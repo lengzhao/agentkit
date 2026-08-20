@@ -34,7 +34,7 @@ func New(_ Config, deps Deps) (agentkit.Tool, error) {
 	if deps.Shell == nil {
 		return nil, fmt.Errorf("tool/shell requires shell dependency")
 	}
-	return agentkit.NewTool[Input, Output]("bash", func(ctx context.Context, input Input) (Output, error) {
+	return agentkit.NewTool("bash", func(ctx context.Context, input Input) (Output, error) {
 		result, err := deps.Shell.Run(ctx, shell.Request{Command: input.Command})
 		if err != nil {
 			return Output{}, err

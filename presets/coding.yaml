@@ -52,6 +52,12 @@ runner:
                           use: fs/local
                           config:
                             root: .
+                    - use: tool/edit-file
+                      deps:
+                        fs:
+                          use: fs/local
+                          config:
+                            root: .
                     - use: tool/shell
                       deps:
                         shell:

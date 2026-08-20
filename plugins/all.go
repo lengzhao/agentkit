@@ -5,6 +5,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/approvalautodeny"
 	_ "github.com/lengzhao/agentkit/plugins/approvalcli"
 	_ "github.com/lengzhao/agentkit/plugins/dangerousshell"
+	_ "github.com/lengzhao/agentkit/plugins/editfile"
 	_ "github.com/lengzhao/agentkit/plugins/fslocal"
 	_ "github.com/lengzhao/agentkit/plugins/fsmemory"
 	_ "github.com/lengzhao/agentkit/plugins/readfile"
