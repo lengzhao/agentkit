@@ -43,4 +43,5 @@ type ToolScope struct {
 	SessionID SessionID
 	AgentID   AgentID
 	TurnID    string
+	Session   Session
 }

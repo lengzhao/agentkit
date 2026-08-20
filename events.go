@@ -13,4 +13,6 @@ const (
 	EventAssistantMessage EventType = "assistant/message"
 	EventToolCall        EventType = "tool/call"
 	EventToolResult      EventType = "tool/result"
+	EventCompaction      EventType = "session/compaction"
+	EventSkillLoad       EventType = "skill/load"
 )

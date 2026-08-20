@@ -1,71 +1,160 @@
+# 扁平实例图：顶层 key 即 instance id，deps 用字符串引用其它实例。
+# pluginkit 会从 runner 出发解析依赖并拓扑构建。
+
 runner:
   use: runner
   config:
     shutdownTimeoutSeconds: 10
   deps:
-    platform:
-      use: platform/cli
-      config:
-        once: false
-    loop:
-      use: loop/default
-      deps:
-        agents:
-          - use: agent/coding
-            config:
-              id: coder
-              model: gpt-5.4
-              maxSteps: 20
-            deps:
-              session:
-                use: session/jsonl
-                config:
-                  path: .agent/sessions/current.jsonl
-              llm:
-                use: llm/openai-compatible
-                config:
-                  model: gpt-5.4
-                  baseUrl: https://api.openai.com/v1
-                  apiKey: ""
-              prompt:
-                use: prompt/assembler/default
-                deps:
-                  sections:
-                    - use: prompt/section/agents-md
-                      config:
-                        root: .
-              tools:
-                use: tools/runtime
-                deps:
-                  tools:
-                    - use: tool/read-file
-                      config:
-                        maxBytes: 1048576
-                      deps:
-                        fs:
-                          use: fs/local
-                          config:
-                            root: .
-                    - use: tool/write-file
-                      deps:
-                        fs:
-                          use: fs/local
-                          config:
-                            root: .
-                    - use: tool/edit-file
-                      deps:
-                        fs:
-                          use: fs/local
-                          config:
-                            root: .
-                    - use: tool/shell
-                      deps:
-                        shell:
-                          use: shell/bash
-                          config:
-                            workDir: .
-                            timeoutSeconds: 60
-                  policies:
-                    - use: policy/deny-dangerous-shell
-                  approval:
-                    use: approval/cli
+    platform: platform
+    loop: loop
+
+platform:
+  use: platform/cli
+  config:
+    once: false
+
+loop:
+  use: loop/default
+  deps:
+    agents:
+      - agent.coder
+
+agent.coder:
+  use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.4
+    maxSteps: 20
+  deps:
+    session: session
+    llm: llm
+    hooks: hooks
+    prompt: prompt
+    tools: tools
+
+session:
+  use: session/jsonl
+  config:
+    path: .agent/sessions/current.jsonl
+
+llm:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKey: ""
+
+hooks:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.before-step
+
+hook.before-step:
+  use: hook/before-step
+  deps:
+    services:
+      - compaction.prune
+      - compaction.summary
+
+compaction.prune:
+  use: compaction/prune-tool-results
+  config:
+    maxToolResultBytes: 8192
+
+compaction.summary:
+  use: compaction/summary
+  config:
+    minMessages: 30
+    keepRecent: 8
+  deps:
+    llm: llm.summary
+
+llm.summary:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKey: ""
+
+prompt:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.agents-md
+      - prompt.skills
+
+prompt.agents-md:
+  use: prompt/section/agents-md
+  config:
+    root: .
+
+prompt.skills:
+  use: prompt/section/skills
+  deps:
+    skills: skills
+
+skills:
+  use: skill/filesystem
+  config:
+    dirs:
+      - .cursor/skills
+      - skills
+
+tools:
+  use: tools/runtime
+  deps:
+    tools:
+      - tool.read-file
+      - tool.write-file
+      - tool.edit-file
+      - tool.shell
+      - tool.skill
+    policies:
+      - policy.dangerous-shell
+    approval: approval.cli
+
+tool.read-file:
+  use: tool/read-file
+  config:
+    maxBytes: 1048576
+  deps:
+    fs: fs.local
+
+tool.write-file:
+  use: tool/write-file
+  deps:
+    fs: fs.local
+
+tool.edit-file:
+  use: tool/edit-file
+  deps:
+    fs: fs.local
+
+tool.shell:
+  use: tool/shell
+  deps:
+    shell: shell.bash
+
+tool.skill:
+  use: tool/skill
+  deps:
+    skills: skills
+
+fs.local:
+  use: fs/local
+  config:
+    root: .
+
+shell.bash:
+  use: shell/bash
+  config:
+    workDir: .
+    timeoutSeconds: 60
+
+policy.dangerous-shell:
+  use: policy/deny-dangerous-shell
+
+approval.cli:
+  use: approval/cli

@@ -10,15 +10,17 @@ import (
 )
 
 type MemoryConfig struct {
-	ID agentkit.SessionID `json:"id"`
+	ID                 agentkit.SessionID `json:"id"`
+	MaxToolResultBytes int                `json:"maxToolResultBytes"`
 }
 
 // Memory is an in-memory session backend for tests and ephemeral runs.
 type Memory struct {
-	mu     sync.RWMutex
-	id     agentkit.SessionID
-	seq    agentkit.EventSeq
-	events []agentkit.SessionEvent
+	mu                 sync.RWMutex
+	id                 agentkit.SessionID
+	seq                agentkit.EventSeq
+	events             []agentkit.SessionEvent
+	maxToolResultBytes int
 }
 
 func NewMemory(cfg MemoryConfig) (*Memory, error) {
@@ -26,7 +28,7 @@ func NewMemory(cfg MemoryConfig) (*Memory, error) {
 	if id == "" {
 		id = agentkit.SessionID("mem-" + time.Now().UTC().Format("20060102-150405.000"))
 	}
-	return &Memory{id: id}, nil
+	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes}, nil
 }
 
 func (s *Memory) ID() agentkit.SessionID { return s.id }
@@ -59,28 +61,7 @@ func (s *Memory) Read(_ context.Context, from agentkit.EventSeq) ([]agentkit.Ses
 func (s *Memory) DeriveMessages(_ context.Context) ([]agentkit.ModelMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return deriveMessages(s.events), nil
-}
-
-func deriveMessages(events []agentkit.SessionEvent) []agentkit.ModelMessage {
-	var out []agentkit.ModelMessage
-	for _, ev := range events {
-		switch ev.Type {
-		case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
-			var msg agentkit.ModelMessage
-			if err := json.Unmarshal(ev.Data, &msg); err != nil {
-				continue
-			}
-			out = append(out, msg)
-		case agentkit.EventToolResult:
-			var result agentkit.ToolResult
-			if err := json.Unmarshal(ev.Data, &result); err != nil {
-				continue
-			}
-			out = append(out, toolResultMessage(result))
-		}
-	}
-	return out
+	return deriveMessages(s.events, s.maxToolResultBytes), nil
 }
 
 func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {

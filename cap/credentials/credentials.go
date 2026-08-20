@@ -8,4 +8,5 @@ type Store interface {
 
 type Secret struct {
 	Value string
+	Ref   string
 }

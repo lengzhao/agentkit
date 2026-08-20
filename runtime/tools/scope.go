@@ -18,3 +18,8 @@ func scopeFrom(ctx context.Context) agentkit.ToolScope {
 	}
 	return agentkit.ToolScope{}
 }
+
+// ScopeFrom returns the tool scope attached to ctx.
+func ScopeFrom(ctx context.Context) agentkit.ToolScope {
+	return scopeFrom(ctx)
+}

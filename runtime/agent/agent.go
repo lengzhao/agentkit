@@ -26,6 +26,7 @@ type Deps struct {
 	Tools    agentkit.ToolRuntime     `json:"tools"`
 	Prompt   agentkit.PromptAssembler `json:"prompt"`
 	Policies []agentkit.Policy        `json:"policies,omitempty"`
+	Hooks    agentkit.HookRuntime     `json:"hooks,omitempty"`
 }
 
 type Runtime struct {
@@ -36,6 +37,7 @@ type Runtime struct {
 	session  agentkit.Session
 	tools    agentkit.ToolRuntime
 	prompt   agentkit.PromptAssembler
+	hooks    agentkit.HookRuntime
 
 	mu            sync.Mutex
 	steering      []agentkit.ModelMessage
@@ -72,6 +74,7 @@ func New(cfg Config, deps Deps) (*Runtime, error) {
 		session:  deps.Session,
 		tools:    deps.Tools,
 		prompt:   deps.Prompt,
+		hooks:    deps.Hooks,
 	}, nil
 }
 
@@ -142,7 +145,11 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 			if err := session.AppendToolCall(ctx, a.session, a.id, call); err != nil {
 				return agentkit.TurnResult{}, err
 			}
-			scope := agentkit.ToolScope{SessionID: a.session.ID(), AgentID: a.id}
+			scope := agentkit.ToolScope{
+				SessionID: a.session.ID(),
+				AgentID:   a.id,
+				Session:   a.session,
+			}
 			toolCtx := tools.WithScope(ctx, scope)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
@@ -159,7 +166,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 }
 
 func (a *Runtime) runStep(ctx context.Context, emit agentkit.OutboundEmit) (agentkit.ModelMessage, error) {
-	history, err := a.session.DeriveMessages(ctx)
+	history, err := a.prepareStepHistory(ctx)
 	if err != nil {
 		return agentkit.ModelMessage{}, err
 	}
@@ -217,6 +224,29 @@ func (a *Runtime) runStep(ctx context.Context, emit agentkit.OutboundEmit) (agen
 	}
 	slog.Info("assistant step", "agent_id", a.id, "tool_calls", len(assistant.ToolCalls))
 	return assistant, nil
+}
+
+func (a *Runtime) prepareStepHistory(ctx context.Context) ([]agentkit.ModelMessage, error) {
+	history, err := a.session.DeriveMessages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if a.hooks == nil {
+		return history, nil
+	}
+	step := &agentkit.BeforeStep{
+		SessionID: a.session.ID(),
+		AgentID:   a.id,
+		Session:   a.session,
+		Messages:  history,
+	}
+	if err := a.hooks.BeforeStep(ctx, step); err != nil {
+		return nil, err
+	}
+	if step.Messages != nil {
+		return step.Messages, nil
+	}
+	return a.session.DeriveMessages(ctx)
 }
 
 func (a *Runtime) popSteering() []agentkit.ModelMessage {

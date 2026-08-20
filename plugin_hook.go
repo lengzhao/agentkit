@@ -55,6 +55,7 @@ type TurnStoppingHook interface {
 type BeforeStep struct {
 	SessionID SessionID
 	AgentID   AgentID
+	Session   Session
 	Messages  []ModelMessage
 }
 

@@ -1,0 +1,46 @@
+# P1 能力片段（扁平引用）。合并到 coding.yaml 时复制对应实例即可。
+
+hook.before-step:
+  use: hook/before-step
+  deps:
+    services:
+      - compaction.prune
+      - compaction.summary
+
+compaction.prune:
+  use: compaction/prune-tool-results
+  config:
+    maxToolResultBytes: 8192
+
+compaction.summary:
+  use: compaction/summary
+  config:
+    minMessages: 30
+    keepRecent: 8
+  deps:
+    llm: llm.summary
+
+prompt.skills:
+  use: prompt/section/skills
+  deps:
+    skills: skills
+
+skills:
+  use: skill/filesystem
+  config:
+    dirs:
+      - .cursor/skills
+      - skills
+
+tool.skill:
+  use: tool/skill
+  deps:
+    skills: skills
+
+settings:
+  use: settings/file
+  config:
+    path: .agent/settings.yaml
+
+credentials:
+  use: credentials/env

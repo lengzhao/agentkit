@@ -6,4 +6,6 @@ type Store interface {
 	Get(context.Context, string) (Value, error)
 }
 
-type Value struct{}
+type Value struct {
+	Raw any
+}
