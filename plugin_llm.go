@@ -41,11 +41,13 @@ type LLMStream interface {
 }
 
 type LLMEvent struct {
-	Type     string
-	Message  *ModelMessage
-	ToolCall *ToolCall
-	Usage    *Usage
-	Raw      []byte
+	Type         string
+	Message      *ModelMessage
+	ContentIndex int
+	Delta        string
+	ToolCall     *ToolCall
+	Usage        *Usage
+	Raw          []byte
 }
 
 type Usage struct {

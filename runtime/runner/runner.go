@@ -52,7 +52,16 @@ func (r *Root) Run(ctx context.Context) error {
 			continue
 		}
 		fmt.Fprintln(os.Stderr)
-		result, err := r.loop.Dispatch(ctx, agentkit.LoopRequest{Event: event})
+		emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
+			if out.SessionID == "" {
+				out.SessionID = event.SessionID
+			}
+			if out.AgentID == "" {
+				out.AgentID = event.AgentID
+			}
+			return r.platform.Send(ctx, out)
+		}
+		_, err = r.loop.Dispatch(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
 		if err != nil {
 			slog.Error("loop dispatch failed", "err", err)
 			if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{
@@ -64,11 +73,6 @@ func (r *Root) Run(ctx context.Context) error {
 				return sendErr
 			}
 			continue
-		}
-		for _, out := range result.Outbound {
-			if err := r.platform.Send(ctx, out); err != nil {
-				return err
-			}
 		}
 	}
 }
@@ -183,6 +187,25 @@ func (p *CLI) readInput() (string, error) {
 
 func (p *CLI) Send(_ context.Context, event agentkit.OutboundEvent) error {
 	switch event.Type {
+	case agentkit.EventMessageStart:
+		return nil
+	case agentkit.EventMessageUpdate:
+		var payload agentkit.MessageUpdatePayload
+		if err := json.Unmarshal(event.Data, &payload); err != nil {
+			return err
+		}
+		switch payload.AssistantMessageEvent.Type {
+		case agentkit.AssistantEventTextDelta, agentkit.AssistantEventThinkingDelta:
+			fmt.Print(payload.AssistantMessageEvent.Delta)
+		case agentkit.AssistantEventToolCallStart:
+			if payload.AssistantMessageEvent.ToolName != "" {
+				fmt.Fprintf(os.Stderr, "\n[tool:%s]\n", payload.AssistantMessageEvent.ToolName)
+			}
+		}
+		return nil
+	case agentkit.EventMessageEnd:
+		fmt.Println()
+		return nil
 	case agentkit.EventAssistantMessage:
 		var msg agentkit.ModelMessage
 		if err := json.Unmarshal(event.Data, &msg); err != nil {

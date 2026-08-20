@@ -16,6 +16,7 @@ type Agent interface {
 
 type TurnInput struct {
 	Message ModelMessage
+	Emit    OutboundEmit
 }
 
 type TurnResult struct {

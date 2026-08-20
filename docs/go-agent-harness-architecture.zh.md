@@ -743,6 +743,16 @@ type Platform interface {
 
 Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`，以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。
 
+Assistant 流式输出对齐 Pi RPC，经 `OutboundEmit` 在 turn 执行期间即时 `Send`：
+
+| OutboundEvent.Type | 含义 |
+|---|---|
+| `message/start` | assistant 流开始，携带初始 message |
+| `message/update` | 增量更新，`data.assistantMessageEvent.type` 为 `text_delta` / `toolcall_delta` 等 |
+| `message/end` | assistant 消息定稿（session 在此时持久化） |
+
+`message/update` 的 wire payload 不包含 cumulative partial，只携带 delta 与 `contentIndex`，与 Pi `toJsonEvent()` 一致。
+
 ### 6.4 Agent
 
 ```go
@@ -781,15 +791,15 @@ sequenceDiagram
   Agent->>Session: step/start + user/message
   Agent->>Prompt: BuildPrompt
   Agent->>LLM: Stream
-  LLM-->>Session: assistant/chunk*
+  LLM-->>Agent: assistant deltas
+  Agent->>Platform: message/start + message/update*
   Agent->>Session: assistant/message
   Agent->>Tools: execute calls
   Tools-->>Session: tool/call + tool/result
   Agent->>Session: step/end
   Loop->>Loop: OnTurnStopping
   Agent->>Session: turn/end
-  Loop->>Runner: OutboundEvent
-  Runner->>Platform: Send
+  Agent->>Platform: message/end
 ```
 
 Loop 不直接依赖具体工具、模型、压缩器、审批器或沙箱。它只调用 Agent 接口、调度策略和已装配的 loop-level hooks。

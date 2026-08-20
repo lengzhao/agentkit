@@ -10,6 +10,7 @@ type Loop interface {
 
 type LoopRequest struct {
 	Event MessageEvent
+	Emit  OutboundEmit
 }
 
 type LoopResult struct {

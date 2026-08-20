@@ -2,7 +2,6 @@ package loop
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -44,24 +43,15 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) (agent
 	if !ok {
 		return agentkit.LoopResult{}, errAgentNotFound(agentID)
 	}
-	result, err := ag.RunTurn(ctx, agentkit.TurnInput{Message: req.Event.Message})
+	result, err := ag.RunTurn(ctx, agentkit.TurnInput{
+		Message: req.Event.Message,
+		Emit:    req.Emit,
+	})
 	if err != nil {
 		return agentkit.LoopResult{}, err
 	}
-	var outbound []agentkit.OutboundEvent
-	for _, msg := range result.Messages {
-		if msg.Role != "assistant" {
-			continue
-		}
-		raw, _ := json.Marshal(msg)
-		outbound = append(outbound, agentkit.OutboundEvent{
-			SessionID: ag.Session().ID(),
-			AgentID:   ag.ID(),
-			Type:      agentkit.EventAssistantMessage,
-			Data:      raw,
-		})
-	}
-	return agentkit.LoopResult{Outbound: outbound}, nil
+	_ = result
+	return agentkit.LoopResult{}, nil
 }
 
 type agentNotFoundError struct{ id agentkit.AgentID }

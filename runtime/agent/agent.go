@@ -128,7 +128,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 			collected = append(collected, msg)
 		}
 
-		assistant, err := a.runStep(ctx)
+		assistant, err := a.runStep(ctx, input.Emit)
 		if err != nil {
 			return agentkit.TurnResult{}, err
 		}
@@ -158,7 +158,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 	return agentkit.TurnResult{Messages: collected}, nil
 }
 
-func (a *Runtime) runStep(ctx context.Context) (agentkit.ModelMessage, error) {
+func (a *Runtime) runStep(ctx context.Context, emit agentkit.OutboundEmit) (agentkit.ModelMessage, error) {
 	history, err := a.session.DeriveMessages(ctx)
 	if err != nil {
 		return agentkit.ModelMessage{}, err
@@ -187,11 +187,16 @@ func (a *Runtime) runStep(ctx context.Context) (agentkit.ModelMessage, error) {
 	}
 	defer stream.Close()
 
+	streamOut := newStreamEmitter(ctx, a.session.ID(), a.id, emit)
+
 	var assistant agentkit.ModelMessage
 	for {
 		ev, err := stream.Recv()
 		if ev.Message != nil {
 			assistant = *ev.Message
+		}
+		if consumeErr := streamOut.consume(ev); consumeErr != nil {
+			return agentkit.ModelMessage{}, consumeErr
 		}
 		if errors.Is(err, io.EOF) {
 			break
@@ -202,6 +207,9 @@ func (a *Runtime) runStep(ctx context.Context) (agentkit.ModelMessage, error) {
 	}
 	if assistant.Role == "" {
 		assistant.Role = "assistant"
+	}
+	if err := streamOut.finalize(assistant); err != nil {
+		return agentkit.ModelMessage{}, err
 	}
 
 	if err := session.AppendMessage(ctx, a.session, a.id, agentkit.EventAssistantMessage, assistant); err != nil {

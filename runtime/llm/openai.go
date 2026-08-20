@@ -128,14 +128,25 @@ type openAIToolCall struct {
 }
 
 type openAIStream struct {
-	resp    *http.Response
-	scanner *bufio.Scanner
-	done    bool
-	acc     agentkit.ModelMessage
-	toolBuf map[int]*agentkit.ToolCall
+	resp          *http.Response
+	scanner       *bufio.Scanner
+	done          bool
+	streamStarted bool
+	acc           agentkit.ModelMessage
+	toolBuf       map[int]*agentkit.ToolCall
+	pending       []agentkit.LLMEvent
+}
+
+func (s *openAIStream) pushPending(events ...agentkit.LLMEvent) {
+	s.pending = append(s.pending, events...)
 }
 
 func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
+	if len(s.pending) > 0 {
+		ev := s.pending[0]
+		s.pending = s.pending[1:]
+		return ev, nil
+	}
 	if s.done {
 		return agentkit.LLMEvent{}, io.EOF
 	}
@@ -152,7 +163,8 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 		if payload == "[DONE]" {
 			s.done = true
 			msg := s.acc
-			return agentkit.LLMEvent{Type: "message", Message: &msg}, io.EOF
+			s.pushPending(agentkit.LLMEvent{Type: "message", Message: &msg})
+			return s.Recv()
 		}
 		var chunk openAIStreamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
@@ -164,8 +176,23 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 		}
 		delta := chunk.Choices[0].Delta
 		if delta.Content != "" {
+			if !s.streamStarted {
+				s.streamStarted = true
+				start := cloneMessage(s.acc)
+				s.pushPending(
+					agentkit.LLMEvent{Type: "start", Message: start},
+					agentkit.LLMEvent{Type: "text_start", ContentIndex: 0, Message: start},
+				)
+			}
 			s.acc.Content = appendText(s.acc.Content, delta.Content)
-			return agentkit.LLMEvent{Type: "text_delta", Message: cloneMessage(s.acc)}, nil
+			msg := cloneMessage(s.acc)
+			s.pushPending(agentkit.LLMEvent{
+				Type:         "text_delta",
+				ContentIndex: 0,
+				Delta:        delta.Content,
+				Message:      msg,
+			})
+			return s.Recv()
 		}
 		for i, tc := range delta.ToolCalls {
 			idx := i
@@ -174,8 +201,23 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 			}
 			call, ok := s.toolBuf[idx]
 			if !ok {
+				if !s.streamStarted {
+					s.streamStarted = true
+					start := cloneMessage(s.acc)
+					s.pushPending(agentkit.LLMEvent{Type: "start", Message: start})
+				}
 				call = &agentkit.ToolCall{ID: agentkit.ToolCallID(tc.ID), Name: tc.Function.Name}
 				s.toolBuf[idx] = call
+				if tc.ID != "" || tc.Function.Name != "" {
+					cp := *call
+					msg := cloneMessage(s.acc)
+					s.pushPending(agentkit.LLMEvent{
+						Type:         "toolcall_start",
+						ContentIndex: idx,
+						ToolCall:     &cp,
+						Message:      msg,
+					})
+				}
 			}
 			if tc.ID != "" {
 				call.ID = agentkit.ToolCallID(tc.ID)
@@ -185,15 +227,36 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 			}
 			if tc.Function.Arguments != "" {
 				call.Input = append(call.Input, tc.Function.Arguments...)
+				cp := *call
+				msg := cloneMessage(s.acc)
+				s.pushPending(agentkit.LLMEvent{
+					Type:         "toolcall_delta",
+					ContentIndex: idx,
+					Delta:        tc.Function.Arguments,
+					ToolCall:     &cp,
+					Message:      msg,
+				})
 			}
 		}
+		if len(s.pending) > 0 {
+			return s.Recv()
+		}
 		if chunk.Choices[0].FinishReason != nil {
-			for _, call := range s.toolBuf {
-				s.acc.ToolCalls = append(s.acc.ToolCalls, *call)
+			for idx, call := range s.toolBuf {
+				cp := *call
+				s.acc.ToolCalls = append(s.acc.ToolCalls, cp)
+				msg := cloneMessage(s.acc)
+				s.pushPending(agentkit.LLMEvent{
+					Type:         "toolcall_end",
+					ContentIndex: idx,
+					ToolCall:     &cp,
+					Message:      msg,
+				})
 			}
 			s.done = true
 			msg := s.acc
-			return agentkit.LLMEvent{Type: "message", Message: &msg}, io.EOF
+			s.pushPending(agentkit.LLMEvent{Type: "message", Message: &msg})
+			return s.Recv()
 		}
 	}
 	if err := s.scanner.Err(); err != nil {
