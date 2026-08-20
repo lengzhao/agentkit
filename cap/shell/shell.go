@@ -1,10 +1,22 @@
 package shell
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Executor interface {
 	Run(context.Context, Request) (Result, error)
 }
 
-type Request struct{}
-type Result struct{}
+type Request struct {
+	Command string
+	WorkDir string
+	Timeout time.Duration
+}
+
+type Result struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}

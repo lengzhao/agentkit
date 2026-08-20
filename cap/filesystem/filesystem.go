@@ -8,5 +8,13 @@ type Service interface {
 	Edit(context.Context, EditRequest) (EditResult, error)
 }
 
-type EditRequest struct{}
-type EditResult struct{}
+type EditRequest struct {
+	Path      string
+	OldString string
+	NewString string
+}
+
+type EditResult struct {
+	Path    string
+	Applied bool
+}

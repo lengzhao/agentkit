@@ -10,6 +10,26 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [reference-analysis.zh.md](reference-analysis.zh.md) | DeepSeek Harness 与 Pi 对比分析，提炼通用 Agent 能力 |
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | Plugin Kind 命名、分类目录、MVP 分阶段落地 |
 
+## 快速开始
+
+```sh
+# 交互式 REPL（默认，config 里 once: false）
+go run ./cmd/agent
+
+# 带首条消息进入 REPL
+go run ./cmd/agent "帮我看看这个项目结构"
+
+# 单次任务：把 config 里 platform.cli.once 设为 true，或用 presets/coding-smoke.yaml
+
+# 使用预设配置
+go run ./cmd/agent presets/coding.yaml "你的任务"
+
+# 无 API Key 的本地冒烟（scripted LLM）
+go run ./cmd/agent presets/coding-smoke.yaml "列出当前目录并读取 README"
+```
+
+Phase 1 已实现：Runner、CLI Platform、Loop、Coding Agent、Session（memory/jsonl）、OpenAI 兼容 LLM、read/write/bash 工具、Policy 与审批插件。
+
 ## 阅读顺序
 
 ```mermaid

@@ -1,0 +1,65 @@
+runner:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+  deps:
+    platform:
+      use: platform/cli
+      config:
+        once: false
+    loop:
+      use: loop/default
+      deps:
+        agents:
+          - use: agent/coding
+            config:
+              id: coder
+              model: gpt-5.4
+              maxSteps: 20
+            deps:
+              session:
+                use: session/jsonl
+                config:
+                  path: .agent/sessions/current.jsonl
+              llm:
+                use: llm/openai-compatible
+                config:
+                  model: gpt-5.4
+                  baseUrl: https://api.openai.com/v1
+                  apiKey: ""
+              prompt:
+                use: prompt/assembler/default
+                deps:
+                  sections:
+                    - use: prompt/section/agents-md
+                      config:
+                        root: .
+              tools:
+                use: tools/runtime
+                deps:
+                  tools:
+                    - use: tool/read-file
+                      config:
+                        maxBytes: 1048576
+                      deps:
+                        fs:
+                          use: fs/local
+                          config:
+                            root: .
+                    - use: tool/write-file
+                      deps:
+                        fs:
+                          use: fs/local
+                          config:
+                            root: .
+                    - use: tool/shell
+                      deps:
+                        shell:
+                          use: shell/bash
+                          config:
+                            workDir: .
+                            timeoutSeconds: 60
+                  policies:
+                    - use: policy/deny-dangerous-shell
+                  approval:
+                    use: approval/cli
