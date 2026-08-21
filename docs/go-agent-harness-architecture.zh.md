@@ -743,6 +743,8 @@ type Platform interface {
 
 Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`，以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。
 
+多个 Platform 可在同一 Agent 中共存：用 `platform/multiplex` 聚合各入口，Runner 仍只依赖一个 `Platform`。入站消息携带 `PlatformID`，出站事件按 `PlatformID` 路由回对应通道（Slack、飞书等后续实现为独立 `platform/*` 插件）。
+
 Assistant 流式输出对齐 Pi RPC，经 `OutboundEmit` 在 turn 执行期间即时 `Send`：
 
 | OutboundEvent.Type | 含义 |
@@ -964,14 +966,14 @@ import (
 开发命令：
 
 ```sh
-agentkit gen
+go generate ./...
 go run ./cmd/agent --preset coding "inspect this repo"
 ```
 
 开发态 watcher：
 
 ```text
-*.go / *.yaml 变更 → agentkit gen → 停止旧进程 → go run ./cmd/agent
+*.go / *.yaml 变更 → go generate ./... → 停止旧进程 → go run ./cmd/agent
 ```
 
 这不是进程内 HMR，但符合 Go 工具链，也能保持插件状态和生命周期语义简单。

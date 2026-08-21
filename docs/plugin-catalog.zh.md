@@ -93,6 +93,7 @@ flowchart TB
 |---|---|---|---|
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop | DSH Loader root / Pi AgentSession 外层 |
 | `platform/cli` | `agentkit.Platform` | 终端 stdin/stdout 消息入口 | Pi TUI / DSH headless |
+| `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
 | `platform/worker` | `agentkit.Platform` | 一次性任务 runner | DSH headless |

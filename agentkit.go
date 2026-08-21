@@ -64,16 +64,18 @@ type SessionEvent struct {
 type Event = SessionEvent
 
 type MessageEvent struct {
-	SessionID SessionID
-	AgentID   AgentID
-	Message   ModelMessage
+	SessionID  SessionID
+	AgentID    AgentID
+	PlatformID string
+	Message    ModelMessage
 }
 
 type OutboundEvent struct {
-	SessionID SessionID
-	AgentID   AgentID
-	Type      EventType
-	Data      json.RawMessage
+	SessionID  SessionID
+	AgentID    AgentID
+	PlatformID string
+	Type       EventType
+	Data       json.RawMessage
 }
 
 type JSONSchema struct {

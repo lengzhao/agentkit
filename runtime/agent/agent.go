@@ -109,6 +109,14 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 	a.cancelReason = ""
 	a.mu.Unlock()
 
+	if err := session.AppendTurnStart(ctx, a.session, a.id); err != nil {
+		return agentkit.TurnResult{}, err
+	}
+	stepsCompleted := 0
+	defer func() {
+		_ = session.AppendTurnEnd(context.WithoutCancel(ctx), a.session, a.id, stepsCompleted)
+	}()
+
 	if err := session.AppendMessage(ctx, a.session, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 		return agentkit.TurnResult{}, err
 	}
@@ -131,18 +139,20 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 			collected = append(collected, msg)
 		}
 
+		if err := session.AppendStepStart(ctx, a.session, a.id, step); err != nil {
+			return agentkit.TurnResult{}, err
+		}
+
 		assistant, err := a.runStep(ctx, input.Emit)
 		if err != nil {
+			_ = session.AppendStepEnd(context.WithoutCancel(ctx), a.session, a.id, step)
 			return agentkit.TurnResult{}, err
 		}
 		collected = append(collected, assistant)
 
-		if len(assistant.ToolCalls) == 0 {
-			break
-		}
-
 		for _, call := range assistant.ToolCalls {
 			if err := session.AppendToolCall(ctx, a.session, a.id, call); err != nil {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), a.session, a.id, step)
 				return agentkit.TurnResult{}, err
 			}
 			scope := agentkit.ToolScope{
@@ -153,12 +163,23 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 			toolCtx := tools.WithScope(ctx, scope)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), a.session, a.id, step)
 				return agentkit.TurnResult{}, err
 			}
 			if err := session.AppendToolResult(ctx, a.session, a.id, result); err != nil {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), a.session, a.id, step)
 				return agentkit.TurnResult{}, err
 			}
 			collected = append(collected, toolResultMessage(result))
+		}
+
+		if err := session.AppendStepEnd(ctx, a.session, a.id, step); err != nil {
+			return agentkit.TurnResult{}, err
+		}
+		stepsCompleted++
+
+		if len(assistant.ToolCalls) == 0 {
+			break
 		}
 	}
 

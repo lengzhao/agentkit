@@ -9,12 +9,18 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md) | 完整架构：Runner、Spine、装配模型、生命周期、测试策略 |
 | [reference-analysis.zh.md](reference-analysis.zh.md) | DeepSeek Harness 与 Pi 对比分析，提炼通用 Agent 能力 |
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | Plugin Kind 命名、分类目录、MVP 分阶段落地 |
+| [coding-workspace.zh.md](coding-workspace.zh.md) | Coding preset 工作区与 FS 边界 |
 
 ## 快速开始
 
 ```sh
-# 交互式 REPL（默认，config 里 once: false）
+# 交互式 REPL（默认 presets/coding.yaml，API Key 走 OPENAI_API_KEY）
+export OPENAI_API_KEY=sk-...
 go run ./cmd/agent
+
+# 本地 override：复制 config.example.yaml 为 config.yaml（已在 .gitignore）
+cp config.example.yaml config.yaml
+go run ./cmd/agent -config config.yaml
 
 # 带首条消息进入 REPL
 go run ./cmd/agent "帮我看看这个项目结构"
@@ -22,13 +28,19 @@ go run ./cmd/agent "帮我看看这个项目结构"
 # 单次任务：把 config 里 platform.cli.once 设为 true，或用 presets/coding-smoke.yaml
 
 # 使用预设配置
-go run ./cmd/agent presets/coding.yaml "你的任务"
+go run ./cmd/agent -config presets/coding.yaml "你的任务"
 
 # 无 API Key 的本地冒烟（scripted LLM）
-go run ./cmd/agent presets/coding-smoke.yaml "列出当前目录并读取 README"
+go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读取 README"
+
+# Web 管理 UI：浏览已注册插件、编辑实例图、导出 YAML（含 build 校验）
+go run ./cmd/agent -manager
+go run ./cmd/agent -manager -addr :9090
 ```
 
 Phase 1 已实现：Runner、CLI Platform、Loop、Coding Agent、Session（memory/jsonl）、OpenAI 兼容 LLM、read/write/bash 工具、Policy 与审批插件。
+
+新增插件后运行 `go generate ./...` 更新 `plugins/all.go` 的 blank import。
 
 ## 阅读顺序
 

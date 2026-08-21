@@ -133,7 +133,7 @@ func TestCredentialsEnvResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build credentials: %v", err)
 	}
-	secret, err := store.Resolve(context.Background(), "AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

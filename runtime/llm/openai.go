@@ -9,17 +9,22 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
 )
 
 type OpenAIConfig struct {
-	Model   string `json:"model"`
-	BaseURL string `json:"baseUrl"`
-	APIKey  string `json:"apiKey"`
+	Model     string `json:"model"`
+	BaseURL   string `json:"baseUrl"`
+	APIKey    string `json:"apiKey"`
+	APIKeyRef string `json:"apiKeyRef"`
+}
+
+type OpenAIDeps struct {
+	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 
 type OpenAI struct {
@@ -29,7 +34,7 @@ type OpenAI struct {
 	client  *http.Client
 }
 
-func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
+func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (*OpenAI, error) {
 	model := cfg.Model
 	if model == "" {
 		model = "gpt-4o"
@@ -38,12 +43,9 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
-	apiKey := cfg.APIKey
-	if apiKey == "" {
-		apiKey = os.Getenv("OPENAI_API_KEY")
-	}
-	if apiKey == "" {
-		apiKey = os.Getenv("OPENAI_COMPATIBLE_API_KEY")
+	apiKey, err := resolveAPIKey(context.Background(), cfg.APIKey, cfg.APIKeyRef, deps.Credentials)
+	if err != nil {
+		return nil, err
 	}
 	return &OpenAI{
 		model:   model,
@@ -57,7 +59,7 @@ func (p *OpenAI) Name() string { return "openai-compatible" }
 
 func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("missing API key: set config.apiKey or OPENAI_API_KEY")
+		return nil, fmt.Errorf("missing API key: set config.apiKeyRef, config.apiKey, or OPENAI_API_KEY")
 	}
 	model := req.Model
 	if model == "" {

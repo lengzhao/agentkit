@@ -2,31 +2,41 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/compaction"
 )
 
 type RuntimeConfig struct {
-	DefaultTimeoutSeconds int `json:"defaultTimeoutSeconds"`
+	DefaultTimeoutSeconds int            `json:"defaultTimeoutSeconds"`
+	MaxResultBytes        int            `json:"maxResultBytes"`
+	ToolTimeouts          map[string]int `json:"toolTimeouts,omitempty"`
 }
 
 type RuntimeDeps struct {
-	Tools    []agentkit.Tool   `json:"tools"`
-	Policies []agentkit.Policy `json:"policies,omitempty"`
-	Approval agentkit.Approval `json:"approval,omitempty"`
+	Tools    []agentkit.Tool        `json:"tools"`
+	Policies []agentkit.Policy      `json:"policies,omitempty"`
+	Approval agentkit.Approval      `json:"approval,omitempty"`
+	Hooks    agentkit.HookRuntime   `json:"hooks,omitempty"`
 }
 
 // Runtime executes tools through the policy and approval pipeline.
 type Runtime struct {
-	tools    map[string]agentkit.Tool
-	policies []agentkit.Policy
-	approval agentkit.Approval
+	tools           map[string]agentkit.Tool
+	policies        []agentkit.Policy
+	approval        agentkit.Approval
+	hooks           agentkit.HookRuntime
+	defaultTimeout  time.Duration
+	maxResultBytes  int
+	toolTimeouts    map[string]time.Duration
 }
 
-func NewRuntime(_ RuntimeConfig, deps RuntimeDeps) (*Runtime, error) {
+func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (*Runtime, error) {
 	tools := make(map[string]agentkit.Tool, len(deps.Tools))
 	for _, tool := range deps.Tools {
 		if tool == nil {
@@ -38,10 +48,25 @@ func NewRuntime(_ RuntimeConfig, deps RuntimeDeps) (*Runtime, error) {
 		}
 		tools[name] = tool
 	}
+	toolTimeouts := make(map[string]time.Duration, len(cfg.ToolTimeouts))
+	for name, seconds := range cfg.ToolTimeouts {
+		if seconds <= 0 {
+			continue
+		}
+		toolTimeouts[name] = time.Duration(seconds) * time.Second
+	}
+	var defaultTimeout time.Duration
+	if cfg.DefaultTimeoutSeconds > 0 {
+		defaultTimeout = time.Duration(cfg.DefaultTimeoutSeconds) * time.Second
+	}
 	return &Runtime{
-		tools:    tools,
-		policies: deps.Policies,
-		approval: deps.Approval,
+		tools:          tools,
+		policies:       deps.Policies,
+		approval:       deps.Approval,
+		hooks:          deps.Hooks,
+		defaultTimeout: defaultTimeout,
+		maxResultBytes: cfg.MaxResultBytes,
+		toolTimeouts:   toolTimeouts,
 	}, nil
 }
 
@@ -94,8 +119,47 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 		}
 	}
 
+	if r.hooks != nil {
+		if err := r.hooks.BeforeTool(ctx, &call); err != nil {
+			return agentkit.ToolResult{}, err
+		}
+	}
+
+	execCtx := ctx
+	cancel := func() {}
+	if timeout := r.timeoutFor(call.Name); timeout > 0 {
+		execCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
 	slog.Info("tool execute", "tool", call.Name, "session_id", scope.SessionID, "agent_id", scope.AgentID)
-	return tool.Call(ctx, call)
+	result, err := tool.Call(execCtx, call)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+			return timeoutResult(call), nil
+		}
+		return agentkit.ToolResult{}, err
+	}
+	if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+		return timeoutResult(call), nil
+	}
+
+	if r.hooks != nil {
+		if err := r.hooks.AfterTool(ctx, &result); err != nil {
+			return agentkit.ToolResult{}, err
+		}
+	}
+	if r.maxResultBytes > 0 {
+		result = compaction.TruncateToolResult(result, r.maxResultBytes)
+	}
+	return result, nil
+}
+
+func (r *Runtime) timeoutFor(name string) time.Duration {
+	if timeout, ok := r.toolTimeouts[name]; ok {
+		return timeout
+	}
+	return r.defaultTimeout
 }
 
 func (r *Runtime) evaluatePolicies(ctx context.Context, scope agentkit.ToolScope, call agentkit.ToolCall) (agentkit.Decision, error) {
@@ -134,6 +198,18 @@ func deniedResult(call agentkit.ToolCall, reason string) agentkit.ToolResult {
 			Text: reason,
 		}},
 		Audit: map[string]string{"decision": "deny", "reason": reason},
+	}
+}
+
+func timeoutResult(call agentkit.ToolCall) agentkit.ToolResult {
+	return agentkit.ToolResult{
+		ID:   call.ID,
+		Name: call.Name,
+		Content: []agentkit.ToolContent{{
+			Type: "text",
+			Text: "tool execution timed out",
+		}},
+		Audit: map[string]string{"decision": "timeout"},
 	}
 }
 

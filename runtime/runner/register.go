@@ -7,10 +7,6 @@ import (
 
 func init() {
 	pluginkit.Register("runner", New)
-	pluginkit.Register("platform/cli", NewCLI)
 }
 
-var (
-	_ agentkit.Runner   = (*Root)(nil)
-	_ agentkit.Platform = (*CLI)(nil)
-)
+var _ agentkit.Runner = (*Root)(nil)

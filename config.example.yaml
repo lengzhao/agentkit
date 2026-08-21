@@ -1,6 +1,7 @@
-# 扁平实例图：顶层 key 即 instance id，deps 用字符串引用其它实例。
-# 文件/S shell 边界见 docs/coding-workspace.zh.md
-# pluginkit 会从 runner 出发解析依赖并拓扑构建。
+# 复制为 config.yaml 做本地 override（config.yaml 已在 .gitignore 中）。
+# 默认启动使用 presets/coding.yaml；API Key 通过环境变量注入：
+#   export OPENAI_API_KEY=sk-...
+# 也可在本地 config.yaml 中设置 config.apiKey（不推荐提交到 git）。
 
 runner:
   use: runner

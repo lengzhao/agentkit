@@ -91,3 +91,13 @@ func pruneToolContent(parts []agentkit.ToolContent, maxBytes int) []agentkit.Too
 	}
 	return out
 }
+
+// TruncateToolResult truncates oversized tool result content after execution.
+func TruncateToolResult(result agentkit.ToolResult, maxBytes int) agentkit.ToolResult {
+	if maxBytes <= 0 {
+		return result
+	}
+	out := result
+	out.Content = pruneToolContent(result.Content, maxBytes)
+	return out
+}

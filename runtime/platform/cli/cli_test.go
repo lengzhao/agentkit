@@ -1,4 +1,4 @@
-package runner_test
+package cli_test
 
 import (
 	"context"
@@ -6,16 +6,16 @@ import (
 	"io"
 	"testing"
 
-	"github.com/lengzhao/agentkit/runtime/runner"
+	"github.com/lengzhao/agentkit/runtime/platform/cli"
 )
 
 func TestCLIExitCommand(t *testing.T) {
 	t.Parallel()
-	cli, err := runner.NewCLI(runner.CLIConfig{Prompt: "/exit"})
+	p, err := cli.New(cli.Config{Prompt: "/exit"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = cli.Receive(context.Background())
+	_, err = p.Receive(context.Background())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF on /exit, got %v", err)
 	}
@@ -23,11 +23,11 @@ func TestCLIExitCommand(t *testing.T) {
 
 func TestCLIHelpDoesNotDispatch(t *testing.T) {
 	t.Parallel()
-	cli, err := runner.NewCLI(runner.CLIConfig{Prompt: "/help"})
+	p, err := cli.New(cli.Config{Prompt: "/help"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, err := cli.Receive(context.Background())
+	event, err := p.Receive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

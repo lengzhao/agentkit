@@ -26,9 +26,9 @@ func New(cfg Config) (credentials.Store, error) {
 }
 
 func (s *Store) Resolve(_ context.Context, ref string) (credentials.Secret, error) {
-	key := ref
+	key := credentials.EnvKey(ref)
 	if s.prefix != "" {
-		key = s.prefix + ref
+		key = s.prefix + key
 	}
 	value := os.Getenv(key)
 	if value == "" {
