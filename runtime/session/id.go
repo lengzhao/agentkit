@@ -1,6 +1,17 @@
 package session
 
-import "github.com/lengzhao/agentkit"
+import (
+	"time"
+
+	"github.com/lengzhao/agentkit"
+)
+
+const DefaultCLISessionID = agentkit.SessionID("cli:default")
+
+// NewCLISessionID returns a fresh opaque CLI session id.
+func NewCLISessionID() agentkit.SessionID {
+	return agentkit.SessionID("cli:" + time.Now().UTC().Format("20060102-150405.000"))
+}
 
 // SlackSessionID builds a stable session key from Slack channel and optional thread timestamp.
 // Use threadTS from event.ThreadTimeStamp; for top-level channel messages pass "".

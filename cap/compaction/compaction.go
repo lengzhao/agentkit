@@ -15,6 +15,8 @@ type Request struct {
 	AgentID   agentkit.AgentID
 	Session   agentkit.Session
 	Messages  []agentkit.ModelMessage
+	// Force skips automatic thresholds such as minMessages (manual /compact).
+	Force bool
 }
 
 type Result struct {

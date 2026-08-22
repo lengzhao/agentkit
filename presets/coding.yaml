@@ -14,6 +14,34 @@ platform:
   use: platform/cli
   config:
     once: false
+  deps:
+    commands: commands
+
+commands:
+  use: command/registry
+  deps:
+    handlers:
+      - command.compact
+      - command.new
+      - command.session
+
+command.compact:
+  use: command/compact
+  config:
+    agentId: coder
+  deps:
+    sessionStore: sessionStore
+    services:
+      - compaction.prune
+      - compaction.summary
+
+command.new:
+  use: command/new
+
+command.session:
+  use: command/session
+  deps:
+    sessionStore: sessionStore
 
 loop:
   use: loop/default

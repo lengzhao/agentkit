@@ -74,6 +74,8 @@ func (s *JSONL) loadExisting() error {
 
 func (s *JSONL) ID() agentkit.SessionID { return s.id }
 
+func (s *JSONL) FilePath() string { return s.path }
+
 func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentkit.EventSeq, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

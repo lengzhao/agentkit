@@ -235,8 +235,10 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `command/builtin` | `command.Registry` | 内置 slash 命令集 |
+| `command/registry` | `command.Registry` | Slash 命令注册与分发 |
 | `command/compact` | `command.Handler` | `/compact` |
+| `command/new` | `command.Handler` | `/new` 新 Session |
+| `command/session` | `command.Handler` | `/session` 显示会话信息 |
 | `command/tree` | `command.Handler` | Session 树导航 |
 
 ## 4. 三角色能力包结构
@@ -353,7 +355,7 @@ graph:
 | Session | `session/sqlite` |
 | Settings | `settings/file` |
 | Telemetry | `telemetry/otel` |
-| Commands | `command/builtin`, `command/compact` |
+| Commands | `command/registry`, `command/compact`, `command/new`, `command/session` |
 
 ### Phase 3 — 高级编排
 

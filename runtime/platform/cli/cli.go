@@ -11,11 +11,18 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/command"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type Config struct {
-	Prompt string `json:"prompt"`
-	Once   bool   `json:"once"`
+	Prompt           string `json:"prompt"`
+	Once             bool   `json:"once"`
+	DefaultSessionID string `json:"defaultSessionId"`
+}
+
+type Deps struct {
+	Commands command.Registry `json:"commands,omitempty"`
 }
 
 type Platform struct {
@@ -24,17 +31,25 @@ type Platform struct {
 	done          bool
 	welcomed      bool
 	reader        *bufio.Reader
+	commands      command.Registry
+	sessionID     agentkit.SessionID
 }
 
-func New(cfg Config) (*Platform, error) {
+func New(cfg Config, deps Deps) (*Platform, error) {
 	initial := cfg.Prompt
 	if initial == "" {
 		initial = initialPromptFromArgs(os.Args[1:])
+	}
+	sessionID := agentkit.SessionID(cfg.DefaultSessionID)
+	if sessionID == "" {
+		sessionID = session.DefaultCLISessionID
 	}
 	return &Platform{
 		initialPrompt: initial,
 		once:          cfg.Once,
 		reader:        bufio.NewReader(os.Stdin),
+		commands:      deps.Commands,
+		sessionID:     sessionID,
 	}, nil
 }
 
@@ -70,17 +85,9 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	if text == "" {
 		return agentkit.MessageEvent{}, nil
 	}
-	if cmd, ok := parseSlashCommand(text); ok {
-		switch cmd {
-		case "exit", "quit", "q":
-			fmt.Fprintln(os.Stderr, "bye")
-			return agentkit.MessageEvent{}, io.EOF
-		case "help", "h", "?":
-			p.printHelp()
-			return agentkit.MessageEvent{}, nil
-		default:
-			fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", cmd)
-			return agentkit.MessageEvent{}, nil
+	if name, args, ok := parseSlashCommand(text); ok {
+		if handled, err := p.handleSlash(ctx, name, args); handled || err != nil {
+			return agentkit.MessageEvent{}, err
 		}
 	}
 
@@ -88,13 +95,50 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 		p.done = true
 	}
 	return agentkit.MessageEvent{
-		SessionID:  agentkit.SessionID("cli:default"),
+		SessionID:  p.sessionID,
 		PlatformID: "cli",
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
 	}, nil
+}
+
+func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, error) {
+	switch name {
+	case "exit", "quit", "q":
+		fmt.Fprintln(os.Stderr, "bye")
+		return true, io.EOF
+	case "help", "h", "?":
+		p.printHelp()
+		return true, nil
+	}
+
+	if p.commands == nil {
+		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
+		return true, nil
+	}
+
+	result, err := p.commands.Dispatch(ctx, command.Request{
+		Name:       name,
+		Args:       args,
+		SessionID:  p.sessionID,
+		PlatformID: "cli",
+		ErrOut:     os.Stderr,
+		Out:        os.Stdout,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "command error: %v\n", err)
+		return true, nil
+	}
+	if !result.Handled {
+		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
+		return true, nil
+	}
+	if result.NewSession != "" {
+		p.sessionID = result.NewSession
+	}
+	return true, nil
 }
 
 func (p *Platform) readInput() (string, error) {
@@ -174,23 +218,34 @@ func (p *Platform) printWelcome() {
 
 func (p *Platform) printHelp() {
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  /help, /h, /?   show this help")
-	fmt.Fprintln(os.Stderr, "  /exit, /quit   exit the session")
-	fmt.Fprintln(os.Stderr, "  Ctrl+D         exit when the input line is empty")
+	fmt.Fprintln(os.Stderr, "  /help, /h, /?     show this help")
+	fmt.Fprintln(os.Stderr, "  /exit, /quit      exit the session")
+	if p.commands != nil {
+		for _, desc := range p.commands.List() {
+			line := fmt.Sprintf("  /%-14s %s", desc.Name, desc.Description)
+			if len(desc.Aliases) > 0 {
+				line += fmt.Sprintf(" (aliases: %s)", strings.Join(desc.Aliases, ", "))
+			}
+			fmt.Fprintln(os.Stderr, line)
+		}
+	}
+	fmt.Fprintln(os.Stderr, "  Ctrl+D            exit when the input line is empty")
 }
 
-func parseSlashCommand(line string) (string, bool) {
+func parseSlashCommand(line string) (name, args string, ok bool) {
 	if !strings.HasPrefix(line, "/") {
-		return "", false
+		return "", "", false
 	}
-	cmd := strings.TrimSpace(strings.TrimPrefix(line, "/"))
-	if cmd == "" {
-		return "", true
+	body := strings.TrimSpace(strings.TrimPrefix(line, "/"))
+	if body == "" {
+		return "", "", true
 	}
-	if i := strings.IndexAny(cmd, " \t"); i >= 0 {
-		cmd = cmd[:i]
+	fields := strings.Fields(body)
+	name = strings.ToLower(fields[0])
+	if len(fields) > 1 {
+		args = strings.TrimSpace(body[len(fields[0]):])
 	}
-	return strings.ToLower(cmd), true
+	return name, args, true
 }
 
 func textOf(msg agentkit.ModelMessage) string {

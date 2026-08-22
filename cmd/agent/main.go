@@ -47,12 +47,15 @@ func main() {
 }
 
 func runManager(addr, configPath string) {
-	if _, err := os.Stat(configPath); err == nil {
-		slog.Info("manager started; import existing config via UI if needed", "path", configPath)
-	}
 	opts := manager.Options{
 		Addr:          addr,
 		ValidateBuild: validateRunnerBuild,
+	}
+	if raw, err := os.ReadFile(configPath); err == nil {
+		opts.InitialYAML = string(raw)
+		slog.Info("manager preloaded config", "path", configPath)
+	} else if !os.IsNotExist(err) {
+		fatal("read config", err)
 	}
 	if err := manager.Run(opts); err != nil {
 		fatal("manager", err)

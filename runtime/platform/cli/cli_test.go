@@ -11,7 +11,7 @@ import (
 
 func TestCLIExitCommand(t *testing.T) {
 	t.Parallel()
-	p, err := cli.New(cli.Config{Prompt: "/exit"})
+	p, err := cli.New(cli.Config{Prompt: "/exit"}, cli.Deps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestCLIExitCommand(t *testing.T) {
 
 func TestCLIHelpDoesNotDispatch(t *testing.T) {
 	t.Parallel()
-	p, err := cli.New(cli.Config{Prompt: "/help"})
+	p, err := cli.New(cli.Config{Prompt: "/help"}, cli.Deps{})
 	if err != nil {
 		t.Fatal(err)
 	}

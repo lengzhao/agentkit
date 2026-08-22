@@ -50,30 +50,14 @@ func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) er
 		}
 	}
 
-	messages := step.Messages
-	for _, svc := range p.services {
-		if svc == nil {
-			continue
-		}
-		result, err := svc.Compact(ctx, compaction.Request{
-			SessionID: sessionID,
-			AgentID:   agentID,
-			Session:   sess,
-			Messages:  messages,
-		})
-		if err != nil {
-			return err
-		}
-		if len(result.Messages) > 0 {
-			messages = result.Messages
-		}
-		if result.Applied && len(result.Messages) == 0 && sess != nil {
-			derived, err := sess.DeriveMessages(ctx)
-			if err != nil {
-				return err
-			}
-			messages = derived
-		}
+	messages, _, err := compaction.ApplyAll(ctx, p.services, compaction.Request{
+		SessionID: sessionID,
+		AgentID:   agentID,
+		Session:   sess,
+		Messages:  step.Messages,
+	})
+	if err != nil {
+		return err
 	}
 	step.Messages = messages
 	return nil

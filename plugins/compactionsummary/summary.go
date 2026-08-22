@@ -50,7 +50,7 @@ func New(cfg Config, deps Deps) (compaction.Service, error) {
 }
 
 func (s *Service) Compact(ctx context.Context, req compaction.Request) (compaction.Result, error) {
-	if len(req.Messages) < s.cfg.MinMessages {
+	if !req.Force && len(req.Messages) < s.cfg.MinMessages {
 		return compaction.Result{}, nil
 	}
 	events, err := session.ReadAllEvents(ctx, req.Session)
