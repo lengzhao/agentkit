@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -11,12 +12,15 @@ type Config struct {
 }
 
 type Deps struct {
-	Agents []agentkit.Agent `json:"agents"`
+	Agents       []agentkit.Agent       `json:"agents"`
+	SessionStore agentkit.SessionStore  `json:"sessionStore,omitempty"`
 }
 
 type Default struct {
 	agents       map[agentkit.AgentID]agentkit.Agent
 	defaultAgent agentkit.AgentID
+	sessionStore agentkit.SessionStore
+	sessionLocks sync.Map // SessionID -> *sync.Mutex
 }
 
 func New(cfg Config, deps Deps) (*Default, error) {
@@ -31,7 +35,11 @@ func New(cfg Config, deps Deps) (*Default, error) {
 	if defaultID == "" && len(deps.Agents) > 0 {
 		defaultID = deps.Agents[0].ID()
 	}
-	return &Default{agents: agents, defaultAgent: defaultID}, nil
+	return &Default{
+		agents:       agents,
+		defaultAgent: defaultID,
+		sessionStore: deps.SessionStore,
+	}, nil
 }
 
 func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) (agentkit.LoopResult, error) {
@@ -43,15 +51,48 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) (agent
 	if !ok {
 		return agentkit.LoopResult{}, errAgentNotFound(agentID)
 	}
+
+	sess, sessionID, err := l.resolveSession(ctx, req.Event, ag)
+	if err != nil {
+		return agentkit.LoopResult{}, err
+	}
+
+	unlock := l.lockSession(sessionID)
+	defer unlock()
+
 	result, err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: req.Event.Message,
 		Emit:    req.Emit,
+		Session: sess,
 	})
 	if err != nil {
 		return agentkit.LoopResult{}, err
 	}
 	_ = result
 	return agentkit.LoopResult{}, nil
+}
+
+func (l *Default) resolveSession(ctx context.Context, event agentkit.MessageEvent, ag agentkit.Agent) (agentkit.Session, agentkit.SessionID, error) {
+	sessionID := event.SessionID
+	if l.sessionStore != nil && sessionID != "" {
+		sess, err := l.sessionStore.Get(ctx, sessionID)
+		if err != nil {
+			return nil, "", err
+		}
+		return sess, sessionID, nil
+	}
+	defaultSess := ag.Session()
+	if sessionID == "" {
+		sessionID = defaultSess.ID()
+	}
+	return defaultSess, sessionID, nil
+}
+
+func (l *Default) lockSession(id agentkit.SessionID) func() {
+	v, _ := l.sessionLocks.LoadOrStore(id, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 type agentNotFoundError struct{ id agentkit.AgentID }

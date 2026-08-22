@@ -721,6 +721,58 @@ type Session interface {
 
 MVP 可以使用 JSONL；生产版增加 SQLite、索引和查询 API。Session backend 也是普通 `pluginkit` 插件，例如 `session/jsonl`。
 
+#### 6.1.1 多会话路由（IM / Slack）
+
+单 Agent 进程可能同时服务多个对话（Slack 频道、thread、DM 等）。**每个对话单元应有独立 Session**，不能共用一个 JSONL 文件。
+
+```go
+// SessionStore 按 SessionID 打开/缓存持久化 Session
+type SessionStore interface {
+    Get(ctx context.Context, id SessionID) (Session, error)
+}
+```
+
+路由约定：
+
+| 组件 | 职责 |
+|------|------|
+| **Platform**（如 `platform/slack`） | 从 `channel_id` + `thread_ts` 生成 `MessageEvent.SessionID`，例如 `slack:C123:thread:1234567890.123` |
+| **Loop** | 若配置了 `SessionStore` 且 `SessionID` 非空，则 `Get` 对应 Session 并传入 `TurnInput.Session`；同一 `SessionID` 内串行执行 Turn |
+| **Agent** | `RunTurn` 优先使用 `TurnInput.Session`，否则回退到构造期注入的默认 Session（CLI 单会话） |
+| **`session/store`** | 在目录下为每个 ID 懒加载 `{safe_id}.jsonl` |
+
+CLI 保持向后兼容：不传 `SessionID` 时 Loop 使用 Agent 默认 Session。IM 配置示例：
+
+```yaml
+loop:
+  use: loop/default
+  deps:
+    sessionStore: session.store
+    agents:
+      - agent.coder
+
+session.store:
+  use: session/store
+  config:
+    dir: .agent/sessions
+
+agent.coder:
+  use: agent/coding
+  deps:
+    session:
+      use: session/memory   # 占位默认 Session，满足 Agent 构造；实际 Turn 走 SessionStore
+```
+
+```mermaid
+flowchart LR
+  Slack["platform/slack"] -->|"SessionID=slack:C:thread:ts"| Loop
+  Loop -->|"SessionStore.Get"| Store["session/store"]
+  Store --> F1["C001.jsonl"]
+  Store --> F2["C002.jsonl"]
+  Loop --> Agent
+  Agent -->|"TurnInput.Session"| F1
+```
+
 ### 6.2 Runner
 
 ```go

@@ -107,7 +107,8 @@ flowchart TB
 | `agent/coding` | `agentkit.Agent` | Coding Agent 默认组合 | 两者默认 Agent |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
-| `session/jsonl` | `agentkit.Session` | JSONL 追加日志 | Pi JSONL v3 |
+| `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
+| `session/store` | `agentkit.SessionStore` | 按 SessionID 目录多文件（IM 多会话） | — |
 | `session/sqlite` | `agentkit.Session` | SQLite + 索引 | DSH session-query-sqlite |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |

@@ -17,6 +17,8 @@ type Agent interface {
 type TurnInput struct {
 	Message ModelMessage
 	Emit    OutboundEmit
+	// Session overrides the agent's default session when set (multi-session / IM).
+	Session Session
 }
 
 type TurnResult struct {
