@@ -52,10 +52,11 @@
 
 ### 配置模型（pluginkit root graph + manager）
 
-MVP 已落地：**扁平 root 实例图**（顶层共享实例 + deps 引用）即 `build.Build` 输入；`cmd/agent -manager` 提供 Web UI（catalog / 编辑 / 导入导出 / ValidateBuild）。
+MVP 已落地：**扁平 root 实例图**（顶层共享实例 + deps 引用）即 `build.Build` 输入；`cmd/agent -manager` 提供 pluginkit 工作台（装配树 / 共享实例 / edit+build API / ValidateBuild）。
 
 - [x] 用 `manager.FromYAML` + `Document.ToGraph()` 加载配置并构建 Runner
 - [x] `-config` 指定 YAML（本地 `config.yaml` 作为 override，不另做 merge 层）
+- [x] 对接新版 manager：`InitialYAML`、`OnChange`（显式 `-config` 时自动写回）、`OnBuild`（试装配成功写回本地配置）
 - [ ] （可选，Phase 2+）Preset / Feature / AgentSet 高层语法 → 展开为 root graph（见架构文档 §5.7）
 - [ ] （可选）`config resolve` CLI：仅当引入 Feature 合并时需要；当前可直接编辑/导出 flat YAML
 

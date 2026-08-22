@@ -33,9 +33,13 @@ go run ./cmd/agent -config presets/coding.yaml "你的任务"
 # 无 API Key 的本地冒烟（scripted LLM）
 go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读取 README"
 
-# Web 管理 UI：浏览已注册插件、编辑实例图、导出 YAML（含 build 校验）
+# Web 工作台：装配树编辑、共享实例提取、结构/plan 诊断、试装配（含 build 校验）
 go run ./cmd/agent -manager
 go run ./cmd/agent -manager -addr :9090
+
+# 打开已有配置编辑；显式 -config 时编辑会自动写回该文件，试装配成功也会写回
+go run ./cmd/agent -manager -config config.yaml
+go run ./cmd/agent -manager -config presets/coding.yaml
 ```
 
 Phase 1 已实现：Runner、CLI Platform、Loop、Coding Agent、Session（memory/jsonl）、OpenAI 兼容 LLM、read/write/bash 工具、Policy 与审批插件。
