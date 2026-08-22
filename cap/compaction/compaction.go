@@ -78,11 +78,11 @@ func pruneParts(parts []agentkit.ContentPart, maxBytes int) []agentkit.ContentPa
 	return out
 }
 
-func pruneToolContent(parts []agentkit.ToolContent, maxBytes int) []agentkit.ToolContent {
+func pruneToolContent(parts []agentkit.ContentPart, maxBytes int) []agentkit.ContentPart {
 	if len(parts) == 0 {
 		return parts
 	}
-	out := make([]agentkit.ToolContent, len(parts))
+	out := make([]agentkit.ContentPart, len(parts))
 	for i, part := range parts {
 		out[i] = part
 		if part.Type == "text" && len(part.Text) > maxBytes {

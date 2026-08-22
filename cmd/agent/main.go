@@ -24,10 +24,8 @@ func main() {
 	configPath := flag.String("config", defaultConfigPath, "config YAML path")
 	flag.Parse()
 
-	configExplicit := flagPassed("config")
-
 	if *managerMode {
-		runManager(*addr, *configPath, configExplicit)
+		runManager(*addr, *configPath)
 		return
 	}
 
@@ -48,40 +46,13 @@ func main() {
 	}
 }
 
-func runManager(addr, configPath string, saveOnChange bool) {
-	initialYAML, err := readConfigYAML(configPath)
-	if err != nil {
-		fatal("load config", err)
+func runManager(addr, configPath string) {
+	if _, err := os.Stat(configPath); err == nil {
+		slog.Info("manager started; import existing config via UI if needed", "path", configPath)
 	}
-
 	opts := manager.Options{
 		Addr:          addr,
-		InitialYAML:   initialYAML,
 		ValidateBuild: validateRunnerBuild,
-		OnChange: func(ctx context.Context, evt manager.DocumentEvent) error {
-			slog.Info("config changed",
-				"reason", evt.Reason,
-				"operation", evt.Operation,
-				"rootId", evt.Document.RootID,
-				"errors", countDiagnosticErrors(evt.Diagnostics),
-			)
-			if saveOnChange {
-				return saveConfigYAML(configPath, evt.YAML)
-			}
-			return nil
-		},
-		OnBuild: func(ctx context.Context, evt manager.DocumentEvent) error {
-			errs := countDiagnosticErrors(evt.Diagnostics)
-			if errs > 0 {
-				slog.Warn("build has errors", "count", errs, "rootId", evt.Document.RootID)
-				return nil
-			}
-			slog.Info("build ok",
-				"rootId", evt.Document.RootID,
-				"kind", evt.Document.Plugin.Use,
-			)
-			return saveConfigYAML(configPath, evt.YAML)
-		},
 	}
 	if err := manager.Run(opts); err != nil {
 		fatal("manager", err)
@@ -89,30 +60,11 @@ func runManager(addr, configPath string, saveOnChange bool) {
 }
 
 func loadDocument(path string) (manager.Document, error) {
-	raw, err := readConfigYAML(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return manager.Document{}, err
 	}
-	return manager.FromYAML([]byte(raw))
-}
-
-func readConfigYAML(path string) (string, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
-}
-
-func saveConfigYAML(path, yaml string) error {
-	if yaml == "" {
-		return nil
-	}
-	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
-		return err
-	}
-	slog.Info("config saved", "path", path)
-	return nil
+	return manager.FromYAML(raw)
 }
 
 func validateRunnerBuild(ctx context.Context, doc manager.Document) error {
@@ -121,26 +73,6 @@ func validateRunnerBuild(ctx context.Context, doc manager.Document) error {
 	}
 	_, _, err := build.Build[agentkit.Runner](ctx, doc.ToGraph(), doc.RootID)
 	return err
-}
-
-func countDiagnosticErrors(diags []manager.Diagnostic) int {
-	n := 0
-	for _, d := range diags {
-		if d.Severity == "error" {
-			n++
-		}
-	}
-	return n
-}
-
-func flagPassed(name string) bool {
-	found := false
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			found = true
-		}
-	})
-	return found
 }
 
 func fatal(msg string, err error) {

@@ -8,40 +8,28 @@ type LLMProvider interface {
 	Stream(context.Context, LLMRequest) (LLMStream, error)
 }
 
-type ModelCatalog interface {
-	Models(context.Context) ([]ModelInfo, error)
-}
-
 type LLMRequest struct {
 	Model    string
 	Messages []ModelMessage
 	Tools    []ToolSpec
 }
 
-type ModelInfo struct {
-	Provider string
-	ID       string
-	Input    []Modality
-	Output   []Modality
-}
-
-type Modality string
-
-const (
-	ModalityText  Modality = "text"
-	ModalityImage Modality = "image"
-	ModalityAudio Modality = "audio"
-	ModalityVideo Modality = "video"
-	ModalityFile  Modality = "file"
-)
-
 type LLMStream interface {
 	Recv() (LLMEvent, error)
 	Close() error
 }
 
+// LLMEventMessage carries a finalized (or snapshot) ModelMessage rather than a
+// delta. It is internal to the provider/agent boundary and is never forwarded
+// to platforms, so it has no counterpart in the Pi RPC event set.
+const LLMEventMessage AssistantMessageEventType = "message"
+
+// LLMEvent reuses AssistantMessageEventType so provider output and the
+// platform-facing stream share one vocabulary. Providers emit the text_*,
+// thinking_* and toolcall_* values plus LLMEventMessage; AssistantEventDone and
+// AssistantEventError are wire-only and never produced here.
 type LLMEvent struct {
-	Type         string
+	Type         AssistantMessageEventType
 	Message      *ModelMessage
 	ContentIndex int
 	Delta        string

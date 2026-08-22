@@ -55,7 +55,7 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 				return agentkit.ToolResult{
 					ID:   call.ID,
 					Name: call.Name,
-					Content: []agentkit.ToolContent{{
+					Content: []agentkit.ContentPart{{
 						Type: "text",
 						Text: "payload",
 					}},
@@ -103,7 +103,7 @@ func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
 				return agentkit.ToolResult{
 					ID:   call.ID,
 					Name: call.Name,
-					Content: []agentkit.ToolContent{{
+					Content: []agentkit.ContentPart{{
 						Type: "text",
 						Text: "01234567890123456789012345",
 					}},
@@ -145,7 +145,7 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 					return agentkit.ToolResult{
 						ID:      call.ID,
 						Name:    call.Name,
-						Content: []agentkit.ToolContent{{Type: "text", Text: "done"}},
+						Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
 					}, nil
 				case <-ctx.Done():
 					return agentkit.ToolResult{}, ctx.Err()

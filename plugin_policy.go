@@ -10,8 +10,6 @@ type PolicyInput struct {
 	SessionID SessionID
 	AgentID   AgentID
 	ToolCall  *ToolCall
-	Action    string
-	Resource  string
 }
 
 type DecisionKind string

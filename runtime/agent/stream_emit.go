@@ -38,14 +38,14 @@ func (s *streamEmitter) consume(ev agentkit.LLMEvent) error {
 		return nil
 	}
 	switch ev.Type {
-	case "start":
+	case agentkit.AssistantEventStart:
 		return s.emitStart(ev.Message)
-	case "text_start":
+	case agentkit.AssistantEventTextStart:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}
 		return s.emitAssistant(agentkit.AssistantEventTextStart, ev.ContentIndex, "", ev.Message)
-	case "text_delta":
+	case agentkit.AssistantEventTextDelta:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}
@@ -61,17 +61,17 @@ func (s *streamEmitter) consume(ev agentkit.LLMEvent) error {
 		}
 		s.prevText += delta
 		return s.emitAssistant(agentkit.AssistantEventTextDelta, contentIndexOr(ev.ContentIndex, 0), delta, ev.Message)
-	case "text_end":
+	case agentkit.AssistantEventTextEnd:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}
 		return s.emitAssistant(agentkit.AssistantEventTextEnd, ev.ContentIndex, ev.Delta, ev.Message)
-	case "thinking_start", "thinking_delta", "thinking_end":
+	case agentkit.AssistantEventThinkingStart, agentkit.AssistantEventThinkingDelta, agentkit.AssistantEventThinkingEnd:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}
-		return s.emitAssistant(agentkit.AssistantMessageEventType(ev.Type), ev.ContentIndex, ev.Delta, ev.Message)
-	case "toolcall_start":
+		return s.emitAssistant(ev.Type, ev.ContentIndex, ev.Delta, ev.Message)
+	case agentkit.AssistantEventToolCallStart:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}
@@ -87,7 +87,7 @@ func (s *streamEmitter) consume(ev agentkit.LLMEvent) error {
 			s.prevToolArg[idx] = string(ev.ToolCall.Input)
 		}
 		return s.emitUpdate(ame, ev.Message)
-	case "toolcall_delta":
+	case agentkit.AssistantEventToolCallDelta:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}
@@ -105,7 +105,7 @@ func (s *streamEmitter) consume(ev agentkit.LLMEvent) error {
 			return nil
 		}
 		return s.emitAssistant(agentkit.AssistantEventToolCallDelta, idx, delta, ev.Message)
-	case "toolcall_end":
+	case agentkit.AssistantEventToolCallEnd:
 		if err := s.ensureStarted(ev.Message); err != nil {
 			return err
 		}

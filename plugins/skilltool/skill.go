@@ -18,7 +18,7 @@ type Deps struct {
 }
 
 type Input struct {
-	Name string `json:"name"`
+	Name string `json:"name" jsonschema:"required,description=Skill name to load"`
 }
 
 type Output struct {
@@ -54,12 +54,5 @@ func New(_ Config, deps Deps) (agentkit.Tool, error) {
 			Description: content.Description,
 			Body:        content.Body,
 		}, nil
-	}).Description("Load a skill by name and inject its instructions into the session.").
-		Schema(agentkit.JSONSchema{
-			Type: "object",
-			Properties: map[string]agentkit.JSONSchema{
-				"name": {Type: "string", Description: "Skill name to load"},
-			},
-			Required: []string{"name"},
-		}).Build()
+	}).Description("Load a skill by name and inject its instructions into the session.").Build()
 }

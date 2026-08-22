@@ -28,11 +28,9 @@ type ToolCall struct {
 type ToolResult struct {
 	ID      ToolCallID
 	Name    string
-	Content []ToolContent
+	Content []ContentPart
 	Audit   map[string]string
 }
-
-type ToolContent = ContentPart
 
 type ToolRuntime interface {
 	Visible(context.Context, ToolScope) ([]ToolSpec, error)

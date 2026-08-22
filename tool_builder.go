@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
 )
 
 type toolImpl[In, Out any] struct {
@@ -39,7 +41,7 @@ func (t *toolImpl[In, Out]) Call(ctx context.Context, call ToolCall) (ToolResult
 		return ToolResult{
 			ID:   call.ID,
 			Name: call.Name,
-			Content: []ToolContent{{
+			Content: []ContentPart{{
 				Type: "text",
 				Text: err.Error(),
 			}},
@@ -52,7 +54,7 @@ func (t *toolImpl[In, Out]) Call(ctx context.Context, call ToolCall) (ToolResult
 	return ToolResult{
 		ID:   call.ID,
 		Name: call.Name,
-		Content: []ToolContent{{
+		Content: []ContentPart{{
 			Type: "text",
 			Text: string(encoded),
 		}},
@@ -100,41 +102,121 @@ func (b *ToolBuilder[In, Out]) Build() (Tool, error) {
 	}, nil
 }
 
+// maxSchemaDepth bounds recursion so a self-referential input type cannot hang
+// schema generation.
+const maxSchemaDepth = 12
+
+// schemaFor derives a JSON Schema from T by reflection. Field names come from
+// the `json` tag; an optional `jsonschema` tag supplies `required` and
+// `description=...` (the description runs to the end of the tag, so it may
+// contain commas). Use ToolBuilder.Schema to override the result entirely.
 func schemaFor[T any]() JSONSchema {
-	switch any(*new(T)).(type) {
-	case struct {
-		Path string `json:"path" jsonschema:"required,description=File path relative to the workspace"`
-	}:
-		return JSONSchema{
-			Type: "object",
-			Properties: map[string]JSONSchema{
-				"path": {Type: "string", Description: "File path relative to the workspace"},
-			},
-			Required: []string{"path"},
-		}
-	case struct {
-		Path    string `json:"path" jsonschema:"required"`
-		Content string `json:"content" jsonschema:"required"`
-	}:
-		return JSONSchema{
-			Type: "object",
-			Properties: map[string]JSONSchema{
-				"path":    {Type: "string", Description: "File path relative to the workspace"},
-				"content": {Type: "string", Description: "Full file content to write"},
-			},
-			Required: []string{"path", "content"},
-		}
-	case struct {
-		Command string `json:"command" jsonschema:"required"`
-	}:
-		return JSONSchema{
-			Type: "object",
-			Properties: map[string]JSONSchema{
-				"command": {Type: "string", Description: "Shell command to execute"},
-			},
-			Required: []string{"command"},
-		}
-	default:
-		return JSONSchema{Type: "object"}
+	return schemaOfType(reflect.TypeFor[T](), 0)
+}
+
+func schemaOfType(t reflect.Type, depth int) JSONSchema {
+	if t == nil || depth > maxSchemaDepth {
+		return JSONSchema{}
 	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Bool:
+		return JSONSchema{Type: "boolean"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return JSONSchema{Type: "integer"}
+	case reflect.Float32, reflect.Float64:
+		return JSONSchema{Type: "number"}
+	case reflect.String:
+		return JSONSchema{Type: "string"}
+	case reflect.Slice, reflect.Array:
+		// []byte marshals to a base64 string, not an array.
+		if t.Elem().Kind() == reflect.Uint8 {
+			return JSONSchema{Type: "string"}
+		}
+		item := schemaOfType(t.Elem(), depth+1)
+		return JSONSchema{Type: "array", Items: &item}
+	case reflect.Map:
+		return JSONSchema{Type: "object"}
+	case reflect.Struct:
+		return structSchema(t, depth)
+	default:
+		// Interfaces and anything else stay unconstrained.
+		return JSONSchema{}
+	}
+}
+
+func structSchema(t reflect.Type, depth int) JSONSchema {
+	out := JSONSchema{Type: "object"}
+	properties := make(map[string]JSONSchema)
+	var required []string
+
+	for i := range t.NumField() {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		name, ok := jsonFieldName(field)
+		if !ok {
+			continue
+		}
+		// Embedded struct without an explicit json name is flattened, matching
+		// encoding/json.
+		if field.Anonymous && name == "" {
+			embedded := schemaOfType(field.Type, depth+1)
+			for k, v := range embedded.Properties {
+				properties[k] = v
+			}
+			required = append(required, embedded.Required...)
+			continue
+		}
+		schema := schemaOfType(field.Type, depth+1)
+		description, isRequired := parseSchemaTag(field.Tag.Get("jsonschema"))
+		if description != "" {
+			schema.Description = description
+		}
+		properties[name] = schema
+		if isRequired {
+			required = append(required, name)
+		}
+	}
+
+	if len(properties) > 0 {
+		out.Properties = properties
+	}
+	out.Required = required
+	return out
+}
+
+// jsonFieldName reports the marshalled name of field, and false when the field
+// is skipped via `json:"-"`.
+func jsonFieldName(field reflect.StructField) (string, bool) {
+	tag := field.Tag.Get("json")
+	if tag == "-" {
+		return "", false
+	}
+	name, _, _ := strings.Cut(tag, ",")
+	if name == "" && !field.Anonymous {
+		name = field.Name
+	}
+	return name, true
+}
+
+func parseSchemaTag(tag string) (description string, required bool) {
+	if tag == "" {
+		return "", false
+	}
+	flags := tag
+	if i := strings.Index(tag, "description="); i >= 0 {
+		description = tag[i+len("description="):]
+		flags = tag[:i]
+	}
+	for _, flag := range strings.Split(flags, ",") {
+		if strings.TrimSpace(flag) == "required" {
+			required = true
+		}
+	}
+	return description, required
 }

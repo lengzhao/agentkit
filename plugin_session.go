@@ -15,16 +15,3 @@ type Session interface {
 type SessionStore interface {
 	Get(context.Context, SessionID) (Session, error)
 }
-
-type SessionQuery interface {
-	Query(context.Context, SessionQueryRequest) (SessionQueryResult, error)
-}
-
-type SessionQueryRequest struct {
-	SessionID SessionID
-	Query     string
-}
-
-type SessionQueryResult struct {
-	Events []SessionEvent
-}

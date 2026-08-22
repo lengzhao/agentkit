@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"sync"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/sessioncontrol"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
@@ -39,10 +39,7 @@ type Runtime struct {
 	prompt   agentkit.PromptAssembler
 	hooks    agentkit.HookRuntime
 
-	mu            sync.Mutex
-	steering      []agentkit.ModelMessage
-	followUps     []agentkit.ModelMessage
-	cancelReason  string
+	defaultControl *sessioncontrol.Control
 }
 
 func New(cfg Config, deps Deps) (*Runtime, error) {
@@ -67,42 +64,28 @@ func New(cfg Config, deps Deps) (*Runtime, error) {
 		return nil, fmt.Errorf("agent requires prompt assembler")
 	}
 	return &Runtime{
-		id:       id,
-		model:    cfg.Model,
-		maxSteps: maxSteps,
-		llm:      deps.LLM,
-		session:  deps.Session,
-		tools:    deps.Tools,
-		prompt:   deps.Prompt,
-		hooks:    deps.Hooks,
+		id:             id,
+		model:          cfg.Model,
+		maxSteps:       maxSteps,
+		llm:            deps.LLM,
+		session:        deps.Session,
+		tools:          deps.Tools,
+		prompt:         deps.Prompt,
+		hooks:          deps.Hooks,
+		defaultControl: sessioncontrol.New(),
 	}, nil
 }
 
-func (a *Runtime) ID() agentkit.AgentID              { return a.id }
-func (a *Runtime) Session() agentkit.Session         { return a.session }
+func (a *Runtime) ID() agentkit.AgentID             { return a.id }
+func (a *Runtime) Session() agentkit.Session        { return a.session }
+func (a *Runtime) Control() agentkit.SessionControl { return a.defaultControl }
 
-func (a *Runtime) Steer(_ context.Context, msg agentkit.ModelMessage) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.steering = append(a.steering, msg)
-	return nil
+func (a *Runtime) controlForTurn(input agentkit.TurnInput) sessioncontrol.TurnControl {
+	if ctrl, ok := input.Control.(sessioncontrol.TurnControl); ok {
+		return ctrl
+	}
+	return a.defaultControl
 }
-
-func (a *Runtime) FollowUp(_ context.Context, msg agentkit.ModelMessage) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.followUps = append(a.followUps, msg)
-	return nil
-}
-
-func (a *Runtime) Cancel(_ context.Context, reason string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.cancelReason = reason
-	return nil
-}
-
-func (a *Runtime) WhenIdle(context.Context) error { return nil }
 
 func (a *Runtime) sessionForTurn(input agentkit.TurnInput) agentkit.Session {
 	if input.Session != nil {
@@ -113,10 +96,9 @@ func (a *Runtime) sessionForTurn(input agentkit.TurnInput) agentkit.Session {
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentkit.TurnResult, error) {
 	sess := a.sessionForTurn(input)
+	ctrl := a.controlForTurn(input)
 
-	a.mu.Lock()
-	a.cancelReason = ""
-	a.mu.Unlock()
+	ctrl.ClearTurnCancel()
 
 	if err := session.AppendTurnStart(ctx, sess, a.id); err != nil {
 		return agentkit.TurnResult{}, err
@@ -137,31 +119,50 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 		if err := ctx.Err(); err != nil {
 			return agentkit.TurnResult{}, err
 		}
-		if reason := a.popCancelReason(); reason != "" {
+		if reason := ctrl.PopCancelReason(); reason != "" {
 			return agentkit.TurnResult{Messages: collected}, fmt.Errorf("cancelled: %s", reason)
 		}
 
-		for _, msg := range a.popSteering() {
+		for _, msg := range ctrl.PopSteering() {
 			if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
 				return agentkit.TurnResult{}, err
 			}
 			collected = append(collected, msg)
 		}
 
+		stepCtx, endStep := ctrl.BeginStep(ctx)
+		stepDone := false
+		endStepOnce := func() {
+			if stepDone {
+				return
+			}
+			stepDone = true
+			endStep()
+		}
+
 		if err := session.AppendStepStart(ctx, sess, a.id, step); err != nil {
+			endStepOnce()
 			return agentkit.TurnResult{}, err
 		}
 
-		assistant, err := a.runStep(ctx, sess, input.Emit)
+		assistant, err := a.runStep(stepCtx, sess, input.Emit)
 		if err != nil {
+			if ctrl.ShouldContinueAfterInterrupt(ctx, stepCtx, err) {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, step)
+				endStepOnce()
+				continue
+			}
 			_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, step)
+			endStepOnce()
 			return agentkit.TurnResult{}, err
 		}
 		collected = append(collected, assistant)
 
+		toolInterrupted := false
 		for _, call := range assistant.ToolCalls {
 			if err := session.AppendToolCall(ctx, sess, a.id, call); err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, step)
+				endStepOnce()
 				return agentkit.TurnResult{}, err
 			}
 			scope := agentkit.ToolScope{
@@ -169,23 +170,35 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (agentk
 				AgentID:   a.id,
 				Session:   sess,
 			}
-			toolCtx := tools.WithScope(ctx, scope)
+			toolCtx := tools.WithScope(stepCtx, scope)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
+				if ctrl.ShouldContinueAfterInterrupt(ctx, stepCtx, err) {
+					toolInterrupted = true
+					break
+				}
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, step)
+				endStepOnce()
 				return agentkit.TurnResult{}, err
 			}
 			if err := session.AppendToolResult(ctx, sess, a.id, result); err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, step)
+				endStepOnce()
 				return agentkit.TurnResult{}, err
 			}
 			collected = append(collected, toolResultMessage(result))
 		}
 
 		if err := session.AppendStepEnd(ctx, sess, a.id, step); err != nil {
+			endStepOnce()
 			return agentkit.TurnResult{}, err
 		}
 		stepsCompleted++
+		endStepOnce()
+
+		if toolInterrupted {
+			continue
+		}
 
 		if len(assistant.ToolCalls) == 0 {
 			break
@@ -228,6 +241,9 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 
 	var assistant agentkit.ModelMessage
 	for {
+		if err := ctx.Err(); err != nil {
+			return agentkit.ModelMessage{}, err
+		}
 		ev, err := stream.Recv()
 		if ev.Message != nil {
 			assistant = *ev.Message
@@ -277,25 +293,6 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 		return step.Messages, nil
 	}
 	return sess.DeriveMessages(ctx)
-}
-
-func (a *Runtime) popSteering() []agentkit.ModelMessage {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if len(a.steering) == 0 {
-		return nil
-	}
-	out := append([]agentkit.ModelMessage(nil), a.steering...)
-	a.steering = nil
-	return out
-}
-
-func (a *Runtime) popCancelReason() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	reason := a.cancelReason
-	a.cancelReason = ""
-	return reason
 }
 
 func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {

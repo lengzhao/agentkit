@@ -17,13 +17,13 @@ type Deps struct {
 }
 
 type Edit struct {
-	OldText string `json:"oldText"`
-	NewText string `json:"newText"`
+	OldText string `json:"oldText" jsonschema:"required,description=Exact text to replace in the original file"`
+	NewText string `json:"newText" jsonschema:"required,description=Replacement text"`
 }
 
 type Input struct {
-	Path  string `json:"path"`
-	Edits []Edit `json:"edits"`
+	Path  string `json:"path" jsonschema:"required,description=Path to the file to edit"`
+	Edits []Edit `json:"edits" jsonschema:"required"`
 }
 
 type Output struct {
@@ -40,25 +40,7 @@ func New(_ Config, deps Deps) (agentkit.Tool, error) {
 		return nil, fmt.Errorf("tool/edit-file requires fs dependency")
 	}
 	return agentkit.NewTool("edit", applyEdits(deps.FS)).
-		Description("Make precise file edits with exact text replacement. Each oldText is matched against the original file.").
-		Schema(agentkit.JSONSchema{
-			Type: "object",
-			Properties: map[string]agentkit.JSONSchema{
-				"path": {Type: "string", Description: "Path to the file to edit"},
-				"edits": {
-					Type: "array",
-					Items: &agentkit.JSONSchema{
-						Type: "object",
-						Properties: map[string]agentkit.JSONSchema{
-							"oldText": {Type: "string", Description: "Exact text to replace in the original file"},
-							"newText": {Type: "string", Description: "Replacement text"},
-						},
-						Required: []string{"oldText", "newText"},
-					},
-				},
-			},
-			Required: []string{"path", "edits"},
-		}).Build()
+		Description("Make precise file edits with exact text replacement. Each oldText is matched against the original file.").Build()
 }
 
 func applyEdits(fs filesystem.Service) func(context.Context, Input) (Output, error) {

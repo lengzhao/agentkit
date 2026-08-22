@@ -16,8 +16,8 @@ type Deps struct {
 }
 
 type Input struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path    string `json:"path" jsonschema:"required,description=File path relative to the workspace"`
+	Content string `json:"content" jsonschema:"required,description=Full file content to write"`
 }
 
 type Output struct {
@@ -37,12 +37,5 @@ func New(_ Config, deps Deps) (agentkit.Tool, error) {
 			return Output{}, err
 		}
 		return Output{Path: input.Path}, nil
-	}).Description("Write content to a file in the workspace.").Schema(agentkit.JSONSchema{
-		Type: "object",
-		Properties: map[string]agentkit.JSONSchema{
-			"path":    {Type: "string", Description: "File path relative to the workspace"},
-			"content": {Type: "string", Description: "Full file content to write"},
-		},
-		Required: []string{"path", "content"},
-	}).Build()
+	}).Description("Write content to a file in the workspace.").Build()
 }

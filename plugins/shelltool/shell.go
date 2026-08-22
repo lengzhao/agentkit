@@ -17,7 +17,7 @@ type Deps struct {
 }
 
 type Input struct {
-	Command string `json:"command"`
+	Command string `json:"command" jsonschema:"required,description=Shell command to execute"`
 }
 
 type Output struct {
@@ -44,13 +44,7 @@ func New(_ Config, deps Deps) (agentkit.Tool, error) {
 			Stdout:   result.Stdout,
 			Stderr:   result.Stderr,
 		}, nil
-	}).Description("Execute a bash command in the workspace.").Schema(agentkit.JSONSchema{
-		Type: "object",
-		Properties: map[string]agentkit.JSONSchema{
-			"command": {Type: "string", Description: "Shell command to execute"},
-		},
-		Required: []string{"command"},
-	}).Build()
+	}).Description("Execute a bash command in the workspace.").Build()
 }
 
 func ExampleOutput() json.RawMessage {

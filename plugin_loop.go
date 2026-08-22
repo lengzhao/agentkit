@@ -6,6 +6,8 @@ import "context"
 // when a turn or step should continue.
 type Loop interface {
 	Dispatch(context.Context, LoopRequest) (LoopResult, error)
+	Steer(context.Context, SessionControlRequest) error
+	FollowUp(context.Context, SessionControlRequest) error
 }
 
 type LoopRequest struct {

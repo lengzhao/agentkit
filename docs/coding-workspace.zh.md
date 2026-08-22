@@ -29,6 +29,18 @@ tool.edit-file:
   deps:
     fs: fs.workspace
 
+tool.grep:
+  deps:
+    fs: fs.workspace.readonly
+
+tool.find:
+  deps:
+    fs: fs.workspace.readonly
+
+tool.list-dir:
+  deps:
+    fs: fs.workspace.readonly
+
 fs.workspace:
   use: fs/local
   config:
@@ -40,7 +52,7 @@ fs.workspace.readonly:
     fs: fs.workspace
 ```
 
-- **read** 走只读包装，即使工具实现有 write 能力也无法落盘。
+- **read / grep / find / ls** 走只读包装，即使工具实现有 write 能力也无法落盘。
 - **write / edit** 直接绑定 workspace，可修改项目内文件。
 - **shell** 在 workspace 根目录执行，与文件工具路径语义一致。
 

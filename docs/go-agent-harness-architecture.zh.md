@@ -813,12 +813,16 @@ Assistant 流式输出对齐 Pi RPC，经 `OutboundEmit` 在 turn 执行期间�
 type Agent interface {
     ID() AgentID
     Session() Session
-    RunTurn(ctx context.Context, msg Message) error
-    Cancel(ctx context.Context, reason string) error
+    Control() SessionControl   // steer/follow-up for Session()
+    RunTurn(ctx context.Context, input TurnInput) (TurnResult, error)
 }
 ```
 
-Agent 是 Loop 下方的执行主体，拥有 Session、Prompt、LLM、Tools、Policy 和 Hooks。它不接收外部平台协议，只处理已归一化的 `Message`；是否进入模型由 `OnBeforeStep` 决定。
+- **Control**：单 Session Agent 的 steer/follow-up 队列；与 `Session()` 绑定，无需额外传 `SessionID`。
+- **TurnInput.Control**：Loop 在 `Dispatch` 时注入 per-session 控制面（IM 多 Session 同 Agent）；未设置时 Agent 使用 `Control()` 返回值。
+- **Loop.Steer/FollowUp**：通过 `SessionControlRequest.SessionID` 路由到 Loop 侧 per-session 队列，再经 `TurnInput.Control` 传入 `RunTurn`。
+- **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。
+- **Cancel**：设置取消原因并打断当前 step；与 steer 不同，会终止整个 turn。
 
 ### 6.5 Agent Loop
 

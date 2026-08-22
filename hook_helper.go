@@ -7,8 +7,7 @@ type beforeStepHook struct {
 	fn    func(context.Context, *BeforeStep) error
 }
 
-func (h *beforeStepHook) Point() HookPoint { return HookBeforeStep }
-func (h *beforeStepHook) Order() int       { return h.order }
+func (h *beforeStepHook) Order() int { return h.order }
 func (h *beforeStepHook) BeforeStep(ctx context.Context, in *BeforeStep) error {
 	return h.fn(ctx, in)
 }
@@ -23,8 +22,7 @@ type beforeToolHook struct {
 	fn    func(context.Context, *ToolCall) error
 }
 
-func (h *beforeToolHook) Point() HookPoint { return HookBeforeTool }
-func (h *beforeToolHook) Order() int       { return h.order }
+func (h *beforeToolHook) Order() int { return h.order }
 func (h *beforeToolHook) BeforeTool(ctx context.Context, in *ToolCall) error {
 	return h.fn(ctx, in)
 }
@@ -39,8 +37,7 @@ type afterToolHook struct {
 	fn    func(context.Context, *ToolResult) error
 }
 
-func (h *afterToolHook) Point() HookPoint { return HookAfterTool }
-func (h *afterToolHook) Order() int       { return h.order }
+func (h *afterToolHook) Order() int { return h.order }
 func (h *afterToolHook) AfterTool(ctx context.Context, in *ToolResult) error {
 	return h.fn(ctx, in)
 }

@@ -40,3 +40,15 @@ func (s *Service) WriteText(context.Context, string, string) error {
 func (s *Service) Edit(context.Context, filesystem.EditRequest) (filesystem.EditResult, error) {
 	return filesystem.EditResult{}, fmt.Errorf("read-only filesystem")
 }
+
+func (s *Service) ListDir(ctx context.Context, path string) ([]filesystem.DirEntry, error) {
+	return s.inner.ListDir(ctx, path)
+}
+
+func (s *Service) Grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
+	return s.inner.Grep(ctx, req)
+}
+
+func (s *Service) Find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
+	return s.inner.Find(ctx, req)
+}

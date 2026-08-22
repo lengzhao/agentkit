@@ -165,7 +165,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 		if payload == "[DONE]" {
 			s.done = true
 			msg := s.acc
-			s.pushPending(agentkit.LLMEvent{Type: "message", Message: &msg})
+			s.pushPending(agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &msg})
 			return s.Recv()
 		}
 		var chunk openAIStreamChunk
@@ -182,14 +182,14 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 				s.streamStarted = true
 				start := cloneMessage(s.acc)
 				s.pushPending(
-					agentkit.LLMEvent{Type: "start", Message: start},
-					agentkit.LLMEvent{Type: "text_start", ContentIndex: 0, Message: start},
+					agentkit.LLMEvent{Type: agentkit.AssistantEventStart, Message: start},
+					agentkit.LLMEvent{Type: agentkit.AssistantEventTextStart, ContentIndex: 0, Message: start},
 				)
 			}
 			s.acc.Content = appendText(s.acc.Content, delta.Content)
 			msg := cloneMessage(s.acc)
 			s.pushPending(agentkit.LLMEvent{
-				Type:         "text_delta",
+				Type:         agentkit.AssistantEventTextDelta,
 				ContentIndex: 0,
 				Delta:        delta.Content,
 				Message:      msg,
@@ -206,7 +206,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 				if !s.streamStarted {
 					s.streamStarted = true
 					start := cloneMessage(s.acc)
-					s.pushPending(agentkit.LLMEvent{Type: "start", Message: start})
+					s.pushPending(agentkit.LLMEvent{Type: agentkit.AssistantEventStart, Message: start})
 				}
 				call = &agentkit.ToolCall{ID: agentkit.ToolCallID(tc.ID), Name: tc.Function.Name}
 				s.toolBuf[idx] = call
@@ -214,7 +214,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 					cp := *call
 					msg := cloneMessage(s.acc)
 					s.pushPending(agentkit.LLMEvent{
-						Type:         "toolcall_start",
+						Type:         agentkit.AssistantEventToolCallStart,
 						ContentIndex: idx,
 						ToolCall:     &cp,
 						Message:      msg,
@@ -232,7 +232,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 				cp := *call
 				msg := cloneMessage(s.acc)
 				s.pushPending(agentkit.LLMEvent{
-					Type:         "toolcall_delta",
+					Type:         agentkit.AssistantEventToolCallDelta,
 					ContentIndex: idx,
 					Delta:        tc.Function.Arguments,
 					ToolCall:     &cp,
@@ -249,7 +249,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 				s.acc.ToolCalls = append(s.acc.ToolCalls, cp)
 				msg := cloneMessage(s.acc)
 				s.pushPending(agentkit.LLMEvent{
-					Type:         "toolcall_end",
+					Type:         agentkit.AssistantEventToolCallEnd,
 					ContentIndex: idx,
 					ToolCall:     &cp,
 					Message:      msg,
@@ -257,7 +257,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 			}
 			s.done = true
 			msg := s.acc
-			s.pushPending(agentkit.LLMEvent{Type: "message", Message: &msg})
+			s.pushPending(agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &msg})
 			return s.Recv()
 		}
 	}
@@ -266,7 +266,7 @@ func (s *openAIStream) Recv() (agentkit.LLMEvent, error) {
 	}
 	s.done = true
 	msg := s.acc
-	return agentkit.LLMEvent{Type: "message", Message: &msg}, io.EOF
+	return agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &msg}, io.EOF
 }
 
 func (s *openAIStream) Close() error {

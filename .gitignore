@@ -33,3 +33,5 @@ go.work.sum
 config.yaml
 .agent
 /agent
+.claude/
+.cursor/

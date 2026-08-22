@@ -80,3 +80,9 @@ func (r *Root) Run(ctx context.Context) error {
 }
 
 func (r *Root) Stop(context.Context) error { return nil }
+
+// Loop exposes the turn scheduler so RPC/TUI integrations can steer or queue
+// follow-ups; agentkit.Loop already carries Steer/FollowUp.
+func (r *Root) Loop() agentkit.Loop { return r.loop }
+
+var _ agentkit.Runner = (*Root)(nil)

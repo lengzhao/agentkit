@@ -19,7 +19,7 @@ type Deps struct {
 }
 
 type Input struct {
-	Path string `json:"path"`
+	Path string `json:"path" jsonschema:"required,description=File path relative to the workspace"`
 }
 
 type Output struct {
@@ -44,13 +44,7 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 			return Output{}, err
 		}
 		return Output{Content: content}, nil
-	}).Description("Read a text file from the workspace.").Schema(agentkit.JSONSchema{
-		Type: "object",
-		Properties: map[string]agentkit.JSONSchema{
-			"path": {Type: "string", Description: "File path relative to the workspace"},
-		},
-		Required: []string{"path"},
-	}).Build()
+	}).Description("Read a text file from the workspace.").Build()
 }
 
 func MustRaw(v any) json.RawMessage {

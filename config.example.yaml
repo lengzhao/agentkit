@@ -122,6 +122,9 @@ tools:
       - tool.read-file
       - tool.write-file
       - tool.edit-file
+      - tool.grep
+      - tool.find
+      - tool.list-dir
       - tool.shell
       - tool.skill
     policies:
@@ -144,6 +147,21 @@ tool.edit-file:
   use: tool/edit-file
   deps:
     fs: fs.workspace
+
+tool.grep:
+  use: tool/grep
+  deps:
+    fs: fs.workspace.readonly
+
+tool.find:
+  use: tool/find
+  deps:
+    fs: fs.workspace.readonly
+
+tool.list-dir:
+  use: tool/list-dir
+  deps:
+    fs: fs.workspace.readonly
 
 tool.shell:
   use: tool/shell

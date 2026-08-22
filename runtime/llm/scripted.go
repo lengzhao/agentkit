@@ -82,8 +82,8 @@ func (s *scriptedStream) Recv() (agentkit.LLMEvent, error) {
 	} else if text != "" {
 		empty := agentkit.ModelMessage{Role: "assistant"}
 		s.pending = append(s.pending,
-			agentkit.LLMEvent{Type: "start", Message: &empty},
-			agentkit.LLMEvent{Type: "text_start", ContentIndex: 0, Message: &empty},
+			agentkit.LLMEvent{Type: agentkit.AssistantEventStart, Message: &empty},
+			agentkit.LLMEvent{Type: agentkit.AssistantEventTextStart, ContentIndex: 0, Message: &empty},
 		)
 		for _, chunk := range chunkText(text, 8) {
 			partial := agentkit.ModelMessage{
@@ -91,7 +91,7 @@ func (s *scriptedStream) Recv() (agentkit.LLMEvent, error) {
 				Content: []agentkit.ContentPart{{Type: "text", Text: chunk.prefix}},
 			}
 			s.pending = append(s.pending, agentkit.LLMEvent{
-				Type:         "text_delta",
+				Type:         agentkit.AssistantEventTextDelta,
 				ContentIndex: 0,
 				Delta:        chunk.delta,
 				Message:      &partial,
@@ -99,26 +99,26 @@ func (s *scriptedStream) Recv() (agentkit.LLMEvent, error) {
 		}
 	}
 
-	s.pending = append(s.pending, agentkit.LLMEvent{Type: "message", Message: &s.msg})
+	s.pending = append(s.pending, agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &s.msg})
 	s.closed = true
 	return s.Recv()
 }
 
 func (s *scriptedStream) queueToolEvents() {
 	empty := agentkit.ModelMessage{Role: "assistant"}
-	s.pending = append(s.pending, agentkit.LLMEvent{Type: "start", Message: &empty})
+	s.pending = append(s.pending, agentkit.LLMEvent{Type: agentkit.AssistantEventStart, Message: &empty})
 	for i, call := range s.msg.ToolCalls {
 		cp := call
 		partial := agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{cp}}
 		s.pending = append(s.pending, agentkit.LLMEvent{
-			Type:         "toolcall_start",
+			Type:         agentkit.AssistantEventToolCallStart,
 			ContentIndex: i,
 			ToolCall:     &cp,
 			Message:      &partial,
 		})
 		if len(call.Input) > 0 {
 			s.pending = append(s.pending, agentkit.LLMEvent{
-				Type:         "toolcall_delta",
+				Type:         agentkit.AssistantEventToolCallDelta,
 				ContentIndex: i,
 				Delta:        string(call.Input),
 				ToolCall:     &cp,
@@ -126,7 +126,7 @@ func (s *scriptedStream) queueToolEvents() {
 			})
 		}
 		s.pending = append(s.pending, agentkit.LLMEvent{
-			Type:         "toolcall_end",
+			Type:         agentkit.AssistantEventToolCallEnd,
 			ContentIndex: i,
 			ToolCall:     &cp,
 			Message:      &partial,

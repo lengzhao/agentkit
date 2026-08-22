@@ -77,7 +77,7 @@ flowchart TB
 | **Model-visible ⟺ Logged** | 强制不变量 | `context` 事件 + Session 条目 | Session 事件 + `DeriveMessages` |
 | **Consumer 依赖接口** | Capability Seam 三角色 | Operations 注入 + Extension | Definition / Provider / Consumer |
 | **Policy 单点裁决** | `tools/pre-execute` waterfall | `tool_call` 可 block | Policy Plane + `Decision` |
-| **Steering / Follow-up** | `steer()` / `followup()` | `steer()` / `followUp()` 双队列 | Agent 接口（规划中） |
+| **Steering / Follow-up** | `steer()` / `followup()` | `steer()` / `followUp()` 双队列 | `Agent.Steer/FollowUp` + `Loop.Dispatch` 消费 |
 | **Turn / Step 生命周期** | turn/start → step → tool → turn/end | turn_start → tool → turn_end | Loop 序列图（§6.5） |
 | **作用域隔离** | global / agent scope + shadow | 扩展 `setActiveTools` | global / preset / agent / turn |
 | **极简核心 + 生态扩展** | 60+ 子系统包 | 刻意不内置 MCP/子 Agent | Phase 分阶段落地 |

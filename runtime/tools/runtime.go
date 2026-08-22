@@ -19,21 +19,21 @@ type RuntimeConfig struct {
 }
 
 type RuntimeDeps struct {
-	Tools    []agentkit.Tool        `json:"tools"`
-	Policies []agentkit.Policy      `json:"policies,omitempty"`
-	Approval agentkit.Approval      `json:"approval,omitempty"`
-	Hooks    agentkit.HookRuntime   `json:"hooks,omitempty"`
+	Tools    []agentkit.Tool      `json:"tools"`
+	Policies []agentkit.Policy    `json:"policies,omitempty"`
+	Approval agentkit.Approval    `json:"approval,omitempty"`
+	Hooks    agentkit.HookRuntime `json:"hooks,omitempty"`
 }
 
 // Runtime executes tools through the policy and approval pipeline.
 type Runtime struct {
-	tools           map[string]agentkit.Tool
-	policies        []agentkit.Policy
-	approval        agentkit.Approval
-	hooks           agentkit.HookRuntime
-	defaultTimeout  time.Duration
-	maxResultBytes  int
-	toolTimeouts    map[string]time.Duration
+	tools          map[string]agentkit.Tool
+	policies       []agentkit.Policy
+	approval       agentkit.Approval
+	hooks          agentkit.HookRuntime
+	defaultTimeout time.Duration
+	maxResultBytes int
+	toolTimeouts   map[string]time.Duration
 }
 
 func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (*Runtime, error) {
@@ -167,8 +167,6 @@ func (r *Runtime) evaluatePolicies(ctx context.Context, scope agentkit.ToolScope
 		SessionID: scope.SessionID,
 		AgentID:   scope.AgentID,
 		ToolCall:  &call,
-		Action:    "tool/call",
-		Resource:  call.Name,
 	}
 	for _, policy := range r.policies {
 		if policy == nil {
@@ -193,7 +191,7 @@ func deniedResult(call agentkit.ToolCall, reason string) agentkit.ToolResult {
 	return agentkit.ToolResult{
 		ID:   call.ID,
 		Name: call.Name,
-		Content: []agentkit.ToolContent{{
+		Content: []agentkit.ContentPart{{
 			Type: "text",
 			Text: reason,
 		}},
@@ -205,7 +203,7 @@ func timeoutResult(call agentkit.ToolCall) agentkit.ToolResult {
 	return agentkit.ToolResult{
 		ID:   call.ID,
 		Name: call.Name,
-		Content: []agentkit.ToolContent{{
+		Content: []agentkit.ContentPart{{
 			Type: "text",
 			Text: "tool execution timed out",
 		}},
