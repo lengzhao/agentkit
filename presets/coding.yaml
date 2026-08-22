@@ -28,16 +28,16 @@ agent.coder:
     model: gpt-5.4
     maxSteps: 20
   deps:
-    session: session
+    sessionStore: sessionStore
     llm: llm
     hooks: hooks
     prompt: prompt
     tools: tools
 
-session:
-  use: session/jsonl
+sessionStore:
+  use: session/store
   config:
-    path: .agent/sessions/current.jsonl
+    dir: .agent/sessions
 
 credentials:
   use: credentials/env
@@ -60,6 +60,7 @@ hooks:
 hook.before-step:
   use: hook/before-step
   deps:
+    sessionStore: sessionStore
     services:
       - compaction.prune
       - compaction.summary
@@ -171,6 +172,7 @@ tool.skill:
   use: tool/skill
   deps:
     skills: skills
+    sessionStore: sessionStore
 
 fs.workspace:
   use: fs/local

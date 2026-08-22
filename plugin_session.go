@@ -10,8 +10,11 @@ type Session interface {
 	DeriveMessages(context.Context) ([]ModelMessage, error)
 }
 
-// SessionStore resolves durable sessions by ID. IM platforms (Slack, 飞书等)
-// assign one SessionID per channel/thread; Loop uses the store to route turns.
+// SessionStore resolves durable sessions by opaque SessionID. Platform plugins
+// generate SessionID values (cc-connect style: platform:segment:...); agent
+// plugins depend on SessionStore and call Get with ctx.Value(KeySessionID)
+// during RunTurn. Loop only uses SessionID for routing and per-session locking,
+// never SessionStore.Get.
 type SessionStore interface {
 	Get(context.Context, SessionID) (Session, error)
 }

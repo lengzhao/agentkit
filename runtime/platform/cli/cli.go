@@ -88,6 +88,8 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 		p.done = true
 	}
 	return agentkit.MessageEvent{
+		SessionID:  agentkit.SessionID("cli:default"),
+		PlatformID: "cli",
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},

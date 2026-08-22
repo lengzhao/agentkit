@@ -33,13 +33,6 @@ type ToolResult struct {
 }
 
 type ToolRuntime interface {
-	Visible(context.Context, ToolScope) ([]ToolSpec, error)
+	Visible(context.Context) ([]ToolSpec, error)
 	Execute(context.Context, ToolCall) (ToolResult, error)
-}
-
-type ToolScope struct {
-	SessionID SessionID
-	AgentID   AgentID
-	TurnID    string
-	Session   Session
 }

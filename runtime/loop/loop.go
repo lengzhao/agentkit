@@ -2,28 +2,27 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/lengzhao/agentkit"
 )
 
 type Config struct {
-	DefaultAgent agentkit.AgentID   `json:"defaultAgent"`
+	DefaultAgent agentkit.AgentID      `json:"defaultAgent"`
 	FollowUpMode agentkit.FollowUpMode `json:"followUpMode"`
 }
 
 type Deps struct {
-	Agents       []agentkit.Agent      `json:"agents"`
-	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Agents []agentkit.Agent `json:"agents"`
 }
 
 type Default struct {
 	agents          map[agentkit.AgentID]agentkit.Agent
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
-	sessionStore    agentkit.SessionStore
 	sessionLocks    sync.Map // SessionID -> *sync.Mutex
-	sessionControls sync.Map // SessionID -> *sessioncontrol.Control
+	sessionControls sync.Map // SessionID -> *Control
 }
 
 func New(cfg Config, deps Deps) (*Default, error) {
@@ -42,56 +41,54 @@ func New(cfg Config, deps Deps) (*Default, error) {
 	if mode == "" {
 		mode = agentkit.FollowUpOneAtATime
 	}
+	if len(deps.Agents) == 0 {
+		return nil, fmt.Errorf("loop requires at least one agent")
+	}
 	return &Default{
 		agents:       agents,
 		defaultAgent: defaultID,
 		followUpMode: mode,
-		sessionStore: deps.SessionStore,
 	}, nil
 }
 
-func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) (agentkit.LoopResult, error) {
+func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error {
 	ag, agentID, err := l.resolveAgent(req.Event.AgentID)
 	if err != nil {
-		return agentkit.LoopResult{}, err
+		return err
 	}
-
-	sess, sessionID, err := l.resolveSession(ctx, req.Event, ag)
-	if err != nil {
-		return agentkit.LoopResult{}, err
+	sessionID := req.Event.SessionID
+	if sessionID == "" {
+		return fmt.Errorf("message event requires session id")
 	}
 
 	unlock := l.lockSession(sessionID)
 	defer unlock()
 
 	control := l.controlFor(sessionID)
+	ctx = withTurnContext(ctx, sessionID, agentID, req.Event.PlatformID, control)
 
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
 		Emit:    req.Emit,
-		Session: sess,
-		Control: control,
 	}
-	if _, err := ag.RunTurn(ctx, turnInput); err != nil {
-		return agentkit.LoopResult{}, err
+	if err := ag.RunTurn(ctx, turnInput); err != nil {
+		return err
 	}
 
 	for {
 		followUps, err := control.DrainFollowUps(ctx, l.followUpMode)
 		if err != nil {
-			return agentkit.LoopResult{}, err
+			return err
 		}
 		if len(followUps) == 0 {
 			break
 		}
 		for _, msg := range followUps {
-			if _, err := ag.RunTurn(ctx, agentkit.TurnInput{
+			if err := ag.RunTurn(ctx, agentkit.TurnInput{
 				Message: msg,
 				Emit:    req.Emit,
-				Session: sess,
-				Control: control,
 			}); err != nil {
-				return agentkit.LoopResult{}, err
+				return err
 			}
 		}
 		if l.followUpMode == agentkit.FollowUpOneAtATime {
@@ -99,32 +96,23 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) (agent
 		}
 	}
 
-	_ = agentID
-	return agentkit.LoopResult{}, nil
+	return nil
 }
 
-func (l *Default) Steer(ctx context.Context, req agentkit.SessionControlRequest) error {
-	ag, _, err := l.resolveAgent(req.AgentID)
+func (l *Default) Steer(ctx context.Context, msg agentkit.ModelMessage) error {
+	sessionID, err := sessionIDFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	sessionID := req.SessionID
-	if sessionID == "" {
-		sessionID = ag.Session().ID()
-	}
-	return l.controlFor(sessionID).Steer(ctx, req.Message)
+	return l.controlFor(sessionID).Steer(ctx, msg)
 }
 
-func (l *Default) FollowUp(ctx context.Context, req agentkit.SessionControlRequest) error {
-	ag, _, err := l.resolveAgent(req.AgentID)
+func (l *Default) FollowUp(ctx context.Context, msg agentkit.ModelMessage) error {
+	sessionID, err := sessionIDFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	sessionID := req.SessionID
-	if sessionID == "" {
-		sessionID = ag.Session().ID()
-	}
-	return l.controlFor(sessionID).FollowUp(ctx, req.Message)
+	return l.controlFor(sessionID).FollowUp(ctx, msg)
 }
 
 func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentkit.AgentID, error) {
@@ -138,27 +126,31 @@ func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentk
 	return ag, agentID, nil
 }
 
-func (l *Default) resolveSession(ctx context.Context, event agentkit.MessageEvent, ag agentkit.Agent) (agentkit.Session, agentkit.SessionID, error) {
-	sessionID := event.SessionID
-	if l.sessionStore != nil && sessionID != "" {
-		sess, err := l.sessionStore.Get(ctx, sessionID)
-		if err != nil {
-			return nil, "", err
-		}
-		return sess, sessionID, nil
-	}
-	defaultSess := ag.Session()
-	if sessionID == "" {
-		sessionID = defaultSess.ID()
-	}
-	return defaultSess, sessionID, nil
-}
-
 func (l *Default) lockSession(id agentkit.SessionID) func() {
 	v, _ := l.sessionLocks.LoadOrStore(id, &sync.Mutex{})
 	mu := v.(*sync.Mutex)
 	mu.Lock()
 	return mu.Unlock
+}
+
+func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, control *Control) context.Context {
+	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
+	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
+	if platformID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyPlatformID, platformID)
+	}
+	if control != nil {
+		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)
+	}
+	return ctx
+}
+
+func sessionIDFromContext(ctx context.Context) (agentkit.SessionID, error) {
+	id, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if !ok || id == "" {
+		return "", fmt.Errorf("session id required in context")
+	}
+	return id, nil
 }
 
 type agentNotFoundError struct{ id agentkit.AgentID }

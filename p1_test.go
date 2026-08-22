@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/settings"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -42,6 +43,13 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	sessionDir := t.TempDir()
+	sessionID := agentkit.SessionID("test:default")
+	sessionStoreCfg := map[string]any{
+		"use":    "session/store",
+		"config": map[string]any{"dir": sessionDir},
+	}
+
 	graph := map[string]any{
 		"agent": map[string]any{
 			"use": "agent/coding",
@@ -50,7 +58,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 				"maxSteps": 5,
 			},
 			"deps": map[string]any{
-				"session": map[string]any{"use": "session/memory"},
+				"sessionStore": sessionStoreCfg,
 				"llm": map[string]any{
 					"use": "llm/scripted",
 					"config": map[string]any{
@@ -77,6 +85,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 							map[string]any{
 								"use": "tool/skill",
 								"deps": map[string]any{
+									"sessionStore": sessionStoreCfg,
 									"skills": map[string]any{
 										"use": "skill/filesystem",
 										"config": map[string]any{
@@ -97,17 +106,25 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
-	_, err = ag.RunTurn(context.Background(), agentkit.TurnInput{
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "load skill"}},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	replay, err := ag.Session().DeriveMessages(context.Background())
+	store, err := session.NewStore(session.StoreConfig{Dir: sessionDir})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	sess, err := store.Get(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	replay, err := sess.DeriveMessages(ctx)
 	if err != nil {
 		t.Fatalf("derive messages: %v", err)
 	}

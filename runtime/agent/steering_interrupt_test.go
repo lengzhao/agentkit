@@ -9,9 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/session"
-	"github.com/lengzhao/agentkit/runtime/sessioncontrol"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
@@ -84,21 +84,21 @@ func TestSteerInterruptsInFlightStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt, err := agent.New(agent.Config{ID: "test", Model: "blocking", MaxSteps: 5}, agent.Deps{
-		LLM:     block,
-		Session: mem,
-		Tools:   toolRuntime,
-		Prompt:  assembler,
+		SessionStore: session.NewStaticStore(mem),
+		LLM:          block,
+		Tools:        toolRuntime,
+		Prompt:       assembler,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
-	ctrl := sessioncontrol.New()
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
+	ctrl := loop.NewControl()
+	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	turnDone := make(chan error, 1)
 	go func() {
-		_, err := rt.RunTurn(ctx, agentkit.TurnInput{
-			Control: ctrl,
+		err := rt.RunTurn(ctx, agentkit.TurnInput{
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "start"}},
@@ -150,7 +150,7 @@ func TestSteerInterruptsInFlightStep(t *testing.T) {
 	}
 }
 
-func TestRunTurnUsesDefaultControlWhenUnset(t *testing.T) {
+func TestRunTurnLeavesFollowUpsForLoop(t *testing.T) {
 	t.Parallel()
 
 	assembler, err := prompt.NewAssembler(prompt.AssemblerConfig{}, prompt.AssemblerDeps{})
@@ -167,24 +167,26 @@ func TestRunTurnUsesDefaultControlWhenUnset(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt, err := agent.New(agent.Config{ID: "test", Model: "scripted", MaxSteps: 1}, agent.Deps{
-		LLM:     scripted,
-		Session: mem,
-		Tools:   toolRuntime,
-		Prompt:  assembler,
+		SessionStore: session.NewStaticStore(mem),
+		LLM:          scripted,
+		Tools:        toolRuntime,
+		Prompt:       assembler,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
-	if err := rt.Control().FollowUp(ctx, agentkit.ModelMessage{
+	ctrl := loop.NewControl()
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
+	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
+	if err := ctrl.FollowUp(ctx, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "follow"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := rt.RunTurn(ctx, agentkit.TurnInput{
+	if err := rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "start"}},
@@ -193,7 +195,7 @@ func TestRunTurnUsesDefaultControlWhenUnset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	follow, err := rt.Control().DrainFollowUps(ctx, agentkit.FollowUpAll)
+	follow, err := ctrl.DrainFollowUps(ctx, agentkit.FollowUpAll)
 	if err != nil {
 		t.Fatal(err)
 	}

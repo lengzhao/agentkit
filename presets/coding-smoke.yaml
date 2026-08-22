@@ -14,8 +14,7 @@ runner:
               id: smoke
               maxSteps: 5
             deps:
-              session:
-                use: session/memory
+              sessionStore: sessionStore
               llm:
                 use: llm/scripted
                 config:
@@ -53,3 +52,13 @@ runner:
                             timeoutSeconds: 30
                   policies:
                     - use: policy/deny-dangerous-shell
+
+session:
+  use: session/memory
+  config:
+    id: cli:default
+
+sessionStore:
+  use: session/static
+  deps:
+    session: session

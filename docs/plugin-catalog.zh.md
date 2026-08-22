@@ -72,7 +72,7 @@ flowchart TB
   Runner --> Platform
   Runner --> Loop
   Loop --> Agent
-  Agent --> Session
+  Loop --> Session
   Agent --> Prompt
   Agent --> Tool
   Agent --> cap
@@ -92,7 +92,9 @@ flowchart TB
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop | DSH Loader root / Pi AgentSession 外层 |
-| `platform/cli` | `agentkit.Platform` | 终端 stdin/stdout 消息入口 | Pi TUI / DSH headless |
+| `platform/cli` | `agentkit.Platform` | 终端 stdin/stdout；入站固定 `SessionID=cli:default` | Pi TUI / DSH headless |
+| `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
+| `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
@@ -102,13 +104,13 @@ flowchart TB
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `loop/default` | `agentkit.Loop` | Turn/Step 调度，多 Agent 路由 | DSH `agent-loop` / Pi `agentLoop` |
+| `loop/default` | `agentkit.Loop` | Turn/Step 调度、按 SessionID 串行，并向 ctx 写入 agentkit context key | DSH `agent-loop` / Pi `agentLoop` |
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation | Pi AgentHarness |
-| `agent/coding` | `agentkit.Agent` | Coding Agent 默认组合 | 两者默认 Agent |
+| `agent/coding` | `agentkit.Agent` | Coding Agent；从 `ctx.Value(KeySessionID)` 取 ID 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
-| `session/store` | `agentkit.SessionStore` | 按 SessionID 目录多文件（IM 多会话） | — |
+| `session/store` | `agentkit.SessionStore` | 按不透明 SessionID 目录多文件；Agent 依赖，非 Loop | cc-connect SessionKey |
 | `session/sqlite` | `agentkit.Session` | SQLite + 索引 | DSH session-query-sqlite |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |

@@ -3,6 +3,8 @@ package agentkit
 import "context"
 
 // LLMProvider streams model responses for an already assembled request.
+// LLMRequest carries model-visible messages only; session routing is handled
+// by the agent runtime before and after the provider boundary.
 type LLMProvider interface {
 	Name() string
 	Stream(context.Context, LLMRequest) (LLMStream, error)

@@ -6,10 +6,10 @@ type Policy interface {
 	Evaluate(context.Context, PolicyInput) (Decision, error)
 }
 
+// PolicyInput carries the policy payload. Per-conversation policy should read
+// ctx.Value(KeySessionID) / ctx.Value(KeyAgentID).
 type PolicyInput struct {
-	SessionID SessionID
-	AgentID   AgentID
-	ToolCall  *ToolCall
+	ToolCall *ToolCall
 }
 
 type DecisionKind string
@@ -31,11 +31,8 @@ type Approval interface {
 }
 
 type ApprovalRequest struct {
-	SessionID SessionID
-	AgentID   AgentID
-	Reason    string
-	Policy    Decision
-	ToolCall  *ToolCall
+	Reason   string
+	ToolCall *ToolCall
 }
 
 type ApprovalDecision struct {

@@ -7,11 +7,14 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
 
 func TestCodingAgentReadsFile(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	sessionID := agentkit.SessionID("test:default")
 	graph := map[string]any{
 		"agent": map[string]any{
 			"use": "agent/coding",
@@ -20,7 +23,10 @@ func TestCodingAgentReadsFile(t *testing.T) {
 				"maxSteps": 5,
 			},
 			"deps": map[string]any{
-				"session": map[string]any{"use": "session/memory"},
+				"sessionStore": map[string]any{
+					"use":    "session/store",
+					"config": map[string]any{"dir": dir},
+				},
 				"llm": map[string]any{
 					"use": "llm/scripted",
 					"config": map[string]any{
@@ -74,33 +80,38 @@ func TestCodingAgentReadsFile(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	result, err := ag.RunTurn(context.Background(), agentkit.TurnInput{
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "read README"}},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
-	if len(result.Messages) < 2 {
-		t.Fatalf("expected assistant messages, got %d", len(result.Messages))
+
+	store, err := session.NewStore(session.StoreConfig{Dir: dir})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
 	}
-	last := result.Messages[len(result.Messages)-1]
+	sess, err := store.Get(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	replay, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatalf("derive messages: %v", err)
+	}
+	if len(replay) == 0 {
+		raw, _ := json.Marshal(replay)
+		t.Fatalf("expected replay messages, got %s", string(raw))
+	}
+	last := replay[len(replay)-1]
 	if last.Role != "assistant" {
 		t.Fatalf("expected final assistant message, got %q", last.Role)
 	}
 	if text := contentText(last); text != "README says hello" {
 		t.Fatalf("unexpected assistant text: %q", text)
-	}
-
-	replay, err := ag.Session().DeriveMessages(context.Background())
-	if err != nil {
-		t.Fatalf("derive messages: %v", err)
-	}
-	raw, _ := json.Marshal(replay)
-	if len(replay) == 0 {
-		t.Fatalf("expected replay messages, got %s", string(raw))
 	}
 }
 

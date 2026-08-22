@@ -62,7 +62,7 @@ func (r *Root) Run(ctx context.Context) error {
 			}
 			return r.platform.Send(ctx, out)
 		}
-		_, err = r.loop.Dispatch(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
+		err = r.loop.Dispatch(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
 		if err != nil {
 			slog.Error("loop dispatch failed", "err", err)
 			if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{

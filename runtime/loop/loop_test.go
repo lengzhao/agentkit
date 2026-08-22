@@ -23,10 +23,6 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 		"loop": map[string]any{
 			"use": "loop/default",
 			"deps": map[string]any{
-				"sessionStore": map[string]any{
-					"use":    "session/store",
-					"config": map[string]any{"dir": dir},
-				},
 				"agents": []any{
 					map[string]any{
 						"use": "agent/coding",
@@ -35,7 +31,10 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 							"maxSteps": 2,
 						},
 						"deps": map[string]any{
-							"session": map[string]any{"use": "session/memory"},
+							"sessionStore": map[string]any{
+								"use":    "session/store",
+								"config": map[string]any{"dir": dir},
+							},
 							"llm": map[string]any{
 								"use": "llm/scripted",
 								"config": map[string]any{
@@ -65,27 +64,25 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := func(text string) agentkit.MessageEvent {
-		return agentkit.MessageEvent{
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-			},
+	msg := func(text string) agentkit.ModelMessage {
+		return agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		}
 	}
 
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
+	if err := loop.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
 			SessionID: "slack:C001",
-			Message:   msg("channel one").Message,
+			Message:   msg("channel one"),
 		},
 	}); err != nil {
 		t.Fatalf("dispatch C001: %v", err)
 	}
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
+	if err := loop.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
 			SessionID: "slack:C002",
-			Message:   msg("channel two").Message,
+			Message:   msg("channel two"),
 		},
 	}); err != nil {
 		t.Fatalf("dispatch C002: %v", err)

@@ -58,7 +58,7 @@ flowchart TB
   RPC --> Platform
   Platform --> Loop
   Loop --> Agent
-  Agent --> Session
+  Loop --> Session
   Agent --> Prompt
   Agent --> Tools
   Agent --> LLM

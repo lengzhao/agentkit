@@ -10,41 +10,25 @@ const (
 	FollowUpAll        FollowUpMode = "all"
 )
 
-// Agent is the execution unit below Loop. It owns session, prompt, model,
-// tools, policies and hooks for a single agent identity.
+// Agent is the execution unit below Loop. It owns prompt, model, tools,
+// policies and hooks for a single agent identity. Conversation state lives in
+// Session; the agent implementation resolves Session via SessionStore using
+// ctx.Value(KeySessionID). Loop does not inject Session objects or duplicate
+// routing fields in TurnInput.
+//
+// Steer/follow-up/cancel are owned by Loop per SessionID. Loop seeds
+// ctx.Value(KeySessionControl) before RunTurn; Agent reads it for step-level
+// steer interrupts.
+//
+// Agent plugins declare SessionStore in their Deps struct (pluginkit injection).
 type Agent interface {
 	ID() AgentID
-	Session() Session
-	RunTurn(context.Context, TurnInput) (TurnResult, error)
+	RunTurn(context.Context, TurnInput) error
 }
 
-// SessionControl steers or queues follow-ups for one session.
-type SessionControl interface {
-	Steer(context.Context, ModelMessage) error
-	FollowUp(context.Context, ModelMessage) error
-	Cancel(context.Context, string) error
-	DrainFollowUps(context.Context, FollowUpMode) ([]ModelMessage, error)
-}
-
-// SessionControlRequest targets an in-flight or idle agent session.
-type SessionControlRequest struct {
-	AgentID   AgentID
-	SessionID SessionID
-	Message   ModelMessage
-}
-
+// TurnInput carries one turn's payload. Routing context is available through
+// ctx.Value(KeySessionID), ctx.Value(KeyAgentID), and related agentkit keys.
 type TurnInput struct {
 	Message ModelMessage
 	Emit    OutboundEmit
-	// Session overrides the agent's default session when set (multi-session / IM).
-	Session Session
-	// Control is session-scoped steer/follow-up state; Loop supplies this per
-	// Dispatch. Implementations that also expose step-level control (see
-	// runtime/sessioncontrol.TurnControl) enable steer interrupts mid-turn.
-	Control SessionControl
-}
-
-type TurnResult struct {
-	Messages []ModelMessage
-	Events   []SessionEvent
 }

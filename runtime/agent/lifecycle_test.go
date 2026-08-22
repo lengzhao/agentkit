@@ -13,6 +13,8 @@ import (
 func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 	t.Parallel()
 
+	dir := t.TempDir()
+	sessionID := agentkit.SessionID("test:default")
 	graph := map[string]any{
 		"agent": map[string]any{
 			"use": "agent/coding",
@@ -21,7 +23,10 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 				"maxSteps": 5,
 			},
 			"deps": map[string]any{
-				"session": map[string]any{"use": "session/memory"},
+				"sessionStore": map[string]any{
+					"use":    "session/store",
+					"config": map[string]any{"dir": dir},
+				},
 				"llm": map[string]any{
 					"use": "llm/scripted",
 					"config": map[string]any{
@@ -69,17 +74,26 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
-	_, err = ag.RunTurn(context.Background(), agentkit.TurnInput{
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "read README"}},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	events, err := session.ReadAllEvents(context.Background(), ag.Session())
+	store, err := session.NewStore(session.StoreConfig{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Get(ctx, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := session.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatalf("read events: %v", err)
 	}

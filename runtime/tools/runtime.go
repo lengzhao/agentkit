@@ -70,7 +70,7 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (*Runtime, error) {
 	}, nil
 }
 
-func (r *Runtime) Visible(_ context.Context, _ agentkit.ToolScope) ([]agentkit.ToolSpec, error) {
+func (r *Runtime) Visible(_ context.Context) ([]agentkit.ToolSpec, error) {
 	specs := make([]agentkit.ToolSpec, 0, len(r.tools))
 	for _, tool := range r.tools {
 		specs = append(specs, agentkit.ToolSpec{
@@ -83,13 +83,15 @@ func (r *Runtime) Visible(_ context.Context, _ agentkit.ToolScope) ([]agentkit.T
 }
 
 func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-	scope := scopeFrom(ctx)
+	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+
 	tool, ok := r.tools[call.Name]
 	if !ok {
 		return deniedResult(call, "tool not found"), nil
 	}
 
-	decision, err := r.evaluatePolicies(ctx, scope, call)
+	decision, err := r.evaluatePolicies(ctx, call)
 	if err != nil {
 		return agentkit.ToolResult{}, err
 	}
@@ -101,11 +103,8 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 			return deniedResult(call, "approval required but no approval provider configured"), nil
 		}
 		approval, err := r.approval.Ask(ctx, agentkit.ApprovalRequest{
-			SessionID: scope.SessionID,
-			AgentID:   scope.AgentID,
-			Reason:    decision.Reason,
-			Policy:    decision,
-			ToolCall:  &call,
+			Reason:   decision.Reason,
+			ToolCall: &call,
 		})
 		if err != nil {
 			return agentkit.ToolResult{}, err
@@ -132,7 +131,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	}
 	defer cancel()
 
-	slog.Info("tool execute", "tool", call.Name, "session_id", scope.SessionID, "agent_id", scope.AgentID)
+	slog.Info("tool execute", "tool", call.Name, "session_id", sessionID, "agent_id", agentID)
 	result, err := tool.Call(execCtx, call)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(execCtx.Err(), context.DeadlineExceeded) {
@@ -162,12 +161,8 @@ func (r *Runtime) timeoutFor(name string) time.Duration {
 	return r.defaultTimeout
 }
 
-func (r *Runtime) evaluatePolicies(ctx context.Context, scope agentkit.ToolScope, call agentkit.ToolCall) (agentkit.Decision, error) {
-	input := agentkit.PolicyInput{
-		SessionID: scope.SessionID,
-		AgentID:   scope.AgentID,
-		ToolCall:  &call,
-	}
+func (r *Runtime) evaluatePolicies(ctx context.Context, call agentkit.ToolCall) (agentkit.Decision, error) {
+	input := agentkit.PolicyInput{ToolCall: &call}
 	for _, policy := range r.policies {
 		if policy == nil {
 			continue

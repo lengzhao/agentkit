@@ -1,17 +1,17 @@
-package sessioncontrol_test
+package loop_test
 
 import (
 	"context"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/sessioncontrol"
+	"github.com/lengzhao/agentkit/runtime/loop"
 )
 
 func TestDrainFollowUpsModes(t *testing.T) {
 	t.Parallel()
 
-	ctrl := sessioncontrol.New()
+	ctrl := loop.NewControl()
 	ctx := context.Background()
 	msg := func(text string) agentkit.ModelMessage {
 		return agentkit.ModelMessage{

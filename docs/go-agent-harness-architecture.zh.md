@@ -230,7 +230,7 @@ flowchart TB
   Runner --> Platform
   Runner --> Loop
   Loop --> Agent
-  Agent --> Session
+  Loop --> Session
   Agent --> Prompt
   Agent --> Tools
   Agent --> LLM
@@ -295,10 +295,10 @@ func NewLoop(cfg LoopConfig, deps LoopDeps) (agentkit.Loop, error) {
 }
 
 type AgentDeps struct {
-    LLM      agentkit.LLMProvider `json:"llm"`
-    Tools    []agentkit.Tool      `json:"tools"`
-    Policies []agentkit.Policy    `json:"policies"`
-    Session  agentkit.Session     `json:"session"`
+    SessionStore agentkit.SessionStore `json:"sessionStore"`
+    LLM          agentkit.LLMProvider  `json:"llm"`
+    Tools        []agentkit.Tool       `json:"tools"`
+    Policies     []agentkit.Policy     `json:"policies"`
 }
 
 func NewAgent(cfg AgentConfig, deps AgentDeps) (agentkit.Agent, error) {
@@ -321,13 +321,13 @@ runner:
       config:
         maxTurns: 20
       deps:
+        session:
+          use: session/jsonl
+          config:
+            path: .agent/sessions
         agents:
           - use: agent/coding
             deps:
-              session:
-                use: session/jsonl
-                config:
-                  path: .agent/sessions
               llm:
                 use: llm/openai
                 config:
@@ -732,22 +732,29 @@ type SessionStore interface {
 }
 ```
 
+**SessionID 格式**（对齐 cc-connect，由平台生成，Loop/Agent 视为不透明字符串）：
+
+```
+<platform>:<segment>[:<segment>...]
+```
+
+示例：`slack:C123ABC`、`slack:C123ABC:U456`、`slack:C123ABC:t:1712345678.123456`、`feishu:oc_xxx:root:om_yyy`、`cli:default`。
+
 路由约定：
 
 | 组件 | 职责 |
 |------|------|
-| **Platform**（如 `platform/slack`） | 从 `channel_id` + `thread_ts` 生成 `MessageEvent.SessionID`，例如 `slack:C123:thread:1234567890.123` |
-| **Loop** | 若配置了 `SessionStore` 且 `SessionID` 非空，则 `Get` 对应 Session 并传入 `TurnInput.Session`；同一 `SessionID` 内串行执行 Turn |
-| **Agent** | `RunTurn` 优先使用 `TurnInput.Session`，否则回退到构造期注入的默认 Session（CLI 单会话） |
-| **`session/store`** | 在目录下为每个 ID 懒加载 `{safe_id}.jsonl` |
+| **Platform**（如 `platform/slack`） | 从 IM 事件生成稳定 `MessageEvent.SessionID`（必填）；出站 `OutboundEvent` 回带同一 ID；可选实现 `ReplyTargetResolver` 用于主动发送 |
+| **Loop** | 按 `MessageEvent.SessionID` 选择 Agent 并串行调度；不调用 `SessionStore` |
+| **Agent** | `RunTurn` 从 `ctx.Value(agentkit.KeySessionID)` 读取 SessionID，并通过 `deps.sessionStore.Get` 加载 Session |
+| **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl` |
 
-CLI 保持向后兼容：不传 `SessionID` 时 Loop 使用 Agent 默认 Session。IM 配置示例：
+所有入口（含 CLI）必须在 `MessageEvent` 上设置 `SessionID`；CLI 通常使用固定 `cli:default`。配置示例：
 
 ```yaml
 loop:
   use: loop/default
   deps:
-    sessionStore: session.store
     agents:
       - agent.coder
 
@@ -759,19 +766,32 @@ session.store:
 agent.coder:
   use: agent/coding
   deps:
-    session:
-      use: session/memory   # 占位默认 Session，满足 Agent 构造；实际 Turn 走 SessionStore
+    sessionStore: session.store
+    llm: llm
+    tools: tools
 ```
 
 ```mermaid
 flowchart LR
-  Slack["platform/slack"] -->|"SessionID=slack:C:thread:ts"| Loop
-  Loop -->|"SessionStore.Get"| Store["session/store"]
+  Slack["platform/slack"] -->|"SessionID=slack:C:t:ts"| Loop
+  Loop -->|"ctx.Value(KeySessionID)"| Agent
+  Agent -->|"SessionStore.Get"| Store["session/store"]
   Store --> F1["C001.jsonl"]
   Store --> F2["C002.jsonl"]
-  Loop --> Agent
-  Agent -->|"TurnInput.Session"| F1
 ```
+
+
+进程内上下文键由 `agentkit` 根包定义，插件直接读取，不再提供 `WithTurn` / `TurnFrom` 包装层：
+
+```go
+ctx.Value(agentkit.KeySessionID)
+ctx.Value(agentkit.KeyAgentID)
+ctx.Value(agentkit.KeyPlatformID)
+ctx.Value(agentkit.KeyTurnID)
+ctx.Value(agentkit.KeyToolCallID)
+```
+
+这些 key 只承载请求标识，不承载 `Session`、`SessionStore`、LLM、ToolRuntime 等服务对象。
 
 ### 6.2 Runner
 
@@ -793,7 +813,7 @@ type Platform interface {
 }
 ```
 
-Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`，以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。
+Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`（**必填 `SessionID`**），以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。各 `platform/*` 插件拥有 SessionID 生成规则；Loop 与 Agent 不解析 ID 段。
 
 多个 Platform 可在同一 Agent 中共存：用 `platform/multiplex` 聚合各入口，Runner 仍只依赖一个 `Platform`。入站消息携带 `PlatformID`，出站事件按 `PlatformID` 路由回对应通道（Slack、飞书等后续实现为独立 `platform/*` 插件）。
 
@@ -812,15 +832,13 @@ Assistant 流式输出对齐 Pi RPC，经 `OutboundEmit` 在 turn 执行期间�
 ```go
 type Agent interface {
     ID() AgentID
-    Session() Session
-    Control() SessionControl   // steer/follow-up for Session()
-    RunTurn(ctx context.Context, input TurnInput) (TurnResult, error)
+    RunTurn(ctx context.Context, input TurnInput) error
 }
 ```
 
-- **Control**：单 Session Agent 的 steer/follow-up 队列；与 `Session()` 绑定，无需额外传 `SessionID`。
-- **TurnInput.Control**：Loop 在 `Dispatch` 时注入 per-session 控制面（IM 多 Session 同 Agent）；未设置时 Agent 使用 `Control()` 返回值。
-- **Loop.Steer/FollowUp**：通过 `SessionControlRequest.SessionID` 路由到 Loop 侧 per-session 队列，再经 `TurnInput.Control` 传入 `RunTurn`。
+- **context key**：Loop 在 `Dispatch` 时把 `MessageEvent.SessionID`、解析后的 `AgentID`、`PlatformID` 以及 per-session `Control` 写入 `ctx`；下游通过 `ctx.Value(agentkit.KeySessionID)` / `ctx.Value(agentkit.KeyAgentID)` / `ctx.Value(agentkit.KeyPlatformID)` / `ctx.Value(agentkit.KeySessionControl)` 读取。
+- **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
+- **Loop.Steer/FollowUp**：从 `ctx.Value(agentkit.KeySessionID)` 路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl` 供 Agent step 级 steer 中断。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。
 - **Cancel**：设置取消原因并打断当前 step；与 steer 不同，会终止整个 turn。
 
@@ -1153,7 +1171,26 @@ func TestReadFileTool(t *testing.T) {
 | 安全 | 策略在执行路径 enforcement，不能只靠 prompt 或工具隐藏 |
 | 日志 | 使用 `slog`，所有关键日志带稳定对象 ID |
 
-## 14. 总结
+## 14. 接口重整后续（runtime 已同步）
+
+公开接口按 SessionID 中心化重整后，`runtime/*`、插件与测试已对齐：
+
+| 区域 | 状态 |
+|---|---|
+| `runtime/loop` | `Control` 内联于 loop 包；`Dispatch` 写入 `KeySessionControl` |
+| `runtime/agent` | `Deps` 含 `SessionStore`；`RunTurn` 从 `ctx.Value(KeySessionID)` 取 ID 后 `Get` |
+| `runtime/platform/cli` | 入站固定 `SessionID=cli:default`、`PlatformID=cli` |
+| `runtime/session/static` | 单会话 `SessionStore` 适配器，供 CLI smoke preset 使用 |
+| `presets/*.yaml` | `sessionStore` 在 `agent.*.deps`；Loop 不再依赖 `session` |
+| 测试 | `TurnInput` 不再传 `Session`；通过 context key + `SessionStore` 断言 |
+
+待办（非本次范围）：
+
+| 区域 | 改造点 |
+|---|---|
+| `runtime/session/id.go` | Slack 线程段改为 cc-connect 的 `:t:`（当前为 `:thread:`） |
+
+## 15. 总结
 
 Go 版 Agent Harness 的核心不是自研一套插件内核，而是在 `pluginkit` 的最小装配模型上提供低心智负担的 Agent 平台。插件作者只注册 Go 构造函数并返回语义接口；应用组装者通过 root graph 声明 Runner、Platform、Loop、Agent、LLM、Tools、Policy、Session 的组合；运行时维护者把复杂度集中在 Agent Spine、Policy Plane、Session replay 和诊断工具中。
 

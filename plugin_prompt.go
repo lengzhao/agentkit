@@ -17,11 +17,11 @@ type Section struct {
 	Build func(context.Context, PromptRequest) (PromptSection, error)
 }
 
+// PromptRequest carries model-visible prompt inputs. Routing context is read
+// from ctx.Value(KeySessionID) / ctx.Value(KeyAgentID), not duplicated here.
 type PromptRequest struct {
-	SessionID SessionID
-	AgentID   AgentID
-	Messages  []ModelMessage
-	Tools     []ToolSpec
+	Messages []ModelMessage
+	Tools    []ToolSpec
 }
 
 type Prompt struct {

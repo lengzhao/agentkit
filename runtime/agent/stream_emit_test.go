@@ -35,10 +35,10 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt, err := agent.New(agent.Config{ID: "test", Model: "scripted"}, agent.Deps{
-		LLM:     scripted,
-		Session: mem,
-		Tools:   toolRuntime,
-		Prompt:  assembler,
+		SessionStore: session.NewStaticStore(mem),
+		LLM:          scripted,
+		Tools:        toolRuntime,
+		Prompt:       assembler,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,8 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 		return nil
 	}
 
-	_, err = rt.RunTurn(context.Background(), agentkit.TurnInput{
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
+	err = rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},

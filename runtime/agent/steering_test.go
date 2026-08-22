@@ -5,14 +5,17 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/sessioncontrol"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
 
 func TestSteerInjectsBeforeNextStep(t *testing.T) {
 	t.Parallel()
 
+	dir := t.TempDir()
+	sessionID := agentkit.SessionID("test:default")
 	graph := map[string]any{
 		"agent": map[string]any{
 			"use": "agent/coding",
@@ -21,7 +24,10 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 				"maxSteps": 5,
 			},
 			"deps": map[string]any{
-				"session": map[string]any{"use": "session/memory"},
+				"sessionStore": map[string]any{
+					"use":    "session/store",
+					"config": map[string]any{"dir": dir},
+				},
 				"llm": map[string]any{
 					"use": "llm/scripted",
 					"config": map[string]any{
@@ -47,8 +53,9 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	ctx := context.Background()
-	ctrl := sessioncontrol.New()
+	ctrl := loop.NewControl()
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	if err := ctrl.Steer(ctx, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "steered"}},
@@ -56,18 +63,24 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = ag.RunTurn(ctx, agentkit.TurnInput{
-		Control: ctrl,
+	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "start"}},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	msgs, err := ag.Session().DeriveMessages(ctx)
+	store, err := session.NewStore(session.StoreConfig{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Get(ctx, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := sess.DeriveMessages(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

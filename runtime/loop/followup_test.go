@@ -2,7 +2,6 @@ package loop_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -11,7 +10,9 @@ import (
 	"github.com/lengzhao/pluginkit/build"
 )
 
-func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, sessionPath string) map[string]any {
+const testSessionID = agentkit.SessionID("test:default")
+
+func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, storeDir string) map[string]any {
 	t.Helper()
 	return map[string]any{
 		"loop": map[string]any{
@@ -28,9 +29,9 @@ func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, sessionPath
 							"maxSteps": 1,
 						},
 						"deps": map[string]any{
-							"session": map[string]any{
-								"use":    "session/jsonl",
-								"config": map[string]any{"path": sessionPath},
+							"sessionStore": map[string]any{
+								"use":    "session/store",
+								"config": map[string]any{"dir": storeDir},
 							},
 							"llm": map[string]any{
 								"use": "llm/scripted",
@@ -65,16 +66,15 @@ func userMessage(text string) agentkit.ModelMessage {
 	}
 }
 
-func readUserTexts(t *testing.T, sessionPath string) []string {
+func readUserTexts(t *testing.T, storeDir string, sessionID agentkit.SessionID) []string {
 	t.Helper()
-	sess, _, err := build.Build[agentkit.Session](context.Background(), map[string]any{
-		"session": map[string]any{
-			"use":    "session/jsonl",
-			"config": map[string]any{"path": sessionPath},
-		},
-	}, "session")
+	store, err := session.NewStore(session.StoreConfig{Dir: storeDir})
 	if err != nil {
-		t.Fatalf("build session: %v", err)
+		t.Fatalf("open store: %v", err)
+	}
+	sess, err := store.Get(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
 	}
 	msgs, err := sess.DeriveMessages(context.Background())
 	if err != nil {
@@ -90,34 +90,37 @@ func readUserTexts(t *testing.T, sessionPath string) []string {
 	return out
 }
 
+func testContext(sessionID agentkit.SessionID) context.Context {
+	return context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+}
+
 func TestDispatchDrainsAllFollowUps(t *testing.T) {
 	t.Parallel()
 
-	sessionPath := filepath.Join(t.TempDir(), "session.jsonl")
-	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpAll, sessionPath), "loop")
+	storeDir := t.TempDir()
+	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpAll, storeDir), "loop")
 	if err != nil {
 		t.Fatalf("build loop: %v", err)
 	}
 
-	ctx := context.Background()
-	if err := loop.FollowUp(ctx, agentkit.SessionControlRequest{
-		Message: userMessage("follow one"),
-	}); err != nil {
+	ctx := testContext(testSessionID)
+	if err := loop.FollowUp(ctx, userMessage("follow one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := loop.FollowUp(ctx, agentkit.SessionControlRequest{
-		Message: userMessage("follow two"),
-	}); err != nil {
+	if err := loop.FollowUp(ctx, userMessage("follow two")); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{Message: userMessage("initial")},
+	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			SessionID: testSessionID,
+			Message:   userMessage("initial"),
+		},
 	}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	got := readUserTexts(t, sessionPath)
+	got := readUserTexts(t, storeDir, testSessionID)
 	want := []string{"initial", "follow one", "follow two"}
 	if len(got) < len(want) {
 		t.Fatalf("messages = %v, want at least %v", got, want)
@@ -132,31 +135,30 @@ func TestDispatchDrainsAllFollowUps(t *testing.T) {
 func TestDispatchDrainsOneFollowUpAtATime(t *testing.T) {
 	t.Parallel()
 
-	sessionPath := filepath.Join(t.TempDir(), "session.jsonl")
-	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpOneAtATime, sessionPath), "loop")
+	storeDir := t.TempDir()
+	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpOneAtATime, storeDir), "loop")
 	if err != nil {
 		t.Fatalf("build loop: %v", err)
 	}
 
-	ctx := context.Background()
-	if err := loop.FollowUp(ctx, agentkit.SessionControlRequest{
-		Message: userMessage("follow one"),
-	}); err != nil {
+	ctx := testContext(testSessionID)
+	if err := loop.FollowUp(ctx, userMessage("follow one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := loop.FollowUp(ctx, agentkit.SessionControlRequest{
-		Message: userMessage("follow two"),
-	}); err != nil {
+	if err := loop.FollowUp(ctx, userMessage("follow two")); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{Message: userMessage("initial")},
+	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			SessionID: testSessionID,
+			Message:   userMessage("initial"),
+		},
 	}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	got := readUserTexts(t, sessionPath)
+	got := readUserTexts(t, storeDir, testSessionID)
 	want := []string{"initial", "follow one"}
 	if len(got) < len(want) {
 		t.Fatalf("messages = %v, want at least %v", got, want)
@@ -167,12 +169,15 @@ func TestDispatchDrainsOneFollowUpAtATime(t *testing.T) {
 		}
 	}
 
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{Message: userMessage("second round")},
+	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			SessionID: testSessionID,
+			Message:   userMessage("second round"),
+		},
 	}); err != nil {
 		t.Fatalf("second dispatch: %v", err)
 	}
-	got = readUserTexts(t, sessionPath)
+	got = readUserTexts(t, storeDir, testSessionID)
 	want = []string{"initial", "follow one", "second round", "follow two"}
 	if len(got) < len(want) {
 		t.Fatalf("messages after second dispatch = %v, want at least %v", got, want)
@@ -187,30 +192,30 @@ func TestDispatchDrainsOneFollowUpAtATime(t *testing.T) {
 func TestDispatchFollowUpTurnLifecycle(t *testing.T) {
 	t.Parallel()
 
-	sessionPath := filepath.Join(t.TempDir(), "session.jsonl")
-	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpAll, sessionPath), "loop")
+	storeDir := t.TempDir()
+	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpAll, storeDir), "loop")
 	if err != nil {
 		t.Fatalf("build loop: %v", err)
 	}
 
-	ctx := context.Background()
-	if err := loop.FollowUp(ctx, agentkit.SessionControlRequest{
-		Message: userMessage("follow one"),
-	}); err != nil {
+	ctx := testContext(testSessionID)
+	if err := loop.FollowUp(ctx, userMessage("follow one")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{Message: userMessage("initial")},
+	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			SessionID: testSessionID,
+			Message:   userMessage("initial"),
+		},
 	}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	sess, _, err := build.Build[agentkit.Session](context.Background(), map[string]any{
-		"session": map[string]any{
-			"use":    "session/jsonl",
-			"config": map[string]any{"path": sessionPath},
-		},
-	}, "session")
+	store, err := session.NewStore(session.StoreConfig{Dir: storeDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Get(context.Background(), testSessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,26 +237,27 @@ func TestDispatchFollowUpTurnLifecycle(t *testing.T) {
 func TestLoopSteerRoutesToAgent(t *testing.T) {
 	t.Parallel()
 
-	sessionPath := filepath.Join(t.TempDir(), "session.jsonl")
-	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpOneAtATime, sessionPath), "loop")
+	storeDir := t.TempDir()
+	loop, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpOneAtATime, storeDir), "loop")
 	if err != nil {
 		t.Fatalf("build loop: %v", err)
 	}
 
-	ctx := context.Background()
-	if err := loop.Steer(ctx, agentkit.SessionControlRequest{
-		Message: userMessage("steered"),
-	}); err != nil {
+	ctx := testContext(testSessionID)
+	if err := loop.Steer(ctx, userMessage("steered")); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{Message: userMessage("initial")},
+	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			SessionID: testSessionID,
+			Message:   userMessage("initial"),
+		},
 	}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	got := readUserTexts(t, sessionPath)
+	got := readUserTexts(t, storeDir, testSessionID)
 	if len(got) < 2 || got[0] != "initial" || got[1] != "steered" {
 		t.Fatalf("messages = %v", got)
 	}
@@ -260,53 +266,45 @@ func TestLoopSteerRoutesToAgent(t *testing.T) {
 func TestSessionControlsAreIsolated(t *testing.T) {
 	t.Parallel()
 
-	sessionA := filepath.Join(t.TempDir(), "a.jsonl")
-	sessionB := filepath.Join(t.TempDir(), "b.jsonl")
+	sessionA := agentkit.SessionID("session-a")
+	sessionB := agentkit.SessionID("session-b")
+	storeDirA := t.TempDir()
+	storeDirB := t.TempDir()
 
-	graphA := testLoopGraph(t, agentkit.FollowUpAll, sessionA)
-	graphB := testLoopGraph(t, agentkit.FollowUpAll, sessionB)
-
-	loopA, _, err := build.Build[agentkit.Loop](context.Background(), graphA, "loop")
+	loopA, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpAll, storeDirA), "loop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	loopB, _, err := build.Build[agentkit.Loop](context.Background(), graphB, "loop")
+	loopB, _, err := build.Build[agentkit.Loop](context.Background(), testLoopGraph(t, agentkit.FollowUpAll, storeDirB), "loop")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
-	if err := loopA.FollowUp(ctx, agentkit.SessionControlRequest{
-		SessionID: "session-a",
-		Message:   userMessage("follow-a"),
-	}); err != nil {
+	if err := loopA.FollowUp(testContext(sessionA), userMessage("follow-a")); err != nil {
 		t.Fatal(err)
 	}
-	if err := loopB.FollowUp(ctx, agentkit.SessionControlRequest{
-		SessionID: "session-b",
-		Message:   userMessage("follow-b"),
-	}); err != nil {
+	if err := loopB.FollowUp(testContext(sessionB), userMessage("follow-b")); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := loopA.Dispatch(ctx, agentkit.LoopRequest{
+	if err := loopA.Dispatch(context.Background(), agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			SessionID: "session-a",
+			SessionID: sessionA,
 			Message:   userMessage("turn-a"),
 		},
 	}); err != nil {
 		t.Fatalf("dispatch A: %v", err)
 	}
-	if _, err := loopB.Dispatch(ctx, agentkit.LoopRequest{
+	if err := loopB.Dispatch(context.Background(), agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			SessionID: "session-b",
+			SessionID: sessionB,
 			Message:   userMessage("turn-b"),
 		},
 	}); err != nil {
 		t.Fatalf("dispatch B: %v", err)
 	}
 
-	gotA := readUserTexts(t, sessionA)
+	gotA := readUserTexts(t, storeDirA, sessionA)
 	wantA := []string{"turn-a", "follow-a"}
 	if len(gotA) < len(wantA) {
 		t.Fatalf("session A = %v, want %v", gotA, wantA)
@@ -317,7 +315,7 @@ func TestSessionControlsAreIsolated(t *testing.T) {
 		}
 	}
 
-	gotB := readUserTexts(t, sessionB)
+	gotB := readUserTexts(t, storeDirB, sessionB)
 	wantB := []string{"turn-b", "follow-b"}
 	if len(gotB) < len(wantB) {
 		t.Fatalf("session B = %v, want %v", gotB, wantB)

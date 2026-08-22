@@ -2,6 +2,7 @@ package hookbeforestep
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
@@ -11,11 +12,13 @@ import (
 type Config struct{}
 
 type Deps struct {
-	Services []compaction.Service `json:"services"`
+	Services     []compaction.Service  `json:"services"`
+	SessionStore agentkit.SessionStore `json:"sessionStore"`
 }
 
 type Provider struct {
-	services []compaction.Service
+	services     []compaction.Service
+	sessionStore agentkit.SessionStore
 }
 
 func init() {
@@ -23,7 +26,10 @@ func init() {
 }
 
 func New(_ Config, deps Deps) (agentkit.HookProvider, error) {
-	return &Provider{services: deps.Services}, nil
+	if deps.SessionStore == nil {
+		return nil, fmt.Errorf("hook/before-step requires sessionStore dependency")
+	}
+	return &Provider{services: deps.Services, sessionStore: deps.SessionStore}, nil
 }
 
 func (p *Provider) Hooks() []agentkit.Hook {
@@ -33,15 +39,26 @@ func (p *Provider) Hooks() []agentkit.Hook {
 }
 
 func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) error {
+	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	var sess agentkit.Session
+	if sessionID != "" {
+		var err error
+		sess, err = p.sessionStore.Get(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+	}
+
 	messages := step.Messages
 	for _, svc := range p.services {
 		if svc == nil {
 			continue
 		}
 		result, err := svc.Compact(ctx, compaction.Request{
-			SessionID: step.SessionID,
-			AgentID:   step.AgentID,
-			Session:   step.Session,
+			SessionID: sessionID,
+			AgentID:   agentID,
+			Session:   sess,
 			Messages:  messages,
 		})
 		if err != nil {
@@ -50,8 +67,8 @@ func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) er
 		if len(result.Messages) > 0 {
 			messages = result.Messages
 		}
-		if result.Applied && len(result.Messages) == 0 && step.Session != nil {
-			derived, err := step.Session.DeriveMessages(ctx)
+		if result.Applied && len(result.Messages) == 0 && sess != nil {
+			derived, err := sess.DeriveMessages(ctx)
 			if err != nil {
 				return err
 			}
