@@ -59,8 +59,11 @@ type ModelMessage struct {
 }
 
 type ContentPart struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type   string `json:"type"`
+	Text   string `json:"text,omitempty"`
+	URL    string `json:"url,omitempty"`
+	MIME   string `json:"mime,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type SessionEvent struct {

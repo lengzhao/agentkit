@@ -56,12 +56,19 @@ agent.coder:
     id: coder
     model: gpt-5.4
     maxSteps: 20
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
   deps:
     sessionStore: sessionStore
     llm: llm
     hooks: hooks
     prompt: prompt
     tools: tools
+    compaction:
+      - compaction.prune
+      - compaction.summary
 
 sessionStore:
   use: session/store
@@ -77,6 +84,14 @@ llm:
     model: gpt-5.4
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
+    api: chat # chat | responses
+    # reasoning: # responses API only
+    #   effort: medium
+    #   generateSummary: auto
+    retry:
+      provider:
+        maxRetries: 0
+        maxRetryDelayMs: 60000
   deps:
     credentials: credentials
 
@@ -104,6 +119,10 @@ compaction.summary:
   config:
     minMessages: 30
     keepRecent: 8
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
   deps:
     llm: llm.summary
 

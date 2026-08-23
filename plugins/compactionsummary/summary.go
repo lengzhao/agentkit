@@ -9,15 +9,17 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit"
 )
 
 type Config struct {
-	MinMessages      int    `json:"minMessages"`
-	KeepRecent       int    `json:"keepRecent"`
-	SummaryModel     string `json:"summaryModel"`
-	SummaryPrompt    string `json:"summaryPrompt"`
+	MinMessages      int                    `json:"minMessages"`
+	KeepRecent       int                    `json:"keepRecent"`
+	SummaryModel     string                 `json:"summaryModel"`
+	SummaryPrompt    string                 `json:"summaryPrompt"`
+	Retry            *compaction.RetryConfig `json:"retry,omitempty"`
 }
 
 type Deps struct {
@@ -63,7 +65,32 @@ func (s *Service) Compact(ctx context.Context, req compaction.Request) (compacti
 	}
 
 	toSummarize := req.Messages[:len(req.Messages)-s.cfg.KeepRecent]
-	summaryText, err := s.summarize(ctx, toSummarize)
+	policy := compaction.ResolveRetrySettings(s.cfg.Retry)
+	var summaryText string
+	err = compaction.RetryCall(ctx, policy, llm.IsRetryableError, func() error {
+		text, err := s.summarizeOnce(ctx, toSummarize)
+		if err != nil {
+			return err
+		}
+		summaryText = text
+		return nil
+	}, &compaction.SummarizationRetryCallbacks{
+		OnScheduled: func(attempt, maxAttempts, delayMs int, errorMessage string) {
+			_ = session.AppendSummarizationRetryStart(ctx, req.Session, req.AgentID, session.SummarizationRetryStartData{
+				Attempt:      attempt,
+				MaxAttempts:  maxAttempts,
+				DelayMs:      delayMs,
+				ErrorMessage: errorMessage,
+			})
+		},
+		OnFinished: func(success bool, attempt int, finalError string) {
+			_ = session.AppendSummarizationRetryEnd(ctx, req.Session, req.AgentID, session.SummarizationRetryEndData{
+				Success:    success,
+				Attempt:    attempt,
+				FinalError: finalError,
+			})
+		},
+	})
 	if err != nil {
 		return compaction.Result{}, err
 	}
@@ -85,7 +112,7 @@ func (s *Service) Compact(ctx context.Context, req compaction.Request) (compacti
 	return compaction.Result{Applied: true}, nil
 }
 
-func (s *Service) summarize(ctx context.Context, messages []agentkit.ModelMessage) (string, error) {
+func (s *Service) summarizeOnce(ctx context.Context, messages []agentkit.ModelMessage) (string, error) {
 	var b strings.Builder
 	for _, msg := range messages {
 		b.WriteString(msg.Role)
@@ -128,7 +155,7 @@ func (s *Service) summarize(ctx context.Context, messages []agentkit.ModelMessag
 			break
 		}
 		if err != nil {
-			break
+			return "", err
 		}
 	}
 	text := strings.TrimSpace(out.String())

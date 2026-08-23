@@ -9,6 +9,7 @@ import (
 	"log/slog"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
@@ -17,6 +18,7 @@ type Config struct {
 	ID       agentkit.AgentID `json:"id"`
 	Model    string           `json:"model"`
 	MaxSteps int              `json:"maxSteps"`
+	Retry    *RetryConfig     `json:"retry,omitempty"`
 }
 
 type Deps struct {
@@ -26,17 +28,20 @@ type Deps struct {
 	Prompt       agentkit.PromptAssembler `json:"prompt"`
 	Policies     []agentkit.Policy     `json:"policies,omitempty"`
 	Hooks        agentkit.HookRuntime  `json:"hooks,omitempty"`
+	Compaction   []compaction.Service  `json:"compaction,omitempty"`
 }
 
 type Runtime struct {
 	id           agentkit.AgentID
 	model        string
 	maxSteps     int
+	retry        retrySettings
 	sessionStore agentkit.SessionStore
 	llm          agentkit.LLMProvider
 	tools        agentkit.ToolRuntime
 	prompt       agentkit.PromptAssembler
 	hooks        agentkit.HookRuntime
+	compaction   []compaction.Service
 }
 
 func New(cfg Config, deps Deps) (agentkit.Agent, error) {
@@ -61,14 +66,16 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		return nil, fmt.Errorf("agent requires prompt assembler")
 	}
 	return &Runtime{
-		id:             id,
-		model:          cfg.Model,
-		maxSteps:       maxSteps,
-		sessionStore:   deps.SessionStore,
-		llm:            deps.LLM,
-		tools:          deps.Tools,
+		id:           id,
+		model:        cfg.Model,
+		maxSteps:     maxSteps,
+		retry:        resolveRetrySettings(cfg.Retry),
+		sessionStore: deps.SessionStore,
+		llm:          deps.LLM,
+		tools:        deps.Tools,
 		prompt:       deps.Prompt,
 		hooks:        deps.Hooks,
+		compaction:   deps.Compaction,
 	}, nil
 }
 
@@ -99,6 +106,8 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		return err
 	}
 
+	overflowRecoveryAttempted := false
+
 	for step := 0; step < a.maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -128,7 +137,9 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 			return err
 		}
 
-		assistant, err := a.runStep(stepCtx, sess, input.Emit)
+		stepRetry := newStepRetry(a.retry)
+
+		assistant, err := a.runStepWithOverflowRecovery(stepCtx, sess, input.Emit, stepRetry, &overflowRecoveryAttempted)
 		if err != nil {
 			if ctrl.ShouldContinueAfterInterrupt(ctx, stepCtx, err) {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, step)

@@ -15,4 +15,9 @@ const (
 	EventToolResult      EventType = "tool/result"
 	EventCompaction      EventType = "session/compaction"
 	EventSkillLoad       EventType = "skill/load"
+	EventAutoRetryStart  EventType = "retry/start"
+	EventAutoRetryEnd    EventType = "retry/end"
+	EventSummarizationRetryStart EventType = "summarization/retry/start"
+	EventSummarizationRetryEnd   EventType = "summarization/retry/end"
+	EventOverflowRecovery        EventType = "overflow/recovery"
 )

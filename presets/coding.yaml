@@ -61,6 +61,9 @@ agent.coder:
     hooks: hooks
     prompt: prompt
     tools: tools
+    compaction:
+      - compaction.prune
+      - compaction.summary
 
 sessionStore:
   use: session/store
@@ -103,6 +106,10 @@ compaction.summary:
   config:
     minMessages: 30
     keepRecent: 8
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
   deps:
     llm: llm.summary
 
