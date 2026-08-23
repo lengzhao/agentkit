@@ -37,11 +37,11 @@ func main() {
 		fatal("load config", err)
 	}
 
-	runner, _, err := build.Build[agentkit.Runner](ctx, doc.ToGraph(), doc.RootID)
+	runner, result, err := build.Build[agentkit.Runner](ctx, doc.ToGraph(), doc.RootID)
 	if err != nil {
 		fatal("build runner", err)
 	}
-	if err := runner.Run(ctx); err != nil && ctx.Err() == nil {
+	if err := runner.Run(ctx, result); err != nil && ctx.Err() == nil {
 		fatal("run agent", err)
 	}
 }

@@ -13,8 +13,9 @@ func init() {
 }
 
 var (
-	_ agentkit.Session      = (*Memory)(nil)
-	_ agentkit.Session      = (*JSONL)(nil)
-	_ agentkit.SessionStore = (*Store)(nil)
-	_ agentkit.SessionStore = (*StaticStore)(nil)
+	_ agentkit.Session         = (*Memory)(nil)
+	_ agentkit.Session         = (*JSONL)(nil)
+	_ agentkit.SessionStore    = (*Store)(nil)
+	_ agentkit.SessionStore    = (*StaticStore)(nil)
+	_ agentkit.CommandProvider = (*Store)(nil)
 )

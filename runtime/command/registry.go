@@ -6,91 +6,101 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lengzhao/agentkit/cap/command"
-	"github.com/lengzhao/pluginkit"
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/pluginkit/build"
 )
 
-type Config struct{}
-
-type Deps struct {
-	Handlers []command.Handler `json:"handlers,omitempty"`
-}
-
+// Registry collects slash commands contributed by built plugins.
 type Registry struct {
-	byName map[string]command.Handler
-	descs  []command.Descriptor
+	byName map[string]agentkit.Command
+	descs  []Entry
 }
 
-func init() {
-	pluginkit.Register("command/registry", New)
+// Entry is one command exposed for discovery.
+type Entry struct {
+	Name        string
+	Description string
+	Aliases     []string
 }
 
-func New(_ Config, deps Deps) (command.Registry, error) {
-	r := &Registry{byName: make(map[string]command.Handler)}
-	for _, handler := range deps.Handlers {
-		if handler == nil {
+// Result is the outcome of one slash command dispatch.
+type Result struct {
+	Handled    bool
+	Output     string
+	NewSession agentkit.SessionID
+}
+
+// NewFromProviders builds a registry from explicit command providers.
+func NewFromProviders(providers []agentkit.CommandProvider) (*Registry, error) {
+	r := &Registry{byName: make(map[string]agentkit.Command)}
+	for _, provider := range providers {
+		if provider == nil {
 			continue
 		}
-		registrar, ok := handler.(commandRegistrar)
-		if !ok {
-			return nil, fmt.Errorf("command handler %T must implement Descriptor()", handler)
-		}
-		if err := r.Register(registrar.Descriptor(), handler); err != nil {
-			return nil, err
+		for _, cmd := range provider.Commands() {
+			if cmd == nil {
+				continue
+			}
+			if err := r.register(cmd); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return r, nil
 }
 
-type commandRegistrar interface {
-	Descriptor() command.Descriptor
+// CollectFromBuild gathers every built instance that implements
+// agentkit.CommandProvider and registers its commands.
+func CollectFromBuild(result *build.Result) (*Registry, error) {
+	return NewFromProviders(build.Collect[agentkit.CommandProvider](result))
 }
 
-func (r *Registry) Register(desc command.Descriptor, handler command.Handler) error {
-	name := normalizeName(desc.Name)
+func (r *Registry) register(cmd agentkit.Command) error {
+	name := normalizeName(cmd.Name())
 	if name == "" {
 		return fmt.Errorf("command name is required")
-	}
-	if handler == nil {
-		return fmt.Errorf("command handler is required")
 	}
 	if _, exists := r.byName[name]; exists {
 		return fmt.Errorf("command already registered: %s", name)
 	}
-	r.byName[name] = handler
-	r.descs = append(r.descs, desc)
-	for _, alias := range desc.Aliases {
-		key := normalizeName(alias)
-		if key == "" {
-			continue
-		}
-		if _, exists := r.byName[key]; exists {
-			return fmt.Errorf("command alias already registered: %s", key)
-		}
-		r.byName[key] = handler
+	r.byName[name] = cmd
+	entry := Entry{
+		Name:        name,
+		Description: cmd.Description(),
 	}
+	if alias := normalizeName(cmd.Alias()); alias != "" {
+		if _, exists := r.byName[alias]; exists {
+			return fmt.Errorf("command alias already registered: %s", alias)
+		}
+		r.byName[alias] = cmd
+		entry.Aliases = []string{alias}
+	}
+	r.descs = append(r.descs, entry)
 	return nil
 }
 
-func (r *Registry) Dispatch(ctx context.Context, req command.Request) (command.Result, error) {
-	name := normalizeName(req.Name)
-	if name == "" {
-		return command.Result{}, nil
+func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (Result, error) {
+	key := normalizeName(name)
+	if key == "" {
+		return Result{}, nil
 	}
-	handler, ok := r.byName[name]
+	cmd, ok := r.byName[key]
 	if !ok {
-		return command.Result{}, nil
+		return Result{}, nil
 	}
-	result, err := handler.Handle(ctx, req)
+	out, err := cmd.CommandExec(ctx, args...)
 	if err != nil {
-		return command.Result{}, err
+		return Result{}, err
 	}
-	result.Handled = true
+	result := Result{Handled: true, Output: out}
+	if cmd.Name() == "new" && out != "" {
+		result.NewSession = agentkit.SessionID(out)
+	}
 	return result, nil
 }
 
-func (r *Registry) List() []command.Descriptor {
-	out := make([]command.Descriptor, len(r.descs))
+func (r *Registry) List() []Entry {
+	out := make([]Entry, len(r.descs))
 	copy(out, r.descs)
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Name < out[j].Name
@@ -101,5 +111,3 @@ func (r *Registry) List() []command.Descriptor {
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
-
-var _ command.Registry = (*Registry)(nil)

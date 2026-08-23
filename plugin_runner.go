@@ -1,11 +1,18 @@
 package agentkit
 
-import "context"
+import (
+	"context"
+
+	"github.com/lengzhao/pluginkit/build"
+)
 
 // Runner is the root plugin type. It owns process lifecycle and connects a
 // Platform to a Loop.
 type Runner interface {
-	Run(context.Context) error
+	// Run starts the process. result is the build graph produced alongside this
+	// runner; the implementation may collect optional capabilities such as slash
+	// commands from it before serving traffic.
+	Run(context.Context, *build.Result) error
 	Stop(context.Context) error
 }
 

@@ -233,13 +233,14 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 ### 3.8 Commands（不经过模型）
 
-| Kind | 返回类型 | 说明 |
-|---|---|---|
-| `command/registry` | `command.Registry` | Slash 命令注册与分发 |
-| `command/compact` | `command.Handler` | `/compact` |
-| `command/new` | `command.Handler` | `/new` 新 Session |
-| `command/session` | `command.Handler` | `/session` 显示会话信息 |
-| `command/tree` | `command.Handler` | Session 树导航 |
+Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献；`runner` 在 `Run(ctx, buildResult)` 时通过 `build.Collect[CommandProvider]` 自动收集并挂到支持的平台（如 CLI）。
+
+| 贡献方 | 命令 |
+|---|---|
+| `session/store` | `/new`、`/session` |
+| `hook/before-step` | `/compact` |
+
+无需在 YAML 中单独配置 `command/registry`。
 
 ## 4. 三角色能力包结构
 
@@ -355,7 +356,7 @@ graph:
 | Session | `session/sqlite` |
 | Settings | `settings/file` |
 | Telemetry | `telemetry/otel` |
-| Commands | `command/registry`, `command/compact`, `command/new`, `command/session` |
+| Commands | `agentkit.CommandProvider` + `runner.Run(ctx, *build.Result)` |
 
 ### Phase 3 — 高级编排
 

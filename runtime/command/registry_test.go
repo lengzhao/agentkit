@@ -4,37 +4,42 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/command"
+	"github.com/lengzhao/agentkit"
 )
 
-type stubHandler struct {
+type stubCommand struct {
 	name string
 }
 
-func (s stubHandler) Descriptor() command.Descriptor {
-	return command.Descriptor{Name: s.name, Description: "stub"}
+func (s stubCommand) Name() string        { return s.name }
+func (s stubCommand) Alias() string       { return "" }
+func (s stubCommand) Description() string { return "stub" }
+func (s stubCommand) CommandExec(context.Context, ...string) (string, error) {
+	return "", nil
 }
 
-func (s stubHandler) Handle(_ context.Context, _ command.Request) (command.Result, error) {
-	return command.Result{}, nil
+type stubProvider struct {
+	commands []agentkit.Command
 }
+
+func (p stubProvider) Commands() []agentkit.Command { return p.commands }
 
 func TestRegistryDispatch(t *testing.T) {
 	t.Parallel()
-	r, err := New(Config{}, Deps{Handlers: []command.Handler{
-		stubHandler{name: "ping"},
-	}})
+	r, err := NewFromProviders([]agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{stubCommand{name: "ping"}}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := r.Dispatch(context.Background(), command.Request{Name: "ping"})
+	result, err := r.Dispatch(context.Background(), "ping", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !result.Handled {
 		t.Fatal("expected handled result")
 	}
-	result, err = r.Dispatch(context.Background(), command.Request{Name: "missing"})
+	result, err = r.Dispatch(context.Background(), "missing", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,21 +50,23 @@ func TestRegistryDispatch(t *testing.T) {
 
 func TestRegistryDuplicateName(t *testing.T) {
 	t.Parallel()
-	r := &Registry{byName: make(map[string]command.Handler)}
-	if err := r.Register(command.Descriptor{Name: "ping"}, stubHandler{name: "ping"}); err != nil {
+	r := &Registry{byName: make(map[string]agentkit.Command)}
+	if err := r.register(stubCommand{name: "ping"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Register(command.Descriptor{Name: "ping"}, stubHandler{name: "ping"}); err == nil {
+	if err := r.register(stubCommand{name: "ping"}); err == nil {
 		t.Fatal("expected duplicate registration error")
 	}
 }
 
 func TestRegistryListSorted(t *testing.T) {
 	t.Parallel()
-	r, err := New(Config{}, Deps{Handlers: []command.Handler{
-		stubHandler{name: "zeta"},
-		stubHandler{name: "alpha"},
-	}})
+	r, err := NewFromProviders([]agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{
+			stubCommand{name: "zeta"},
+			stubCommand{name: "alpha"},
+		}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

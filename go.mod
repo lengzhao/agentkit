@@ -8,3 +8,5 @@ require (
 )
 
 require github.com/sashabaranov/go-openai v1.42.0
+
+replace github.com/lengzhao/pluginkit => ../pluginkit

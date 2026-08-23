@@ -38,6 +38,58 @@ func (p *Provider) Hooks() []agentkit.Hook {
 	}
 }
 
+func (p *Provider) Commands() []agentkit.Command {
+	if len(p.services) == 0 {
+		return nil
+	}
+	return []agentkit.Command{compactCommand{
+		sessionStore: p.sessionStore,
+		services:     p.services,
+	}}
+}
+
+type compactCommand struct {
+	sessionStore agentkit.SessionStore
+	services     []compaction.Service
+}
+
+func (compactCommand) Name() string        { return "compact" }
+func (compactCommand) Alias() string       { return "" }
+func (compactCommand) Description() string { return "run session compaction now" }
+
+func (c compactCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
+	if len(args) > 0 {
+		return "", fmt.Errorf("usage: /compact")
+	}
+	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if sessionID == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	sess, err := c.sessionStore.Get(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		return "", err
+	}
+	_, applied, err := compaction.ApplyAll(ctx, c.services, compaction.Request{
+		SessionID: sessionID,
+		AgentID:   agentID,
+		Session:   sess,
+		Messages:  messages,
+		Force:     true,
+	})
+	if err != nil {
+		return "", err
+	}
+	if applied == 0 {
+		return "compaction: nothing to compact", nil
+	}
+	return fmt.Sprintf("compaction: applied %d service(s)", applied), nil
+}
+
 func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) error {
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)

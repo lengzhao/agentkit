@@ -131,7 +131,7 @@ Pi 核心 UX：`steer()` 中断当前 turn、`followUp()` turn 结束后排队�
 Pi 高频命令优先；无 TUI 时走 stderr 文本交互。
 
 - [x] `command/registry` — 注册与分发框架
-- [x] `/compact` — 手动触发 compaction（`command/compact`）
+- [x] `/compact` — 手动触发 compaction（`hook/before-step` 贡献）
 - [x] `/new` — 新 Session
 - [x] `/session` — 显示 session id、路径、消息数
 - [x] `platform/cli` 接入 command registry（替代硬编码 switch）

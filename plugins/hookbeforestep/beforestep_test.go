@@ -1,4 +1,4 @@
-package commandcompact_test
+package hookbeforestep_test
 
 import (
 	"context"
@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/command"
 	"github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/plugins/commandcompact"
 	"github.com/lengzhao/agentkit/plugins/compactionprune"
+	"github.com/lengzhao/agentkit/plugins/hookbeforestep"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-func TestCompactCommandAppliesPrune(t *testing.T) {
+func TestCompactCommand(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	store, err := session.NewStore(session.StoreConfig{Dir: dir})
@@ -43,24 +42,28 @@ func TestCompactCommandAppliesPrune(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := commandcompact.NewCompact(commandcompact.CompactConfig{AgentID: "coder"}, commandcompact.CompactDeps{
+	provider, err := hookbeforestep.New(hookbeforestep.Config{}, hookbeforestep.Deps{
 		SessionStore: store,
 		Services:     []compaction.Service{prune},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	cmdProvider, ok := provider.(agentkit.CommandProvider)
+	if !ok {
+		t.Fatal("expected hook provider to implement CommandProvider")
+	}
+	commands := cmdProvider.Commands()
+	if len(commands) != 1 || commands[0].Name() != "compact" {
+		t.Fatalf("unexpected commands: %+v", commands)
+	}
 
-	var out strings.Builder
-	_, err = handler.Handle(context.Background(), command.Request{
-		Name:      "compact",
-		SessionID: sessionID,
-		ErrOut:    &out,
-	})
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	out, err := commands[0].CommandExec(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "applied 1 service") {
-		t.Fatalf("unexpected output: %q", out.String())
+	if !strings.Contains(out, "applied 1 service") {
+		t.Fatalf("unexpected output: %q", out)
 	}
 }

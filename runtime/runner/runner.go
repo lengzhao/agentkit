@@ -10,6 +10,8 @@ import (
 	"os"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/command"
+	"github.com/lengzhao/pluginkit/build"
 )
 
 type Config struct {
@@ -37,7 +39,10 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	return &Root{platform: deps.Platform, loop: deps.Loop}, nil
 }
 
-func (r *Root) Run(ctx context.Context) error {
+func (r *Root) Run(ctx context.Context, result *build.Result) error {
+	if err := r.attachCommands(result); err != nil {
+		return err
+	}
 	for {
 		event, err := r.platform.Receive(ctx)
 		if err != nil {
@@ -77,6 +82,23 @@ func (r *Root) Run(ctx context.Context) error {
 			continue
 		}
 	}
+}
+
+func (r *Root) attachCommands(result *build.Result) error {
+	if result == nil {
+		return nil
+	}
+	registry, err := command.CollectFromBuild(result)
+	if err != nil {
+		return err
+	}
+	if registry == nil {
+		return nil
+	}
+	if p, ok := r.platform.(interface{ SetCommands(*command.Registry) }); ok {
+		p.SetCommands(registry)
+	}
+	return nil
 }
 
 func (r *Root) Stop(context.Context) error { return nil }

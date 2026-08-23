@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/command"
+	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -21,9 +21,7 @@ type Config struct {
 	DefaultSessionID string `json:"defaultSessionId"`
 }
 
-type Deps struct {
-	Commands command.Registry `json:"commands,omitempty"`
-}
+type Deps struct{}
 
 type Platform struct {
 	initialPrompt string
@@ -31,7 +29,7 @@ type Platform struct {
 	done          bool
 	welcomed      bool
 	reader        *bufio.Reader
-	commands      command.Registry
+	commands      *command.Registry
 	sessionID     agentkit.SessionID
 }
 
@@ -48,9 +46,13 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		initialPrompt: initial,
 		once:          cfg.Once,
 		reader:        bufio.NewReader(os.Stdin),
-		commands:      deps.Commands,
 		sessionID:     sessionID,
 	}, nil
+}
+
+// SetCommands attaches slash commands collected after the instance graph is built.
+func (p *Platform) SetCommands(commands *command.Registry) {
+	p.commands = commands
 }
 
 func initialPromptFromArgs(args []string) string {
@@ -119,14 +121,8 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 		return true, nil
 	}
 
-	result, err := p.commands.Dispatch(ctx, command.Request{
-		Name:       name,
-		Args:       args,
-		SessionID:  p.sessionID,
-		PlatformID: "cli",
-		ErrOut:     os.Stderr,
-		Out:        os.Stdout,
-	})
+	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, p.sessionID)
+	result, err := p.commands.Dispatch(cmdCtx, name, splitArgs(args))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "command error: %v\n", err)
 		return true, nil
@@ -135,8 +131,12 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
 		return true, nil
 	}
+	if result.Output != "" {
+		fmt.Fprintln(os.Stderr, result.Output)
+	}
 	if result.NewSession != "" {
 		p.sessionID = result.NewSession
+		fmt.Fprintf(os.Stderr, "new session: %s\n", p.sessionID)
 	}
 	return true, nil
 }
@@ -246,6 +246,14 @@ func parseSlashCommand(line string) (name, args string, ok bool) {
 		args = strings.TrimSpace(body[len(fields[0]):])
 	}
 	return name, args, true
+}
+
+func splitArgs(args string) []string {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return nil
+	}
+	return strings.Fields(args)
 }
 
 func textOf(msg agentkit.ModelMessage) string {
