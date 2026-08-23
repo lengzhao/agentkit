@@ -95,7 +95,7 @@ func (r *Root) attachCommands(result *build.Result) error {
 	if registry == nil {
 		return nil
 	}
-	if p, ok := r.platform.(interface{ SetCommands(*command.Registry) }); ok {
+	if p, ok := r.platform.(agentkit.CommandHost); ok {
 		p.SetCommands(registry)
 	}
 	return nil

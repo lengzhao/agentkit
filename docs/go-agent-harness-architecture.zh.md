@@ -1066,7 +1066,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 - `agentkit session replay <id>`：从 Session 日志重放模型可见上下文。
 - `agentkit hooks list`：展示已装配 hook 顺序和提供插件。
 
-日志使用 Go 标准库 `log/slog`。每条启动、停止、工具执行、LLM 请求、审批决策日志都应带 `plugin_id`、`plugin_kind`、`session_id`、`agent_id` 或 `tool_call_id`。
+日志使用 Go 标准库 `log/slog`。`cmd/agent` 默认写入 `.agent/agent.log`，避免干扰 CLI TUI；`.agent/` 已在 `.gitignore` 中。每条启动、停止、工具执行、LLM 请求、审批决策日志都应带 `plugin_id`、`plugin_kind`、`session_id`、`agent_id` 或 `tool_call_id`。
 
 错误分类也应统一，便于日志、CLI、SDK 和模型可见错误复用：
 

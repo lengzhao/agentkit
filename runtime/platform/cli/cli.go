@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -29,7 +28,7 @@ type Platform struct {
 	done          bool
 	welcomed      bool
 	reader        *bufio.Reader
-	commands      *command.Registry
+	commands      agentkit.Commands
 	sessionID     agentkit.SessionID
 }
 
@@ -51,9 +50,11 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 }
 
 // SetCommands attaches slash commands collected after the instance graph is built.
-func (p *Platform) SetCommands(commands *command.Registry) {
+func (p *Platform) SetCommands(commands agentkit.Commands) {
 	p.commands = commands
 }
+
+var _ agentkit.CommandHost = (*Platform)(nil)
 
 func initialPromptFromArgs(args []string) string {
 	if len(args) == 0 {
@@ -127,7 +128,7 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 		fmt.Fprintf(os.Stderr, "command error: %v\n", err)
 		return true, nil
 	}
-	if !result.Handled {
+	if result == nil {
 		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
 		return true, nil
 	}
@@ -221,10 +222,10 @@ func (p *Platform) printHelp() {
 	fmt.Fprintln(os.Stderr, "  /help, /h, /?     show this help")
 	fmt.Fprintln(os.Stderr, "  /exit, /quit      exit the session")
 	if p.commands != nil {
-		for _, desc := range p.commands.List() {
-			line := fmt.Sprintf("  /%-14s %s", desc.Name, desc.Description)
-			if len(desc.Aliases) > 0 {
-				line += fmt.Sprintf(" (aliases: %s)", strings.Join(desc.Aliases, ", "))
+		for _, cmd := range p.commands.List() {
+			line := fmt.Sprintf("  /%-14s %s", cmd.Name(), cmd.Description())
+			if alias := cmd.Alias(); alias != "" {
+				line += fmt.Sprintf(" (alias: %s)", alias)
 			}
 			fmt.Fprintln(os.Stderr, line)
 		}

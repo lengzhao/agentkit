@@ -36,14 +36,14 @@ func TestRegistryDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Handled {
+	if result == nil {
 		t.Fatal("expected handled result")
 	}
 	result, err = r.Dispatch(context.Background(), "missing", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Handled {
+	if result != nil {
 		t.Fatal("expected unhandled result")
 	}
 }
@@ -71,7 +71,7 @@ func TestRegistryListSorted(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := r.List()
-	if len(list) != 2 || list[0].Name != "alpha" || list[1].Name != "zeta" {
+	if len(list) != 2 || list[0].Name() != "alpha" || list[1].Name() != "zeta" {
 		t.Fatalf("unexpected list order: %+v", list)
 	}
 }

@@ -1,3 +1,5 @@
+github.com/lengzhao/pluginkit v0.0.0-20260823142452-a1aa5d68b6ae h1:fiETDt2nGdc+nw3HggGhg5jUJWH1cWs1Q11dogMmMys=
+github.com/lengzhao/pluginkit v0.0.0-20260823142452-a1aa5d68b6ae/go.mod h1:S5MLIgPYaRcG9zw1jRqF2RxTZwrE2DUC0rLWslk1Wm4=
 github.com/sashabaranov/go-openai v1.42.0 h1:fgeZx7/D8dRT//PwXAGe9ylOMtj6vrs999uWF71K+f8=
 github.com/sashabaranov/go-openai v1.42.0/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=

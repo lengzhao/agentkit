@@ -16,3 +16,20 @@ type Command interface {
 	Description() string
 	CommandExec(ctx context.Context, args ...string) (string, error)
 }
+
+// CommandResult is the outcome of a handled slash command.
+type CommandResult struct {
+	Output     string
+	NewSession SessionID
+}
+
+// Commands is a post-build slash command catalog for platforms.
+type Commands interface {
+	Dispatch(ctx context.Context, name string, args []string) (*CommandResult, error)
+	List() []Command
+}
+
+// CommandHost is implemented by platforms that accept slash commands.
+type CommandHost interface {
+	SetCommands(Commands)
+}

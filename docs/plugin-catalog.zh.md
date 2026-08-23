@@ -233,7 +233,7 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 ### 3.8 Commands（不经过模型）
 
-Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献；`runner` 在 `Run(ctx, buildResult)` 时通过 `build.Collect[CommandProvider]` 自动收集并挂到支持的平台（如 CLI）。
+Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献；`runner` 在 `Run(ctx, buildResult)` 时通过 `build.Collect[CommandProvider]` 收集为 `agentkit.Commands`，并挂到实现 `agentkit.CommandHost` 的平台（如 CLI）。
 
 | 贡献方 | 命令 |
 |---|---|
@@ -356,7 +356,7 @@ graph:
 | Session | `session/sqlite` |
 | Settings | `settings/file` |
 | Telemetry | `telemetry/otel` |
-| Commands | `agentkit.CommandProvider` + `runner.Run(ctx, *build.Result)` |
+| Commands | `agentkit.CommandProvider` → `Commands` + `CommandHost` |
 
 ### Phase 3 — 高级编排
 

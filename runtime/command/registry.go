@@ -13,21 +13,7 @@ import (
 // Registry collects slash commands contributed by built plugins.
 type Registry struct {
 	byName map[string]agentkit.Command
-	descs  []Entry
-}
-
-// Entry is one command exposed for discovery.
-type Entry struct {
-	Name        string
-	Description string
-	Aliases     []string
-}
-
-// Result is the outcome of one slash command dispatch.
-type Result struct {
-	Handled    bool
-	Output     string
-	NewSession agentkit.SessionID
+	cmds   []agentkit.Command
 }
 
 // NewFromProviders builds a registry from explicit command providers.
@@ -64,49 +50,46 @@ func (r *Registry) register(cmd agentkit.Command) error {
 		return fmt.Errorf("command already registered: %s", name)
 	}
 	r.byName[name] = cmd
-	entry := Entry{
-		Name:        name,
-		Description: cmd.Description(),
-	}
 	if alias := normalizeName(cmd.Alias()); alias != "" {
 		if _, exists := r.byName[alias]; exists {
 			return fmt.Errorf("command alias already registered: %s", alias)
 		}
 		r.byName[alias] = cmd
-		entry.Aliases = []string{alias}
 	}
-	r.descs = append(r.descs, entry)
+	r.cmds = append(r.cmds, cmd)
 	return nil
 }
 
-func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (Result, error) {
+func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (*agentkit.CommandResult, error) {
 	key := normalizeName(name)
 	if key == "" {
-		return Result{}, nil
+		return nil, nil
 	}
 	cmd, ok := r.byName[key]
 	if !ok {
-		return Result{}, nil
+		return nil, nil
 	}
 	out, err := cmd.CommandExec(ctx, args...)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	result := Result{Handled: true, Output: out}
+	result := &agentkit.CommandResult{Output: out}
 	if cmd.Name() == "new" && out != "" {
 		result.NewSession = agentkit.SessionID(out)
 	}
 	return result, nil
 }
 
-func (r *Registry) List() []Entry {
-	out := make([]Entry, len(r.descs))
-	copy(out, r.descs)
+func (r *Registry) List() []agentkit.Command {
+	out := make([]agentkit.Command, len(r.cmds))
+	copy(out, r.cmds)
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
+		return out[i].Name() < out[j].Name()
 	})
 	return out
 }
+
+var _ agentkit.Commands = (*Registry)(nil)
 
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
