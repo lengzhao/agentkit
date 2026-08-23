@@ -27,7 +27,7 @@ type JSONL struct {
 	mem  *Memory
 }
 
-func NewJSONL(cfg JSONLConfig) (*JSONL, error) {
+func newJSONL(cfg JSONLConfig) (*JSONL, error) {
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("session jsonl path is required")
 	}
@@ -38,7 +38,7 @@ func NewJSONL(cfg JSONLConfig) (*JSONL, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.Path), 0o755); err != nil {
 		return nil, err
 	}
-	mem, err := NewMemory(MemoryConfig{ID: id})
+	mem, err := newMemory(MemoryConfig{ID: id})
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +47,10 @@ func NewJSONL(cfg JSONLConfig) (*JSONL, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func NewJSONL(cfg JSONLConfig) (agentkit.Session, error) {
+	return newJSONL(cfg)
 }
 
 func (s *JSONL) loadExisting() error {

@@ -25,7 +25,7 @@ type Default struct {
 	sessionControls sync.Map // SessionID -> *Control
 }
 
-func New(cfg Config, deps Deps) (*Default, error) {
+func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 	agents := make(map[agentkit.AgentID]agentkit.Agent, len(deps.Agents))
 	for _, ag := range deps.Agents {
 		if ag == nil {

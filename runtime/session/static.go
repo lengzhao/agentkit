@@ -33,7 +33,7 @@ type StaticDeps struct {
 	Session agentkit.Session `json:"session"`
 }
 
-func NewStatic(_ StaticConfig, deps StaticDeps) (*StaticStore, error) {
+func NewStatic(_ StaticConfig, deps StaticDeps) (agentkit.SessionStore, error) {
 	if deps.Session == nil {
 		return nil, fmt.Errorf("session/static requires session dependency")
 	}

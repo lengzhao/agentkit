@@ -18,7 +18,7 @@ type Assembler struct {
 	sections []agentkit.Section
 }
 
-func NewAssembler(_ AssemblerConfig, deps AssemblerDeps) (*Assembler, error) {
+func NewAssembler(_ AssemblerConfig, deps AssemblerDeps) (agentkit.PromptAssembler, error) {
 	var sections []agentkit.Section
 	for _, provider := range deps.Sections {
 		if provider == nil {

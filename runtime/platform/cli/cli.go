@@ -35,7 +35,7 @@ type Platform struct {
 	sessionID     agentkit.SessionID
 }
 
-func New(cfg Config, deps Deps) (*Platform, error) {
+func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	initial := cfg.Prompt
 	if initial == "" {
 		initial = initialPromptFromArgs(os.Args[1:])

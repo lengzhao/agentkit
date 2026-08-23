@@ -23,12 +23,16 @@ type Memory struct {
 	maxToolResultBytes int
 }
 
-func NewMemory(cfg MemoryConfig) (*Memory, error) {
+func newMemory(cfg MemoryConfig) (*Memory, error) {
 	id := cfg.ID
 	if id == "" {
 		id = agentkit.SessionID("mem-" + time.Now().UTC().Format("20060102-150405.000"))
 	}
 	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes}, nil
+}
+
+func NewMemory(cfg MemoryConfig) (agentkit.Session, error) {
+	return newMemory(cfg)
 }
 
 func (s *Memory) ID() agentkit.SessionID { return s.id }

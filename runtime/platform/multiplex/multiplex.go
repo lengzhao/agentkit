@@ -33,7 +33,7 @@ type incoming struct {
 	err   error
 }
 
-func New(cfg Config, deps Deps) (*Platform, error) {
+func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if len(deps.Platforms) == 0 {
 		return nil, fmt.Errorf("multiplex requires at least one platform")
 	}

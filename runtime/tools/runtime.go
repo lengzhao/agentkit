@@ -36,7 +36,7 @@ type Runtime struct {
 	toolTimeouts   map[string]time.Duration
 }
 
-func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (*Runtime, error) {
+func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, error) {
 	tools := make(map[string]agentkit.Tool, len(deps.Tools))
 	for _, tool := range deps.Tools {
 		if tool == nil {

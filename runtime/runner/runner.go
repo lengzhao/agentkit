@@ -26,7 +26,7 @@ type Root struct {
 	loop     agentkit.Loop
 }
 
-func New(cfg Config, deps Deps) (*Root, error) {
+func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if deps.Platform == nil {
 		return nil, fmt.Errorf("runner requires platform")
 	}

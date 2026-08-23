@@ -27,7 +27,7 @@ type Scripted struct {
 	idx   int
 }
 
-func NewScripted(cfg ScriptedConfig) (*Scripted, error) {
+func NewScripted(cfg ScriptedConfig) (agentkit.LLMProvider, error) {
 	if len(cfg.Steps) == 0 {
 		return nil, fmt.Errorf("scripted llm requires at least one step")
 	}

@@ -34,7 +34,7 @@ type OpenAI struct {
 	client  *http.Client
 }
 
-func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (*OpenAI, error) {
+func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) {
 	model := cfg.Model
 	if model == "" {
 		model = "gpt-4o"

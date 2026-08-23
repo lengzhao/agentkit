@@ -24,7 +24,7 @@ func init() {
 	pluginkit.Register("hooks/runtime", New)
 }
 
-func New(_ Config, deps Deps) (*Runtime, error) {
+func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 	var beforeStep []agentkit.BeforeStepHook
 	var beforeTool []agentkit.BeforeToolHook
 	var afterTool []agentkit.AfterToolHook

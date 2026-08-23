@@ -23,7 +23,7 @@ type Store struct {
 	cache map[agentkit.SessionID]*JSONL
 }
 
-func NewStore(cfg StoreConfig) (*Store, error) {
+func NewStore(cfg StoreConfig) (agentkit.SessionStore, error) {
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("session store dir is required")
 	}
@@ -49,7 +49,7 @@ func (s *Store) Get(_ context.Context, id agentkit.SessionID) (agentkit.Session,
 	if err != nil {
 		return nil, err
 	}
-	sess, err := NewJSONL(JSONLConfig{Path: path, ID: id})
+	sess, err := newJSONL(JSONLConfig{Path: path, ID: id})
 	if err != nil {
 		return nil, err
 	}

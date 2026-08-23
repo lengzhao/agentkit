@@ -39,7 +39,7 @@ type Runtime struct {
 	hooks        agentkit.HookRuntime
 }
 
-func New(cfg Config, deps Deps) (*Runtime, error) {
+func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	id := cfg.ID
 	if id == "" {
 		id = "coding"
