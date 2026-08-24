@@ -465,7 +465,9 @@ MVP 配置使用两层 YAML 合并后得到 `pluginkit` root graph：
 workspace.default:
   use: workspace/default
   config:
-    root: .
+    global: ~/.agentkit
+    local: .
+    scope: local
 
 llm.default:
   use: llm/openai-compatible
@@ -916,11 +918,11 @@ Prompt 组装器管理多个 section：
 ```go
 type Section struct {
     Name  string
-    Order int
-    Scope Scope
-    Build func(context.Context, PromptRequest) (string, error)
+    Build func(context.Context, PromptRequest) (PromptSection, error)
 }
 ```
+
+`prompt/assembler/default` 按 `deps.sections` 列表顺序组装，不再使用显式 `order` 字段。
 
 插件可以作为 `prompt/section/*` 返回 Section 或 SectionProvider。Prompt 组装结果必须能追溯到 Session 日志和当前配置；临时运行态信息如果进入模型，也需要对应事件或可重建来源。
 
@@ -1047,8 +1049,9 @@ agentkit/
 ├── spine/
 ├── cap/
 ├── plugins/
-│   └── read-file/
-│       └── plugin.go
+│   ├── fs/                 # fs/local, fs/memory, fs/readonly
+│   ├── tool/               # tool/read-file, tool/write-file, ...
+│   └── compaction/         # compaction/summary, compaction/prune-tool-results
 ├── presets/
 │   └── coding.yaml
 └── scripts/
@@ -1058,11 +1061,12 @@ agentkit/
 生成文件：
 
 ```go
-package plugins
+package all
 
 import (
-    _ "github.com/lengzhao/agentkit/plugins/read-file"
-    _ "github.com/lengzhao/agentkit/plugins/shell"
+    _ "github.com/lengzhao/agentkit/plugins/fs"
+    _ "github.com/lengzhao/agentkit/plugins/tool"
+    _ "github.com/lengzhao/agentkit/plugins/compaction"
 )
 ```
 

@@ -70,4 +70,6 @@ sessionStore.default:
 workspace.default:
   use: workspace/default
   config:
-    root: .
+    global: ~/.agentkit
+    local: .
+    scope: local

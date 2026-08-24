@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"context"
-	"sort"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/pluginkit"
@@ -47,23 +46,11 @@ func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 			}
 		}
 	}
-	sortHooks(beforeStep)
-	sortHooks(beforeTool)
-	sortHooks(afterTool)
 	return &Runtime{
 		beforeStep: beforeStep,
 		beforeTool: beforeTool,
 		afterTool:  afterTool,
 	}, nil
-}
-
-func sortHooks[H agentkit.Hook](hooks []H) {
-	sort.Slice(hooks, func(i, j int) bool {
-		if hooks[i].Order() == hooks[j].Order() {
-			return false
-		}
-		return hooks[i].Order() < hooks[j].Order()
-	})
 }
 
 func (r *Runtime) BeforeStep(ctx context.Context, in *agentkit.BeforeStep) error {

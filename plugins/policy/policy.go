@@ -1,0 +1,33 @@
+package policy
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/pluginkit"
+)
+
+func init() {
+	pluginkit.Register("policy/deny-dangerous-shell", New)
+}
+
+func New() (agentkit.Policy, error) {
+	return agentkit.PolicyFunc(func(_ context.Context, in agentkit.PolicyInput) agentkit.Decision {
+		if in.ToolCall == nil || in.ToolCall.Name != "bash" {
+			return agentkit.Allow()
+		}
+		var args struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal(in.ToolCall.Input, &args); err != nil {
+			return agentkit.Deny("invalid shell arguments")
+		}
+		cmd := strings.TrimSpace(strings.ToLower(args.Command))
+		if strings.Contains(cmd, "rm -rf /") || strings.Contains(cmd, "rm -rf /*") {
+			return agentkit.Deny("dangerous shell command")
+		}
+		return agentkit.Allow()
+	}), nil
+}

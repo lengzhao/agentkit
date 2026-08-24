@@ -2,7 +2,6 @@ package prompt
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -26,12 +25,6 @@ func NewAssembler(_ AssemblerConfig, deps AssemblerDeps) (agentkit.PromptAssembl
 		}
 		sections = append(sections, provider.Sections()...)
 	}
-	sort.Slice(sections, func(i, j int) bool {
-		if sections[i].Order == sections[j].Order {
-			return sections[i].Name < sections[j].Name
-		}
-		return sections[i].Order < sections[j].Order
-	})
 	return &Assembler{sections: sections}, nil
 }
 

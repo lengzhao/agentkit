@@ -2,17 +2,23 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/pluginkit"
 )
 
 type Config struct {
-	Root string `json:"root"`
+	Root   string `json:"root"`   // deprecated: alias for global
+	Global string `json:"global"`
+	Local  string `json:"local"`
+	Scope  string `json:"scope"` // global | local
 }
 
 type Service struct {
-	root string
+	globalRoot string
+	localRoot  string
+	scope      string
 }
 
 func init() {
@@ -20,19 +26,58 @@ func init() {
 }
 
 func New(cfg Config) (cw.Service, error) {
-	root := cfg.Root
-	if root == "" {
-		root = "."
+	global := cfg.Global
+	if global == "" {
+		global = cfg.Root
 	}
-	abs, err := cw.Resolve(root)
+	if global == "" {
+		global = "~/.agentkit"
+	}
+	local := cfg.Local
+	if local == "" {
+		local = "."
+	}
+	scope := cfg.Scope
+	if scope == "" {
+		scope = cw.ScopeGlobal
+	}
+	if scope != cw.ScopeGlobal && scope != cw.ScopeLocal {
+		return nil, fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
+	}
+
+	globalAbs, err := cw.Resolve(global)
 	if err != nil {
 		return nil, err
 	}
-	return &Service{root: abs}, nil
+	localAbs, err := cw.Resolve(local)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{globalRoot: globalAbs, localRoot: localAbs, scope: scope}, nil
 }
 
-func (s *Service) Resolve(ctx context.Context, rel string) (string, error) {
-	return cw.ResolveRel(s.root, rel)
+func (s *Service) Resolve(_ context.Context, rel string) (string, error) {
+	scope, path, scoped := cw.ParseScoped(rel)
+	if !scoped {
+		scope = s.scope
+		path = rel
+	}
+	root, err := s.rootFor(scope)
+	if err != nil {
+		return "", err
+	}
+	return cw.ResolveRel(root, path)
+}
+
+func (s *Service) rootFor(scope string) (string, error) {
+	switch scope {
+	case cw.ScopeGlobal:
+		return s.globalRoot, nil
+	case cw.ScopeLocal:
+		return s.localRoot, nil
+	default:
+		return "", fmt.Errorf("unknown workspace scope %q", scope)
+	}
 }
 
 var _ cw.Service = (*Service)(nil)

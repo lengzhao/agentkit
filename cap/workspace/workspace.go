@@ -8,11 +8,34 @@ import (
 	"strings"
 )
 
+const (
+	ScopeGlobal = "global"
+	ScopeLocal  = "local"
+)
+
 // Service resolves config-relative paths for the current request context.
 // Implementations may scope roots by session, agent, or other ctx values;
 // swap the workspace plugin to change isolation policy.
 type Service interface {
 	Resolve(ctx context.Context, rel string) (string, error)
+}
+
+// ParseScoped splits scoped paths such as "global:skills" or "local:.".
+// Bare paths and absolute paths (~/foo, /abs) are not scoped.
+func ParseScoped(rel string) (scope, path string, ok bool) {
+	i := strings.Index(rel, ":")
+	if i <= 0 {
+		return "", rel, false
+	}
+	prefix := rel[:i]
+	if prefix != ScopeGlobal && prefix != ScopeLocal {
+		return "", rel, false
+	}
+	path = rel[i+1:]
+	if path == "" {
+		path = "."
+	}
+	return prefix, path, true
 }
 
 // Resolve expands ~/ and returns an absolute path. Use at build time for workspace.root config.

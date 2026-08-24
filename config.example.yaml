@@ -1,18 +1,40 @@
 # 复制为 config.yaml 做本地 override（L1 覆盖 L0 config.base.yaml）。
 # 同 id 的实例会整颗替换；只写需要改的实例即可。
 
-# 示例：把工作区改到当前项目目录
-# workspace.default:
-#   use: workspace/default
-#   config:
-#     root: .
+# 示例：切换工作区 scope（global=~/.agentkit，local=当前目录）
+workspace.default:
+  use: workspace/default
+  config:
+    global: ~/.agentkit
+    local: .
+    scope: local
 
 # 示例：覆盖模型（需写完整实例块）
-# llm.default:
-#   use: llm/openai-compatible
-#   config:
-#     model: gpt-4o
-#     baseUrl: https://api.openai.com/v1
-#     apiKeyRef: env:OPENAI_API_KEY
-#   deps:
-#     credentials: credentials.default
+llm.default:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+  deps:
+    credentials: credentials.default
+
+# 示例：自定义 Agent system prompt
+# sections 按 deps 列表顺序拼进 system message。
+#
+prompt.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.custom.default
+      - prompt.agents-md.default
+      - prompt.skills.default
+prompt.custom.default:
+  use: prompt/section/static
+  config:
+    name: custom-instructions
+    content: |
+      你是一名资深 Go 工程师。
+      - 优先最小化 diff，不做无关改动
+      - 修改后运行测试再声称完成
+      - 用中文回复

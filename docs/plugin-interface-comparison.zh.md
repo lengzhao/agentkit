@@ -408,7 +408,7 @@ type Approval interface {
 ```go
 type HookProvider interface { Hooks() []Hook }
 type BeforeStepHook / BeforeToolHook / AfterToolHook
-// 均带 Order() int
+// HookProvider 贡献的 hook 按 deps.providers 列表顺序执行；同一 provider 内 Hooks() 返回顺序保留。
 ```
 
 **DSH 等价（节选）**
@@ -427,7 +427,7 @@ type BeforeStepHook / BeforeToolHook / AfterToolHook
 | 对比项 | AgentKit | DSH |
 |---|---|---|
 | 钩子类型 | 3 种 typed interface | 20+ 事件点 |
-| 链式语义 | `Order()` 排序，error 中断 | waterfall `next()` 委托 |
+| 链式语义 | deps 列表顺序，error 中断 | waterfall `next()` 委托 |
 | 改写 vs 否决 | Hook 返回 error 中断 | `PreStepDecision.reject` / `PreToolDecision.deny` 显式 |
 | Scope | 无 | agent-scoped 监听器 |
 

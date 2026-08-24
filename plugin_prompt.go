@@ -13,7 +13,6 @@ type SectionProvider interface {
 
 type Section struct {
 	Name  string
-	Order int
 	Build func(context.Context, PromptRequest) (PromptSection, error)
 }
 

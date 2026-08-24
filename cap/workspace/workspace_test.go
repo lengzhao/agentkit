@@ -23,6 +23,22 @@ func TestResolveHome(t *testing.T) {
 	}
 }
 
+func TestParseScoped(t *testing.T) {
+	t.Parallel()
+	scope, path, ok := ParseScoped("global:skills")
+	if !ok || scope != ScopeGlobal || path != "skills" {
+		t.Fatalf("ParseScoped(global:skills)=%q %q %v", scope, path, ok)
+	}
+	scope, path, ok = ParseScoped("local:")
+	if !ok || scope != ScopeLocal || path != "." {
+		t.Fatalf("ParseScoped(local:)=%q %q %v", scope, path, ok)
+	}
+	_, _, ok = ParseScoped("/abs/path")
+	if ok {
+		t.Fatal("expected absolute path to be unscoped")
+	}
+}
+
 func TestResolveRelRelative(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()

@@ -6,14 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/plugins/editfile"
-	"github.com/lengzhao/agentkit/plugins/findtool"
-	"github.com/lengzhao/agentkit/plugins/greptool"
-	"github.com/lengzhao/agentkit/plugins/listdir"
-	"github.com/lengzhao/agentkit/plugins/readfile"
-	"github.com/lengzhao/agentkit/plugins/shelltool"
-	"github.com/lengzhao/agentkit/plugins/skilltool"
-	"github.com/lengzhao/agentkit/plugins/writefile"
+	"github.com/lengzhao/agentkit/plugins/tool"
 )
 
 // schemaOf builds a throwaway tool over In so we exercise the same reflection
@@ -44,7 +37,7 @@ func TestToolInputSchemas(t *testing.T) {
 	}{
 		{
 			name: "find",
-			got:  schemaOf[findtool.Input](t),
+			got:  schemaOf[tool.FindInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -56,7 +49,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "grep",
-			got:  schemaOf[greptool.Input](t),
+			got:  schemaOf[tool.GrepInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -70,7 +63,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "ls",
-			got:  schemaOf[listdir.Input](t),
+			got:  schemaOf[tool.ListDirInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -80,7 +73,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "read",
-			got:  schemaOf[readfile.Input](t),
+			got:  schemaOf[tool.ReadInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -91,7 +84,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "write",
-			got:  schemaOf[writefile.Input](t),
+			got:  schemaOf[tool.WriteInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -103,7 +96,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "bash",
-			got:  schemaOf[shelltool.Input](t),
+			got:  schemaOf[tool.ShellInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -114,7 +107,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "skill",
-			got:  schemaOf[skilltool.Input](t),
+			got:  schemaOf[tool.SkillInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -125,7 +118,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "edit",
-			got:  schemaOf[editfile.Input](t),
+			got:  schemaOf[tool.EditInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -149,8 +142,6 @@ func TestToolInputSchemas(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Compare as JSON so Required ordering and nested pointers are
-			// checked structurally rather than by field identity.
 			got, err := json.Marshal(tc.got)
 			if err != nil {
 				t.Fatal(err)

@@ -3,7 +3,9 @@
 workspace.default:
   use: workspace/default
   config:
-    root: .
+    global: ~/.agentkit
+    local: .
+    scope: local
 
 sessionStore.default:
   use: session/store
@@ -16,7 +18,8 @@ skills.default:
   use: skill/filesystem
   config:
     dirs:
-      - .cursor/skills
-      - skills
+      - local:skills
+      - local:.cursor/skills
+      - global:skills
   deps:
     workspace: workspace.default

@@ -4,16 +4,25 @@ Coding preset 的文件与 Shell 边界策略。
 
 ## 结论
 
-工作目录由 `workspace/default` 插件定义；需要解析相对路径的插件（`fs/local`、`shell/bash`、`session/store` 等）**依赖** `workspace` 实例，在运行时调用 `workspace.Resolve(ctx, rel)`。要换隔离策略（如按 session 分目录、沙箱根），只需替换 `workspace` 插件实现。
+`workspace/default` 同时定义 **global**（默认 `~/.agentkit`）与 **local**（默认当前目录 `.`）两个根，并通过 `scope` 选择默认使用哪一个（L0 默认 `global`）。
+
+需要解析相对路径的插件（`fs/local`、`shell/bash`、`session/store`、`skill/filesystem` 等）调用 `workspace.Resolve(ctx, rel)`。路径可加前缀显式指定根：
+
+| 写法 | 含义 |
+|---|---|
+| `sessions` | 相对当前 `scope` 默认根 |
+| `global:skills` | `~/.agentkit/skills` |
+| `local:skills` | `./skills`（项目目录下） |
+| `~/foo` | 绝对路径（不受 scope 影响） |
 
 | 实例 | Kind | 配置 | 解析结果 |
 |---|---|---|---|
-| `workspace.default` | `workspace/default` | `root: .` 或 `~/.agentkit` | 工作区根（绝对路径） |
+| `workspace.default` | `workspace/default` | `global` + `local` + `scope` | 默认根由 scope 决定 |
 | `fs.workspace.default` | `fs/local` | `root: .` | `workspace.Resolve(ctx, ".")` |
-| `shell.bash.default` | `shell/bash` | `workDir: .` | 工作区根 |
-| `sessionStore.default` | `session/store` | `dir: .agent/sessions` | `工作区根/.agent/sessions` |
+| `shell.bash.default` | `shell/bash` | `workDir: .` | 工作区默认根 |
+| `sessionStore.default` | `session/store` | `dir: sessions` | 相对默认根 |
 
-`config.base.yaml`（L0）默认 `workspace.default.config.root: ~/.agentkit`；`presets/coding.yaml`（L1 overlay）覆盖为 `.`（当前项目目录）。
+`config.base.yaml`（L0）默认 `scope: global`；`presets/coding.yaml`（L1）覆盖为 `scope: local`，文件工具与 shell 在项目目录执行。
 
 Session 日志不属于工具 FS 工作区，但目录同样通过 `workspace` 解析。
 
@@ -23,12 +32,9 @@ Session 日志不属于工具 FS 工作区，但目录同样通过 `workspace` �
 workspace.default:
   use: workspace/default
   config:
-    root: .
-
-runner.default:
-  deps:
-    platform: platform.default
-    loop: loop.default
+    global: ~/.agentkit
+    local: .
+    scope: local
 
 fs.workspace.default:
   use: fs/local
@@ -36,15 +42,27 @@ fs.workspace.default:
     root: .
   deps:
     workspace: workspace.default
-
-tool.read-file.default:
-  deps:
-    fs: fs.workspace.readonly.default
 ```
 
 - **read / grep / find / ls** 走只读包装，即使工具实现有 write 能力也无法落盘。
 - **write / edit** 直接绑定 workspace，可修改项目内文件。
-- **shell** 在 workspace 根目录执行，与文件工具路径语义一致。
+- **shell** 在 workspace 默认根执行，与文件工具路径语义一致。
+
+## Skills 目录叠加
+
+```yaml
+skills.default:
+  use: skill/filesystem
+  config:
+    dirs:
+      - local:skills
+      - local:.cursor/skills
+      - global:skills
+  deps:
+    workspace: workspace.default
+```
+
+列表顺序决定扫描优先级；同名 skill 以先出现的为准。
 
 ## 隔离扩展
 

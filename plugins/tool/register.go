@@ -1,0 +1,14 @@
+package tool
+
+import "github.com/lengzhao/pluginkit"
+
+func init() {
+	pluginkit.Register("tool/read-file", NewReadFile)
+	pluginkit.Register("tool/write-file", NewWriteFile)
+	pluginkit.Register("tool/edit-file", NewEditFile)
+	pluginkit.Register("tool/grep", NewGrep)
+	pluginkit.Register("tool/find", NewFind)
+	pluginkit.Register("tool/list-dir", NewListDir)
+	pluginkit.Register("tool/shell", NewShell)
+	pluginkit.Register("tool/skill", NewSkill)
+}

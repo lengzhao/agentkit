@@ -114,6 +114,7 @@ flowchart TB
 | `session/sqlite` | `agentkit.Session` | SQLite + 索引 | DSH session-query-sqlite |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |
+| `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API | Pi openai-responses |
@@ -224,7 +225,7 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `workspace/default` | `workspace.Service` | 工作区根；`Resolve(ctx, rel)` 按 context（可含 session）解析相对路径；替换此插件即可换隔离策略 |
+| `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `credentials/env` | `credentials.Store` | 环境变量 |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
@@ -269,12 +270,20 @@ cap/<domain>/
   doc.go             # 接口文档
 
 plugins/
-  fs/local/          # kind: fs/local → filesystem.Service
-  fs/sandbox/        # kind: fs/sandbox → filesystem.Service
-  tool/read-file/    # kind: tool/read-file → agentkit.Tool, deps.fs
-  tool/edit-file/    # kind: tool/edit-file → agentkit.Tool, deps.fs
-  policy/path-deny/  # kind: policy/path-denylist → agentkit.Policy
+  fs/                # local、memory、readonly 三个 kind
+  tool/              # read-file、write-file、edit-file、grep、find、list-dir、shell、skill
+  compaction/        # summary、prune-tool-results
+  approval/          # cli、auto-deny
+  prompt/            # section/agents-md、section/static、section/skills
+  skill/             # filesystem
+  shell/             # bash
+  policy/            # deny-dangerous-shell
+  hook/              # before-step
+  credentials/       # env
+  settings/          # file
 ```
+
+同一能力域内多个 kind 共用一个 Go package，通过 `register.go` 集中注册；各 kind 保留独立的 Config/Deps 与构造函数（如 `NewLocal`、`NewReadFile`）。
 
 **规则**：
 

@@ -48,8 +48,8 @@ func TestPresetCodingOverlayBuilds(t *testing.T) {
 	if !ok {
 		t.Fatal("missing workspace.default")
 	}
-	if workspace.Config["root"] != "." {
-		t.Fatalf("workspace.root=%v", workspace.Config["root"])
+	if workspace.Config["scope"] != "local" {
+		t.Fatalf("workspace.scope=%v", workspace.Config["scope"])
 	}
 
 	_, _, err = build.Build[agentkit.Runner](context.Background(), doc.ToGraph(), doc.RootID)

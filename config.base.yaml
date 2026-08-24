@@ -1,11 +1,14 @@
 # L0 默认配置：随 agentkit 发布，用户通过 config.yaml（L1）按 instance id 整颗覆盖。
-# 工作目录由 workspace.default 定义（默认 ~/.agentkit）；其余路径均相对该目录。
+# workspace 提供 global（~/.agentkit）与 local（当前目录）两个根；默认 scope=global。
+# 路径可用 global:rel / local:rel 前缀显式指定根；skills 等可按需叠加多个目录。
 # API Key 通过环境变量注入：export OPENAI_API_KEY=sk-...
 
 workspace.default:
   use: workspace/default
   config:
-    root: ~/.agentkit
+    global: ~/.agentkit
+    local: .
+    scope: global
 
 runner.default:
   use: runner
@@ -138,8 +141,8 @@ skills.default:
   use: skill/filesystem
   config:
     dirs:
-      - skills
-      - ~/.cursor/skills
+      - local:skills
+      - global:skills
   deps:
     workspace: workspace.default
 

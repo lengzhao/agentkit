@@ -6,11 +6,11 @@ type HookProvider interface {
 	Hooks() []Hook
 }
 
-// Hook is the base type for all hook implementations. The concrete hook point
-// is determined by which of the *Hook interfaces below the value satisfies;
-// Order decides the relative execution order within one point.
+// Hook marks a value that may implement one or more hook point interfaces.
+// Execution order follows deps.providers list order; within a provider, Hooks()
+// slice order is preserved.
 type Hook interface {
-	Order() int
+	isHook()
 }
 
 type BeforeStepHook interface {
