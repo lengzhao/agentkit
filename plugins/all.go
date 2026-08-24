@@ -27,6 +27,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/skilltool"
 	_ "github.com/lengzhao/agentkit/plugins/writefile"
 	_ "github.com/lengzhao/agentkit/runtime/agent"
+	_ "github.com/lengzhao/agentkit/runtime/command"
 	_ "github.com/lengzhao/agentkit/runtime/hooks"
 	_ "github.com/lengzhao/agentkit/runtime/llm"
 	_ "github.com/lengzhao/agentkit/runtime/loop"

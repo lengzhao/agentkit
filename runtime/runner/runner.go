@@ -10,7 +10,6 @@ import (
 	"os"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -40,7 +39,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 }
 
 func (r *Root) Run(ctx context.Context, result *build.Result) error {
-	if err := r.attachCommands(result); err != nil {
+	if err := attachCommands(result); err != nil {
 		return err
 	}
 	for {
@@ -84,19 +83,21 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	}
 }
 
-func (r *Root) attachCommands(result *build.Result) error {
+func attachCommands(result *build.Result) error {
 	if result == nil {
 		return nil
 	}
-	registry, err := command.CollectFromBuild(result)
-	if err != nil {
-		return err
-	}
-	if registry == nil {
+	providers := build.Collect[agentkit.CommandProvider](result)
+	if len(providers) == 0 {
 		return nil
 	}
-	if p, ok := r.platform.(agentkit.CommandHost); ok {
-		p.SetCommands(registry)
+	for _, collector := range build.Collect[agentkit.CommandCollector](result) {
+		if collector == nil {
+			continue
+		}
+		if err := collector.SetCommands(providers); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -20,7 +20,9 @@ type Config struct {
 	DefaultSessionID string `json:"defaultSessionId"`
 }
 
-type Deps struct{}
+type Deps struct {
+	Commands agentkit.Commands `json:"commands,omitempty"`
+}
 
 type Platform struct {
 	initialPrompt string
@@ -46,15 +48,9 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		once:          cfg.Once,
 		reader:        bufio.NewReader(os.Stdin),
 		sessionID:     sessionID,
+		commands:      deps.Commands,
 	}, nil
 }
-
-// SetCommands attaches slash commands collected after the instance graph is built.
-func (p *Platform) SetCommands(commands agentkit.Commands) {
-	p.commands = commands
-}
-
-var _ agentkit.CommandHost = (*Platform)(nil)
 
 func initialPromptFromArgs(args []string) string {
 	if len(args) == 0 {

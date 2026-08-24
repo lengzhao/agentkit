@@ -11,7 +11,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
-	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
 type Config struct {
@@ -22,13 +21,13 @@ type Config struct {
 }
 
 type Deps struct {
-	SessionStore agentkit.SessionStore `json:"sessionStore"`
-	LLM          agentkit.LLMProvider  `json:"llm"`
-	Tools        agentkit.ToolRuntime  `json:"tools"`
+	SessionStore agentkit.SessionStore    `json:"sessionStore"`
+	LLM          agentkit.LLMProvider     `json:"llm"`
+	Tools        agentkit.ToolRuntime     `json:"tools"`
 	Prompt       agentkit.PromptAssembler `json:"prompt"`
-	Policies     []agentkit.Policy     `json:"policies,omitempty"`
-	Hooks        agentkit.HookRuntime  `json:"hooks,omitempty"`
-	Compaction   []compaction.Service  `json:"compaction,omitempty"`
+	Policies     []agentkit.Policy        `json:"policies,omitempty"`
+	Hooks        agentkit.HookRuntime     `json:"hooks,omitempty"`
+	Compaction   []compaction.Service     `json:"compaction,omitempty"`
 }
 
 type Runtime struct {
@@ -279,14 +278,6 @@ func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID 
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
 	return ctx
-}
-
-func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {
-	return agentkit.ModelMessage{
-		Role:        "tool",
-		ToolResults: []agentkit.ToolResult{result},
-		Content:     []agentkit.ContentPart{{Type: "text", Text: tools.ResultText(result)}},
-	}
 }
 
 func EncodeEventData(v any) json.RawMessage {

@@ -10,8 +10,8 @@ import (
 // Platform to a Loop.
 type Runner interface {
 	// Run starts the process. result is the build graph produced alongside this
-	// runner; the implementation may collect optional capabilities such as slash
-	// commands from it before serving traffic.
+	// runner; implementations may collect CommandProvider instances and attach
+	// them to commands/registry before serving traffic.
 	Run(context.Context, *build.Result) error
 	Stop(context.Context) error
 }

@@ -14,6 +14,11 @@ platform:
   use: platform/cli
   config:
     once: false
+  deps:
+    commands: commands
+
+commands:
+  use: commands/registry
 
 loop:
   use: loop/default

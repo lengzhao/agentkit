@@ -29,7 +29,8 @@ type Commands interface {
 	List() []Command
 }
 
-// CommandHost is implemented by platforms that accept slash commands.
-type CommandHost interface {
-	SetCommands(Commands)
+// CommandCollector receives CommandProvider contributions after pluginkit build.
+// Runner calls SetCommands on every built commands/registry instance.
+type CommandCollector interface {
+	SetCommands(providers []CommandProvider) error
 }
