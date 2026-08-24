@@ -1,0 +1,38 @@
+# L1 preset：常驻守护进程，按固定间隔自己醒来干活。
+#
+# 薄 overlay，只换传输层；能力栈从 autonomous.yaml 叠加：
+#
+#   go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
+#
+# 单独用 `-config presets/daemon.yaml` 会拿到 L0 的 approval/cli，守护进程会卡在
+# 等人输入 —— 一定要跟 autonomous.yaml 一起链。
+#
+# 停止：Ctrl+C 或 SIGTERM。信号会取消 ctx，正在睡的定时器立刻返回，
+# 正在跑的 turn 收到取消后照常写 turn/end（defer 里用的是 context.WithoutCancel）。
+#
+# 日历型定时（"每天 9 点"）不要用这个，用系统 cron + presets/worker.yaml：
+# OS cron 抗进程重启、抗机器重启，进程内定时器不抗。
+
+platform.default:
+  use: platform/timer
+  config:
+    # 间隔。tick 锚定在进程启动时间上（start + n*interval），所以慢 turn 不会让
+    # 节奏漂移；错过的 boundary 直接跳过而不排队 —— 攒了一堆过期 tick 再连着跑
+    # 从来不是"定时"的本意。
+    everySeconds: 900
+    # 每次醒来发给 agent 的任务。
+    prompt: |
+      巡检当前工作区：看看有没有新的失败测试、未提交的改动、或明显的问题。
+      有需要跟进的就用 todo 记下来并处理，没有就直接调用 finish 说明一切正常。
+    # true（默认）：启动即跑第一次，不必等满一个间隔。重启后立刻干活。
+    immediate: true
+    # 0 = 一直跑到收到信号。设正数可用于冒烟/试跑。
+    maxRuns: 0
+    # fresh（默认，推荐）：每个 tick 一个独立 session。
+    #   固定 session 的日常巡检会每 tick 都往同一份历史里追加，几天后必然撑爆窗口 ——
+    #   即使配了压缩，也只是把无限增长换成无限摘要。
+    # fixed：需要跨 tick 记事时才用，务必同时配 compaction/token-limit。
+    sessionMode: fresh
+    sessionID: daemon
+    output: text
+    stream: false

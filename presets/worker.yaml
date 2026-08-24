@@ -1,0 +1,34 @@
+# L1 preset：一次性任务 worker（headless，从不读 stdin）。
+#
+# 这是一个**薄 overlay**，只换传输层。能力栈（预算、todo/finish、白名单 policy、
+# token 压缩）从 autonomous.yaml 叠加，overlay 按顺序合并，后面的覆盖前面的：
+#
+#   go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "把 docs/ 里的死链列出来"
+#
+# 单独用 `-config presets/worker.yaml` 会拿到 L0 的 approval/cli，无人值守时会卡在
+# 等人输入 —— 一定要跟 autonomous.yaml 一起链。
+#
+# 与 platform/cli once=true 的区别：worker 从不碰 stdin，所以在 systemd、cron、
+# 容器、CI 里（stdin 是 /dev/null）不会挂住；并且支持一次跑多个任务。
+#
+# 日历型定时（"每天 9 点"）用系统 cron + 这个 preset，比进程内定时器更抗重启：
+#   0 9 * * * cd /path/to/repo && agent -config presets/autonomous.yaml,presets/worker.yaml "跑日常巡检" >> ~/agent.log 2>&1
+#
+# 进程内固定间隔轮询用 presets/daemon.yaml。
+
+platform.default:
+  use: platform/worker
+  config:
+    # 命令行位置参数优先级最高，会覆盖这里的 tasks/prompt。
+    # 多个 task 依次各跑一个 turn。
+    tasks: []
+    prompt: "检查当前工作区状态并汇报，然后调用 finish 收尾。"
+    # fresh（默认）：每个任务一个独立 session，id 带进程启动时间戳，重启不会复用旧历史。
+    # fixed：所有任务共用一个 session，能跨任务记事，但必须配压缩。
+    sessionMode: fresh
+    sessionID: worker
+    # text（默认）人读；json 每个事件一行，便于 `| jq` 消费。结果走 stdout，
+    # 进度与诊断走 stderr，所以 json 模式下 stdout 是干净的。
+    output: text
+    # 无人值守默认不回显增量，只要最终结果。
+    stream: false

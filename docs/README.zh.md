@@ -10,6 +10,7 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [reference-analysis.zh.md](reference-analysis.zh.md) | DeepSeek Harness 与 Pi 对比分析，提炼通用 Agent 能力 |
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | Plugin Kind 命名、分类目录、MVP 分阶段落地 |
 | [coding-workspace.zh.md](coding-workspace.zh.md) | Coding preset 工作区与 FS 边界 |
+| [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：turn 续跑契约、预算分层、todo/finish 判定、token 阈值压缩、崩溃恢复、无人值守安全边界 |
 
 ## 快速开始
 
@@ -32,6 +33,15 @@ go run ./cmd/agent -config presets/coding.yaml "你的任务"
 # 无 API Key 的本地冒烟（scripted LLM）
 go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读取 README"
 
+# 自主运行：无人干预连续推进，靠 todo/finish 判定收尾，预算兜底（见 autonomous-run.zh.md）
+go run ./cmd/agent -config presets/autonomous.yaml "你的多轮任务"
+go run ./cmd/agent -config presets/autonomous-smoke.yaml "整理这个目录并收尾"
+
+# headless：-config 接受逗号分隔的多个 overlay，按顺序合并（后面的覆盖前面的）
+# worker 跑完即退出（不读 stdin，适合 cron / CI / 容器）；daemon 常驻按间隔自己醒来
+go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次性任务"
+go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
+
 # Web 工作台：装配树编辑、共享实例提取、结构/plan 诊断、试装配（含 build 校验）
 go run ./cmd/agent -manager
 go run ./cmd/agent -manager -addr :9090
@@ -42,6 +52,12 @@ go run ./cmd/agent -manager -config presets/coding.yaml
 ```
 
 Phase 1 已实现：Runner、CLI Platform、Loop、Coding Agent、Session（memory/jsonl）、OpenAI 兼容 LLM、read/write/bash 工具、Policy 与审批插件。
+
+Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预算（续跑/步数/墙钟/token）、token usage 计量、`hook/turn-continue` 驱动、`tool/todo` + `tool/finish`、`approval/auto-allow` 与 `policy/shell-allowlist` / `policy/path-denylist`。
+
+Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
+
+Phase 3 守护外壳已实现：`platform/worker`（一次性任务，不读 stdin）、`platform/timer`（进程内定时器，tick 锚定启动时间、跳过错过的 boundary）、runner per-turn panic 隔离、overlay 链式合并。
 
 新增插件后运行 `go generate ./...` 更新 `plugins/all.go` 的 blank import。
 

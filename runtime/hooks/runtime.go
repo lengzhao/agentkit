@@ -14,9 +14,10 @@ type Deps struct {
 }
 
 type Runtime struct {
-	beforeStep []agentkit.BeforeStepHook
-	beforeTool []agentkit.BeforeToolHook
-	afterTool  []agentkit.AfterToolHook
+	beforeStep   []agentkit.BeforeStepHook
+	beforeTool   []agentkit.BeforeToolHook
+	afterTool    []agentkit.AfterToolHook
+	turnStopping []agentkit.TurnStoppingHook
 }
 
 func init() {
@@ -27,6 +28,7 @@ func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 	var beforeStep []agentkit.BeforeStepHook
 	var beforeTool []agentkit.BeforeToolHook
 	var afterTool []agentkit.AfterToolHook
+	var turnStopping []agentkit.TurnStoppingHook
 	for _, provider := range deps.Providers {
 		if provider == nil {
 			continue
@@ -44,12 +46,16 @@ func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 			if h, ok := hook.(agentkit.AfterToolHook); ok {
 				afterTool = append(afterTool, h)
 			}
+			if h, ok := hook.(agentkit.TurnStoppingHook); ok {
+				turnStopping = append(turnStopping, h)
+			}
 		}
 	}
 	return &Runtime{
-		beforeStep: beforeStep,
-		beforeTool: beforeTool,
-		afterTool:  afterTool,
+		beforeStep:   beforeStep,
+		beforeTool:   beforeTool,
+		afterTool:    afterTool,
+		turnStopping: turnStopping,
 	}, nil
 }
 
@@ -74,6 +80,15 @@ func (r *Runtime) BeforeTool(ctx context.Context, in *agentkit.ToolCall) error {
 func (r *Runtime) AfterTool(ctx context.Context, in *agentkit.ToolResult) error {
 	for _, hook := range r.afterTool {
 		if err := hook.AfterTool(ctx, in); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Runtime) TurnStopping(ctx context.Context, in *agentkit.TurnStopping) error {
+	for _, hook := range r.turnStopping {
+		if err := hook.TurnStopping(ctx, in); err != nil {
 			return err
 		}
 	}

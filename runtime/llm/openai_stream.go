@@ -12,6 +12,7 @@ type streamAccumulator struct {
 	acc           agentkit.ModelMessage
 	toolBuf       map[int]*agentkit.ToolCall
 	pending       []agentkit.LLMEvent
+	usage         *agentkit.Usage
 }
 
 func newStreamAccumulator() *streamAccumulator {
@@ -137,7 +138,23 @@ func (a *streamAccumulator) finalize() {
 	}
 	a.done = true
 	msg := a.acc
-	a.pushPending(agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &msg})
+	a.pushPending(agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &msg, Usage: a.usage})
+}
+
+// setUsage records the token accounting a provider reports, so the final message
+// event can carry it to the agent's run budget.
+func (a *streamAccumulator) setUsage(input, output, total int) {
+	if input == 0 && output == 0 && total == 0 {
+		return
+	}
+	if total == 0 {
+		total = input + output
+	}
+	a.usage = &agentkit.Usage{
+		InputTokens:  input,
+		OutputTokens: output,
+		TotalTokens:  total,
+	}
 }
 
 func appendText(parts []agentkit.ContentPart, text string) []agentkit.ContentPart {

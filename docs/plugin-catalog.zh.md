@@ -67,6 +67,7 @@ flowchart TB
     HTTP["platform/http"]
     RPC["platform/rpc"]
     Worker["platform/worker"]
+    Timer["platform/timer"]
   end
 
   Runner --> Platform
@@ -98,7 +99,8 @@ flowchart TB
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
-| `platform/worker` | `agentkit.Platform` | 一次性任务 runner | DSH headless |
+| `platform/worker` | `agentkit.Platform` | 一次性任务 runner（从不读 stdin，支持多 task、`output` 支持 text / json） | DSH headless |
+| `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
 ### 3.2 Agent Spine
 
@@ -140,7 +142,8 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `tool/skill` | `skills` | Skill 发现与加载 | DSH/Pi skill tool |
 | `tool/subagent` | `subagent` | 子 Agent 委派 | DSH `tool-subagent` |
 | `tool/ask-user` | `approval` | 向用户提问 | DSH `tool-ask-user` |
-| `tool/todo` | — | 任务列表（可选） | DSH `tool-todo` |
+| `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
+| `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
 | `tool/session-query` | `session-query` | 跨 Session 检索 | DSH `tool-session-query` |
 
 ### 3.4 Policy & Safety
@@ -148,12 +151,13 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `policy/deny-dangerous-shell` | `agentkit.Policy` | 拦截危险 shell 命令 | 两者常见 Extension |
-| `policy/path-denylist` | `agentkit.Policy` | 路径黑名单 | Pi path protection 示例 |
+| `policy/path-denylist` | `agentkit.Policy` | 路径黑名单（glob，默认拒 `.git/**`、`**/.env*`、`**/.ssh/**`、`**/*.pem`） | Pi path protection 示例 |
+| `policy/shell-allowlist` | `agentkit.Policy` | shell 命令前缀白名单；`strict` 时白名单外一律 deny，链式命令每段都要命中 | — |
 | `policy/network-deny` | `agentkit.Policy` | 禁止网络类工具 | DSH sandbox policy |
 | `policy/plan-mode` | `agentkit.Policy` | Plan 模式下限制写操作 | DSH plan-mode |
 | `approval/cli` | `approval.Service` | 终端 y/n 审批 | Pi `ctx.ui.confirm` |
 | `approval/auto-deny` | `approval.Service` | 自动拒绝 ask | 测试 / CI |
-| `approval/auto-allow` | `approval.Service` | 自动允许 ask | 开发模式 |
+| `approval/auto-allow` | `approval.Service` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
 
 ### 3.5 Hooks（观察与改写，非裁决）
 
@@ -163,7 +167,7 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `hook/before-tool` | `agentkit.HookProvider` | 工具 input 改写 | DSH post-policy / Pi beforeToolCall |
 | `hook/after-tool` | `agentkit.HookProvider` | 工具 result 截断/改写 | DSH `tools/post-execute` |
 | `hook/llm-request` | `agentkit.HookProvider` | LLM 请求改写 | Pi `before_provider_request` |
-| `hook/turn-stopping` | `agentkit.HookProvider` | 控制 Turn 结束 | DSH `agent/turn-stopping` |
+| `hook/turn-continue` | `agentkit.HookProvider` | Turn 末裁决续跑/收尾（`TurnStopping` seam）；贡献 `/status` | DSH `agent/turn-stopping` |
 | `hook/repeat-tool-reminder` | `agentkit.HookProvider` | 重复工具调用提醒 | DSH repeat-tool-reminder |
 | `hook/timeout` | `agentkit.HookProvider` | Turn/Step 超时 | DSH timeout-policy |
 
@@ -219,7 +223,7 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 |---|---|---|
 | `compaction/summary` | `compaction.Service` | LLM 摘要压缩 |
 | `compaction/prune-tool-results` | `compaction.Service` | 无模型工具结果裁剪 |
-| `compaction/token-limit` | `compaction.Service` | Token 阈值触发 |
+| `compaction/token-limit` | `compaction.Service` | 按 token 阈值门控内层压缩链（deps.services）；阈值取 `maxTokens` 或 `contextWindow × triggerRatio` |
 
 ### 3.7 Infrastructure
 
@@ -245,6 +249,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 |---|---|
 | `session/store` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |
+| `hook/turn-continue` | `/status` |
 
 示例：
 
@@ -376,7 +381,10 @@ graph:
 
 | 类别 | Kind |
 |---|---|
-| Compaction | `compaction/summary`, `compaction/prune-tool-results`, `hook/before-step` |
+| Compaction | `compaction/summary`, `compaction/prune-tool-results`, `compaction/token-limit`, `hook/before-step` |
+| 崩溃恢复 | Agent 内置：`ScanIncomplete` / `RepairIncomplete` + `session/recovery` 事件 |
+| 守护外壳 | `platform/worker`, `platform/timer`；runner per-turn panic 隔离；overlay 链式合并 |
+| 自主运行 | `hook/turn-continue`, `tool/todo`, `tool/finish`, `approval/auto-allow`, `policy/shell-allowlist`, `policy/path-denylist` |
 | Skills | `skill/filesystem`, `tool/skill`, `prompt/section/skills` |
 | 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |
 | Session | `session/sqlite` |

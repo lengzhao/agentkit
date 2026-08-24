@@ -48,6 +48,10 @@ func (s *responsesStream) Recv() (agentkit.LLMEvent, error) {
 		if err != nil {
 			return agentkit.LLMEvent{}, err
 		}
+		if event.Response != nil && event.Response.Usage != nil {
+			usage := event.Response.Usage
+			s.acc.setUsage(usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
+		}
 		switch event.Type {
 		case openai.ResponseStreamEventOutputTextDelta:
 			s.acc.appendTextDelta(event.Delta)

@@ -1,0 +1,184 @@
+# L1 preset：无人值守自主运行。
+#
+#   go run ./cmd/agent -config presets/autonomous.yaml
+#   然后输入任务（首条消息走 stdin）
+#
+# 与默认 coding preset 的区别：
+#   1. platform once=true：跑完即退出，不等下一条输入
+#   2. agent 带 budget：续跑次数 / 总步数 / 墙钟 / token 四重硬上限
+#   3. hook/turn-continue：assistant 停止调用工具时，若还有 pending todo 或未 finish 就注入续跑消息
+#   4. tool/todo + tool/finish：任务清单与显式收尾，是"做完了"的可审计信号
+#   5. approval/auto-allow：不阻塞等人
+#
+# 安全约束（重要）：auto-allow 本身不做任何过滤，唯一的 enforcement 是 Policy。
+# 因此 auto-allow 必须与 policy/shell-allowlist（strict）+ policy/path-denylist
+# 同时挂载；单独启用 auto-allow 等于对模型放开一切。改 allow 列表前先想清楚
+# 这台机器上"最坏情况"能做什么。
+
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+  deps:
+    commands: commands.default
+
+agent.coder.default:
+  use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.4
+    maxSteps: 20
+    budget:
+      # 单个 turn 内最多续跑 30 次，累计 300 步、2 小时、200 万 token。
+      # 任何一项触顶都会硬停，hook 无法突破。
+      maxContinuations: 30
+      maxTotalSteps: 300
+      wallClockSeconds: 7200
+      maxTotalTokens: 2000000
+      # 消耗到 80% 时改注入"收尾"提示，让模型自己把工作收口。
+      softRatio: 0.8
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    sessionStore: sessionStore.default
+    llm: llm.default
+    hooks: hooks.default
+    prompt: prompt.default
+    tools: tools.default
+    # overflow 兜底路径（Force=true）也走 token-limit，透传到 summary。
+    compaction:
+      - compaction.prune.default
+      - compaction.token-limit.default
+
+hooks.default:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.before-step.default
+      - hook.turn-continue.default
+
+# 每步触发的压缩路径。默认 preset 按"消息条数 >= 30"触发 summary；长跑改按 token
+# 阈值触发：20 步 grep 输出可能比 200 轮短对话还大，条数是个很差的代理指标。
+hook.before-step.default:
+  use: hook/before-step
+  deps:
+    sessionStore: sessionStore.default
+    services:
+      - compaction.prune.default
+      - compaction.token-limit.default
+
+compaction.token-limit.default:
+  use: compaction/token-limit
+  config:
+    # 阈值 = contextWindow * triggerRatio；也可直接写 maxTokens 覆盖。
+    # 留 30% 余量给本轮回复和下一个工具结果。
+    contextWindow: 200000
+    triggerRatio: 0.7
+    # 无 usage 可读时的兜底估算。3 而非默认 4：中文与代码里 1 token 覆盖的字符更少，
+    # 估低了会导致压缩太晚。
+    charsPerToken: 3
+  deps:
+    services:
+      - compaction.summary.default
+
+hook.turn-continue.default:
+  use: hook/turn-continue
+  config:
+    maxContinuations: 30
+    # 同一工具同一参数连续 3 次即判定停滞，直接停止，避免烧预算。
+    stallLimit: 3
+    # 必须调用 finish 才算干净收尾；todo 还有 pending 就一定继续。
+    requireFinish: true
+    requireTodosDone: true
+  deps:
+    sessionStore: sessionStore.default
+
+tools.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.write-file.default
+      - tool.edit-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.shell.default
+      - tool.skill.default
+      - tool.todo.default
+      - tool.finish.default
+    policies:
+      - policy.dangerous-shell.default
+      - policy.path-denylist.default
+      - policy.shell-allowlist.default
+    approval: approval.auto-allow.default
+
+tool.todo.default:
+  use: tool/todo
+  deps:
+    sessionStore: sessionStore.default
+
+tool.finish.default:
+  use: tool/finish
+  deps:
+    sessionStore: sessionStore.default
+
+approval.auto-allow.default:
+  use: approval/auto-allow
+  config:
+    reason: "auto-allowed: autonomous run"
+
+policy.path-denylist.default:
+  use: policy/path-denylist
+  config:
+    # 留空即使用内置默认：.git/**、**/.env*、**/.ssh/**、**/*.pem
+    tools:
+      - write
+      - edit
+
+policy.shell-allowlist.default:
+  use: policy/shell-allowlist
+  config:
+    # strict=true：白名单外一律 deny，不给 auto-allow 兜底的机会。
+    strict: true
+    allow:
+      - ls
+      - cat
+      - head
+      - tail
+      - wc
+      - find
+      - grep
+      - rg
+      - pwd
+      - echo
+      - go build
+      - go test
+      - go vet
+      - go run
+      - go fmt
+      - gofmt
+      - git status
+      - git diff
+      - git log
+      - git show
+      - git add
+      - git stash list
+    deny:
+      - rm
+      - sudo
+      - chmod
+      - chown
+      - curl
+      - wget
+      - ssh
+      - scp
+      - git push
+      - git reset --hard
+      - git clean

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime/debug"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/pluginkit/build"
@@ -69,7 +70,7 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			}
 			return r.platform.Send(ctx, out)
 		}
-		err = r.loop.Dispatch(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
+		err = r.dispatch(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
 		if err != nil {
 			slog.Error("loop dispatch failed", "err", err)
 			if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{
@@ -84,6 +85,28 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			continue
 		}
 	}
+}
+
+// dispatch turns a panicking turn into an ordinary turn error. A long-running
+// process must not die because one tool call hit a nil map: the panic is logged
+// with its stack, reported on the session's error channel, and the loop moves to
+// the next event. The interrupted turn leaves an unterminated turn/start behind,
+// which the agent repairs on its next turn.
+func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err error) {
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+		slog.Error("turn panicked",
+			"session_id", req.Event.SessionID,
+			"agent_id", req.Event.AgentID,
+			"panic", fmt.Sprint(recovered),
+			"stack", string(debug.Stack()),
+		)
+		err = fmt.Errorf("turn panicked: %v", recovered)
+	}()
+	return r.loop.Dispatch(ctx, req)
 }
 
 func attachCommands(result *build.Result) error {

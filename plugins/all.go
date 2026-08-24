@@ -20,6 +20,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/llm"
 	_ "github.com/lengzhao/agentkit/runtime/loop"
 	_ "github.com/lengzhao/agentkit/runtime/platform/cli"
+	_ "github.com/lengzhao/agentkit/runtime/platform/headless"
 	_ "github.com/lengzhao/agentkit/runtime/platform/multiplex"
 	_ "github.com/lengzhao/agentkit/runtime/prompt"
 	_ "github.com/lengzhao/agentkit/runtime/runner"

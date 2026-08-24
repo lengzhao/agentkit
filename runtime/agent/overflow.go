@@ -17,7 +17,7 @@ func (a *Runtime) runStepWithOverflowRecovery(
 	emit agentkit.OutboundEmit,
 	retry *stepRetry,
 	overflowRecoveryAttempted *bool,
-) (agentkit.ModelMessage, error) {
+) (stepOutcome, error) {
 	for {
 		msg, err := a.runStepWithRetry(ctx, sess, emit, retry)
 		if err == nil {

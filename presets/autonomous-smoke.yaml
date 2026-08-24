@@ -1,0 +1,107 @@
+# L1 preset：自主运行冒烟（scripted LLM，无需 API Key）。
+#
+# 脚本设计成两个 segment：
+#   segment 1: todo set -> read -> 纯文本（触发 turn-stopping）
+#              hook 看到还有 pending todo，注入 continue -> segment 2
+#   segment 2: todo complete -> finish -> 纯文本
+#              hook 看到 run/finish，Stop，进程退出
+# 期望 session 事件里出现 todo/update ×2、turn/continue ×1、run/finish ×1。
+
+runner.default:
+  use: runner
+  deps:
+    platform:
+      use: platform/cli
+      config:
+        once: true
+    loop:
+      use: loop/default
+      deps:
+        agents:
+          - use: agent/coding
+            config:
+              id: smoke
+              maxSteps: 3
+              budget:
+                maxTotalSteps: 12
+                maxContinuations: 3
+                wallClockSeconds: 120
+            deps:
+              sessionStore: sessionStore.default
+              hooks: hooks.default
+              llm:
+                use: llm/scripted
+                config:
+                  steps:
+                    - text: "先记录任务清单。"
+                      toolCalls:
+                        - id: call-todo-set
+                          name: todo
+                          input: '{"op":"set","items":[{"id":"1","title":"读取 README","status":"in_progress"},{"id":"2","title":"汇报结论","status":"pending"}]}'
+                    - text: "读取 README。"
+                      toolCalls:
+                        - id: call-read
+                          name: read
+                          input: '{"path":"README.md"}'
+                    - text: "README 已读取，本段先到这里。"
+                    - text: "标记任务完成。"
+                      toolCalls:
+                        - id: call-todo-done
+                          name: todo
+                          input: '{"op":"complete","ids":["1","2"]}'
+                    - text: "收尾。"
+                      toolCalls:
+                        - id: call-finish
+                          name: finish
+                          input: '{"status":"completed","summary":"读取 README 并汇报结论"}'
+                    - text: "全部完成。"
+              prompt:
+                use: prompt/assembler/default
+              tools:
+                use: tools/runtime
+                deps:
+                  tools:
+                    - use: tool/read-file
+                      deps:
+                        fs:
+                          use: fs/memory
+                          config:
+                            files:
+                              README.md: "# AgentKit\n\nhello"
+                    - use: tool/todo
+                      deps:
+                        sessionStore: sessionStore.default
+                    - use: tool/finish
+                      deps:
+                        sessionStore: sessionStore.default
+
+hooks.default:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.turn-continue.default
+
+hook.turn-continue.default:
+  use: hook/turn-continue
+  config:
+    maxContinuations: 3
+    stallLimit: 3
+  deps:
+    sessionStore: sessionStore.default
+
+session.default:
+  use: session/memory
+  config:
+    id: cli:default
+
+sessionStore.default:
+  use: session/static
+  deps:
+    session: session.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    global: ~/.agentkit
+    local: .
+    scope: local

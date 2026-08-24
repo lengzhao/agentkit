@@ -114,3 +114,42 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 		t.Fatalf("retry events start=%d end=%d", retryStarts, retryEnds)
 	}
 }
+
+// TestForcedCompactionBelowKeepRecent covers /compact and overflow recovery on a
+// short history: Force skips the minMessages gate, so the slice bounds must hold.
+func TestForcedCompactionBelowKeepRecent(t *testing.T) {
+	t.Parallel()
+
+	svc, err := NewSummary(SummaryConfig{KeepRecent: 6}, SummaryDeps{LLM: &flakySummaryLLM{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:shorthistory"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := session.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		Session:   sess,
+		Messages:  messages,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("forced compaction: %v", err)
+	}
+	if result.Applied {
+		t.Fatal("nothing should be compacted when the history is shorter than keepRecent")
+	}
+}

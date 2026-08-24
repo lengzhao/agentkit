@@ -11,6 +11,8 @@ import (
 
 func init() {
 	pluginkit.Register("policy/deny-dangerous-shell", New)
+	pluginkit.Register("policy/shell-allowlist", NewShellAllowlist)
+	pluginkit.Register("policy/path-denylist", NewPathDenylist)
 }
 
 func New() (agentkit.Policy, error) {

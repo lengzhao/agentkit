@@ -92,7 +92,7 @@ func (a *Runtime) runStepWithRetry(
 	sess agentkit.Session,
 	emit agentkit.OutboundEmit,
 	retry *stepRetry,
-) (agentkit.ModelMessage, error) {
+) (stepOutcome, error) {
 	for {
 		msg, err := a.runStep(ctx, sess, emit)
 		if err == nil {

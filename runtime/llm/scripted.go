@@ -141,20 +141,27 @@ type textChunk struct {
 	delta  string
 }
 
+// chunkText splits text into deltas of about size bytes, cutting on rune
+// boundaries so multi-byte characters survive the stream.
 func chunkText(text string, size int) []textChunk {
 	if size <= 0 || len(text) <= size {
 		return []textChunk{{prefix: text, delta: text}}
 	}
-	out := make([]textChunk, 0, (len(text)+size-1)/size)
+	var out []textChunk
 	var prefix strings.Builder
-	for i := 0; i < len(text); i += size {
-		end := i + size
-		if end > len(text) {
-			end = len(text)
+	var delta strings.Builder
+	for _, r := range text {
+		delta.WriteRune(r)
+		if delta.Len() < size {
+			continue
 		}
-		delta := text[i:end]
-		prefix.WriteString(delta)
-		out = append(out, textChunk{prefix: prefix.String(), delta: delta})
+		prefix.WriteString(delta.String())
+		out = append(out, textChunk{prefix: prefix.String(), delta: delta.String()})
+		delta.Reset()
+	}
+	if delta.Len() > 0 {
+		prefix.WriteString(delta.String())
+		out = append(out, textChunk{prefix: prefix.String(), delta: delta.String()})
 	}
 	return out
 }

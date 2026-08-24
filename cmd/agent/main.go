@@ -27,7 +27,7 @@ func main() {
 	managerMode := flag.Bool("manager", false, "start plugin manager web UI")
 	addr := flag.String("addr", ":8080", "manager HTTP listen address")
 	basePath := flag.String("base", config.DefaultBasePath, "L0 base config YAML path")
-	overlayPath := flag.String("config", config.DefaultOverlayPath, "L1 override YAML path (optional)")
+	overlayPath := flag.String("config", config.DefaultOverlayPath, "L1 override YAML path(s), comma-separated; later files win")
 	flag.Parse()
 
 	if *managerMode {
@@ -38,7 +38,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	doc, err := config.LoadDocument(*basePath, *overlayPath)
+	doc, err := config.LoadDocument(*basePath, config.SplitOverlayPaths(*overlayPath)...)
 	if err != nil {
 		fatal("load config", err)
 	}
@@ -57,7 +57,7 @@ func runManager(addr, basePath, overlayPath string) {
 		Addr:          addr,
 		ValidateBuild: validateRunnerBuild,
 	}
-	if merged, err := config.MergeFromFiles(basePath, overlayPath); err == nil {
+	if merged, err := config.MergeFromFiles(basePath, config.SplitOverlayPaths(overlayPath)...); err == nil {
 		opts.InitialYAML = string(merged)
 		slog.Info("manager preloaded config", "base", basePath, "overlay", overlayPath)
 	} else if !errors.Is(err, os.ErrNotExist) {

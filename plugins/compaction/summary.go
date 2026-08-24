@@ -59,7 +59,13 @@ func (s *summaryService) Compact(ctx context.Context, req compaction.Request) (c
 		return compaction.Result{}, nil
 	}
 
-	toSummarize := req.Messages[:len(req.Messages)-s.cfg.KeepRecent]
+	// Force skips the minMessages gate, so the history can be shorter than
+	// keepRecent. Nothing to summarize is a no-op, not a crash.
+	keepRecent := min(s.cfg.KeepRecent, len(req.Messages))
+	toSummarize := req.Messages[:len(req.Messages)-keepRecent]
+	if len(toSummarize) == 0 {
+		return compaction.Result{}, nil
+	}
 	policy := compaction.ResolveRetrySettings(s.cfg.Retry)
 	var summaryText string
 	err = compaction.RetryCall(ctx, policy, llm.IsRetryableError, func() error {

@@ -73,7 +73,14 @@ func (s *JSONL) loadExisting() error {
 			s.seq = ev.Seq
 		}
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	// Resume numbering above the loaded events. Without this a reopened session
+	// restarts at 1 and collides with its own history, which silently corrupts
+	// every seq comparison: compaction's cutoff, run-state scans, Read(from).
+	s.mem.resumeSeq(s.seq)
+	return nil
 }
 
 func (s *JSONL) ID() agentkit.SessionID { return s.id }

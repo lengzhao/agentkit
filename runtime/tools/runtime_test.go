@@ -42,6 +42,7 @@ func (h stubHooks) AfterTool(ctx context.Context, result *agentkit.ToolResult) e
 	}
 	return nil
 }
+func (h stubHooks) TurnStopping(context.Context, *agentkit.TurnStopping) error { return nil }
 
 func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 	t.Parallel()

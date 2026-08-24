@@ -407,7 +407,7 @@ type Approval interface {
 
 ```go
 type HookProvider interface { Hooks() []Hook }
-type BeforeStepHook / BeforeToolHook / AfterToolHook
+type BeforeStepHook / BeforeToolHook / AfterToolHook / TurnStoppingHook
 // HookProvider 贡献的 hook 按 deps.providers 列表顺序执行；同一 provider 内 Hooks() 返回顺序保留。
 ```
 
@@ -418,7 +418,7 @@ type BeforeStepHook / BeforeToolHook / AfterToolHook
 | `agent/pre-step` | waterfall | `BeforeStepHook`（但无 reject/enter 决策类型） |
 | `agent/request` | waterfall | 文档规划 `hook/llm-request`，**未实现** |
 | `agent/request-error` | waterfall | **未实现** |
-| `agent/turn-stopping` | serial | 文档规划 `hook/turn-stopping`，**未实现** |
+| `agent/turn-stopping` | serial | `TurnStoppingHook`（已实现，`hook/turn-continue` 为默认驱动） |
 | `tools/pre-execute` | waterfall | `Policy`（裁决，非 Hook） |
 | `tools/post-execute` | waterfall | `AfterToolHook`（但无 block/replace 决策） |
 | `tools/execute` | waterfall | **未实现** |
@@ -426,7 +426,7 @@ type BeforeStepHook / BeforeToolHook / AfterToolHook
 
 | 对比项 | AgentKit | DSH |
 |---|---|---|
-| 钩子类型 | 3 种 typed interface | 20+ 事件点 |
+| 钩子类型 | 4 种 typed interface | 20+ 事件点 |
 | 链式语义 | deps 列表顺序，error 中断 | waterfall `next()` 委托 |
 | 改写 vs 否决 | Hook 返回 error 中断 | `PreStepDecision.reject` / `PreToolDecision.deny` 显式 |
 | Scope | 无 | agent-scoped 监听器 |
@@ -436,12 +436,12 @@ type BeforeStepHook / BeforeToolHook / AfterToolHook
 - AgentKit 可取：typed hook 易读、易测；Policy 不混入 Hook。
 - DSH 可取：
   - **`PreStepDecision`**：`reject` vs `enter(messages)` 比单纯返回 error 语义更精确。
-  - **`agent/turn-stopping`**：数据驱动地延长 turn（如 tool 声明 `concludesTurn`）。
+  - **`agent/turn-stopping`**：已补齐为 `TurnStoppingHook`（`Continue` 延长 turn / `Stop` 强制收尾，硬预算优先），见 [autonomous-run.zh.md](autonomous-run.zh.md)。
   - **waterfall `next()`**：链式组合比纯 Order 更灵活（可短路或委托）。
 - AgentKit 建议：
   - `BeforeStep` 增加 `StepDecision`（Allow / Reject / EnterMessages）。
   - `AfterTool` 增加可选「替换结果」返回值，对齐 `post-execute`。
-  - 按 plugin-catalog 补齐 `BeforeLLMRequest`、`TurnStopping` 接口。
+  - 按 plugin-catalog 补齐 `BeforeLLMRequest` 接口（`TurnStopping` 已补齐）。
 
 ---
 

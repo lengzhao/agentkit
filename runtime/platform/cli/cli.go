@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -37,7 +38,7 @@ type Platform struct {
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	initial := cfg.Prompt
 	if initial == "" {
-		initial = initialPromptFromArgs(os.Args[1:])
+		initial = initialPromptFromArgs(promptArgs())
 	}
 	sessionID := agentkit.SessionID(cfg.DefaultSessionID)
 	if sessionID == "" {
@@ -50,6 +51,16 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		sessionID:     sessionID,
 		commands:      deps.Commands,
 	}, nil
+}
+
+// promptArgs returns the positional arguments the first message may come from.
+// Once the host has parsed its flags, flag.Args() holds exactly the positional
+// tail, so `agent -config preset.yaml "task"` still yields the task.
+func promptArgs() []string {
+	if flag.Parsed() {
+		return flag.Args()
+	}
+	return os.Args[1:]
 }
 
 func initialPromptFromArgs(args []string) string {
@@ -192,6 +203,18 @@ func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
 		if text != "" {
 			fmt.Println(text)
 		}
+	case agentkit.EventTurnContinue:
+		var payload struct {
+			Segment int    `json:"segment"`
+			Reason  string `json:"reason"`
+			Steps   int    `json:"steps"`
+		}
+		if err := json.Unmarshal(event.Data, &payload); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "\n[continue #%d after %d step(s): %s]\n",
+			payload.Segment, payload.Steps, payload.Reason)
+		return nil
 	case "error":
 		var payload struct {
 			Error string `json:"error"`

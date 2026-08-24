@@ -11,4 +11,6 @@ func init() {
 	pluginkit.Register("tool/list-dir", NewListDir)
 	pluginkit.Register("tool/shell", NewShell)
 	pluginkit.Register("tool/skill", NewSkill)
+	pluginkit.Register("tool/todo", NewTodo)
+	pluginkit.Register("tool/finish", NewFinish)
 }

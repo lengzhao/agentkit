@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/lengzhao/pluginkit/manager"
 	"gopkg.in/yaml.v3"
@@ -15,37 +16,53 @@ const (
 	DefaultRootID      = "runner.default"
 )
 
-// LoadDocument loads L0 base config and optional L1 overlay, prunes unreachable instances, then parses.
-func LoadDocument(basePath, overlayPath string) (manager.Document, error) {
-	resolved, err := ResolveFiles(basePath, overlayPath)
+// LoadDocument loads L0 base config and optional L1 overlays, prunes unreachable
+// instances, then parses. Overlays apply in order, so a later one wins.
+func LoadDocument(basePath string, overlayPaths ...string) (manager.Document, error) {
+	resolved, err := ResolveFiles(basePath, overlayPaths...)
 	if err != nil {
 		return manager.Document{}, err
 	}
 	return manager.FromYAML(resolved)
 }
 
-// ResolveFiles merges L0/L1 from disk and prunes instances unreachable from root.
-func ResolveFiles(basePath, overlayPath string) ([]byte, error) {
+// ResolveFiles merges L0 with each L1 overlay in order and prunes instances
+// unreachable from root. Chaining lets a capability stack live in one preset and
+// a transport swap in another, instead of every preset restating the whole graph.
+func ResolveFiles(basePath string, overlayPaths ...string) ([]byte, error) {
 	baseRaw, err := os.ReadFile(basePath)
 	if err != nil {
 		return nil, fmt.Errorf("read base config %q: %w", basePath, err)
 	}
 
-	var overlayRaw []byte
-	if overlayPath != "" {
-		overlayRaw, err = os.ReadFile(overlayPath)
-		if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("read overlay config %q: %w", overlayPath, err)
+	overlays := make([][]byte, 0, len(overlayPaths))
+	for _, path := range overlayPaths {
+		if path == "" {
+			continue
 		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			// A missing overlay is not fatal: the default config.yaml is optional.
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("read overlay config %q: %w", path, err)
+		}
+		overlays = append(overlays, raw)
 	}
-	return ResolveYAML(baseRaw, overlayRaw)
+	return ResolveYAML(baseRaw, overlays...)
 }
 
-// ResolveYAML merges base/overlay and prunes unreachable instances.
-func ResolveYAML(base, overlay []byte) ([]byte, error) {
-	merged, err := MergeYAML(base, overlay)
-	if err != nil {
-		return nil, err
+// ResolveYAML merges base with each overlay in order and prunes unreachable
+// instances.
+func ResolveYAML(base []byte, overlays ...[]byte) ([]byte, error) {
+	merged := base
+	for _, overlay := range overlays {
+		next, err := MergeYAML(merged, overlay)
+		if err != nil {
+			return nil, err
+		}
+		merged = next
 	}
 	raw, err := parseInstanceMap(merged)
 	if err != nil {
@@ -78,8 +95,20 @@ func MergeYAML(base, overlay []byte) ([]byte, error) {
 }
 
 // MergeFromFiles is an alias for ResolveFiles.
-func MergeFromFiles(basePath, overlayPath string) ([]byte, error) {
-	return ResolveFiles(basePath, overlayPath)
+func MergeFromFiles(basePath string, overlayPaths ...string) ([]byte, error) {
+	return ResolveFiles(basePath, overlayPaths...)
+}
+
+// SplitOverlayPaths parses a comma-separated overlay list, e.g.
+// "presets/autonomous.yaml,presets/daemon.yaml".
+func SplitOverlayPaths(spec string) []string {
+	var out []string
+	for _, part := range strings.Split(spec, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func parseInstanceMap(raw []byte) (map[string]any, error) {

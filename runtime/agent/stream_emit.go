@@ -17,6 +17,8 @@ type streamEmitter struct {
 	toolStarted map[int]bool
 	prevText    string
 	prevToolArg map[int]string
+	// usage is the latest token accounting the provider reported for this step.
+	usage *agentkit.Usage
 }
 
 func newStreamEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit) *streamEmitter {
@@ -36,6 +38,9 @@ func newStreamEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID
 func (s *streamEmitter) consume(ev agentkit.LLMEvent) error {
 	if s == nil {
 		return nil
+	}
+	if ev.Usage != nil {
+		s.usage = ev.Usage
 	}
 	switch ev.Type {
 	case agentkit.AssistantEventStart:
@@ -174,11 +179,8 @@ func (s *streamEmitter) emitAssistant(typ agentkit.AssistantMessageEventType, co
 	return s.emitUpdate(ame, msg)
 }
 
-func (s *streamEmitter) emitUpdate(ame agentkit.AssistantMessageEvent, msg *agentkit.ModelMessage) error {
-	payload := agentkit.MessageUpdatePayload{AssistantMessageEvent: ame}
-	if msg != nil {
-		payload.Usage = msgUsage(msg)
-	}
+func (s *streamEmitter) emitUpdate(ame agentkit.AssistantMessageEvent, _ *agentkit.ModelMessage) error {
+	payload := agentkit.MessageUpdatePayload{AssistantMessageEvent: ame, Usage: s.usage}
 	return s.sendOutbound(agentkit.EventMessageUpdate, payload)
 }
 
@@ -206,10 +208,6 @@ func contentIndexOr(idx, fallback int) int {
 		return idx
 	}
 	return fallback
-}
-
-func msgUsage(_ *agentkit.ModelMessage) *agentkit.Usage {
-	return nil
 }
 
 func textOf(parts []agentkit.ContentPart) string {

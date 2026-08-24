@@ -390,12 +390,22 @@ func OnBuildPrompt(h func(context.Context, *PromptBuilder) error) Hook
 func OnBeforeTool(h func(context.Context, *ToolCall) error) Hook
 func OnAfterTool(h func(context.Context, *ToolResult) error) Hook
 func OnLLMRequest(h func(context.Context, *LLMRequest) error) Hook
-func OnTurnStopping(h func(context.Context, *TurnState) (StopDecision, error)) Hook
+func OnTurnStopping(h func(context.Context, *TurnStopping) error) Hook
 ```
 
 内部 Hook Runtime 可以支持 chain、serial、parallel 三种模式；插件作者只看到稳定 payload 类型和返回约定，不调用 `next()`。hook 实例只有在 root graph 中被依赖后才会进入运行时；未配置的 hook 即使被 import 也不会运行。
 
 `OnBeforeTool` / `OnAfterTool` 不是拒绝通道。允许、拒绝、询问只由 Policy Plane 产生 `Decision`，见 [5.5](#55-工具执行路径)。hook 返回的 `error` 表示插件执行失败，运行时中止该阶段并写入失败事件，它不是 Policy `deny`。
+
+`OnTurnStopping` 是自主运行的唯一 seam：Agent 准备结束 turn 时调用它，hook 往 `Continue` 追加消息即延展一个 segment，置 `Stop` 即强制收尾。三条不变量：
+
+| 规则 | 含义 |
+|---|---|
+| `Stop` 优先于 `Continue` | 任何 hook 说停就停，不看其它 hook 是否想继续 |
+| 硬预算优先于 hook | `Budget.Exhausted` 时 `Continue` 被忽略；hook 仍会被调用以便记录/收尾 |
+| 续跑消息必须落盘 | Agent 以 `turn/continue` 事件记录注入内容，derive 再把它回放成 user 消息 |
+
+续跑策略（判断"做完没有"）属于插件，不属于 Agent；Agent 只负责执行与硬预算。详见 [autonomous-run.zh.md](autonomous-run.zh.md)。
 
 ### 5.5 工具执行路径
 
@@ -752,6 +762,15 @@ type Session interface {
 
 MVP 可以使用 JSONL；生产版增加 SQLite、索引和查询 API。Session backend 也是普通 `pluginkit` 插件，例如 `session/jsonl`。
 
+Session backend 必须守住两条不变量，否则依赖 seq 的一切（compaction 的 `beforeSeq` 截断、run-state 扫描、`Read(from)`）都会静默出错：
+
+| 不变量 | 说明 |
+|---|---|
+| **seq 单调递增** | 重新打开已有 session 后，编号必须从既有最大值之上继续，不能从 1 重新开始 |
+| **派生历史始终可回放** | `DeriveMessages` 不得输出没有对应结果的 tool call —— provider 会直接拒收这种历史。中断留下的 orphan call 由 derive 补一条"被中断"的 stand-in 结果 |
+
+崩溃（SIGKILL / panic / 断电）会留下 `turn/start` 无 `turn/end`、tool call 无结果的日志。Agent 在每个 turn 开始前扫描并修复它，写 `session/recovery` 事件留痕；详见 [autonomous-run.zh.md §6](autonomous-run.zh.md)。
+
 #### 6.1.1 多会话路由（IM / Slack）
 
 单 Agent 进程可能同时服务多个对话（Slack 频道、thread、DM 等）。**每个对话单元应有独立 Session**，不能共用一个 JSONL 文件。
@@ -904,12 +923,15 @@ sequenceDiagram
   Agent->>Tools: execute calls
   Tools-->>Session: tool/call + tool/result
   Agent->>Session: step/end
-  Loop->>Loop: OnTurnStopping
+  Agent->>Agent: OnTurnStopping
+  Agent->>Session: turn/continue（若续跑，回到 step/start）
   Agent->>Session: turn/end
   Agent->>Platform: message/end
 ```
 
 Loop 不直接依赖具体工具、模型、压缩器、审批器或沙箱。它只调用 Agent 接口、调度策略和已装配的 loop-level hooks。
+
+一个 turn 由一个或多个 **segment** 组成：每个 segment 最多跑 `maxSteps` 步，段末由 `OnTurnStopping` 决定收尾还是续跑。`config.budget` 给出跨 segment 的硬上限（续跑次数 / 总步数 / 墙钟 / token），不配则 `maxContinuations=0`，turn 退化为单 segment——与引入该 seam 之前行为一致。
 
 ### 6.6 Prompt
 

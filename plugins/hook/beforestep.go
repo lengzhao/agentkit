@@ -23,6 +23,7 @@ type Provider struct {
 
 func init() {
 	pluginkit.Register("hook/before-step", New)
+	pluginkit.Register("hook/turn-continue", NewTurnContinue)
 }
 
 func New(_ Config, deps Deps) (agentkit.HookProvider, error) {

@@ -47,8 +47,24 @@ func OnAfterTool(fn func(context.Context, *ToolResult) error) AfterToolHook {
 	return &afterToolHook{fn: fn}
 }
 
+type turnStoppingHook struct {
+	fn func(context.Context, *TurnStopping) error
+}
+
+func (h *turnStoppingHook) isHook() {}
+
+func (h *turnStoppingHook) TurnStopping(ctx context.Context, in *TurnStopping) error {
+	return h.fn(ctx, in)
+}
+
+// OnTurnStopping wraps a function as a TurnStoppingHook.
+func OnTurnStopping(fn func(context.Context, *TurnStopping) error) TurnStoppingHook {
+	return &turnStoppingHook{fn: fn}
+}
+
 type HookRuntime interface {
 	BeforeStep(context.Context, *BeforeStep) error
 	BeforeTool(context.Context, *ToolCall) error
 	AfterTool(context.Context, *ToolResult) error
+	TurnStopping(context.Context, *TurnStopping) error
 }

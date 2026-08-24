@@ -21,6 +21,9 @@ func (b *chatBackend) stream(ctx context.Context, model string, req agentkit.LLM
 			Messages: toChatCompletionMessages(req.Messages),
 			Tools:    toOpenAITools(req.Tools),
 			Stream:   true,
+			// Token accounting feeds the agent's run budget, which is what stops
+			// an autonomous run from going forever.
+			StreamOptions: &openai.StreamOptions{IncludeUsage: true},
 		})
 		if err != nil {
 			return nil, err
@@ -48,6 +51,10 @@ func (s *chatStream) Recv() (agentkit.LLMEvent, error) {
 		if err != nil {
 			return agentkit.LLMEvent{}, err
 		}
+		if chunk.Usage != nil {
+			s.acc.setUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens, chunk.Usage.TotalTokens)
+		}
+		// The usage-only chunk carries no choices; it arrives after the last delta.
 		if len(chunk.Choices) == 0 {
 			continue
 		}

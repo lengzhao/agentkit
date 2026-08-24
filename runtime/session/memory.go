@@ -37,6 +37,15 @@ func NewMemory(cfg MemoryConfig) (agentkit.Session, error) {
 
 func (s *Memory) ID() agentkit.SessionID { return s.id }
 
+// resumeSeq continues numbering above seq, for backends that preload history.
+func (s *Memory) resumeSeq(seq agentkit.EventSeq) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if seq > s.seq {
+		s.seq = seq
+	}
+}
+
 func (s *Memory) Append(_ context.Context, event agentkit.SessionEvent) (agentkit.EventSeq, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
