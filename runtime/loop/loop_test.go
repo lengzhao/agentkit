@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -14,7 +15,7 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: dir})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,13 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 						"deps": map[string]any{
 							"sessionStore": map[string]any{
 								"use":    "session/store",
-								"config": map[string]any{"dir": dir},
+								"config": map[string]any{"dir": "."},
+								"deps": map[string]any{
+									"workspace": map[string]any{
+										"use":    "workspace/default",
+										"config": map[string]any{"root": dir},
+									},
+								},
 							},
 							"llm": map[string]any{
 								"use": "llm/scripted",

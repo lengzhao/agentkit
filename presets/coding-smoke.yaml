@@ -1,4 +1,6 @@
-runner:
+# L1 preset：无 API Key 冒烟（scripted LLM，覆盖 runner / session 相关实例）。
+
+runner.default:
   use: runner
   deps:
     platform:
@@ -14,7 +16,7 @@ runner:
               id: smoke
               maxSteps: 5
             deps:
-              sessionStore: sessionStore
+              sessionStore: sessionStore.default
               llm:
                 use: llm/scripted
                 config:
@@ -50,15 +52,22 @@ runner:
                           config:
                             workDir: .
                             timeoutSeconds: 30
+                          deps:
+                            workspace: workspace.default
                   policies:
                     - use: policy/deny-dangerous-shell
 
-session:
+session.default:
   use: session/memory
   config:
     id: cli:default
 
-sessionStore:
+sessionStore.default:
   use: session/static
   deps:
-    session: session
+    session: session.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    root: .

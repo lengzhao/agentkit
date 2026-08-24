@@ -9,43 +9,57 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
 type StoreConfig struct {
 	Dir string `json:"dir"`
 }
 
+type StoreDeps struct {
+	Workspace workspace.Service `json:"workspace"`
+}
+
 // Store opens one JSONL session file per SessionID under Dir.
 // Suitable for IM platforms where each channel/thread maps to a distinct session.
 type Store struct {
-	dir   string
-	mu    sync.Mutex
-	cache map[agentkit.SessionID]*JSONL
+	relDir    string
+	workspace workspace.Service
+	mu        sync.Mutex
+	cache     map[agentkit.SessionID]*JSONL
 }
 
-func NewStore(cfg StoreConfig) (agentkit.SessionStore, error) {
+func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("session store requires workspace")
+	}
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("session store dir is required")
 	}
-	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
-		return nil, err
-	}
 	return &Store{
-		dir:   cfg.Dir,
-		cache: make(map[agentkit.SessionID]*JSONL),
+		relDir:    cfg.Dir,
+		workspace: deps.Workspace,
+		cache:     make(map[agentkit.SessionID]*JSONL),
 	}, nil
 }
 
-func (s *Store) Get(_ context.Context, id agentkit.SessionID) (agentkit.Session, error) {
+func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Session, error) {
 	if id == "" {
 		return nil, fmt.Errorf("session id is required")
+	}
+	dir, err := s.workspace.Resolve(ctx, s.relDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sess, ok := s.cache[id]; ok {
 		return sess, nil
 	}
-	path, err := sessionFilePath(s.dir, id)
+	path, err := sessionFilePath(dir, id)
 	if err != nil {
 		return nil, err
 	}

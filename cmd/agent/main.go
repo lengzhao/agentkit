@@ -2,22 +2,23 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/config"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/pluginkit/build"
 	"github.com/lengzhao/pluginkit/manager"
 )
 
-const (
-	defaultConfigPath = "./config.yaml"
-	defaultLogPath    = ".agent/agent.log"
-)
+const defaultLogPath = "~/.agentkit/agent.log"
 
 func main() {
 	closeLog := setupLogging()
@@ -25,18 +26,19 @@ func main() {
 
 	managerMode := flag.Bool("manager", false, "start plugin manager web UI")
 	addr := flag.String("addr", ":8080", "manager HTTP listen address")
-	configPath := flag.String("config", defaultConfigPath, "config YAML path")
+	basePath := flag.String("base", config.DefaultBasePath, "L0 base config YAML path")
+	overlayPath := flag.String("config", config.DefaultOverlayPath, "L1 override YAML path (optional)")
 	flag.Parse()
 
 	if *managerMode {
-		runManager(*addr, *configPath)
+		runManager(*addr, *basePath, *overlayPath)
 		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	doc, err := loadDocument(*configPath)
+	doc, err := config.LoadDocument(*basePath, *overlayPath)
 	if err != nil {
 		fatal("load config", err)
 	}
@@ -50,28 +52,20 @@ func main() {
 	}
 }
 
-func runManager(addr, configPath string) {
+func runManager(addr, basePath, overlayPath string) {
 	opts := manager.Options{
 		Addr:          addr,
 		ValidateBuild: validateRunnerBuild,
 	}
-	if raw, err := os.ReadFile(configPath); err == nil {
-		opts.InitialYAML = string(raw)
-		slog.Info("manager preloaded config", "path", configPath)
-	} else if !os.IsNotExist(err) {
-		fatal("read config", err)
+	if merged, err := config.MergeFromFiles(basePath, overlayPath); err == nil {
+		opts.InitialYAML = string(merged)
+		slog.Info("manager preloaded config", "base", basePath, "overlay", overlayPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		fatal("load config", err)
 	}
 	if err := manager.Run(opts); err != nil {
 		fatal("manager", err)
 	}
-}
-
-func loadDocument(path string) (manager.Document, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return manager.Document{}, err
-	}
-	return manager.FromYAML(raw)
 }
 
 func validateRunnerBuild(ctx context.Context, doc manager.Document) error {
@@ -83,17 +77,22 @@ func validateRunnerBuild(ctx context.Context, doc manager.Document) error {
 }
 
 func setupLogging() func() {
-	if err := os.MkdirAll(".agent", 0o755); err != nil {
+	logPath, err := workspace.Resolve(defaultLogPath)
+	if err != nil {
+		slog.Error("resolve log path", "err", err)
+		return func() {}
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		slog.Error("create log dir", "err", err)
 		return func() {}
 	}
-	f, err := os.OpenFile(defaultLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		slog.Error("open log file", "err", err)
 		return func() {}
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	slog.Info("logging to file", "path", defaultLogPath)
+	slog.Info("logging to file", "path", logPath)
 	return func() { _ = f.Close() }
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
@@ -25,7 +26,13 @@ func TestCodingAgentReadsFile(t *testing.T) {
 			"deps": map[string]any{
 				"sessionStore": map[string]any{
 					"use":    "session/store",
-					"config": map[string]any{"dir": dir},
+					"config": map[string]any{"dir": "."},
+					"deps": map[string]any{
+						"workspace": map[string]any{
+							"use":    "workspace/default",
+							"config": map[string]any{"root": dir},
+						},
+					},
 				},
 				"llm": map[string]any{
 					"use": "llm/scripted",
@@ -90,7 +97,7 @@ func TestCodingAgentReadsFile(t *testing.T) {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: dir})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

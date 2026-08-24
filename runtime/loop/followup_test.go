@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -31,7 +32,13 @@ func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, storeDir st
 						"deps": map[string]any{
 							"sessionStore": map[string]any{
 								"use":    "session/store",
-								"config": map[string]any{"dir": storeDir},
+								"config": map[string]any{"dir": "."},
+								"deps": map[string]any{
+									"workspace": map[string]any{
+										"use":    "workspace/default",
+										"config": map[string]any{"root": storeDir},
+									},
+								},
 							},
 							"llm": map[string]any{
 								"use": "llm/scripted",
@@ -68,7 +75,7 @@ func userMessage(text string) agentkit.ModelMessage {
 
 func readUserTexts(t *testing.T, storeDir string, sessionID agentkit.SessionID) []string {
 	t.Helper()
-	store, err := session.NewStore(session.StoreConfig{Dir: storeDir})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(storeDir)})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -211,7 +218,7 @@ func TestDispatchFollowUpTurnLifecycle(t *testing.T) {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: storeDir})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(storeDir)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -15,33 +16,45 @@ type Config struct {
 	Root string `json:"root"`
 }
 
+type Deps struct {
+	Workspace workspace.Service `json:"workspace"`
+}
+
 type Service struct {
-	root string
+	relRoot   string
+	workspace workspace.Service
 }
 
 func init() {
 	pluginkit.Register("fs/local", New)
 }
 
-func New(cfg Config) (filesystem.Service, error) {
+func New(cfg Config, deps Deps) (filesystem.Service, error) {
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("fs/local requires workspace")
+	}
 	root := cfg.Root
 	if root == "" {
 		root = "."
 	}
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return nil, err
-	}
-	return &Service{root: abs}, nil
+	return &Service{relRoot: root, workspace: deps.Workspace}, nil
 }
 
-func (s *Service) resolve(path string) (string, error) {
+func (s *Service) rootDir(ctx context.Context) (string, error) {
+	return s.workspace.Resolve(ctx, s.relRoot)
+}
+
+func (s *Service) resolve(ctx context.Context, path string) (string, error) {
+	root, err := s.rootDir(ctx)
+	if err != nil {
+		return "", err
+	}
 	clean := filepath.Clean(path)
 	if filepath.IsAbs(clean) {
 		clean = strings.TrimPrefix(clean, string(filepath.Separator))
 	}
-	full := filepath.Join(s.root, clean)
-	rel, err := filepath.Rel(s.root, full)
+	full := filepath.Join(root, clean)
+	rel, err := filepath.Rel(root, full)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return "", fmt.Errorf("path escapes workspace: %s", path)
 	}
@@ -49,8 +62,7 @@ func (s *Service) resolve(path string) (string, error) {
 }
 
 func (s *Service) ReadText(ctx context.Context, path string, maxBytes int) (string, error) {
-	_ = ctx
-	full, err := s.resolve(path)
+	full, err := s.resolve(ctx, path)
 	if err != nil {
 		return "", err
 	}
@@ -65,8 +77,7 @@ func (s *Service) ReadText(ctx context.Context, path string, maxBytes int) (stri
 }
 
 func (s *Service) WriteText(ctx context.Context, path, content string) error {
-	_ = ctx
-	full, err := s.resolve(path)
+	full, err := s.resolve(ctx, path)
 	if err != nil {
 		return err
 	}

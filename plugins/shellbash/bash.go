@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/shell"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -19,29 +19,33 @@ type Config struct {
 	TimeoutSeconds int    `json:"timeoutSeconds"`
 }
 
+type Deps struct {
+	Workspace workspace.Service `json:"workspace"`
+}
+
 type Executor struct {
-	workDir string
-	timeout time.Duration
+	relWorkDir string
+	timeout    time.Duration
+	workspace  workspace.Service
 }
 
 func init() {
 	pluginkit.Register("shell/bash", New)
 }
 
-func New(cfg Config) (shell.Executor, error) {
+func New(cfg Config, deps Deps) (shell.Executor, error) {
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("shell/bash requires workspace")
+	}
 	workDir := cfg.WorkDir
 	if workDir == "" {
 		workDir = "."
-	}
-	abs, err := filepath.Abs(workDir)
-	if err != nil {
-		return nil, err
 	}
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	return &Executor{workDir: abs, timeout: timeout}, nil
+	return &Executor{relWorkDir: workDir, timeout: timeout, workspace: deps.Workspace}, nil
 }
 
 func (e *Executor) Run(ctx context.Context, req shell.Request) (shell.Result, error) {
@@ -52,8 +56,13 @@ func (e *Executor) Run(ctx context.Context, req shell.Request) (shell.Result, er
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	workDir, err := e.workspace.Resolve(ctx, e.relWorkDir)
+	if err != nil {
+		return shell.Result{}, err
+	}
+
 	cmd := exec.CommandContext(runCtx, "bash", "-lc", req.Command)
-	cmd.Dir = e.workDir
+	cmd.Dir = workDir
 	if req.WorkDir != "" {
 		cmd.Dir = req.WorkDir
 	}
@@ -61,7 +70,7 @@ func (e *Executor) Run(ctx context.Context, req shell.Request) (shell.Result, er
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	exitCode := 0
 	if err != nil {
 		var exitErr *exec.ExitError

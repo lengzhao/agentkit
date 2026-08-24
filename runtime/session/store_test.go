@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -14,7 +15,7 @@ func TestStoreIsolatesSessionsByID(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: dir})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestStoreIsolatesSessionsByID(t *testing.T) {
 func TestStoreRejectsUnsafeSessionID(t *testing.T) {
 	t.Parallel()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: t.TempDir()})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}

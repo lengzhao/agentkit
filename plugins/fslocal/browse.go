@@ -19,8 +19,8 @@ var skipDirNames = map[string]struct{}{
 	".agent":       {},
 }
 
-func (s *Service) ListDir(_ context.Context, path string) ([]filesystem.DirEntry, error) {
-	full, err := s.resolve(path)
+func (s *Service) ListDir(ctx context.Context, path string) ([]filesystem.DirEntry, error) {
+	full, err := s.resolve(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (s *Service) ListDir(_ context.Context, path string) ([]filesystem.DirEntry
 	return out, nil
 }
 
-func (s *Service) Grep(_ context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
+func (s *Service) Grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
 	if req.Pattern == "" {
 		return filesystem.GrepResult{}, fmt.Errorf("pattern is required")
 	}
@@ -68,7 +68,11 @@ func (s *Service) Grep(_ context.Context, req filesystem.GrepRequest) (filesyste
 		return filesystem.GrepResult{}, fmt.Errorf("invalid pattern: %w", err)
 	}
 
-	root, err := s.resolve(searchPath)
+	root, err := s.resolve(ctx, searchPath)
+	if err != nil {
+		return filesystem.GrepResult{}, err
+	}
+	workspaceRoot, err := s.rootDir(ctx)
 	if err != nil {
 		return filesystem.GrepResult{}, err
 	}
@@ -101,7 +105,7 @@ func (s *Service) Grep(_ context.Context, req filesystem.GrepRequest) (filesyste
 				return result, nil
 			}
 		}
-		rel, err := filepath.Rel(s.root, root)
+		rel, err := filepath.Rel(workspaceRoot, root)
 		if err != nil {
 			return filesystem.GrepResult{}, err
 		}
@@ -132,7 +136,7 @@ func (s *Service) Grep(_ context.Context, req filesystem.GrepRequest) (filesyste
 				return nil
 			}
 		}
-		rel, err := filepath.Rel(s.root, fullPath)
+		rel, err := filepath.Rel(workspaceRoot, fullPath)
 		if err != nil {
 			return err
 		}
@@ -169,7 +173,7 @@ func grepFile(fullPath, rel string, re *regexp.Regexp, appendMatch func(string, 
 	return scanner.Err()
 }
 
-func (s *Service) Find(_ context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
+func (s *Service) Find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
 	if req.Pattern == "" {
 		return filesystem.FindResult{}, fmt.Errorf("pattern is required")
 	}
@@ -182,7 +186,11 @@ func (s *Service) Find(_ context.Context, req filesystem.FindRequest) (filesyste
 		maxResults = 200
 	}
 
-	root, err := s.resolve(searchPath)
+	root, err := s.resolve(ctx, searchPath)
+	if err != nil {
+		return filesystem.FindResult{}, err
+	}
+	workspaceRoot, err := s.rootDir(ctx)
 	if err != nil {
 		return filesystem.FindResult{}, err
 	}
@@ -209,7 +217,7 @@ func (s *Service) Find(_ context.Context, req filesystem.FindRequest) (filesyste
 	}
 
 	if !rootInfo.IsDir() {
-		rel, err := filepath.Rel(s.root, root)
+		rel, err := filepath.Rel(workspaceRoot, root)
 		if err != nil {
 			return filesystem.FindResult{}, err
 		}
@@ -236,7 +244,7 @@ func (s *Service) Find(_ context.Context, req filesystem.FindRequest) (filesyste
 			}
 			return nil
 		}
-		rel, err := filepath.Rel(s.root, fullPath)
+		rel, err := filepath.Rel(workspaceRoot, fullPath)
 		if err != nil {
 			return err
 		}

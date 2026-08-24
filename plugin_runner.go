@@ -25,12 +25,3 @@ type Platform interface {
 	Receive(context.Context) (MessageEvent, error)
 	Send(context.Context, OutboundEvent) error
 }
-
-// ReplyTargetResolver is an optional platform capability for proactive sends
-// (cron, push, cc-connect send) where no live inbound message exists. The
-// platform reconstructs its private reply/delivery context from an opaque
-// SessionID. Only platform plugins implement this; Loop and Agent must not
-// parse SessionID segments.
-type ReplyTargetResolver interface {
-	ResolveReplyTarget(SessionID) (replyCtx any, err error)
-}

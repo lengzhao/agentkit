@@ -224,6 +224,7 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
+| `workspace/default` | `workspace.Service` | 工作区根；`Resolve(ctx, rel)` 按 context（可含 session）解析相对路径；替换此插件即可换隔离策略 |
 | `credentials/env` | `credentials.Store` | 环境变量 |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |

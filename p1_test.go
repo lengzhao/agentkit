@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/settings"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
@@ -47,7 +48,17 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 	sessionID := agentkit.SessionID("test:default")
 	sessionStoreCfg := map[string]any{
 		"use":    "session/store",
-		"config": map[string]any{"dir": sessionDir},
+		"config": map[string]any{"dir": "."},
+		"deps": map[string]any{
+			"workspace": map[string]any{
+				"use":    "workspace/default",
+				"config": map[string]any{"root": sessionDir},
+			},
+		},
+	}
+	workspaceCfg := map[string]any{
+		"use":    "workspace/default",
+		"config": map[string]any{"root": dir},
 	}
 
 	graph := map[string]any{
@@ -89,7 +100,10 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 									"skills": map[string]any{
 										"use": "skill/filesystem",
 										"config": map[string]any{
-											"dirs": []string{dir},
+											"dirs": []string{"."},
+										},
+										"deps": map[string]any{
+											"workspace": workspaceCfg,
 										},
 									},
 								},
@@ -116,7 +130,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: sessionDir})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(sessionDir)})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

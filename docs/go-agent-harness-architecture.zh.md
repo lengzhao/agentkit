@@ -447,10 +447,42 @@ type Decision struct {
 
 ### 5.6 用户配置模型
 
-MVP 配置直接使用 `pluginkit` root graph。AgentKit 可以在更高层提供 Preset / Feature，但它们最终必须编译成 `use/config/deps` 结构。
+MVP 配置使用两层 YAML 合并后得到 `pluginkit` root graph：
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| L0 | `config.base.yaml` | 随版本发布的默认实例图；所有实例 id 以 `.default` 结尾 |
+| L1 | `config.yaml` 或 `-config` 指定路径 | 用户 override；**同 id 整颗替换** L0 实例 |
+
+合并规则：
+
+1. 先加载 L0，再按 map key 用 L1 覆盖（整颗 `PluginNode` 替换，不做字段级 merge）。
+2. 以 `runner.default` 为 root，裁剪从 root 可达的顶层实例（含 inline deps 中对共享实例的引用）。
+3. 输出 merged graph 后调用 `build.Build`。
 
 ```yaml
-runner:
+# config.yaml — 只写需要覆盖的实例
+workspace.default:
+  use: workspace/default
+  config:
+    root: .
+
+llm.default:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+  deps:
+    credentials: credentials.default
+```
+
+`presets/*.yaml` 也是 L1 overlay（例如 `presets/coding.yaml` 只覆盖 workspace / sessionStore 等少数实例）。
+
+完整 L0 示例见仓库根目录 [config.base.yaml](../config.base.yaml)。AgentKit 可以在更高层提供 Preset / Feature，但它们最终必须编译成 `use/config/deps` 结构。
+
+```yaml
+runner.default:
   use: runner
   config:
     shutdownTimeout: 10s
@@ -467,15 +499,12 @@ loop.default:
     maxTurns: 20
   deps:
     agents:
-      - agent.coder
+      - agent.coder.default
 
-agent.coder:
+agent.coder.default:
   use: agent/coding
   deps:
-    session:
-      use: session/jsonl
-      config:
-        path: .agent/sessions
+    sessionStore: sessionStore.default
     llm:
       use: llm/openai
       config:
@@ -504,12 +533,12 @@ shell.default:
 
 配置规则：
 
-- 顶层 key 是实例 id；root id 通常是 `runner`。
+- 顶层 key 是实例 id；root id 通常是 `runner.default`。
 - `use` 是 `pluginkit.Register` 注册的 kind。
 - `config` 按 JSON 规则解码到构造函数的 Config 参数；未知字段失败。
 - `deps` 的值可以是已有实例 id、内联插件对象，或它们的列表。
 - 可复用实例放到顶层并通过 id 引用；私有实例优先内联在依赖处。
-- `agentkit config resolve` 只做 Preset / Feature / override 展开，输出仍是 `pluginkit` root graph。
+- `agentkit config resolve`（规划中）对 Preset / Feature / override 展开，输出仍是 `pluginkit` root graph。
 
 ### 5.7 Feature 与 Preset
 
@@ -744,7 +773,7 @@ type SessionStore interface {
 
 | 组件 | 职责 |
 |------|------|
-| **Platform**（如 `platform/slack`） | 从 IM 事件生成稳定 `MessageEvent.SessionID`（必填）；出站 `OutboundEvent` 回带同一 ID；可选实现 `ReplyTargetResolver` 用于主动发送 |
+| **Platform**（如 `platform/slack`） | 从 IM 事件生成稳定 `MessageEvent.SessionID`（必填）；出站 `OutboundEvent` 回带同一 ID，由 `Send` 解析投递目标（含主动发送） |
 | **Loop** | 按 `MessageEvent.SessionID` 选择 Agent 并串行调度；不调用 `SessionStore` |
 | **Agent** | `RunTurn` 从 `ctx.Value(agentkit.KeySessionID)` 读取 SessionID，并通过 `deps.sessionStore.Get` 加载 Session |
 | **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl` |
@@ -836,7 +865,7 @@ type Agent interface {
 }
 ```
 
-- **context key**：Loop 在 `Dispatch` 时把 `MessageEvent.SessionID`、解析后的 `AgentID`、`PlatformID` 以及 per-session `Control` 写入 `ctx`；下游通过 `ctx.Value(agentkit.KeySessionID)` / `ctx.Value(agentkit.KeyAgentID)` / `ctx.Value(agentkit.KeyPlatformID)` / `ctx.Value(agentkit.KeySessionControl)` 读取。
+- **context key**：Loop 在 `Dispatch` 时把 `MessageEvent.SessionID`、解析后的 `AgentID`、`PlatformID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件可在 `Resolve` 中读取这些 key 做隔离。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
 - **Loop.Steer/FollowUp**：从 `ctx.Value(agentkit.KeySessionID)` 路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl` 供 Agent step 级 steer 中断。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。
@@ -1066,7 +1095,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 - `agentkit session replay <id>`：从 Session 日志重放模型可见上下文。
 - `agentkit hooks list`：展示已装配 hook 顺序和提供插件。
 
-日志使用 Go 标准库 `log/slog`。`cmd/agent` 默认写入 `.agent/agent.log`，避免干扰 CLI TUI；`.agent/` 已在 `.gitignore` 中。每条启动、停止、工具执行、LLM 请求、审批决策日志都应带 `plugin_id`、`plugin_kind`、`session_id`、`agent_id` 或 `tool_call_id`。
+日志使用 Go 标准库 `log/slog`。`cmd/agent` 默认写入 `~/.agentkit/agent.log`，避免干扰 CLI TUI。每条启动、停止、工具执行、LLM 请求、审批决策日志都应带 `plugin_id`、`plugin_kind`、`session_id`、`agent_id` 或 `tool_call_id`。
 
 错误分类也应统一，便于日志、CLI、SDK 和模型可见错误复用：
 

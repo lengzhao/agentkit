@@ -35,7 +35,10 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 		return nil, fmt.Errorf("runner requires loop")
 	}
 	_ = cfg
-	return &Root{platform: deps.Platform, loop: deps.Loop}, nil
+	return &Root{
+		platform: deps.Platform,
+		loop:     deps.Loop,
+	}, nil
 }
 
 func (r *Root) Run(ctx context.Context, result *build.Result) error {

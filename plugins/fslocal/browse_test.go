@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/fslocal"
 )
 
@@ -24,7 +25,7 @@ func TestBrowseOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fs, err := fslocal.New(fslocal.Config{Root: dir})
+	fs, err := fslocal.New(fslocal.Config{Root: "."}, fslocal.Deps{Workspace: workspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,20 +14,19 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 ## 快速开始
 
 ```sh
-# 交互式 REPL（默认 presets/coding.yaml，API Key 走 OPENAI_API_KEY）
+# 交互式 REPL（L0 config.base.yaml + 可选 L1 config.yaml，API Key 走 OPENAI_API_KEY）
 export OPENAI_API_KEY=sk-...
 go run ./cmd/agent
 
-# 本地 override：复制 config.example.yaml 为 config.yaml（已在 .gitignore）
+# 本地 override：复制 config.example.yaml 为 config.yaml（已在 .gitignore），只写要覆盖的实例
 cp config.example.yaml config.yaml
-go run ./cmd/agent -config config.yaml
 
 # 带首条消息进入 REPL
 go run ./cmd/agent "帮我看看这个项目结构"
 
-# 单次任务：把 config 里 platform.cli.once 设为 true，或用 presets/coding-smoke.yaml
+# 单次任务：把 platform.default.config.once 设为 true，或用 presets/coding-smoke.yaml
 
-# 使用预设配置
+# 项目目录 coding preset（L1 overlay）
 go run ./cmd/agent -config presets/coding.yaml "你的任务"
 
 # 无 API Key 的本地冒烟（scripted LLM）
@@ -37,7 +36,7 @@ go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读�
 go run ./cmd/agent -manager
 go run ./cmd/agent -manager -addr :9090
 
-# 打开已有配置编辑；显式 -config 时编辑会自动写回该文件，试装配成功也会写回
+# 打开已有配置编辑；试装配成功会写回 -config 指定的 L1 文件
 go run ./cmd/agent -manager -config config.yaml
 go run ./cmd/agent -manager -config presets/coding.yaml
 ```

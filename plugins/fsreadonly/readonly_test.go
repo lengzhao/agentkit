@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/fsreadonly"
 	"github.com/lengzhao/agentkit/plugins/fslocal"
 )
@@ -13,7 +14,8 @@ import (
 func TestReadonlyAllowsReadDeniesWrite(t *testing.T) {
 	t.Parallel()
 
-	inner, err := fslocal.New(fslocal.Config{Root: t.TempDir()})
+	dir := t.TempDir()
+	inner, err := fslocal.New(fslocal.Config{Root: "."}, fslocal.Deps{Workspace: workspace.Static(dir)})
 	if err != nil {
 		t.Fatalf("local fs: %v", err)
 	}

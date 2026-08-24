@@ -1,0 +1,233 @@
+# L0 默认配置：随 agentkit 发布，用户通过 config.yaml（L1）按 instance id 整颗覆盖。
+# 工作目录由 workspace.default 定义（默认 ~/.agentkit）；其余路径均相对该目录。
+# API Key 通过环境变量注入：export OPENAI_API_KEY=sk-...
+
+workspace.default:
+  use: workspace/default
+  config:
+    root: ~/.agentkit
+
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+  deps:
+    platform: platform.default
+    loop: loop.default
+
+platform.default:
+  use: platform/cli
+  config:
+    once: false
+  deps:
+    commands: commands.default
+
+commands.default:
+  use: commands/registry
+
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.coder.default
+
+agent.coder.default:
+  use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.4
+    maxSteps: 20
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    sessionStore: sessionStore.default
+    llm: llm.default
+    hooks: hooks.default
+    prompt: prompt.default
+    tools: tools.default
+    compaction:
+      - compaction.prune.default
+      - compaction.summary.default
+
+sessionStore.default:
+  use: session/store
+  config:
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+credentials.default:
+  use: credentials/env
+
+llm.default:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+    api: chat
+    retry:
+      provider:
+        maxRetries: 0
+        maxRetryDelayMs: 60000
+  deps:
+    credentials: credentials.default
+
+hooks.default:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.before-step.default
+
+hook.before-step.default:
+  use: hook/before-step
+  deps:
+    sessionStore: sessionStore.default
+    services:
+      - compaction.prune.default
+      - compaction.summary.default
+
+compaction.prune.default:
+  use: compaction/prune-tool-results
+  config:
+    maxToolResultBytes: 8192
+
+compaction.summary.default:
+  use: compaction/summary
+  config:
+    minMessages: 30
+    keepRecent: 8
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    llm: llm.summary.default
+
+llm.summary.default:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+  deps:
+    credentials: credentials.default
+
+prompt.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.agents-md.default
+      - prompt.skills.default
+
+prompt.agents-md.default:
+  use: prompt/section/agents-md
+  config:
+    root: .
+  deps:
+    workspace: workspace.default
+
+prompt.skills.default:
+  use: prompt/section/skills
+  deps:
+    skills: skills.default
+
+skills.default:
+  use: skill/filesystem
+  config:
+    dirs:
+      - skills
+      - ~/.cursor/skills
+  deps:
+    workspace: workspace.default
+
+tools.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.write-file.default
+      - tool.edit-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.shell.default
+      - tool.skill.default
+    policies:
+      - policy.dangerous-shell.default
+    approval: approval.cli.default
+
+tool.read-file.default:
+  use: tool/read-file
+  config:
+    maxBytes: 1048576
+  deps:
+    fs: fs.workspace.readonly.default
+
+tool.write-file.default:
+  use: tool/write-file
+  deps:
+    fs: fs.workspace.default
+
+tool.edit-file.default:
+  use: tool/edit-file
+  deps:
+    fs: fs.workspace.default
+
+tool.grep.default:
+  use: tool/grep
+  deps:
+    fs: fs.workspace.readonly.default
+
+tool.find.default:
+  use: tool/find
+  deps:
+    fs: fs.workspace.readonly.default
+
+tool.list-dir.default:
+  use: tool/list-dir
+  deps:
+    fs: fs.workspace.readonly.default
+
+tool.shell.default:
+  use: tool/shell
+  deps:
+    shell: shell.bash.default
+
+tool.skill.default:
+  use: tool/skill
+  deps:
+    skills: skills.default
+    sessionStore: sessionStore.default
+
+fs.workspace.default:
+  use: fs/local
+  config:
+    root: .
+  deps:
+    workspace: workspace.default
+
+fs.workspace.readonly.default:
+  use: fs/readonly
+  deps:
+    fs: fs.workspace.default
+
+shell.bash.default:
+  use: shell/bash
+  config:
+    workDir: .
+    timeoutSeconds: 60
+  deps:
+    workspace: workspace.default
+
+policy.dangerous-shell.default:
+  use: policy/deny-dangerous-shell
+
+approval.cli.default:
+  use: approval/cli
