@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -20,10 +21,13 @@ type ScriptedConfig struct {
 	Steps []ScriptedStep `json:"steps"`
 }
 
-// Scripted replays fixed assistant responses for tests.
+// Scripted replays fixed assistant responses for tests. One instance can be
+// shared by several sessions (a multiplex or concurrent-dispatch preset), so the
+// step cursor is guarded.
 type Scripted struct {
 	model string
 	steps []ScriptedStep
+	mu    sync.Mutex
 	idx   int
 }
 
@@ -41,11 +45,14 @@ func NewScripted(cfg ScriptedConfig) (agentkit.LLMProvider, error) {
 func (p *Scripted) Name() string { return "scripted" }
 
 func (p *Scripted) Stream(_ context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
+	p.mu.Lock()
 	if p.idx >= len(p.steps) {
+		p.mu.Unlock()
 		return nil, fmt.Errorf("scripted llm exhausted after %d steps", len(p.steps))
 	}
 	step := p.steps[p.idx]
 	p.idx++
+	p.mu.Unlock()
 	msg := agentkit.ModelMessage{
 		Role: "assistant",
 		Content: []agentkit.ContentPart{{
@@ -61,9 +68,9 @@ func (p *Scripted) Stream(_ context.Context, req agentkit.LLMRequest) (agentkit.
 }
 
 type scriptedStream struct {
-	msg    agentkit.ModelMessage
+	msg     agentkit.ModelMessage
 	pending []agentkit.LLMEvent
-	closed bool
+	closed  bool
 }
 
 func (s *scriptedStream) Recv() (agentkit.LLMEvent, error) {

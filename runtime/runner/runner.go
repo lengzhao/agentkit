@@ -9,13 +9,24 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/pluginkit/build"
 )
 
 type Config struct {
+	// ShutdownTimeoutSeconds bounds how long shutdown waits for in-flight turns
+	// to finish. 0 waits indefinitely.
 	ShutdownTimeoutSeconds int `json:"shutdownTimeoutSeconds"`
+	// MaxConcurrentTurns caps how many turns run at once. Defaults to 1, i.e.
+	// fully serial, because turns from different sessions share one workspace:
+	// two agents running `go build` or editing the same file concurrently is a
+	// real hazard. Raise it for multi-conversation transports (IM, HTTP) where
+	// sessions are genuinely independent.
+	//
+	// Ordering within a session is always preserved, whatever the value.
+	MaxConcurrentTurns int `json:"maxConcurrentTurns"`
 }
 
 type Deps struct {
@@ -24,8 +35,10 @@ type Deps struct {
 }
 
 type Root struct {
-	platform agentkit.Platform
-	loop     agentkit.Loop
+	platform        agentkit.Platform
+	loop            agentkit.Loop
+	maxConcurrent   int
+	shutdownTimeout time.Duration
 }
 
 func New(cfg Config, deps Deps) (agentkit.Runner, error) {
@@ -35,10 +48,22 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if deps.Loop == nil {
 		return nil, fmt.Errorf("runner requires loop")
 	}
-	_ = cfg
+	if cfg.MaxConcurrentTurns < 0 {
+		return nil, fmt.Errorf("runner maxConcurrentTurns must not be negative")
+	}
+	maxConcurrent := cfg.MaxConcurrentTurns
+	if maxConcurrent == 0 {
+		maxConcurrent = 1
+	}
+	var shutdownTimeout time.Duration
+	if cfg.ShutdownTimeoutSeconds > 0 {
+		shutdownTimeout = time.Duration(cfg.ShutdownTimeoutSeconds) * time.Second
+	}
 	return &Root{
-		platform: deps.Platform,
-		loop:     deps.Loop,
+		platform:        deps.Platform,
+		loop:            deps.Loop,
+		maxConcurrent:   maxConcurrent,
+		shutdownTimeout: shutdownTimeout,
 	}, nil
 }
 
@@ -46,15 +71,26 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	if err := attachCommands(result); err != nil {
 		return err
 	}
+	sched := newScheduler(r.maxConcurrent, r.dispatch, r.reportTurnError)
+	// Let in-flight turns record turn/end before the process goes away.
+	defer sched.wait(r.shutdownTimeout)
+
 	for {
+		// Taking the slot before reading bounds read-ahead to the configured
+		// concurrency; at 1 this blocks until the previous turn completes.
+		if err := sched.acquire(ctx); err != nil {
+			return err
+		}
 		event, err := r.platform.Receive(ctx)
 		if err != nil {
+			sched.release()
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
 		}
 		if event.Message.Role == "" {
+			sched.release()
 			continue
 		}
 		fmt.Fprintln(os.Stderr)
@@ -70,20 +106,26 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			}
 			return r.platform.Send(ctx, out)
 		}
-		err = r.dispatch(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
-		if err != nil {
-			slog.Error("loop dispatch failed", "err", err)
-			if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{
-				SessionID:  event.SessionID,
-				AgentID:    event.AgentID,
-				PlatformID: event.PlatformID,
-				Type:       "error",
-				Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
-			}); sendErr != nil {
-				return sendErr
-			}
-			continue
-		}
+		sched.submit(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
+	}
+}
+
+// reportTurnError surfaces a failed turn on its own session's channel and keeps
+// the process serving. A turn failure is never fatal to the runner.
+func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, err error) {
+	slog.Error("loop dispatch failed",
+		"session_id", req.Event.SessionID,
+		"agent_id", req.Event.AgentID,
+		"err", err,
+	)
+	if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{
+		SessionID:  req.Event.SessionID,
+		AgentID:    req.Event.AgentID,
+		PlatformID: req.Event.PlatformID,
+		Type:       "error",
+		Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
+	}); sendErr != nil {
+		slog.Error("reporting turn error failed", "session_id", req.Event.SessionID, "err", sendErr)
 	}
 }
 

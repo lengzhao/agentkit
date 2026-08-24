@@ -232,6 +232,31 @@ agent -config presets/autonomous.yaml,presets/daemon.yaml
 
 所以 `worker.yaml` / `daemon.yaml` 都是**薄 overlay，只换传输层**，能力栈从 `autonomous.yaml` 叠加，不必每个 preset 重述整张图。反过来说：单独用 `-config presets/daemon.yaml` 会拿到 L0 的 `approval/cli`，守护进程会卡在等人审批 —— 一定要一起链。
 
+### 7.7 并发分发
+
+Runner 可以让**不同 session** 的 turn 并行，`runner.config.maxConcurrentTurns` 控制上限：
+
+```yaml
+runner.default:
+  use: runner
+  config:
+    maxConcurrentTurns: 4
+    shutdownTimeoutSeconds: 30
+```
+
+四条保证：
+
+| 保证 | 为什么需要 |
+|---|---|
+| **同一 session 内严格保序** | Loop 也按 session 加锁，但用的是普通 mutex，而 **Go 的 mutex 不保证 FIFO** —— 同一会话的两条消息可能乱序执行。所以顺序在调度层用 per-session 队列显式保证，不依赖锁 |
+| **并发上限可控** | 每个请求携带且仅携带一个 slot，dispatch 结束归还；入队请求不需要再抢 slot，所以不会死锁 |
+| **读取不超前** | 入队前先取 slot，于是 `in-flight + queued ≤ 上限`。等于 1 时不会提前读走下一条事件，交互式 CLI 的 UX 与全串行完全一致 |
+| **关停不截断 turn** | 退出前等进行中的 turn 落盘 `turn/end`，上限 `shutdownTimeoutSeconds`。被截断的 turn 会留下悬空 `turn/start`，虽然 [§6](#6-崩溃恢复) 能修，但能不留就不留 |
+
+**默认是 1（串行），这是有意的**：不同 session 的 turn 共享同一个工作区，两个 agent 并发跑 `go build` 或改同一个文件是真实风险。会话之间真正独立的传输（多频道 IM、HTTP）才该往上调。实测 4 个 2 秒工作量：串行 8.2s，`maxConcurrentTurns: 2` 下 4.1s。
+
+对第三方 Platform 的要求：`Send` 必须支持并发调用（每个 turn 从自己的 goroutine 发出），`Receive` 仍只由单个 goroutine 调用。
+
 ## 8. 无人值守的安全边界
 
 `approval/cli` 会阻塞等人，`approval/auto-deny` 会让自主跑全程被拒，所以无人值守用 `approval/auto-allow`。
@@ -278,7 +303,6 @@ print(collections.Counter(json.loads(l)['Type'] for l in open(f)))
 
 仍缺的长期运行能力：
 
-- **runner 并发分发**：仍是单进程串行 `Receive → Dispatch`，一个长 turn 会阻塞其它会话。多会话守护（IM、HTTP）需要按 SessionID 并发派发；Loop 已经按 session 串行加锁，所以这一步主要改 runner
 - **HTTP / RPC 触发**：`platform/http`、`platform/rpc` 仍未实现，外部系统目前只能通过 OS cron + worker 触发
 - **cron 表达式**：`platform/timer` 只支持固定间隔。日历型定时用 OS cron + worker（见 §7.4），比进程内 cron 更抗重启
 - **进程级自动重启**：panic 隔离保住了单个 turn，但进程真的挂掉（OOM、被 kill）仍需外部 supervisor（systemd `Restart=always`）兜底

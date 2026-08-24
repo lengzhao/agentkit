@@ -13,7 +13,12 @@ workspace.default:
 runner.default:
   use: runner
   config:
+    # 关停时等待进行中的 turn 落盘 turn/end 的上限；0 = 无限等。
     shutdownTimeoutSeconds: 10
+    # 同时运行的 turn 上限。默认 1（串行）：不同 session 的 turn 共享同一个工作区，
+    # 两个 agent 并发跑 go build 或改同一个文件是真实风险。
+    # 会话之间真正独立的传输（IM、HTTP）再往上调；同一 session 内的顺序始终保证。
+    maxConcurrentTurns: 1
   deps:
     platform: platform.default
     loop: loop.default

@@ -854,6 +854,20 @@ type Runner interface {
 
 Runner 是 `pluginkit` root plugin 的返回值，负责连接 Platform 和 Loop，管理生命周期、取消、优雅退出和后台错误收集。Runner 不直接调用 LLM 或 Tools，也不持有具体业务策略；这些由 Loop 下方的 Agent 处理。
 
+**并发分发**（`config.maxConcurrentTurns`，默认 1）：
+
+| 保证 | 实现 |
+|---|---|
+| 同一 session 内严格保序 | 每个 session 一个 worker 顺序消费自己的队列。Loop 虽然也按 session 加锁，但用的是普通 mutex，而 Go 的 mutex 不保证 FIFO，所以顺序必须在调度层显式保证，不能依赖锁 |
+| 并发上限可控 | slot 信号量；**每个请求携带且仅携带一个 slot**，dispatch 结束后归还。入队请求不需要再抢 slot，因此不会死锁 |
+| 读取不超前 | 入队前先取 slot，所以 `in-flight + queued ≤ maxConcurrentTurns`；等于 1 时行为与全串行完全一致（不会提前读走下一条事件） |
+| 单个 turn 崩溃隔离 | 每个 turn 包一层 recover，panic 记堆栈 + 报到该 session 的 error 通道后继续服务 |
+| 关停不截断 turn | 退出前等待进行中的 turn 落盘 `turn/end`，上限 `shutdownTimeoutSeconds` |
+
+默认 1（串行）是有意的：不同 session 的 turn **共享同一个工作区**，两个 agent 并发跑 `go build` 或改同一个文件是真实风险。会话之间真正独立的传输（IM、HTTP）才该往上调。
+
+由此 `Platform.Send` 必须支持并发调用（每个 turn 从自己的 goroutine 发出），`Receive` 仍只由单个 goroutine 调用。
+
 ### 6.3 Platform
 
 ```go

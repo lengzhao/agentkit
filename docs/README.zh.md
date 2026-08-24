@@ -57,7 +57,7 @@ Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预
 
 Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
 
-Phase 3 守护外壳已实现：`platform/worker`（一次性任务，不读 stdin）、`platform/timer`（进程内定时器，tick 锚定启动时间、跳过错过的 boundary）、runner per-turn panic 隔离、overlay 链式合并。
+Phase 3 守护外壳已实现：`platform/worker`（一次性任务，不读 stdin）、`platform/timer`（进程内定时器，tick 锚定启动时间、跳过错过的 boundary）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 
 新增插件后运行 `go generate ./...` 更新 `plugins/all.go` 的 blank import。
 

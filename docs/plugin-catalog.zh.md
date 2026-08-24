@@ -92,7 +92,7 @@ flowchart TB
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop | DSH Loader root / Pi AgentSession 外层 |
+| `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop；`maxConcurrentTurns` 控制跨 session 并发（默认 1，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
 | `platform/cli` | `agentkit.Platform` | 终端 stdin/stdout；入站固定 `SessionID=cli:default` | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
@@ -383,7 +383,7 @@ graph:
 |---|---|
 | Compaction | `compaction/summary`, `compaction/prune-tool-results`, `compaction/token-limit`, `hook/before-step` |
 | 崩溃恢复 | Agent 内置：`ScanIncomplete` / `RepairIncomplete` + `session/recovery` 事件 |
-| 守护外壳 | `platform/worker`, `platform/timer`；runner per-turn panic 隔离；overlay 链式合并 |
+| 守护外壳 | `platform/worker`, `platform/timer`；runner 并发分发 + per-turn panic 隔离 + 优雅关停；overlay 链式合并 |
 | 自主运行 | `hook/turn-continue`, `tool/todo`, `tool/finish`, `approval/auto-allow`, `policy/shell-allowlist`, `policy/path-denylist` |
 | Skills | `skill/filesystem`, `tool/skill`, `prompt/section/skills` |
 | 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |

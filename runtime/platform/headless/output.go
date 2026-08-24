@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -23,9 +24,14 @@ const (
 // emitter renders outbound events for an unattended run. Results go to stdout so
 // they can be piped; progress and diagnostics go to stderr so they cannot
 // corrupt that stream.
+//
+// Writes are serialized because Runner may emit from several turns at once, and a
+// JSON line longer than the pipe buffer would otherwise interleave with another
+// goroutine's, breaking the one-object-per-line guarantee.
 type emitter struct {
 	mode   string
 	stream bool
+	mu     sync.Mutex
 	out    io.Writer
 	errOut io.Writer
 }
@@ -41,6 +47,8 @@ func newEmitter(mode string, stream bool) *emitter {
 }
 
 func (e *emitter) send(event agentkit.OutboundEvent) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.mode == OutputJSON {
 		return e.sendJSON(event)
 	}
