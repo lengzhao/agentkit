@@ -91,4 +91,33 @@ func init() {
 			"Bump toolTimeouts for delegate: a child agent runs many steps and will blow through the default tool timeout.",
 		},
 	})
+	plugindoc.Register("tool/web-fetch", plugindoc.Doc{
+		Summary: "Fetch a URL (tool name: web_fetch) and return its readable text.",
+		ConfigNotes: map[string]string{
+			"maxBytes": "per-call read limit on top of the provider's own; 0 uses the provider default",
+		},
+		BestPractices: []string{
+			"Needs only web/http-fetch, so it works without any API key.",
+			"Pair with tool/web-search: search returns snippets, this returns the page.",
+			"A refused or failed fetch comes back as a readable tool result, so the turn survives it.",
+		},
+	})
+	plugindoc.Register("tool/web-search", plugindoc.Doc{
+		Summary: "Search the web (tool name: web_search) and return ranked hits with snippets.",
+		ConfigNotes: map[string]string{
+			"maxResults": "default cap on hits per call when the model does not ask for one",
+		},
+		BestPractices: []string{
+			"Needs a keyed provider such as web/exa-search; use web/scripted-search for tests and smoke runs.",
+			"Snippets are excerpts. Fetch the url before relying on any detail.",
+		},
+	})
+	plugindoc.Register("tool/ask-user", plugindoc.Doc{
+		Summary: "Ask the human one question (tool name: ask_user) whose answer changes what the agent does next.",
+		BestPractices: []string{
+			"Wire ask/cli for interactive platforms and ask/unavailable for worker / timer / cron, so an unattended run degrades instead of blocking.",
+			"An unanswered question returns answered=false plus guidance to proceed; it is never an error, and never blocks the turn.",
+			"Do not mount it on subagents: a child agent runs behind a delegate call, where nobody is watching its stdout.",
+		},
+	})
 }

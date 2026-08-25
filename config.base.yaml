@@ -75,6 +75,27 @@ schedule.default:
   deps:
     workspace: workspace.default
 
+# 子 agent 委派：定义在 local:agents / global:agents 下的 agents/*.md。
+# 子 agent 必须用不含 tool/subagent 的兄弟 tools/prompt 实例，既断依赖环，也让"只有主 agent 能委派"成为结构性事实。
+subagent.default:
+  use: subagent/inprocess
+  config:
+    dirs:
+      - local:agents
+      - global:agents
+    maxSteps: 20
+    timeoutSeconds: 600
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+    llm: llm.default
+    tools: tools.subagent.default
+    prompt: prompt.subagent.default
+    hooks: hooks.default
+    compaction:
+      - compaction.prune.default
+      - compaction.summary.default
+
 credentials.default:
   use: credentials/env
 
@@ -129,6 +150,20 @@ prompt.default:
     sections:
       - prompt.agents-md.default
       - prompt.skills.default
+      - prompt.subagents.default
+
+prompt.subagents.default:
+  use: prompt/section/subagents
+  deps:
+    subagent: subagent.default
+
+# 子 agent 的 prompt：共享 AGENTS.md 与 skills，不含可委派名单。
+prompt.subagent.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.agents-md.default
+      - prompt.skills.default
 
 prompt.agents-md.default:
   use: prompt/section/agents-md
@@ -156,6 +191,11 @@ tools.default:
   config:
     defaultTimeoutSeconds: 120
     maxResultBytes: 8192
+    # 子 agent 要跑多步，delegate 单独放宽墙钟上限。
+    toolTimeouts:
+      delegate: 900
+      # 人不是 120s 内一定会回话的。
+      ask_user: 900
   deps:
     hooks: hooks.default
     tools:
@@ -167,6 +207,30 @@ tools.default:
       - tool.list-dir.default
       - tool.shell.default
       - tool.skill.default
+      - tool.subagent.default
+      - tool.web-fetch.default
+      - tool.web-search.default
+      - tool.ask-user.default
+    policies:
+      - policy.dangerous-shell.default
+    approval: approval.cli.default
+
+# 子 agent 的工具集：只读 + finish，不含 delegate。
+tools.subagent.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.finish.default
+      - tool.web-fetch.default
+      - tool.web-search.default
     policies:
       - policy.dangerous-shell.default
     approval: approval.cli.default
@@ -221,6 +285,59 @@ tool.schedule.default:
     maxJobs: 32
   deps:
     schedule: schedule.default
+
+tool.subagent.default:
+  use: tool/subagent
+  deps:
+    subagent: subagent.default
+
+tool.finish.default:
+  use: tool/finish
+  deps:
+    sessionStore: sessionStore.default
+
+# 抓取与搜索是两个 cap（web.Fetcher / web.Searcher）：没配 EXA_API_KEY 时抓取仍可用，
+# 搜索在调用时返回模型可读的"没有 key"而不是阻断构造。
+web.fetch.default:
+  use: web/http-fetch
+  config:
+    timeoutSeconds: 30
+    maxBytes: 1048576
+    maxRedirects: 5
+    # 打开它等于允许 agent 访问 127.0.0.1 / 10.0.0.0/8 等私网地址。
+    allowPrivateHosts: false
+
+web.search.default:
+  use: web/exa-search
+  config:
+    apiKeyRef: env:EXA_API_KEY
+    maxResults: 5
+    includeText: false
+    snippetChars: 800
+  deps:
+    credentials: credentials.default
+
+ask.default:
+  use: ask/cli
+  config:
+    prefix: "[agent asks]"
+
+tool.web-fetch.default:
+  use: tool/web-fetch
+  deps:
+    web: web.fetch.default
+
+tool.web-search.default:
+  use: tool/web-search
+  config:
+    maxResults: 5
+  deps:
+    web: web.search.default
+
+tool.ask-user.default:
+  use: tool/ask-user
+  deps:
+    ask: ask.default
 
 fs.workspace.default:
   use: fs/local

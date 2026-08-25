@@ -242,17 +242,3 @@ func (s *instantStream) Recv() (agentkit.LLMEvent, error) {
 }
 
 func (s *instantStream) Close() error { return nil }
-
-func userTexts(sess agentkit.Session, ctx context.Context) []string {
-	msgs, err := sess.DeriveMessages(ctx)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, msg := range msgs {
-		if msg.Role == "user" && len(msg.Content) > 0 {
-			out = append(out, msg.Content[0].Text)
-		}
-	}
-	return out
-}

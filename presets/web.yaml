@@ -1,0 +1,112 @@
+# L1 preset：网络能力（搜索 + 抓取 + 向用户提问）。
+#
+#   export EXA_API_KEY=...          # 只有搜索需要 key
+#   go run ./cmd/agent -config presets/web.yaml "查一下 xxx 的官方文档怎么说，给我结论并附来源"
+#
+# 三条设计约定，值得先读：
+#
+#   1. 抓取与搜索是两个 cap 接口（web.Fetcher / web.Searcher），不是一个。
+#      web/http-fetch 不需要任何凭据，所以没配 EXA_API_KEY 时它照样可用；
+#      web/exa-search 缺 key 不会让实例图构建失败，而是在调用时返回一条模型可读的
+#      "没有 key" —— 一个 preset 不该因为少一个可选凭据就起不来。
+#
+#   2. 私网地址默认禁止。web/http-fetch 在 dial 时校验解析后的 IP，所以重定向和
+#      DNS rebinding 一起挡住了。要抓内网服务才打开 allowPrivateHosts。
+#      这是将来 policy/network-deny 的雏形，现在先落在 provider 里。
+#
+#   3. ask_user 的超时要单独放宽，并且"没人可问"不是错误。人思考几分钟很正常，默认
+#      120s 的工具超时会把提问砍掉；而在 cron / CI 里 stdin 是关着的，ask/cli 会返回
+#      answered=false + guidance，让 agent 自己拍板继续，而不是挂住等一个不存在的人。
+#      无人值守场景可以把 ask.default 换成 ask/unavailable，把这件事写明。
+
+web.fetch.default:
+  use: web/http-fetch
+  config:
+    timeoutSeconds: 30
+    maxBytes: 1048576
+    maxRedirects: 5
+    # 打开它等于允许 agent 访问 127.0.0.1 / 10.0.0.0/8 / 169.254.169.254 等地址。
+    allowPrivateHosts: false
+
+web.search.default:
+  use: web/exa-search
+  config:
+    apiKeyRef: env:EXA_API_KEY
+    maxResults: 5
+    # highlights 只取与查询相关的片段，比整页 text 便宜得多；要全文就调 web_fetch。
+    includeText: false
+    snippetChars: 800
+  deps:
+    credentials: credentials.default
+
+ask.default:
+  use: ask/cli
+  config:
+    prefix: "[agent asks]"
+
+tool.web-fetch.default:
+  use: tool/web-fetch
+  deps:
+    web: web.fetch.default
+
+tool.web-search.default:
+  use: tool/web-search
+  config:
+    maxResults: 5
+  deps:
+    web: web.search.default
+
+tool.ask-user.default:
+  use: tool/ask-user
+  deps:
+    ask: ask.default
+
+# 整颗覆盖 tools.default：在 L0 那批工具之外加上三个网络/提问工具。
+tools.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+    toolTimeouts:
+      delegate: 900
+      # 人不是 120s 内一定会回话的。
+      ask_user: 900
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.write-file.default
+      - tool.edit-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.shell.default
+      - tool.skill.default
+      - tool.subagent.default
+      - tool.web-fetch.default
+      - tool.web-search.default
+      - tool.ask-user.default
+    policies:
+      - policy.dangerous-shell.default
+    approval: approval.cli.default
+
+# 子 agent 也给搜索与抓取：调研类子 agent 的价值正是"烧掉十几轮检索，只回一段结论"。
+# 但不给 ask_user —— 子 agent 跑在 delegate 调用背后，它的提问没人看得见。
+tools.subagent.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.finish.default
+      - tool.web-fetch.default
+      - tool.web-search.default
+    policies:
+      - policy.dangerous-shell.default
+    approval: approval.cli.default

@@ -58,8 +58,7 @@ func (l *panickyLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error 
 	first := l.calls == 1
 	l.mu.Unlock()
 	if first {
-		var m map[string]string
-		m["boom"] = "nil map write" // panics on purpose
+		panic("boom")
 	}
 	return nil
 }

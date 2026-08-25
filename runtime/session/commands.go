@@ -32,9 +32,11 @@ type showSessionCommand struct {
 	store agentkit.SessionStore
 }
 
-func (showSessionCommand) Name() string        { return "session" }
-func (showSessionCommand) Alias() string       { return "sess" }
-func (showSessionCommand) Description() string { return "show current session id, path, and message count" }
+func (showSessionCommand) Name() string  { return "session" }
+func (showSessionCommand) Alias() string { return "sess" }
+func (showSessionCommand) Description() string {
+	return "show current session id, path, and message count"
+}
 
 func (c showSessionCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
 	if len(args) > 0 {

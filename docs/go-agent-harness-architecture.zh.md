@@ -1075,7 +1075,8 @@ cap/tool-shell/
 | approval | `Ask`, `Decide` | `approval/cli`、`approval/web`、`approval/auto-deny` | tool policy |
 | credentials | `Resolve(ref)` | env、file、vault | LLM、web |
 | settings | typed namespaces | file、remote | model defaults |
-| web | `Search`, `Fetch` | HTTP providers | web tools |
+| web | `Fetcher.Fetch` / `Searcher.Search`（两个接口） | `web/http-fetch`、`web/exa-search` | `tool/web-fetch`、`tool/web-search` |
+| ask | `Ask(question)` | `ask/cli`、`ask/unavailable` | `tool/ask-user` |
 | subagent | `Definitions`, `Run` | in-process、RPC | delegate tool |
 | compaction | `Compact(session)` | summary provider | before-step hook |
 

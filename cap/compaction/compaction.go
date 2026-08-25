@@ -26,9 +26,9 @@ type Result struct {
 }
 
 type EventData struct {
-	BeforeSeq agentkit.EventSeq  `json:"beforeSeq"`
+	BeforeSeq agentkit.EventSeq     `json:"beforeSeq"`
 	Summary   agentkit.ModelMessage `json:"summary"`
-	Kind      string             `json:"kind"`
+	Kind      string                `json:"kind"`
 }
 
 const (

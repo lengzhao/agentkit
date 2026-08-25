@@ -4,6 +4,7 @@ package all
 
 import (
 	_ "github.com/lengzhao/agentkit/plugins/approval"
+	_ "github.com/lengzhao/agentkit/plugins/ask"
 	_ "github.com/lengzhao/agentkit/plugins/compaction"
 	_ "github.com/lengzhao/agentkit/plugins/credentials"
 	_ "github.com/lengzhao/agentkit/plugins/fs"
@@ -15,6 +16,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/shell"
 	_ "github.com/lengzhao/agentkit/plugins/skill"
 	_ "github.com/lengzhao/agentkit/plugins/tool"
+	_ "github.com/lengzhao/agentkit/plugins/web"
 	_ "github.com/lengzhao/agentkit/runtime/agent"
 	_ "github.com/lengzhao/agentkit/runtime/command"
 	_ "github.com/lengzhao/agentkit/runtime/hooks"

@@ -6,13 +6,16 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 
 | 文档 | 说明 |
 |---|---|
+| [roadmap.zh.md](roadmap.zh.md) | **现状基线与接下来的目标**（M0–M4）、缺口清单、文档与代码的核对方法 |
 | [go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md) | 完整架构：Runner、Spine、装配模型、生命周期、测试策略 |
 | [reference-analysis.zh.md](reference-analysis.zh.md) | DeepSeek Harness 与 Pi 对比分析，提炼通用 Agent 能力 |
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | Plugin Kind 命名、分类目录、MVP 分阶段落地 |
+| [plugin-interface-comparison.zh.md](plugin-interface-comparison.zh.md) | `plugin_*.go` 与 DSH 的接口级逐文件对比与取长补短 |
 | [coding-workspace.zh.md](coding-workspace.zh.md) | Coding preset 工作区与 FS 边界 |
 | [../examples/config/README.md](../examples/config/README.md) | 各场景 L1 配置示例与用法 |
 | [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：turn 续跑契约、预算分层、todo/finish 判定、token 阈值压缩、崩溃恢复、无人值守安全边界 |
 | [subagent.zh.md](subagent.zh.md) | 子 Agent 委派：`agents/*.md` 定义格式、目录查找、工具白名单、结论读回、串行边界 |
+| [web.zh.md](web.zh.md) | 网络能力：抓取与搜索为何拆成两个接口、私网地址在 dial 时拦截、无 API Key / 无人可问时的降级 |
 
 ## 快速开始
 
@@ -43,8 +46,14 @@ go run ./cmd/agent -config presets/autonomous.yaml "你的多轮任务"
 go run ./cmd/agent -config presets/autonomous-smoke.yaml "整理这个目录并收尾"
 
 # 子 Agent 委派：主 agent 把子任务交给 agents/*.md 定义的子 agent，只把结论带回（见 subagent.zh.md）
+# L0 已内置 delegate；以下 preset 额外纳入 examples/agents 并把 local 根改为项目目录
 go run ./cmd/agent -config presets/subagent.yaml "让 researcher 查清 runtime/loop 的并发模型，再据此给我结论"
 go run ./cmd/agent -config presets/subagent.yaml,presets/subagent-smoke.yaml "调研一下"   # 无 API Key 冒烟
+
+# 网络能力：搜索 + 抓取 + 向用户提问（搜索需要 EXA_API_KEY，抓取不需要；见 web.zh.md）
+export EXA_API_KEY=...
+go run ./cmd/agent -config presets/web.yaml "查一下 xxx 的官方说法，给我结论并附来源"
+go run ./cmd/agent -config presets/web.yaml,presets/web-smoke.yaml "loop 怎么保证同一 session 串行？"   # 无 key、无真实请求
 
 # headless：-config 接受逗号分隔的多个 overlay，按顺序合并（后面的覆盖前面的）
 # worker 跑完即退出（不读 stdin，适合 cron / CI / 容器）；daemon 常驻按间隔自己醒来
@@ -69,6 +78,8 @@ Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预
 
 Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
 
+Phase 3 网络能力已实现：`web/http-fetch`（HTML → 文本、dial 时拦截私网地址）、`web/exa-search`（缺 key 不阻断构造）、`web/scripted-*` 无网络替身、`tool/web-fetch` / `tool/web-search` / `tool/ask-user` 与 `cap/ask`（`ask/cli`、`ask/unavailable`）。
+
 Phase 3 守护外壳已实现：`platform/worker`（headless 任务，不读 stdin；带 `cron` 时转常驻定时模式）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 
 新增插件后运行 `go generate ./...` 更新 `plugins/all.go` 的 blank import。
@@ -79,11 +90,13 @@ Phase 3 守护外壳已实现：`platform/worker`（headless 任务，不读 std
 flowchart LR
   A["reference-analysis<br/>理解业界共性"] --> B["plugin-catalog<br/>确定插件边界"]
   B --> C["go-agent-harness-architecture<br/>实现细节与约束"]
+  C --> D["roadmap<br/>现状基线与下一步"]
 ```
 
 1. **reference-analysis** — 了解 DSH / Pi 做了什么、共性是什么
 2. **plugin-catalog** — 确定 AgentKit 要注册哪些 `pluginkit.Register` kind
 3. **go-agent-harness-architecture** — 深入 Runner / Loop / Policy / Hook 语义与配置模型
+4. **roadmap** — 现在缺什么、下一步做什么、怎么核对文档没漂移
 
 ## 外部参考
 

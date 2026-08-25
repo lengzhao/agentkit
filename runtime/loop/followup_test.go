@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )

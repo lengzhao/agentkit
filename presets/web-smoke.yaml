@@ -1,0 +1,77 @@
+# L1 overlay：网络能力冒烟（scripted LLM + scripted web provider，不需要 API Key，
+# 也不产生任何真实网络请求）。叠在 web.yaml 之上：
+#
+#   go run ./cmd/agent -config presets/web.yaml,presets/web-smoke.yaml "loop 怎么保证同一 session 串行？"
+#
+# 四步走完，正好把 M1 的三个工具和"没人可问"的降级路径都跑一遍：
+#
+#   step 1  web_search  → 拿到两条带 snippet 的命中
+#   step 2  web_fetch   → 抓第一条命中的正文（scripted-fetch 提供页面）
+#   step 3  ask_user    → ask/unavailable 返回 answered=false + guidance
+#   step 4  纯文本      → 自己拍板给结论，并附来源 URL
+#
+# 期望：session jsonl 里三条 tool/result 依次出现；第三条的 answered 是 false，
+# 且 turn 没有因此中断。
+
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+  deps:
+    commands: commands.default
+
+# 无人值守下的正确接法：明确说"没人可问"，而不是等一个不存在的人。
+ask.default:
+  use: ask/unavailable
+  config:
+    reason: "这是一次冒烟运行，没有人在看"
+
+web.search.default:
+  use: web/scripted-search
+  config:
+    byQuery:
+      loop:
+        - title: "Loop 并发模型"
+          url: "https://example.com/docs/loop"
+          snippet: "同一 session 的 turn 串行执行"
+        - title: "Runner 分发"
+          url: "https://example.com/docs/runner"
+          snippet: "跨 session 可并行，上限由 maxConcurrentTurns 控制"
+    results:
+      - title: "AgentKit 文档首页"
+        url: "https://example.com/docs"
+        snippet: "Go Agent Harness 运行时"
+
+web.fetch.default:
+  use: web/scripted-fetch
+  config:
+    pages:
+      /docs/loop: |
+        <html><head><title>Loop 并发模型</title></head><body>
+        <h1>Loop 并发模型</h1>
+        <p>loop/default 按 SessionID 取锁，同一 session 的 turn 串行执行。</p>
+        <p>跨 session 的并行度由 runner 的 maxConcurrentTurns 决定，默认 1。</p>
+        <script>这段不该出现在抓取结果里</script>
+        </body></html>
+    default: "<p>这个 URL 没有脚本页面。</p>"
+
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: "先搜一下。"
+        toolCalls:
+          - id: call-search
+            name: web_search
+            input: '{"query":"agentkit loop 同一 session 串行"}'
+      - text: "第一条命中最相关，抓正文确认。"
+        toolCalls:
+          - id: call-fetch
+            name: web_fetch
+            input: '{"url":"https://example.com/docs/loop"}'
+      - text: "结论要不要连 runner 的并发上限一起讲，问一下。"
+        toolCalls:
+          - id: call-ask
+            name: ask_user
+            input: '{"question":"结论要不要一并说明跨 session 的并发上限？","options":["要","不要"],"default":"要"}'
+      - text: "没人可答，按更完整的那个口径给结论：loop/default 按 SessionID 取锁，同一 session 的 turn 串行；跨 session 的并行度由 runner.maxConcurrentTurns 控制，默认 1。来源：https://example.com/docs/loop"

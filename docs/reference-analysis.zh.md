@@ -2,7 +2,9 @@
 
 本文对比 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（下称 **DSH**）与 [Pi](https://github.com/badlogic/pi)（下称 **Pi**），提炼 Agent Harness 的通用能力，并映射到 AgentKit 的插件模型。
 
-相关文档：[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)、[plugin-catalog.zh.md](plugin-catalog.zh.md)。
+相关文档：[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)、[plugin-catalog.zh.md](plugin-catalog.zh.md)、[roadmap.zh.md](roadmap.zh.md)。
+
+> **本文是"业界做了什么"，不是"我们做到哪"**。AgentKit 的落地状态以 [roadmap.zh.md §0](roadmap.zh.md#0-现状基线2026-08-25) 为准；下面表格里的状态标注核对于 2026-08-25。
 
 ## 1. 项目定位对比
 
@@ -11,7 +13,7 @@
 | 语言 | TypeScript (Node) | TypeScript (Node) | Go |
 | 插件框架 | Cordis（Service + Event） | Extension API（事件 + 注册） | pluginkit（Register + Deps 注入） |
 | 核心理念 | 一切皆插件，无特权内核 | 核心极简，能力靠扩展 | Agent 语义上移，装配交给 pluginkit |
-| 默认形态 | Web UI + Headless CLI | 终端 TUI + RPC/JSON/SDK | CLI / HTTP / SDK（规划中） |
+| 默认形态 | Web UI + Headless CLI | 终端 TUI + RPC/JSON/SDK | CLI + headless worker / timer + multiplex（HTTP / RPC 未做） |
 | 扩展方式 | npm 包 + cordis.yml patch | TS 文件 + jiti 热加载 | Go 包 + import 生成器 |
 | 配置分层 | Profile → Bundle → Patch | 全局 settings + 项目 `.pi/` | Preset → Feature → root graph |
 
@@ -105,20 +107,20 @@ DSH 用 **Definition / Provider / Consumer** 三角色；Pi 用 **Operations 接
 
 ### 4.1 核心能力（两者共有或高度重叠）
 
-| 能力 | DSH Provider 示例 | Pi 实现 | 优先级 |
-|---|---|---|---|
-| **Filesystem** | `dsh-fs-local`, `dsh-fs-sandbox` | `read` / `edit` / `write` 工具 + Operations | P0 |
-| **Shell** | `dsh-bash-local`, `dsh-bash-sandbox` | `bash` 工具 + BashOperations | P0 |
-| **LLM** | `dsh-llm-deepseek`, `dsh-llm-pi-ai` | pi-ai 多 Provider | P0 |
-| **Skills** | `dsh-skill-filesystem` + `dsh-tool-skill` | `SKILL.md` + `/skill:name` | P1 |
-| **Compaction** | `dsh-compaction-basic` | `session_before_compact` | P1 |
-| **Approval** | `dsh-approval`, `dsh-tool-ask-user` | Extension `tool_call` + `ctx.ui.confirm` | P1 |
-| **Web** | `dsh-web-search-exa`, `dsh-web-fetch-http` | 无内置，靠 Extension | P2 |
-| **Subagent** | `dsh-subagent-*` + `dsh-tool-subagent` | 无内置，靠 Extension/Package | P2 |
-| **Sandbox** | landlock / bwrap / seatbelt | 无内置，Operations 可替换 | P2 |
-| **Terminal/PTY** | `dsh-terminal-bash` | 无 | P3 |
-| **LSP** | `dsh-lsp-stdio` | 无 | P3 |
-| **Workflow/Jobs** | `dsh-workflow`, `dsh-jobs` | 无 | P3 |
+| 能力 | DSH Provider 示例 | Pi 实现 | 优先级 | AgentKit 状态 |
+|---|---|---|---|---|
+| **Filesystem** | `dsh-fs-local`, `dsh-fs-sandbox` | `read` / `edit` / `write` 工具 + Operations | P0 | ✅ `fs/local`、`fs/memory`、`fs/readonly` |
+| **Shell** | `dsh-bash-local`, `dsh-bash-sandbox` | `bash` 工具 + BashOperations | P0 | ✅ `shell/bash`（无沙箱） |
+| **LLM** | `dsh-llm-deepseek`, `dsh-llm-pi-ai` | pi-ai 多 Provider | P0 | ✅ `llm/openai-compatible`、`llm/scripted` |
+| **Skills** | `dsh-skill-filesystem` + `dsh-tool-skill` | `SKILL.md` + `/skill:name` | P1 | ✅ `skill/filesystem` + `tool/skill` + `prompt/section/skills` |
+| **Compaction** | `dsh-compaction-basic` | `session_before_compact` | P1 | ✅ summary / prune-tool-results / token-limit |
+| **Approval** | `dsh-approval`, `dsh-tool-ask-user` | Extension `tool_call` + `ctx.ui.confirm` | P1 | ✅ `approval/cli`、`auto-allow`、`auto-deny`；`tool/ask-user` + `ask/cli` / `ask/unavailable`（走独立的 `cap/ask`） |
+| **Web** | `dsh-web-search-exa`, `dsh-web-fetch-http` | 无内置，靠 Extension | P2 | ✅ `web/http-fetch` + `web/exa-search` + 两个 scripted 替身（[web.zh.md](web.zh.md)） |
+| **Subagent** | `dsh-subagent-*` + `dsh-tool-subagent` | 无内置，靠 Extension/Package | P2 | 🟡 `subagent/inprocess` 串行版已落地（[subagent.zh.md](subagent.zh.md)）；并行 fan-out 未做 |
+| **Sandbox** | landlock / bwrap / seatbelt | 无内置，Operations 可替换 | P2 | ❌ `cap/sandbox` / `cap/process` 空壳 → [M2](roadmap.zh.md#m2--隔离--守护收尾) |
+| **Terminal/PTY** | `dsh-terminal-bash` | 无 | P3 | ❌ |
+| **LSP** | `dsh-lsp-stdio` | 无 | P3 | ❌ |
+| **Workflow/Jobs** | `dsh-workflow`, `dsh-jobs` | 无 | P3 | 🟡 `schedule/file` + worker cron + `tool/schedule`（日历定时）；无 workflow 编排 |
 
 ### 4.2 DSH 独有、Pi 靠扩展实现
 
@@ -257,9 +259,9 @@ flowchart TB
 
 ## 9. 提炼的通用能力清单
 
-以下能力在两个参考项目中均被验证为 Harness 必需品或高频扩展点，AgentKit 插件目录以此为主干（详见 [plugin-catalog.zh.md](plugin-catalog.zh.md)）。
+以下能力在两个参考项目中均被验证为 Harness 必需品或高频扩展点，AgentKit 插件目录以此为主干（详见 [plugin-catalog.zh.md](plugin-catalog.zh.md)）。括注为 AgentKit 落地状态（2026-08-25），排期见 [roadmap.zh.md](roadmap.zh.md)。
 
-### 9.1 Spine（P0 — 无此不可运行）
+### 9.1 Spine（P0 — 无此不可运行）· 全部落地
 
 1. **Runner** — 进程生命周期、Platform ↔ Loop 连接
 2. **Platform** — 外部消息 ↔ 内部事件
@@ -270,39 +272,39 @@ flowchart TB
 7. **Tools** — 注册、schema、执行管线
 8. **LLM** — 流式 Provider、错误分类
 
-### 9.2 执行能力（P0 — Coding Agent 最小集）
+### 9.2 执行能力（P0 — Coding Agent 最小集）· 全部落地
 
 9. **Filesystem** — read / write / edit
 10. **Shell** — bash 执行、超时、环境注入
 11. **Policy** — 工具/路径/命令裁决
 12. **Approval** — ask 决策的人机通道
 
-### 9.3 上下文与记忆（P1 — 长会话必需）
+### 9.3 上下文与记忆（P1 — 长会话必需）· 全部落地
 
 13. **Compaction** — 上下文窗口管理
 14. **Skills** — 按需能力包
 15. **Agent Instructions** — AGENTS.md / 项目规则注入
-16. **Credentials** — API Key / OAuth 解析
+16. **Credentials** — API Key / OAuth 解析（✅ `credentials/env`；`credentials/file` 未做）
 17. **Settings** — 模型默认、工具开关
 
 ### 9.4 协作与编排（P2 — 高级场景）
 
-18. **Subagent** — 任务委派、并行子任务
-19. **Web** — search / fetch
-20. **Sandbox** — 进程/文件系统隔离
-21. **Commands** — 不经过模型的 Slash 命令
-22. **User Questions** — 结构化问答
+18. **Subagent** — 任务委派、并行子任务（🟡 串行委派已落地；并行 fan-out 未做）
+19. **Web** — search / fetch（✅ `web/http-fetch` + `web/exa-search` + `tool/web-fetch` + `tool/web-search`）
+20. **Sandbox** — 进程/文件系统隔离（❌ → [M2](roadmap.zh.md#m2--隔离--守护收尾)）
+21. **Commands** — 不经过模型的 Slash 命令（✅ `commands/registry`）
+22. **User Questions** — 结构化问答（✅ `tool/ask-user` + `ask/cli` / `ask/unavailable`）
 
 ### 9.5 平台与观测（P2 — 产品化）
 
-23. **Session Persistence** — JSONL / SQLite 持久化
-24. **Session Query** — 检索、 lineage
-25. **Telemetry** — OTel / 用量统计
-26. **Host Adapters** — HTTP / RPC / ACP
+23. **Session Persistence** — JSONL / SQLite 持久化（✅ `session/jsonl`；`session/sqlite` 未做）
+24. **Session Query** — 检索、lineage（❌ → [M3](roadmap.zh.md#m3--可运营观测--接入)）
+25. **Telemetry** — OTel / 用量统计（❌ `usage` 事件已有但无人汇总 → [M3](roadmap.zh.md#m3--可运营观测--接入)）
+26. **Host Adapters** — HTTP / RPC / ACP（❌ 只有 CLI / worker / timer / multiplex → [M3](roadmap.zh.md#m3--可运营观测--接入)）
 
-### 9.6 专项能力（P3 — 按需）
+### 9.6 专项能力（P3 — 按需）· 全部未做
 
-27. Terminal/PTY、LSP、Workflow、Jobs、Code Runtime、Plan Mode、Goal、Attachment、Web UI Slots
+27. Terminal/PTY、LSP、Workflow、Jobs、Code Runtime、Plan Mode、Goal、Attachment、Web UI Slots（`schedule/file` + worker cron 覆盖了 Jobs 的定时那一半）
 
 ## 10. 对 AgentKit 的设计启示
 
@@ -318,8 +320,13 @@ flowchart TB
 
 | 文档 | 内容 |
 |---|---|
+| [roadmap.zh.md](roadmap.zh.md) | 现状基线与 M0–M4 目标（本文的状态标注以它为准） |
 | [go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md) | AgentKit 完整架构 |
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | 插件 Kind 目录与 MVP 范围 |
+| [plugin-interface-comparison.zh.md](plugin-interface-comparison.zh.md) | `plugin_*.go` 与 DSH 的接口级逐文件对比 |
+| [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：预算分层、turn 续跑、崩溃恢复 |
+| [subagent.zh.md](subagent.zh.md) | 子 Agent 委派（串行版） |
+| [web.zh.md](web.zh.md) | 网络抓取 / 搜索 / 向用户提问，含 SSRF 边界与无 key 降级 |
 | DSH `docs/architecture.md` | Cordis 微内核 + Agent Spine |
 | DSH `docs/capability-seams.md` | 能力缝服务图 |
 | Pi `packages/coding-agent/docs/extensions.md` | Extension 事件模型 |

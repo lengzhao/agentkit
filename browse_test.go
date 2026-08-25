@@ -52,7 +52,7 @@ func TestGrepFindListDirTools(t *testing.T) {
 								"use": "fs/memory",
 								"config": map[string]any{
 									"files": map[string]string{
-										"main.go": "package main\n",
+										"main.go":     "package main\n",
 										"pkg/util.go": "package pkg\n",
 									},
 								},

@@ -15,4 +15,7 @@ func init() {
 	pluginkit.Register("tool/finish", NewFinish)
 	pluginkit.Register("tool/schedule", NewSchedule)
 	pluginkit.Register("tool/subagent", NewSubagent)
+	pluginkit.Register("tool/web-fetch", NewWebFetch)
+	pluginkit.Register("tool/web-search", NewWebSearch)
+	pluginkit.Register("tool/ask-user", NewAskUser)
 }

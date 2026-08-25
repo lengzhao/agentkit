@@ -42,6 +42,7 @@ flowchart TB
     Policy["policy/*"]
     Hook["hook/*"]
     Approval["approval/*"]
+    Ask["ask/*"]
     Command["command/*"]
   end
 
@@ -80,6 +81,7 @@ flowchart TB
   Tool --> cap
   Tool --> Policy
   Tool --> Approval
+  Tool --> Ask
   Agent --> Hook
   Agent --> Compaction
   Runner --> infra
@@ -138,11 +140,11 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `tool/find` | `fs` | 文件查找 | Pi `find` |
 | `tool/list-dir` | `fs` | 目录列表 | Pi `ls` |
 | `tool/shell` | `shell`, `approval?` | Shell 命令执行 | Pi `bash` / DSH `tool-bash` |
-| `tool/web-search` | `web` | 网络搜索 | DSH `tool-web` |
-| `tool/web-fetch` | `web` | URL 抓取 | DSH `tool-web` |
+| `tool/web-search` | `web`（`web.Searcher`） | 网络搜索（工具名 `web_search`）：返回 title / url / snippet；snippet 是摘录，要正文得再调 `web_fetch` | DSH `tool-web` |
+| `tool/web-fetch` | `web`（`web.Fetcher`） | URL 抓取（工具名 `web_fetch`）：HTML → 文本、大小上限、私网地址拦截 | DSH `tool-web` |
 | `tool/skill` | `skills` | Skill 发现与加载 | DSH/Pi skill tool |
 | `tool/subagent` | `subagent` | 子 Agent 委派（工具名 `delegate`）：阻塞等子 agent 跑完，返回 status + summary + 子 session id；只挂在主 agent 的 tools runtime 上 | DSH `tool-subagent` |
-| `tool/ask-user` | `approval` | 向用户提问 | DSH `tool-ask-user` |
+| `tool/ask-user` | `ask` | 向用户提问（工具名 `ask_user`）：单选 + 自由文本；没人可答时返回 `answered:false` + guidance 而不是阻塞或报错。**不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。依赖 `cap/ask` 而**不是** `cap/approval`，见 [web.zh.md §4](web.zh.md#4-提问ask_user-与-capask) | DSH `tool-ask-user` |
 | `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
 | `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
 | `tool/schedule` | `schedule` | agent 自主排期：add / list / remove cron job，与 worker 的 cron 引擎共用 registry | — |
@@ -155,11 +157,13 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `policy/deny-dangerous-shell` | `agentkit.Policy` | 拦截危险 shell 命令 | 两者常见 Extension |
 | `policy/path-denylist` | `agentkit.Policy` | 路径黑名单（glob，默认拒 `.git/**`、`**/.env*`、`**/.ssh/**`、`**/*.pem`） | Pi path protection 示例 |
 | `policy/shell-allowlist` | `agentkit.Policy` | shell 命令前缀白名单；`strict` 时白名单外一律 deny，链式命令每段都要命中 | — |
-| `policy/network-deny` | `agentkit.Policy` | 禁止网络类工具 | DSH sandbox policy |
+| `policy/network-deny` | `agentkit.Policy` | 禁止网络类工具（未做；`web/http-fetch` 自带的 scheme / host / 私网约束是它的雏形） | DSH sandbox policy |
 | `policy/plan-mode` | `agentkit.Policy` | Plan 模式下限制写操作 | DSH plan-mode |
 | `approval/cli` | `approval.Service` | 终端 y/n 审批 | Pi `ctx.ui.confirm` |
 | `approval/auto-deny` | `approval.Service` | 自动拒绝 ask | 测试 / CI |
 | `approval/auto-allow` | `approval.Service` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
+| `ask/cli` | `ask.Service` | 终端提问，答案从 stdin 读；stdin 关闭时降级为"没人可答"而不是挂住 | DSH `tool-ask-user` 后端 |
+| `ask/unavailable` | `ask.Service` | 恒定回答"没人可答"，无人值守场景的显式接法 | — |
 
 ### 3.5 Hooks（观察与改写，非裁决）
 
@@ -199,8 +203,12 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `web/http-fetch` | `web.Service` | HTTP 抓取 |
-| `web/exa-search` | `web.Service` | Exa 搜索 Provider |
+| `web/http-fetch` | `web.Fetcher` | HTTP 抓取：HTML → 文本、`maxBytes` / `maxRedirects` / 超时、scheme 白名单、host allow/deny；私网地址在 **dial 时**按解析后的 IP 拦截，因此覆盖重定向与 DNS rebinding。无需任何凭据 |
+| `web/exa-search` | `web.Searcher` | Exa 搜索：`x-api-key` + `highlights`；key 走 `apiKeyRef` + `deps.credentials`，**缺 key 不阻断构造**，调用时返回模型可读的提示 |
+| `web/scripted-fetch` | `web.Fetcher` | 预置页面，测试与无 key 冒烟用 |
+| `web/scripted-search` | `web.Searcher` | 预置命中，测试与无 key 冒烟用 |
+
+抓取与搜索是两个接口而不是一个 `Service`：pluginkit 按 Go 接口类型匹配 deps，拆开之后"没有搜索 key 也能单独挂抓取"是实例图的形状决定的，不是代码里的 if。详见 [web.zh.md §1](web.zh.md#1-为什么抓取和搜索是两个接口)。
 
 #### Skills & Subagent
 
@@ -286,7 +294,9 @@ plugins/
   fs/                # local、memory、readonly 三个 kind
   tool/              # read-file、write-file、edit-file、grep、find、list-dir、shell、skill
   compaction/        # summary、prune-tool-results
-  approval/          # cli、auto-deny
+  approval/          # cli、auto-deny、auto-allow
+  ask/               # cli、unavailable
+  web/               # http-fetch、exa-search、scripted-fetch、scripted-search
   prompt/            # section/agents-md、section/static、section/skills
   skill/             # filesystem
   shell/             # bash
@@ -372,6 +382,8 @@ graph:
 
 ## 6. 分阶段落地
 
+Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什么以 [roadmap.zh.md](roadmap.zh.md) 为准**——下表已按 2026-08-25 的代码标注状态。
+
 ### Phase 1 — 可运行 Runner（MVP）
 
 | 类别 | Kind |
@@ -397,9 +409,9 @@ graph:
 | 自主运行 | `hook/turn-continue`, `tool/todo`, `tool/finish`, `approval/auto-allow`, `policy/shell-allowlist`, `policy/path-denylist` |
 | Skills | `skill/filesystem`, `tool/skill`, `prompt/section/skills` |
 | 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |
-| Session | `session/sqlite` |
+| Session | `session/sqlite`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)） |
 | Settings | `settings/file` |
-| Telemetry | `telemetry/otel` |
+| Telemetry | `telemetry/otel`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)） |
 | Commands | `commands/registry` + `CommandProvider` |
 
 ### Phase 3 — 高级编排
@@ -407,11 +419,11 @@ graph:
 | 类别 | Kind |
 |---|---|
 | Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，见 `presets/subagent.yaml`；并行 fan-out 待做） |
-| Web | `web/http-fetch`, `tool/web-fetch` |
-| Sandbox | `sandbox/landlock`, `fs/sandbox`, `process/sandbox` |
-| Platform | `platform/http`, `platform/rpc` |
-| Multi-Agent | `loop/harness`, AgentSet 配置 |
-| Policy | `policy/plan-mode`, `policy/path-denylist` |
+| Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user` + `ask/cli` / `ask/unavailable`（已落地 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 `presets/web.yaml` 与 [web.zh.md](web.zh.md)） |
+| Sandbox | `sandbox/landlock`, `fs/sandbox`, `process/sandbox`（未做 → [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)） |
+| Platform | `platform/http`, `platform/rpc`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)；`platform/multiplex` / `timer` / `worker` 已落地） |
+| Multi-Agent | `loop/harness`, AgentSet 配置（未做 → [roadmap M4](roadmap.zh.md#m4--并行与多-agent需求驱动)） |
+| Policy | `policy/path-denylist` 已落地；`policy/plan-mode` 未做；`policy/network-deny` 未做（SSRF 约束现落在 `web/http-fetch` 里 → [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)） |
 
 ### Phase 4 — 专项（按需）
 

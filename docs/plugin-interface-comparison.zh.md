@@ -4,6 +4,8 @@
 
 相关文档：[reference-analysis.zh.md](reference-analysis.zh.md)、[plugin-catalog.zh.md](plugin-catalog.zh.md)、[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)。
 
+> **核对基线 2026-08-25**：本文的 AgentKit 侧断言均已对代码逐条核对，核对命令见 [roadmap.zh.md](roadmap.zh.md#怎么维护这份路线图)。取长补短的落地优先级已迁到 [roadmap.zh.md](roadmap.zh.md)，本文只保留接口级对比。
+>
 > **2026-08 接口重整**：`MessageEvent`/`OutboundEvent` 必填 `SessionID`；Loop 在 `Dispatch` 时写入 `ctx.Value(agentkit.KeySessionID)` / `ctx.Value(agentkit.KeyAgentID)` / `ctx.Value(agentkit.KeyUserID)`；`TurnInput` 不再重复携带路由字段。`SessionStore` 由 Agent 依赖并在 `RunTurn` 内用 context key 取出的 SessionID 执行 `Get`。SessionID 格式对齐 cc-connect（`platform:segment:...`），由 `platform/*` 生成。
 
 ## 1. 对比范围说明
@@ -11,7 +13,7 @@
 | 维度 | AgentKit | DSH |
 |---|---|---|
 | 语言 | Go | TypeScript |
-| 接口文件 | `plugin_agent.go` … `plugin_tool.go`（9 个） | 分散在 `packages/core/*`、`packages/*/src/index.ts` |
+| 接口文件 | `plugin_agent.go` … `plugin_tool.go`（10 个，含 `plugin_command.go`） | 分散在 `packages/core/*`、`packages/*/src/index.ts` |
 | 装配方式 | `pluginkit.Register(kind, New)` + YAML 实例图 | Cordis `Plugin`（`name` / `inject` / `Config` / `apply`）+ `cordis.yml` patch |
 | 运行时访问 | 构造期 `Deps` 注入，请求路径不查容器 | `ctx.<service>` 服务容器 + 事件总线 |
 
@@ -29,6 +31,7 @@ flowchart LR
     PO["plugin_policy"]
     PH["plugin_hook"]
     PLL["plugin_llm"]
+    PC["plugin_command"]
   end
 
   subgraph dsh ["DSH 等价层"]
@@ -41,6 +44,7 @@ flowchart LR
     AP["dsh-user-approval + tools/pre-execute"]
     EV["Cordis Events waterfall"]
     LM["dsh-llm"]
+    CM["dsh-commands"]
   end
 
   PR --> Boot
@@ -52,6 +56,7 @@ flowchart LR
   PO --> AP
   PH --> EV
   PLL --> LM
+  PC --> CM
 ```
 
 ## 2. 扩展模型：根本差异
@@ -126,7 +131,7 @@ type Platform interface {
 |---|---|---|
 | 生命周期 | `Run` / `Stop` 显式 | Cordis Fiber `dispose` |
 | 入口抽象 | `Platform` 统一 Receive/Send | 各 Host 适配器独立 |
-| 多入口 | `platform/multiplex`（规划中） | Web + CLI + ACP 原生共存 |
+| 多入口 | `platform/multiplex`（已实现）+ `platform/timer` / `platform/worker` | Web + CLI + ACP 原生共存 |
 
 **取长补短**
 
@@ -183,15 +188,18 @@ type Agent interface {
     ID() AgentID
     RunTurn(context.Context, TurnInput) error
 }
-type SessionControl interface {
-    Steer(...) / FollowUp(...) / Cancel(...) / DrainFollowUps(...)
-}
 type TurnInput struct {
     Message ModelMessage
     Emit    OutboundEmit
-    Control SessionControl
 }
 ```
+
+**根包不再定义 `SessionControl` 接口**。控制面拆成了两半，靠 context 值对接：
+
+- 供给侧 `runtime/loop.Control`（具体类型，Loop 每个 SessionID 持一个）提供 `Steer` / `FollowUp` / `Cancel` / `DrainFollowUps`，Loop 在 `Dispatch` 时写入 `ctx.Value(agentkit.KeySessionControl)`。
+- 消费侧 `runtime/agent/turn_control.go` 的**私有窄接口** `turnControl`（`BeginStep` / `PopSteering` / `PopCancelReason` / `ClearTurnCancel` / `ShouldContinueAfterInterrupt`）从同一个 context 值鸭子类型取出；取不到则退化为 `noopTurnControl`。子 agent 正是走这条退化路径（`runtime/subagent/inprocess.go` 显式把该 key 置 nil），因此不被父 turn 的 steering / cancel 语义牵连。
+
+代价是这条 seam 没有编译期契约：Loop 侧改了方法签名，Agent 侧只会在运行时静默退化成 noop。好处是 Agent 不必依赖 Loop 的队列语义。
 
 Loop 在调用 Agent 前把 `MessageEvent.SessionID`、`AgentID`、`PlatformID`、`UserID` 写入 context key；Agent 插件通过 `ctx.Value(agentkit.KeySessionID)` 取 ID，并用 `deps.sessionStore` 在 `RunTurn` 内加载 Session。Loop 不注入 `Session` 对象。
 
@@ -216,10 +224,11 @@ interface Agent {
 
 | 对比项 | AgentKit | DSH |
 |---|---|---|
-| 控制面 | `SessionControl` 由 Loop 注入 TurnInput | Agent 自身方法 + inbox |
+| 控制面 | `runtime/loop.Control` 经 `KeySessionControl` 传递，Agent 侧私有窄接口消费 | Agent 自身方法 + inbox |
 | Session 加载 | Agent `SessionStore.Get(ctx.Value(KeySessionID))` | Agent 内嵌 `session` 字段 |
 | inject | **无** | `inject()` 排队 next-step 上下文，不唤醒 |
-| cancel | `SessionControl.Cancel` | `cancel(cause, { keepInbox? })` + AbortSignal 贯穿 turn |
+| 队列持久化 | **无**（`Control` 的 steering / follow-up 队列纯内存，进程挂即丢） | `agent/inbox/spliced` 会话事件 |
+| cancel | `runtime/loop.Control.Cancel(reason)`，取消当前 step | `cancel(cause, { keepInbox? })` + AbortSignal 贯穿 turn |
 | 状态 | 无 status 概念 | `idle` / `running` + `agent/status` 事件 |
 | scoped 世界 | 无 agent-scoped ctx | `agent.ctx` 隔离工具/prompt/监听器 |
 | 维护任务 | 无 | `runMaintenance` 在 idle 相运行非 turn 任务 |
@@ -231,7 +240,7 @@ interface Agent {
   - **`inject()`** 是独立能力（审批结果、子任务完成通知），AgentKit 仅有 steer/follow-up，缺少「静默注入」。
   - **`AgentCancelCause`** 结构化（user/parent/hook/disposed），比单纯 reason 字符串更可观测。
   - **`whenIdle()`** 便于测试与编排（子 agent 等待父 agent 空闲）。
-- AgentKit 建议：在 `SessionControl` 增加 `Inject(ctx, ModelMessage) error`；`Cancel` 支持 `keepQueue bool`。
+- AgentKit 建议：`Inject` 的落点是 `runtime/loop.Control` + Agent 侧窄接口（根包已无 `SessionControl` 类型可加），并顺带补 `Cancel` 的 `keepQueue`；队列持久化见 [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)。
 
 ---
 
@@ -472,7 +481,7 @@ type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
 | 配置状态 | 每次 `LLMRequest` 传入 | 会话级 `LlmCallConfig` + header 事件 |
 | 流事件 | 复用 Pi RPC `AssistantMessageEventType` | adapter 自有 chunk → `assistant/chunk` 会话事件 |
 | 请求拦截 | 无接口 | `agent/request` waterfall |
-| 错误恢复 | 无接口 | `agent/request-error` + retry policy |
+| 错误恢复 | **已落地**（无 hook 接口，实现在 Runtime）：provider 级 `runtime/llm/retry.go` + agent 级 `runtime/agent/retry.go` + `retry/start\|end` 事件 | `agent/request-error` + retry policy |
 | Thinking | 通过 `thinking_*` 事件 | adapter 层统一 reasoningEffort |
 
 **取长补短**
@@ -480,23 +489,25 @@ type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
 - AgentKit 可取：Provider 只管 `Stream`，适配层薄；与 Pi RPC 事件词汇对齐便于互通。
 - DSH 可取：
   - **会话级 call config** 避免静默改模型；变更有日志。
-  - **request-error 恢复链** 是生产必备。
+  - ~~**request-error 恢复链**~~ 已落地为两层 retry（provider 退避 + agent 重试），差别是 DSH 把它做成可替换的 waterfall，AgentKit 写死在 Runtime 里。
 - AgentKit 建议：`LLMRequest` 增加 `CallConfig` 字段并由 Session 记录；在 LLM Runtime（非 `plugin_llm.go`）实现 request 拦截与 retry。
 
 ---
 
 ## 4. AgentKit 有规划但 DSH 已成熟的能力
 
-以下在 `plugin-catalog.zh.md` 或架构文档中出现，但根包 `plugin_*.go` 尚未定义或 `plugin_command.go` 已删除：
+下表按 2026-08-25 的代码重新核对（此前版本把已落地的三项误标为缺失，见 [roadmap §0.3](roadmap.zh.md#03-已知的文档漂移已在-m0-修正)）：
 
 | 能力 | plugin-catalog | 当前代码 | DSH |
 |---|---|---|---|
-| Slash 命令 | `command/*` | `plugin_command.go` 已删，CLI 硬编码 | `ctx.commands` |
-| 生命周期 | `StartStop` | 仅文档，无类型 | Fiber dispose |
-| Compaction | `compaction/*` + hook | 仅 `EventCompaction` | `ctx.compaction` seam |
-| Scope 隔离 | 隐含于 context key | 仅 Turn 级字段 | `dsh-scope` 多层 |
-| Settings | `settings/*` | 无 | `ctx.settings` |
-| Telemetry | `telemetry/*` | 无 | `ctx.sessionTelemetry` |
+| Slash 命令 | `command/*` | **已落地**：`plugin_command.go` + `commands/registry` + `CommandProvider` / `CommandCollector` | `ctx.commands` |
+| Compaction | `compaction/*` + hook | **已落地**：`compaction/summary`、`compaction/prune-tool-results`、`compaction/token-limit` + `hook/before-step` | `ctx.compaction` seam |
+| Settings | `settings/*` | **已落地**：`settings/file` | `ctx.settings` |
+| 生命周期 | `StartStop` | **仍缺**：仅文档，无类型；`runtime/runner.Root.Stop` 是空实现 | Fiber dispose |
+| Scope 隔离 | 隐含于 context key | **仍缺**：只有 context key，无分层 restrict | `dsh-scope` 多层 |
+| Telemetry | `telemetry/*` | **仍缺**：`cap/telemetry` 是空壳，`usage` 事件无人汇总 | `ctx.sessionTelemetry` |
+| Session Query | `tool/session-query` | **仍缺**：`cap/sessionquery` 是空壳 | SQLite 投影 + 全文检索 |
+| Web / Sandbox | `web/*`、`sandbox/*` | **仍缺**：`cap/web`、`cap/sandbox`、`cap/process` 均为空壳 | `dsh-web-*`、landlock / bwrap / seatbelt |
 
 ## 5. 综合取长补短
 
@@ -509,22 +520,24 @@ type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
 
 ### 5.2 建议从 DSH 吸收的设计
 
-按优先级排序：
+状态列为 2026-08-25 核对结果；排期见 [roadmap.zh.md](roadmap.zh.md)。
 
-| 优先级 | 项 | 建议落点 |
+| 项 | 状态 | 建议落点 |
 |---|---|---|
-| P0 | `Inject` 静默上下文 | `SessionControl.Inject` |
-| P0 | `PreStepDecision` 显式 reject/enter | 扩展 `BeforeStepHook` 或 `BeforeStep` 返回值 |
-| P0 | inbox 持久化事件 | `events.go` + `session/*` 实现 |
-| P1 | `agent/request` / `request-error` 拦截 | `plugin_hook.go` 或 LLM Runtime |
-| P1 | `tools/execute` around（超时/重试） | Tool Runtime 包装链 |
-| P1 | `StartStop` 生命周期 | 新 `plugin_lifecycle.go` 或 `agentkit.go` |
-| P1 | Session `Fork` + `SessionHeader` 元数据 | `plugin_session.go` |
-| P2 | Prompt Context 与 Section 分离 | `plugin_prompt.go` |
-| P2 | Tool presentation 视图 | `cap/` 或 `runtime/tools/presentation` |
-| P2 | Permission preset 组合 | `presets/` + Policy 链 |
-| P3 | Code Mode 工具折叠 | `tool/code-mode` 插件 |
-| P3 | `command` 插件接口 | 恢复 `plugin_command.go` |
+| `request-error` 恢复链 | **已落地** | `runtime/llm/retry.go` + `runtime/agent/retry.go` |
+| `command` 插件接口 | **已落地** | `plugin_command.go` + `commands/registry` |
+| `tools/execute` around — 超时 | **已落地** | `runtime/tools` 的 `defaultTimeoutSeconds` / `toolTimeouts` |
+| `tools/execute` around — 重试与指标 | 未做 | Tool Runtime 包装链 |
+| `StartStop` 生命周期 | 未做 | 新 `plugin_lifecycle.go`；`Root.Stop` 目前是空实现 |
+| inbox 持久化事件 | 未做 | `events.go` + `session/*`；`runtime/loop.Control` 队列纯内存 |
+| `PreStepDecision` 显式 reject/enter | 未做 | 扩展 `BeforeStepHook` 返回值 |
+| `agent/request` 出栈拦截 | 未做 | `BeforeLLMRequest` hook 或 LLM Runtime |
+| `Inject` 静默上下文 | 未做 | `runtime/loop.Control` + Agent 侧窄接口（根包已无 `SessionControl`） |
+| Session `Fork` + `SessionHeader` | 未做 | `plugin_session.go` |
+| Prompt Context 与 Section 分离 | 未做 | `plugin_prompt.go` |
+| Tool presentation 视图 | 未做 | `cap/` 或 `runtime/tools/presentation` |
+| Permission preset 组合 | 未做 | `presets/` + Policy 链 |
+| Code Mode 工具折叠 | 未做 | `tool/code-mode` 插件 |
 
 ### 5.3 DSH 可借鉴 AgentKit 的设计
 
@@ -532,33 +545,11 @@ type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
 2. **ToolRuntime 与 Tool 分离**：DSH 的 `ctx.tools` 混合注册与执行；AgentKit 的 `Tool`（consumer）+ `ToolRuntime`（编排）更清晰。
 3. **Loop 无状态 Dispatch**：更易于水平扩展 Worker 模式（`platform/worker`）。
 
-## 6. 接口演进路线图（建议）
+## 6. 接口演进路线图
 
-```mermaid
-flowchart TB
-  subgraph phase1 ["Phase 1 — 对齐 DSH 控制面"]
-    A1["SessionControl.Inject"]
-    A2["BeforeStep → StepDecision"]
-    A3["StartStop + Runner 收集启停"]
-    A4["inbox 持久事件 agent/inbox/spliced"]
-  end
+排期与验收标准统一维护在 [roadmap.zh.md](roadmap.zh.md)。本文只负责说清每一项**改哪个接口**（见 [§5.2](#52-建议从-dsh-吸收的设计) 的落点列）。
 
-  subgraph phase2 ["Phase 2 — 对齐 DSH 执行面"]
-    B1["LLM request / request-error hooks"]
-    B2["AroundTool / PostTool 可替换结果"]
-    B3["Session.Fork + Header 元数据"]
-    B4["plugin_command.go 恢复"]
-  end
-
-  subgraph phase3 ["Phase 3 — 产品化"]
-    C1["Prompt Context 分离 + scope 组装"]
-    C2["Tool presentation 类型"]
-    C3["Permission preset"]
-    C4["Code Mode 可选"]
-  end
-
-  phase1 --> phase2 --> phase3
-```
+原先此处的三阶段图已作废：Phase 1 的 `Inject` 落点（`SessionControl`）在接口重整中消失，Phase 2 的 `request-error` 与 Phase 3 的 `command` 接口已经落地，继续按旧图推进会做错。
 
 ## 7. 文件级对照索引
 
@@ -573,9 +564,9 @@ flowchart TB
 | `plugin_policy.go` | `Policy`, `Approval` | `tools/pre-execute` + `dsh-user-approval` |
 | `plugin_hook.go` | `HookProvider`, `*Hook` | Cordis `agent/*`, `tools/*` events |
 | `plugin_llm.go` | `LLMProvider`, `LLMStream` | `dsh-llm` → `ctx.llm` |
-| （缺失）`plugin_command.go` | — | `dsh-commands` → `ctx.commands` |
+| `plugin_command.go` | `CommandProvider`, `Command`, `Commands`, `CommandCollector` | `dsh-commands` → `ctx.commands` |
 | （缺失）lifecycle | `StartStop`（文档） | Cordis Fiber lifecycle |
 
 ---
 
-*文档版本：2026-08-22，基于 agentkit 工作区 `plugin_*.go` 与 deepseek-harness `master` 分支 `packages/core/*` 只读对比。*
+*文档版本：2026-08-25（对代码重新核对，修正 §3.3 控制面、§3.9 错误恢复、§4 三行过期状态、§5.2 优先级表），基于 agentkit 工作区 `plugin_*.go` 与 deepseek-harness `master` 分支 `packages/core/*` 只读对比。*

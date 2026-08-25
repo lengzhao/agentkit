@@ -17,8 +17,8 @@ import (
 // cannot build on the L0 base alone.
 var examplesChainOnly = map[string]string{
 	"headless-worker.yaml": "requires autonomous capability stack",
-	"interval-daemon.yaml":   "requires autonomous capability stack",
-	"cron-daemon.yaml":       "requires autonomous capability stack",
+	"interval-daemon.yaml": "requires autonomous capability stack",
+	"cron-daemon.yaml":     "requires autonomous capability stack",
 }
 
 func TestExamplesBuild(t *testing.T) {

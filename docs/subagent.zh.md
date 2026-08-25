@@ -64,7 +64,7 @@ subagent.default:
     timeoutSeconds: 600
 ```
 
-`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 默认 `local: .agentkit`，即 `local:agents` = `<cwd>/.agentkit/agents`；`presets/subagent.yaml` 把 `local` 改成 `.`，于是变成 `<cwd>/agents`。两种都行，按项目习惯选。
+`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 `config.base.yaml` 已内置 `delegate` 能力与上述目录约定，默认 `local: .agentkit`，即 `local:agents` = `<cwd>/.agentkit/agents`；`presets/subagent.yaml` 把 `local` 改成 `.` 并额外纳入 `examples/agents/`，便于开箱 demo。
 
 定义是**每次委派前重读**的，改完 md 文件不用重启进程。
 
@@ -126,12 +126,19 @@ tools.subagent.default:      # 只读 + finish，没有 delegate
 
 ## 6. 跑起来
 
+L0 默认已挂载 `tool/subagent`（`delegate`）与 `prompt/section/subagents`。在 `.agentkit/agents/`（或 `global:agents`）放好 `*.md` 定义后即可委派：
+
+```sh
+go run ./cmd/agent
+> 让 researcher 查清 runtime/loop 是怎么保证同一 session 串行的，然后给我结论
+```
+
+要用仓库自带的示例子 agent，可叠 `presets/subagent.yaml`（把 `local` 根改为 `.` 并纳入 `examples/agents/`）：
+
 ```sh
 go run ./cmd/agent -config presets/subagent.yaml
 > 让 researcher 查清 runtime/loop 是怎么保证同一 session 串行的，然后给我结论
 ```
-
-`presets/subagent.yaml` 把 `examples/agents/` 也纳入查找路径，所以开箱就有 `researcher` 和 `reviewer` 两个只读子 Agent 可用。
 
 不想花 API Key 就先看一遍事件流：
 
