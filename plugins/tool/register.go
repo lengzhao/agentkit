@@ -13,4 +13,5 @@ func init() {
 	pluginkit.Register("tool/skill", NewSkill)
 	pluginkit.Register("tool/todo", NewTodo)
 	pluginkit.Register("tool/finish", NewFinish)
+	pluginkit.Register("tool/schedule", NewSchedule)
 }

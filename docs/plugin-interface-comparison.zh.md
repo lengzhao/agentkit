@@ -4,7 +4,7 @@
 
 相关文档：[reference-analysis.zh.md](reference-analysis.zh.md)、[plugin-catalog.zh.md](plugin-catalog.zh.md)、[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)。
 
-> **2026-08 接口重整**：`MessageEvent`/`OutboundEvent` 必填 `SessionID`；Loop 在 `Dispatch` 时写入 `ctx.Value(agentkit.KeySessionID)` / `ctx.Value(agentkit.KeyAgentID)`；`TurnInput` 不再重复携带路由字段。`SessionStore` 由 Agent 依赖并在 `RunTurn` 内用 context key 取出的 SessionID 执行 `Get`。SessionID 格式对齐 cc-connect（`platform:segment:...`），由 `platform/*` 生成。
+> **2026-08 接口重整**：`MessageEvent`/`OutboundEvent` 必填 `SessionID`；Loop 在 `Dispatch` 时写入 `ctx.Value(agentkit.KeySessionID)` / `ctx.Value(agentkit.KeyAgentID)` / `ctx.Value(agentkit.KeyUserID)`；`TurnInput` 不再重复携带路由字段。`SessionStore` 由 Agent 依赖并在 `RunTurn` 内用 context key 取出的 SessionID 执行 `Get`。SessionID 格式对齐 cc-connect（`platform:segment:...`），由 `platform/*` 生成。
 
 ## 1. 对比范围说明
 
@@ -193,7 +193,7 @@ type TurnInput struct {
 }
 ```
 
-Loop 在调用 Agent 前把 `MessageEvent.SessionID`、`AgentID`、`PlatformID` 写入 context key；Agent 插件通过 `ctx.Value(agentkit.KeySessionID)` 取 ID，并用 `deps.sessionStore` 在 `RunTurn` 内加载 Session。Loop 不注入 `Session` 对象。
+Loop 在调用 Agent 前把 `MessageEvent.SessionID`、`AgentID`、`PlatformID`、`UserID` 写入 context key；Agent 插件通过 `ctx.Value(agentkit.KeySessionID)` 取 ID，并用 `deps.sessionStore` 在 `RunTurn` 内加载 Session。Loop 不注入 `Session` 对象。
 
 **DSH 等价**：`Agent`（`dsh-agent/runtime-types.ts`）
 
@@ -351,7 +351,7 @@ type ToolRuntime interface {
 | 策略 | 外置 `Policy` | `pre-execute` 内嵌 allow/deny/ask |
 | 改写结果 | `Hook AfterTool` | `post-execute` waterfall |
 | UI 呈现 | 无 | `presentation.ts` 丰富视图类型 |
-| Scope | context key（`KeySessionID` / `KeyAgentID` / `KeyTurnID`） | `dsh-scope` 多层 restrict |
+| Scope | context key（`KeySessionID` / `KeyAgentID` / `KeyUserID` / `KeyTurnID`） | `dsh-scope` 多层 restrict |
 
 **取长补短**
 

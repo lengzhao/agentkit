@@ -104,6 +104,9 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			if out.PlatformID == "" {
 				out.PlatformID = event.PlatformID
 			}
+			if out.UserID == "" {
+				out.UserID = event.UserID
+			}
 			return r.platform.Send(ctx, out)
 		}
 		sched.submit(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
@@ -122,6 +125,7 @@ func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, er
 		SessionID:  req.Event.SessionID,
 		AgentID:    req.Event.AgentID,
 		PlatformID: req.Event.PlatformID,
+		UserID:     req.Event.UserID,
 		Type:       "error",
 		Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
 	}); sendErr != nil {

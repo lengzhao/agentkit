@@ -99,7 +99,7 @@ flowchart TB
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
-| `platform/worker` | `agentkit.Platform` | 一次性任务 runner（从不读 stdin，支持多 task、`output` 支持 text / json） | DSH headless |
+| `platform/worker` | `agentkit.Platform` | headless 任务 runner（从不读 stdin，`output` 支持 text / json）。task 带 `cron` 时转为常驻定时模式，需 `deps.schedule` | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
 ### 3.2 Agent Spine
@@ -144,6 +144,7 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `tool/ask-user` | `approval` | 向用户提问 | DSH `tool-ask-user` |
 | `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
 | `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
+| `tool/schedule` | `schedule` | agent 自主排期：add / list / remove cron job，与 worker 的 cron 引擎共用 registry | — |
 | `tool/session-query` | `session-query` | 跨 Session 检索 | DSH `tool-session-query` |
 
 ### 3.4 Policy & Safety
@@ -208,6 +209,12 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 | `skill/badge` | `skill.Registry` | Badge 元数据 |
 | `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent |
 | `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent |
+
+#### Schedule
+
+| Kind | 返回类型 | 说明 |
+|---|---|---|
+| `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表；临时文件 + rename 写入，agent 排的 job 跨重启存活 |
 
 #### Sandbox
 
@@ -285,6 +292,7 @@ plugins/
   policy/            # deny-dangerous-shell
   hook/              # before-step
   credentials/       # env
+  schedule/          # file
   settings/          # file
 ```
 
@@ -384,6 +392,7 @@ graph:
 | Compaction | `compaction/summary`, `compaction/prune-tool-results`, `compaction/token-limit`, `hook/before-step` |
 | 崩溃恢复 | Agent 内置：`ScanIncomplete` / `RepairIncomplete` + `session/recovery` 事件 |
 | 守护外壳 | `platform/worker`, `platform/timer`；runner 并发分发 + per-turn panic 隔离 + 优雅关停；overlay 链式合并 |
+| 日历定时 | `schedule/file` + worker cron 模式 + `tool/schedule`（agent 自主排期） |
 | 自主运行 | `hook/turn-continue`, `tool/todo`, `tool/finish`, `approval/auto-allow`, `policy/shell-allowlist`, `policy/path-denylist` |
 | Skills | `skill/filesystem`, `tool/skill`, `prompt/section/skills` |
 | 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |

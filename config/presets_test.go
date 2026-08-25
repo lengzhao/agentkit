@@ -12,6 +12,14 @@ import (
 	"github.com/lengzhao/pluginkit/build"
 )
 
+// chainOnly lists presets that extend another preset's instances and therefore
+// cannot build on the L0 base alone. TestChainedPresetsBuild covers them; the
+// value is the reason, so a future reader knows this is by design rather than a
+// preset someone forgot to finish.
+var chainOnly = map[string]string{
+	"cron.yaml": "extends the autonomous tool set with tool/schedule",
+}
+
 // TestPresetsBuild assembles every shipped preset against the L0 base config.
 // A preset that references a renamed kind or a missing dep only fails at
 // startup otherwise, which is the worst place to find out.
@@ -30,6 +38,9 @@ func TestPresetsBuild(t *testing.T) {
 
 	for _, overlay := range presets {
 		t.Run(filepath.Base(overlay), func(t *testing.T) {
+			if reason, ok := chainOnly[filepath.Base(overlay)]; ok {
+				t.Skipf("chain-only preset: %s", reason)
+			}
 			doc, err := config.LoadDocument(filepath.Join("..", "config.base.yaml"), overlay)
 			if err != nil {
 				t.Fatalf("load: %v", err)
@@ -49,6 +60,7 @@ func TestChainedPresetsBuild(t *testing.T) {
 	chains := [][]string{
 		{"autonomous.yaml", "worker.yaml"},
 		{"autonomous.yaml", "daemon.yaml"},
+		{"autonomous.yaml", "cron.yaml"},
 	}
 	for _, chain := range chains {
 		t.Run(strings.Join(chain, "+"), func(t *testing.T) {

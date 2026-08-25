@@ -837,6 +837,7 @@ flowchart LR
 ctx.Value(agentkit.KeySessionID)
 ctx.Value(agentkit.KeyAgentID)
 ctx.Value(agentkit.KeyPlatformID)
+ctx.Value(agentkit.KeyUserID)
 ctx.Value(agentkit.KeyTurnID)
 ctx.Value(agentkit.KeyToolCallID)
 ```
@@ -900,7 +901,7 @@ type Agent interface {
 }
 ```
 
-- **context key**：Loop 在 `Dispatch` 时把 `MessageEvent.SessionID`、解析后的 `AgentID`、`PlatformID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件可在 `Resolve` 中读取这些 key 做隔离。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
+- **context key**：Loop 在 `Dispatch` 时把 `MessageEvent.SessionID`、解析后的 `AgentID`、`PlatformID`、`UserID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件可在 `Resolve` 中读取这些 key 做隔离。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
 - **Loop.Steer/FollowUp**：从 `ctx.Value(agentkit.KeySessionID)` 路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl` 供 Agent step 级 steer 中断。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。

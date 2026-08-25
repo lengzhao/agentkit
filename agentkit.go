@@ -16,6 +16,8 @@ const (
 	KeyAgentID contextKey = "agentkit.agent_id"
 	// KeyPlatformID is the context key for the current inbound/outbound platform.
 	KeyPlatformID contextKey = "agentkit.platform_id"
+	// KeyUserID is the context key for the current end-user identity, when known.
+	KeyUserID contextKey = "agentkit.user_id"
 	// KeyTurnID is the context key for the current turn, when one is active.
 	KeyTurnID contextKey = "agentkit.turn_id"
 	// KeyToolCallID is the context key for the current tool call, when one is active.
@@ -83,6 +85,7 @@ type MessageEvent struct {
 	SessionID  SessionID // required
 	AgentID    AgentID
 	PlatformID string
+	UserID     string
 	Message    ModelMessage
 }
 
@@ -93,6 +96,7 @@ type OutboundEvent struct {
 	SessionID  SessionID // required
 	AgentID    AgentID
 	PlatformID string
+	UserID     string
 	Type       EventType
 	Data       json.RawMessage
 }

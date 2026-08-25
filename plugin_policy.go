@@ -7,7 +7,7 @@ type Policy interface {
 }
 
 // PolicyInput carries the policy payload. Per-conversation policy should read
-// ctx.Value(KeySessionID) / ctx.Value(KeyAgentID).
+// ctx.Value(KeySessionID) / ctx.Value(KeyAgentID) / ctx.Value(KeyUserID).
 type PolicyInput struct {
 	ToolCall *ToolCall
 }

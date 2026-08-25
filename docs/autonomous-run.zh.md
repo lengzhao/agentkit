@@ -167,14 +167,15 @@ $ 崩溃后重新运行
 
 前面几节让 agent 能自己把一个任务推完，这一节是"谁来发起任务"。
 
-### 7.1 两个 headless 平台
+### 7.1 三种 headless 形态
 
-| Kind | 形态 | 用途 |
+| 配置 | 形态 | 用途 |
 |---|---|---|
-| `platform/worker` | 跑完配置里的 task 列表就 EOF 退出 | 批处理、CI、系统 cron 的执行体 |
-| `platform/timer` | 常驻，按固定间隔自己发起 turn | 进程内轮询、巡检 |
+| `platform/worker` | 跑完 task 列表就 EOF 退出 | 批处理、CI、系统 cron 的执行体 |
+| `platform/worker` + task 带 `cron` | 常驻，按 cron 表达式发起 turn | 日历型定时（[§7.4](#74-日历型定时worker-的-cron-模式)），agent 可自主排期 |
+| `platform/timer` | 常驻，按固定间隔发起 turn | 简单的"每 N 分钟看一眼" |
 
-两者都**从不读 stdin**。这是它们与 `platform/cli once=true` 的关键区别：在 systemd、cron、容器、CI 里 stdin 是 `/dev/null`，CLI 平台会挂在等输入上。
+它们都**从不读 stdin**。这是它们与 `platform/cli once=true` 的关键区别：在 systemd、cron、容器、CI 里 stdin 是 `/dev/null`，CLI 平台会挂在等输入上。
 
 输出约定：**结果走 stdout，进度与诊断走 stderr**。所以 `output: json` 模式下 stdout 是干净的 JSON Lines，可以直接 `| jq`：
 
@@ -208,21 +209,77 @@ platform.default:
 
 `fixed` 复用一个 session，能跨 tick 记事，**但必须配 `compaction/token-limit`**：每天巡检往同一份历史里追加，几天后必然撑爆窗口；即使配了压缩，也只是把无限增长换成无限摘要。所以默认是 fresh。
 
-### 7.4 日历型定时用 OS cron，不要用 timer
+### 7.4 日历型定时：worker 的 cron 模式
 
-`platform/timer` 是**进程内**的，进程挂了、机器重启了，schedule 就没了。"每天早上 9 点"这类日历型定时应该用系统 cron 驱动 `platform/worker`：
+`platform/timer` 只有固定间隔，表达不了"工作日早上 9 点"。worker 的 task 带上 `cron` 就变成常驻定时模式：
+
+```yaml
+platform.default:
+  use: platform/worker
+  config:
+    tasks:
+      # 无 cron：启动时立刻跑一次，跑完才进入 cron 等待
+      - "启动巡检：看看工作区状态"
+      # 带 cron：注册成定时 job
+      - id: weekday-morning
+        cron: "0 9 * * 1-5"
+        prompt: "工作日早班巡检"
+    pollSeconds: 30
+  deps:
+    schedule: schedule.default   # 没有它，带 cron 的 task 是配置错误而不是被静默忽略
+```
+
+支持完整 5 段式（分 时 日 月 周）：`*`、`N`、`a-b`、`a,b,c`、`*/n`、`a-b/n`，月份和星期可用 `jan` / `mon` 之类的名字，另有 `@hourly` / `@daily` / `@weekly` / `@monthly` / `@yearly`。星期 0 和 7 都是周日。
+
+两个容易被忽略的语义，都按标准 cron 实现并有测试锁定：
+
+- **日 和 星期同时限定时取"或"**。`0 0 1 * 5` 是"每月 1 号**或**任意周五"，不是两者都满足。这是最常被手写解析器搞错的一条。
+- **错过的 boundary 直接跳过，不补跑**。进程停了 4 小时再起来，每小时的 job 只跑一次，不会连补 4 次 —— 与 timer 同一个原则。
+
+`cron` 表达式在启动时就校验，写错立刻报错而不是安静地永不触发。
+
+**和系统 cron 怎么选**：进程内 cron 不抗机器重启，但换来两件系统 cron 做不到的事 —— job 表持久化且 agent 能自己增删（见下节），以及不必为每次触发付进程启动 + 配置装配的开销。要抗重启就把这个进程交给 systemd（`Restart=always`）。纯粹的"每天跑一次然后退出"仍然可以用系统 cron + batch 模式的 worker：
 
 ```cron
 0 9 * * * cd /path/to/repo && agent -config presets/autonomous.yaml,presets/worker.yaml "跑日常巡检" >> ~/agent.log 2>&1
 ```
 
-`platform/timer` 适合的是"进程活着的时候每 N 分钟看一眼"。
+### 7.5 agent 自主排期：tool/schedule
 
-### 7.5 单个 turn 崩了不会带走进程
+job 表是一个能力（`cap/schedule`），worker 的 cron 引擎和 `tool/schedule` **共用同一个 registry 实例**。于是 agent 可以给自己安排后续工作：
+
+```
+schedule(op="add", cron="*/30 * * * *", prompt="再看一眼那个部署有没有恢复", note="等 SRE 回复")
+```
+
+因此：
+
+- 新加的 job **不用重启就会被拾起**，最迟一个 `pollSeconds` 之后（这也是 worker 轮询而不是直接睡到下一个 boundary 的原因）。
+- job 表落在工作区的 `schedule.json`，**跨重启存活**。写入走临时文件 + rename：进程在写一半被杀，回来不会读到截断的 job 表。
+- `nextRun` 由工具算好返回，agent 不必自己解析 cron。
+
+job 分两个来源，这个区分是必要的：
+
+| source | 归属 | 重启时 |
+|---|---|---|
+| `config` | preset 声明 | 每次启动按 preset 重新对账：preset 里删掉的 job 会从 registry 移除 |
+| `agent` | 运行时由 `tool/schedule` 创建 | 完全不受 config 对账影响 |
+
+少了这个区分，改一次 preset 就会把 agent 给自己排的所有后续工作删干净。对账时**保留原有的 `lastRun` 锚点** —— 否则一个每几分钟重启一次的进程会把 `0 9 * * *` 永远往后推。
+
+`maxJobs`（默认 32）限制 agent 能排的数量，config 声明的 job 不占这个额度。
+
+上手：
+
+```sh
+go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
+```
+
+### 7.6 单个 turn 崩了不会带走进程
 
 Runner 对每个 turn 做 panic 隔离：panic 被记成带堆栈的 `ERROR` 日志 + 该 session 的 error 事件，然后继续服务下一个事件。被打断的 turn 会留下悬空的 `turn/start`，由 [§6](#6-崩溃恢复) 的机制在下个 turn 修掉。一个 nil map 写入不该带走一个跑了三天的守护进程。
 
-### 7.6 overlay 可以链式叠加
+### 7.7 overlay 可以链式叠加
 
 `-config` 接受逗号分隔的多个 overlay，按顺序合并，后面的覆盖前面的：
 
@@ -230,9 +287,9 @@ Runner 对每个 turn 做 panic 隔离：panic 被记成带堆栈的 `ERROR` 日
 agent -config presets/autonomous.yaml,presets/daemon.yaml
 ```
 
-所以 `worker.yaml` / `daemon.yaml` 都是**薄 overlay，只换传输层**，能力栈从 `autonomous.yaml` 叠加，不必每个 preset 重述整张图。反过来说：单独用 `-config presets/daemon.yaml` 会拿到 L0 的 `approval/cli`，守护进程会卡在等人审批 —— 一定要一起链。
+所以 `worker.yaml` / `daemon.yaml` / `cron.yaml` 都是**薄 overlay**，能力栈从 `autonomous.yaml` 叠加，不必每个 preset 重述整张图。反过来说：单独用它们会拿到 L0 的 `approval/cli`，守护进程会卡在等人审批 —— 一定要一起链。`cron.yaml` 还扩展了 autonomous 的工具集（加 `tool/schedule`），所以它连单独装配都不成立，`config/presets_test.go` 里把它标为 chain-only。
 
-### 7.7 并发分发
+### 7.8 并发分发
 
 Runner 可以让**不同 session** 的 turn 并行，`runner.config.maxConcurrentTurns` 控制上限：
 
@@ -282,8 +339,11 @@ go run ./cmd/agent -config presets/autonomous.yaml "<一个需要多轮的任务
 # headless 一次性任务（不读 stdin，适合 cron / CI / 容器）
 go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "<任务>"
 
-# 常驻守护进程，按间隔自己醒来；Ctrl+C / SIGTERM 停止
+# 常驻守护进程，按固定间隔自己醒来；Ctrl+C / SIGTERM 停止
 go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
+
+# 常驻 cron 守护进程；agent 还能用 tool/schedule 给自己排后续工作
+go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
 ```
 
 `presets/autonomous.yaml` 是 L1 overlay，改动集中在六处：`platform` once、`agent` budget、`hooks` 加 turn-continue、`tools` 加 todo/finish 与两个 policy、`approval` 换 auto-allow、压缩改按 token 阈值触发。
@@ -304,6 +364,5 @@ print(collections.Counter(json.loads(l)['Type'] for l in open(f)))
 仍缺的长期运行能力：
 
 - **HTTP / RPC 触发**：`platform/http`、`platform/rpc` 仍未实现，外部系统目前只能通过 OS cron + worker 触发
-- **cron 表达式**：`platform/timer` 只支持固定间隔。日历型定时用 OS cron + worker（见 §7.4），比进程内 cron 更抗重启
 - **进程级自动重启**：panic 隔离保住了单个 turn，但进程真的挂掉（OOM、被 kill）仍需外部 supervisor（systemd `Restart=always`）兜底
 - `telemetry/*` 落地、异步审批、verifier 子 agent 二次确认

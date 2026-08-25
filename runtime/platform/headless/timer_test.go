@@ -23,7 +23,14 @@ type fakeClock struct {
 }
 
 func newFakeClock() *fakeClock {
-	return &fakeClock{now: time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)}
+	return newFakeClockAt(time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC))
+}
+
+// newFakeClockAt is for tests that also touch a schedule registry: the registry
+// anchors jobs with the real clock, so the fake one has to share that timeline or
+// the two disagree about when a boundary is.
+func newFakeClockAt(start time.Time) *fakeClock {
+	return &fakeClock{now: start}
 }
 
 func (c *fakeClock) Now() time.Time {

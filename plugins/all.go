@@ -10,6 +10,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/hook"
 	_ "github.com/lengzhao/agentkit/plugins/policy"
 	_ "github.com/lengzhao/agentkit/plugins/prompt"
+	_ "github.com/lengzhao/agentkit/plugins/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/settings"
 	_ "github.com/lengzhao/agentkit/plugins/shell"
 	_ "github.com/lengzhao/agentkit/plugins/skill"

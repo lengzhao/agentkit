@@ -11,6 +11,20 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/headless"
 )
 
+// newWorker builds a worker without a schedule registry, i.e. batch mode.
+func newWorker(cfg headless.WorkerConfig) (agentkit.Platform, error) {
+	return headless.NewWorker(cfg, headless.WorkerDeps{})
+}
+
+// tasks builds plain run-once task specs from prompts.
+func tasks(prompts ...string) []headless.TaskSpec {
+	out := make([]headless.TaskSpec, 0, len(prompts))
+	for _, prompt := range prompts {
+		out = append(out, headless.TaskSpec{Prompt: prompt})
+	}
+	return out
+}
+
 func textOfMessage(msg agentkit.ModelMessage) string {
 	var b strings.Builder
 	for _, part := range msg.Content {
@@ -22,8 +36,8 @@ func textOfMessage(msg agentkit.ModelMessage) string {
 func TestWorkerRunsEachTaskThenReportsEOF(t *testing.T) {
 	t.Parallel()
 
-	p, err := headless.NewWorker(headless.WorkerConfig{
-		Tasks: []string{"first", "  second  ", "", "third"},
+	p, err := newWorker(headless.WorkerConfig{
+		Tasks: tasks("first", "  second  ", "", "third"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,8 +89,8 @@ func TestWorkerRunsEachTaskThenReportsEOF(t *testing.T) {
 func TestWorkerFixedModeSharesOneSession(t *testing.T) {
 	t.Parallel()
 
-	p, err := headless.NewWorker(headless.WorkerConfig{
-		Tasks:       []string{"a", "b"},
+	p, err := newWorker(headless.WorkerConfig{
+		Tasks:       tasks("a", "b"),
 		SessionMode: headless.SessionFixed,
 		SessionID:   "batch",
 	})
@@ -109,7 +123,7 @@ func TestWorkerFreshSessionsAreUniqueAcrossProcesses(t *testing.T) {
 	// history, which is the opposite of "fresh".
 	ids := make([]agentkit.SessionID, 0, 2)
 	for i := 0; i < 2; i++ {
-		p, err := headless.NewWorker(headless.WorkerConfig{Tasks: []string{"task"}})
+		p, err := newWorker(headless.WorkerConfig{Tasks: tasks("task")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,10 +141,10 @@ func TestWorkerFreshSessionsAreUniqueAcrossProcesses(t *testing.T) {
 func TestWorkerRequiresATask(t *testing.T) {
 	t.Parallel()
 
-	if _, err := headless.NewWorker(headless.WorkerConfig{}); err == nil {
+	if _, err := newWorker(headless.WorkerConfig{}); err == nil {
 		t.Fatal("expected an error with no task configured")
 	}
-	if _, err := headless.NewWorker(headless.WorkerConfig{SessionMode: "weird", Prompt: "x"}); err == nil {
+	if _, err := newWorker(headless.WorkerConfig{SessionMode: "weird", Prompt: "x"}); err == nil {
 		t.Fatal("expected an error for an unknown sessionMode")
 	}
 }
@@ -138,7 +152,7 @@ func TestWorkerRequiresATask(t *testing.T) {
 func TestWorkerPromptIsTheSingleTaskShorthand(t *testing.T) {
 	t.Parallel()
 
-	p, err := headless.NewWorker(headless.WorkerConfig{Prompt: "just this"})
+	p, err := newWorker(headless.WorkerConfig{Prompt: "just this"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +171,7 @@ func TestWorkerPromptIsTheSingleTaskShorthand(t *testing.T) {
 func TestWorkerHonorsCancellation(t *testing.T) {
 	t.Parallel()
 
-	p, err := headless.NewWorker(headless.WorkerConfig{Tasks: []string{"a"}})
+	p, err := newWorker(headless.WorkerConfig{Tasks: tasks("a")})
 	if err != nil {
 		t.Fatal(err)
 	}

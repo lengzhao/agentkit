@@ -17,7 +17,8 @@ type Section struct {
 }
 
 // PromptRequest carries model-visible prompt inputs. Routing context is read
-// from ctx.Value(KeySessionID) / ctx.Value(KeyAgentID), not duplicated here.
+// from ctx.Value(KeySessionID) / ctx.Value(KeyAgentID) / ctx.Value(KeyUserID),
+// not duplicated here.
 type PromptRequest struct {
 	Messages []ModelMessage
 	Tools    []ToolSpec

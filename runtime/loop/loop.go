@@ -65,7 +65,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	defer unlock()
 
 	control := l.controlFor(sessionID)
-	ctx = withTurnContext(ctx, sessionID, agentID, req.Event.PlatformID, control)
+	ctx = withTurnContext(ctx, sessionID, agentID, req.Event.PlatformID, req.Event.UserID, control)
 
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
@@ -133,11 +133,14 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, control *Control) context.Context {
+func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control) context.Context {
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
 	if platformID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyPlatformID, platformID)
+	}
+	if userID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyUserID, userID)
 	}
 	if control != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)
