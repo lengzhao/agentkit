@@ -9,7 +9,7 @@ import (
 )
 
 type Config struct {
-	Root   string `json:"root"`   // deprecated: alias for global
+	Root   string `json:"root"` // deprecated: alias for global
 	Global string `json:"global"`
 	Local  string `json:"local"`
 	Scope  string `json:"scope"` // global | local

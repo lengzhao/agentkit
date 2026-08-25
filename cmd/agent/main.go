@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -97,6 +98,7 @@ func setupLogging() func() {
 }
 
 func fatal(msg string, err error) {
+	fmt.Fprintf(os.Stderr, "error: %s: %v\n", msg, err)
 	slog.Error(msg, "err", err)
 	os.Exit(1)
 }

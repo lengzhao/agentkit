@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/plugindoc"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -120,7 +121,7 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 		fmt.Fprintln(os.Stderr, "bye")
 		return true, io.EOF
 	case "help", "h", "?":
-		p.printHelp()
+		p.printHelp(args)
 		return true, nil
 	}
 
@@ -236,10 +237,17 @@ func (p *Platform) printWelcome() {
 	fmt.Fprintln(os.Stderr, "AgentKit interactive mode. Type /help for commands, /exit to quit.")
 }
 
-func (p *Platform) printHelp() {
+func (p *Platform) printHelp(args string) {
+	args = strings.TrimSpace(args)
+	if args != "" {
+		p.printHelpArgs(args)
+		return
+	}
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  /help, /h, /?     show this help")
-	fmt.Fprintln(os.Stderr, "  /exit, /quit      exit the session")
+	fmt.Fprintln(os.Stderr, "  /help, /h, /?              show this help")
+	fmt.Fprintln(os.Stderr, "  /help plugin -l            list registered plugin kinds")
+	fmt.Fprintln(os.Stderr, "  /help plugin <kind>        show plugin usage docs")
+	fmt.Fprintln(os.Stderr, "  /exit, /quit               exit the session")
 	if p.commands != nil {
 		for _, cmd := range p.commands.List() {
 			line := fmt.Sprintf("  /%-14s %s", cmd.Name(), cmd.Description())
@@ -249,7 +257,33 @@ func (p *Platform) printHelp() {
 			fmt.Fprintln(os.Stderr, line)
 		}
 	}
-	fmt.Fprintln(os.Stderr, "  Ctrl+D            exit when the input line is empty")
+	fmt.Fprintln(os.Stderr, "  Ctrl+D                     exit when the input line is empty")
+}
+
+func (p *Platform) printHelpArgs(args string) {
+	fields := splitArgs(args)
+	if len(fields) == 0 || fields[0] != "plugin" {
+		fmt.Fprintln(os.Stderr, "usage: /help plugin -l")
+		fmt.Fprintln(os.Stderr, "       /help plugin <kind>")
+		return
+	}
+	if len(fields) == 1 {
+		fmt.Fprintln(os.Stderr, "usage: /help plugin -l")
+		fmt.Fprintln(os.Stderr, "       /help plugin <kind>")
+		return
+	}
+	switch fields[1] {
+	case "-l", "--list":
+		fmt.Fprintln(os.Stderr, plugindoc.FormatList())
+		return
+	}
+	kind := strings.TrimSpace(strings.Join(fields[1:], " "))
+	text, err := plugindoc.FormatKind(kind)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "help error: %v\n", err)
+		return
+	}
+	fmt.Fprintln(os.Stderr, text)
 }
 
 func parseSlashCommand(line string) (name, args string, ok bool) {

@@ -121,16 +121,7 @@ compaction.summary.default:
       maxRetries: 3
       baseDelayMs: 2000
   deps:
-    llm: llm.summary.default
-
-llm.summary.default:
-  use: llm/openai-compatible
-  config:
-    model: gpt-5.4
-    baseUrl: https://api.openai.com/v1
-    apiKeyRef: env:OPENAI_API_KEY
-  deps:
-    credentials: credentials.default
+    llm: llm.default
 
 prompt.default:
   use: prompt/assembler/default

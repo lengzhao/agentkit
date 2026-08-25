@@ -140,8 +140,8 @@ func (r *Registry) List() []agentkit.Command {
 }
 
 var (
-	_ agentkit.Commands          = (*Registry)(nil)
-	_ agentkit.CommandCollector  = (*Registry)(nil)
+	_ agentkit.Commands         = (*Registry)(nil)
+	_ agentkit.CommandCollector = (*Registry)(nil)
 )
 
 func normalizeName(name string) string {

@@ -10,12 +10,14 @@ workspace.default:
     scope: local
 
 # 示例：覆盖模型（需写完整实例块）
+# 此实例同时供 agent 与 compaction/summary 使用；覆盖 apiKey 一处即可。
 llm.default:
   use: llm/openai-compatible
   config:
     model: gpt-5.4
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
+    # 或直接写 apiKey: sk-...
   deps:
     credentials: credentials.default
 
