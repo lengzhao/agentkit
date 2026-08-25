@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 	"github.com/lengzhao/agentkit/plugindoc"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -201,7 +202,7 @@ func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
 			fmt.Println(text)
 		}
 	case agentkit.EventInteractionStart:
-		var payload agentkit.InteractionStartPayload
+		var payload interaction.StartPayload
 		if err := json.Unmarshal(event.Data, &payload); err != nil {
 			return err
 		}

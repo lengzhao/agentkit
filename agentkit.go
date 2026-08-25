@@ -24,12 +24,18 @@ const (
 	KeyToolCallID contextKey = "agentkit.tool_call_id"
 	// KeySessionControl is the context key for per-session steer/follow-up state.
 	// Loop sets it before Agent.RunTurn; the value is a runtime/loop.Control that
-	// also implements SessionInteraction.
+	// also implements interaction.Session.
 	KeySessionControl contextKey = "agentkit.session_control"
 	// KeyOutboundEmit is the per-turn outbound hook. Loop sets it before
 	// Agent.RunTurn so tools and session control can emit interaction/start
 	// through the same channel as assistant streaming.
 	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
+	// KeyInteractionHandler is the optional sync reply reader for the inbound
+	// platform. Loop sets it from runner Platform when implemented.
+	KeyInteractionHandler contextKey = "agentkit.interaction_handler"
+	// KeyAsyncInteraction is true when the inbound platform delivers interaction
+	// replies asynchronously via TryDeliverInteraction.
+	KeyAsyncInteraction contextKey = "agentkit.async_interaction"
 )
 
 // SessionID is an opaque conversation routing key. Platforms (platform/slack,

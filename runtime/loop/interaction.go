@@ -10,15 +10,16 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 )
 
 type pendingInteraction struct {
 	id   string
-	ch   chan agentkit.InteractionReply
+	ch   chan interaction.Reply
 	once sync.Once
 }
 
-func (p *pendingInteraction) deliver(reply agentkit.InteractionReply) bool {
+func (p *pendingInteraction) deliver(reply interaction.Reply) bool {
 	select {
 	case p.ch <- reply:
 		return true
@@ -31,14 +32,14 @@ func (p *pendingInteraction) close() {
 	p.once.Do(func() { close(p.ch) })
 }
 
-func (c *Control) RunInteraction(ctx context.Context, req agentkit.HumanInteraction) (agentkit.InteractionResult, error) {
+func (c *Control) Run(ctx context.Context, req interaction.Human) (interaction.Result, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
-		return agentkit.InteractionResult{}, fmt.Errorf("interaction prompt is required")
+		return interaction.Result{}, fmt.Errorf("interaction prompt is required")
 	}
 	req.Prompt = prompt
 	if req.Kind == "" {
-		req.Kind = agentkit.InteractionQuestion
+		req.Kind = interaction.Question
 	}
 	if req.ID == "" {
 		req.ID = newInteractionID()
@@ -46,79 +47,79 @@ func (c *Control) RunInteraction(ctx context.Context, req agentkit.HumanInteract
 
 	emit, _ := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit)
 	if emit == nil {
-		return agentkit.InteractionResult{
+		return interaction.Result{
 			Selected: -1,
 			Reason:   "no outbound channel for interaction",
 		}, nil
 	}
 
 	if err := c.emitInteractionStart(ctx, emit, req); err != nil {
-		return agentkit.InteractionResult{}, err
+		return interaction.Result{}, err
 	}
 
-	pending := &pendingInteraction{id: req.ID, ch: make(chan agentkit.InteractionReply, 1)}
+	pending := &pendingInteraction{id: req.ID, ch: make(chan interaction.Reply, 1)}
 	c.setPendingInteraction(pending)
 	defer c.clearPendingInteraction()
 
-	var result agentkit.InteractionResult
-	if handler, ok := ctx.Value(agentkit.KeyInteractionHandler).(agentkit.InteractionHandler); ok && handler != nil {
+	var result interaction.Result
+	if handler, ok := ctx.Value(agentkit.KeyInteractionHandler).(interaction.Handler); ok && handler != nil {
 		result = c.runSyncInteraction(ctx, req, handler)
 	} else if async, ok := ctx.Value(agentkit.KeyAsyncInteraction).(bool); ok && async {
 		result = c.waitAsyncInteraction(ctx, req)
 	} else {
-		result = agentkit.InteractionResult{
+		result = interaction.Result{
 			Selected: -1,
 			Reason:   "no interactive user on this platform",
 		}
 	}
 
 	if err := c.emitInteractionEnd(ctx, emit, req.ID, result); err != nil {
-		return agentkit.InteractionResult{}, err
+		return interaction.Result{}, err
 	}
 	return result, nil
 }
 
-func (c *Control) runSyncInteraction(ctx context.Context, req agentkit.HumanInteraction, handler agentkit.InteractionHandler) agentkit.InteractionResult {
-	reply, err := handler.ReadInteractionReply(ctx, req)
+func (c *Control) runSyncInteraction(ctx context.Context, req interaction.Human, handler interaction.Handler) interaction.Result {
+	reply, err := handler.ReadReply(ctx, req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return agentkit.InteractionResult{Selected: -1, Reason: "interaction abandoned: " + err.Error()}
+			return interaction.Result{Selected: -1, Reason: "interaction abandoned: " + err.Error()}
 		}
-		return agentkit.InteractionResult{Selected: -1, Reason: err.Error()}
+		return interaction.Result{Selected: -1, Reason: err.Error()}
 	}
 	text := strings.TrimSpace(reply.Text)
 	if text == "" {
 		if req.Default == "" {
-			return agentkit.InteractionResult{Selected: -1, Reason: "user gave an empty answer"}
+			return interaction.Result{Selected: -1, Reason: "user gave an empty answer"}
 		}
 		text = req.Default
 	}
-	return agentkit.MatchInteractionOption(text, req.Options)
+	return interaction.MatchOption(text, req.Options)
 }
 
-func (c *Control) waitAsyncInteraction(ctx context.Context, req agentkit.HumanInteraction) agentkit.InteractionResult {
+func (c *Control) waitAsyncInteraction(ctx context.Context, req interaction.Human) interaction.Result {
 	c.mu.Lock()
 	pending := c.pending
 	c.mu.Unlock()
 	if pending == nil {
-		return agentkit.InteractionResult{Selected: -1, Reason: "no interactive user on this platform"}
+		return interaction.Result{Selected: -1, Reason: "no interactive user on this platform"}
 	}
 
 	select {
 	case <-ctx.Done():
-		return agentkit.InteractionResult{Selected: -1, Reason: "interaction abandoned: " + ctx.Err().Error()}
+		return interaction.Result{Selected: -1, Reason: "interaction abandoned: " + ctx.Err().Error()}
 	case reply, ok := <-pending.ch:
 		if !ok {
-			return agentkit.InteractionResult{Selected: -1, Reason: "interaction closed"}
+			return interaction.Result{Selected: -1, Reason: "interaction closed"}
 		}
 		text := strings.TrimSpace(reply.Text)
 		if text == "" {
 			if req.Default == "" {
-				return agentkit.InteractionResult{Selected: -1, Reason: "user gave an empty answer"}
+				return interaction.Result{Selected: -1, Reason: "user gave an empty answer"}
 			}
 			text = req.Default
 		}
-		return agentkit.MatchInteractionOption(text, req.Options)
+		return interaction.MatchOption(text, req.Options)
 	}
 }
 
@@ -133,7 +134,7 @@ func (c *Control) DeliverInteractionReply(sessionID agentkit.SessionID, interact
 	if interactionID != "" && pending.id != interactionID {
 		return false
 	}
-	return pending.deliver(agentkit.InteractionReply{Text: text})
+	return pending.deliver(interaction.Reply{Text: text})
 }
 
 func (c *Control) setPendingInteraction(p *pendingInteraction) {
@@ -151,7 +152,7 @@ func (c *Control) clearPendingInteraction() {
 	c.mu.Unlock()
 }
 
-func (c *Control) emitInteractionStart(ctx context.Context, emit agentkit.OutboundEmit, req agentkit.HumanInteraction) error {
+func (c *Control) emitInteractionStart(ctx context.Context, emit agentkit.OutboundEmit, req interaction.Human) error {
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
 	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
@@ -162,7 +163,7 @@ func (c *Control) emitInteractionStart(ctx context.Context, emit agentkit.Outbou
 		PlatformID: platformID,
 		UserID:     userID,
 		Type:       agentkit.EventInteractionStart,
-		Data: agentkit.MarshalOutboundData(agentkit.InteractionStartPayload{
+		Data: agentkit.MarshalOutboundData(interaction.StartPayload{
 			ID:       req.ID,
 			Kind:     req.Kind,
 			Prompt:   req.Prompt,
@@ -173,7 +174,7 @@ func (c *Control) emitInteractionStart(ctx context.Context, emit agentkit.Outbou
 	})
 }
 
-func (c *Control) emitInteractionEnd(ctx context.Context, emit agentkit.OutboundEmit, id string, result agentkit.InteractionResult) error {
+func (c *Control) emitInteractionEnd(ctx context.Context, emit agentkit.OutboundEmit, id string, result interaction.Result) error {
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
 	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
@@ -184,7 +185,7 @@ func (c *Control) emitInteractionEnd(ctx context.Context, emit agentkit.Outbound
 		PlatformID: platformID,
 		UserID:     userID,
 		Type:       agentkit.EventInteractionEnd,
-		Data: agentkit.MarshalOutboundData(agentkit.InteractionEndPayload{
+		Data: agentkit.MarshalOutboundData(interaction.EndPayload{
 			ID:       id,
 			Answered: result.Answered,
 			Text:     result.Text,
@@ -202,4 +203,4 @@ func newInteractionID() string {
 	return hex.EncodeToString(b[:])
 }
 
-var _ agentkit.SessionInteraction = (*Control)(nil)
+var _ interaction.Session = (*Control)(nil)

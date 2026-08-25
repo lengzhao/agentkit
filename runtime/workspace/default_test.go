@@ -74,6 +74,28 @@ func TestDefaultLocalScope(t *testing.T) {
 	}
 }
 
+func TestDefaultEmptyLocalUsesAgentkit(t *testing.T) {
+	t.Parallel()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := rw.New(rw.Config{Scope: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Resolve(context.Background(), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(cwd, ".agentkit")
+	if got != want {
+		t.Fatalf("default local root=%q want %q", got, want)
+	}
+}
+
 func TestDefaultRootAlias(t *testing.T) {
 	t.Parallel()
 

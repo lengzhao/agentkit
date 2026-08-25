@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 )
 
 type Config struct {
@@ -156,7 +157,7 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit, handler agentkit.InteractionHandler, asyncInteraction bool) context.Context {
+func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit, handler interaction.Handler, asyncInteraction bool) context.Context {
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
 	if platformID != "" {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 )
 
 func TestRunInteractionSyncPath(t *testing.T) {
@@ -22,13 +23,13 @@ func TestRunInteractionSyncPath(t *testing.T) {
 		}
 		return nil
 	}
-	handler := stubInteractionHandler{reply: agentkit.InteractionReply{Text: "2"}}
+	handler := stubInteractionHandler{reply: interaction.Reply{Text: "2"}}
 
 	ctx := withTurnContext(context.Background(), "cli:default", "coder", "cli", "", ctrl, emit, handler, false)
-	result, err := ctrl.RunInteraction(ctx, agentkit.HumanInteraction{
-		Kind:   agentkit.InteractionQuestion,
+	result, err := ctrl.Run(ctx, interaction.Human{
+		Kind:   interaction.Question,
 		Prompt: "pick one",
-		Options: []agentkit.InteractionOption{
+		Options: []interaction.Option{
 			{Label: "alpha"},
 			{Label: "beta"},
 		},
@@ -51,8 +52,8 @@ func TestRunInteractionHeadlessUnanswered(t *testing.T) {
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
 	ctx := withTurnContext(context.Background(), "worker:job", "coder", "worker", "", ctrl, emit, nil, false)
 
-	result, err := ctrl.RunInteraction(ctx, agentkit.HumanInteraction{
-		Kind:   agentkit.InteractionQuestion,
+	result, err := ctrl.Run(ctx, interaction.Human{
+		Kind:   interaction.Question,
 		Prompt: "anyone there?",
 	})
 	if err != nil {
@@ -72,7 +73,7 @@ func TestTryDeliverInteractionConsumesReply(t *testing.T) {
 	}
 	l := loop.(*Default)
 	ctrl := l.controlFor("feishu:oc_test")
-	ctrl.setPendingInteraction(&pendingInteraction{id: "ix1", ch: make(chan agentkit.InteractionReply, 1)})
+	ctrl.setPendingInteraction(&pendingInteraction{id: "ix1", ch: make(chan interaction.Reply, 1)})
 
 	event := agentkit.MessageEvent{
 		SessionID:          "feishu:oc_test",
@@ -93,11 +94,11 @@ func TestTryDeliverInteractionConsumesReply(t *testing.T) {
 }
 
 type stubInteractionHandler struct {
-	reply agentkit.InteractionReply
+	reply interaction.Reply
 	err   error
 }
 
-func (s stubInteractionHandler) ReadInteractionReply(context.Context, agentkit.HumanInteraction) (agentkit.InteractionReply, error) {
+func (s stubInteractionHandler) ReadReply(context.Context, interaction.Human) (interaction.Reply, error) {
 	return s.reply, s.err
 }
 

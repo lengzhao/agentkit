@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 	capweb "github.com/lengzhao/agentkit/cap/web"
 	"github.com/lengzhao/agentkit/plugins/tool"
 )
@@ -36,12 +37,12 @@ func (f *fakeSearcher) Search(_ context.Context, req capweb.SearchRequest) (capw
 }
 
 type fakeSessionInteraction struct {
-	got    agentkit.HumanInteraction
-	result agentkit.InteractionResult
+	got    interaction.Human
+	result interaction.Result
 	err    error
 }
 
-func (f *fakeSessionInteraction) RunInteraction(_ context.Context, req agentkit.HumanInteraction) (agentkit.InteractionResult, error) {
+func (f *fakeSessionInteraction) Run(_ context.Context, req interaction.Human) (interaction.Result, error) {
 	f.got = req
 	return f.result, f.err
 }
@@ -164,7 +165,7 @@ func TestWebSearchToolResultLimitPrecedence(t *testing.T) {
 func TestAskUserToolAnsweredPath(t *testing.T) {
 	t.Parallel()
 
-	si := &fakeSessionInteraction{result: agentkit.InteractionResult{Answered: true, Text: "sqlite", Selected: 1}}
+	si := &fakeSessionInteraction{result: interaction.Result{Answered: true, Text: "sqlite", Selected: 1}}
 	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +197,7 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	t.Parallel()
 
-	si := &fakeSessionInteraction{result: agentkit.InteractionResult{Selected: -1, Reason: "this run is unattended"}}
+	si := &fakeSessionInteraction{result: interaction.Result{Selected: -1, Reason: "this run is unattended"}}
 	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)

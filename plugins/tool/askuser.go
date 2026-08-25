@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 )
 
 type AskUserConfig struct{}
@@ -33,18 +34,18 @@ func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.Tool, error) {
 			return AskUserOutput{}, fmt.Errorf("question is required")
 		}
 
-		si, ok := ctx.Value(agentkit.KeySessionControl).(agentkit.SessionInteraction)
+		si, ok := ctx.Value(agentkit.KeySessionControl).(interaction.Session)
 		if !ok || si == nil {
 			return unansweredAsk("session interaction unavailable"), nil
 		}
 
-		options := make([]agentkit.InteractionOption, 0, len(input.Options))
+		options := make([]interaction.Option, 0, len(input.Options))
 		for _, opt := range input.Options {
-			options = append(options, agentkit.InteractionOption{Label: opt})
+			options = append(options, interaction.Option{Label: opt})
 		}
 
-		result, err := si.RunInteraction(ctx, agentkit.HumanInteraction{
-			Kind:    agentkit.InteractionQuestion,
+		result, err := si.Run(ctx, interaction.Human{
+			Kind:    interaction.Question,
 			Prompt:  question,
 			Options: options,
 			Default: strings.TrimSpace(input.Default),

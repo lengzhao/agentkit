@@ -4,7 +4,9 @@ Coding preset 的文件与 Shell 边界策略。
 
 ## 结论
 
-`workspace/default` 同时定义 **global**（默认 `~/.agentkit`）与 **local**（默认当前目录 `.`）两个根，并通过 `scope` 选择默认使用哪一个（L0 默认 `global`）。
+`workspace/default` 同时定义 **global**（默认 `~/.agentkit`）与 **local**（默认 `<cwd>/.agentkit`）两个根，并通过 `scope` 选择默认使用哪一个（L0 默认 `global`）。
+
+AgentKit 运行时数据（session、schedule、agents 定义等）落在 **local 根** 下，避免把临时文件散进项目源码树。文件工具与 shell 在 coding preset 里通过 `..` 解析到**项目根目录**。
 
 需要解析相对路径的插件（`fs/local`、`shell/bash`、`session/store`、`skill/filesystem` 等）调用 `workspace.Resolve(ctx, rel)`。路径可加前缀显式指定根：
 
@@ -12,17 +14,18 @@ Coding preset 的文件与 Shell 边界策略。
 |---|---|
 | `sessions` | 相对当前 `scope` 默认根 |
 | `global:skills` | `~/.agentkit/skills` |
-| `local:skills` | `./skills`（项目目录下） |
+| `local:skills` | `<cwd>/.agentkit/skills` |
+| `..` | 项目根（local 根 `.agentkit` 的父目录） |
 | `~/foo` | 绝对路径（不受 scope 影响） |
 
 | 实例 | Kind | 配置 | 解析结果 |
 |---|---|---|---|
 | `workspace.default` | `workspace/default` | `global` + `local` + `scope` | 默认根由 scope 决定 |
-| `fs.workspace.default` | `fs/local` | `root: .` | `workspace.Resolve(ctx, ".")` |
-| `shell.bash.default` | `shell/bash` | `workDir: .` | 工作区默认根 |
-| `sessionStore.default` | `session/store` | `dir: sessions` | 相对默认根 |
+| `fs.workspace.default` | `fs/local` | `root: ..`（coding preset） | 项目根目录 |
+| `shell.bash.default` | `shell/bash` | `workDir: ..`（coding preset） | 项目根目录 |
+| `sessionStore.default` | `session/store` | `dir: sessions` | `<cwd>/.agentkit/sessions`（scope=local） |
 
-`config.base.yaml`（L0）默认 `scope: global`；`presets/coding.yaml`（L1）覆盖为 `scope: local`，文件工具与 shell 在项目目录执行。
+`config.base.yaml`（L0）默认 `scope: global`；`presets/coding.yaml`（L1）覆盖为 `scope: local`，并把 fs/shell 指到 `..`（项目根）。
 
 Session 日志不属于工具 FS 工作区，但目录同样通过 `workspace` 解析。
 
@@ -32,21 +35,19 @@ Session 日志不属于工具 FS 工作区，但目录同样通过 `workspace` �
 workspace.default:
   use: workspace/default
   config:
-    global: ~/.agentkit
-    local: .
     scope: local
 
 fs.workspace.default:
   use: fs/local
   config:
-    root: .
+    root: ..
   deps:
     workspace: workspace.default
 ```
 
 - **read / grep / find / ls** 走只读包装，即使工具实现有 write 能力也无法落盘。
 - **write / edit** 直接绑定 workspace，可修改项目内文件。
-- **shell** 在 workspace 默认根执行，与文件工具路径语义一致。
+- **shell** 在 workspace 解析后的 workDir 执行，与文件工具路径语义一致。
 
 ## Skills 目录叠加
 
@@ -56,7 +57,7 @@ skills.default:
   config:
     dirs:
       - local:skills
-      - local:.cursor/skills
+      - local:.agentkit/skills
       - global:skills
   deps:
     workspace: workspace.default

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -189,15 +190,15 @@ func (r *Root) Stop(context.Context) error { return nil }
 // follow-ups; agentkit.Loop already carries Steer/FollowUp.
 func (r *Root) Loop() agentkit.Loop { return r.loop }
 
-func interactionHandler(platform agentkit.Platform) agentkit.InteractionHandler {
-	if h, ok := platform.(agentkit.InteractionHandler); ok {
+func interactionHandler(platform agentkit.Platform) interaction.Handler {
+	if h, ok := platform.(interaction.Handler); ok {
 		return h
 	}
 	return nil
 }
 
 func asyncInteraction(platform agentkit.Platform) bool {
-	if a, ok := platform.(agentkit.AsyncInteractionPlatform); ok {
+	if a, ok := platform.(interaction.AsyncPlatform); ok {
 		return a.AsyncInteraction()
 	}
 	return false

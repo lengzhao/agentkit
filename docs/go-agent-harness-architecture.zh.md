@@ -501,7 +501,7 @@ workspace.default:
   use: workspace/default
   config:
     global: ~/.agentkit
-    local: .
+    local: .agentkit
     scope: local
 
 llm.default:

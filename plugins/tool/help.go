@@ -115,7 +115,7 @@ func init() {
 	plugindoc.Register("tool/ask-user", plugindoc.Doc{
 		Summary: "Ask the human one question (tool name: ask_user) whose answer changes what the agent does next.",
 		BestPractices: []string{
-			"Routes through the inbound platform via SessionInteraction; interactive CLI reads stdin, IM platforms render cards/buttons.",
+			"Routes through the inbound platform via cap/interaction.Session; interactive CLI reads stdin, IM platforms render cards/buttons.",
 			"Headless platforms return answered=false immediately; it is never an error and never blocks the turn.",
 			"Do not mount it on subagents: a child agent runs behind a delegate call, where nobody is watching its stdout.",
 		},

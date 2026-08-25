@@ -1,6 +1,10 @@
 package agentkit
 
-import "context"
+import (
+	"context"
+
+	"github.com/lengzhao/agentkit/cap/interaction"
+)
 
 // Loop is the turn scheduler. It routes inbound MessageEvents to agents,
 // serializes work per SessionID, and owns per-session steer/follow-up control.
@@ -23,6 +27,6 @@ type Loop interface {
 type LoopRequest struct {
 	Event              MessageEvent
 	Emit               OutboundEmit
-	InteractionHandler InteractionHandler
+	InteractionHandler interaction.Handler
 	AsyncInteraction   bool
 }

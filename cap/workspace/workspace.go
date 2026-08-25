@@ -77,7 +77,20 @@ func ResolveRel(base, rel string) (string, error) {
 		return "", err
 	}
 	relToBase, err := filepath.Rel(base, abs)
-	if err != nil || strings.HasPrefix(relToBase, "..") {
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(relToBase, "..") {
+		return abs, nil
+	}
+	// When local root is <project>/.agentkit, allow resolving into the parent
+	// directory (project root) but not above it.
+	parent, err := filepath.Abs(filepath.Join(base, ".."))
+	if err != nil {
+		return "", err
+	}
+	relToParent, err := filepath.Rel(parent, abs)
+	if err != nil || strings.HasPrefix(relToParent, "..") {
 		return "", fmt.Errorf("path escapes work dir: %s", rel)
 	}
 	return abs, nil

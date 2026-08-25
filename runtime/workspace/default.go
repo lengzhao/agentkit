@@ -35,7 +35,7 @@ func New(cfg Config) (cw.Service, error) {
 	}
 	local := cfg.Local
 	if local == "" {
-		local = "."
+		local = ".agentkit"
 	}
 	scope := cfg.Scope
 	if scope == "" {

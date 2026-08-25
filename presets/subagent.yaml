@@ -17,17 +17,14 @@
 #      语义上也正确：子 agent 不能委派，给它看可委派名单毫无意义。
 #
 # 与默认 coding preset 的其它区别：
-#   - workspace.local 改成 `.`，让 local:agents 就是工作目录下的 agents/；
-#     本 preset 额外把 examples/agents 也纳入查找路径，开箱即可跑 demo。
+#   - local 根默认为 .agentkit；子 agent 定义放 local:agents，demo 额外纳入 ../examples/agents。
 #   - tools.default 给 delegate 单独放宽超时：子 agent 要跑十几步，默认 120s 一定被砍。
 
-# local 根改为当前目录：local:agents = <cwd>/agents。
-# L0 默认 local: .agentkit（即 <cwd>/.agentkit/agents），两种都行，按项目习惯选。
+# local 根默认为 .agentkit：local:agents = <cwd>/.agentkit/agents。
+# examples/agents 在项目根下，用 ../examples/agents 解析。
 workspace.default:
   use: workspace/default
   config:
-    global: ~/.agentkit
-    local: .
     scope: global
 
 subagent.default:
@@ -35,7 +32,7 @@ subagent.default:
   config:
     dirs:
       - local:agents
-      - local:examples/agents
+      - ../examples/agents
       - global:agents
     # 定义文件没写 maxSteps 时的默认值。
     maxSteps: 20

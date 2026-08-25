@@ -39,6 +39,43 @@ func TestParseScoped(t *testing.T) {
 	}
 }
 
+func TestResolveRelParent(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	localRoot := filepath.Join(project, ".agentkit")
+	if err := os.MkdirAll(localRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	examples := filepath.Join(project, "examples", "agents")
+	if err := os.MkdirAll(examples, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Static(localRoot)
+	ctx := context.Background()
+
+	got, err := svc.Resolve(ctx, "..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != project {
+		t.Fatalf("Resolve(..)=%q want project root %q", got, project)
+	}
+
+	got, err = svc.Resolve(ctx, "../examples/agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != examples {
+		t.Fatalf("Resolve(../examples/agents)=%q want %q", got, examples)
+	}
+
+	if _, err := svc.Resolve(ctx, "../../etc/passwd"); err == nil {
+		t.Fatal("expected path above project root to be rejected")
+	}
+}
+
 func TestResolveRelRelative(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()

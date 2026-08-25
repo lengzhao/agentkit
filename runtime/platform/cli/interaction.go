@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 )
 
-func (p *Platform) ReadInteractionReply(ctx context.Context, req agentkit.HumanInteraction) (agentkit.InteractionReply, error) {
+func (p *Platform) ReadReply(ctx context.Context, req interaction.Human) (interaction.Reply, error) {
 	if p.input == nil {
 		p.input = NewInput(os.Stdin)
 	}
@@ -19,19 +19,19 @@ func (p *Platform) ReadInteractionReply(ctx context.Context, req agentkit.HumanI
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			fmt.Fprintln(os.Stderr)
-			return agentkit.InteractionReply{}, fmt.Errorf("stdin is closed, no interactive user")
+			return interaction.Reply{}, fmt.Errorf("stdin is closed, no interactive user")
 		}
-		return agentkit.InteractionReply{}, err
+		return interaction.Reply{}, err
 	}
-	return agentkit.InteractionReply{Text: line}, nil
+	return interaction.Reply{Text: line}, nil
 }
 
-func renderInteractionStart(payload agentkit.InteractionStartPayload) {
+func renderInteractionStart(payload interaction.StartPayload) {
 	prefix := "[agent asks]"
 	switch payload.Kind {
-	case agentkit.InteractionApproval:
+	case interaction.Approval:
 		prefix = "[approval needed]"
-	case agentkit.InteractionConfirmation:
+	case interaction.Confirmation:
 		prefix = "[confirm]"
 	}
 	fmt.Fprintf(os.Stderr, "\n%s %s\n", prefix, payload.Prompt)
@@ -49,4 +49,4 @@ func renderInteractionStart(payload agentkit.InteractionStartPayload) {
 	}
 }
 
-var _ agentkit.InteractionHandler = (*Platform)(nil)
+var _ interaction.Handler = (*Platform)(nil)

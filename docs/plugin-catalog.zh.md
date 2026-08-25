@@ -95,7 +95,7 @@ flowchart TB
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop；`maxConcurrentTurns` 控制跨 session 并发（默认 1，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
-| `platform/cli` | `agentkit.Platform` + `InteractionHandler` | 终端 stdin/stdout；入站固定 `SessionID=cli:default`；同步 HIL 读 stdin | Pi TUI / DSH headless |
+| `platform/cli` | `agentkit.Platform` + `interaction.Handler` | 终端 stdin/stdout；入站固定 `SessionID=cli:default`；同步 HIL 读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
@@ -144,7 +144,7 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `tool/web-fetch` | `web`（`web.Fetcher`） | URL 抓取（工具名 `web_fetch`）：HTML → 文本、大小上限、私网地址拦截 | DSH `tool-web` |
 | `tool/skill` | `skills` | Skill 发现与加载 | DSH/Pi skill tool |
 | `tool/subagent` | `subagent` | 子 Agent 委派（工具名 `delegate`）：阻塞等子 agent 跑完，返回 status + summary + 子 session id；只挂在主 agent 的 tools runtime 上 | DSH `tool-subagent` |
-| `tool/ask-user` | — | 向用户提问（工具名 `ask_user`）：单选 + 自由文本；通过 Loop `SessionInteraction` 走 HIL，platform 不支持交互时返回 `answered:false` + guidance 而不是阻塞或报错。**不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。见 [web.zh.md §4](web.zh.md#4-提问ask_user-与-human-in-the-loop) 与 [platform-interaction.zh.md](platform-interaction.zh.md) | DSH `tool-ask-user` |
+| `tool/ask-user` | — | 向用户提问（工具名 `ask_user`）：单选 + 自由文本；通过 `cap/interaction.Session` 走 HIL，platform 不支持交互时返回 `answered:false` + guidance 而不是阻塞或报错。**不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。见 [web.zh.md §4](web.zh.md#4-提问ask_user-与-human-in-the-loop) 与 [platform-interaction.zh.md](platform-interaction.zh.md) | DSH `tool-ask-user` |
 | `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
 | `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
 | `tool/schedule` | `schedule` | agent 自主排期：add / list / remove cron job，与 worker 的 cron 引擎共用 registry | — |
@@ -243,7 +243,7 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
+| `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `credentials/env` | `credentials.Store` | 环境变量 |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |

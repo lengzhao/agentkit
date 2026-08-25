@@ -3,14 +3,27 @@
 workspace.default:
   use: workspace/default
   config:
-    global: ~/.agentkit
-    local: .
     scope: local
 
 sessionStore.default:
   use: session/store
   config:
-    dir: .agent/sessions
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+# local 根为 .agentkit；文件工具与 shell 通过 .. 落到项目根目录。
+fs.workspace.default:
+  use: fs/local
+  config:
+    root: ..
+  deps:
+    workspace: workspace.default
+
+shell.bash.default:
+  use: shell/bash
+  config:
+    workDir: ..
   deps:
     workspace: workspace.default
 
@@ -19,7 +32,7 @@ skills.default:
   config:
     dirs:
       - local:skills
-      - local:.cursor/skills
+      - local:../.cursor/skills
       - global:skills
   deps:
     workspace: workspace.default

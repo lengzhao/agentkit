@@ -64,7 +64,7 @@ subagent.default:
     timeoutSeconds: 600
 ```
 
-`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 `config.base.yaml` 已内置 `delegate` 能力与上述目录约定，默认 `local: .agentkit`，即 `local:agents` = `<cwd>/.agentkit/agents`；`presets/subagent.yaml` 把 `local` 改成 `.` 并额外纳入 `examples/agents/`，便于开箱 demo。
+`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 默认 `local: .agentkit`，即 `local:agents` = `<cwd>/.agentkit/agents`；`presets/subagent.yaml` 额外用 `../examples/agents` 纳入开箱 demo。
 
 定义是**每次委派前重读**的，改完 md 文件不用重启进程。
 

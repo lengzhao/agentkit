@@ -1,7 +1,7 @@
 # 复制为 config.yaml 做本地 override（L1 覆盖 L0 config.base.yaml）。
 # 同 id 的实例会整颗替换；只写需要改的实例即可。
 
-# 示例：切换工作区 scope（global=~/.agentkit，local=当前目录）
+# 示例：切换工作区 scope（global=~/.agentkit，local=.agentkit）
 workspace.default:
   use: workspace/default
   config:

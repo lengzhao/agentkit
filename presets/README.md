@@ -14,7 +14,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 
 | 文件 | 场景 | 说明 |
 |---|---|---|
-| [coding.yaml](coding.yaml) | 项目目录 coding | `scope: local`，session 落在 `.agent/sessions` |
+| [coding.yaml](coding.yaml) | 项目目录 coding | `scope: local`，session 落在 `.agentkit/sessions` |
 | [coding-smoke.yaml](coding-smoke.yaml) | 无 API Key 冒烟 | scripted LLM，验证装配与工具链 |
 | [autonomous.yaml](autonomous.yaml) | 自主运行 | 预算、todo/finish、auto-allow + policy 白名单 |
 | [autonomous-smoke.yaml](autonomous-smoke.yaml) | 自主运行冒烟 | scripted LLM，验证 turn-continue / todo / finish |
