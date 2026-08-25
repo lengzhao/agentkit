@@ -14,8 +14,10 @@ import (
 )
 
 type JSONLConfig struct {
-	Path string             `json:"path"`
-	ID   agentkit.SessionID `json:"id"`
+	// Path is the log file itself, not a directory.
+	Path string `json:"path"`
+	// ID is fixed session id.
+	ID agentkit.SessionID `json:"id"`
 }
 
 // JSONL persists session events as append-only JSON lines.
@@ -49,6 +51,10 @@ func newJSONL(cfg JSONLConfig) (*JSONL, error) {
 	return s, nil
 }
 
+// NewJSONL registers session/jsonl: Append-only JSONL event log for one session.
+//
+// Best practices:
+//   - Reopening a file resumes event sequence numbering, so seq stays unique across restarts.
 func NewJSONL(cfg JSONLConfig) (agentkit.Session, error) {
 	return newJSONL(cfg)
 }

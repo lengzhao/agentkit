@@ -117,6 +117,12 @@ type Worker struct {
 	dueQueue []schedule.Job
 }
 
+// NewWorker registers platform/worker: Headless task runner: one-shot prompts, shell scripts, or a resident cron daemon.
+//
+// Best practices:
+//   - Without any cron task the worker exits at EOF; with one it stays resident.
+//   - A cron task needs the schedule dep, and a script task needs workspace and shell; both are checked at startup rather than silently skipped.
+//   - Missed boundaries are skipped, not backfilled, so a restart does not replay a day of jobs.
 func NewWorker(cfg WorkerConfig, deps WorkerDeps) (agentkit.Platform, error) {
 	tasks, err := resolveWorkerTasks(cfg)
 	if err != nil {

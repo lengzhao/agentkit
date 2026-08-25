@@ -10,8 +10,7 @@ import (
 )
 
 type WebFetchConfig struct {
-	// MaxBytes caps every fetch made through this tool, on top of whatever the
-	// provider allows. 0 = provider default.
+	// MaxBytes is per-call read limit on top of the provider's own; 0 uses the provider default.
 	MaxBytes int `json:"maxBytes,omitempty"`
 }
 
@@ -33,6 +32,12 @@ type WebFetchOutput struct {
 	Truncated   bool   `json:"truncated,omitempty"`
 }
 
+// NewWebFetch registers tool/web-fetch: Fetch a URL (tool name: web_fetch) and return its readable text.
+//
+// Best practices:
+//   - Needs only web/http-fetch, so it works without any API key.
+//   - Pair with tool/web-search: search returns snippets, this returns the page.
+//   - A refused or failed fetch comes back as a readable tool result, so the turn survives it.
 func NewWebFetch(cfg WebFetchConfig, deps WebFetchDeps) (agentkit.Tool, error) {
 	if deps.Web == nil {
 		return nil, fmt.Errorf("tool/web-fetch requires web dependency")
@@ -62,7 +67,7 @@ func NewWebFetch(cfg WebFetchConfig, deps WebFetchDeps) (agentkit.Tool, error) {
 }
 
 type WebSearchConfig struct {
-	// MaxResults caps hits per call. 0 = provider default.
+	// MaxResults is default cap on hits per call when the model does not ask for one.
 	MaxResults int `json:"maxResults,omitempty"`
 }
 
@@ -81,6 +86,11 @@ type WebSearchOutput struct {
 	Results  []web.SearchHit `json:"results"`
 }
 
+// NewWebSearch registers tool/web-search: Search the web (tool name: web_search) and return ranked hits with snippets.
+//
+// Best practices:
+//   - Needs a keyed provider such as web/exa-search; use web/scripted-search for tests and smoke runs.
+//   - Snippets are excerpts. Fetch the url before relying on any detail.
 func NewWebSearch(cfg WebSearchConfig, deps WebSearchDeps) (agentkit.Tool, error) {
 	if deps.Web == nil {
 		return nil, fmt.Errorf("tool/web-search requires web dependency")

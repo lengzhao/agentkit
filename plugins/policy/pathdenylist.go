@@ -10,11 +10,9 @@ import (
 )
 
 type PathDenylistConfig struct {
-	// Deny holds glob patterns matched against the tool's path argument. Empty
-	// falls back to DefaultDeniedPaths.
+	// Deny holds glob patterns matched against the path argument; ** spans directories. Empty falls back to DefaultDeniedPaths (.git, .env, .ssh, *.pem).
 	Deny []string `json:"deny"`
-	// Tools limits enforcement to these tool names. Empty means every tool that
-	// takes a path argument.
+	// Tools limits enforcement to these tool names; empty means every tool taking a path.
 	Tools []string `json:"tools"`
 }
 
@@ -32,8 +30,10 @@ var DefaultDeniedPaths = []string{
 	"**/*.pem",
 }
 
-// NewPathDenylist denies tool calls whose path argument matches a denied glob.
-// This is Policy-plane enforcement, so it holds even under approval/auto-allow.
+// NewPathDenylist registers policy/path-denylist: Deny tool calls whose path argument matches a glob.
+//
+// Best practices:
+//   - Mandatory alongside approval/auto-allow, which does no filtering of its own.
 func NewPathDenylist(cfg PathDenylistConfig) (agentkit.Policy, error) {
 	deny := cfg.Deny
 	if len(deny) == 0 {

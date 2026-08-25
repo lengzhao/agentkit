@@ -12,6 +12,7 @@ import (
 )
 
 type LocalConfig struct {
+	// Root is directory relative to the workspace root; may use the global: or local: scope prefix.
 	Root string `json:"root"`
 }
 
@@ -24,6 +25,10 @@ type localFS struct {
 	workspace workspace.Service
 }
 
+// NewLocal registers fs/local: Local filesystem access, rooted inside the workspace.
+//
+// Best practices:
+//   - Paths are resolved against the workspace, so a tool cannot escape root via ..
 func NewLocal(cfg LocalConfig, deps LocalDeps) (filesystem.Service, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("fs/local requires workspace")

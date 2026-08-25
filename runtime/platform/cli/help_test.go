@@ -53,8 +53,6 @@ func helpOutput(t *testing.T, prompt string) string {
 	})
 }
 
-// TestCLIHelpPlugin covers the wiring only; the rendering itself is tested in
-// package plugindoc, which is also where doc coverage is enforced.
 func TestCLIHelpPlugin(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -69,8 +67,7 @@ func TestCLIHelpPlugin(t *testing.T) {
 		{
 			name:   "kind",
 			prompt: "/help plugin llm/openai-compatible",
-			// apiKeyRef is reflected off the Config struct, not hand-written.
-			want: []string{"# llm/openai-compatible", "## Config", "- apiKeyRef (string)", "## Deps"},
+			want:   []string{"go doc github.com/lengzhao/agentkit/runtime/llm.NewOpenAI", "llm/openai-compatible"},
 		},
 		{
 			name:   "unknown kind",

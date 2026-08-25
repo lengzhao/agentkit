@@ -14,10 +14,9 @@ import (
 // wiring, without an API key or a live host.
 
 type ScriptedSearchConfig struct {
-	// Results is returned for any query not matched by ByQuery.
+	// Results are hits returned for any query ByQuery does not match.
 	Results []web.SearchHit `json:"results,omitempty"`
-	// ByQuery maps a case-insensitive query substring to its hits. Map
-	// iteration order is random, so keep the keys mutually exclusive.
+	// ByQuery maps case-insensitive query substring to hits; keep keys mutually exclusive.
 	ByQuery map[string][]web.SearchHit `json:"byQuery,omitempty"`
 }
 
@@ -28,6 +27,7 @@ func init() {
 	pluginkit.Register("web/scripted-fetch", NewScriptedFetch)
 }
 
+// NewScriptedSearch registers web/scripted-search: Canned search results for tests and keyless smoke runs.
 func NewScriptedSearch(cfg ScriptedSearchConfig) (web.Searcher, error) {
 	return &scriptedSearcher{cfg: cfg}, nil
 }
@@ -52,14 +52,15 @@ func (s *scriptedSearcher) Search(_ context.Context, req web.SearchRequest) (web
 }
 
 type ScriptedFetchConfig struct {
-	// Pages maps a URL substring to the content served for it.
+	// Pages maps URL substring to the HTML served for it.
 	Pages map[string]string `json:"pages,omitempty"`
-	// Default is served for URLs no key matches. Empty means "not found".
+	// Default is body served when no Pages key matches; empty means not found.
 	Default string `json:"default,omitempty"`
 }
 
 type scriptedFetcher struct{ cfg ScriptedFetchConfig }
 
+// NewScriptedFetch registers web/scripted-fetch: Canned page bodies for tests and keyless smoke runs.
 func NewScriptedFetch(cfg ScriptedFetchConfig) (web.Fetcher, error) {
 	return &scriptedFetcher{cfg: cfg}, nil
 }

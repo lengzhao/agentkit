@@ -14,10 +14,14 @@ import (
 )
 
 type SummaryConfig struct {
-	MinMessages   int                     `json:"minMessages"`
-	KeepRecent    int                     `json:"keepRecent"`
-	SummaryModel  string                  `json:"summaryModel"`
-	SummaryPrompt string                  `json:"summaryPrompt"`
+	// MinMessages does nothing until the history reaches this many messages.
+	MinMessages int `json:"minMessages"`
+	// KeepRecent is trailing messages left verbatim; a forced compaction with fewer messages than this is a no-op.
+	KeepRecent int `json:"keepRecent"`
+	// SummaryModel is model used for the summary; defaults to the agent's model.
+	SummaryModel string `json:"summaryModel"`
+	// SummaryPrompt overrides the built-in summarisation instruction.
+	SummaryPrompt string `json:"summaryPrompt"`
 	Retry         *compaction.RetryConfig `json:"retry,omitempty"`
 }
 
@@ -30,6 +34,7 @@ type summaryService struct {
 	llm agentkit.LLMProvider
 }
 
+// NewSummary registers compaction/summary: Replace older messages with an LLM-written summary.
 func NewSummary(cfg SummaryConfig, deps SummaryDeps) (compaction.Service, error) {
 	if deps.LLM == nil {
 		return nil, fmt.Errorf("compaction/summary requires llm dependency")

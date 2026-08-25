@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	// Prefix is prepended to every lookup key.
 	Prefix string `json:"prefix"`
 }
 
@@ -21,6 +22,10 @@ func init() {
 	pluginkit.Register("credentials/env", New)
 }
 
+// New registers credentials/env: Resolve secrets from environment variables.
+//
+// Best practices:
+//   - Reference a secret as env:NAME from the consumer's apiKeyRef rather than inlining it in YAML.
 func New(cfg Config) (credentials.Store, error) {
 	return &Store{prefix: cfg.Prefix}, nil
 }

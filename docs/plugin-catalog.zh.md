@@ -456,7 +456,7 @@ Terminal/PTY、LSP、Workflow、Jobs、Web UI、ACP、E2B 远程沙箱等 — �
 - [ ] Config struct 字段有 `json` tag；未知字段 decode 失败
 - [ ] Deps 字段类型为接口，非具体 Provider
 - [ ] 需生命周期时实现 `agentkit.StartStop`
-- [ ] 在同包的 `help.go` 里调用 `plugindoc.Register(kind, plugindoc.Doc{...})`；只写语义与建议，字段清单由反射生成（`plugindoc` 的测试会强制这一条）
+- [ ] 构造函数与 Config 字段写好 godoc（`// NewXxx registers <kind>:` + 字段注释）；CLI `/help plugin <kind>` 通过 `go doc` 展示
 - [ ] 工具/注入内容写入 Session，满足 Model-visible ⟺ Logged
 - [ ] Policy 裁决走 `agentkit.Policy`；Hook 不充当 deny 通道
 - [ ] 加入 import 生成器 manifest

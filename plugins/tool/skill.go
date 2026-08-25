@@ -26,6 +26,10 @@ type SkillOutput struct {
 	Body        string `json:"body"`
 }
 
+// NewSkill registers tool/skill: Discover and load an agent skill by name.
+//
+// Best practices:
+//   - Load a skill once per task, then follow its instructions.
 func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("tool/skill requires skills dependency")

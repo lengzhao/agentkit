@@ -9,14 +9,15 @@ import (
 
 // AutoAllowConfig configures unattended approval.
 type AutoAllowConfig struct {
-	// Reason is recorded on every decision, e.g. "unattended run".
+	// Reason is text recorded on each decision; defaults to "auto-allowed: unattended run".
 	Reason string `json:"reason"`
 }
 
-// NewAutoAllow approves every ask so an unattended run never blocks on a human.
-// It performs no filtering: the only real enforcement is the Policy plane, so
-// pair this with policy/shell-allowlist and policy/path-denylist. Every decision
-// is logged and audited.
+// NewAutoAllow registers approval/auto-allow: Allow every ask decision, for unattended runs.
+//
+// Best practices:
+//   - Never use alone. It filters nothing, so the Policy plane is the only enforcement left: pair it with policy/shell-allowlist and policy/path-denylist.
+//   - Every decision is logged and audited, so an unattended run stays reviewable after the fact.
 func NewAutoAllow(cfg AutoAllowConfig) (agentkit.Approval, error) {
 	reason := cfg.Reason
 	if reason == "" {

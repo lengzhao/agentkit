@@ -8,7 +8,9 @@ import (
 )
 
 type StaticConfig struct {
-	Name    string `json:"name"`
+	// Name is section label, used for ordering and debugging.
+	Name string `json:"name"`
+	// Content is the prompt text.
 	Content string `json:"content"`
 }
 
@@ -17,6 +19,7 @@ type staticSectionProvider struct {
 	content string
 }
 
+// NewStatic registers prompt/section/static: Inject a fixed block of system prompt text from config.
 func NewStatic(cfg StaticConfig) (agentkit.SectionProvider, error) {
 	name := cfg.Name
 	if name == "" {

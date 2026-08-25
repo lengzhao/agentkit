@@ -11,17 +11,13 @@ import (
 )
 
 type TokenLimitConfig struct {
-	// MaxTokens is the absolute trigger. Takes precedence over ContextWindow.
+	// MaxTokens is absolute trigger; takes precedence over ContextWindow.
 	MaxTokens int `json:"maxTokens"`
-	// ContextWindow is the model's context size; the trigger becomes
-	// ContextWindow * TriggerRatio. Use this to stay model-relative.
+	// ContextWindow is model context size; the trigger becomes ContextWindow × TriggerRatio.
 	ContextWindow int `json:"contextWindow"`
-	// TriggerRatio is the fraction of ContextWindow that trips compaction.
-	// Defaults to 0.7, leaving room for the reply plus the next tool result.
+	// TriggerRatio is fraction of ContextWindow that trips compaction, default 0.7 — leaving room for the reply plus the next tool result.
 	TriggerRatio float64 `json:"triggerRatio"`
-	// CharsPerToken calibrates the fallback estimate used before the provider
-	// has reported any usage. Defaults to 4 (English prose); lower it for CJK or
-	// dense payloads, where one token covers fewer characters.
+	// CharsPerToken calibrates the fallback estimate used before the provider reports usage; default 4 (English prose), lower it for CJK.
 	CharsPerToken int `json:"charsPerToken"`
 }
 
@@ -41,10 +37,11 @@ type tokenLimitService struct {
 	services      []compaction.Service
 }
 
-// NewTokenLimit gates an inner compaction chain on context size rather than
-// message count. Message count is a poor proxy: twenty steps of grep output can
-// dwarf two hundred short turns. Measuring tokens is what keeps a long
-// autonomous run from discovering its limit as a provider error.
+// NewTokenLimit registers compaction/token-limit: Trigger inner compaction services once the context crosses a token threshold.
+//
+// Best practices:
+//   - A decorator, not a strategy: it decides when, the services dep decides how.
+//   - The estimate is max(character estimate, reported usage), so it errs toward compacting early.
 func NewTokenLimit(cfg TokenLimitConfig, deps TokenLimitDeps) (compaction.Service, error) {
 	ratio := cfg.TriggerRatio
 	if ratio <= 0 || ratio >= 1 {

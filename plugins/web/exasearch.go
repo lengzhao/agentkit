@@ -24,24 +24,27 @@ const (
 )
 
 type ExaConfig struct {
-	// APIKeyRef is resolved through deps.credentials, e.g. "env:EXA_API_KEY".
-	// When it cannot be resolved the provider still builds and reports the
-	// missing key at call time, so mounting search alongside web/http-fetch
-	// never breaks a keyless setup.
-	APIKeyRef      string `json:"apiKeyRef,omitempty"`
-	APIKey         string `json:"apiKey,omitempty"`
-	BaseURL        string `json:"baseUrl,omitempty"`
-	MaxResults     int    `json:"maxResults,omitempty"`
-	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
-	// Type selects Exa's search mode: auto (default), fast, instant, deep...
+	// APIKeyRef is credential ref resolved via deps.credentials, e.g. "env:EXA_API_KEY".
+	APIKeyRef string `json:"apiKeyRef,omitempty"`
+	// APIKey is literal key; prefer APIKeyRef so the secret stays out of config files.
+	APIKey string `json:"apiKey,omitempty"`
+	// BaseURL overrides the API host; defaults to https://api.exa.ai.
+	BaseURL string `json:"baseUrl,omitempty"`
+	// MaxResults is cap on hits per call; defaults to 5.
+	MaxResults int `json:"maxResults,omitempty"`
+	// TimeoutSeconds is per-request wall clock; defaults to 30.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	// Type is Exa search mode: auto (default), fast, instant, deep.
 	Type string `json:"type,omitempty"`
-	// Category narrows results, e.g. "research paper", "news", "company".
+	// Category narrows results, e.g. "news" or "research paper".
 	Category string `json:"category,omitempty"`
-	// IncludeText additionally requests page text, which costs more tokens and
-	// more money than the query-relevant highlights alone.
-	IncludeText    bool     `json:"includeText,omitempty"`
-	SnippetChars   int      `json:"snippetChars,omitempty"`
+	// IncludeText also requests page text; costs more tokens and money than highlights alone.
+	IncludeText bool `json:"includeText,omitempty"`
+	// SnippetChars is snippet truncation limit; defaults to 800.
+	SnippetChars int `json:"snippetChars,omitempty"`
+	// IncludeDomains restricts results to these domains.
 	IncludeDomains []string `json:"includeDomains,omitempty"`
+	// ExcludeDomains drops results from these domains.
 	ExcludeDomains []string `json:"excludeDomains,omitempty"`
 }
 
@@ -66,6 +69,11 @@ func init() {
 	pluginkit.Register("web/exa-search", NewExa)
 }
 
+// NewExa registers web/exa-search: Search the web through the Exa API.
+//
+// Best practices:
+//   - A missing key is reported at call time, not at build time, so mounting search never breaks a keyless preset.
+//   - Search returns snippets; pair it with tool/web-fetch when the model needs the full page.
 func NewExa(cfg ExaConfig, deps ExaDeps) (web.Searcher, error) {
 	timeout := 30 * time.Second
 	if cfg.TimeoutSeconds > 0 {

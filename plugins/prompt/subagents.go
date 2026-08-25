@@ -19,10 +19,10 @@ type subagentsSectionProvider struct {
 	spawner subagent.Spawner
 }
 
-// NewSubagentsSection injects the delegatable agent catalog. It belongs in the
-// prompt rather than in the delegate tool's description because definitions are
-// read from disk and can change between turns, while a tool description is fixed
-// when the tool is built.
+// NewSubagentsSection registers prompt/section/subagents: Inject the catalog of delegatable subagents so the model knows who it can hand work to.
+//
+// Best practices:
+//   - Mount this wherever tool/subagent is mounted: the delegate tool's description is static, so without this section the model has no list of valid agent names.
 func NewSubagentsSection(_ SubagentsSectionConfig, deps SubagentsSectionDeps) (agentkit.SectionProvider, error) {
 	if deps.Subagent == nil {
 		return nil, fmt.Errorf("prompt/section/subagents requires subagent dependency")

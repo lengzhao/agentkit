@@ -30,12 +30,11 @@ import (
 )
 
 type Config struct {
-	// Dirs are the definition directories, in precedence order.
+	// Dirs are definition directories in precedence order; defaults to local:agents then global:agents.
 	Dirs []string `json:"dirs,omitempty"`
-	// MaxSteps applies to definitions that do not set their own.
+	// MaxSteps is step cap for definitions that do not set their own; defaults to 20.
 	MaxSteps int `json:"maxSteps,omitempty"`
-	// TimeoutSeconds caps one delegation's wall clock. 0 means no cap, in which
-	// case the tool runtime's timeout for the delegate tool is the only bound.
+	// TimeoutSeconds is wall clock for one delegation; 0 leaves the delegate tool's own timeout as the only bound.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
@@ -71,6 +70,13 @@ type Spawner struct {
 	compact   []compaction.Service
 }
 
+// New registers subagent/inprocess: Run a child agent in-process from an agents/<name>.md definition and return only its conclusion.
+//
+// Best practices:
+//   - deps.tools must be a sibling tools/runtime instance that does NOT mount tool/subagent: wiring the parent's runtime is a dependency cycle, and the separate instance is what makes 'only the main agent delegates' structural.
+//   - Give the child a narrower tool set than the parent — read-only is the common case. Delegation is for context isolation, not for a second agent editing the same workspace.
+//   - Pair with prompt/section/subagents so the parent can see who it may delegate to; the delegate tool's description is static and cannot list definitions read from disk.
+//   - Raise the delegate entry in the parent's toolTimeouts: a child agent takes far longer than a normal tool call.
 func New(cfg Config, deps Deps) (subagent.Spawner, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("subagent/inprocess requires workspace")

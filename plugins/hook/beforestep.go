@@ -26,6 +26,10 @@ func init() {
 	pluginkit.Register("hook/turn-continue", NewTurnContinue)
 }
 
+// New registers hook/before-step: Run compaction services before each model step; contributes /compact.
+//
+// Best practices:
+//   - Attach the same services here and to the agent's compaction dep: this hook covers the periodic check, the agent covers overflow recovery.
 func New(_ Config, deps Deps) (agentkit.HookProvider, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/before-step requires sessionStore dependency")

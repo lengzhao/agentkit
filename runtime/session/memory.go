@@ -10,8 +10,10 @@ import (
 )
 
 type MemoryConfig struct {
-	ID                 agentkit.SessionID `json:"id"`
-	MaxToolResultBytes int                `json:"maxToolResultBytes"`
+	// ID is fixed session id.
+	ID agentkit.SessionID `json:"id"`
+	// MaxToolResultBytes truncates tool results as they are appended.
+	MaxToolResultBytes int `json:"maxToolResultBytes"`
 }
 
 // Memory is an in-memory session backend for tests and ephemeral runs.
@@ -31,6 +33,7 @@ func newMemory(cfg MemoryConfig) (*Memory, error) {
 	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes}, nil
 }
 
+// NewMemory registers session/memory: Ephemeral in-memory session. Nothing survives the process.
 func NewMemory(cfg MemoryConfig) (agentkit.Session, error) {
 	return newMemory(cfg)
 }

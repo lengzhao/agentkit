@@ -17,6 +17,10 @@ type readonlyFS struct {
 	inner filesystem.Service
 }
 
+// NewReadonly registers fs/readonly: Read-only wrapper around another filesystem service.
+//
+// Best practices:
+//   - Give read-only tools (read-file, grep, find, list-dir) this instead of fs/local.
 func NewReadonly(_ ReadonlyConfig, deps ReadonlyDeps) (filesystem.Service, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("fs/readonly requires fs dependency")

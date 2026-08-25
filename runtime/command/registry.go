@@ -14,8 +14,10 @@ import (
 // When Allow is empty, every command is eligible unless denied.
 // When Allow is non-empty, only listed commands are registered.
 type Config struct {
+	// Allow exposes only these command names; empty means all.
 	Allow []string `json:"allow,omitempty"`
-	Deny  []string `json:"deny,omitempty"`
+	// Deny hides these command names; applied after Allow.
+	Deny []string `json:"deny,omitempty"`
 }
 
 type Deps struct{}
@@ -27,7 +29,10 @@ type Registry struct {
 	cmds   []agentkit.Command
 }
 
-// New builds an empty command registry. Runner populates providers via SetCommands.
+// New registers commands/registry: Aggregate slash commands contributed by CommandProvider plugins.
+//
+// Best practices:
+//   - Providers are discovered from the built graph, so a command appears as soon as its plugin is wired in.
 func New(cfg Config, _ Deps) (agentkit.Commands, error) {
 	return &Registry{
 		cfg:    cfg,

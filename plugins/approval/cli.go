@@ -10,6 +10,10 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+// NewCLI registers approval/cli: Prompt on stderr for y/n before a gated tool call.
+//
+// Best practices:
+//   - Blocks forever without a terminal; never use it in a worker or timer preset.
 func NewCLI() (agentkit.Approval, error) {
 	return &CLI{}, nil
 }

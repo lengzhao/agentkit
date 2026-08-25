@@ -41,9 +41,11 @@ const (
 	todoOpComplete = "complete"
 )
 
-// NewTodo builds the durable task list tool. The list is the signal an
-// autonomous run uses to decide whether there is still work to do, so every
-// mutation is written to the session as a todo/update event.
+// NewTodo registers tool/todo: Durable task list; the signal an autonomous run uses to decide whether work remains.
+//
+// Best practices:
+//   - op=set replaces the whole list, op=complete closes ids, op=list reads it.
+//   - Pair with tool/finish: an empty pending list alone does not end a run.
 func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/todo requires sessionStore dependency")

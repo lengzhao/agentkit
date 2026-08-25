@@ -7,6 +7,7 @@ import (
 )
 
 type PruneConfig struct {
+	// MaxToolResultBytes is per-result truncation limit.
 	MaxToolResultBytes int `json:"maxToolResultBytes"`
 }
 
@@ -14,6 +15,10 @@ type pruneService struct {
 	maxBytes int
 }
 
+// NewPrune registers compaction/prune-tool-results: Trim verbose tool results without calling a model.
+//
+// Best practices:
+//   - Cheap and lossless enough to run before compaction/summary in the same chain.
 func NewPrune(cfg PruneConfig) (compaction.Service, error) {
 	maxBytes := cfg.MaxToolResultBytes
 	if maxBytes <= 0 {

@@ -13,6 +13,7 @@ import (
 )
 
 type StoreConfig struct {
+	// Dir is root directory holding one file per session, resolved through the workspace.
 	Dir string `json:"dir"`
 }
 
@@ -29,6 +30,7 @@ type Store struct {
 	cache     map[agentkit.SessionID]*JSONL
 }
 
+// NewStore registers session/store: Resolve durable JSONL sessions by id; contributes /new and /session.
 func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("session store requires workspace")

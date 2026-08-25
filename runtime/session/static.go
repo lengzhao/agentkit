@@ -33,6 +33,10 @@ type StaticDeps struct {
 	Session agentkit.Session `json:"session"`
 }
 
+// NewStatic registers session/static: Wrap one pre-built Session as a store that returns it for every id.
+//
+// Best practices:
+//   - For tests and single-session hosts; every session id maps to the same log.
 func NewStatic(_ StaticConfig, deps StaticDeps) (agentkit.SessionStore, error) {
 	if deps.Session == nil {
 		return nil, fmt.Errorf("session/static requires session dependency")

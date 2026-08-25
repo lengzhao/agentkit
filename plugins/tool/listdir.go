@@ -22,6 +22,7 @@ type ListDirOutput struct {
 	Entries []filesystem.DirEntry `json:"entries"`
 }
 
+// NewListDir registers tool/list-dir: List entries in a workspace directory.
 func NewListDir(_ ListDirConfig, deps ListDirDeps) (agentkit.Tool, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/list-dir requires fs dependency")

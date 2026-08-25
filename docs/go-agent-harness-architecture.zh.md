@@ -378,28 +378,14 @@ type StartStop interface {
 
 ### 5.3.1 插件文档（Help）
 
-插件文档是 **kind 级** 的，不是实例级的：使用说明要在写 YAML 之前就能查到，那时还没有实例。文档因此落在独立的叶子包 `plugindoc`，与 `pluginkit.Register` 一一对应。
-
-```go
-// plugindoc
-type Doc struct {
-    Summary       string            // 一句话说明这个插件做什么
-    ConfigNotes   map[string]string // 按 json 字段名给出的补充说明
-    BestPractices []string          // 简短使用建议
-}
-
-func Register(kind string, doc Doc)
-```
-
-关键取舍：**字段清单不手写**。`pluginkit.Spec` 带有构造函数的 `ConfigType` / `DepsType`，`plugindoc` 直接反射出字段名、类型与嵌套结构；`Doc` 只补反射拿不到的东西（语义、约束、踩坑点）。手写一份字段表就意味着两个真相来源，而它一定会漂移——重构前那份集中文档上线当天就已经有四处与代码不符（`shell/bash` 的 `timeout`、`policy/shell-allowlist` 的 `strict` 语义、`session/jsonl` 的 `path`、`tool/schedule` 的 job 命名）。
+插件文档是 **kind 级** 的，不是实例级的：使用说明要在写 YAML 之前就能查到，那时还没有实例。文档写在构造函数与 Config struct 的 godoc 注释里，与 `pluginkit.Register` 同包、同文件。
 
 约定：
 
-- `plugindoc.Register` 与 `pluginkit.Register` 写在同一个包里（惯例是该包的 `help.go`），文档紧贴它描述的 Config struct。
-- `plugindoc` 只依赖 `pluginkit` 与标准库。半数插件包提供 `cap/*` 接口、从不 import 根包 `agentkit`；文档若放在根包，为了给 `fs/local`、`shell/bash` 写说明就会把 harness 核心拖进这些包。
-- `ConfigNotes` 的 key 必须是 Config 的 json 字段名。`plugindoc` 的测试会校验：每个注册 kind 都有 `Doc`、每个 `ConfigNotes` key 都真实存在——重命名字段而忘了改文档，是测试失败而不是静默错误。
-
-`plugindoc.FormatList()` / `FormatKind(kind)` 输出可读 markdown，供 CLI、Manager 或配置工作台展示。CLI 内置 `/help plugin -l` 与 `/help plugin <kind>`（例如 `/help plugin llm/openai-compatible`）。
+- 构造函数注释以 `// NewXxx registers <kind>:` 开头，写一句话说明；`Best practices:` 段落列简短使用建议。
+- Config 字段注释写语义与约束（对应 json 字段名）；字段清单本身由类型定义提供，不另维护一份。
+- `pluginkit.Describe(kind)` 提供配置字段的结构化元信息，供配置工作台等程序消费。
+- CLI 内置 `/help plugin -l` 与 `/help plugin <kind>`；后者通过本地 `go doc` 展示对应构造函数文档（例如 `/help plugin llm/openai-compatible`）。模块发布到 pkg.go.dev 后也可直接浏览在线文档。
 
 ### 5.4 Typed Hooks
 
@@ -1131,10 +1117,8 @@ agentkit/
 ├── runtime/
 ├── spine/
 ├── cap/
-├── plugindoc/              # kind -> 文档注册表 + 渲染器（叶子包，见 §5.3.1）
 ├── plugins/
 │   ├── fs/                 # fs/local, fs/memory, fs/readonly
-│   │   └── help.go         #   同包登记 plugindoc.Doc
 │   ├── tool/               # tool/read-file, tool/write-file, ...
 │   └── compaction/         # compaction/summary, compaction/prune-tool-results
 ├── presets/

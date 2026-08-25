@@ -27,9 +27,12 @@ type SubagentOutput struct {
 	Steps   int    `json:"steps"`
 }
 
-// NewSubagent builds the delegation tool. The spawner writes the audit events and
-// owns the child session, so this stays a thin adapter — which is also why it
-// depends only on the cap interface and never on a concrete spawner.
+// NewSubagent registers tool/subagent: Delegate a subtask to a child agent (tool name: delegate) and wait for its conclusion.
+//
+// Best practices:
+//   - Pair with prompt/section/subagents, which lists the valid agent names; this tool's description is static and cannot.
+//   - Mount it only on the main agent's tools runtime. The subagent spawner needs a separate runtime without it, both to break a dependency cycle and to keep children from delegating further.
+//   - Bump toolTimeouts for delegate: a child agent runs many steps and will blow through the default tool timeout.
 func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
 	if deps.Subagent == nil {
 		return nil, fmt.Errorf("tool/subagent requires subagent dependency")

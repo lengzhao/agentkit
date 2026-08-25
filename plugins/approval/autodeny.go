@@ -6,6 +6,7 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+// NewAutoDeny registers approval/auto-deny: Deny every ask decision. For tests and CI.
 func NewAutoDeny() (agentkit.Approval, error) {
 	return autoDeny{}, nil
 }

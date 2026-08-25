@@ -11,8 +11,7 @@ import (
 )
 
 type ScheduleConfig struct {
-	// MaxJobs caps how many agent-created jobs may exist, so a confused agent
-	// cannot fill the schedule. 0 means the default of 32.
+	// MaxJobs is cap on agent-created jobs, default 32; jobs declared in config do not count against it.
 	MaxJobs int `json:"maxJobs"`
 }
 
@@ -54,9 +53,11 @@ const (
 
 const defaultMaxAgentJobs = 32
 
-// NewSchedule builds the tool that lets an agent put work on the calendar. It is
-// the same registry the firing platform reads, so a job the agent adds is picked
-// up without a restart, and survives one.
+// NewSchedule registers tool/schedule: Let the agent list, add and remove its own cron jobs.
+//
+// Best practices:
+//   - Ids are assigned by the registry (agent-1, agent-2, ...); read them back with op=list before op=remove.
+//   - Needs a schedule registry that platform/worker also uses, or nothing will fire the jobs.
 func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	if deps.Schedule == nil {
 		return nil, fmt.Errorf("tool/schedule requires schedule dependency")

@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	// Names are labels for the platforms dep, positionally matched; used in logs and PlatformID.
 	Names []string `json:"names,omitempty"`
 }
 
@@ -33,6 +34,10 @@ type incoming struct {
 	err   error
 }
 
+// New registers platform/multiplex: Merge several platforms into one Runner entrypoint.
+//
+// Best practices:
+//   - Raise runner.maxConcurrentTurns if the merged platforms should make progress in parallel.
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if len(deps.Platforms) == 0 {
 		return nil, fmt.Errorf("multiplex requires at least one platform")

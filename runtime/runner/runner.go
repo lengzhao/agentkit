@@ -42,6 +42,11 @@ type Root struct {
 	shutdownTimeout time.Duration
 }
 
+// New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
+//
+// Best practices:
+//   - Ordering within a session is preserved at any concurrency; only cross-session turns overlap.
+//   - A panicking or failing turn is reported on its session and never kills the process.
 func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if deps.Platform == nil {
 		return nil, fmt.Errorf("runner requires platform")

@@ -23,18 +23,19 @@ const (
 )
 
 type FetchConfig struct {
-	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
-	MaxBytes       int    `json:"maxBytes,omitempty"`
-	MaxRedirects   int    `json:"maxRedirects,omitempty"`
-	UserAgent      string `json:"userAgent,omitempty"`
-	// AllowPrivateHosts lifts the loopback / private / link-local block. Off by
-	// default: an agent that can be told to fetch a URL can otherwise be aimed
-	// at the host's own metadata service or an internal admin endpoint.
+	// TimeoutSeconds is per-request wall clock; defaults to 30.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	// MaxBytes is body read limit before extraction; defaults to 1 MiB.
+	MaxBytes int `json:"maxBytes,omitempty"`
+	// MaxRedirects is redirect chain limit; defaults to 5.
+	MaxRedirects int `json:"maxRedirects,omitempty"`
+	// UserAgent overrides the outgoing User-Agent.
+	UserAgent string `json:"userAgent,omitempty"`
+	// AllowPrivateHosts allows loopback / private / link-local targets; off by default.
 	AllowPrivateHosts bool `json:"allowPrivateHosts,omitempty"`
-	// AllowHosts, when non-empty, is an allowlist; everything else is refused.
+	// AllowHosts, when non-empty, only these hosts (and their subdomains) may be fetched.
 	AllowHosts []string `json:"allowHosts,omitempty"`
-	// DenyHosts is applied after AllowHosts. Entries match the host exactly or
-	// as a parent domain ("example.com" also blocks "api.example.com").
+	// DenyHosts are hosts to refuse, applied after AllowHosts.
 	DenyHosts []string `json:"denyHosts,omitempty"`
 }
 
@@ -51,6 +52,13 @@ func init() {
 	pluginkit.Register("web/http-fetch", NewFetcher)
 }
 
+// NewFetcher registers web/http-fetch: Fetch a URL over HTTP(S) and return it as readable text.
+//
+// Best practices:
+//   - Needs no credentials, so it is the one web provider that works in a keyless setup.
+//   - Leave allowPrivateHosts off: it is what stops a fetched URL from reaching cloud metadata or internal admin endpoints.
+//   - The private-address check runs at dial time, so it also covers redirects and DNS rebinding.
+//   - Non-text responses are reported as a placeholder instead of being returned as bytes.
 func NewFetcher(cfg FetchConfig) (web.Fetcher, error) {
 	timeout := defaultFetchTimeout
 	if cfg.TimeoutSeconds > 0 {

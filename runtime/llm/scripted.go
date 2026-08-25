@@ -17,7 +17,9 @@ type ScriptedStep struct {
 }
 
 type ScriptedConfig struct {
-	Model string         `json:"model"`
+	// Model is name reported back to callers.
+	Model string `json:"model"`
+	// Steps are replies in order: text, tool calls, or both.
 	Steps []ScriptedStep `json:"steps"`
 }
 
@@ -31,6 +33,7 @@ type Scripted struct {
 	idx   int
 }
 
+// NewScripted registers llm/scripted: Deterministic canned responses. For tests and offline smoke runs.
 func NewScripted(cfg ScriptedConfig) (agentkit.LLMProvider, error) {
 	if len(cfg.Steps) == 0 {
 		return nil, fmt.Errorf("scripted llm requires at least one step")

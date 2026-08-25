@@ -15,8 +15,10 @@ import (
 )
 
 type Config struct {
-	WorkDir        string `json:"workDir"`
-	TimeoutSeconds int    `json:"timeoutSeconds"`
+	// WorkDir is working directory relative to the workspace root.
+	WorkDir string `json:"workDir"`
+	// TimeoutSeconds is per-command limit; 0 falls back to the built-in default.
+	TimeoutSeconds int `json:"timeoutSeconds"`
 }
 
 type Deps struct {
@@ -33,6 +35,7 @@ func init() {
 	pluginkit.Register("shell/bash", New)
 }
 
+// New registers shell/bash: Run bash commands with a per-command timeout, rooted in the workspace.
 func New(cfg Config, deps Deps) (shell.Executor, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("shell/bash requires workspace")

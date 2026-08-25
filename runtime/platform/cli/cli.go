@@ -12,13 +12,15 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/interaction"
-	"github.com/lengzhao/agentkit/plugindoc"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type Config struct {
-	Prompt           string `json:"prompt"`
-	Once             bool   `json:"once"`
+	// Prompt is first message; falls back to the positional command-line arguments.
+	Prompt string `json:"prompt"`
+	// Once runs a single turn and exit instead of looping on stdin.
+	Once bool `json:"once"`
+	// DefaultSessionID is session to attach to; defaults to cli:default so a restart resumes the conversation.
 	DefaultSessionID string `json:"defaultSessionId"`
 }
 
@@ -36,6 +38,7 @@ type Platform struct {
 	sessionID     agentkit.SessionID
 }
 
+// New registers platform/cli: Interactive terminal platform with slash commands.
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	initial := cfg.Prompt
 	if initial == "" {
@@ -252,7 +255,7 @@ func (p *Platform) printHelp(args string) {
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  /help, /h, /?              show this help")
 	fmt.Fprintln(os.Stderr, "  /help plugin -l            list registered plugin kinds")
-	fmt.Fprintln(os.Stderr, "  /help plugin <kind>        show plugin usage docs")
+	fmt.Fprintln(os.Stderr, "  /help plugin <kind>        show plugin godoc")
 	fmt.Fprintln(os.Stderr, "  /exit, /quit               exit the session")
 	if p.commands != nil {
 		for _, cmd := range p.commands.List() {
@@ -280,11 +283,11 @@ func (p *Platform) printHelpArgs(args string) {
 	}
 	switch fields[1] {
 	case "-l", "--list":
-		fmt.Fprintln(os.Stderr, plugindoc.FormatList())
+		fmt.Fprintln(os.Stderr, formatPluginList())
 		return
 	}
 	kind := strings.TrimSpace(strings.Join(fields[1:], " "))
-	text, err := plugindoc.FormatKind(kind)
+	text, err := pluginDoc(kind)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "help error: %v\n", err)
 		return

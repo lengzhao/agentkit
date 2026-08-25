@@ -15,6 +15,10 @@ func init() {
 	pluginkit.Register("policy/path-denylist", NewPathDenylist)
 }
 
+// New registers policy/deny-dangerous-shell: Deny bash commands matching known destructive patterns (rm -rf /).
+//
+// Best practices:
+//   - A backstop, not a sandbox: keep it on, but do not rely on it alone.
 func New() (agentkit.Policy, error) {
 	return agentkit.PolicyFunc(func(_ context.Context, in agentkit.PolicyInput) agentkit.Decision {
 		if in.ToolCall == nil || in.ToolCall.Name != "bash" {

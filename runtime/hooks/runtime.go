@@ -24,6 +24,10 @@ func init() {
 	pluginkit.Register("hooks/runtime", New)
 }
 
+// New registers hooks/runtime: Collect HookProvider instances and run the typed hook chains.
+//
+// Best practices:
+//   - Chain order follows the providers dep order, and the first error aborts the chain.
 func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 	var beforeStep []agentkit.BeforeStepHook
 	var beforeTool []agentkit.BeforeToolHook

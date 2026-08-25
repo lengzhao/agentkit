@@ -10,19 +10,17 @@ import (
 )
 
 type TurnContinueConfig struct {
-	// MaxContinuations bounds how many times this hook asks for another segment.
-	// The agent's own budget is the hard ceiling; this is the driver's own limit.
+	// MaxContinuations is segments this hook will ask for. The agent's budget.maxContinuations is the hard ceiling and always wins.
 	MaxContinuations int `json:"maxContinuations"`
-	// ContinuePrompt is injected to keep the agent working.
+	// ContinuePrompt is text injected to start another segment.
 	ContinuePrompt string `json:"continuePrompt"`
-	// WrapUpPrompt replaces ContinuePrompt once the budget is nearly spent.
+	// WrapUpPrompt is injected instead of ContinuePrompt once the budget is softly exhausted.
 	WrapUpPrompt string `json:"wrapUpPrompt"`
-	// RequireFinish keeps the run going until the finish tool is called, even
-	// when no tasks are pending.
+	// RequireFinish keeps going until tool/finish is called, even with no pending todos.
 	RequireFinish *bool `json:"requireFinish"`
-	// RequireTodosDone keeps the run going while any task is still pending.
+	// RequireTodosDone keeps going while todos are still pending.
 	RequireTodosDone *bool `json:"requireTodosDone"`
-	// StallLimit stops the run when the same tool call repeats this many times.
+	// StallLimit stops after this many repeats of the same tool call signature.
 	StallLimit int `json:"stallLimit"`
 }
 
@@ -43,10 +41,11 @@ type turnContinueProvider struct {
 	requireTodosDone bool
 }
 
-// NewTurnContinue builds the autonomy driver: the TurnStopping hook that decides
-// whether an unattended run should keep going. It reads its signals from the
-// session log (todo state, run/finish, repeated tool calls) so the decision is
-// reproducible from the transcript alone.
+// NewTurnContinue registers hook/turn-continue: Decide whether an autonomous turn continues or stops; contributes /status.
+//
+// Best practices:
+//   - Useless without tool/todo and tool/finish: with no completion signal it can only stop on budget or stall.
+//   - Decision order is finish, then stall, then budget, then segment limit, then pending work.
 func NewTurnContinue(cfg TurnContinueConfig, deps TurnContinueDeps) (agentkit.HookProvider, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/turn-continue requires sessionStore dependency")

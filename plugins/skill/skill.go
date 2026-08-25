@@ -13,6 +13,7 @@ import (
 )
 
 type Config struct {
+	// Dirs are directories to scan, in precedence order; each may use the global: or local: scope prefix.
 	Dirs []string `json:"dirs"`
 }
 
@@ -29,6 +30,7 @@ func init() {
 	pluginkit.Register("skill/filesystem", New)
 }
 
+// New registers skill/filesystem: Scan directories for SKILL.md definitions.
 func New(cfg Config, deps Deps) (skill.Registry, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("skill/filesystem requires workspace")

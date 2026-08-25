@@ -9,6 +9,7 @@ import (
 )
 
 type ReadConfig struct {
+	// MaxBytes is truncation limit; defaults to 1 MiB.
 	MaxBytes int `json:"maxBytes"`
 }
 
@@ -24,6 +25,10 @@ type ReadOutput struct {
 	Content string `json:"content"`
 }
 
+// NewReadFile registers tool/read-file: Read a text file from the workspace.
+//
+// Best practices:
+//   - Prefer grep for searching inside files instead of reading whole trees.
 func NewReadFile(cfg ReadConfig, deps ReadDeps) (agentkit.Tool, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/read-file requires fs dependency")

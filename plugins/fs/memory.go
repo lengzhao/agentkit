@@ -10,6 +10,7 @@ import (
 )
 
 type MemoryConfig struct {
+	// Files is seed contents, keyed by path.
 	Files map[string]string `json:"files"`
 }
 
@@ -18,6 +19,7 @@ type memoryFS struct {
 	files map[string]string
 }
 
+// NewMemory registers fs/memory: In-memory filesystem for tests and ephemeral sandboxes.
 func NewMemory(cfg MemoryConfig) (filesystem.Service, error) {
 	files := make(map[string]string, len(cfg.Files))
 	for k, v := range cfg.Files {

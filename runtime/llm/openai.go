@@ -11,13 +11,20 @@ import (
 )
 
 type OpenAIConfig struct {
-	Model     string                 `json:"model"`
-	BaseURL   string                 `json:"baseUrl"`
-	APIKey    string                 `json:"apiKey"`
-	APIKeyRef string                 `json:"apiKeyRef"`
-	API       string                 `json:"api"`
+	// Model is model name.
+	Model string `json:"model"`
+	// BaseURL is API base URL, e.g. https://api.openai.com/v1.
+	BaseURL string `json:"baseUrl"`
+	// APIKey is inline key. Prefer APIKeyRef so the secret stays out of the config file.
+	APIKey string `json:"apiKey"`
+	// APIKeyRef is credentials reference, e.g. env:OPENAI_API_KEY.
+	APIKeyRef string `json:"apiKeyRef"`
+	// API is chat or responses.
+	API string `json:"api"`
+	// Reasoning is reasoning effort and summary settings, for models that support them.
 	Reasoning *OpenAIReasoningConfig `json:"reasoning,omitempty"`
-	Retry     *LLMRetryConfig        `json:"retry,omitempty"`
+	// Retry is provider-level retry, separate from the agent's per-step retry.
+	Retry *LLMRetryConfig `json:"retry,omitempty"`
 }
 
 type OpenAIReasoningConfig struct {
@@ -38,6 +45,10 @@ type OpenAI struct {
 	client        *openai.Client
 }
 
+// NewOpenAI registers llm/openai-compatible: OpenAI-compatible provider, chat or responses API.
+//
+// Best practices:
+//   - Token budgets and compaction/token-limit need reported usage; the chat API supplies it, the responses API may not.
 func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) {
 	model := cfg.Model
 	if model == "" {

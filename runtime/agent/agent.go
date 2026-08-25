@@ -15,11 +15,16 @@ import (
 )
 
 type Config struct {
-	ID       agentkit.AgentID `json:"id"`
-	Model    string           `json:"model"`
-	MaxSteps int              `json:"maxSteps"`
-	Retry    *RetryConfig     `json:"retry,omitempty"`
-	Budget   *BudgetConfig    `json:"budget,omitempty"`
+	// ID is agent id, referenced by loop.defaultAgent.
+	ID agentkit.AgentID `json:"id"`
+	// Model is model name passed to the LLM provider.
+	Model string `json:"model"`
+	// MaxSteps is steps allowed in one segment.
+	MaxSteps int `json:"maxSteps"`
+	// Retry is per-step retry for transient provider failures.
+	Retry *RetryConfig `json:"retry,omitempty"`
+	// Budget is hard bounds for a whole turn including its continuations. No hook can extend a turn past these.
+	Budget *BudgetConfig `json:"budget,omitempty"`
 }
 
 type Deps struct {
@@ -47,6 +52,12 @@ type Runtime struct {
 	compaction   []compaction.Service
 }
 
+// New registers agent/coding: Default coding agent: runs one turn against session, LLM, tools and prompt.
+//
+// Best practices:
+//   - budget.maxContinuations defaults to 0, i.e. one segment: an agent stays request/response until you raise it.
+//   - budget.softRatio (default 0.8) marks the point where a turn-stopping hook should wrap up rather than start new work.
+//   - An interrupted turn is repaired on the next turn, so a crash mid-tool-call does not leave the session unusable.
 func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	id := cfg.ID
 	if id == "" {

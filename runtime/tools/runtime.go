@@ -13,9 +13,12 @@ import (
 )
 
 type RuntimeConfig struct {
-	DefaultTimeoutSeconds int            `json:"defaultTimeoutSeconds"`
-	MaxResultBytes        int            `json:"maxResultBytes"`
-	ToolTimeouts          map[string]int `json:"toolTimeouts,omitempty"`
+	// DefaultTimeoutSeconds is per-call timeout when a tool has no specific entry.
+	DefaultTimeoutSeconds int `json:"defaultTimeoutSeconds"`
+	// MaxResultBytes is truncation limit applied to every tool result.
+	MaxResultBytes int `json:"maxResultBytes"`
+	// ToolTimeouts are per-tool timeout overrides, keyed by tool name.
+	ToolTimeouts map[string]int `json:"toolTimeouts,omitempty"`
 }
 
 type RuntimeDeps struct {
@@ -36,6 +39,11 @@ type Runtime struct {
 	toolTimeouts   map[string]time.Duration
 }
 
+// NewRuntime registers tools/runtime: Tool orchestration: visibility, policy evaluation, hooks, execution, result capping.
+//
+// Best practices:
+//   - Policies are the enforcement plane; hooks only observe and rewrite. Put a security rule in a policy.
+//   - The approval dep is consulted only for ask decisions, so it never sees an allowed or denied call.
 func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, error) {
 	tools := make(map[string]agentkit.Tool, len(deps.Tools))
 	for _, tool := range deps.Tools {

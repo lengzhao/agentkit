@@ -30,6 +30,11 @@ type EditOutput struct {
 	Applied bool   `json:"applied"`
 }
 
+// NewEditFile registers tool/edit-file: Apply exact search-and-replace edits to an existing file.
+//
+// Best practices:
+//   - oldText must match exactly, including whitespace and indentation.
+//   - Batch related edits into one call when they touch the same file.
 func NewEditFile(_ EditConfig, deps EditDeps) (agentkit.Tool, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/edit-file requires fs dependency")

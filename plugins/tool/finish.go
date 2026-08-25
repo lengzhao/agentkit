@@ -25,9 +25,10 @@ type FinishOutput struct {
 	Acknowledged bool   `json:"acknowledged"`
 }
 
-// NewFinish builds the explicit run terminator. Recording a run/finish event is
-// the only signal that ends an autonomous run early; without it a run stops only
-// on budget exhaustion or stall detection.
+// NewFinish registers tool/finish: End an autonomous run, with status=completed or status=blocked.
+//
+// Best practices:
+//   - This is the only signal that stops a run early; otherwise it runs to budget.
 func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/finish requires sessionStore dependency")

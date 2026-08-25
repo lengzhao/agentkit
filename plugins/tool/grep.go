@@ -9,6 +9,7 @@ import (
 )
 
 type GrepConfig struct {
+	// MaxMatches is cap on matches returned per call.
 	MaxMatches int `json:"maxMatches"`
 }
 
@@ -25,6 +26,10 @@ type GrepInput struct {
 
 type GrepOutput = filesystem.GrepResult
 
+// NewGrep registers tool/grep: Search file contents with a regular expression.
+//
+// Best practices:
+//   - Scope the search path to avoid scanning the whole repository.
 func NewGrep(cfg GrepConfig, deps GrepDeps) (agentkit.Tool, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/grep requires fs dependency")

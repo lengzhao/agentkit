@@ -24,6 +24,12 @@ type ShellOutput struct {
 	Stderr   string `json:"stderr"`
 }
 
+// NewShell registers tool/shell: Execute a shell command through the configured executor.
+//
+// Best practices:
+//   - Keep commands non-interactive; avoid pagers and prompts.
+//   - For unattended runs pair with policy/shell-allowlist in strict mode.
+//   - The per-command timeout comes from the shell dep, not from this tool.
 func NewShell(_ ShellConfig, deps ShellDeps) (agentkit.Tool, error) {
 	if deps.Shell == nil {
 		return nil, fmt.Errorf("tool/shell requires shell dependency")

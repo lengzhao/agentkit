@@ -11,7 +11,9 @@ import (
 )
 
 type Config struct {
-	DefaultAgent agentkit.AgentID      `json:"defaultAgent"`
+	// DefaultAgent is agent id used when the event names none; defaults to the single configured agent.
+	DefaultAgent agentkit.AgentID `json:"defaultAgent"`
+	// FollowUpMode is how a message arriving mid-turn is handled: queue it or steer the running turn.
 	FollowUpMode agentkit.FollowUpMode `json:"followUpMode"`
 }
 
@@ -27,6 +29,7 @@ type Default struct {
 	sessionControls sync.Map // SessionID -> *Control
 }
 
+// New registers loop/default: Route inbound messages to an agent and serialize turns per session.
 func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 	agents := make(map[agentkit.AgentID]agentkit.Agent, len(deps.Agents))
 	for _, ag := range deps.Agents {

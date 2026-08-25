@@ -23,6 +23,10 @@ type WriteOutput struct {
 	Path string `json:"path"`
 }
 
+// NewWriteFile registers tool/write-file: Write full file contents, creating or overwriting the target path.
+//
+// Best practices:
+//   - Prefer edit-file for small, targeted changes to an existing file.
 func NewWriteFile(_ WriteConfig, deps WriteDeps) (agentkit.Tool, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/write-file requires fs dependency")

@@ -19,6 +19,7 @@ type skillsSectionProvider struct {
 	skills skill.Registry
 }
 
+// NewSkillsSection registers prompt/section/skills: Inject a catalog of available skills so the model knows what it can load.
 func NewSkillsSection(_ SkillsSectionConfig, deps SkillsSectionDeps) (agentkit.SectionProvider, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("prompt/section/skills requires skills dependency")

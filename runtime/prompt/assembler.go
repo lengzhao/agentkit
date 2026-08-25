@@ -17,6 +17,10 @@ type Assembler struct {
 	sections []agentkit.Section
 }
 
+// NewAssembler registers prompt/assembler/default: Assemble SectionProvider contributions into one system prompt.
+//
+// Best practices:
+//   - Sections are emitted in dep order, so put stable instructions before volatile context.
 func NewAssembler(_ AssemblerConfig, deps AssemblerDeps) (agentkit.PromptAssembler, error) {
 	var sections []agentkit.Section
 	for _, provider := range deps.Sections {

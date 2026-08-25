@@ -13,6 +13,7 @@ import (
 )
 
 type Config struct {
+	// Path is settings file, resolved through the workspace.
 	Path string `json:"path"`
 }
 
@@ -25,6 +26,7 @@ func init() {
 	pluginkit.Register("settings/file", New)
 }
 
+// New registers settings/file: Load persistent settings from a YAML or JSON file.
 func New(cfg Config) (settings.Store, error) {
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("settings/file requires path")

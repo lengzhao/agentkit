@@ -9,6 +9,7 @@ import (
 )
 
 type FindConfig struct {
+	// MaxResults is cap on paths returned per call.
 	MaxResults int `json:"maxResults"`
 }
 
@@ -23,6 +24,10 @@ type FindInput struct {
 
 type FindOutput = filesystem.FindResult
 
+// NewFind registers tool/find: Find files by filename glob under a directory.
+//
+// Best practices:
+//   - Patterns match a single path segment; ** recursive glob is not supported.
 func NewFind(cfg FindConfig, deps FindDeps) (agentkit.Tool, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/find requires fs dependency")

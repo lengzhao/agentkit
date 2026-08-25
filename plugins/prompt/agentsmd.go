@@ -12,6 +12,7 @@ import (
 )
 
 type AgentsMDConfig struct {
+	// Root is directory to start the upward search from.
 	Root string `json:"root"`
 }
 
@@ -24,6 +25,7 @@ type agentsMDProvider struct {
 	workspace workspace.Service
 }
 
+// NewAgentsMD registers prompt/section/agents-md: Inject AGENTS.md instructions discovered in the workspace hierarchy.
 func NewAgentsMD(cfg AgentsMDConfig, deps AgentsMDDeps) (agentkit.SectionProvider, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("prompt/section/agents-md requires workspace")

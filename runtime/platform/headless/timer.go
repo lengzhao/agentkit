@@ -52,6 +52,11 @@ type Timer struct {
 	runs    int
 }
 
+// NewTimer registers platform/timer: Fire the same prompt on a fixed interval.
+//
+// Best practices:
+//   - Ticks are anchored to the start time and missed ones are skipped, so a slow turn does not make the schedule drift.
+//   - Use platform/worker with a cron expression when you need calendar times rather than an interval.
 func NewTimer(cfg TimerConfig) (agentkit.Platform, error) {
 	if cfg.EverySeconds <= 0 {
 		return nil, fmt.Errorf("platform/timer requires everySeconds > 0")

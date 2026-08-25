@@ -11,18 +11,19 @@ import (
 type ShellAllowlistConfig struct {
 	// Allow holds command prefixes that may run, e.g. "go test", "git status".
 	Allow []string `json:"allow"`
-	// Deny holds command prefixes that never run, checked before Allow.
+	// Deny holds command prefixes that never run; checked before Allow.
 	Deny []string `json:"deny"`
-	// Strict denies anything outside Allow. Without it, unlisted commands fall
-	// through to ask, so an approval provider still gets a say.
+	// Strict denies anything outside Allow. Without it, unlisted commands fall through to ask, so the approval provider still gets a say.
 	Strict bool `json:"strict"`
-	// Tool is the shell tool name to guard. Defaults to "bash".
+	// Tool is shell tool name to guard; defaults to "bash".
 	Tool string `json:"tool"`
 }
 
-// NewShellAllowlist gates shell commands by prefix. Under an unattended run this
-// is what replaces human judgement, so prefer strict mode with a narrow Allow
-// list rather than relying on approval/auto-allow.
+// NewShellAllowlist registers policy/shell-allowlist: Gate shell commands by command prefix.
+//
+// Best practices:
+//   - Chained commands are checked segment by segment regardless of strict, so `git status && rm -rf /` cannot ride in on an allowed prefix.
+//   - Under an unattended run this replaces human judgement: prefer strict with a narrow allow list over approval/auto-allow on its own.
 func NewShellAllowlist(cfg ShellAllowlistConfig) (agentkit.Policy, error) {
 	toolName := strings.TrimSpace(cfg.Tool)
 	if toolName == "" {
