@@ -123,6 +123,45 @@ func FinishAfter(events []agentkit.SessionEvent, seq agentkit.EventSeq) *RunFini
 	return out
 }
 
+// LastAssistantText returns the text of the most recent assistant message after
+// seq. It is the fallback answer for a run that stopped without calling
+// tool/finish, which is the common case for a child agent that was only asked a
+// question.
+func LastAssistantText(events []agentkit.SessionEvent, seq agentkit.EventSeq) string {
+	var out string
+	for _, ev := range events {
+		if ev.Type != agentkit.EventAssistantMessage || ev.Seq <= seq {
+			continue
+		}
+		var msg agentkit.ModelMessage
+		if err := json.Unmarshal(ev.Data, &msg); err != nil {
+			continue
+		}
+		var b strings.Builder
+		for _, part := range msg.Content {
+			if part.Type == "text" {
+				b.WriteString(part.Text)
+			}
+		}
+		if text := strings.TrimSpace(b.String()); text != "" {
+			out = text
+		}
+	}
+	return out
+}
+
+// StepCount counts the steps completed after seq. Unlike turn/end's Steps field
+// it is also available for a turn that failed partway through.
+func StepCount(events []agentkit.SessionEvent, seq agentkit.EventSeq) int {
+	count := 0
+	for _, ev := range events {
+		if ev.Type == agentkit.EventStepEnd && ev.Seq > seq {
+			count++
+		}
+	}
+	return count
+}
+
 // RunStartSeq returns the seq of the most recent inbound user message, which
 // marks where the current run began. Continuations are recorded as
 // turn/continue events rather than user/message events, so they never shift it.

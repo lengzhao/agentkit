@@ -770,6 +770,26 @@ agents:
 - Agent 级 override 只影响该 Agent 的 Resolved Graph，不修改共享 Preset。
 - 临时子 Agent 使用 agent template，由父 Agent 或 workflow 在运行时生成新的 Agent 实例片段，并挂入当前 Runner / Loop 管理的执行上下文。
 
+### 5.10 子 Agent 委派（subagent）
+
+AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"。已落地的是后者的串行版（`subagent/inprocess` + `tool/subagent` + `prompt/section/subagents`），子 Agent 不是配置里的实例，而是工作目录 `agents/*.md` 里的定义文件——加一个子 Agent = 加一个文件，不改实例图。使用手册见 [subagent.zh.md](subagent.zh.md)。
+
+**为什么值得做**：委派的收益是**上下文隔离**，不是并发。子 Agent 烧掉的十几轮 grep 输出留在它自己的 Session 里，回到父 Session 的只有一段结论——父 Agent 的 turn 因此不必靠 compaction 去救那些一次性的探索输出。
+
+**子 Agent 必须有自己的 Tool Runtime**。把父 Agent 的 runtime 直接接给 Spawner 会在构造期成环：
+
+```text
+tools.default → tool.subagent.default → subagent.default → tools.default
+```
+
+`prompt` 侧同理（`prompt.default → prompt.subagents.default → subagent.default → prompt.default`）。pluginkit 在 `build` 阶段直接判 dependency cycle，所以配置里必须给子 Agent 一份兄弟实例 `tools.subagent.default` / `prompt.subagent.default`。这个约束正好和产品要求同向：兄弟实例里没挂 `tool/subagent`，"只有主 Agent 能委派"就从一条约定变成**结构性事实**——子 Agent 的可见工具列表里根本没有 `delegate`，不依赖深度计数去兜底（Spawner 内部另有一个 ctx 标记，只用于配置接错时的第二道锁）。
+
+定义里的 `tools` 白名单是在那份兄弟 runtime 之上再做一层收窄的包装器：`Visible` 过滤、`Execute` 对名单外的调用返回模型可读的 deny 结果。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径（[5.5](#55-工具执行路径)），不另建一条。
+
+**结论的读回**：`Agent.RunTurn` 只返回 `error`，答案必须从子 Session 里取——子 Agent 调了 `tool/finish` 就用其结构化 `status` + `summary`，没调则退回最后一条 assistant 文本并标 `status=stopped`。父 Session 上只落 `subagent/start` / `subagent/end` 两条审计事件；模型看到的结论走 `delegate` 的 tool result 那一条路，"Model-visible ⟺ Logged" 不破。
+
+**本期串行**：一次 `delegate` 跑一个子 Agent 并阻塞等它结束。并行 fan-out 需要在 `Run` 旁边**加** `Start` / `Handle` 异步接口，并先解决共享 workspace 的写冲突——那是与 `runner.maxConcurrentTurns` 默认 1 同源的问题。
+
 ## 6. Agent Spine
 
 ### 6.1 Session
@@ -1056,7 +1076,7 @@ cap/tool-shell/
 | credentials | `Resolve(ref)` | env、file、vault | LLM、web |
 | settings | typed namespaces | file、remote | model defaults |
 | web | `Search`, `Fetch` | HTTP providers | web tools |
-| subagent | `Start`, `Join`, `Cancel` | in-process、RPC | delegate tool |
+| subagent | `Definitions`, `Run` | in-process、RPC | delegate tool |
 | compaction | `Compact(session)` | summary provider | before-step hook |
 
 设计规则：

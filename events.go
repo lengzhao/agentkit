@@ -25,4 +25,6 @@ const (
 	EventTodoUpdate              EventType = "todo/update"
 	EventRunFinish               EventType = "run/finish"
 	EventSessionRecovery         EventType = "session/recovery"
+	EventSubagentStart           EventType = "subagent/start"
+	EventSubagentEnd             EventType = "subagent/end"
 )

@@ -14,4 +14,5 @@ func init() {
 	pluginkit.Register("tool/todo", NewTodo)
 	pluginkit.Register("tool/finish", NewFinish)
 	pluginkit.Register("tool/schedule", NewSchedule)
+	pluginkit.Register("tool/subagent", NewSubagent)
 }

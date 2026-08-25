@@ -83,4 +83,12 @@ func init() {
 			"Needs a schedule registry that platform/worker also uses, or nothing will fire the jobs.",
 		},
 	})
+	plugindoc.Register("tool/subagent", plugindoc.Doc{
+		Summary: "Delegate a subtask to a child agent (tool name: delegate) and wait for its conclusion.",
+		BestPractices: []string{
+			"Pair with prompt/section/subagents, which lists the valid agent names; this tool's description is static and cannot.",
+			"Mount it only on the main agent's tools runtime. The subagent spawner needs a separate runtime without it, both to break a dependency cycle and to keep children from delegating further.",
+			"Bump toolTimeouts for delegate: a child agent runs many steps and will blow through the default tool timeout.",
+		},
+	})
 }

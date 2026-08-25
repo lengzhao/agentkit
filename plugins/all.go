@@ -26,6 +26,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/prompt"
 	_ "github.com/lengzhao/agentkit/runtime/runner"
 	_ "github.com/lengzhao/agentkit/runtime/session"
+	_ "github.com/lengzhao/agentkit/runtime/subagent"
 	_ "github.com/lengzhao/agentkit/runtime/tools"
 	_ "github.com/lengzhao/agentkit/runtime/workspace"
 )

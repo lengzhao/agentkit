@@ -12,6 +12,7 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [coding-workspace.zh.md](coding-workspace.zh.md) | Coding preset 工作区与 FS 边界 |
 | [../examples/config/README.md](../examples/config/README.md) | 各场景 L1 配置示例与用法 |
 | [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：turn 续跑契约、预算分层、todo/finish 判定、token 阈值压缩、崩溃恢复、无人值守安全边界 |
+| [subagent.zh.md](subagent.zh.md) | 子 Agent 委派：`agents/*.md` 定义格式、目录查找、工具白名单、结论读回、串行边界 |
 
 ## 快速开始
 
@@ -40,6 +41,10 @@ go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读�
 # 自主运行：无人干预连续推进，靠 todo/finish 判定收尾，预算兜底（见 autonomous-run.zh.md）
 go run ./cmd/agent -config presets/autonomous.yaml "你的多轮任务"
 go run ./cmd/agent -config presets/autonomous-smoke.yaml "整理这个目录并收尾"
+
+# 子 Agent 委派：主 agent 把子任务交给 agents/*.md 定义的子 agent，只把结论带回（见 subagent.zh.md）
+go run ./cmd/agent -config presets/subagent.yaml "让 researcher 查清 runtime/loop 的并发模型，再据此给我结论"
+go run ./cmd/agent -config presets/subagent.yaml,presets/subagent-smoke.yaml "调研一下"   # 无 API Key 冒烟
 
 # headless：-config 接受逗号分隔的多个 overlay，按顺序合并（后面的覆盖前面的）
 # worker 跑完即退出（不读 stdin，适合 cron / CI / 容器）；daemon 常驻按间隔自己醒来

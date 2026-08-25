@@ -118,6 +118,7 @@ flowchart TB
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |
 | `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
+| `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API | Pi openai-responses |
 | `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API | Pi anthropic-messages |
@@ -140,7 +141,7 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `tool/web-search` | `web` | 网络搜索 | DSH `tool-web` |
 | `tool/web-fetch` | `web` | URL 抓取 | DSH `tool-web` |
 | `tool/skill` | `skills` | Skill 发现与加载 | DSH/Pi skill tool |
-| `tool/subagent` | `subagent` | 子 Agent 委派 | DSH `tool-subagent` |
+| `tool/subagent` | `subagent` | 子 Agent 委派（工具名 `delegate`）：阻塞等子 agent 跑完，返回 status + summary + 子 session id；只挂在主 agent 的 tools runtime 上 | DSH `tool-subagent` |
 | `tool/ask-user` | `approval` | 向用户提问 | DSH `tool-ask-user` |
 | `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
 | `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
@@ -207,7 +208,7 @@ Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 impor
 |---|---|---|
 | `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md |
 | `skill/badge` | `skill.Registry` | Badge 元数据 |
-| `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent |
+| `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [subagent.zh.md](subagent.zh.md) |
 | `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent |
 
 #### Schedule
@@ -405,7 +406,7 @@ graph:
 
 | 类别 | Kind |
 |---|---|
-| Subagent | `subagent/inprocess`, `tool/subagent` |
+| Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，见 `presets/subagent.yaml`；并行 fan-out 待做） |
 | Web | `web/http-fetch`, `tool/web-fetch` |
 | Sandbox | `sandbox/landlock`, `fs/sandbox`, `process/sandbox` |
 | Platform | `platform/http`, `platform/rpc` |

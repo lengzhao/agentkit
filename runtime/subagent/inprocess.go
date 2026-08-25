@@ -1,0 +1,284 @@
+// Package subagent runs child agents in-process.
+//
+// It lives under runtime/ rather than plugins/ because it must import
+// runtime/agent to construct a child — the same reason agent/coding is
+// registered from runtime/agent. Kind names are independent of package paths.
+//
+// # Why the child needs its own tool runtime
+//
+// Wiring the parent's tool runtime here would be a dependency cycle:
+//
+//	tools.default → tool.subagent.default → subagent.default → tools.default
+//
+// pluginkit rejects that at build time. So deps.tools must point at a sibling
+// runtime instance, and since that instance does not mount tool/subagent, "only
+// the main agent can delegate" stops being a policy and becomes structural.
+package subagent
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/cap/subagent"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/session"
+)
+
+type Config struct {
+	// Dirs are the definition directories, in precedence order.
+	Dirs []string `json:"dirs,omitempty"`
+	// MaxSteps applies to definitions that do not set their own.
+	MaxSteps int `json:"maxSteps,omitempty"`
+	// TimeoutSeconds caps one delegation's wall clock. 0 means no cap, in which
+	// case the tool runtime's timeout for the delegate tool is the only bound.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+}
+
+type Deps struct {
+	Workspace    workspace.Service        `json:"workspace"`
+	SessionStore agentkit.SessionStore    `json:"sessionStore"`
+	LLM          agentkit.LLMProvider     `json:"llm"`
+	Tools        agentkit.ToolRuntime     `json:"tools"`
+	Prompt       agentkit.PromptAssembler `json:"prompt"`
+	Hooks        agentkit.HookRuntime     `json:"hooks,omitempty"`
+	Compaction   []compaction.Service     `json:"compaction,omitempty"`
+}
+
+// contextKey marks a context as already running inside a child agent. It is
+// package-private on purpose: nothing outside this package should be able to
+// clear it.
+type contextKey string
+
+const keyInSubagent contextKey = "agentkit.subagent.active"
+
+const defaultMaxSteps = 20
+
+type Spawner struct {
+	dirs      []string
+	maxSteps  int
+	timeout   time.Duration
+	workspace workspace.Service
+	store     agentkit.SessionStore
+	llm       agentkit.LLMProvider
+	tools     agentkit.ToolRuntime
+	prompt    agentkit.PromptAssembler
+	hooks     agentkit.HookRuntime
+	compact   []compaction.Service
+}
+
+func New(cfg Config, deps Deps) (subagent.Spawner, error) {
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("subagent/inprocess requires workspace")
+	}
+	if deps.SessionStore == nil {
+		return nil, fmt.Errorf("subagent/inprocess requires sessionStore")
+	}
+	if deps.LLM == nil {
+		return nil, fmt.Errorf("subagent/inprocess requires llm")
+	}
+	if deps.Tools == nil {
+		return nil, fmt.Errorf("subagent/inprocess requires a tools runtime that does not mount tool/subagent")
+	}
+	if deps.Prompt == nil {
+		return nil, fmt.Errorf("subagent/inprocess requires prompt")
+	}
+	dirs := cfg.Dirs
+	if len(dirs) == 0 {
+		dirs = defaultDirs
+	}
+	maxSteps := cfg.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = defaultMaxSteps
+	}
+	var timeout time.Duration
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	return &Spawner{
+		dirs:      dirs,
+		maxSteps:  maxSteps,
+		timeout:   timeout,
+		workspace: deps.Workspace,
+		store:     deps.SessionStore,
+		llm:       deps.LLM,
+		tools:     deps.Tools,
+		prompt:    deps.Prompt,
+		hooks:     deps.Hooks,
+		compact:   deps.Compaction,
+	}, nil
+}
+
+func (s *Spawner) Definitions(ctx context.Context) ([]subagent.Definition, error) {
+	return loadDefinitions(ctx, s.workspace, s.dirs)
+}
+
+func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Result, error) {
+	if ctx.Value(keyInSubagent) != nil {
+		// Unreachable with the recommended wiring, since a child's tool runtime
+		// has no delegate tool. This is the second lock, for a mis-wired graph.
+		return subagent.Result{}, fmt.Errorf("a subagent cannot delegate further")
+	}
+	name := strings.TrimSpace(req.Agent)
+	task := strings.TrimSpace(req.Task)
+	if name == "" {
+		return subagent.Result{}, fmt.Errorf("subagent name is required")
+	}
+	if task == "" {
+		return subagent.Result{}, fmt.Errorf("subagent task is required")
+	}
+
+	defs, err := s.Definitions(ctx)
+	if err != nil {
+		return subagent.Result{}, err
+	}
+	def, ok := findDefinition(defs, name)
+	if !ok {
+		return subagent.Result{}, fmt.Errorf("unknown subagent %q; available: %s", name, namesOf(defs))
+	}
+
+	parentID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if parentID == "" {
+		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
+	}
+	parentAgent, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	parent, err := s.store.Get(ctx, parentID)
+	if err != nil {
+		return subagent.Result{}, err
+	}
+	parentEvents, err := session.ReadAllEvents(ctx, parent)
+	if err != nil {
+		return subagent.Result{}, err
+	}
+
+	// The parent's current seq makes the id deterministic per call site and
+	// unique within the parent session; session/store sanitizes the separators.
+	childID := agentkit.SessionID(fmt.Sprintf("sub:%s:%s:%d",
+		parentID, def.Name, session.LatestEventSeq(parentEvents)))
+
+	if err := session.AppendSubagentStart(ctx, parent, parentAgent, session.SubagentStartData{
+		Agent:   def.Name,
+		Session: string(childID),
+		Task:    task,
+	}); err != nil {
+		return subagent.Result{}, err
+	}
+
+	result, runErr := s.runChild(ctx, def, task, childID)
+	end := session.SubagentEndData{
+		Agent:   def.Name,
+		Session: string(childID),
+		Status:  result.Status,
+		Summary: result.Summary,
+		Steps:   result.Steps,
+	}
+	if runErr != nil {
+		end.Error = runErr.Error()
+	}
+	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
+		return subagent.Result{}, err
+	}
+	return result, runErr
+}
+
+func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID) (subagent.Result, error) {
+	out := subagent.Result{Agent: def.Name, Session: string(childID)}
+
+	tools, err := newFilteredTools(ctx, s.tools, def.Tools)
+	if err != nil {
+		return out, fmt.Errorf("subagent %q: %w", def.Name, err)
+	}
+	maxSteps := def.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = s.maxSteps
+	}
+	child, err := agent.New(agent.Config{
+		ID:       agentkit.AgentID("sub:" + def.Name),
+		Model:    def.Model,
+		MaxSteps: maxSteps,
+	}, agent.Deps{
+		SessionStore: s.store,
+		LLM:          s.llm,
+		Tools:        tools,
+		Prompt:       &definitionPrompt{inner: s.prompt, body: def.Prompt},
+		Hooks:        s.hooks,
+		Compaction:   s.compact,
+	})
+	if err != nil {
+		return out, err
+	}
+
+	childCtx := context.WithValue(ctx, keyInSubagent, true)
+	childCtx = context.WithValue(childCtx, agentkit.KeySessionID, childID)
+	childCtx = context.WithValue(childCtx, agentkit.KeyAgentID, child.ID())
+	// Drop the parent's turn control: steering and cancel reasons belong to the
+	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.
+	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
+	if s.timeout > 0 {
+		var cancel context.CancelFunc
+		childCtx, cancel = context.WithTimeout(childCtx, s.timeout)
+		defer cancel()
+	}
+
+	// Emit is nil so the child's token deltas do not interleave with the
+	// parent's output stream; the parent only ever sees the summary.
+	runErr := child.RunTurn(childCtx, agentkit.TurnInput{
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: task}},
+		},
+	})
+
+	// Read the outcome even when the turn failed: a child that worked for ten
+	// steps and then hit a provider error still has a partial answer worth
+	// carrying back.
+	sess, err := s.store.Get(ctx, childID)
+	if err != nil {
+		if runErr != nil {
+			return out, runErr
+		}
+		return out, err
+	}
+	events, err := session.ReadAllEvents(ctx, sess)
+	if err != nil {
+		if runErr != nil {
+			return out, runErr
+		}
+		return out, err
+	}
+	out.Steps = session.StepCount(events, 0)
+	if finish := session.FinishAfter(events, 0); finish != nil {
+		out.Status = finish.Status
+		out.Summary = finish.Summary
+	} else {
+		out.Status = subagent.StatusStopped
+		out.Summary = session.LastAssistantText(events, 0)
+	}
+	return out, runErr
+}
+
+func findDefinition(defs []subagent.Definition, name string) (subagent.Definition, bool) {
+	for _, def := range defs {
+		if strings.EqualFold(def.Name, name) {
+			return def, true
+		}
+	}
+	return subagent.Definition{}, false
+}
+
+// namesOf renders the available agents for an error the model can act on: it
+// cannot edit a definition file, but it can retry with a name that exists.
+func namesOf(defs []subagent.Definition) string {
+	if len(defs) == 0 {
+		return "(none defined)"
+	}
+	names := make([]string, 0, len(defs))
+	for _, def := range defs {
+		names = append(names, def.Name)
+	}
+	return strings.Join(names, ", ")
+}

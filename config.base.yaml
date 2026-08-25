@@ -7,7 +7,7 @@ workspace.default:
   use: workspace/default
   config:
     global: ~/.agentkit
-    local: .
+    local: .agentkit
     scope: global
 
 runner.default:

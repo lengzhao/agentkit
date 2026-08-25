@@ -6,7 +6,7 @@ workspace.default:
   use: workspace/default
   config:
     global: ~/.agentkit
-    local: .
+    local: .agentkit
     scope: local
 
 # 示例：覆盖模型（需写完整实例块）

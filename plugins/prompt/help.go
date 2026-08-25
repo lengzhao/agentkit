@@ -12,6 +12,12 @@ func init() {
 	plugindoc.Register("prompt/section/skills", plugindoc.Doc{
 		Summary: "Inject a catalog of available skills so the model knows what it can load.",
 	})
+	plugindoc.Register("prompt/section/subagents", plugindoc.Doc{
+		Summary: "Inject the catalog of delegatable subagents so the model knows who it can hand work to.",
+		BestPractices: []string{
+			"Mount this wherever tool/subagent is mounted: the delegate tool's description is static, so without this section the model has no list of valid agent names.",
+		},
+	})
 	plugindoc.Register("prompt/section/static", plugindoc.Doc{
 		Summary: "Inject a fixed block of system prompt text from config.",
 		ConfigNotes: map[string]string{

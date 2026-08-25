@@ -1,0 +1,132 @@
+# L1 preset：子 agent 委派。
+#
+#   go run ./cmd/agent -config presets/subagent.yaml
+#   > 让 researcher 查清 runtime/loop 是怎么保证同一 session 串行的，然后给我结论
+#
+# 子 agent 的价值是**上下文隔离**：子 agent 烧掉的十几轮 grep 留在它自己的 session 里，
+# 回到主 agent 的只有一段结论。定义放在 agents/*.md，加一个子 agent = 加一个文件。
+#
+# 两条"必须分开的实例"（不是洁癖，是构建期硬约束）：
+#
+#   1. tools.subagent.default —— 子 agent 的工具集。接主 agent 的 tools.default 会成环：
+#      tools.default → tool.subagent.default → subagent.default → tools.default
+#      pluginkit 直接判 dependency cycle。分开之后"只有主 agent 能委派"也从约定变成结构性
+#      事实：子 agent 的 runtime 里根本没有 delegate 这个工具。
+#   2. prompt.subagent.default —— 子 agent 的 prompt 装配器。同理：prompt.default 挂了
+#      prompt/section/subagents，而 subagent.default 依赖 prompt，接同一个又是环。
+#      语义上也正确：子 agent 不能委派，给它看可委派名单毫无意义。
+#
+# 与默认 coding preset 的其它区别：
+#   - workspace.local 改成 `.`，让 local:agents 就是工作目录下的 agents/；
+#     本 preset 额外把 examples/agents 也纳入查找路径，开箱即可跑 demo。
+#   - tools.default 给 delegate 单独放宽超时：子 agent 要跑十几步，默认 120s 一定被砍。
+
+# local 根改为当前目录：local:agents = <cwd>/agents。
+# L0 默认 local: .agentkit（即 <cwd>/.agentkit/agents），两种都行，按项目习惯选。
+workspace.default:
+  use: workspace/default
+  config:
+    global: ~/.agentkit
+    local: .
+    scope: global
+
+subagent.default:
+  use: subagent/inprocess
+  config:
+    dirs:
+      - local:agents
+      - local:examples/agents
+      - global:agents
+    # 定义文件没写 maxSteps 时的默认值。
+    maxSteps: 20
+    # 单次委派的墙钟上限，兜住"子 agent 卡住把主 agent 一起拖死"。
+    timeoutSeconds: 600
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+    llm: llm.default
+    # 必须是不含 tool/subagent 的兄弟实例，见文件头说明。
+    tools: tools.subagent.default
+    prompt: prompt.subagent.default
+    hooks: hooks.default
+    compaction:
+      - compaction.prune.default
+      - compaction.summary.default
+
+# 子 agent 的工具集：只读 + finish。
+# finish 一定要给：子 agent 调了 finish，主 agent 拿到的就是结构化的 status + summary；
+# 没调就只能退回"它最后说的那段话"。
+tools.subagent.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.finish.default
+    policies:
+      - policy.dangerous-shell.default
+    approval: approval.cli.default
+
+tool.finish.default:
+  use: tool/finish
+  deps:
+    sessionStore: sessionStore.default
+
+# 子 agent 的 prompt：共享 AGENTS.md 与 skills，但不含可委派名单。
+prompt.subagent.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.agents-md.default
+      - prompt.skills.default
+
+# 主 agent 的 prompt：加上可委派名单。
+# 名单走 prompt section 而不是 delegate 的 description，因为定义是从磁盘读的、会变，
+# 而 tool description 在构造期就固定了。
+prompt.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.agents-md.default
+      - prompt.skills.default
+      - prompt.subagents.default
+
+prompt.subagents.default:
+  use: prompt/section/subagents
+  deps:
+    subagent: subagent.default
+
+# 整颗覆盖 tools.default：加 delegate，并单独放宽它的超时。
+tools.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+    toolTimeouts:
+      delegate: 900
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.write-file.default
+      - tool.edit-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.shell.default
+      - tool.skill.default
+      - tool.subagent.default
+    policies:
+      - policy.dangerous-shell.default
+    approval: approval.cli.default
+
+tool.subagent.default:
+  use: tool/subagent
+  deps:
+    subagent: subagent.default

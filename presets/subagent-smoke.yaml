@@ -1,0 +1,37 @@
+# L1 overlay：子 agent 委派冒烟（scripted LLM，无需 API Key）。叠在 subagent.yaml 之上：
+#
+#   go run ./cmd/agent -config presets/subagent.yaml,presets/subagent-smoke.yaml "调研一下"
+#
+# scripted provider 的游标是全进程共享的，而委派是串行的，所以步骤按"父 → 子 → 父"顺序消费：
+#
+#   step 1  父：调 delegate(researcher)          ← 父的 tools.default 里有 delegate
+#   step 2  子：调 finish(completed, summary)    ← 子的 tools.subagent.default 里没有 delegate
+#   step 3  子：纯文本 → 子 turn 结束
+#   step 4  父：纯文本，把 summary 说给用户
+#
+# 期望：父 session 出现 subagent/start + subagent/end 各一条、delegate 的 tool/result 里是子 agent 的
+# summary；子 session 单独一个文件（sessions/sub_cli_default_researcher_*.jsonl）装着它自己那两步。
+
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+  deps:
+    commands: commands.default
+
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: "这个问题交给 researcher 更合适，它只读、且不会把探索过程堆到这里。"
+        toolCalls:
+          - id: call-delegate
+            name: delegate
+            input: '{"agent":"researcher","task":"查清 runtime/loop 如何保证同一 session 的 turn 串行，给出文件行号"}'
+      - text: ""
+        toolCalls:
+          - id: call-finish
+            name: finish
+            input: '{"status":"completed","summary":"loop/default 按 SessionID 取锁，同一 session 的 turn 串行执行（runtime/loop/loop.go）"}'
+      - text: "已把结论写进 finish。"
+      - text: "researcher 的结论：loop/default 按 SessionID 取锁，同一 session 的 turn 串行执行（runtime/loop/loop.go）。"
