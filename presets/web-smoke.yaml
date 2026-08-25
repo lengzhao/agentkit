@@ -7,7 +7,7 @@
 #
 #   step 1  web_search  → 拿到两条带 snippet 的命中
 #   step 2  web_fetch   → 抓第一条命中的正文（scripted-fetch 提供页面）
-#   step 3  ask_user    → ask/unavailable 返回 answered=false + guidance
+#   step 3  ask_user    → headless platform 返回 answered=false + guidance
 #   step 4  纯文本      → 自己拍板给结论，并附来源 URL
 #
 # 期望：session jsonl 里三条 tool/result 依次出现；第三条的 answered 是 false，
@@ -20,11 +20,7 @@ platform.default:
   deps:
     commands: commands.default
 
-# 无人值守下的正确接法：明确说"没人可问"，而不是等一个不存在的人。
-ask.default:
-  use: ask/unavailable
-  config:
-    reason: "这是一次冒烟运行，没有人在看"
+# 无人值守下的正确接法：headless platform 不支持交互，ask_user 自动降级。
 
 web.search.default:
   use: web/scripted-search

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,7 +30,7 @@ type Platform struct {
 	once          bool
 	done          bool
 	welcomed      bool
-	reader        *bufio.Reader
+	input         *Input
 	commands      agentkit.Commands
 	sessionID     agentkit.SessionID
 }
@@ -48,7 +47,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	return &Platform{
 		initialPrompt: initial,
 		once:          cfg.Once,
-		reader:        bufio.NewReader(os.Stdin),
+		input:         NewInput(os.Stdin),
 		sessionID:     sessionID,
 		commands:      deps.Commands,
 	}, nil
@@ -160,18 +159,15 @@ func (p *Platform) readInput() (string, error) {
 		return text, nil
 	}
 	fmt.Fprint(os.Stderr, "> ")
-	line, err := p.reader.ReadString('\n')
+	line, err := p.input.ReadPrompt()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			if len(line) > 0 {
-				return strings.TrimSpace(line), nil
-			}
 			fmt.Fprintln(os.Stderr)
 			return "", io.EOF
 		}
 		return "", err
 	}
-	return strings.TrimSpace(line), nil
+	return line, nil
 }
 
 func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
@@ -204,6 +200,15 @@ func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
 		if text != "" {
 			fmt.Println(text)
 		}
+	case agentkit.EventInteractionStart:
+		var payload agentkit.InteractionStartPayload
+		if err := json.Unmarshal(event.Data, &payload); err != nil {
+			return err
+		}
+		renderInteractionStart(payload)
+		return nil
+	case agentkit.EventInteractionEnd:
+		return nil
 	case agentkit.EventTurnContinue:
 		var payload struct {
 			Segment int    `json:"segment"`

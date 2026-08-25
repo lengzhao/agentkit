@@ -89,6 +89,10 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			}
 			return err
 		}
+		if r.loop.TryDeliverInteraction(event) {
+			sched.release()
+			continue
+		}
 		if event.Message.Role == "" {
 			sched.release()
 			continue
@@ -109,7 +113,12 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			}
 			return r.platform.Send(ctx, out)
 		}
-		sched.submit(ctx, agentkit.LoopRequest{Event: event, Emit: emit})
+		sched.submit(ctx, agentkit.LoopRequest{
+			Event:              event,
+			Emit:               emit,
+			InteractionHandler: interactionHandler(r.platform),
+			AsyncInteraction:   asyncInteraction(r.platform),
+		})
 	}
 }
 
@@ -179,5 +188,19 @@ func (r *Root) Stop(context.Context) error { return nil }
 // Loop exposes the turn scheduler so RPC/TUI integrations can steer or queue
 // follow-ups; agentkit.Loop already carries Steer/FollowUp.
 func (r *Root) Loop() agentkit.Loop { return r.loop }
+
+func interactionHandler(platform agentkit.Platform) agentkit.InteractionHandler {
+	if h, ok := platform.(agentkit.InteractionHandler); ok {
+		return h
+	}
+	return nil
+}
+
+func asyncInteraction(platform agentkit.Platform) bool {
+	if a, ok := platform.(agentkit.AsyncInteractionPlatform); ok {
+		return a.AsyncInteraction()
+	}
+	return false
+}
 
 var _ agentkit.Runner = (*Root)(nil)

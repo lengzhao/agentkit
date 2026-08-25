@@ -27,6 +27,10 @@ platform.default:
       - id: weekday-morning
         cron: "0 9 * * 1-5"
         prompt: "工作日早班巡检：跑测试、看有没有未提交改动，汇总后 finish。"
+      # script 模式示例（与 prompt 互斥）：直接跑 bash，不经过 agent
+      # - id: nightly
+      #   cron: "0 3 * * *"
+      #   script: presets/scripts/nightly.sh
       - id: nightly
         cron: "0 3 * * *"
         prompt: "夜间巡检：检查依赖与构建是否正常，有问题记 todo 并处理。"

@@ -19,7 +19,8 @@ pluginkit 是**按 Go 接口类型**匹配 deps 的。合成一个接口，等�
 flowchart LR
   TF["tool/web-fetch<br/>web_fetch"] -->|"web.Fetcher"| HF["web/http-fetch<br/>无需凭据"]
   TS["tool/web-search<br/>web_search"] -->|"web.Searcher"| EX["web/exa-search<br/>需要 key"]
-  TA["tool/ask-user<br/>ask_user"] -->|"ask.Service"| CLI["ask/cli · ask/unavailable"]
+  TA["tool/ask-user<br/>ask_user"] -->|"SessionInteraction"| Loop["runtime/loop<br/>pending HIL"]
+  Loop -->|"interaction/start"| Platform["platform/*<br/>CLI · Lark · …"]
   EX -->|"apiKeyRef"| CR["credentials/env"]
 ```
 
@@ -68,34 +69,44 @@ web/exa-search has no API key: set EXA_API_KEY, or config.apiKeyRef with a crede
 
 `web/scripted-search` 与 `web/scripted-fetch` 是它们的无网络替身，给测试和冒烟 preset 用，用法同 `llm/scripted`。
 
-## 4. 提问：`ask_user` 与 `cap/ask`
+## 4. 提问：`ask_user` 与 Human-in-the-loop
 
-`tool/ask-user` 依赖的是**新开的 `cap/ask`，不是 `cap/approval`**。两者形状很像，但语义相反：
+`tool/ask-user` 走 **Loop 的 HIL 控制流**，不再依赖独立的 `ask/*` 插件。语义上与 approval 相反：
 
-| | approval | ask |
+| | approval | HIL interaction |
 |---|---|---|
 | 回答的问题 | "这个工具调用允许吗" | "这个开放问题你怎么选" |
 | 返回 | bool | 文本 / 选项下标 |
-| 无人值守时的正确接法 | `approval/auto-allow`（放行） | `ask/unavailable`（明确说没人） |
+| 无人值守时的正确接法 | `approval/auto-allow`（放行） | platform 不支持交互 → `answered:false` |
 
 复用 approval 实例会在无人值守场景直接出事：`presets/autonomous.yaml` 挂的是 `approval/auto-allow`，那 agent 问的每一个问题都会被默默答成"是"。
 
-### 4.1 没人可答不是错误
+### 4.1 平台路由（默认）
 
-`Ask` 的契约写在 `cap/ask/ask.go` 里：**不能因为"没有人可问"就返回 error**，那是 `Answer{Answered: false}` 加一句 `Reason`。工具结果因此长这样：
+提问由**入站消息所在的 platform** 决定（见 [platform-interaction.zh.md](platform-interaction.zh.md)）：
+
+| 入口 | 提问方式 |
+|---|---|
+| `platform/cli` | `interaction/start` 渲染到 stderr，stdin 同步作答 |
+| `platform/feishu`（待实现） | 发 Lark 卡片，inbound 经 `TryDeliverInteraction` 回传 |
+| headless / cron | 无 `InteractionHandler` → 立即 `answered:false` |
+
+Loop 在 turn context 注入 `SessionInteraction`；CLI platform 另实现 `InteractionHandler` 读 stdin。
+
+### 4.2 没人可答不是错误
+
+**不能因为"没有人可问"就返回 error**，那是 `Answered: false` 加一句 `Reason`。工具结果因此长这样：
 
 ```json
-{"answered":false,"selected":-1,"reason":"stdin is closed, no interactive user",
+{"answered":false,"selected":-1,"reason":"no interactive user on this platform",
  "guidance":"Nobody answered. Do not ask again: pick the most reasonable option yourself, state the assumption you made, and continue."}
 ```
 
 `guidance` 放在**结果里**而不是工具 description 里——模型在真正被拒的那一刻读到它，比在几千 token 之前的工具清单里读到有效得多。
 
-`ask/cli` 把问题和编号选项打到 stderr，answer 从 stdin 读；读取在一个**长期存在的** goroutine 里跑，`Ask` 只是 `select` 在它和 `ctx.Done()` 之间，所以工具超时与 turn 取消照样生效。之所以是一个常驻 goroutine 而不是每次提问起一个：读操作打断不了，超时放弃的那次提问会把 goroutine 留在原地，两个留下来的 goroutine 就会争抢同一个 stdin。同理，提问之间加了锁——两个并发 session 共用一个终端时，提示不能交织在一起。超时之后才敲进来的那一行会在下一次提问前丢掉：它不是那个新问题的答案。`io.EOF` 直接降级成上面那个 `answered:false`——cron / CI 里 stdin 本来就是关着的。答案可以是选项编号、选项原文（大小写不敏感），也可以是菜单外的自由文本（`selected` 记 -1，文本原样带回）。
+`presets/autonomous.yaml` 与 headless platform 配对时，提问会正确降级——它和把 `approval/cli` 换成 `approval/auto-allow` 是同一个决定的两个方向。
 
-`presets/autonomous.yaml` 已经把 `ask.default` 换成 `ask/unavailable`——它是"没人在看"这件事的能力栈，和它把 `approval/cli` 换成 `approval/auto-allow` 是同一个决定的两个方向。所以 `-config presets/web.yaml,presets/autonomous.yaml` 这样叠，提问会正确降级。
-
-### 4.2 超时要单独放宽
+### 4.3 超时要单独放宽
 
 人思考几分钟很正常，默认 120s 的工具超时会把提问砍掉：
 
@@ -126,4 +137,4 @@ go run ./cmd/agent -config presets/web.yaml,presets/web-smoke.yaml "loop 怎么�
 - `policy/network-deny`：网络裁决目前长在 provider 的配置里，还没有独立的 policy 插件（[M2](roadmap.zh.md#m2--隔离--守护收尾)）。
 - 除 Exa 之外的搜索 provider（Brave / Tavily / SearXNG 等）；接口已经是 `web.Searcher`，加一个 kind 即可。
 - 抓取结果的缓存与去重、robots.txt、PDF / 图片解析。
-- 富交互提问（多选、表单）：`ask.Question` 只有单选 + 自由文本。
+- 富交互提问（多选、表单）：`HumanInteraction` 已预留 `Kind` / `Multiple`，CLI 当前只实现单选 + 自由文本。

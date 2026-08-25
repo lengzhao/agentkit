@@ -65,6 +65,7 @@ func (l *panickyLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error 
 
 func (l *panickyLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *panickyLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l *panickyLoop) TryDeliverInteraction(agentkit.MessageEvent) bool     { return false }
 
 func (l *panickyLoop) count() int {
 	l.mu.Lock()
@@ -132,6 +133,7 @@ type errorLoop struct{ err error }
 func (l errorLoop) Dispatch(context.Context, agentkit.LoopRequest) error  { return l.err }
 func (l errorLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l errorLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l errorLoop) TryDeliverInteraction(agentkit.MessageEvent) bool       { return false }
 
 func TestRunKeepsServingAfterTurnError(t *testing.T) {
 	t.Parallel()

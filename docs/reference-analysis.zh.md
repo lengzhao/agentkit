@@ -114,7 +114,7 @@ DSH 用 **Definition / Provider / Consumer** 三角色；Pi 用 **Operations 接
 | **LLM** | `dsh-llm-deepseek`, `dsh-llm-pi-ai` | pi-ai 多 Provider | P0 | ✅ `llm/openai-compatible`、`llm/scripted` |
 | **Skills** | `dsh-skill-filesystem` + `dsh-tool-skill` | `SKILL.md` + `/skill:name` | P1 | ✅ `skill/filesystem` + `tool/skill` + `prompt/section/skills` |
 | **Compaction** | `dsh-compaction-basic` | `session_before_compact` | P1 | ✅ summary / prune-tool-results / token-limit |
-| **Approval** | `dsh-approval`, `dsh-tool-ask-user` | Extension `tool_call` + `ctx.ui.confirm` | P1 | ✅ `approval/cli`、`auto-allow`、`auto-deny`；`tool/ask-user` + `ask/cli` / `ask/unavailable`（走独立的 `cap/ask`） |
+| **Approval** | `dsh-approval`, `dsh-tool-ask-user` | Extension `tool_call` + `ctx.ui.confirm` | P1 | ✅ `approval/cli`、`auto-allow`、`auto-deny`；`tool/ask-user`（Loop HIL + platform，见 [platform-interaction.zh.md](platform-interaction.zh.md)） |
 | **Web** | `dsh-web-search-exa`, `dsh-web-fetch-http` | 无内置，靠 Extension | P2 | ✅ `web/http-fetch` + `web/exa-search` + 两个 scripted 替身（[web.zh.md](web.zh.md)） |
 | **Subagent** | `dsh-subagent-*` + `dsh-tool-subagent` | 无内置，靠 Extension/Package | P2 | 🟡 `subagent/inprocess` 串行版已落地（[subagent.zh.md](subagent.zh.md)）；并行 fan-out 未做 |
 | **Sandbox** | landlock / bwrap / seatbelt | 无内置，Operations 可替换 | P2 | ❌ `cap/sandbox` / `cap/process` 空壳 → [M2](roadmap.zh.md#m2--隔离--守护收尾) |
@@ -293,7 +293,7 @@ flowchart TB
 19. **Web** — search / fetch（✅ `web/http-fetch` + `web/exa-search` + `tool/web-fetch` + `tool/web-search`）
 20. **Sandbox** — 进程/文件系统隔离（❌ → [M2](roadmap.zh.md#m2--隔离--守护收尾)）
 21. **Commands** — 不经过模型的 Slash 命令（✅ `commands/registry`）
-22. **User Questions** — 结构化问答（✅ `tool/ask-user` + `ask/cli` / `ask/unavailable`）
+22. **User Questions** — 结构化问答（✅ `tool/ask-user` + Loop HIL / platform-interaction）
 
 ### 9.5 平台与观测（P2 — 产品化）
 

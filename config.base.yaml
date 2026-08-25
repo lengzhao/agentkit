@@ -317,11 +317,6 @@ web.search.default:
   deps:
     credentials: credentials.default
 
-ask.default:
-  use: ask/cli
-  config:
-    prefix: "[agent asks]"
-
 tool.web-fetch.default:
   use: tool/web-fetch
   deps:
@@ -336,8 +331,6 @@ tool.web-search.default:
 
 tool.ask-user.default:
   use: tool/ask-user
-  deps:
-    ask: ask.default
 
 fs.workspace.default:
   use: fs/local

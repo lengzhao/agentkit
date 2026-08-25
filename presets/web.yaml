@@ -15,9 +15,8 @@
 #      这是将来 policy/network-deny 的雏形，现在先落在 provider 里。
 #
 #   3. ask_user 的超时要单独放宽，并且"没人可问"不是错误。人思考几分钟很正常，默认
-#      120s 的工具超时会把提问砍掉；而在 cron / CI 里 stdin 是关着的，ask/cli 会返回
-#      answered=false + guidance，让 agent 自己拍板继续，而不是挂住等一个不存在的人。
-#      无人值守场景可以把 ask.default 换成 ask/unavailable，把这件事写明。
+#      120s 的工具超时会把提问砍掉；提问由入站 platform 的 InteractionHandler 承载。
+#      headless / 无人值守 platform 不支持交互时会自动返回 answered:false。
 
 web.fetch.default:
   use: web/http-fetch
@@ -39,11 +38,6 @@ web.search.default:
   deps:
     credentials: credentials.default
 
-ask.default:
-  use: ask/cli
-  config:
-    prefix: "[agent asks]"
-
 tool.web-fetch.default:
   use: tool/web-fetch
   deps:
@@ -58,8 +52,6 @@ tool.web-search.default:
 
 tool.ask-user.default:
   use: tool/ask-user
-  deps:
-    ask: ask.default
 
 # 整颗覆盖 tools.default：在 L0 那批工具之外加上三个网络/提问工具。
 tools.default:

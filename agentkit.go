@@ -23,8 +23,13 @@ const (
 	// KeyToolCallID is the context key for the current tool call, when one is active.
 	KeyToolCallID contextKey = "agentkit.tool_call_id"
 	// KeySessionControl is the context key for per-session steer/follow-up state.
-	// Loop sets it before Agent.RunTurn; the value is a runtime/loop.Control.
+	// Loop sets it before Agent.RunTurn; the value is a runtime/loop.Control that
+	// also implements SessionInteraction.
 	KeySessionControl contextKey = "agentkit.session_control"
+	// KeyOutboundEmit is the per-turn outbound hook. Loop sets it before
+	// Agent.RunTurn so tools and session control can emit interaction/start
+	// through the same channel as assistant streaming.
+	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
 )
 
 // SessionID is an opaque conversation routing key. Platforms (platform/slack,
@@ -87,6 +92,9 @@ type MessageEvent struct {
 	PlatformID string
 	UserID     string
 	Message    ModelMessage
+	// InteractionReplyTo marks an inbound message consumed as a pending
+	// interaction reply rather than a new user turn.
+	InteractionReplyTo string `json:"interactionReplyTo,omitempty"`
 }
 
 // OutboundEvent is the outbound envelope from Agent/Loop to Platform. SessionID

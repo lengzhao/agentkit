@@ -48,6 +48,7 @@ func (l *recordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) er
 
 func (l *recordingLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *recordingLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l *recordingLoop) TryDeliverInteraction(agentkit.MessageEvent) bool     { return false }
 
 func (l *recordingLoop) snapshot() ([]string, int) {
 	l.mu.Lock()

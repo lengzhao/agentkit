@@ -18,6 +18,7 @@ type Control struct {
 	steering     []agentkit.ModelMessage
 	followUps    []agentkit.ModelMessage
 	cancelReason string
+	pending      *pendingInteraction
 }
 
 func NewControl() *Control {

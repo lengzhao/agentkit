@@ -1076,7 +1076,7 @@ cap/tool-shell/
 | credentials | `Resolve(ref)` | env、file、vault | LLM、web |
 | settings | typed namespaces | file、remote | model defaults |
 | web | `Fetcher.Fetch` / `Searcher.Search`（两个接口） | `web/http-fetch`、`web/exa-search` | `tool/web-fetch`、`tool/web-search` |
-| ask | `Ask(question)` | `ask/cli`、`ask/unavailable` | `tool/ask-user` |
+| ask | `RunInteraction` | Loop `SessionInteraction` + platform `InteractionHandler` | `tool/ask-user` |
 | subagent | `Definitions`, `Run` | in-process、RPC | delegate tool |
 | compaction | `Compact(session)` | summary provider | before-step hook |
 

@@ -63,7 +63,7 @@ prompt.custom.default:
 #         prompt: "工作日早班巡检"
 #       - id: nightly
 #         cron: "0 3 * * *"
-#         script: scripts/nightly.sh
+#         script: presets/scripts/nightly.sh
 #     sessionMode: fresh
 #     sessionID: cron
 #     pollSeconds: 30

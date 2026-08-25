@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	capask "github.com/lengzhao/agentkit/cap/ask"
+	"github.com/lengzhao/agentkit"
 	capweb "github.com/lengzhao/agentkit/cap/web"
 	"github.com/lengzhao/agentkit/plugins/tool"
 )
@@ -35,15 +35,15 @@ func (f *fakeSearcher) Search(_ context.Context, req capweb.SearchRequest) (capw
 	return f.result, f.err
 }
 
-type fakeAsker struct {
-	got    capask.Question
-	answer capask.Answer
+type fakeSessionInteraction struct {
+	got    agentkit.HumanInteraction
+	result agentkit.InteractionResult
 	err    error
 }
 
-func (f *fakeAsker) Ask(_ context.Context, q capask.Question) (capask.Answer, error) {
-	f.got = q
-	return f.answer, f.err
+func (f *fakeSessionInteraction) RunInteraction(_ context.Context, req agentkit.HumanInteraction) (agentkit.InteractionResult, error) {
+	f.got = req
+	return f.result, f.err
 }
 
 func TestWebFetchToolMapsResultAndCapsBytes(t *testing.T) {
@@ -122,9 +122,6 @@ func TestWebFetchToolRequiresDep(t *testing.T) {
 	if _, err := tool.NewWebSearch(tool.WebSearchConfig{}, tool.WebSearchDeps{}); err == nil {
 		t.Fatal("built without a web dep")
 	}
-	if _, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{}); err == nil {
-		t.Fatal("built without an ask dep")
-	}
 }
 
 func TestWebSearchToolResultLimitPrecedence(t *testing.T) {
@@ -167,8 +164,8 @@ func TestWebSearchToolResultLimitPrecedence(t *testing.T) {
 func TestAskUserToolAnsweredPath(t *testing.T) {
 	t.Parallel()
 
-	asker := &fakeAsker{answer: capask.Answer{Answered: true, Text: "sqlite", Selected: 1}}
-	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{Ask: asker})
+	si := &fakeSessionInteraction{result: agentkit.InteractionResult{Answered: true, Text: "sqlite", Selected: 1}}
+	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +176,8 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 		t.Errorf("required = %v, want question", ask.InputSchema().Required)
 	}
 
-	out := callTool(t, context.Background(), ask, `{"question":"which store?","options":["jsonl","sqlite"],"default":"jsonl"}`)
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
+	out := callTool(t, ctx, ask, `{"question":"which store?","options":["jsonl","sqlite"],"default":"jsonl"}`)
 	var got tool.AskUserOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
@@ -190,21 +188,21 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 	if got.Guidance != "" {
 		t.Errorf("guidance = %q, want none on an answered question", got.Guidance)
 	}
-	if len(asker.got.Options) != 2 || asker.got.Default != "jsonl" {
-		t.Errorf("question = %+v", asker.got)
+	if len(si.got.Options) != 2 || si.got.Default != "jsonl" {
+		t.Errorf("question = %+v", si.got)
 	}
 }
 
 func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	t.Parallel()
 
-	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{
-		Ask: &fakeAsker{answer: capask.Answer{Selected: -1, Reason: "this run is unattended"}},
-	})
+	si := &fakeSessionInteraction{result: agentkit.InteractionResult{Selected: -1, Reason: "this run is unattended"}}
+	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := callTool(t, context.Background(), ask, `{"question":"which store?"}`)
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
+	out := callTool(t, ctx, ask, `{"question":"which store?"}`)
 	var got tool.AskUserOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
@@ -212,7 +210,6 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	if got.Answered {
 		t.Errorf("output = %+v, want unanswered", got)
 	}
-	// Without guidance the model tends to retry the question forever.
 	if !strings.Contains(got.Guidance, "Do not ask again") {
 		t.Errorf("guidance = %q", got.Guidance)
 	}
@@ -224,11 +221,12 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 func TestAskUserToolRequiresQuestion(t *testing.T) {
 	t.Parallel()
 
-	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{Ask: &fakeAsker{}})
+	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out := callTool(t, context.Background(), ask, `{"question":"   "}`); !strings.Contains(out, "required") {
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, &fakeSessionInteraction{})
+	if out := callTool(t, ctx, ask, `{"question":"   "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
 }

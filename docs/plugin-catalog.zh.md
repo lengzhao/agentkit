@@ -95,7 +95,7 @@ flowchart TB
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop；`maxConcurrentTurns` 控制跨 session 并发（默认 1，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
-| `platform/cli` | `agentkit.Platform` | 终端 stdin/stdout；入站固定 `SessionID=cli:default` | Pi TUI / DSH headless |
+| `platform/cli` | `agentkit.Platform` + `InteractionHandler` | 终端 stdin/stdout；入站固定 `SessionID=cli:default`；同步 HIL 读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
@@ -144,7 +144,7 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `tool/web-fetch` | `web`（`web.Fetcher`） | URL 抓取（工具名 `web_fetch`）：HTML → 文本、大小上限、私网地址拦截 | DSH `tool-web` |
 | `tool/skill` | `skills` | Skill 发现与加载 | DSH/Pi skill tool |
 | `tool/subagent` | `subagent` | 子 Agent 委派（工具名 `delegate`）：阻塞等子 agent 跑完，返回 status + summary + 子 session id；只挂在主 agent 的 tools runtime 上 | DSH `tool-subagent` |
-| `tool/ask-user` | `ask` | 向用户提问（工具名 `ask_user`）：单选 + 自由文本；没人可答时返回 `answered:false` + guidance 而不是阻塞或报错。**不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。依赖 `cap/ask` 而**不是** `cap/approval`，见 [web.zh.md §4](web.zh.md#4-提问ask_user-与-capask) | DSH `tool-ask-user` |
+| `tool/ask-user` | — | 向用户提问（工具名 `ask_user`）：单选 + 自由文本；通过 Loop `SessionInteraction` 走 HIL，platform 不支持交互时返回 `answered:false` + guidance 而不是阻塞或报错。**不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。见 [web.zh.md §4](web.zh.md#4-提问ask_user-与-human-in-the-loop) 与 [platform-interaction.zh.md](platform-interaction.zh.md) | DSH `tool-ask-user` |
 | `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
 | `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
 | `tool/schedule` | `schedule` | agent 自主排期：add / list / remove cron job，与 worker 的 cron 引擎共用 registry | — |
@@ -162,8 +162,6 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `approval/cli` | `approval.Service` | 终端 y/n 审批 | Pi `ctx.ui.confirm` |
 | `approval/auto-deny` | `approval.Service` | 自动拒绝 ask | 测试 / CI |
 | `approval/auto-allow` | `approval.Service` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
-| `ask/cli` | `ask.Service` | 终端提问，答案从 stdin 读；stdin 关闭时降级为"没人可答"而不是挂住 | DSH `tool-ask-user` 后端 |
-| `ask/unavailable` | `ask.Service` | 恒定回答"没人可答"，无人值守场景的显式接法 | — |
 
 ### 3.5 Hooks（观察与改写，非裁决）
 
@@ -419,7 +417,7 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 | 类别 | Kind |
 |---|---|
 | Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，见 `presets/subagent.yaml`；并行 fan-out 待做） |
-| Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user` + `ask/cli` / `ask/unavailable`（已落地 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 `presets/web.yaml` 与 [web.zh.md](web.zh.md)） |
+| Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user`（HIL 由 Loop + platform 承载 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 [web.zh.md](web.zh.md) 与 [platform-interaction.zh.md](platform-interaction.zh.md)） |
 | Sandbox | `sandbox/landlock`, `fs/sandbox`, `process/sandbox`（未做 → [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)） |
 | Platform | `platform/http`, `platform/rpc`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)；`platform/multiplex` / `timer` / `worker` 已落地） |
 | Multi-Agent | `loop/harness`, AgentSet 配置（未做 → [roadmap M4](roadmap.zh.md#m4--并行与多-agent需求驱动)） |

@@ -12,7 +12,7 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | Plugin Kind 命名、分类目录、MVP 分阶段落地 |
 | [plugin-interface-comparison.zh.md](plugin-interface-comparison.zh.md) | `plugin_*.go` 与 DSH 的接口级逐文件对比与取长补短 |
 | [coding-workspace.zh.md](coding-workspace.zh.md) | Coding preset 工作区与 FS 边界 |
-| [../examples/config/README.md](../examples/config/README.md) | 各场景 L1 配置示例与用法 |
+| [../presets/README.md](../presets/README.md) | 各场景 L1 preset 与用法 |
 | [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：turn 续跑契约、预算分层、todo/finish 判定、token 阈值压缩、崩溃恢复、无人值守安全边界 |
 | [subagent.zh.md](subagent.zh.md) | 子 Agent 委派：`agents/*.md` 定义格式、目录查找、工具白名单、结论读回、串行边界 |
 | [web.zh.md](web.zh.md) | 网络能力：抓取与搜索为何拆成两个接口、私网地址在 dial 时拦截、无 API Key / 无人可问时的降级 |
@@ -26,9 +26,6 @@ go run ./cmd/agent
 
 # 本地 override：复制 config.example.yaml 为 config.yaml（已在 .gitignore），只写要覆盖的实例
 cp config.example.yaml config.yaml
-
-# 或直接使用 examples/config 下的场景配置（见 examples/config/README.md）
-go run ./cmd/agent -config examples/config/local-coding.yaml "你的任务"
 
 # 带首条消息进入 REPL
 go run ./cmd/agent "帮我看看这个项目结构"
@@ -78,7 +75,7 @@ Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预
 
 Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
 
-Phase 3 网络能力已实现：`web/http-fetch`（HTML → 文本、dial 时拦截私网地址）、`web/exa-search`（缺 key 不阻断构造）、`web/scripted-*` 无网络替身、`tool/web-fetch` / `tool/web-search` / `tool/ask-user` 与 `cap/ask`（`ask/cli`、`ask/unavailable`）。
+Phase 3 网络能力已实现：`web/http-fetch`（HTML → 文本、dial 时拦截私网地址）、`web/exa-search`（缺 key 不阻断构造）、`web/scripted-*` 无网络替身、`tool/web-fetch` / `tool/web-search` / `tool/ask-user`（HIL 由 Loop + platform 承载，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
 
 Phase 3 守护外壳已实现：`platform/worker`（headless 任务，不读 stdin；带 `cron` 时转常驻定时模式）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 
