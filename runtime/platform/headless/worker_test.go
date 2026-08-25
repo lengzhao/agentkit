@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capshell "github.com/lengzhao/agentkit/cap/shell"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/headless"
 )
 
@@ -180,4 +184,70 @@ func TestWorkerHonorsCancellation(t *testing.T) {
 	if _, err := p.Receive(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("receive err = %v, want context.Canceled", err)
 	}
+}
+
+func TestWorkerPromptAndScriptAreMutuallyExclusive(t *testing.T) {
+	t.Parallel()
+
+	_, err := headless.NewWorker(headless.WorkerConfig{
+		Tasks: []headless.TaskSpec{{Prompt: "a", Script: "run.sh"}},
+	}, headless.WorkerDeps{})
+	if err == nil {
+		t.Fatal("expected an error when prompt and script are both set")
+	}
+}
+
+func TestWorkerRunsScriptTaskWithoutAgentTurn(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\necho ok\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	sh := &recordingShell{}
+	p, err := headless.NewWorker(headless.WorkerConfig{
+		Tasks: []headless.TaskSpec{
+			{Script: "run.sh"},
+			{Prompt: "after script"},
+		},
+	}, headless.WorkerDeps{
+		Workspace: workspace.Static(dir),
+		Shell:     sh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	event, err := p.Receive(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := textOfMessage(event.Message); got != "after script" {
+		t.Fatalf("task = %q, want prompt after script", got)
+	}
+	if len(sh.commands) != 1 || !strings.Contains(sh.commands[0], "run.sh") {
+		t.Fatalf("shell commands = %v", sh.commands)
+	}
+}
+
+func TestWorkerScriptRequiresWorkspaceAndShell(t *testing.T) {
+	t.Parallel()
+
+	_, err := headless.NewWorker(headless.WorkerConfig{
+		Tasks: []headless.TaskSpec{{Script: "run.sh"}},
+	}, headless.WorkerDeps{})
+	if err == nil {
+		t.Fatal("expected an error when script is set without workspace and shell")
+	}
+}
+
+type recordingShell struct {
+	commands []string
+}
+
+func (s *recordingShell) Run(_ context.Context, req capshell.Request) (capshell.Result, error) {
+	s.commands = append(s.commands, req.Command)
+	return capshell.Result{ExitCode: 0, Stdout: "ok"}, nil
 }

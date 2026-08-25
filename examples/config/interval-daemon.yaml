@@ -1,0 +1,20 @@
+# 场景：常驻守护进程，按固定间隔巡检。
+# 需链 autonomous：
+#
+#   go run ./cmd/agent -config examples/config/autonomous.yaml,examples/config/interval-daemon.yaml
+#
+# 日历型定时（"每天 9 点"）请用 cron-daemon.yaml 或系统 cron + headless-worker。
+
+platform.default:
+  use: platform/timer
+  config:
+    everySeconds: 900
+    prompt: |
+      巡检当前工作区：看看有没有新的失败测试、未提交的改动、或明显的问题。
+      有需要跟进的就用 todo 记下来并处理，没有就直接调用 finish 说明一切正常。
+    immediate: true
+    maxRuns: 0
+    sessionMode: fresh
+    sessionID: daemon
+    output: text
+    stream: false

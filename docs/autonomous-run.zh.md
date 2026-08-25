@@ -219,14 +219,20 @@ platform.default:
   config:
     tasks:
       # 无 cron：启动时立刻跑一次，跑完才进入 cron 等待
-      - "启动巡检：看看工作区状态"
-      # 带 cron：注册成定时 job
+      - prompt: "启动巡检：看看工作区状态"
+      # 带 cron + prompt：注册成定时 agent 任务
       - id: weekday-morning
         cron: "0 9 * * 1-5"
         prompt: "工作日早班巡检"
+      # 带 cron + script：直接执行 bash 脚本，不经过 agent
+      - id: nightly
+        cron: "0 3 * * *"
+        script: scripts/nightly.sh
     pollSeconds: 30
   deps:
     schedule: schedule.default   # 没有它，带 cron 的 task 是配置错误而不是被静默忽略
+    workspace: workspace.default # script 路径通过 workspace 解析
+    shell: shell.bash.default    # script 任务通过 shell 执行
 ```
 
 支持完整 5 段式（分 时 日 月 周）：`*`、`N`、`a-b`、`a,b,c`、`*/n`、`a-b/n`，月份和星期可用 `jan` / `mon` 之类的名字，另有 `@hourly` / `@daily` / `@weekly` / `@monthly` / `@yearly`。星期 0 和 7 都是周日。

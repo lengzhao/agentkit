@@ -20,7 +20,8 @@ platform.default:
   config:
     tasks:
       # 无 cron 的 task：启动时立刻跑一次，跑完才进入 cron 等待。
-      - "启动巡检：看看工作区当前状态，有问题用 todo 记下来处理，没问题直接 finish。"
+      # prompt 发给 agent；script 直接执行 bash 脚本（二者互斥）。
+      - prompt: "启动巡检：看看工作区当前状态，有问题用 todo 记下来处理，没问题直接 finish。"
       # 带 cron 的 task：注册成定时 job。cron 为 5 段式
       # （分 时 日 月 周），也支持 @hourly / @daily / @weekly / @monthly / @yearly。
       - id: weekday-morning
@@ -38,6 +39,8 @@ platform.default:
     pollSeconds: 30
   deps:
     schedule: schedule.default
+    workspace: workspace.default
+    shell: shell.bash.default
 
 # job 表落在工作区里，agent 加的 job 因此能跨重启存活。
 # 写入走临时文件 + rename：进程在写一半时被杀，回来不会读到截断的 job 表。

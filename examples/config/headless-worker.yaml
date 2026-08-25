@@ -1,0 +1,16 @@
+# 场景：headless 一次性任务（不读 stdin）。
+# 需链 autonomous 能力栈：
+#
+#   go run ./cmd/agent -config examples/config/autonomous.yaml,examples/config/headless-worker.yaml "任务"
+#
+# 适合 CI、容器、系统 cron（stdin 为 /dev/null 时 CLI 会挂住，worker 不会）。
+
+platform.default:
+  use: platform/worker
+  config:
+    tasks: []
+    prompt: "检查当前工作区状态并汇报，然后调用 finish 收尾。"
+    sessionMode: fresh
+    sessionID: worker
+    output: text
+    stream: false

@@ -10,6 +10,7 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [reference-analysis.zh.md](reference-analysis.zh.md) | DeepSeek Harness 与 Pi 对比分析，提炼通用 Agent 能力 |
 | [plugin-catalog.zh.md](plugin-catalog.zh.md) | Plugin Kind 命名、分类目录、MVP 分阶段落地 |
 | [coding-workspace.zh.md](coding-workspace.zh.md) | Coding preset 工作区与 FS 边界 |
+| [../examples/config/README.md](../examples/config/README.md) | 各场景 L1 配置示例与用法 |
 | [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：turn 续跑契约、预算分层、todo/finish 判定、token 阈值压缩、崩溃恢复、无人值守安全边界 |
 
 ## 快速开始
@@ -21,6 +22,9 @@ go run ./cmd/agent
 
 # 本地 override：复制 config.example.yaml 为 config.yaml（已在 .gitignore），只写要覆盖的实例
 cp config.example.yaml config.yaml
+
+# 或直接使用 examples/config 下的场景配置（见 examples/config/README.md）
+go run ./cmd/agent -config examples/config/local-coding.yaml "你的任务"
 
 # 带首条消息进入 REPL
 go run ./cmd/agent "帮我看看这个项目结构"

@@ -20,7 +20,10 @@ const (
 type Job struct {
 	ID     string `json:"id"`
 	Cron   string `json:"cron"`
-	Prompt string `json:"prompt"`
+	Prompt string `json:"prompt,omitempty"`
+	// Script is a workspace-relative bash script. When set, the job runs the
+	// script directly instead of starting an agent turn.
+	Script string `json:"script,omitempty"`
 	Source string `json:"source"`
 	// Disabled jobs stay in the registry but never fire.
 	Disabled bool `json:"disabled,omitempty"`

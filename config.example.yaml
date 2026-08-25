@@ -38,3 +38,64 @@ prompt.custom.default:
       - 优先最小化 diff，不做无关改动
       - 修改后运行测试再声称完成
       - 用中文回复
+
+# 示例：自定义 cron job 表路径（默认 schedule.json，落在 workspace 根下）
+# schedule.default:
+#   use: schedule/file
+#   config:
+#     path: .agentkit/schedule.json
+#   deps:
+#     workspace: workspace.default
+
+# 示例：常驻 cron 守护进程（日历型定时 + agent 自主排期）
+# 完整能力栈建议链 preset：-config presets/autonomous.yaml,presets/cron.yaml
+# 下面展示如何在 config.yaml 里手写核心片段。
+#
+# platform.default:
+#   use: platform/worker
+#   config:
+#     tasks:
+#       - prompt: "启动巡检"
+#       - id: weekday-morning
+#         cron: "0 9 * * 1-5"
+#         prompt: "工作日早班巡检"
+#       - id: nightly
+#         cron: "0 3 * * *"
+#         script: scripts/nightly.sh
+#     sessionMode: fresh
+#     sessionID: cron
+#     pollSeconds: 30
+#   deps:
+#     schedule: schedule.default
+#     workspace: workspace.default
+#     shell: shell.bash.default
+#
+# tools.default:
+#   use: tools/runtime
+#   config:
+#     defaultTimeoutSeconds: 120
+#     maxResultBytes: 8192
+#   deps:
+#     hooks: hooks.default
+#     tools:
+#       - tool.read-file.default
+#       - tool.write-file.default
+#       - tool.edit-file.default
+#       - tool.grep.default
+#       - tool.find.default
+#       - tool.list-dir.default
+#       - tool.shell.default
+#       - tool.skill.default
+#       - tool.todo.default
+#       - tool.finish.default
+#       - tool.schedule.default
+#     policies:
+#       - policy.dangerous-shell.default
+#     approval: approval.cli.default
+#
+# tool.schedule.default:
+#   use: tool/schedule
+#   config:
+#     maxJobs: 16   # agent 创建的 job 上限；config 里声明的 job 不占此额度
+#   deps:
+#     schedule: schedule.default

@@ -1,0 +1,164 @@
+# 场景：无人值守自主运行。
+#
+#   go run ./cmd/agent -config examples/config/autonomous.yaml "你的多轮任务"
+#
+# 与默认 L0 的区别：
+#   1. platform once=true：跑完即退出
+#   2. agent 带 budget：续跑 / 步数 / 墙钟 / token 四重上限
+#   3. hook/turn-continue：未 finish 或 todo 未完成时自动续跑
+#   4. tool/todo + tool/finish：可审计的收尾信号
+#   5. approval/auto-allow + policy 白名单（auto-allow 本身不做过滤）
+
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+  deps:
+    commands: commands.default
+
+agent.coder.default:
+  use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.4
+    maxSteps: 20
+    budget:
+      maxContinuations: 30
+      maxTotalSteps: 300
+      wallClockSeconds: 7200
+      maxTotalTokens: 2000000
+      softRatio: 0.8
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    sessionStore: sessionStore.default
+    llm: llm.default
+    hooks: hooks.default
+    prompt: prompt.default
+    tools: tools.default
+    compaction:
+      - compaction.prune.default
+      - compaction.token-limit.default
+
+hooks.default:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.before-step.default
+      - hook.turn-continue.default
+
+hook.before-step.default:
+  use: hook/before-step
+  deps:
+    sessionStore: sessionStore.default
+    services:
+      - compaction.prune.default
+      - compaction.token-limit.default
+
+compaction.token-limit.default:
+  use: compaction/token-limit
+  config:
+    contextWindow: 200000
+    triggerRatio: 0.7
+    charsPerToken: 3
+  deps:
+    services:
+      - compaction.summary.default
+
+hook.turn-continue.default:
+  use: hook/turn-continue
+  config:
+    maxContinuations: 30
+    stallLimit: 3
+    requireFinish: true
+    requireTodosDone: true
+  deps:
+    sessionStore: sessionStore.default
+
+tools.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+  deps:
+    hooks: hooks.default
+    tools:
+      - tool.read-file.default
+      - tool.write-file.default
+      - tool.edit-file.default
+      - tool.grep.default
+      - tool.find.default
+      - tool.list-dir.default
+      - tool.shell.default
+      - tool.skill.default
+      - tool.todo.default
+      - tool.finish.default
+    policies:
+      - policy.dangerous-shell.default
+      - policy.path-denylist.default
+      - policy.shell-allowlist.default
+    approval: approval.auto-allow.default
+
+tool.todo.default:
+  use: tool/todo
+  deps:
+    sessionStore: sessionStore.default
+
+tool.finish.default:
+  use: tool/finish
+  deps:
+    sessionStore: sessionStore.default
+
+approval.auto-allow.default:
+  use: approval/auto-allow
+  config:
+    reason: "auto-allowed: autonomous run"
+
+policy.path-denylist.default:
+  use: policy/path-denylist
+  config:
+    tools:
+      - write
+      - edit
+
+policy.shell-allowlist.default:
+  use: policy/shell-allowlist
+  config:
+    strict: true
+    allow:
+      - ls
+      - cat
+      - head
+      - tail
+      - wc
+      - find
+      - grep
+      - rg
+      - pwd
+      - echo
+      - go build
+      - go test
+      - go vet
+      - go run
+      - go fmt
+      - gofmt
+      - git status
+      - git diff
+      - git log
+      - git show
+      - git add
+      - git stash list
+    deny:
+      - rm
+      - sudo
+      - chmod
+      - chown
+      - curl
+      - wget
+      - ssh
+      - scp
+      - git push
+      - git reset --hard
+      - git clean

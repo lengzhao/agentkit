@@ -66,6 +66,15 @@ sessionStore.default:
   deps:
     workspace: workspace.default
 
+# cron job 表持久化；worker 的 cron 模式与 tool/schedule 共用此 registry。
+# 写入走临时文件 + rename，进程写一半被杀不会留下截断的 job 表。
+schedule.default:
+  use: schedule/file
+  config:
+    path: schedule.json
+  deps:
+    workspace: workspace.default
+
 credentials.default:
   use: credentials/env
 
@@ -213,6 +222,14 @@ tool.skill.default:
   deps:
     skills: skills.default
     sessionStore: sessionStore.default
+
+tool.schedule.default:
+  use: tool/schedule
+  config:
+    # agent 创建的 job 上限；0 表示默认 32。config 里声明的 job 不占此额度。
+    maxJobs: 32
+  deps:
+    schedule: schedule.default
 
 fs.workspace.default:
   use: fs/local

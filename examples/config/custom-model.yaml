@@ -1,0 +1,31 @@
+# 场景：覆盖默认模型与 API 端点。
+# 同 id 整颗替换；改 model 时 agent 与 summary 的 llm 需分别覆盖（若都要换）。
+
+llm.default:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+  deps:
+    credentials: credentials.default
+
+agent.coder.default:
+  use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.4
+    maxSteps: 20
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    sessionStore: sessionStore.default
+    llm: llm.default
+    hooks: hooks.default
+    prompt: prompt.default
+    tools: tools.default
+    compaction:
+      - compaction.prune.default
+      - compaction.summary.default

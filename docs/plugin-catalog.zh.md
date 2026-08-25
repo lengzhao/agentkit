@@ -99,7 +99,7 @@ flowchart TB
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
-| `platform/worker` | `agentkit.Platform` | headless 任务 runner（从不读 stdin，`output` 支持 text / json）。task 带 `cron` 时转为常驻定时模式，需 `deps.schedule` | DSH headless |
+| `platform/worker` | `agentkit.Platform` | headless 任务 runner（从不读 stdin，`output` 支持 text / json）。task 带 `cron` 时转为常驻定时模式，需 `deps.schedule`；task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`） | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
 ### 3.2 Agent Spine

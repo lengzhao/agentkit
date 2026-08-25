@@ -1,0 +1,9 @@
+# 场景：单次任务，跑完即退出（不等下一条 stdin）。
+# 适合脚本里传首条消息后一次性执行。
+
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+  deps:
+    commands: commands.default

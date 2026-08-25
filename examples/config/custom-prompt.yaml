@@ -1,0 +1,20 @@
+# 场景：在 system message 里插入自定义静态指令。
+# sections 按 deps 列表顺序拼接。
+
+prompt.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.custom.default
+      - prompt.agents-md.default
+      - prompt.skills.default
+
+prompt.custom.default:
+  use: prompt/section/static
+  config:
+    name: custom-instructions
+    content: |
+      你是一名资深 Go 工程师。
+      - 优先最小化 diff，不做无关改动
+      - 修改后运行测试再声称完成
+      - 用中文回复

@@ -14,13 +14,21 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/cap/shell"
+	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
 // TaskSpec is one worker task. In YAML it may be written either as a bare string
 // (run once at startup) or as an object with a cron expression (run on that
 // schedule, keeping the process resident).
+//
+// Each task uses exactly one mode:
+//   - prompt: send text to the agent as a turn
+//   - script: run a workspace-relative bash script without an agent turn
 type TaskSpec struct {
 	Prompt string `json:"prompt"`
+	// Script is a workspace-relative path to a bash script executed directly.
+	Script string `json:"script,omitempty"`
 	// Cron, when set, turns this task into a scheduled job instead of a
 	// run-once-at-startup task.
 	Cron string `json:"cron,omitempty"`
@@ -79,6 +87,10 @@ type WorkerDeps struct {
 	// Schedule enables cron mode. Without it, cron-bearing tasks are a config
 	// error rather than a silently ignored setting.
 	Schedule schedule.Registry `json:"schedule,omitempty"`
+	// Workspace resolves script paths. Required when any task uses script.
+	Workspace workspace.Service `json:"workspace,omitempty"`
+	// Shell runs script tasks. Required when any task uses script.
+	Shell shell.Executor `json:"shell,omitempty"`
 }
 
 const defaultPollSeconds = 30
@@ -87,8 +99,10 @@ const defaultPollSeconds = 30
 // stays resident firing cron jobs. It never reads stdin, so it is safe under
 // cron, systemd, and CI.
 type Worker struct {
-	immediate []string
+	immediate []TaskSpec
 	registry  schedule.Registry
+	workspace workspace.Service
+	shell     shell.Executor
 	poll      time.Duration
 	naming    sessionNamer
 	emitter   *emitter
@@ -106,6 +120,9 @@ type Worker struct {
 func NewWorker(cfg WorkerConfig, deps WorkerDeps) (agentkit.Platform, error) {
 	tasks, err := resolveWorkerTasks(cfg)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateScriptDeps(tasks, deps); err != nil {
 		return nil, err
 	}
 	scheduled, immediate := splitTasks(tasks)
@@ -132,6 +149,8 @@ func NewWorker(cfg WorkerConfig, deps WorkerDeps) (agentkit.Platform, error) {
 	w := &Worker{
 		immediate: immediate,
 		registry:  deps.Schedule,
+		workspace: deps.Workspace,
+		shell:     deps.Shell,
 		poll:      poll,
 		naming:    newSessionNamer(mode, sessionID, nil),
 		emitter:   newEmitter(cfg.Output, cfg.Stream),
@@ -158,12 +177,18 @@ func resolveWorkerTasks(cfg WorkerConfig) ([]TaskSpec, error) {
 	tasks := make([]TaskSpec, 0, len(cfg.Tasks))
 	for i, task := range cfg.Tasks {
 		task.Prompt = strings.TrimSpace(task.Prompt)
+		task.Script = strings.TrimSpace(task.Script)
 		task.Cron = strings.TrimSpace(task.Cron)
-		if task.Prompt == "" {
+		hasPrompt := task.Prompt != ""
+		hasScript := task.Script != ""
+		if hasPrompt && hasScript {
+			return nil, fmt.Errorf("platform/worker task %d: prompt and script are mutually exclusive", i+1)
+		}
+		if !hasPrompt && !hasScript {
 			if task.Cron == "" {
 				continue // a blank entry is just noise
 			}
-			return nil, fmt.Errorf("platform/worker task %d has a cron but no prompt", i+1)
+			return nil, fmt.Errorf("platform/worker task %d has a cron but neither prompt nor script", i+1)
 		}
 		if task.ID == "" {
 			task.ID = fmt.Sprintf("task-%d", i+1)
@@ -176,19 +201,44 @@ func resolveWorkerTasks(cfg WorkerConfig) ([]TaskSpec, error) {
 	return tasks, nil
 }
 
-func splitTasks(tasks []TaskSpec) (scheduled []schedule.Job, immediate []string) {
+func validateScriptDeps(tasks []TaskSpec, deps WorkerDeps) error {
+	needsScript := false
+	for _, task := range tasks {
+		if strings.TrimSpace(task.Script) != "" {
+			needsScript = true
+			break
+		}
+	}
+	if !needsScript {
+		return nil
+	}
+	if deps.Workspace == nil {
+		return fmt.Errorf("platform/worker tasks with script require workspace dependency")
+	}
+	if deps.Shell == nil {
+		return fmt.Errorf("platform/worker tasks with script require shell dependency")
+	}
+	return nil
+}
+
+func splitTasks(tasks []TaskSpec) (scheduled []schedule.Job, immediate []TaskSpec) {
 	for _, task := range tasks {
 		if !task.scheduled() {
-			immediate = append(immediate, task.Prompt)
+			immediate = append(immediate, task)
 			continue
 		}
-		scheduled = append(scheduled, schedule.Job{
+		job := schedule.Job{
 			ID:     task.ID,
 			Cron:   task.Cron,
-			Prompt: task.Prompt,
 			Note:   task.Note,
 			Source: schedule.SourceConfig,
-		})
+		}
+		if task.Script != "" {
+			job.Script = task.Script
+		} else {
+			job.Prompt = task.Prompt
+		}
+		scheduled = append(scheduled, job)
 	}
 	return scheduled, immediate
 }
@@ -200,16 +250,26 @@ func (w *Worker) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 
 	// Startup tasks first: a resident worker should do its immediate work before
 	// settling into the schedule.
-	w.mu.Lock()
-	if w.next < len(w.immediate) {
-		prompt := w.immediate[w.next]
+	for {
+		w.mu.Lock()
+		if w.next >= len(w.immediate) {
+			w.mu.Unlock()
+			break
+		}
+		task := w.immediate[w.next]
 		w.next++
 		run := w.runCount
 		w.runCount++
 		w.mu.Unlock()
-		return w.event(run, prompt), nil
+
+		if task.Script != "" {
+			if err := w.runScript(ctx, task.Script); err != nil {
+				return agentkit.MessageEvent{}, err
+			}
+			continue
+		}
+		return w.event(run, task.Prompt), nil
 	}
-	w.mu.Unlock()
 
 	if w.registry == nil {
 		return agentkit.MessageEvent{}, io.EOF
@@ -223,6 +283,12 @@ func (w *Worker) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 func (w *Worker) receiveScheduled(ctx context.Context) (agentkit.MessageEvent, error) {
 	for {
 		if job, ok := w.popDue(); ok {
+			if strings.TrimSpace(job.Script) != "" {
+				if err := w.runScript(ctx, job.Script); err != nil {
+					return agentkit.MessageEvent{}, err
+				}
+				continue
+			}
 			w.mu.Lock()
 			run := w.runCount
 			w.runCount++
@@ -244,6 +310,27 @@ func (w *Worker) receiveScheduled(ctx context.Context) (agentkit.MessageEvent, e
 			return agentkit.MessageEvent{}, err
 		}
 	}
+}
+
+func (w *Worker) runScript(ctx context.Context, scriptPath string) error {
+	path, err := w.workspace.Resolve(ctx, scriptPath)
+	if err != nil {
+		return fmt.Errorf("resolve script %q: %w", scriptPath, err)
+	}
+	result, err := w.shell.Run(ctx, shell.Request{Command: fmt.Sprintf("bash %q", path)})
+	if err != nil {
+		return fmt.Errorf("run script %q: %w", scriptPath, err)
+	}
+	slog.Info("task script finished",
+		"script", scriptPath,
+		"exit_code", result.ExitCode,
+		"stdout_bytes", len(result.Stdout),
+		"stderr_bytes", len(result.Stderr),
+	)
+	if result.ExitCode != 0 {
+		return fmt.Errorf("script %q failed with exit code %d: %s", scriptPath, result.ExitCode, strings.TrimSpace(result.Stderr))
+	}
+	return nil
 }
 
 // waitFor is the shorter of "until the next boundary" and the poll interval.

@@ -1,0 +1,16 @@
+# 场景：自定义 cron job 表路径与 agent 排期上限。
+# 可单独覆盖，也可与 cron-daemon.yaml 链式合并（后者会整颗替换 schedule / tool.schedule）。
+
+schedule.default:
+  use: schedule/file
+  config:
+    path: .agent/schedule.json
+  deps:
+    workspace: workspace.default
+
+tool.schedule.default:
+  use: tool/schedule
+  config:
+    maxJobs: 16
+  deps:
+    schedule: schedule.default
