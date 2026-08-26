@@ -30,7 +30,10 @@ func New(cfg Config) (credentials.Store, error) {
 	return &Store{prefix: cfg.Prefix}, nil
 }
 
-func (s *Store) Resolve(_ context.Context, ref string) (credentials.Secret, error) {
+func (s *Store) Resolve(ctx context.Context, ref string) (credentials.Secret, error) {
+	if secret, ok := credentials.SecretFromContext(ctx, ref); ok {
+		return secret, nil
+	}
 	key := credentials.EnvKey(ref)
 	if s.prefix != "" {
 		key = s.prefix + key

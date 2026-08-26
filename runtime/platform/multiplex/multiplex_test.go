@@ -12,10 +12,13 @@ import (
 )
 
 type stubPlatform struct {
+	id      string
 	receive []agentkit.MessageEvent
 	recvErr []error
 	sent    []agentkit.OutboundEvent
 }
+
+func (s *stubPlatform) PlatformID() string { return s.id }
 
 func (s *stubPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
 	if len(s.receive) == 0 {
@@ -39,9 +42,15 @@ func (s *stubPlatform) Send(_ context.Context, out agentkit.OutboundEvent) error
 func TestMultiplexPermissionCapabilityForwardsLeaf(t *testing.T) {
 	t.Parallel()
 
-	cli := &capableStub{cap: permission.Capability{Interactive: true}}
-	headless := &capableStub{cap: permission.Capability{Interactive: false}}
-	m, err := multiplex.New(multiplex.Config{Names: []string{"cli", "headless"}}, multiplex.Deps{
+	cli := &capableStub{
+		stubPlatform: stubPlatform{id: "cli"},
+		cap:          permission.Capability{Interactive: true},
+	}
+	headless := &capableStub{
+		stubPlatform: stubPlatform{id: "headless"},
+		cap:          permission.Capability{Interactive: false},
+	}
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{
 		Platforms: []agentkit.Platform{cli, headless},
 	})
 	if err != nil {
@@ -71,9 +80,9 @@ func (s *capableStub) PermissionCapability() permission.Capability {
 func TestMultiplexRoutesOutboundByPlatformID(t *testing.T) {
 	t.Parallel()
 
-	cli := &stubPlatform{}
-	slack := &stubPlatform{}
-	m, err := multiplex.New(multiplex.Config{Names: []string{"cli", "slack"}}, multiplex.Deps{
+	cli := &stubPlatform{id: "cli"}
+	slack := &stubPlatform{id: "slack"}
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{
 		Platforms: []agentkit.Platform{cli, slack},
 	})
 	if err != nil {
@@ -98,6 +107,7 @@ func TestMultiplexReceiveSetsPlatformID(t *testing.T) {
 	t.Parallel()
 
 	cli := &stubPlatform{
+		id: "cli",
 		receive: []agentkit.MessageEvent{{
 			Message: agentkit.ModelMessage{
 				Role:    "user",
@@ -105,9 +115,9 @@ func TestMultiplexReceiveSetsPlatformID(t *testing.T) {
 			},
 		}},
 	}
-	slack := &stubPlatform{}
+	slack := &stubPlatform{id: "slack"}
 
-	m, err := multiplex.New(multiplex.Config{Names: []string{"cli", "slack"}}, multiplex.Deps{
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{
 		Platforms: []agentkit.Platform{cli, slack},
 	})
 	if err != nil {
@@ -128,5 +138,31 @@ func TestMultiplexReceiveSetsPlatformID(t *testing.T) {
 	_, err = m.Receive(context.Background())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF after all platforms closed, got %v", err)
+	}
+}
+
+func TestMultiplexDisambiguatesDuplicatePlatformIDs(t *testing.T) {
+	t.Parallel()
+
+	first := &stubPlatform{id: "timer"}
+	second := &stubPlatform{id: "timer"}
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{
+		Platforms: []agentkit.Platform{first, second},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Send(context.Background(), agentkit.OutboundEvent{
+		PlatformID: "timer1",
+		Type:       agentkit.EventMessageEnd,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.sent) != 0 {
+		t.Fatalf("first sent=%d, want 0", len(first.sent))
+	}
+	if len(second.sent) != 1 {
+		t.Fatalf("second sent=%d, want 1", len(second.sent))
 	}
 }

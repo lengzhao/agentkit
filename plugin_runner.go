@@ -31,3 +31,10 @@ type Platform interface {
 	Receive(context.Context) (MessageEvent, error)
 	Send(context.Context, OutboundEvent) error
 }
+
+// PlatformIdentifier exposes the stable routing ID for a leaf platform.
+// Multiplex and other aggregators use it to key sub-platforms without extra
+// config; conflicts are disambiguated with an index suffix.
+type PlatformIdentifier interface {
+	PlatformID() string
+}

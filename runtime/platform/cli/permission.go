@@ -70,7 +70,7 @@ func decodePermissionRequest(data json.RawMessage) (permission.RequestPayload, e
 func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
 		SessionID:  p.sessionID,
-		PlatformID: "cli",
+		PlatformID: platformID,
 		Reply: permission.MarshalReply(permission.Reply{
 			RequestID: pending.requestID,
 			Text:      text,

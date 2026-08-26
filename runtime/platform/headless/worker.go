@@ -18,6 +18,8 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
+const workerPlatformID = "worker"
+
 // TaskSpec is one worker task. In YAML it may be written either as a bare string
 // (run once at startup) or as an object with a cron expression (run on that
 // schedule, keeping the process resident).
@@ -249,6 +251,8 @@ func splitTasks(tasks []TaskSpec) (scheduled []schedule.Job, immediate []TaskSpe
 	return scheduled, immediate
 }
 
+func (w *Worker) PlatformID() string { return workerPlatformID }
+
 func (w *Worker) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return agentkit.MessageEvent{}, err
@@ -384,7 +388,7 @@ func (w *Worker) pushDue(jobs []schedule.Job) {
 func (w *Worker) event(run int, prompt string) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
 		SessionID:  w.naming.forRun(run),
-		PlatformID: "worker",
+		PlatformID: workerPlatformID,
 		Message:    userMessage(prompt),
 	}
 }

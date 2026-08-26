@@ -15,6 +15,8 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+const platformID = "cli"
+
 type Config struct {
 	// Prompt is first message; falls back to the positional command-line arguments.
 	Prompt string `json:"prompt"`
@@ -61,6 +63,8 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		commands:      deps.Commands,
 	}, nil
 }
+
+func (p *Platform) PlatformID() string { return platformID }
 
 // promptArgs returns the positional arguments the first message may come from.
 // Once the host has parsed its flags, flag.Args() holds exactly the positional
@@ -119,7 +123,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	}
 	return agentkit.MessageEvent{
 		SessionID:  p.sessionID,
-		PlatformID: "cli",
+		PlatformID: platformID,
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},

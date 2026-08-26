@@ -12,6 +12,8 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+const timerPlatformID = "timer"
+
 type TimerConfig struct {
 	// EverySeconds is the tick interval. Required.
 	EverySeconds int `json:"everySeconds"`
@@ -92,6 +94,8 @@ func NewTimer(cfg TimerConfig) (agentkit.Platform, error) {
 	}, nil
 }
 
+func (t *Timer) PlatformID() string { return timerPlatformID }
+
 func (t *Timer) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return agentkit.MessageEvent{}, err
@@ -122,7 +126,7 @@ func (t *Timer) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	slog.Info("timer tick", "run", run+1, "interval", t.interval.String())
 	return agentkit.MessageEvent{
 		SessionID:  t.naming.forRun(run),
-		PlatformID: "timer",
+		PlatformID: timerPlatformID,
 		Message:    userMessage(t.prompt),
 	}, nil
 }

@@ -11,10 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-type Config struct {
-	// Names are labels for the platforms dep, positionally matched; used in logs and PlatformID.
-	Names []string `json:"names,omitempty"`
-}
+type Config struct{}
 
 type Deps struct {
 	Platforms []agentkit.Platform `json:"platforms"`
@@ -42,17 +39,12 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if len(deps.Platforms) == 0 {
 		return nil, fmt.Errorf("multiplex requires at least one platform")
 	}
-	platforms := make(map[string]agentkit.Platform, len(deps.Platforms))
-	active := make(map[string]bool, len(deps.Platforms))
-	for i, p := range deps.Platforms {
-		if p == nil {
-			return nil, fmt.Errorf("platforms[%d] is nil", i)
-		}
-		id := platformID(cfg.Names, i)
-		if _, exists := platforms[id]; exists {
-			return nil, fmt.Errorf("duplicate platform id %q", id)
-		}
-		platforms[id] = p
+	platforms, err := assignPlatformIDs(deps.Platforms)
+	if err != nil {
+		return nil, err
+	}
+	active := make(map[string]bool, len(platforms))
+	for id := range platforms {
 		active[id] = true
 	}
 	return &Platform{
@@ -62,11 +54,46 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	}, nil
 }
 
-func platformID(names []string, index int) string {
-	if index < len(names) && names[index] != "" {
-		return names[index]
+func assignPlatformIDs(platforms []agentkit.Platform) (map[string]agentkit.Platform, error) {
+	out := make(map[string]agentkit.Platform, len(platforms))
+	used := make(map[string]struct{}, len(platforms))
+	for i, p := range platforms {
+		if p == nil {
+			return nil, fmt.Errorf("platforms[%d] is nil", i)
+		}
+		base, err := leafPlatformID(p, i)
+		if err != nil {
+			return nil, err
+		}
+		id := uniquePlatformKey(base, i, used)
+		used[id] = struct{}{}
+		out[id] = p
 	}
-	return strconv.Itoa(index)
+	return out, nil
+}
+
+func leafPlatformID(p agentkit.Platform, index int) (string, error) {
+	ider, ok := p.(agentkit.PlatformIdentifier)
+	if !ok {
+		return "", fmt.Errorf("platforms[%d] does not implement PlatformIdentifier", index)
+	}
+	id := ider.PlatformID()
+	if id == "" {
+		return "", fmt.Errorf("platforms[%d] has empty PlatformID", index)
+	}
+	return id, nil
+}
+
+func uniquePlatformKey(base string, index int, used map[string]struct{}) string {
+	if _, exists := used[base]; !exists {
+		return base
+	}
+	for n := index; ; n++ {
+		candidate := base + strconv.Itoa(n)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
 }
 
 func (m *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
