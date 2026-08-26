@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/fs"
+	"github.com/lengzhao/agentkit/plugins/tool/shell"
+	"github.com/lengzhao/agentkit/plugins/tool/skill"
 )
 
 // schemaOf builds a throwaway tool over In so we exercise the same reflection
@@ -37,7 +39,7 @@ func TestToolInputSchemas(t *testing.T) {
 	}{
 		{
 			name: "find",
-			got:  schemaOf[tool.FindInput](t),
+			got:  schemaOf[fs.FindInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -49,7 +51,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "grep",
-			got:  schemaOf[tool.GrepInput](t),
+			got:  schemaOf[fs.GrepInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -63,7 +65,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "ls",
-			got:  schemaOf[tool.ListDirInput](t),
+			got:  schemaOf[fs.ListDirInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -73,7 +75,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "read",
-			got:  schemaOf[tool.ReadInput](t),
+			got:  schemaOf[fs.ReadInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -84,7 +86,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "write",
-			got:  schemaOf[tool.WriteInput](t),
+			got:  schemaOf[fs.WriteInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -96,7 +98,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "bash",
-			got:  schemaOf[tool.ShellInput](t),
+			got:  schemaOf[shell.ShellInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -107,7 +109,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "skill",
-			got:  schemaOf[tool.SkillInput](t),
+			got:  schemaOf[skill.SkillInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -118,7 +120,7 @@ func TestToolInputSchemas(t *testing.T) {
 		},
 		{
 			name: "edit",
-			got:  schemaOf[tool.EditInput](t),
+			got:  schemaOf[fs.EditInput](t),
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{

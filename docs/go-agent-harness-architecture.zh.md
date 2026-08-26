@@ -776,6 +776,10 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 
 **本期串行**：一次 `delegate` 跑一个子 Agent 并阻塞等它结束。并行 fan-out 需要在 `Run` 旁边**加** `Start` / `Handle` 异步接口，并先解决共享 workspace 的写冲突——那是与 `runner.maxConcurrentTurns` 默认 1 同源的问题。
 
+### 5.11 MCP 动态工具
+
+MCP server 使用与 Cursor 等项目相同的 `mcpServers` JSON（默认 `.cursor/mcp.json` + `global:mcp.json`），由 `tool/mcp` 加载并作为动态工具源，经 `tools/runtime` 的 `deps.dynamicTools` 暴露给模型。每次工具发现前重读配置并重连变更的 server；模型看到的是带 prefix 的原生 MCP 工具 schema，而不是泛化 `mcp_call`。使用手册见 [mcp.zh.md](mcp.zh.md)。
+
 ## 6. Agent Spine
 
 ### 6.1 Session
@@ -1036,10 +1040,14 @@ LLM Runtime 负责：
 
 ```text
 plugins/tool/
-  fs_workspace.go      # tool/fs-workspace → 返回 ToolPack(read, write, edit, grep, find, ls)
-  shell_bash.go        # tool/shell-bash → bash
-  web_fetch_http.go    # tool/web-fetch-http → web_fetch
-  web_search_exa.go    # tool/web-search-exa → web_search
+  fs/           # tool/fs-workspace, tool/fs-memory
+  shell/        # tool/shell-bash
+  web/          # tool/web-fetch-http, tool/web-search-exa, ...
+  mcp/          # tool/mcp
+  subagent/     # tool/subagent
+  todo/         # tool/todo
+  finish/       # tool/finish
+  ...
 ```
 
 只有真正跨多个插件共享、且不适合内聚进单个 tool 的能力才保留独立插件：
@@ -1138,7 +1146,8 @@ package all
 
 import (
     _ "github.com/lengzhao/agentkit/plugins/fs"
-    _ "github.com/lengzhao/agentkit/plugins/tool"
+    _ "github.com/lengzhao/agentkit/plugins/tool/fs"
+    _ "github.com/lengzhao/agentkit/plugins/tool/mcp"
     _ "github.com/lengzhao/agentkit/plugins/compaction"
 )
 ```

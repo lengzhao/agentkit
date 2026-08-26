@@ -206,6 +206,8 @@ tools.default:
       - tool.web-fetch-http.default
       - tool.web-search-exa.default
       - tool.ask-user.default
+    dynamicTools:
+      - mcp.default
     policies:
       - policy.dangerous-shell.default
     approval: approval.cli.default
@@ -300,6 +302,16 @@ tool.web-search-exa.default:
 
 tool.ask-user.default:
   use: tool/ask-user
+
+mcp.default:
+  use: tool/mcp
+  config:
+    files:
+      - .cursor/mcp.json
+      - global:mcp.json
+  deps:
+    workspace: workspace.default
+    credentials: credentials.default
 
 policy.dangerous-shell.default:
   use: policy/deny-dangerous-shell

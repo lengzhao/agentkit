@@ -70,6 +70,8 @@ tools.default:
       - tool.todo.default
       - tool.finish.default
       - tool.schedule.default
+    dynamicTools:
+      - mcp.default
     policies:
       - policy.dangerous-shell.default
       - policy.path-denylist.default

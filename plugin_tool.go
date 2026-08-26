@@ -13,6 +13,12 @@ type Tool interface {
 	Call(context.Context, ToolCall) (ToolResult, error)
 }
 
+// ToolProvider supplies tools whose definitions may change between turns.
+// Implementations re-read configuration or rediscover remote tools on each call.
+type ToolProvider interface {
+	ListTools(context.Context) ([]Tool, error)
+}
+
 // ToolPack is one plugin instance that exposes one or more model-visible tools.
 type ToolPack []Tool
 

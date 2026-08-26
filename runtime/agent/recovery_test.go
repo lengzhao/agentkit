@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/fs"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
@@ -67,7 +67,7 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 
 func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLMProvider) agentkit.Agent {
 	t.Helper()
-	readPack, err := tool.NewFSMemory(tool.FSMemoryConfig{
+	readPack, err := fs.NewFSMemory(fs.FSMemoryConfig{
 		Files: map[string]string{"README.md": "hello"},
 		Tools: []string{"read"},
 	})

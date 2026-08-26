@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -22,21 +23,25 @@ type RuntimeConfig struct {
 }
 
 type RuntimeDeps struct {
-	Tools    []agentkit.ToolPack  `json:"tools"`
-	Policies []agentkit.Policy    `json:"policies,omitempty"`
-	Approval agentkit.Approval    `json:"approval,omitempty"`
-	Hooks    agentkit.HookRuntime `json:"hooks,omitempty"`
+	Tools        []agentkit.ToolPack      `json:"tools"`
+	DynamicTools []agentkit.ToolProvider  `json:"dynamicTools,omitempty"`
+	Policies     []agentkit.Policy        `json:"policies,omitempty"`
+	Approval     agentkit.Approval        `json:"approval,omitempty"`
+	Hooks        agentkit.HookRuntime     `json:"hooks,omitempty"`
 }
 
 // Runtime executes tools through the policy and approval pipeline.
 type Runtime struct {
-	tools          map[string]agentkit.Tool
-	policies       []agentkit.Policy
-	approval       agentkit.Approval
-	hooks          agentkit.HookRuntime
-	defaultTimeout time.Duration
-	maxResultBytes int
-	toolTimeouts   map[string]time.Duration
+	tools            map[string]agentkit.Tool
+	dynamicProviders []agentkit.ToolProvider
+	dynamicTools     map[string]agentkit.Tool
+	dynamicMu        sync.Mutex
+	policies         []agentkit.Policy
+	approval         agentkit.Approval
+	hooks            agentkit.HookRuntime
+	defaultTimeout   time.Duration
+	maxResultBytes   int
+	toolTimeouts     map[string]time.Duration
 }
 
 // NewRuntime registers tools/runtime: Tool orchestration: visibility, policy evaluation, hooks, execution, result capping.
@@ -70,18 +75,60 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		defaultTimeout = time.Duration(cfg.DefaultTimeoutSeconds) * time.Second
 	}
 	return &Runtime{
-		tools:          tools,
-		policies:       deps.Policies,
-		approval:       deps.Approval,
-		hooks:          deps.Hooks,
-		defaultTimeout: defaultTimeout,
-		maxResultBytes: cfg.MaxResultBytes,
-		toolTimeouts:   toolTimeouts,
+		tools:            tools,
+		dynamicProviders: deps.DynamicTools,
+		dynamicTools:     make(map[string]agentkit.Tool),
+		policies:         deps.Policies,
+		approval:         deps.Approval,
+		hooks:            deps.Hooks,
+		defaultTimeout:   defaultTimeout,
+		maxResultBytes:   cfg.MaxResultBytes,
+		toolTimeouts:     toolTimeouts,
 	}, nil
 }
 
-func (r *Runtime) Visible(_ context.Context) ([]agentkit.ToolSpec, error) {
-	specs := make([]agentkit.ToolSpec, 0, len(r.tools))
+func (r *Runtime) refreshDynamic(ctx context.Context) error {
+	if len(r.dynamicProviders) == 0 {
+		r.dynamicMu.Lock()
+		r.dynamicTools = make(map[string]agentkit.Tool)
+		r.dynamicMu.Unlock()
+		return nil
+	}
+	dynamic := make(map[string]agentkit.Tool)
+	for _, provider := range r.dynamicProviders {
+		if provider == nil {
+			continue
+		}
+		tools, err := provider.ListTools(ctx)
+		if err != nil {
+			slog.Warn("dynamic tool provider failed", "error", err)
+			continue
+		}
+		for _, tool := range tools {
+			if tool == nil {
+				continue
+			}
+			name := tool.Name()
+			if _, ok := r.tools[name]; ok {
+				return fmt.Errorf("duplicate tool name %q", name)
+			}
+			if _, ok := dynamic[name]; ok {
+				return fmt.Errorf("duplicate tool name %q", name)
+			}
+			dynamic[name] = tool
+		}
+	}
+	r.dynamicMu.Lock()
+	r.dynamicTools = dynamic
+	r.dynamicMu.Unlock()
+	return nil
+}
+
+func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
+	if err := r.refreshDynamic(ctx); err != nil {
+		return nil, err
+	}
+	specs := make([]agentkit.ToolSpec, 0, len(r.tools)+len(r.dynamicTools))
 	for _, tool := range r.tools {
 		specs = append(specs, agentkit.ToolSpec{
 			Name:        tool.Name(),
@@ -89,6 +136,15 @@ func (r *Runtime) Visible(_ context.Context) ([]agentkit.ToolSpec, error) {
 			InputSchema: tool.InputSchema(),
 		})
 	}
+	r.dynamicMu.Lock()
+	for _, tool := range r.dynamicTools {
+		specs = append(specs, agentkit.ToolSpec{
+			Name:        tool.Name(),
+			Description: tool.Description(),
+			InputSchema: tool.InputSchema(),
+		})
+	}
+	r.dynamicMu.Unlock()
 	return specs, nil
 }
 
@@ -98,7 +154,15 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 
 	tool, ok := r.tools[call.Name]
 	if !ok {
-		return deniedResult(call, "tool not found"), nil
+		if err := r.refreshDynamic(ctx); err != nil {
+			return agentkit.ToolResult{}, err
+		}
+		r.dynamicMu.Lock()
+		tool, ok = r.dynamicTools[call.Name]
+		r.dynamicMu.Unlock()
+		if !ok {
+			return deniedResult(call, "tool not found"), nil
+		}
 	}
 
 	decision, err := r.evaluatePolicies(ctx, call)

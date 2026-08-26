@@ -1,4 +1,4 @@
-package tool_test
+package schedule_test
 
 import (
 	"context"
@@ -10,26 +10,27 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/schedule"
+	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 )
 
-func newScheduleTool(t *testing.T, cfg tool.ScheduleConfig) (agentkit.Tool, capschedule.Registry) {
+func newScheduleTool(t *testing.T, cfg schedule.ScheduleConfig) (agentkit.Tool, capschedule.Registry) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
 		pluginschedule.FileDeps{Workspace: workspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tl, err := tool.NewSchedule(cfg, tool.ScheduleDeps{Schedule: registry})
+	tl, err := schedule.NewSchedule(cfg, schedule.ScheduleDeps{Schedule: registry})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return agentkit.First(tl), registry
 }
 
-func decodeSchedule(t *testing.T, raw string) tool.ScheduleOutput {
+func decodeSchedule(t *testing.T, raw string) schedule.ScheduleOutput {
 	t.Helper()
-	var out tool.ScheduleOutput
+	var out schedule.ScheduleOutput
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		t.Fatalf("decode %q: %v", raw, err)
 	}
@@ -39,7 +40,7 @@ func decodeSchedule(t *testing.T, raw string) tool.ScheduleOutput {
 func TestScheduleToolRequiresRegistry(t *testing.T) {
 	t.Parallel()
 
-	if _, err := tool.NewSchedule(tool.ScheduleConfig{}, tool.ScheduleDeps{}); err == nil {
+	if _, err := schedule.NewSchedule(schedule.ScheduleConfig{}, schedule.ScheduleDeps{}); err == nil {
 		t.Fatal("expected an error without a schedule dependency")
 	}
 }
@@ -47,10 +48,10 @@ func TestScheduleToolRequiresRegistry(t *testing.T) {
 func TestScheduleAddListRemove(t *testing.T) {
 	t.Parallel()
 
-	tl, registry := newScheduleTool(t, tool.ScheduleConfig{})
+	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
 	ctx := context.Background()
 
-	out := decodeSchedule(t, callTool(t, ctx, tl, `{"op":"add","cron":"0 9 * * 1-5","prompt":"weekday standup notes","note":"asked by me"}`))
+	out := decodeSchedule(t, testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"0 9 * * 1-5","prompt":"weekday standup notes","note":"asked by me"}`))
 	if len(out.Jobs) != 1 {
 		t.Fatalf("jobs = %+v, want 1", out.Jobs)
 	}
@@ -74,12 +75,12 @@ func TestScheduleAddListRemove(t *testing.T) {
 		t.Fatalf("registry = %+v", stored)
 	}
 
-	listed := decodeSchedule(t, callTool(t, ctx, tl, `{"op":"list"}`))
+	listed := decodeSchedule(t, testutil.CallTool(t, ctx, tl, `{"op":"list"}`))
 	if len(listed.Jobs) != 1 {
 		t.Fatalf("list = %+v", listed.Jobs)
 	}
 
-	removed := decodeSchedule(t, callTool(t, ctx, tl, `{"op":"remove","id":"`+job.ID+`"}`))
+	removed := decodeSchedule(t, testutil.CallTool(t, ctx, tl, `{"op":"remove","id":"`+job.ID+`"}`))
 	if len(removed.Jobs) != 0 {
 		t.Fatalf("after remove = %+v", removed.Jobs)
 	}
@@ -91,7 +92,7 @@ func TestScheduleAddListRemove(t *testing.T) {
 func TestScheduleRejectsBadInput(t *testing.T) {
 	t.Parallel()
 
-	tl, _ := newScheduleTool(t, tool.ScheduleConfig{})
+	tl, _ := newScheduleTool(t, schedule.ScheduleConfig{})
 	ctx := context.Background()
 
 	// The tool builder turns handler errors into text results, so assert on those.
@@ -105,7 +106,7 @@ func TestScheduleRejectsBadInput(t *testing.T) {
 		`{"op":"frobnicate"}`:                           "unknown op",
 	}
 	for input, want := range cases {
-		if got := callTool(t, ctx, tl, input); !strings.Contains(got, want) {
+		if got := testutil.CallTool(t, ctx, tl, input); !strings.Contains(got, want) {
 			t.Errorf("%s = %q, want it to mention %q", input, got, want)
 		}
 	}
@@ -115,21 +116,21 @@ func TestScheduleRejectsBadInput(t *testing.T) {
 func TestScheduleEnforcesJobLimit(t *testing.T) {
 	t.Parallel()
 
-	tl, _ := newScheduleTool(t, tool.ScheduleConfig{MaxJobs: 2})
+	tl, _ := newScheduleTool(t, schedule.ScheduleConfig{MaxJobs: 2})
 	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
-		out := callTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"job"}`)
+		out := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"job"}`)
 		if strings.Contains(out, "limit") {
 			t.Fatalf("add %d unexpectedly hit the limit: %s", i, out)
 		}
 	}
-	if got := callTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"one too many"}`); !strings.Contains(got, "limit of 2") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"one too many"}`); !strings.Contains(got, "limit of 2") {
 		t.Fatalf("third add = %q, want a limit error", got)
 	}
 
 	// A cron typo must report the cron problem, not the quota.
-	if got := callTool(t, ctx, tl, `{"op":"add","cron":"bogus","prompt":"x"}`); strings.Contains(got, "limit") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"bogus","prompt":"x"}`); strings.Contains(got, "limit") {
 		t.Fatalf("invalid cron reported as a quota error: %q", got)
 	}
 }
@@ -139,7 +140,7 @@ func TestScheduleEnforcesJobLimit(t *testing.T) {
 func TestScheduleLimitCountsOnlyAgentJobs(t *testing.T) {
 	t.Parallel()
 
-	tl, registry := newScheduleTool(t, tool.ScheduleConfig{MaxJobs: 1})
+	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{MaxJobs: 1})
 	ctx := context.Background()
 
 	if err := registry.SyncSource(ctx, capschedule.SourceConfig, []capschedule.Job{
@@ -148,10 +149,10 @@ func TestScheduleLimitCountsOnlyAgentJobs(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := callTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"agent job"}`); strings.Contains(got, "limit") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"agent job"}`); strings.Contains(got, "limit") {
 		t.Fatalf("config jobs consumed the agent quota: %q", got)
 	}
-	if got := callTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"second agent job"}`); !strings.Contains(got, "limit of 1") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"second agent job"}`); !strings.Contains(got, "limit of 1") {
 		t.Fatalf("second agent job = %q, want a limit error", got)
 	}
 }
@@ -159,8 +160,8 @@ func TestScheduleLimitCountsOnlyAgentJobs(t *testing.T) {
 func TestScheduleListIsEmptyWithoutJobs(t *testing.T) {
 	t.Parallel()
 
-	tl, _ := newScheduleTool(t, tool.ScheduleConfig{})
-	out := decodeSchedule(t, callTool(t, context.Background(), tl, `{"op":"list"}`))
+	tl, _ := newScheduleTool(t, schedule.ScheduleConfig{})
+	out := decodeSchedule(t, testutil.CallTool(t, context.Background(), tl, `{"op":"list"}`))
 	if len(out.Jobs) != 0 {
 		t.Fatalf("jobs = %+v, want none", out.Jobs)
 	}

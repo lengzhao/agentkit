@@ -111,6 +111,8 @@ tools.default:
       - tool.shell-bash.default
       - tool.skill.default
       - tool.subagent.default
+    dynamicTools:
+      - mcp.default
     policies:
       - policy.dangerous-shell.default
     approval: approval.cli.default

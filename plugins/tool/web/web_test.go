@@ -1,4 +1,4 @@
-package tool_test
+package web_test
 
 import (
 	"context"
@@ -9,13 +9,15 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/interaction"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/askuser"
+	"github.com/lengzhao/agentkit/plugins/tool/testutil"
+	"github.com/lengzhao/agentkit/plugins/tool/web"
 )
 
 func TestWebFetchHTTPToolSchema(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewWebFetchHTTP(tool.WebFetchHTTPConfig{MaxBytes: 4096})
+	pack, err := web.NewWebFetchHTTP(web.WebFetchHTTPConfig{MaxBytes: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +33,7 @@ func TestWebFetchHTTPToolSchema(t *testing.T) {
 func TestWebFetchScriptedMapsResult(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewWebFetchScripted(tool.WebFetchScriptedConfig{
+	pack, err := web.NewWebFetchScripted(web.WebFetchScriptedConfig{
 		Pages: map[string]string{
 			"example.com": "<html><head><title>Doc</title></head><body>body text</body></html>",
 		},
@@ -41,8 +43,8 @@ func TestWebFetchScriptedMapsResult(t *testing.T) {
 	}
 	fetch := agentkit.First(pack)
 
-	out := callTool(t, context.Background(), fetch, `{"url":"https://example.com/start","raw":true}`)
-	var got tool.WebFetchOutput
+	out := testutil.CallTool(t, context.Background(), fetch, `{"url":"https://example.com/start","raw":true}`)
+	var got web.WebFetchOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -60,12 +62,12 @@ func TestWebFetchScriptedMapsResult(t *testing.T) {
 func TestWebFetchHTTPReportsPrivateHostWithoutFailingTurn(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewWebFetchHTTP(tool.WebFetchHTTPConfig{})
+	pack, err := web.NewWebFetchHTTP(web.WebFetchHTTPConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fetch := agentkit.First(pack)
-	out := callTool(t, context.Background(), fetch, `{"url":"http://127.0.0.1/"}`)
+	out := testutil.CallTool(t, context.Background(), fetch, `{"url":"http://127.0.0.1/"}`)
 	if !strings.Contains(out, "non-public address") {
 		t.Errorf("result = %q, want the refusal text", out)
 	}
@@ -74,12 +76,12 @@ func TestWebFetchHTTPReportsPrivateHostWithoutFailingTurn(t *testing.T) {
 func TestWebFetchToolRequiresURL(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewWebFetchScripted(tool.WebFetchScriptedConfig{Default: "ok"})
+	pack, err := web.NewWebFetchScripted(web.WebFetchScriptedConfig{Default: "ok"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fetch := agentkit.First(pack)
-	if out := callTool(t, context.Background(), fetch, `{"url":"  "}`); !strings.Contains(out, "required") {
+	if out := testutil.CallTool(t, context.Background(), fetch, `{"url":"  "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
 }
@@ -87,9 +89,9 @@ func TestWebFetchToolRequiresURL(t *testing.T) {
 func TestWebSearchScriptedResultLimit(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewWebSearchScripted(tool.WebSearchScriptedConfig{
+	pack, err := web.NewWebSearchScripted(web.WebSearchScriptedConfig{
 		MaxResults: 5,
-		ByQuery: map[string][]tool.WebSearchHit{
+		ByQuery: map[string][]web.WebSearchHit{
 			"loop": {{Title: "Loop", URL: "https://example.com/loop", Snippet: "serialized"}},
 		},
 	})
@@ -104,8 +106,8 @@ func TestWebSearchScriptedResultLimit(t *testing.T) {
 		t.Errorf("required = %v, want query", search.InputSchema().Required)
 	}
 
-	out := callTool(t, context.Background(), search, `{"query":"loop"}`)
-	var got tool.WebSearchOutput
+	out := testutil.CallTool(t, context.Background(), search, `{"query":"loop"}`)
+	var got web.WebSearchOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -113,7 +115,7 @@ func TestWebSearchScriptedResultLimit(t *testing.T) {
 		t.Errorf("output = %+v", got)
 	}
 
-	out = callTool(t, context.Background(), search, `{"query":"loop","maxResults":0}`)
+	out = testutil.CallTool(t, context.Background(), search, `{"query":"loop","maxResults":0}`)
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -125,12 +127,12 @@ func TestWebSearchScriptedResultLimit(t *testing.T) {
 func TestWebSearchExaRequiresKeyAtCallTime(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewWebSearchExa(tool.WebSearchExaConfig{}, tool.WebSearchExaDeps{})
+	pack, err := web.NewWebSearchExa(web.WebSearchExaConfig{}, web.WebSearchExaDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	search := agentkit.First(pack)
-	out := callTool(t, context.Background(), search, `{"query":"anything"}`)
+	out := testutil.CallTool(t, context.Background(), search, `{"query":"anything"}`)
 	if !strings.Contains(out, "no API key") {
 		t.Errorf("result = %q", out)
 	}
@@ -140,7 +142,7 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 	t.Parallel()
 
 	si := &fakeSessionInteraction{result: interaction.Result{Answered: true, Text: "sqlite", Selected: 1}}
-	pack, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
+	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +155,8 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 	}
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
-	out := callTool(t, ctx, ask, `{"question":"which store?","options":["jsonl","sqlite"],"default":"jsonl"}`)
-	var got tool.AskUserOutput
+	out := testutil.CallTool(t, ctx, ask, `{"question":"which store?","options":["jsonl","sqlite"],"default":"jsonl"}`)
+	var got askuser.AskUserOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -173,14 +175,14 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	t.Parallel()
 
 	si := &fakeSessionInteraction{result: interaction.Result{Selected: -1, Reason: "this run is unattended"}}
-	pack, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
+	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ask := agentkit.First(pack)
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
-	out := callTool(t, ctx, ask, `{"question":"which store?"}`)
-	var got tool.AskUserOutput
+	out := testutil.CallTool(t, ctx, ask, `{"question":"which store?"}`)
+	var got askuser.AskUserOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -198,13 +200,13 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 func TestAskUserToolRequiresQuestion(t *testing.T) {
 	t.Parallel()
 
-	pack, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
+	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ask := agentkit.First(pack)
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, &fakeSessionInteraction{})
-	if out := callTool(t, ctx, ask, `{"question":"   "}`); !strings.Contains(out, "required") {
+	if out := testutil.CallTool(t, ctx, ask, `{"question":"   "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
 }

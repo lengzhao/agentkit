@@ -108,6 +108,8 @@ tools.default:
       - tool.skill.default
       - tool.todo.default
       - tool.finish.default
+    dynamicTools:
+      - mcp.default
     policies:
       - policy.dangerous-shell.default
       - policy.path-denylist.default

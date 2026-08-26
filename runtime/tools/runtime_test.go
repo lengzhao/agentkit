@@ -197,3 +197,53 @@ func TestRuntimeExecuteDeniesBeforeHooks(t *testing.T) {
 		t.Fatalf("unexpected deny result: %q", tools.ResultText(result))
 	}
 }
+
+type stubProvider struct {
+	tools []agentkit.Tool
+}
+
+func (p *stubProvider) ListTools(context.Context) ([]agentkit.Tool, error) {
+	return p.tools, nil
+}
+
+func TestRuntimeVisibleIncludesDynamicTools(t *testing.T) {
+	t.Parallel()
+
+	dynamic := &stubProvider{tools: []agentkit.Tool{stubTool{
+		name: "mcp__ping",
+		fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+			return agentkit.ToolResult{
+				ID:      call.ID,
+				Name:    call.Name,
+				Content: []agentkit.ContentPart{{Type: "text", Text: "pong"}},
+			}, nil
+		},
+	}}}
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools:        []agentkit.ToolPack{agentkit.Pack(stubTool{name: "static"})},
+		DynamicTools: []agentkit.ToolProvider{dynamic},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	specs, err := rt.Visible(context.Background())
+	if err != nil {
+		t.Fatalf("visible: %v", err)
+	}
+	names := map[string]bool{}
+	for _, spec := range specs {
+		names[spec.Name] = true
+	}
+	if !names["static"] || !names["mcp__ping"] {
+		t.Fatalf("visible tools = %v", names)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: "mcp__ping"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "pong" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+}

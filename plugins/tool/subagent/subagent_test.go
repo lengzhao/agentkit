@@ -1,4 +1,4 @@
-package tool_test
+package subagent_test
 
 import (
 	"context"
@@ -9,7 +9,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/subagent"
+	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 )
 
 type fakeSpawner struct {
@@ -37,7 +38,7 @@ func TestSubagentToolReturnsSummary(t *testing.T) {
 		Summary: "the loop serializes turns per session",
 		Steps:   4,
 	}}
-	delegatePack, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: spawner})
+	delegatePack, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{Subagent: spawner})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +47,8 @@ func TestSubagentToolReturnsSummary(t *testing.T) {
 		t.Fatalf("tool name = %q, want delegate", delegate.Name())
 	}
 
-	out := callTool(t, context.Background(), delegate, `{"agent":"researcher","task":"how does the loop serialize turns?"}`)
-	var got tool.SubagentOutput
+	out := testutil.CallTool(t, context.Background(), delegate, `{"agent":"researcher","task":"how does the loop serialize turns?"}`)
+	var got subagent.SubagentOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -69,7 +70,7 @@ func TestSubagentToolSurfacesSpawnerError(t *testing.T) {
 	t.Parallel()
 
 	spawner := &fakeSpawner{err: fmt.Errorf("unknown subagent %q; available: researcher", "reviewer")}
-	delegatePack, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: spawner})
+	delegatePack, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{Subagent: spawner})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestSubagentToolSurfacesSpawnerError(t *testing.T) {
 
 	// The tool builder turns a handler error into a text result, so the model can
 	// read the available names and retry instead of the turn dying.
-	out := callTool(t, context.Background(), delegate, `{"agent":"reviewer","task":"review"}`)
+	out := testutil.CallTool(t, context.Background(), delegate, `{"agent":"reviewer","task":"review"}`)
 	if !strings.Contains(out, "available: researcher") {
 		t.Fatalf("output = %q, want the spawner's error text", out)
 	}
@@ -86,7 +87,7 @@ func TestSubagentToolSurfacesSpawnerError(t *testing.T) {
 func TestSubagentToolSchemaMarksBothFieldsRequired(t *testing.T) {
 	t.Parallel()
 
-	delegatePack, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: &fakeSpawner{}})
+	delegatePack, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{Subagent: &fakeSpawner{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +114,7 @@ func TestSubagentToolSchemaMarksBothFieldsRequired(t *testing.T) {
 func TestSubagentToolRequiresSpawner(t *testing.T) {
 	t.Parallel()
 
-	if _, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{}); err == nil {
+	if _, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{}); err == nil {
 		t.Fatal("expected an error without a spawner dependency")
 	}
 }

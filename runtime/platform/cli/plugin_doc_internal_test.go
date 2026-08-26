@@ -14,7 +14,7 @@ func TestPluginDoc(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"go doc github.com/lengzhao/agentkit/plugins/tool.NewFSWorkspace",
+		"go doc github.com/lengzhao/agentkit/plugins/tool/fs.NewFSWorkspace",
 		"tool/fs-workspace",
 	} {
 		if !strings.Contains(out, want) {
@@ -30,7 +30,7 @@ func TestDocSymbol(t *testing.T) {
 		t.Fatal("tool/shell-bash not registered")
 	}
 	symbol := docSymbol(spec)
-	if want := "github.com/lengzhao/agentkit/plugins/tool.NewShellBash"; symbol != want {
+	if want := "github.com/lengzhao/agentkit/plugins/tool/shell.NewShellBash"; symbol != want {
 		t.Fatalf("got %q, want %q", symbol, want)
 	}
 }

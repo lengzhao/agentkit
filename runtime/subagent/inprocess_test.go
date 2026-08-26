@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
@@ -51,7 +51,7 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishPack, err := tool.NewFinish(tool.FinishConfig{}, tool.FinishDeps{SessionStore: store})
+	finishPack, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}

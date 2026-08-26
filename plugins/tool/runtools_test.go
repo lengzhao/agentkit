@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/plugins/tool"
+	"github.com/lengzhao/agentkit/plugins/tool/finish"
+	"github.com/lengzhao/agentkit/plugins/tool/todo"
+	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -19,62 +21,50 @@ func (s singleSessionStore) Get(context.Context, agentkit.SessionID) (agentkit.S
 	return s.sess, nil
 }
 
-func newRunToolsFixture(t *testing.T) (todo, finish agentkit.Tool, sess agentkit.Session, ctx context.Context) {
+func newRunToolsFixture(t *testing.T) (todoTool, finishTool agentkit.Tool, sess agentkit.Session, ctx context.Context) {
 	t.Helper()
 	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:runtools"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := singleSessionStore{sess: sess}
-	todoPack, err := tool.NewTodo(tool.TodoConfig{}, tool.TodoDeps{SessionStore: store})
+	todoPack, err := todo.NewTodo(todo.TodoConfig{}, todo.TodoDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishPack, err := tool.NewFinish(tool.FinishConfig{}, tool.FinishDeps{SessionStore: store})
+	finishPack, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
-	finish = agentkit.First(finishPack)
-	todo = agentkit.First(todoPack)
+	finishTool = agentkit.First(finishPack)
+	todoTool = agentkit.First(todoPack)
 	ctx = context.WithValue(context.Background(), agentkit.KeySessionID, sess.ID())
-	return todo, finish, sess, ctx
+	return todoTool, finishTool, sess, ctx
 }
 
 func callTool(t *testing.T, ctx context.Context, tl agentkit.Tool, input string) string {
-	t.Helper()
-	result, err := tl.Call(ctx, agentkit.ToolCall{ID: "call", Name: tl.Name(), Input: json.RawMessage(input)})
-	if err != nil {
-		t.Fatalf("call %s: %v", tl.Name(), err)
-	}
-	var b strings.Builder
-	for _, part := range result.Content {
-		if part.Type == "text" {
-			b.WriteString(part.Text)
-		}
-	}
-	return b.String()
+	return testutil.CallTool(t, ctx, tl, input)
 }
 
 func TestTodoSetCompleteAndList(t *testing.T) {
 	t.Parallel()
 
-	todo, _, sess, ctx := newRunToolsFixture(t)
+	todoTool, _, sess, ctx := newRunToolsFixture(t)
 
-	out := callTool(t, ctx, todo, `{"op":"set","items":[{"id":"1","title":"first"},{"title":"second"}]}`)
-	var set tool.TodoOutput
+	out := callTool(t, ctx, todoTool, `{"op":"set","items":[{"id":"1","title":"first"},{"title":"second"}]}`)
+	var set todo.TodoOutput
 	if err := json.Unmarshal([]byte(out), &set); err != nil {
 		t.Fatalf("decode set output: %v (%s)", err, out)
 	}
 	if set.Total != 2 || set.Pending != 2 {
 		t.Fatalf("after set: total=%d pending=%d, want 2/2", set.Total, set.Pending)
 	}
-	// The second item had no id, so position supplies one.
 	if set.Items[1].ID != "2" {
 		t.Fatalf("derived id = %q, want %q", set.Items[1].ID, "2")
 	}
 
-	out = callTool(t, ctx, todo, `{"op":"complete","ids":["1"]}`)
-	var done tool.TodoOutput
+	out = callTool(t, ctx, todoTool, `{"op":"complete","ids":["1"]}`)
+	var done todo.TodoOutput
 	if err := json.Unmarshal([]byte(out), &done); err != nil {
 		t.Fatalf("decode complete output: %v (%s)", err, out)
 	}
@@ -82,8 +72,8 @@ func TestTodoSetCompleteAndList(t *testing.T) {
 		t.Fatalf("pending after complete = %d, want 1", done.Pending)
 	}
 
-	out = callTool(t, ctx, todo, `{"op":"complete","ids":["2"]}`)
-	var all tool.TodoOutput
+	out = callTool(t, ctx, todoTool, `{"op":"complete","ids":["2"]}`)
+	var all todo.TodoOutput
 	if err := json.Unmarshal([]byte(out), &all); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
@@ -94,7 +84,6 @@ func TestTodoSetCompleteAndList(t *testing.T) {
 		t.Fatalf("expected a nudge to call finish, got %q", all.Instruction)
 	}
 
-	// Every mutation must be on the log, not just in the tool result.
 	events, err := session.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
@@ -116,19 +105,18 @@ func TestTodoSetCompleteAndList(t *testing.T) {
 func TestTodoRejectsBadInput(t *testing.T) {
 	t.Parallel()
 
-	todo, _, _, ctx := newRunToolsFixture(t)
+	todoTool, _, _, ctx := newRunToolsFixture(t)
 
-	// The tool builder turns handler errors into text results, so assert on those.
-	if out := callTool(t, ctx, todo, `{"op":"set","items":[]}`); !strings.Contains(out, "at least one item") {
+	if out := callTool(t, ctx, todoTool, `{"op":"set","items":[]}`); !strings.Contains(out, "at least one item") {
 		t.Fatalf("empty set = %q", out)
 	}
-	if out := callTool(t, ctx, todo, `{"op":"complete","ids":["nope"]}`); !strings.Contains(out, "unknown todo id") {
+	if out := callTool(t, ctx, todoTool, `{"op":"complete","ids":["nope"]}`); !strings.Contains(out, "unknown todo id") {
 		t.Fatalf("unknown id = %q", out)
 	}
-	if out := callTool(t, ctx, todo, `{"op":"frobnicate"}`); !strings.Contains(out, "unknown op") {
+	if out := callTool(t, ctx, todoTool, `{"op":"frobnicate"}`); !strings.Contains(out, "unknown op") {
 		t.Fatalf("bad op = %q", out)
 	}
-	if out := callTool(t, ctx, todo, `{"op":"set","items":[{"id":"x","title":"a"},{"id":"x","title":"b"}]}`); !strings.Contains(out, "duplicate") {
+	if out := callTool(t, ctx, todoTool, `{"op":"set","items":[{"id":"x","title":"a"},{"id":"x","title":"b"}]}`); !strings.Contains(out, "duplicate") {
 		t.Fatalf("duplicate id = %q", out)
 	}
 }
@@ -136,9 +124,9 @@ func TestTodoRejectsBadInput(t *testing.T) {
 func TestFinishRecordsRunFinish(t *testing.T) {
 	t.Parallel()
 
-	_, finish, sess, ctx := newRunToolsFixture(t)
+	_, finishTool, sess, ctx := newRunToolsFixture(t)
 
-	out := callTool(t, ctx, finish, `{"status":"blocked","summary":"missing credentials"}`)
+	out := callTool(t, ctx, finishTool, `{"status":"blocked","summary":"missing credentials"}`)
 	if !strings.Contains(out, session.FinishBlocked) {
 		t.Fatalf("finish output = %q", out)
 	}
@@ -159,12 +147,12 @@ func TestFinishRecordsRunFinish(t *testing.T) {
 func TestFinishDefaultsToCompletedAndRequiresSummary(t *testing.T) {
 	t.Parallel()
 
-	_, finish, sess, ctx := newRunToolsFixture(t)
+	_, finishTool, sess, ctx := newRunToolsFixture(t)
 
-	if out := callTool(t, ctx, finish, `{"summary":"all done"}`); !strings.Contains(out, session.FinishCompleted) {
+	if out := callTool(t, ctx, finishTool, `{"summary":"all done"}`); !strings.Contains(out, session.FinishCompleted) {
 		t.Fatalf("finish without status = %q, want completed", out)
 	}
-	if out := callTool(t, ctx, finish, `{"status":"completed"}`); !strings.Contains(out, "requires a summary") {
+	if out := callTool(t, ctx, finishTool, `{"status":"completed"}`); !strings.Contains(out, "requires a summary") {
 		t.Fatalf("finish without summary = %q", out)
 	}
 

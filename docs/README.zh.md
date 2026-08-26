@@ -15,6 +15,7 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [../presets/README.md](../presets/README.md) | 各场景 L1 preset 与用法 |
 | [autonomous-run.zh.md](autonomous-run.zh.md) | 自主运行：turn 续跑契约、预算分层、todo/finish 判定、token 阈值压缩、崩溃恢复、无人值守安全边界 |
 | [subagent.zh.md](subagent.zh.md) | 子 Agent 委派：`agents/*.md` 定义格式、目录查找、工具白名单、结论读回、串行边界 |
+| [mcp.zh.md](mcp.zh.md) | MCP 动态工具：`mcpServers` JSON 配置、stdio/HTTP 接入、工具前缀与 `tools/runtime` 聚合 |
 | [web.zh.md](web.zh.md) | 网络能力：抓取与搜索为何拆成两个接口、私网地址在 dial 时拦截、无 API Key / 无人可问时的降级 |
 
 ## 快速开始

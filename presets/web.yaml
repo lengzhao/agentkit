@@ -27,6 +27,8 @@ tools.default:
       - tool.web-fetch-http.default
       - tool.web-search-exa.default
       - tool.ask-user.default
+    dynamicTools:
+      - mcp.default
     policies:
       - policy.dangerous-shell.default
     approval: approval.cli.default

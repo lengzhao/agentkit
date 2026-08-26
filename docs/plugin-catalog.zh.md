@@ -146,6 +146,7 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
+| `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [mcp.zh.md](mcp.zh.md) |
 
 ### 3.4 Policy & Safety
 
@@ -385,6 +386,7 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 | 类别 | Kind |
 |---|---|
 | Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，见 `presets/subagent.yaml`；并行 fan-out 待做） |
+| MCP | `tool/mcp`（`mcpServers` JSON 动态工具，见 `docs/mcp.zh.md`） |
 | Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user`（HIL 由 Loop + platform 承载 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 [web.zh.md](web.zh.md) 与 [platform-interaction.zh.md](platform-interaction.zh.md)） |
 | Sandbox | `sandbox/landlock`, `fs/sandbox`, `process/sandbox`（未做 → [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)） |
 | Platform | `platform/http`, `platform/rpc`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)；`platform/multiplex` / `timer` / `worker` 已落地） |
