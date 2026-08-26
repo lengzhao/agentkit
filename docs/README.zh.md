@@ -18,6 +18,7 @@ AgentKit 是基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Age
 | [multi-tenant.zh.md](multi-tenant.zh.md) | 多租户：会话隔离 / 用户识别 / 按群分工作目录三层各由谁负责，为何粒度可分别决定，租户根为何禁止 `..` |
 | [mcp.zh.md](mcp.zh.md) | MCP 动态工具：`mcpServers` JSON 配置、stdio/HTTP 接入、工具前缀与 `tools/runtime` 聚合 |
 | [web.zh.md](web.zh.md) | 网络能力：抓取与搜索为何拆成两个接口、私网地址在 dial 时拦截、无 API Key / 无人可问时的降级 |
+| [platform-interaction.zh.md](platform-interaction.zh.md) | **人机交互目标架构**：统一 Permission 协议（对齐 cc-connect）、Runner 入站解耦、废弃 sync/async HIL 双路径 |
 
 ## 快速开始
 
@@ -77,7 +78,7 @@ Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预
 
 Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
 
-Phase 3 网络能力已实现：`tool/web-fetch-http`（HTML → 文本、dial 时拦截私网地址）、`tool/web-search-exa`（缺 key 不阻断构造）、`tool/web-*-scripted` 无网络替身、`tool/ask-user`（HIL 由 Loop + platform 承载，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
+Phase 3 网络能力已实现：`tool/web-fetch-http`（HTML → 文本、dial 时拦截私网地址）、`tool/web-search-exa`（缺 key 不阻断构造）、`tool/web-*-scripted` 无网络替身、`tool/ask-user`（当前实现：Loop `interaction.Session`；**目标**：Permission 协议，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
 
 Phase 3 守护外壳已实现：`platform/worker`（headless 任务，不读 stdin；带 `cron` 时转常驻定时模式）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 

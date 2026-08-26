@@ -52,7 +52,9 @@ tool/web-search-exa has no API key: set EXA_API_KEY, or config.apiKeyRef with a 
 
 ## 4. 提问：`ask_user` 与 Human-in-the-loop
 
-`tool/ask-user` 走 Loop 的 HIL 控制流。platform 不支持交互时返回 `answered:false` + guidance，不阻塞 turn。
+**当前**：`tool/ask-user` 走 Loop `interaction.Session`（`Handler` / `AsyncPlatform` 双路径）。
+
+**目标**：统一 Permission 协议（`cap/permission` + `PermissionBroker`），见 [platform-interaction.zh.md](platform-interaction.zh.md)。platform 不支持交互时返回 `answered:false` + guidance，不阻塞 turn。
 
 **不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。
 

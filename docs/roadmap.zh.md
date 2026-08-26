@@ -76,7 +76,9 @@
 | `tool/ask-user` 无人可问时的降级 | **既不阻塞也不报错**：返回 `answered:false` + `reason` + `guidance`，让模型自己拍板并声明假设 | 与本仓库一贯的"deny 是模型可读的结果而不是 error"一致（`tool_builder.go` 把 handler error 也转成文本 result）。headless platform 无 `InteractionHandler` 时自动降级 |
 | SSRF 边界要不要做成 `policy/network-deny` | **先落在 `web/http-fetch` 里**（dial 时校验解析后的 IP + scheme 白名单 + host allow/deny + 重定向重校验），`policy/network-deny` 不在本期创建 | 私网校验必须发生在 DNS 解析之后才挡得住重定向与 DNS rebinding，这个位置只有 provider 有。它是 M2 那个 policy 的雏形，不是它的替代 |
 
-HIL interaction **没有复用 `cap/approval`**。approval 回答的是"这个工具调用允许吗"（bool），而无人值守 preset 挂的是 `approval/auto-allow`——复用会让 agent 问的每个问题都被默默答成"是"。
+HIL interaction **没有复用 `cap/approval`**（**当前实现**）。approval 回答的是"这个工具调用允许吗"（bool），而无人值守 preset 挂的是 `approval/auto-allow`——复用会让 agent 问的每个问题都被默默答成"是"。
+
+**目标重构**（见 [platform-interaction.zh.md](platform-interaction.zh.md)）：统一 `cap/permission` + Loop `PermissionBroker`，`ask_user` 与 `DecisionAsk` 共用 pending；`auto-allow` 仍在 runtime 短路，不回答 question kind。
 
 **验收**（已通过）：`presets/web.yaml,presets/web-smoke.yaml` 跑通"搜索 → 抓取 → 提问降级 → 引用来源回答"；`env -u EXA_API_KEY` 下实例图照常构建、`web/http-fetch` 单独可用、搜索返回一句模型可读的"没有 key"；抓取/搜索失败均为模型可读结果，turn 不中断。
 
