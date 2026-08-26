@@ -95,7 +95,7 @@ flowchart TB
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop；`maxConcurrentTurns` 控制跨 session 并发（默认 1，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
-| `platform/cli` | `agentkit.Platform` + `interaction.Handler` | 终端 stdin/stdout；入站固定 `SessionID=cli:default`；同步 HIL 读 stdin | Pi TUI / DSH headless |
+| `platform/cli` | `agentkit.Platform` + `interaction.Handler` | 终端 stdin/stdout；启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话，`/new` 会换新 id 并更新软链；同步 HIL 读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |

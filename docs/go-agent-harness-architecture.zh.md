@@ -834,7 +834,7 @@ type SessionStore interface {
 | **Agent** | `RunTurn` 从 `ctx.Value(agentkit.KeySessionID)` 读取 SessionID，并通过 `deps.sessionStore.Get` 加载 Session |
 | **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl` |
 
-所有入口（含 CLI）必须在 `MessageEvent` 上设置 `SessionID`；CLI 通常使用固定 `cli:default`。配置示例：
+所有入口（含 CLI）必须在 `MessageEvent` 上设置 `SessionID`。CLI 启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话（缺省指向 `cli:default`）；`/new` 创建新 id 并更新软链。配置示例：
 
 ```yaml
 loop:
@@ -1294,7 +1294,7 @@ func TestReadFileTool(t *testing.T) {
 |---|---|
 | `runtime/loop` | `Control` 内联于 loop 包；`Dispatch` 写入 `KeySessionControl` |
 | `runtime/agent` | `Deps` 含 `SessionStore`；`RunTurn` 从 `ctx.Value(KeySessionID)` 取 ID 后 `Get` |
-| `runtime/platform/cli` | 入站固定 `SessionID=cli:default`、`PlatformID=cli` |
+| `runtime/platform/cli` | 启动读 `cli_current.jsonl` 软链定 `SessionID`；`/new` 更新软链；`PlatformID=cli` |
 | `runtime/session/static` | 单会话 `SessionStore` 适配器，供 CLI smoke preset 使用 |
 | `presets/*.yaml` | `sessionStore` 在 `agent.*.deps`；Loop 不再依赖 `session` |
 | 测试 | `TurnInput` 不再传 `Session`；通过 context key + `SessionStore` 断言 |

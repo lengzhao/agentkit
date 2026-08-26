@@ -18,4 +18,5 @@ var (
 	_ agentkit.SessionStore    = (*Store)(nil)
 	_ agentkit.SessionStore    = (*StaticStore)(nil)
 	_ agentkit.CommandProvider = (*Store)(nil)
+	_ CLICurrentStore          = (*Store)(nil)
 )

@@ -20,12 +20,14 @@ type Config struct {
 	Prompt string `json:"prompt"`
 	// Once runs a single turn and exit instead of looping on stdin.
 	Once bool `json:"once"`
-	// DefaultSessionID is session to attach to; defaults to cli:default so a restart resumes the conversation.
+	// DefaultSessionID overrides the session to attach to. When empty, CLI reads
+	// sessions/cli_current.jsonl (falls back to cli:default when the link is missing).
 	DefaultSessionID string `json:"defaultSessionId"`
 }
 
 type Deps struct {
-	Commands agentkit.Commands `json:"commands,omitempty"`
+	Commands     agentkit.Commands     `json:"commands,omitempty"`
+	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
 }
 
 type Platform struct {
@@ -46,7 +48,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	}
 	sessionID := agentkit.SessionID(cfg.DefaultSessionID)
 	if sessionID == "" {
-		sessionID = session.DefaultCLISessionID
+		sessionID = resolveCLISessionID(deps.SessionStore)
 	}
 	return &Platform{
 		initialPrompt: initial,
@@ -331,4 +333,19 @@ func textOf(msg agentkit.ModelMessage) string {
 
 func stringsHasSuffix(s, suffix string) bool {
 	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
+func resolveCLISessionID(store agentkit.SessionStore) agentkit.SessionID {
+	if store == nil {
+		return session.DefaultCLISessionID
+	}
+	current, ok := store.(session.CLICurrentStore)
+	if !ok {
+		return session.DefaultCLISessionID
+	}
+	id, err := current.ResolveCLICurrent(context.Background())
+	if err != nil || id == "" {
+		return session.DefaultCLISessionID
+	}
+	return id
 }

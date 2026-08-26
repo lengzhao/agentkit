@@ -10,22 +10,30 @@ import (
 
 func (s *Store) Commands() []agentkit.Command {
 	return []agentkit.Command{
-		newCommand{},
+		newCommand{store: s},
 		showSessionCommand{store: s},
 	}
 }
 
-type newCommand struct{}
+type newCommand struct {
+	store *Store
+}
 
 func (newCommand) Name() string        { return "new" }
 func (newCommand) Alias() string       { return "" }
 func (newCommand) Description() string { return "start a new CLI session" }
 
-func (newCommand) CommandExec(_ context.Context, args ...string) (string, error) {
+func (c newCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
 	if len(args) > 0 {
 		return "", fmt.Errorf("usage: /new")
 	}
-	return string(NewCLISessionID()), nil
+	id := NewCLISessionID()
+	if c.store != nil {
+		if err := c.store.SetCLICurrent(ctx, id); err != nil {
+			return "", err
+		}
+	}
+	return string(id), nil
 }
 
 type showSessionCommand struct {

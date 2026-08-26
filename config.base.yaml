@@ -29,6 +29,7 @@ platform.default:
     once: false
   deps:
     commands: commands.default
+    sessionStore: sessionStore.default
 
 commands.default:
   use: commands/registry
