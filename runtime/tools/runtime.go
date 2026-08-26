@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/cap/permission"
 )
 
 type RuntimeConfig struct {
@@ -173,18 +175,11 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	case agentkit.DecisionDeny:
 		return deniedResult(call, decision.Reason), nil
 	case agentkit.DecisionAsk:
-		if r.approval == nil {
-			return deniedResult(call, "approval required but no approval provider configured"), nil
-		}
-		approval, err := r.approval.Ask(ctx, agentkit.ApprovalRequest{
-			Reason:   decision.Reason,
-			ToolCall: &call,
-		})
+		allowed, reason, err := r.resolveAskDecision(ctx, &call, decision.Reason)
 		if err != nil {
 			return agentkit.ToolResult{}, err
 		}
-		if !approval.Allowed {
-			reason := approval.Reason
+		if !allowed {
 			if reason == "" {
 				reason = "approval denied"
 			}
@@ -233,6 +228,47 @@ func (r *Runtime) timeoutFor(name string) time.Duration {
 		return timeout
 	}
 	return r.defaultTimeout
+}
+
+func (r *Runtime) resolveAskDecision(ctx context.Context, call *agentkit.ToolCall, policyReason string) (bool, string, error) {
+	if r.approval != nil {
+		decision, err := r.approval.Ask(ctx, agentkit.ApprovalRequest{
+			Reason:   policyReason,
+			ToolCall: call,
+		})
+		if err != nil {
+			return false, "", err
+		}
+		return decision.Allowed, decision.Reason, nil
+	}
+
+	broker, ok := permission.BrokerFrom(ctx)
+	if !ok {
+		return false, "approval required but no permission broker on this session", nil
+	}
+	result, err := broker.Await(ctx, permission.Request{
+		Kind:     permission.KindAllowDeny,
+		Reason:   policyReason,
+		ToolCall: call,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	if len(result.UpdatedInput) > 0 {
+		raw, err := json.Marshal(result.UpdatedInput)
+		if err != nil {
+			return false, "", err
+		}
+		call.Input = raw
+	}
+	if result.Allow {
+		return true, result.Reason, nil
+	}
+	reason := result.Reason
+	if reason == "" {
+		reason = string(result.Outcome)
+	}
+	return false, reason, nil
 }
 
 func (r *Runtime) evaluatePolicies(ctx context.Context, call agentkit.ToolCall) (agentkit.Decision, error) {

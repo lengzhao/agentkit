@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/interaction"
+	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -81,26 +81,35 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	// Let in-flight turns record turn/end before the process goes away.
 	defer sched.wait(r.shutdownTimeout)
 
+	recvDone := make(chan error, 1)
+	go r.receiveLoop(ctx, sched, recvDone)
+
+	err := <-recvDone
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return err
+}
+
+// receiveLoop reads inbound events without holding concurrency slots. Permission
+// replies are delivered immediately; new turns are queued for the scheduler.
+func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- error) {
 	for {
-		// Taking the slot before reading bounds read-ahead to the configured
-		// concurrency; at 1 this blocks until the previous turn completes.
-		if err := sched.acquire(ctx); err != nil {
-			return err
-		}
 		event, err := r.platform.Receive(ctx)
 		if err != nil {
-			sched.release()
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
+			done <- err
+			return
 		}
-		if r.loop.TryDeliverInteraction(event) {
-			sched.release()
+		if r.loop.TryDeliverPermission(event) {
 			continue
 		}
+		if event.Message.Role != "" {
+			r.loop.SupersedePendingForInbound(event)
+		}
 		if event.Message.Role == "" {
-			sched.release()
 			continue
 		}
 		fmt.Fprintln(os.Stderr)
@@ -120,10 +129,9 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 			return r.platform.Send(ctx, out)
 		}
 		sched.submit(ctx, agentkit.LoopRequest{
-			Event:              event,
-			Emit:               emit,
-			InteractionHandler: interactionHandler(r.platform),
-			AsyncInteraction:   asyncInteraction(r.platform),
+			Event:        event,
+			Emit:         emit,
+			Capability:   permissionCapability(r.platform, event.PlatformID),
 		})
 	}
 }
@@ -195,18 +203,14 @@ func (r *Root) Stop(context.Context) error { return nil }
 // follow-ups; agentkit.Loop already carries Steer/FollowUp.
 func (r *Root) Loop() agentkit.Loop { return r.loop }
 
-func interactionHandler(platform agentkit.Platform) interaction.Handler {
-	if h, ok := platform.(interaction.Handler); ok {
-		return h
+func permissionCapability(platform agentkit.Platform, platformID string) permission.Capability {
+	if router, ok := platform.(permission.CapabilityRouter); ok && platformID != "" {
+		return router.PermissionCapabilityFor(platformID)
 	}
-	return nil
-}
-
-func asyncInteraction(platform agentkit.Platform) bool {
-	if a, ok := platform.(interaction.AsyncPlatform); ok {
-		return a.AsyncInteraction()
+	if c, ok := platform.(permission.Capable); ok {
+		return c.PermissionCapability()
 	}
-	return false
+	return permission.Capability{Interactive: false}
 }
 
 var _ agentkit.Runner = (*Root)(nil)

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/interaction"
+	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/plugins/tool/askuser"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/plugins/tool/web"
@@ -141,7 +141,10 @@ func TestWebSearchExaRequiresKeyAtCallTime(t *testing.T) {
 func TestAskUserToolAnsweredPath(t *testing.T) {
 	t.Parallel()
 
-	si := &fakeSessionInteraction{result: interaction.Result{Answered: true, Text: "sqlite", Selected: 1}}
+	broker := &fakePermissionBroker{result: permission.Result{
+		Outcome: permission.OutcomeResolved,
+		Answer:  &permission.QuestionResult{Text: "sqlite", Selected: []int{1}},
+	}}
 	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +157,7 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 		t.Errorf("required = %v, want question", ask.InputSchema().Required)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, broker)
 	out := testutil.CallTool(t, ctx, ask, `{"question":"which store?","options":["jsonl","sqlite"],"default":"jsonl"}`)
 	var got askuser.AskUserOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -166,21 +169,25 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 	if got.Guidance != "" {
 		t.Errorf("guidance = %q, want none on an answered question", got.Guidance)
 	}
-	if len(si.got.Options) != 2 || si.got.Default != "jsonl" {
-		t.Errorf("question = %+v", si.got)
+	if broker.got.Question == nil || len(broker.got.Question.Options) != 2 || broker.got.Question.Default != "jsonl" {
+		t.Errorf("question = %+v", broker.got.Question)
 	}
 }
 
 func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	t.Parallel()
 
-	si := &fakeSessionInteraction{result: interaction.Result{Selected: -1, Reason: "this run is unattended"}}
+	broker := &fakePermissionBroker{result: permission.Result{
+		Outcome: permission.OutcomeNoHuman,
+		Reason:  "this run is unattended",
+		Guidance: "Nobody answered. Do not ask again: pick the most reasonable option yourself, state the assumption you made, and continue.",
+	}}
 	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ask := agentkit.First(pack)
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, broker)
 	out := testutil.CallTool(t, ctx, ask, `{"question":"which store?"}`)
 	var got askuser.AskUserOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -192,8 +199,8 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	if !strings.Contains(got.Guidance, "Do not ask again") {
 		t.Errorf("guidance = %q", got.Guidance)
 	}
-	if got.Reason != "this run is unattended" {
-		t.Errorf("reason = %q, want the provider's explanation", got.Reason)
+	if got.Reason != "no_human: this run is unattended" {
+		t.Errorf("reason = %q, want the provider's explanation with outcome", got.Reason)
 	}
 }
 
@@ -205,19 +212,19 @@ func TestAskUserToolRequiresQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	ask := agentkit.First(pack)
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, &fakeSessionInteraction{})
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, &fakePermissionBroker{})
 	if out := testutil.CallTool(t, ctx, ask, `{"question":"   "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
 }
 
-type fakeSessionInteraction struct {
-	got    interaction.Human
-	result interaction.Result
+type fakePermissionBroker struct {
+	got    permission.Request
+	result permission.Result
 	err    error
 }
 
-func (f *fakeSessionInteraction) Run(_ context.Context, req interaction.Human) (interaction.Result, error) {
+func (f *fakePermissionBroker) Await(_ context.Context, req permission.Request) (permission.Result, error) {
 	f.got = req
 	return f.result, f.err
 }

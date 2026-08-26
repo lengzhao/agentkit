@@ -48,7 +48,8 @@ func (l *recordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) er
 
 func (l *recordingLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *recordingLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
-func (l *recordingLoop) TryDeliverInteraction(agentkit.MessageEvent) bool     { return false }
+func (l *recordingLoop) TryDeliverPermission(agentkit.MessageEvent) bool      { return false }
+func (l *recordingLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
 
 func (l *recordingLoop) snapshot() ([]string, int) {
 	l.mu.Lock()
@@ -168,10 +169,11 @@ func TestConcurrencyIsCappedByConfig(t *testing.T) {
 	}
 }
 
-// TestDefaultIsSerialWithoutReadAhead pins the conservative default: turns from
-// different sessions share one workspace, so parallelism must be opt-in — and at
-// the default the platform must not be read ahead of the running turn either.
-func TestDefaultIsSerialWithoutReadAhead(t *testing.T) {
+// TestDefaultIsSerialExecution pins the conservative default: turns from
+// different sessions share one workspace, so parallelism must be opt-in. The
+// receive loop may read ahead while a turn runs, but only one turn executes at
+// a time at the default concurrency cap.
+func TestDefaultIsSerialExecution(t *testing.T) {
 	t.Parallel()
 
 	platform := &countingPlatform{scriptedPlatform: scriptedPlatform{events: []agentkit.MessageEvent{
@@ -183,7 +185,6 @@ func TestDefaultIsSerialWithoutReadAhead(t *testing.T) {
 	var maxReadAhead int
 	loop := &recordingLoop{}
 	loop.hold = func(agentkit.LoopRequest) {
-		// While a turn runs, the intake must not have consumed the next event.
 		dispatched, _ := loop.snapshot()
 		if ahead := platform.received() - len(dispatched); ahead > maxReadAhead {
 			maxReadAhead = ahead
@@ -196,8 +197,8 @@ func TestDefaultIsSerialWithoutReadAhead(t *testing.T) {
 	if _, peak := loop.snapshot(); peak != 1 {
 		t.Fatalf("peak concurrency = %d, want 1 by default", peak)
 	}
-	if maxReadAhead > 0 {
-		t.Fatalf("read ahead %d events while a turn was running, want 0 at the default", maxReadAhead)
+	if maxReadAhead == 0 {
+		t.Fatal("expected receive to read ahead while a turn was running")
 	}
 }
 

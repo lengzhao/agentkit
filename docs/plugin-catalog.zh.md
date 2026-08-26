@@ -95,7 +95,7 @@ flowchart TB
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop；`maxConcurrentTurns` 控制跨 session 并发（默认 1，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
-| `platform/cli` | `agentkit.Platform` + `interaction.Handler` | 终端 stdin/stdout；启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话，`/new` 会换新 id 并更新软链；同步 HIL 读 stdin | Pi TUI / DSH headless |
+| `platform/cli` | `agentkit.Platform` + `permission.Capable` | 终端 stdin/stdout；启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话，`/new` 会换新 id 并更新软链；allow/deny 与 ask 经 Permission 协议读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
@@ -157,9 +157,10 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `policy/shell-allowlist` | `agentkit.Policy` | shell 命令前缀白名单；`strict` 时白名单外一律 deny，链式命令每段都要命中 | — |
 | `policy/network-deny` | `agentkit.Policy` | 禁止网络类工具（未做；`web/http-fetch` 自带的 scheme / host / 私网约束是它的雏形） | DSH sandbox policy |
 | `policy/plan-mode` | `agentkit.Policy` | Plan 模式下限制写操作 | DSH plan-mode |
-| `approval/cli` | `approval.Service` | 终端 y/n 审批 | Pi `ctx.ui.confirm` |
 | `approval/auto-deny` | `approval.Service` | 自动拒绝 ask | 测试 / CI |
 | `approval/auto-allow` | `approval.Service` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
+
+> **说明**：交互式终端审批不再使用 `approval/cli` 插件——policy `DecisionAsk` 在无 `approval` 插件时走 platform 可选能力 `permission.Capable` / `CapabilityRouter`（见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
 
 ### 3.5 Hooks（观察与改写，非裁决）
 
@@ -341,7 +342,7 @@ graph:
               config:
                 timeout: 60s
             approval:
-              use: approval/cli
+              use: approval/auto-deny
       policies:
         - use: policy/deny-dangerous-shell
       prompts:
@@ -362,7 +363,7 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 | LLM | `llm/openai-compatible` |
 | Tools | `tool/read-file`, `tool/edit-file`, `tool/write-file`, `tool/shell` |
 | Cap | `fs/local`, `fs/memory`, `shell/bash` |
-| Safety | `policy/deny-dangerous-shell`, `approval/cli`, `approval/auto-deny` |
+| Safety | `policy/deny-dangerous-shell`, Platform Permission（交互式 ask）, `approval/auto-deny` |
 | Prompt | `prompt/assembler/default`, `prompt/section/agents-md` |
 | Infra | `credentials/env` |
 
@@ -412,7 +413,7 @@ Terminal/PTY、LSP、Workflow、Jobs、Web UI、ACP、E2B 远程沙箱等 — �
 | `shell/bash` | `dsh-bash-local` | bash 执行器 |
 | `llm/openai-compatible` | `dsh-llm-*` | pi-ai provider |
 | `policy/deny-dangerous-shell` | permission-presets | extension 示例 |
-| `approval/cli` | `dsh-approval` | `ctx.ui.confirm` |
+| Platform Permission（CLI） | `dsh-approval` | `ctx.ui.confirm` |
 | `compaction/summary` | `dsh-compaction-basic` | `session_before_compact` |
 | `skill/filesystem` | `dsh-skill-filesystem` | skills 目录 |
 | `hook/before-step` | `agent/pre-step` listeners | `context` event |

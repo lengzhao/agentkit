@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/multiplex"
 )
 
@@ -33,6 +34,38 @@ func (s *stubPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
 func (s *stubPlatform) Send(_ context.Context, out agentkit.OutboundEvent) error {
 	s.sent = append(s.sent, out)
 	return nil
+}
+
+func TestMultiplexPermissionCapabilityForwardsLeaf(t *testing.T) {
+	t.Parallel()
+
+	cli := &capableStub{cap: permission.Capability{Interactive: true}}
+	headless := &capableStub{cap: permission.Capability{Interactive: false}}
+	m, err := multiplex.New(multiplex.Config{Names: []string{"cli", "headless"}}, multiplex.Deps{
+		Platforms: []agentkit.Platform{cli, headless},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mp := m.(*multiplex.Platform)
+
+	got := mp.PermissionCapabilityFor("cli")
+	if !got.Interactive {
+		t.Fatalf("cli cap = %+v", got)
+	}
+	got = mp.PermissionCapabilityFor("headless")
+	if got.Interactive {
+		t.Fatalf("headless cap = %+v", got)
+	}
+}
+
+type capableStub struct {
+	stubPlatform
+	cap permission.Capability
+}
+
+func (s *capableStub) PermissionCapability() permission.Capability {
+	return s.cap
 }
 
 func TestMultiplexRoutesOutboundByPlatformID(t *testing.T) {

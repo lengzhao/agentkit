@@ -93,7 +93,7 @@ prompt.custom.default:
 #       - tool.schedule.default
 #     policies:
 #       - policy.dangerous-shell.default
-#     approval: approval.cli.default
+#     # Interactive ask uses platform Permission; unattended runs use approval/auto-allow.
 #
 # tool.schedule.default:
 #   use: tool/schedule

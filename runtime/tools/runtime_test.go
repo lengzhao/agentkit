@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
@@ -204,6 +205,102 @@ type stubProvider struct {
 
 func (p *stubProvider) ListTools(context.Context) ([]agentkit.Tool, error) {
 	return p.tools, nil
+}
+
+func TestRuntimeExecuteUsesPermissionBrokerForAsk(t *testing.T) {
+	t.Parallel()
+
+	broker := &stubPermissionBroker{allow: true}
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+			name: "demo",
+			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+				return agentkit.ToolResult{
+					ID:      call.ID,
+					Name:    call.Name,
+					Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
+				}, nil
+			},
+		})},
+		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
+			return agentkit.Decision{Kind: agentkit.DecisionAsk, Reason: "confirm demo"}
+		})},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, broker)
+	result, err := rt.Execute(ctx, agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "ok" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+	if broker.got.Kind != "allow_deny" || broker.got.Reason != "confirm demo" {
+		t.Fatalf("broker request = %+v", broker.got)
+	}
+}
+
+func TestRuntimeExecuteAutoAllowSkipsBroker(t *testing.T) {
+	t.Parallel()
+
+	broker := &stubPermissionBroker{allow: false}
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+			name: "demo",
+			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+				return agentkit.ToolResult{
+					ID:      call.ID,
+					Name:    call.Name,
+					Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
+				}, nil
+			},
+		})},
+		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
+			return agentkit.Decision{Kind: agentkit.DecisionAsk, Reason: "confirm demo"}
+		})},
+		Approval: stubApproval{allowed: true},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, broker)
+	result, err := rt.Execute(ctx, agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "ok" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+	if broker.awaited {
+		t.Fatal("broker should not run when auto-approval is configured")
+	}
+}
+
+type stubPermissionBroker struct {
+	got     permission.Request
+	allow   bool
+	awaited bool
+}
+
+func (b *stubPermissionBroker) Await(_ context.Context, req permission.Request) (permission.Result, error) {
+	b.awaited = true
+	b.got = req
+	if b.allow {
+		return permission.Result{Outcome: permission.OutcomeResolved, Allow: true}, nil
+	}
+	return permission.Result{Outcome: permission.OutcomeResolved, Allow: false, Reason: "denied"}, nil
+}
+
+type stubApproval struct {
+	allowed bool
+}
+
+func (s stubApproval) Ask(context.Context, agentkit.ApprovalRequest) (agentkit.ApprovalDecision, error) {
+	return agentkit.ApprovalDecision{Allowed: s.allowed}, nil
 }
 
 func TestRuntimeVisibleIncludesDynamicTools(t *testing.T) {

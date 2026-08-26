@@ -1,14 +1,14 @@
 # Platform Human-in-the-loop（Permission 协议）
 
-本文描述 **目标架构**：人机交互（`ask_user`、工具审批、表单/多选）统一走 **Permission 协议**，对齐 [cc-connect](https://github.com/lengzhao/cc-connect) 的 `pendingPermission` + 入站分流模型，不再在 tool 调用栈里分叉 sync/async platform。
+本文描述 **当前架构**：人机交互（`ask_user`、工具审批、表单/多选）统一走 **Permission 协议**，对齐 [cc-connect](https://github.com/lengzhao/cc-connect) 的 `pendingPermission` + 入站分流模型，不再在 tool 调用栈里分叉 sync/async platform。
 
 > **命名**：这里的 *Permission* 指「**一次需要人类输入才能继续的裁决**」，不限于权限检查——`ask_user` 的开放提问同样走这条通道。allow/deny 与 question 是同一协议的两个 `Kind`。
 
-> **代码状态**：当前实现仍是 Loop `interaction.Session` + `Handler`/`AsyncPlatform` 双路径（见文末「迁移」）。本文是 **M3 前后要落地的设计**，实现后需同步更新 [plugin-catalog.zh.md](plugin-catalog.zh.md) 与 [roadmap.zh.md](roadmap.zh.md)。
+> **代码状态（2026-08-26）**：P1–P5 已落地。`MessageEvent.Reply` 为 `json.RawMessage`；类型与 Broker/Capability 均在 `cap/permission`；仅 `KeySessionControl` 承载 Broker；`KindQuestion` 一次一题。
 
-## 1. 为什么要改
+## 1. 为什么要改（迁移前问题，已解决）
 
-当前 HIL（`cap/interaction` + `Control.Run`）存在结构性问题：
+当前 HIL（`cap/interaction` + `Control.Run`，**已删除**）曾存在结构性问题：
 
 | 问题 | 说明 |
 |---|---|
@@ -34,9 +34,9 @@ cc-connect 的做法：**Agent/Runtime 发出 permission 请求 → Engine 渲�
 5. **降级明确、等待有界**：无交互 platform 立即降级（不 emit、不挂 pending）；有交互时必须有超时上界，到点强制继续。
 6. **与 Policy 平面分工清晰**：Policy 裁决 allow/deny/ask；Permission 平面只处理 **需要人输入** 的 ask 出口（含 `ask_user` 与 `DecisionAsk`）。
 7. **作答者归属可约束**：pending 记 `AskedBy`；`answerScope=asker`（默认）时只接受发起者的作答。
-8. **结果语义正交**：「等待怎么结束的」（`Outcome`）与「裁决内容」（`Allow` / `Answers`）分开表达，不用魔法值。
+8. **结果语义正交**：「等待怎么结束的」（`Outcome`）与「裁决内容」（`Allow` / `Answer`）分开表达，不用魔法值。
 
-## 3. 目标架构
+## 3. 架构
 
 ```mermaid
 flowchart TB
@@ -74,7 +74,7 @@ flowchart TB
 
 与 cc-connect 对照：
 
-| cc-connect | AgentKit（目标） |
+| cc-connect | AgentKit（当前） |
 |---|---|
 | `EventPermissionRequest` | 出站 `permission/request` |
 | `interactiveState.pending` | `loop.Control.pending`（按 requestID 键） |
@@ -83,9 +83,7 @@ flowchart TB
 | `CardSender` / `InlineButtonSender` + `supportsCards(p)` | `permission.Capable`，按 `PlatformID` 解析 **leaf** 平台 |
 | `processInteractiveEvents` ∥ `Send` | receive goroutine ∥ dispatch goroutine |
 
-## 4. 核心类型（`cap/permission`）
-
-新建能力边界包，**不**再扩展 `cap/interaction` 作为主路径。
+## 4. 核心类型（`cap/permission`，已落地）
 
 ```go
 type Kind string
@@ -108,35 +106,31 @@ type Question struct {
     MultiSelect bool     `json:"multiSelect,omitempty"`
 }
 
-// Request 一次待人类裁决的请求。多题由 Await 内部拆成多次 emit，
-// 不在 Request/pending 里维护「当前第几题」的状态。
+// Request 一次待人类裁决的请求。KindQuestion 只允许 **一题**（`Question` 字段）。
 type Request struct {
     ID     string `json:"id"`
     Kind   Kind   `json:"kind"`
     Reason string `json:"reason,omitempty"`
 
-    ToolCall  *agentkit.ToolCall `json:"toolCall,omitempty"`  // allow_deny 必填
-    Questions []Question         `json:"questions,omitempty"` // question 必填
+    ToolCall *agentkit.ToolCall `json:"toolCall,omitempty"` // allow_deny 必填
+    Question *Question          `json:"question,omitempty"` // question 必填，且仅一题
 
-    // Timeout 是本次等待的上界；0 表示取 Capability.DefaultTimeout。
-    // 到点不是错误，是按 kind 降级后强制继续（对齐 n8n Limit Wait Time）。
+    // Timeout 是本次等待的上界；0 表示取 EffectiveTimeout（Capability.DefaultTimeout，交互平台兜底 10 分钟）。
     Timeout time.Duration `json:"timeout,omitempty"`
-    // AskedBy 是触发本次请求的 turn 的 UserID；空表示单用户平台。
-    AskedBy string `json:"askedBy,omitempty"`
+    AskedBy string             `json:"askedBy,omitempty"`
 }
 
-// Reply 是平台回传的一次作答。**平台负责**把按钮 payload / 文本行填进结构，
-// Loop 不从字符串猜语义；字符串匹配只在 Decision / Selected 皆空时兜底。
+// Reply 是平台回传的一次作答。Loop 侧用 permission.DecodeReply 解析。
+// KindAllowDeny：Decision（"allow"/"deny" 或 y/n/yes/no），Text 为 CLI 兜底；UpdatedInput 为人类改参；Cancelled 为显式放弃。
+// KindQuestion：仅用 Text / Selected，不设 Decision。
 type Reply struct {
-    RequestID     string `json:"requestId"`
-    QuestionIndex int    `json:"questionIndex,omitempty"`
-    UserID        string `json:"userId,omitempty"` // 谁答的，用于归属校验
-
-    Decision     string         `json:"decision,omitempty"` // allow_deny: allow | deny
-    Selected     []int          `json:"selected,omitempty"` // question: 按钮直给下标（支持多选）
-    Text         string         `json:"text,omitempty"`     // 自由文本
+    RequestID    string         `json:"requestId"`
+    UserID       string         `json:"userId,omitempty"`
+    Decision     string         `json:"decision,omitempty"` // 仅 KindAllowDeny
+    Selected     []int          `json:"selected,omitempty"`
+    Text         string         `json:"text,omitempty"`
     UpdatedInput map[string]any `json:"updatedInput,omitempty"`
-    Cancelled    bool           `json:"cancelled,omitempty"` // 用户显式放弃
+    Cancelled    bool           `json:"cancelled,omitempty"`
 }
 
 // Outcome 说明等待是**怎么结束的**，与裁决内容正交。
@@ -156,13 +150,14 @@ type QuestionResult struct {
 }
 
 type Result struct {
+    ID      string  `json:"id,omitempty"` // permission/resolved 事件携带 request ID
     Outcome Outcome `json:"outcome"`
     // Allow 仅 KindAllowDeny 有意义。Outcome != resolved 时它是**降级裁决**
     // （默认 deny），而 Outcome 保留了「为什么不是人答的」——审计需要这个区分。
     Allow bool `json:"allow,omitempty"`
-    // Answers 与 Request.Questions 同序；仅 KindQuestion。
-    Answers      []QuestionResult `json:"answers,omitempty"`
-    UpdatedInput map[string]any   `json:"updatedInput,omitempty"`
+    // Answer 仅 KindQuestion；一次一题。
+    Answer       *QuestionResult `json:"answer,omitempty"`
+    UpdatedInput map[string]any  `json:"updatedInput,omitempty"`
 
     Reason   string `json:"reason,omitempty"`
     Guidance string `json:"guidance,omitempty"` // 非 resolved 时给模型的继续指引
@@ -187,33 +182,30 @@ const (
 
 type Capability struct {
     Interactive    bool          // false → 立即降级，不 emit、不挂 pending
-    Options        bool          // 能渲染选项 / 按钮
     MultiSelect    bool
-    DefaultTimeout time.Duration // CLI 可为 0（无界，前台有人盯着）；IM 必须 > 0
+    DefaultTimeout time.Duration // 未显式设置时默认 10 分钟；headless 等非交互平台为 0
     AnswerScope    AnswerScope
 }
 
-// Capable 由 **leaf** platform 实现；multiplex 按 PlatformID 转发。
+// Capable 由 **leaf** platform 实现。
 type Capable interface {
     PermissionCapability() Capability
 }
 
-// Broker 由 Loop 注入 context；tools/runtime 与 ask_user 通过它挂起/唤醒。
-// Await 只在 Request 非法（编程错误）或 pending 重入时返回 error，
-// 「等不到人」一律通过 Result.Outcome 表达。
+// CapabilityRouter 由 multiplex 等聚合 platform 实现，按 PlatformID 转发 leaf 能力。
+type CapabilityRouter interface {
+    PermissionCapabilityFor(platformID string) Capability
+}
+
+// Broker 由 Loop Control 经 KeySessionControl 注入；tools/runtime 与 ask_user 通过 permission.BrokerFrom(ctx) 获取。
 type Broker interface {
     Await(context.Context, Request) (Result, error)
 }
 ```
 
-`agentkit` 包保留 context key：
+`agentkit` 包只保留 **`KeySessionControl`**（`*loop.Control`，同时实现 `permission.Broker`）。Runner 把 leaf platform 的 `Capability` 放进 `LoopRequest.Capability`，Loop 在 turn 开始时写入 `Control.setTurnCapability`。
 
-```go
-KeyPermissionBroker    contextKey = "agentkit.permission_broker"
-KeyPermissionCapability contextKey = "agentkit.permission_capability"
-```
-
-**废弃**（迁移完成后删除）：`KeyInteractionHandler`、`KeyAsyncInteraction`；`cap/interaction.Session` / `Handler` / `AsyncPlatform`。
+**已删除**：`KeyPermissionBroker`、`KeyPermissionCapability`、`KeyInteractionHandler`、`KeyAsyncInteraction`；`cap/interaction` 主路径；`plugins/approval/cli`。
 
 ## 5. Loop：pending 表与 `Await`
 
@@ -221,21 +213,17 @@ KeyPermissionCapability contextKey = "agentkit.permission_capability"
 
 ```go
 type pendingPermission struct {
-    requestID     string
-    questionIndex int
-    askedBy       string
-    scope         permission.AnswerScope
-    replies       chan permission.Reply
-    once          sync.Once
+    requestID string
+    askedBy   string
+    scope     permission.AnswerScope
+    replies   chan permission.Reply
+    once      sync.Once
 }
 ```
 
-**不变量**：同一 root session 同时至多一个 pending。今天成立是因为 `runtime/agent` 串行执行工具调用（`for _, call := range assistant.ToolCalls` + 阻塞 `Execute`），**不是**因为协议要求。因此：
+**不变量**：同一 root session 同时至多一个 pending；`KindQuestion` 每次 `Await` 只带 **一题**（`Question` 指针）。重入时 `Await` 返回 error，**不覆盖**现有 pending。
 
-- pending 表按 `(rootSessionID, requestID)` 键，不是单字段；
-- 重入时 `Await` 返回 error 并附现有 requestID，**不覆盖**——一旦将来并行工具调用或 subagent HIL 上线，这里会立刻炸出来而不是静默丢答案。
-
-**subagent**：`runtime/subagent/inprocess.go` 给子 agent 换了 `KeySessionID`（子 session）并置 `KeySessionControl=nil`，同样要置 `KeyPermissionBroker=nil`。原因是结构性的：pending 按执行方 session 挂，而 IM 回复落在**父** session，子 session 的 pending 永远等不到。若将来要支持子 agent 提问，pending 必须按 **root** session 键并在 Request 上带 `originAgentID`。
+**subagent**：`runtime/subagent/inprocess.go` 置 `KeySessionControl=nil`（Broker 与 steer 一并禁用）。子 session 的 pending 永远等不到 IM 父 session 的回复。
 
 ```go
 func (c *Control) Await(ctx context.Context, req permission.Request) (permission.Result, error) {
@@ -245,7 +233,7 @@ func (c *Control) Await(ctx context.Context, req permission.Request) (permission
         return permission.NoHuman(req, "platform has no interactive user"), nil
     }
     if req.Timeout == 0 {
-        req.Timeout = capab.DefaultTimeout
+        req.Timeout = permission.EffectiveTimeout(req, capab)
     }
     if req.Timeout > 0 {
         var cancel context.CancelFunc
@@ -254,19 +242,8 @@ func (c *Control) Await(ctx context.Context, req permission.Request) (permission
     }
 
     switch req.Kind {
-    case permission.KindAllowDeny:
-        return c.awaitOne(ctx, req, 0)
-    case permission.KindQuestion:
-        // 多题顺序追问：每题一次 awaitOne，任一题未 resolved 即带着已答部分返回。
-        out := permission.Result{Outcome: permission.OutcomeResolved,
-            Answers: make([]permission.QuestionResult, len(req.Questions))}
-        for i := range req.Questions {
-            r, err := c.awaitOne(ctx, req, i)
-            if err != nil { return permission.Result{}, err }
-            if !r.Resolved() { r.Answers = out.Answers[:i]; return r, nil }
-            out.Answers[i] = r.Answers[0]
-        }
-        return out, nil
+    case permission.KindAllowDeny, permission.KindQuestion:
+        return c.awaitOne(ctx, req, capab)
     }
 }
 ```
@@ -274,10 +251,10 @@ func (c *Control) Await(ctx context.Context, req permission.Request) (permission
 `awaitOne` 的职责，顺序固定：
 
 1. 注册 pending（重入 → error）；
-2. emit `permission/request`（带 `questionIndex` / `questionTotal`）；
+2. emit `permission/request`；
 3. `select { <-ctx.Done() → timeout/cancelled; reply := <-pending.replies → 解析 }`；
 4. emit `permission/resolved`——**失败只记日志，绝不因此丢掉已拿到的答案**；
-5. 清理 pending（`once` 保证 resolve 恰好一次）。
+5. 清理 pending。
 
 ```go
 func (c *Control) DeliverPermissionReply(root agentkit.SessionID, reply permission.Reply) bool
@@ -287,11 +264,10 @@ func (l *Default) TryDeliverPermission(event agentkit.MessageEvent) bool
 
 **校验**（`DeliverPermissionReply` 内，全部不通过就返回 false，由调用方决定后续）：
 
-- `reply.RequestID` 与 pending 匹配（空 requestID 一律拒绝——不再「空 ID 匹配任意 pending」）；
-- `questionIndex` 与当前待答题一致；
+- `reply.RequestID` 与 pending 匹配；
 - `scope == ScopeAsker` 时 `reply.UserID == pending.askedBy`。
 
-**选项匹配**：`permission.MatchReply(reply, question)` —— 仅当 `Decision`/`Selected` 皆空时才解析 `Text`。数字下标匹配只在该题**有** Options 时启用，避免自由文本 `"2"` 被吞成第 2 项。
+**选项匹配**：`permission.MatchReply(reply, question)` —— 仅用 `Selected` / `Text`（忽略 `Decision`）。数字下标匹配只在该题**有** Options 时启用，避免自由文本 `"2"` 被吞成第 2 项。allow/deny 解析用 `permission.MatchAllowDeny(reply)`。
 
 ## 6. 事件契约与入站分流
 
@@ -299,8 +275,8 @@ func (l *Default) TryDeliverPermission(event agentkit.MessageEvent) bool
 
 | Type | 含义 | Payload |
 |---|---|---|
-| `permission/request` | 开始一次人机等待 | `permission.Request` + `questionIndex` / `questionTotal` |
-| `permission/resolved` | 结束等待 | `id`、`outcome`、`allow`、`answers`、`reason` |
+| `permission/request` | 开始一次人机等待 | `permission.RequestPayload`（嵌入 `Request`） |
+| `permission/resolved` | 结束等待 | `permission.Result`（含 `id`） |
 
 `events.go` 迁移期可同时发新旧事件（一版兼容），最终只保留 permission 事件。
 
@@ -314,9 +290,8 @@ Platform `Send` 职责：
 ```go
 type MessageEvent struct {
     // ...
-    // Reply 非 nil 时，这条入站是对某个 permission/request 的作答：
-    // Runner 直接投递，绝不开新 turn。与 Message 互斥。
-    Reply *permission.Reply `json:"reply,omitempty"`
+    // Reply 非空 JSON 时，是对 permission/request 的作答：Runner 直接 TryDeliverPermission，绝不开新 turn。
+    Reply json.RawMessage `json:"reply,omitempty"` // permission.MarshalReply / DecodeReply
 }
 ```
 
@@ -326,7 +301,7 @@ type MessageEvent struct {
 - CLI：`Send(permission/request)` 记下 id → `Receive` 读到的行包成 `Reply{RequestID: id, Text: line}` → `permission/resolved` 时清除。这也顺带回答了「CLI 怎么区分答案行和新 prompt 行」。
 - IM：按钮 callback 自带 id；纯文本回复则看是否 reply 到那条卡片消息。
 
-**`Reply == nil` 但存在 pending**（用户改主意、插话、发新需求）：默认 `SupersedePending` —— pending 以 `OutcomeSuperseded` 收尾（allow_deny 降级为 deny），这条消息再按 `followUpMode` 走 steer / 新 turn。**必须显式处理**：否则新 turn 阻塞在 session 锁，旧 turn 等一个永不到来的回复，形成 session 锁层死锁。
+**`Reply` 为空但存在 pending**（用户改主意、插话）：`SupersedePending` → pending 以 `OutcomeSuperseded` 收尾，消息再按 steer / 新 turn 处理。
 
 ## 7. tools/runtime 与 `ask_user`
 
@@ -360,13 +335,13 @@ sequenceDiagram
 ### 7.2 `tool/ask_user`
 
 ```go
-broker, ok := ctx.Value(agentkit.KeyPermissionBroker).(permission.Broker)
-if !ok || broker == nil {
+broker, ok := permission.BrokerFrom(ctx)
+if !ok {
     return unanswered("no permission broker on this session"), nil // 子 agent
 }
 result, err := broker.Await(ctx, permission.Request{
-    Kind:      permission.KindQuestion,
-    Questions: []permission.Question{{Prompt: question, Options: opts, Default: def}},
+    Kind: permission.KindQuestion,
+    Question: &permission.Question{Prompt: question, Options: opts, Default: def},
 })
 ```
 
@@ -407,8 +382,8 @@ read-ahead 由 session 队列容量界定，不再由 slot 界定。`LoopRequest
 
 | 平台 | Capability | 展示 | 回传 |
 |---|---|---|---|
-| `platform/cli` | `Interactive`, `Options`, `DefaultTimeout=0`, `ScopeAnyone` | `Send` → stderr | `Receive` 文本行 → 包成 `Reply`；删除 `interaction.Handler` |
-| `platform/feishu`（待建） | `Interactive`, `Options`, `MultiSelect`, `DefaultTimeout>0`, `ScopeAsker` | 卡片 + inline button | 按钮 callback 或 reply-to 卡片 |
+| `platform/cli` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | `Send` → stderr | `Receive` 文本行 → 包成 `Reply` |
+| `platform/feishu`（待建） | `Interactive`, `MultiSelect`, `DefaultTimeout≥10m`, `ScopeAsker` | 卡片 + inline button | 按钮 callback 或 reply-to 卡片 |
 | `platform/headless` | `Interactive=false` | 无 | Broker 直接 `NoHuman` |
 | `platform/multiplex` | **转发 leaf 的 Capability** | 按 `PlatformID` 路由子平台 `Send` | 子平台 `Receive` 原样上送 |
 
@@ -430,7 +405,7 @@ read-ahead 由 session 队列容量界定，不再由 slot 界定。`LoopRequest
 
 ## 11. 超时、持久化与重启
 
-**超时**：`Request.Timeout` → `Capability.DefaultTimeout`。IM 平台必须给非零默认值：等待期间 Dispatch 持 session 锁并占一个 slot，`maxConcurrentTurns=1` 下一张没人点的卡片会拖住整个进程。到点按 §10 降级并**继续**，不报错。
+**超时**：`Request.Timeout` → `Capability.DefaultTimeout` → 交互平台兜底 `permission.DefaultTimeout`（**10 分钟**）。到点按 §10 降级并**继续**，不报错。
 
 **持久化分级**（借 n8n 的阈值思路，不借它的执行模型）：
 
@@ -454,36 +429,35 @@ read-ahead 由 session 队列容量界定，不再由 slot 界定。`LoopRequest
 3. in-process `Broker` 与 adapter **共用** Loop pending 表与同一 requestID 空间，避免两套状态；
 4. `UpdatedInput` 语义与 in-process 保持一致（人类改写后的工具入参）。
 
-## 13. 迁移计划
+## 13. 迁移计划（已完成）
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| **P0 文档** | 本文 + 更新 README / roadmap | — |
-| **P1 Runner** | receive goroutine 与 slot 解耦（双 goroutine） | 单测：pending 期间 `Receive` 仍可投递作答 |
-| **P2 cap/permission + Broker** | `Control.Await` / `awaitOne` / pending 表；`Outcome`；**超时**；**作答者归属校验**；`superseded` 语义；`permission/*` 事件 | 替代 `interaction_test` 场景；新增超时、归属、superseded、pending 重入四组用例 |
-| **P3 runtime 接入** | `DecisionAsk` → Broker；`ask_user` → Broker；删除 `approval/cli`；subagent 置 `KeyPermissionBroker=nil` | `presets/web.yaml` 冒烟 |
-| **P4 Platform** | `MessageEvent.Reply` + `Capability`；CLI 去 `Handler` 与多余 stdin reader；multiplex 转发 capability；飞书卡片 | CLI 交互回归；飞书 E2E |
-| **P5 清理** | 删 `cap/interaction` 主路径、`KeyInteractionHandler`、旧事件；session log 落盘与 recovery 收尾 | grep 无残留 |
+| **P0 文档** | 本文 + 更新 README / roadmap | ✅ |
+| **P1 Runner** | receive goroutine 与 slot 解耦（双 goroutine） | ✅ 单测 `TestReceiveDeliversPermissionWhileTurnBlocked` |
+| **P2 cap/permission + Broker** | `Control.Await` / pending 表；`Outcome`；超时；作答者归属；`superseded` | ✅ `permission_test.go` |
+| **P3 runtime 接入** | `DecisionAsk` → Broker；`ask_user` → Broker；删除 `approval/cli`；subagent 置 `KeySessionControl=nil` | ✅ |
+| **P4 Platform** | `MessageEvent.Reply` + `Capability`；CLI 去 `Handler`；multiplex 转发 capability | ✅ |
+| **P5 清理** | 删 `cap/interaction` 主路径、`KeyInteractionHandler`、旧事件 | ✅ grep 无残留 |
+| **后续** | session log 落盘与 recovery 收尾（§11 `permissionPersistAfterSeconds`） | 未做 |
 
 P2 里超时与归属校验**不能后置**：前者是可用性底线（无界等待拖死进程），后者是授权正确性（群里代答）。
 
-迁移期 **双发事件**（`interaction/*` + `permission/*`）最多保持一个 minor 版本。
+## 14. 已删除项（P5）
 
-## 14. 废弃清单（P5 后）
-
-| 项 | 说明 |
+| 项 | 替代 |
 |---|---|
-| `cap/interaction.Session` | 由 `permission.Broker` 取代 |
-| `interaction.Handler` | Platform 不再同步读 |
+| `cap/interaction.Session` | `permission.Broker` |
+| `interaction.Handler` | Platform `PermissionCapability()` + `Receive` → `Reply` |
 | `interaction.AsyncPlatform` | 无 async 特例；能力由 `Capability` 声明 |
-| `EventInteractionStart` / `End` | 改为 `permission/request` / `resolved` |
-| `MessageEvent.InteractionReplyTo` | 改为类型化 `Reply *permission.Reply` |
-| `plugins/approval/cli` | 整包删除；渲染归 Platform，`Approval` 只留自动应答器 |
-| `cli.Input.ReadAnswer` / `waiting` / `armed` / `discardStale` | 单一 reader 后不再需要 |
-| `Loop.TryDeliverInteraction` | 改名 `TryDeliverPermission`，只做校验 |
-| `interaction.Result.Selected` / `Multiple` | 由 `QuestionResult.Selected []int` 取代 |
+| `EventInteractionStart` / `End` | `permission/request` / `resolved` |
+| `MessageEvent.InteractionReplyTo` | `Reply json.RawMessage` + `permission.DecodeReply` |
+| `plugins/approval/cli` | Platform 渲染 allow/deny；`Approval` 只留 `auto-allow` / `auto-deny` |
+| `cli.Input.ReadAnswer` / `waiting` / `armed` | 单一 `ReadPrompt` reader |
+| `Loop.TryDeliverInteraction` | `TryDeliverPermission` |
+| `interaction.Result.Selected` / `Multiple` | `QuestionResult.Selected []int` |
 
-## 15. 配置（目标态）
+## 15. 配置（当前）
 
 ```yaml
 tool.ask-user.default:
@@ -512,4 +486,4 @@ loop.default:
 - cc-connect：`core/engine.go` — `handlePendingPermission`、`processInteractiveEvents` 与 `Send` 并行、`sendAskQuestionPrompt`；capability 接口 `CardSender` / `InlineButtonSender` + `supportsCards(p)` 模式
 - cc-connect：`agent/claudecode/session.go` — `handleControlRequest` / `RespondPermission`（作答不走消息通道，独立方法）
 - [n8n Wait 节点](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait) — *Limit Wait Time*（到点强制继续）、resume URL 的 per-execution 唯一性与 Webhook Suffix（一个执行里多个等待点必须各自可寻址）、65s 内存/落库阈值
-- AgentKit 现状代码：`runtime/loop/interaction.go`、`runtime/runner/{runner,dispatch}.go`、`runtime/tools/runtime.go:179`、`plugins/approval/cli.go`、`runtime/subagent/inprocess.go:222`
+- AgentKit 实现代码：`cap/permission/`、`runtime/loop/permission.go`、`runtime/runner/{runner,dispatch}.go`、`runtime/tools/runtime.go`、`runtime/platform/cli/permission.go`、`runtime/subagent/inprocess.go`

@@ -4,7 +4,7 @@
 #
 #   go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
 #
-# 单独用 `-config presets/daemon.yaml` 会拿到 L0 的 approval/cli，守护进程会卡在
+# 单独用 `-config presets/daemon.yaml` 且未链 autonomous 时，L0 无 auto-allow，policy ask 会走 Permission 等人 —
 # 等人输入 —— 一定要跟 autonomous.yaml 一起链。
 #
 # 停止：Ctrl+C 或 SIGTERM。信号会取消 ctx，正在睡的定时器立刻返回，

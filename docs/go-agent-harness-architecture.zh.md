@@ -343,8 +343,7 @@ runner:
                   deps:
                     executor:
                       use: shell/bash
-                    approval:
-                      use: approval/cli
+                    # 交互式 ask 由 platform Permission 承载；无人值守时配 approval/auto-allow
               policies:
                 - use: policy/deny-dangerous-shell
 ```
@@ -545,8 +544,7 @@ agent.coder.default:
         use: tool/shell
         deps:
           executor: shell.default
-          approval:
-            use: approval/cli
+          # 交互式 ask 由 platform Permission 承载
 
 shell.default:
   use: shell/bash
@@ -580,7 +578,7 @@ graph:
       timeout: 30s
 
   approval.default:
-    use: approval/cli
+    use: approval/auto-deny
 
   tool.shell:
     use: tool/shell

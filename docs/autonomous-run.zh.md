@@ -293,7 +293,7 @@ Runner 对每个 turn 做 panic 隔离：panic 被记成带堆栈的 `ERROR` 日
 agent -config presets/autonomous.yaml,presets/daemon.yaml
 ```
 
-所以 `worker.yaml` / `daemon.yaml` / `cron.yaml` 都是**薄 overlay**，能力栈从 `autonomous.yaml` 叠加，不必每个 preset 重述整张图。反过来说：单独用它们会拿到 L0 的 `approval/cli`，守护进程会卡在等人审批 —— 一定要一起链。`cron.yaml` 还扩展了 autonomous 的工具集（加 `tool/schedule`），所以它连单独装配都不成立，`config/presets_test.go` 里把它标为 chain-only。
+所以 `worker.yaml` / `daemon.yaml` / `cron.yaml` 都是**薄 overlay**，能力栈从 `autonomous.yaml` 叠加，不必每个 preset 重述整张图。反过来说：单独用它们且未链 `autonomous.yaml` 时，L0 无 `approval/auto-allow`，policy ask 会走 Platform Permission 等人 —— 无人值守一定要一起链。`cron.yaml` 还扩展了 autonomous 的工具集（加 `tool/schedule`），所以它连单独装配都不成立，`config/presets_test.go` 里把它标为 chain-only。
 
 ### 7.8 并发分发
 
@@ -322,7 +322,7 @@ runner.default:
 
 ## 8. 无人值守的安全边界
 
-`approval/cli` 会阻塞等人，`approval/auto-deny` 会让自主跑全程被拒，所以无人值守用 `approval/auto-allow`。
+交互式 Platform Permission 会阻塞等人，`approval/auto-deny` 会让自主跑全程被拒，所以无人值守用 `approval/auto-allow`。
 
 **关键约束**：`auto-allow` 不做任何过滤，它只是不阻塞。唯一的 enforcement 是 Policy Plane。因此它必须与下面两个 policy 同时挂载：
 

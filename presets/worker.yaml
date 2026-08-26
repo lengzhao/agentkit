@@ -5,7 +5,7 @@
 #
 #   go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "把 docs/ 里的死链列出来"
 #
-# 单独用 `-config presets/worker.yaml` 会拿到 L0 的 approval/cli，无人值守时会卡在
+# 单独用 `-config presets/worker.yaml` 且未链 autonomous 时，L0 无 auto-allow，policy ask 会走 Permission 等人，
 # 等人输入 —— 一定要跟 autonomous.yaml 一起链。
 #
 # 与 platform/cli once=true 的区别：worker 从不碰 stdin，所以在 systemd、cron、

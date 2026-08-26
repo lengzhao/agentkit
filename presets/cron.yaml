@@ -4,7 +4,7 @@
 #
 #   go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
 #
-# 单独用 `-config presets/cron.yaml` 会拿到 L0 的 approval/cli，守护进程会卡在
+# 单独用 `-config presets/cron.yaml` 且未链 autonomous 时，L0 无 auto-allow，policy ask 会走 Permission 等人 —
 # 等人审批 —— 一定要跟 autonomous.yaml 一起链。
 #
 # 与 presets/daemon.yaml（platform/timer）的区别：timer 只支持固定间隔，这里支持

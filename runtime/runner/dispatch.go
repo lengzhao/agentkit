@@ -17,16 +17,13 @@ import (
 // could run them out of order. So ordering is enforced here, with one worker per
 // session drained in order.
 //
-// Concurrency is capped by a slot semaphore with one invariant: every submitted
-// request carries exactly one slot, released when its dispatch finishes. The
-// intake acquires the slot before reading the next event, so
+// Concurrency is capped by a slot semaphore: a slot is acquired when a worker
+// starts dispatching a request and released when that dispatch finishes. The
+// platform receive path does not take slots, so inbound can still be read while
+// a turn waits on human input (permission pending).
 //
-//	in-flight + queued <= maxConcurrent
-//
-// and a queued request never has to wait for a slot to run, which is what keeps
-// the design deadlock-free. It also means read-ahead from the platform is
-// bounded: at maxConcurrent == 1 the intake blocks until the previous turn is
-// done, exactly as a fully serial loop would.
+// Session queues may hold more requests than maxConcurrent; only in-flight
+// dispatches are capped.
 type scheduler struct {
 	dispatch func(context.Context, agentkit.LoopRequest) error
 	onError  func(context.Context, agentkit.LoopRequest, error)
@@ -59,7 +56,7 @@ func newScheduler(
 	}
 }
 
-// acquire takes the slot that the next submitted request will carry.
+// acquire takes one concurrency slot before running a turn.
 func (s *scheduler) acquire(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
@@ -69,8 +66,7 @@ func (s *scheduler) acquire(ctx context.Context) error {
 	}
 }
 
-// release returns a slot taken by acquire when no request was submitted after
-// all, e.g. the platform reported EOF or an empty event.
+// release returns a slot after dispatch finishes.
 func (s *scheduler) release() {
 	select {
 	case <-s.slots:
@@ -78,8 +74,8 @@ func (s *scheduler) release() {
 	}
 }
 
-// submit queues a request whose slot is already held, starting a worker for the
-// session when one is not already draining it.
+// submit queues a new turn request, starting a worker for the session when one
+// is not already draining it.
 func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
 	sessionID := req.Event.SessionID
 
@@ -124,9 +120,10 @@ func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 		queue.pending = queue.pending[1:]
 		s.mu.Unlock()
 
+		if err := s.acquire(ctx); err != nil {
+			return
+		}
 		err := s.dispatch(ctx, req)
-		// The slot travelled with this request; hand it back before reporting so
-		// the intake can move on.
 		s.release()
 		if err != nil && s.onError != nil {
 			s.onError(ctx, req, err)

@@ -65,7 +65,6 @@ tools.subagent.default:
       - tool.finish.default
     policies:
       - policy.dangerous-shell.default
-    approval: approval.cli.default
 
 tool.finish.default:
   use: tool/finish
@@ -115,7 +114,6 @@ tools.default:
       - mcp.default
     policies:
       - policy.dangerous-shell.default
-    approval: approval.cli.default
 
 tool.subagent.default:
   use: tool/subagent

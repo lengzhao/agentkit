@@ -9,9 +9,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/interaction"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -31,6 +31,8 @@ type Deps struct {
 }
 
 type Platform struct {
+	mu sync.Mutex
+
 	initialPrompt string
 	once          bool
 	done          bool
@@ -38,6 +40,7 @@ type Platform struct {
 	input         *Input
 	commands      agentkit.Commands
 	sessionID     agentkit.SessionID
+	pending       *permissionPrompt
 }
 
 // New registers platform/cli: Interactive terminal platform with slash commands.
@@ -94,9 +97,13 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 		p.welcomed = true
 	}
 
-	text, err := p.readInput()
+	waitingPermission := p.hasPending()
+	text, err := p.readInput(waitingPermission)
 	if err != nil {
 		return agentkit.MessageEvent{}, err
+	}
+	if pending := p.takePending(); pending != nil {
+		return p.permissionReplyEvent(text, pending), nil
 	}
 	if text == "" {
 		return agentkit.MessageEvent{}, nil
@@ -155,7 +162,7 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	return true, nil
 }
 
-func (p *Platform) readInput() (string, error) {
+func (p *Platform) readInput(skipPrompt bool) (string, error) {
 	if p.initialPrompt != "" {
 		text := p.initialPrompt
 		p.initialPrompt = ""
@@ -164,7 +171,9 @@ func (p *Platform) readInput() (string, error) {
 		}
 		return text, nil
 	}
-	fmt.Fprint(os.Stderr, "> ")
+	if !skipPrompt {
+		fmt.Fprint(os.Stderr, "> ")
+	}
 	line, err := p.input.ReadPrompt()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -206,14 +215,25 @@ func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
 		if text != "" {
 			fmt.Println(text)
 		}
-	case agentkit.EventInteractionStart:
-		var payload interaction.StartPayload
-		if err := json.Unmarshal(event.Data, &payload); err != nil {
+	case agentkit.EventPermissionRequest:
+		payload, err := decodePermissionRequest(event.Data)
+		if err != nil {
 			return err
 		}
-		renderInteractionStart(payload)
+		if payload.ID == "" {
+			return fmt.Errorf("permission/request missing id")
+		}
+		p.mu.Lock()
+		p.pending = &permissionPrompt{
+			requestID: payload.ID,
+		}
+		p.mu.Unlock()
+		p.renderPermissionRequest(payload)
 		return nil
-	case agentkit.EventInteractionEnd:
+	case agentkit.EventPermissionResolved:
+		p.mu.Lock()
+		p.pending = nil
+		p.mu.Unlock()
 		return nil
 	case agentkit.EventTurnContinue:
 		var payload struct {

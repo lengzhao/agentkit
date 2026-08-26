@@ -7,8 +7,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/runner"
 )
 
@@ -65,7 +67,8 @@ func (l *panickyLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error 
 
 func (l *panickyLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *panickyLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
-func (l *panickyLoop) TryDeliverInteraction(agentkit.MessageEvent) bool     { return false }
+func (l *panickyLoop) TryDeliverPermission(agentkit.MessageEvent) bool      { return false }
+func (l *panickyLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
 
 func (l *panickyLoop) count() int {
 	l.mu.Lock()
@@ -133,7 +136,158 @@ type errorLoop struct{ err error }
 func (l errorLoop) Dispatch(context.Context, agentkit.LoopRequest) error  { return l.err }
 func (l errorLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l errorLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
-func (l errorLoop) TryDeliverInteraction(agentkit.MessageEvent) bool       { return false }
+func (l errorLoop) TryDeliverPermission(agentkit.MessageEvent) bool        { return false }
+func (l errorLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
+
+// permissionLoop blocks the first dispatch until closed, and records permission
+// deliveries via TryDeliverPermission.
+type permissionLoop struct {
+	mu sync.Mutex
+
+	turnBlocked chan struct{}
+	releaseTurn chan struct{}
+	delivered   int
+}
+
+func (l *permissionLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error {
+	l.mu.Lock()
+	if l.turnBlocked == nil {
+		l.mu.Unlock()
+		return nil
+	}
+	blocked := l.turnBlocked
+	release := l.releaseTurn
+	l.turnBlocked = nil
+	l.mu.Unlock()
+
+	close(blocked)
+	select {
+	case <-release:
+	case <-time.After(5 * time.Second):
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+func (l *permissionLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
+func (l *permissionLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+
+func (l *permissionLoop) TryDeliverPermission(event agentkit.MessageEvent) bool {
+	if len(event.Reply) == 0 {
+		return false
+	}
+	l.mu.Lock()
+	l.delivered++
+	l.mu.Unlock()
+	return true
+}
+
+func (l *permissionLoop) SupersedePendingForInbound(agentkit.MessageEvent) {}
+
+func (l *permissionLoop) deliveredCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.delivered
+}
+
+// stagedPermissionPlatform serves one user turn, then waits until the turn is
+// blocked before offering a permission reply.
+type stagedPermissionPlatform struct {
+	turnBlocked chan struct{}
+	replySent   chan struct{}
+
+	mu       sync.Mutex
+	stage    int
+	received int
+}
+
+func (p *stagedPermissionPlatform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
+	p.mu.Lock()
+	stage := p.stage
+	p.stage++
+	p.received++
+	p.mu.Unlock()
+
+	switch stage {
+	case 0:
+		return userEvent("s:1", "start turn"), nil
+	case 1:
+		select {
+		case <-p.turnBlocked:
+		case <-ctx.Done():
+			return agentkit.MessageEvent{}, ctx.Err()
+		}
+		select {
+		case p.replySent <- struct{}{}:
+		default:
+		}
+		return agentkit.MessageEvent{
+			SessionID: "s:1",
+			Reply: permission.MarshalReply(permission.Reply{
+				RequestID: "perm1",
+				Text:      "yes",
+			}),
+		}, nil
+	default:
+		return agentkit.MessageEvent{}, io.EOF
+	}
+}
+
+func (p *stagedPermissionPlatform) Send(context.Context, agentkit.OutboundEvent) error {
+	return nil
+}
+
+// TestReceiveDeliversPermissionWhileTurnBlocked is the P1 guarantee: the
+// receive loop must not hold a concurrency slot, so permission replies can
+// still be read and delivered while a turn waits on pending input.
+func TestReceiveDeliversPermissionWhileTurnBlocked(t *testing.T) {
+	t.Parallel()
+
+	turnBlocked := make(chan struct{})
+	releaseTurn := make(chan struct{})
+	replySent := make(chan struct{}, 1)
+	loop := &permissionLoop{
+		turnBlocked: turnBlocked,
+		releaseTurn: releaseTurn,
+	}
+	platform := &stagedPermissionPlatform{
+		turnBlocked: turnBlocked,
+		replySent:   replySent,
+	}
+
+	root, err := runner.New(runner.Config{}, runner.Deps{Platform: platform, Loop: loop})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- root.Run(context.Background(), nil) }()
+
+	select {
+	case <-turnBlocked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn did not start blocking")
+	}
+
+	select {
+	case <-replySent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("permission reply was not received while turn was blocked")
+	}
+	if got := loop.deliveredCount(); got != 1 {
+		t.Fatalf("delivered = %d, want 1", got)
+	}
+
+	close(releaseTurn)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("run did not finish after unblocking turn")
+	}
+}
 
 func TestRunKeepsServingAfterTurnError(t *testing.T) {
 	t.Parallel()

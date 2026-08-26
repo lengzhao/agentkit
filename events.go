@@ -26,6 +26,6 @@ const (
 	EventSessionRecovery         EventType = "session/recovery"
 	EventSubagentStart           EventType = "subagent/start"
 	EventSubagentEnd             EventType = "subagent/end"
-	EventInteractionStart        EventType = "interaction/start"
-	EventInteractionEnd          EventType = "interaction/end"
+	EventPermissionRequest       EventType = "permission/request"
+	EventPermissionResolved      EventType = "permission/resolved"
 )

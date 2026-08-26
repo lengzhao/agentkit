@@ -3,11 +3,10 @@ package loop
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/interaction"
+	"github.com/lengzhao/agentkit/cap/permission"
 )
 
 type Config struct {
@@ -70,7 +69,9 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	defer unlock()
 
 	control := l.controlFor(sessionID)
-	ctx = withTurnContext(ctx, sessionID, agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit, req.InteractionHandler, req.AsyncInteraction)
+	capab := permissionCapability(req.Capability)
+	control.setTurnCapability(capab)
+	ctx = withTurnContext(ctx, sessionID, agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
 
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
@@ -120,26 +121,9 @@ func (l *Default) FollowUp(ctx context.Context, msg agentkit.ModelMessage) error
 	return l.controlFor(sessionID).FollowUp(ctx, msg)
 }
 
-func (l *Default) TryDeliverInteraction(event agentkit.MessageEvent) bool {
-	if event.SessionID == "" {
-		return false
-	}
-	text := messageText(event.Message)
-	if strings.TrimSpace(text) == "" {
-		return false
-	}
-	ctrl := l.controlFor(event.SessionID)
-	return ctrl.DeliverInteractionReply(event.SessionID, event.InteractionReplyTo, text)
-}
-
-func messageText(msg agentkit.ModelMessage) string {
-	var b strings.Builder
-	for _, part := range msg.Content {
-		if part.Type == "text" {
-			b.WriteString(part.Text)
-		}
-	}
-	return b.String()
+func (l *Default) controlFor(sessionID agentkit.SessionID) *Control {
+	v, _ := l.sessionControls.LoadOrStore(sessionID, NewControl())
+	return v.(*Control)
 }
 
 func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentkit.AgentID, error) {
@@ -160,7 +144,7 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit, handler interaction.Handler, asyncInteraction bool) context.Context {
+func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit) context.Context {
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
 	if platformID != "" {
@@ -172,16 +156,18 @@ func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID 
 	if emit != nil {
 		ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, emit)
 	}
-	if handler != nil {
-		ctx = context.WithValue(ctx, agentkit.KeyInteractionHandler, handler)
-	}
-	if asyncInteraction {
-		ctx = context.WithValue(ctx, agentkit.KeyAsyncInteraction, true)
-	}
 	if control != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)
 	}
 	return ctx
+}
+
+func permissionCapability(raw any) permission.Capability {
+	capab, ok := raw.(permission.Capability)
+	if !ok {
+		return permission.Capability{}
+	}
+	return capab
 }
 
 func sessionIDFromContext(ctx context.Context) (agentkit.SessionID, error) {

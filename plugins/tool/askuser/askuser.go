@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/interaction"
+	"github.com/lengzhao/agentkit/cap/permission"
 )
 
 type AskUserConfig struct{}
@@ -30,7 +30,7 @@ type AskUserOutput struct {
 // NewAskUser registers tool/ask-user: Ask the human one question (tool name: ask_user) whose answer changes what the agent does next.
 //
 // Best practices:
-//   - Routes through the inbound platform via cap/interaction.Session; interactive CLI reads stdin, IM platforms render cards/buttons.
+//   - Routes through the inbound platform via permission.Broker; interactive CLI renders permission/request, IM platforms render cards/buttons.
 //   - Headless platforms return answered=false immediately; it is never an error and never blocks the turn.
 //   - Do not mount it on subagents: a child agent runs behind a delegate call, where nobody is watching its stdout.
 func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.ToolPack, error) {
@@ -40,41 +40,65 @@ func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.ToolPack, error) {
 			return AskUserOutput{}, fmt.Errorf("question is required")
 		}
 
-		si, ok := ctx.Value(agentkit.KeySessionControl).(interaction.Session)
-		if !ok || si == nil {
-			return unansweredAsk("session interaction unavailable"), nil
+		broker, ok := permission.BrokerFrom(ctx)
+		if !ok {
+			return unansweredAsk("no permission broker on this session"), nil
 		}
 
-		options := make([]interaction.Option, 0, len(input.Options))
+		options := make([]permission.Option, 0, len(input.Options))
 		for _, opt := range input.Options {
-			options = append(options, interaction.Option{Label: opt})
+			options = append(options, permission.Option{Label: opt})
 		}
 
-		result, err := si.Run(ctx, interaction.Human{
-			Kind:    interaction.Question,
-			Prompt:  question,
-			Options: options,
-			Default: strings.TrimSpace(input.Default),
+		result, err := broker.Await(ctx, permission.Request{
+			Kind: permission.KindQuestion,
+			Question: &permission.Question{
+				Prompt:  question,
+				Options: options,
+				Default: strings.TrimSpace(input.Default),
+			},
 		})
 		if err != nil {
 			return AskUserOutput{}, err
 		}
-
-		out := AskUserOutput{
-			Answered: result.Answered,
-			Answer:   result.Text,
-			Selected: result.Selected,
-			Reason:   result.Reason,
-		}
-		if !result.Answered {
-			out.Guidance = "Nobody answered. Do not ask again: pick the most reasonable option yourself, state the assumption you made, and continue."
-		}
-		return out, nil
+		return mapAskUserOutput(result), nil
 	}).Description("Ask the user one question when their answer changes what you do next. Do not use it for questions you can answer by reading the workspace. If nobody is available the result says so, and you should proceed on your own judgement.").Build()
 	if err != nil {
 		return nil, err
 	}
 	return agentkit.Pack(tool), nil
+}
+
+func mapAskUserOutput(result permission.Result) AskUserOutput {
+	out := AskUserOutput{
+		Answered: result.Resolved(),
+		Reason:   askUserReason(result),
+		Guidance: result.Guidance,
+		Selected: -1,
+	}
+	if result.Answer != nil {
+		out.Answer = result.Answer.Text
+		if len(result.Answer.Selected) > 0 {
+			out.Selected = result.Answer.Selected[0]
+		}
+	}
+	if !result.Resolved() && out.Guidance == "" {
+		out.Guidance = "Nobody answered. Do not ask again: pick the most reasonable option yourself, state the assumption you made, and continue."
+	}
+	return out
+}
+
+func askUserReason(result permission.Result) string {
+	if result.Reason != "" {
+		if !result.Resolved() {
+			return string(result.Outcome) + ": " + result.Reason
+		}
+		return result.Reason
+	}
+	if !result.Resolved() {
+		return string(result.Outcome)
+	}
+	return ""
 }
 
 func unansweredAsk(reason string) AskUserOutput {

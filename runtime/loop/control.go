@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/permission"
 )
 
 // Control holds steer / follow-up queues and step-cancel state for one session.
@@ -18,16 +19,24 @@ type Control struct {
 	steering     []agentkit.ModelMessage
 	followUps    []agentkit.ModelMessage
 	cancelReason string
-	pending      *pendingInteraction
+	capability   permission.Capability
+	permissionPending *pendingPermission
 }
 
 func NewControl() *Control {
 	return &Control{}
 }
 
-func (l *Default) controlFor(sessionID agentkit.SessionID) *Control {
-	v, _ := l.sessionControls.LoadOrStore(sessionID, NewControl())
-	return v.(*Control)
+func (c *Control) setTurnCapability(cap permission.Capability) {
+	c.mu.Lock()
+	c.capability = cap
+	c.mu.Unlock()
+}
+
+func (c *Control) PermissionCapability() permission.Capability {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.capability
 }
 
 func (c *Control) Steer(_ context.Context, msg agentkit.ModelMessage) error {
