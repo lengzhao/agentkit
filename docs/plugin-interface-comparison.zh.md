@@ -479,7 +479,7 @@ type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
 | 对比项 | AgentKit | DSH |
 |---|---|---|
 | 配置状态 | 每次 `LLMRequest` 传入 | 会话级 `LlmCallConfig` + header 事件 |
-| 流事件 | 复用 Pi RPC `AssistantMessageEventType` | adapter 自有 chunk → `assistant/chunk` 会话事件 |
+| 流事件 | `message/start\|update\|end` + Pi RPC `AssistantMessageEventType` | adapter 自有 chunk 会话事件 |
 | 请求拦截 | 无接口 | `agent/request` waterfall |
 | 错误恢复 | **已落地**（无 hook 接口，实现在 Runtime）：provider 级 `runtime/llm/retry.go` + agent 级 `runtime/agent/retry.go` + `retry/start\|end` 事件 | `agent/request-error` + retry policy |
 | Thinking | 通过 `thinking_*` 事件 | adapter 层统一 reasoningEffort |

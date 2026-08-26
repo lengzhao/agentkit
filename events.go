@@ -9,7 +9,6 @@ const (
 	EventMessageStart            EventType = "message/start"
 	EventMessageUpdate           EventType = "message/update"
 	EventMessageEnd              EventType = "message/end"
-	EventAssistantChunk          EventType = "assistant/chunk"
 	EventAssistantMessage        EventType = "assistant/message"
 	EventToolCall                EventType = "tool/call"
 	EventToolResult              EventType = "tool/result"

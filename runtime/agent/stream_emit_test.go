@@ -65,8 +65,14 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected streaming outbound events")
 	}
-	if events[0].Type != agentkit.EventMessageStart {
-		t.Fatalf("expected message/start first, got %q", events[0].Type)
+	if events[0].Type != agentkit.EventTurnStart {
+		t.Fatalf("expected turn/start first, got %q", events[0].Type)
+	}
+	if events[len(events)-1].Type != agentkit.EventTurnEnd {
+		t.Fatalf("expected turn/end last, got %q", events[len(events)-1].Type)
+	}
+	if events[1].Type != agentkit.EventMessageStart {
+		t.Fatalf("expected message/start after turn/start, got %q", events[1].Type)
 	}
 
 	var deltas []string

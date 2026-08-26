@@ -123,12 +123,19 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		return err
 	}
 
+	run := &turnRun{budget: newRunBudget(a.budget, a.now)}
+	if err := a.emitLifecycle(ctx, input.Emit, sessionID, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
+		return err
+	}
 	if err := session.AppendTurnStart(ctx, sess, a.id); err != nil {
 		return err
 	}
-	run := &turnRun{budget: newRunBudget(a.budget, a.now)}
 	defer func() {
-		_ = session.AppendTurnEnd(context.WithoutCancel(ctx), sess, a.id, run.completed)
+		endCtx := context.WithoutCancel(ctx)
+		_ = session.AppendTurnEnd(endCtx, sess, a.id, run.completed)
+		if err := a.emitLifecycle(endCtx, input.Emit, sessionID, agentkit.EventTurnEnd, session.TurnEndData{Steps: run.completed}); err != nil {
+			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
+		}
 	}()
 
 	if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
@@ -472,4 +479,16 @@ func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID 
 func EncodeEventData(v any) json.RawMessage {
 	raw, _ := json.Marshal(v)
 	return raw
+}
+
+func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID, typ agentkit.EventType, data any) error {
+	if emit == nil {
+		return nil
+	}
+	return emit(ctx, agentkit.OutboundEvent{
+		SessionID: sessionID,
+		AgentID:   a.id,
+		Type:      typ,
+		Data:      agentkit.MarshalOutboundData(data),
+	})
 }
