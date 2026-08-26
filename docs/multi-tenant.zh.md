@@ -19,7 +19,8 @@ flowchart LR
   UID -->|"落在 user 事件信封上"| Attr["回放渲染 &lt;user id=\"U111\"&gt;"]
   SID -->|"cap/tenant.Key<br/>取平台段 + 第一个路由段"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
-  Root --> FS["fs / shell / skills / AGENTS.md / mcp / sessions"]
+  Root --> Runtime["sessions / agents / mcp / skills"]
+  Root --> Work["work/ — fs 与 shell 操作区"]
 ```
 
 ## 1. 会话隔离
@@ -64,6 +65,21 @@ platform 侧只需在 `MessageEvent.UserID` 填上发言人，其余自动。
 
 **为什么这一层不需要改任何下游插件**：`workspace.Service.Resolve(ctx, rel)` 本身带 ctx，而 fs 工具、shell、skills、AGENTS.md、mcp.json、`session/store`、subagent 定义目录**全部**经它解析路径，且都是每次调用现算、不缓存解析结果。所以把 local 根按租户分开，隔离就自动贯穿到全部文件访问。
 
+### local 根 vs tool 工作区
+
+local 根放**运行时与配置**，tool 只在 **`work/` 子目录**读写，避免 `rm`、`mv` 之类操作误伤 `sessions/` 或 `mcp.json`：
+
+```
+tenants/slack_C001/
+├── sessions/          # session/store
+├── agents/            # 子 agent 定义
+├── mcp.json
+├── skills/            # 租户私有 skill
+└── work/              # fs / shell 的操作区（preset 默认 root）
+```
+
+`presets/multi-tenant.yaml` 把 `tool/fs-workspace`、`tool/shell-bash`、`prompt/section/agents-md` 的 `root` / `workDir` 都指到 `work`，与 coding preset 里「`.agentkit` 放运行时、`..` 落到项目根」是同一思路，但多租户**不允许 `..`**，所以用子目录而不是向上一级。
+
 ```yaml
 workspace.default:
   use: workspace/tenant
@@ -71,15 +87,20 @@ workspace.default:
     global: ~/.agentkit              # 全租户共享：技能库、子 agent 定义、公共 mcp.json
     localBase: ~/.agentkit/tenants   # 每租户一个子目录
     scope: local                     # 不带前缀的路径落在调用方自己的租户根下
-    tenants:                         # 只有要钉到已有项目目录时才列
+    tenants:                         # 钉到已有项目时，local 根指向项目下的 .agentkit/
       "slack:C123ABC":
-        root: ~/work/project-a
+        root: ~/work/project-a/.agentkit
+
+tool.fs-workspace.default:
+  config:
+    root: work                       # 只在此子目录读写
 ```
 
 - **默认就是隔离的。** 没在 `tenants` 里列出的群走 `localBase/<租户键>`，新群接进来零配置。
 - **`tenants` 的键是租户键，不是 SessionID。** 该频道下所有 thread、所有人共用这一条。
 - **`global:` 是唯一共享的根。** 装一次的技能库对所有群可见。
 - **没有 session 时落在 `localBase/_default`。** timer、cron、库直调不会掉进某个真实租户的目录里。
+- **钉项目目录时指 `.agentkit/` 而不是项目根。** 运行时落在 `<项目>/.agentkit/`，工具在 `<项目>/.agentkit/work/` 操作；项目源码树不会被 `sessions/` 污染。
 
 ### 与 `workspace/default` 唯一的行为差异：`..` 不解析
 
@@ -87,7 +108,9 @@ workspace.default:
 
 但租户根是**并列**的（`tenants/slack_C001` 与 `tenants/slack_C002` 互为兄弟），同一个豁免就成了越权通道：A 群一个 `../slack_C002` 就读写到 B 群。所以 `workspace/tenant` 全部走 `cap/workspace.ResolveRelStrict`，`..` 一律不解析，`global:` 也一样。
 
-代价是不能再靠 `..` 落到项目根 —— 要让某个群在已有项目里干活，把该租户的 `root` 直接指向项目目录（见上面的 `tenants`）。
+多租户 preset 进一步把 tool 根限制在 `work/` 子目录：`tool/fs-workspace` 在解析用户路径时还会拒绝 `../` 逃出 `work/`。路径只能落在 local/global 根下的子树里，不能靠 `..` 访问兄弟租户、父目录或 `sessions/`。
+
+要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`，工具在 `work/` 下操作。若必须直接改项目源码树，用 [coding.yaml](../presets/coding.yaml)（单租户 CLI）或自行把 `work/` 换成项目内其他子目录名。
 
 ## 4. 并发
 
@@ -123,7 +146,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 | 测试 | 覆盖 |
 |---|---|
-| `multitenant_test.go` | 两个群写同一个相对路径 → 落在各自根下；某群钉到项目目录；同群两人共用一段历史且各自具名 |
+| `multitenant_test.go` | 两个群写 `work/` 下同一相对路径 → 落在各自根下；某群钉到项目 `.agentkit/`；同群两人共用一段历史且各自具名 |
 | `runtime/workspace/tenant_test.go` | 默认隔离、三种粒度同租户、pin 生效、`global:` 共享、`..` 越权被拒、无 session 落 `_default` |
 | `runtime/session/attribution_test.go` | 只标 user 消息、无 `UserID` 不改变回放、重启后归属仍在、图片消息也具名 |
 | `cap/tenant/tenant_test.go` | 租户键推导规则、目录名不可能变成 `..` |

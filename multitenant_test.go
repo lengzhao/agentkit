@@ -70,7 +70,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 							map[string]any{
 								"use": "tool/fs-workspace",
 								"config": map[string]any{
-									"root":     ".",
+									"root":     "work",
 									"maxBytes": 1048576,
 								},
 								"deps": map[string]any{"workspace": workspaceNode},
@@ -121,12 +121,12 @@ func TestMultiTenantChannelsGetSeparateWorkdirs(t *testing.T) {
 	rootB := filepath.Join(base, "slack_C002")
 
 	for root, want := range map[string]string{rootA: "from C001", rootB: "from C002"} {
-		raw, err := os.ReadFile(filepath.Join(root, "notes.txt"))
+		raw, err := os.ReadFile(filepath.Join(root, "work", "notes.txt"))
 		if err != nil {
 			t.Fatalf("read notes in %s: %v", root, err)
 		}
 		if string(raw) != want {
-			t.Fatalf("%s/notes.txt = %q, want %q", root, raw, want)
+			t.Fatalf("%s/work/notes.txt = %q, want %q", root, raw, want)
 		}
 	}
 	// Same relative path, two files: the tenants never saw each other's write.
@@ -149,8 +149,9 @@ func TestMultiTenantPinnedProjectDir(t *testing.T) {
 
 	base := t.TempDir()
 	project := t.TempDir()
+	agentkitDir := filepath.Join(project, ".agentkit")
 	pinned := map[string]any{
-		"slack:C001": map[string]any{"root": project},
+		"slack:C001": map[string]any{"root": agentkitDir},
 	}
 	ag, _, err := build.Build[agentkit.Agent](context.Background(), multiTenantGraph(base, pinned, writeStep("out.txt", "pinned")), "agent")
 	if err != nil {
@@ -159,12 +160,15 @@ func TestMultiTenantPinnedProjectDir(t *testing.T) {
 
 	runTurn(t, ag, agentkit.SessionID("slack:C001:t:1712345678.9"), "U111", "写文件")
 
-	raw, err := os.ReadFile(filepath.Join(project, "out.txt"))
+	raw, err := os.ReadFile(filepath.Join(agentkitDir, "work", "out.txt"))
 	if err != nil {
 		t.Fatalf("read pinned output: %v", err)
 	}
 	if string(raw) != "pinned" {
 		t.Fatalf("out.txt = %q", raw)
+	}
+	if _, err := os.Stat(filepath.Join(project, "out.txt")); err == nil {
+		t.Fatal("tool write escaped work/ into project root")
 	}
 }
 
@@ -188,8 +192,8 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 
 	root := filepath.Join(base, "slack_C001")
 	for _, name := range []string{"a.txt", "b.txt"} {
-		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
-			t.Fatalf("%s missing from shared workdir: %v", name, err)
+		if _, err := os.Stat(filepath.Join(root, "work", name)); err != nil {
+			t.Fatalf("work/%s missing from shared workdir: %v", name, err)
 		}
 	}
 
