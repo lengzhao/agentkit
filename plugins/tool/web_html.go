@@ -1,4 +1,4 @@
-package web
+package tool
 
 import (
 	"strconv"
@@ -25,16 +25,10 @@ var blockTags = map[string]bool{
 	"/blockquote": true, "/pre": true, "/main": true, "/nav": true,
 }
 
-// htmlToText strips markup and returns the readable text. It is deliberately a
-// scanner rather than a real parser: the goal is to give a model something
-// readable, not to build a DOM, and pulling in an HTML parser for that would be
-// the module's only heavyweight dependency.
 func htmlToText(doc string) string {
 	var b strings.Builder
 	b.Grow(len(doc) / 2)
 	lower := strings.ToLower(doc)
-	// last tracks the byte just written so a block's open and close tags produce
-	// one line break between the two texts, not a blank line each time.
 	var last byte
 	write := func(s string) {
 		if s == "" {
@@ -88,8 +82,6 @@ func htmlToText(doc string) string {
 	return collapse(decodeEntities(b.String()))
 }
 
-// skipContainer returns the offset just past the matching close tag, or the end
-// of the document when the tag is never closed.
 func skipContainer(lower, name string, from int) int {
 	closeTag := "</" + name
 	k := strings.Index(lower[from:], closeTag)
@@ -103,9 +95,6 @@ func skipContainer(lower, name string, from int) int {
 	return from + k + gt + 1
 }
 
-// tagAt parses the tag starting at lower[i] == '<'. It returns the lowercased
-// tag name (prefixed with "/" for a close tag) and the offset just past '>',
-// or -1 when the tag is unterminated. Quoted attribute values may contain '>'.
 func tagAt(lower string, i int) (string, int) {
 	j := i + 1
 	closing := j < len(lower) && lower[j] == '/'
@@ -140,7 +129,6 @@ func tagAt(lower string, i int) (string, int) {
 	return name, -1
 }
 
-// extractTitle returns the decoded <title> text, or "" when absent.
 func extractTitle(doc string) string {
 	lower := strings.ToLower(doc)
 	open := strings.Index(lower, "<title")
@@ -155,8 +143,6 @@ func extractTitle(doc string) string {
 	if end < 0 {
 		return ""
 	}
-	// A title is one line by definition, so squeeze the newlines out rather than
-	// preserving them the way collapse does for page text.
 	return strings.Join(strings.Fields(decodeEntities(doc[start:start+end])), " ")
 }
 
@@ -180,7 +166,6 @@ func decodeEntities(s string) string {
 			continue
 		}
 		semi := strings.IndexByte(s[i:], ';')
-		// An unterminated or absurdly long "&" is literal text, not an entity.
 		if semi < 0 || semi > 12 {
 			b.WriteByte(s[i])
 			i++
@@ -219,8 +204,6 @@ func decodeEntity(body string) (string, bool) {
 	return "", false
 }
 
-// collapse trims each line, squeezes runs of whitespace, and keeps at most one
-// blank line between paragraphs.
 func collapse(s string) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))
@@ -228,7 +211,6 @@ func collapse(s string) string {
 	for _, line := range lines {
 		line = strings.Join(strings.Fields(line), " ")
 		if line == "" {
-			// Leading blanks are dropped; interior runs collapse to one.
 			if len(out) > 0 {
 				blank = true
 			}

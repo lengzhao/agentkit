@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/plugins/tool"
 )
@@ -36,10 +37,11 @@ func TestSubagentToolReturnsSummary(t *testing.T) {
 		Summary: "the loop serializes turns per session",
 		Steps:   4,
 	}}
-	delegate, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: spawner})
+	delegatePack, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: spawner})
 	if err != nil {
 		t.Fatal(err)
 	}
+	delegate := agentkit.First(delegatePack)
 	if delegate.Name() != "delegate" {
 		t.Fatalf("tool name = %q, want delegate", delegate.Name())
 	}
@@ -67,10 +69,11 @@ func TestSubagentToolSurfacesSpawnerError(t *testing.T) {
 	t.Parallel()
 
 	spawner := &fakeSpawner{err: fmt.Errorf("unknown subagent %q; available: researcher", "reviewer")}
-	delegate, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: spawner})
+	delegatePack, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: spawner})
 	if err != nil {
 		t.Fatal(err)
 	}
+	delegate := agentkit.First(delegatePack)
 
 	// The tool builder turns a handler error into a text result, so the model can
 	// read the available names and retry instead of the turn dying.
@@ -83,10 +86,11 @@ func TestSubagentToolSurfacesSpawnerError(t *testing.T) {
 func TestSubagentToolSchemaMarksBothFieldsRequired(t *testing.T) {
 	t.Parallel()
 
-	delegate, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: &fakeSpawner{}})
+	delegatePack, err := tool.NewSubagent(tool.SubagentConfig{}, tool.SubagentDeps{Subagent: &fakeSpawner{}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	delegate := agentkit.First(delegatePack)
 	schema, err := json.Marshal(delegate.InputSchema())
 	if err != nil {
 		t.Fatal(err)

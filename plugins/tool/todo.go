@@ -46,12 +46,12 @@ const (
 // Best practices:
 //   - op=set replaces the whole list, op=complete closes ids, op=list reads it.
 //   - Pair with tool/finish: an empty pending list alone does not end a run.
-func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
+func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.ToolPack, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/todo requires sessionStore dependency")
 	}
 	store := deps.SessionStore
-	return agentkit.NewTool[TodoInput, TodoOutput]("todo", func(ctx context.Context, input TodoInput) (TodoOutput, error) {
+	tool, err := agentkit.NewTool[TodoInput, TodoOutput]("todo", func(ctx context.Context, input TodoInput) (TodoOutput, error) {
 		sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 		if sessionID == "" {
 			return TodoOutput{}, fmt.Errorf("todo requires a session")
@@ -104,6 +104,10 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	}).
 		Description("Durable task list for multi-step work. Call with op=set to record the plan, op=complete as each task lands, op=list to review. An autonomous run keeps going while tasks remain pending.").
 		Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }
 
 func normalizeTodoItems(items []TodoItemInput) ([]session.Todo, error) {

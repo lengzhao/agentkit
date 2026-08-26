@@ -1032,46 +1032,50 @@ LLM Runtime 负责：
 
 ## 7. 能力扩展模型
 
-能力可以从单包开始：
+**默认规则：一个模型可见功能就是一个具体 tool 插件**，配置直接写在该插件的 `config` 里，不再为了形态统一拆成 provider + consumer 两段接线。
 
 ```text
-cap/shell/
-  definition.go   # Shell 接口
-  local.go        # local provider，注册 shell/bash
-  tool.go         # 面向模型的 shell 工具，注册 tool/shell
+plugins/tool/
+  fs_workspace.go      # tool/fs-workspace → 返回 ToolPack(read, write, edit, grep, find, ls)
+  shell_bash.go        # tool/shell-bash → bash
+  web_fetch_http.go    # tool/web-fetch-http → web_fetch
+  web_search_exa.go    # tool/web-search-exa → web_search
 ```
 
-当出现多个 provider 或 consumer 时再拆分：
+只有真正跨多个插件共享、且不适合内聚进单个 tool 的能力才保留独立插件：
 
-```text
-cap/shell/
-cap/shell-local/
-cap/shell-sandbox/
-cap/tool-shell/
-```
+| 插件 | 何时保留 |
+|---|---|
+| `workspace/default` | 多插件共享根路径解析 |
+| `credentials/env` | LLM / Exa 等共用 key 解析 |
+| `session/store` | todo / finish / skill 写 Session |
+| `approval/*` | Policy Plane 的 ask 出口 |
+| `schedule/file` | worker cron 与 tool/schedule 共用 registry |
+| `skill/filesystem` | skill 发现与加载 |
 
-常用能力：
+常用 tool 插件：
 
-| 能力 | Definition | Provider 示例 | Consumer 示例 |
-|---|---|---|---|
-| filesystem | `Read`, `Write`, `Edit` | `fs/local`、`fs/sandboxed` | `tool/read-file`、`tool/edit-file` |
-| subprocess | `Spawn`, `Kill`, `ReadOutput` | `process/local` | shell、terminal |
-| shell | `Run(command)` | `shell/bash`、`shell/pwsh` | `tool/shell` |
-| sandbox | `WrapExec`, `AuthorizePath` | landlock、seatbelt、bwrap | fs、subprocess |
-| approval | `Ask`, `Decide` | `approval/cli`、`approval/web`、`approval/auto-deny` | tool policy |
-| credentials | `Resolve(ref)` | env、file、vault | LLM、web |
-| settings | typed namespaces | file、remote | model defaults |
-| web | `Fetcher.Fetch` / `Searcher.Search`（两个接口） | `web/http-fetch`、`web/exa-search` | `tool/web-fetch`、`tool/web-search` |
-| ask | `RunInteraction` | Loop `SessionInteraction` + platform `InteractionHandler` | `tool/ask-user` |
-| subagent | `Definitions`, `Run` | in-process、RPC | delegate tool |
-| compaction | `Compact(session)` | summary provider | before-step hook |
+| 插件 kind | 模型工具名 | 说明 |
+|---|---|---|
+| `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.tools` 可限制暴露子集 |
+| `tool/fs-memory` | 同上 | 内存 FS，测试与冒烟 |
+| `tool/shell-bash` | `bash` | bash 执行，依赖 `workspace` |
+| `tool/web-fetch-http` | `web_fetch` | HTTP 抓取，无需凭据 |
+| `tool/web-search-exa` | `web_search` | Exa 搜索，缺 key 不阻断构造 |
+| `tool/web-fetch-scripted` / `tool/web-search-scripted` | 同上 | 无网络替身 |
+| `tool/skill` | `skill` | 依赖 `skills` + `sessionStore` |
+| `tool/subagent` | `delegate` | 子 agent 委派 |
+| `tool/ask-user` | `ask_user` | HIL 提问 |
+
+`tools/runtime` 的 `deps.tools` 元素类型是 `agentkit.ToolPack`（`[]Tool` 的具名切片）。一个插件实例可返回多个模型工具。
+
+`cap/*` 包仍保留领域接口（如 `cap/filesystem`、`cap/web`），供库内复用与测试；**不再强制每个 tool 都通过 cap provider 注入**。
 
 设计规则：
 
-- Consumer 依赖 Definition，不依赖 Provider。
-- Provider 只实现能力，不决定模型如何看到它。
-- 模型可见工具是 Consumer，负责 schema、描述、错误文本和 Session 事件。
-- 安全策略挂在执行路径上，不能只靠 prompt 隐藏或工具过滤。
+- 优先单插件完成模型可见功能；出现多个真实实现或多个消费者时再拆分。
+- 只有 workspace、credentials、session、approval 等运行时共享能力继续作为 deps 注入。
+- 安全策略挂在执行路径上（Policy Plane + provider 内硬约束），不能只靠 prompt 隐藏工具。
 
 ### 7.1 Policy Plane
 

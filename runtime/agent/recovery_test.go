@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/plugins/fs"
 	"github.com/lengzhao/agentkit/plugins/tool"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -68,15 +67,14 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 
 func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLMProvider) agentkit.Agent {
 	t.Helper()
-	memFS, err := fs.NewMemory(fs.MemoryConfig{Files: map[string]string{"README.md": "hello"}})
+	readPack, err := tool.NewFSMemory(tool.FSMemoryConfig{
+		Files: map[string]string{"README.md": "hello"},
+		Tools: []string{"read"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	readTool, err := tool.NewReadFile(tool.ReadConfig{}, tool.ReadDeps{FS: memFS})
-	if err != nil {
-		t.Fatal(err)
-	}
-	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{Tools: []agentkit.Tool{readTool}})
+	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{Tools: []agentkit.ToolPack{readPack}})
 	if err != nil {
 		t.Fatal(err)
 	}

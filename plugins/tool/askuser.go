@@ -33,8 +33,8 @@ type AskUserOutput struct {
 //   - Routes through the inbound platform via cap/interaction.Session; interactive CLI reads stdin, IM platforms render cards/buttons.
 //   - Headless platforms return answered=false immediately; it is never an error and never blocks the turn.
 //   - Do not mount it on subagents: a child agent runs behind a delegate call, where nobody is watching its stdout.
-func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.Tool, error) {
-	return agentkit.NewTool("ask_user", func(ctx context.Context, input AskUserInput) (AskUserOutput, error) {
+func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.ToolPack, error) {
+	tool, err := agentkit.NewTool("ask_user", func(ctx context.Context, input AskUserInput) (AskUserOutput, error) {
 		question := strings.TrimSpace(input.Question)
 		if question == "" {
 			return AskUserOutput{}, fmt.Errorf("question is required")
@@ -71,6 +71,10 @@ func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.Tool, error) {
 		}
 		return out, nil
 	}).Description("Ask the user one question when their answer changes what you do next. Do not use it for questions you can answer by reading the workspace. If nobody is available the result says so, and you should proceed on your own judgement.").Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }
 
 func unansweredAsk(reason string) AskUserOutput {

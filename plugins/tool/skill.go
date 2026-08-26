@@ -30,7 +30,7 @@ type SkillOutput struct {
 //
 // Best practices:
 //   - Load a skill once per task, then follow its instructions.
-func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
+func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.ToolPack, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("tool/skill requires skills dependency")
 	}
@@ -38,7 +38,7 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		return nil, fmt.Errorf("tool/skill requires sessionStore dependency")
 	}
 	store := deps.SessionStore
-	return agentkit.NewTool[SkillInput, SkillOutput]("skill", func(ctx context.Context, input SkillInput) (SkillOutput, error) {
+	tool, err := agentkit.NewTool[SkillInput, SkillOutput]("skill", func(ctx context.Context, input SkillInput) (SkillOutput, error) {
 		if input.Name == "" {
 			return SkillOutput{}, fmt.Errorf("skill name is required")
 		}
@@ -63,4 +63,8 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 			Body:        content.Body,
 		}, nil
 	}).Description("Load a skill by name and inject its instructions into the session.").Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }

@@ -61,10 +61,7 @@ tools.subagent.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.read-file.default
-      - tool.grep.default
-      - tool.find.default
-      - tool.list-dir.default
+      - tool.fs-workspace.readonly.default
       - tool.finish.default
     policies:
       - policy.dangerous-shell.default
@@ -110,13 +107,8 @@ tools.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.read-file.default
-      - tool.write-file.default
-      - tool.edit-file.default
-      - tool.grep.default
-      - tool.find.default
-      - tool.list-dir.default
-      - tool.shell.default
+      - tool.fs-workspace.default
+      - tool.shell-bash.default
       - tool.skill.default
       - tool.subagent.default
     policies:

@@ -49,7 +49,7 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 
 	var seenInput string
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{stubTool{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
 			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 				seenInput = string(call.Input)
@@ -62,7 +62,7 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 					}},
 				}, nil
 			},
-		}},
+		})},
 		Hooks: stubHooks{
 			beforeTool: func(_ context.Context, call *agentkit.ToolCall) error {
 				call.Input = json.RawMessage(`{"mutated":true}`)
@@ -98,7 +98,7 @@ func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{MaxResultBytes: 20}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{stubTool{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
 			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 				return agentkit.ToolResult{
@@ -110,7 +110,7 @@ func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
 					}},
 				}, nil
 			},
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -138,7 +138,7 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 			"slow": 1,
 		},
 	}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{stubTool{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "slow",
 			fn: func(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 				select {
@@ -152,7 +152,7 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 					return agentkit.ToolResult{}, ctx.Err()
 				}
 			},
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -174,13 +174,13 @@ func TestRuntimeExecuteDeniesBeforeHooks(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{stubTool{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
 			fn: func(_ context.Context, _ agentkit.ToolCall) (agentkit.ToolResult, error) {
 				t.Fatal("tool body should not run")
 				return agentkit.ToolResult{}, nil
 			},
-		}},
+		})},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
 			return agentkit.Deny("blocked")
 		})},

@@ -199,17 +199,12 @@ tools.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.read-file.default
-      - tool.write-file.default
-      - tool.edit-file.default
-      - tool.grep.default
-      - tool.find.default
-      - tool.list-dir.default
-      - tool.shell.default
+      - tool.fs-workspace.default
+      - tool.shell-bash.default
       - tool.skill.default
       - tool.subagent.default
-      - tool.web-fetch.default
-      - tool.web-search.default
+      - tool.web-fetch-http.default
+      - tool.web-search-exa.default
       - tool.ask-user.default
     policies:
       - policy.dangerous-shell.default
@@ -224,53 +219,43 @@ tools.subagent.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.read-file.default
-      - tool.grep.default
-      - tool.find.default
-      - tool.list-dir.default
+      - tool.fs-workspace.readonly.default
       - tool.finish.default
-      - tool.web-fetch.default
-      - tool.web-search.default
+      - tool.web-fetch-http.default
+      - tool.web-search-exa.default
     policies:
       - policy.dangerous-shell.default
     approval: approval.cli.default
 
-tool.read-file.default:
-  use: tool/read-file
+tool.fs-workspace.default:
+  use: tool/fs-workspace
   config:
+    root: .
     maxBytes: 1048576
   deps:
-    fs: fs.workspace.readonly.default
+    workspace: workspace.default
 
-tool.write-file.default:
-  use: tool/write-file
+tool.fs-workspace.readonly.default:
+  use: tool/fs-workspace
+  config:
+    root: .
+    maxBytes: 1048576
+    readOnly: true
+    tools:
+      - read
+      - grep
+      - find
+      - ls
   deps:
-    fs: fs.workspace.default
+    workspace: workspace.default
 
-tool.edit-file.default:
-  use: tool/edit-file
+tool.shell-bash.default:
+  use: tool/shell-bash
+  config:
+    workDir: .
+    timeoutSeconds: 60
   deps:
-    fs: fs.workspace.default
-
-tool.grep.default:
-  use: tool/grep
-  deps:
-    fs: fs.workspace.readonly.default
-
-tool.find.default:
-  use: tool/find
-  deps:
-    fs: fs.workspace.readonly.default
-
-tool.list-dir.default:
-  use: tool/list-dir
-  deps:
-    fs: fs.workspace.readonly.default
-
-tool.shell.default:
-  use: tool/shell
-  deps:
-    shell: shell.bash.default
+    workspace: workspace.default
 
 tool.skill.default:
   use: tool/skill
@@ -281,7 +266,6 @@ tool.skill.default:
 tool.schedule.default:
   use: tool/schedule
   config:
-    # agent 创建的 job 上限；0 表示默认 32。config 里声明的 job 不占此额度。
     maxJobs: 32
   deps:
     schedule: schedule.default
@@ -296,19 +280,16 @@ tool.finish.default:
   deps:
     sessionStore: sessionStore.default
 
-# 抓取与搜索是两个 cap（web.Fetcher / web.Searcher）：没配 EXA_API_KEY 时抓取仍可用，
-# 搜索在调用时返回模型可读的"没有 key"而不是阻断构造。
-web.fetch.default:
-  use: web/http-fetch
+tool.web-fetch-http.default:
+  use: tool/web-fetch-http
   config:
     timeoutSeconds: 30
     maxBytes: 1048576
     maxRedirects: 5
-    # 打开它等于允许 agent 访问 127.0.0.1 / 10.0.0.0/8 等私网地址。
     allowPrivateHosts: false
 
-web.search.default:
-  use: web/exa-search
+tool.web-search-exa.default:
+  use: tool/web-search-exa
   config:
     apiKeyRef: env:EXA_API_KEY
     maxResults: 5
@@ -317,40 +298,8 @@ web.search.default:
   deps:
     credentials: credentials.default
 
-tool.web-fetch.default:
-  use: tool/web-fetch
-  deps:
-    web: web.fetch.default
-
-tool.web-search.default:
-  use: tool/web-search
-  config:
-    maxResults: 5
-  deps:
-    web: web.search.default
-
 tool.ask-user.default:
   use: tool/ask-user
-
-fs.workspace.default:
-  use: fs/local
-  config:
-    root: .
-  deps:
-    workspace: workspace.default
-
-fs.workspace.readonly.default:
-  use: fs/readonly
-  deps:
-    fs: fs.workspace.default
-
-shell.bash.default:
-  use: shell/bash
-  config:
-    workDir: .
-    timeoutSeconds: 60
-  deps:
-    workspace: workspace.default
 
 policy.dangerous-shell.default:
   use: policy/deny-dangerous-shell

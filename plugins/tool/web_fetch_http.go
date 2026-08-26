@@ -1,4 +1,4 @@
-package web
+package tool
 
 import (
 	"context"
@@ -11,18 +11,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lengzhao/agentkit/cap/web"
-	"github.com/lengzhao/pluginkit"
+	"github.com/lengzhao/agentkit"
 )
 
 const (
 	defaultFetchTimeout  = 30 * time.Second
-	defaultFetchMaxBytes = 1 << 20 // 1 MiB, same ceiling as tool/read-file
+	defaultFetchMaxBytes = 1 << 20
 	defaultMaxRedirects  = 5
 	defaultUserAgent     = "agentkit/1.0 (+https://github.com/lengzhao/agentkit)"
 )
 
-type FetchConfig struct {
+type WebFetchHTTPConfig struct {
 	// TimeoutSeconds is per-request wall clock; defaults to 30.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 	// MaxBytes is body read limit before extraction; defaults to 1 MiB.
@@ -39,7 +38,7 @@ type FetchConfig struct {
 	DenyHosts []string `json:"denyHosts,omitempty"`
 }
 
-type Fetcher struct {
+type httpFetcher struct {
 	client       *http.Client
 	maxBytes     int
 	userAgent    string
@@ -48,18 +47,26 @@ type Fetcher struct {
 	denyHosts    []string
 }
 
-func init() {
-	pluginkit.Register("web/http-fetch", NewFetcher)
+type WebFetchInput struct {
+	URL string `json:"url" jsonschema:"required,description=Absolute http or https URL to fetch"`
+	Raw bool   `json:"raw,omitempty" jsonschema:"description=Return the body as served instead of extracting readable text from HTML"`
 }
 
-// NewFetcher registers web/http-fetch: Fetch a URL over HTTP(S) and return it as readable text.
+type WebFetchOutput struct {
+	URL         string `json:"url"`
+	Status      int    `json:"status"`
+	ContentType string `json:"contentType,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Content     string `json:"content"`
+	Truncated   bool   `json:"truncated,omitempty"`
+}
+
+// NewWebFetchHTTP registers tool/web-fetch-http: Fetch a URL over HTTP(S) and return readable text (tool name: web_fetch).
 //
 // Best practices:
-//   - Needs no credentials, so it is the one web provider that works in a keyless setup.
-//   - Leave allowPrivateHosts off: it is what stops a fetched URL from reaching cloud metadata or internal admin endpoints.
-//   - The private-address check runs at dial time, so it also covers redirects and DNS rebinding.
-//   - Non-text responses are reported as a placeholder instead of being returned as bytes.
-func NewFetcher(cfg FetchConfig) (web.Fetcher, error) {
+//   - Needs no credentials, so it works without any API key.
+//   - Leave allowPrivateHosts off to block cloud metadata and internal admin endpoints.
+func NewWebFetchHTTP(cfg WebFetchHTTPConfig) (agentkit.ToolPack, error) {
 	timeout := defaultFetchTimeout
 	if cfg.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
@@ -77,7 +84,7 @@ func NewFetcher(cfg FetchConfig) (web.Fetcher, error) {
 		userAgent = defaultUserAgent
 	}
 
-	f := &Fetcher{
+	f := &httpFetcher{
 		maxBytes:     maxBytes,
 		userAgent:    userAgent,
 		allowPrivate: cfg.AllowPrivateHosts,
@@ -87,9 +94,6 @@ func NewFetcher(cfg FetchConfig) (web.Fetcher, error) {
 
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	if !cfg.AllowPrivateHosts {
-		// Control runs after DNS resolution and once per connection attempt, so
-		// it also covers redirects and rebinding tricks that a URL-level check
-		// on the hostname would miss.
 		dialer.Control = func(_, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {
@@ -116,43 +120,50 @@ func NewFetcher(cfg FetchConfig) (web.Fetcher, error) {
 			return f.checkURL(req.URL)
 		},
 	}
-	return f, nil
+
+	tool, err := agentkit.NewTool[WebFetchInput, WebFetchOutput]("web_fetch", func(ctx context.Context, input WebFetchInput) (WebFetchOutput, error) {
+		url := strings.TrimSpace(input.URL)
+		if url == "" {
+			return WebFetchOutput{}, fmt.Errorf("url is required")
+		}
+		result, err := f.fetch(ctx, url, input.Raw)
+		if err != nil {
+			return WebFetchOutput{}, err
+		}
+		return result, nil
+	}).Description("Fetch a URL and return its readable text. Use it to read a page you already have the address for; cite the returned url when you use the content.").Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }
 
-func (f *Fetcher) Fetch(ctx context.Context, req web.FetchRequest) (web.FetchResult, error) {
-	target := strings.TrimSpace(req.URL)
-	if target == "" {
-		return web.FetchResult{}, fmt.Errorf("url is required")
-	}
+func (f *httpFetcher) fetch(ctx context.Context, target string, raw bool) (WebFetchOutput, error) {
 	parsed, err := url.Parse(target)
 	if err != nil {
-		return web.FetchResult{}, fmt.Errorf("invalid url %q: %w", target, err)
+		return WebFetchOutput{}, fmt.Errorf("invalid url %q: %w", target, err)
 	}
 	if err := f.checkURL(parsed); err != nil {
-		return web.FetchResult{}, err
+		return WebFetchOutput{}, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return web.FetchResult{}, err
+		return WebFetchOutput{}, err
 	}
 	httpReq.Header.Set("User-Agent", f.userAgent)
 	httpReq.Header.Set("Accept", "text/html,text/plain,application/json;q=0.9,*/*;q=0.5")
 
 	resp, err := f.client.Do(httpReq)
 	if err != nil {
-		return web.FetchResult{}, fmt.Errorf("fetch %s: %w", parsed, err)
+		return WebFetchOutput{}, fmt.Errorf("fetch %s: %w", parsed, err)
 	}
 	defer resp.Body.Close()
 
 	maxBytes := f.maxBytes
-	if req.MaxBytes > 0 && req.MaxBytes < maxBytes {
-		maxBytes = req.MaxBytes
-	}
-	// Read one byte past the limit so truncation is detectable.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxBytes)+1))
 	if err != nil {
-		return web.FetchResult{}, fmt.Errorf("read %s: %w", parsed, err)
+		return WebFetchOutput{}, fmt.Errorf("read %s: %w", parsed, err)
 	}
 	truncated := len(body) > maxBytes
 	if truncated {
@@ -160,23 +171,20 @@ func (f *Fetcher) Fetch(ctx context.Context, req web.FetchRequest) (web.FetchRes
 	}
 
 	contentType := resp.Header.Get("Content-Type")
-	result := web.FetchResult{
+	result := WebFetchOutput{
 		URL:         resp.Request.URL.String(),
 		Status:      resp.StatusCode,
 		ContentType: contentType,
-		Bytes:       len(body),
 		Truncated:   truncated,
 	}
 
 	if !isTextual(contentType) {
-		// Binary payloads are reported, not returned: handing a model a
-		// megabyte of base64 helps nobody.
 		result.Content = fmt.Sprintf("[non-text content: %s, %d bytes read]", contentType, len(body))
 		return result, nil
 	}
 
 	text := string(body)
-	if !req.Raw && isHTML(contentType) {
+	if !raw && isHTML(contentType) {
 		result.Title = extractTitle(text)
 		text = htmlToText(text)
 	}
@@ -184,9 +192,7 @@ func (f *Fetcher) Fetch(ctx context.Context, req web.FetchRequest) (web.FetchRes
 	return result, nil
 }
 
-// checkURL enforces the scheme and host rules. It runs on the requested URL and
-// again on every redirect target.
-func (f *Fetcher) checkURL(u *url.URL) error {
+func (f *httpFetcher) checkURL(u *url.URL) error {
 	switch u.Scheme {
 	case "http", "https":
 	default:
@@ -202,8 +208,6 @@ func (f *Fetcher) checkURL(u *url.URL) error {
 	if matchHost(host, f.denyHosts) {
 		return fmt.Errorf("host %q is in denyHosts", host)
 	}
-	// Literal non-public addresses are refused up front so the error names the
-	// URL rather than surfacing as a dial failure.
 	if !f.allowPrivate {
 		if ip := net.ParseIP(host); ip != nil && isPrivateIP(ip) {
 			return fmt.Errorf("refusing to fetch non-public address %s (set allowPrivateHosts to override)", ip)
@@ -235,8 +239,6 @@ func matchHost(host string, list []string) bool {
 	return false
 }
 
-// isPrivateIP reports whether ip is anything other than a routable public
-// address — including the cloud metadata endpoints, which are link-local.
 func isPrivateIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
 		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
@@ -245,19 +247,17 @@ func isPrivateIP(ip net.IP) bool {
 	}
 	if v4 := ip.To4(); v4 != nil {
 		switch {
-		case v4[0] == 100 && v4[1]&0xc0 == 64: // 100.64.0.0/10 CGNAT
+		case v4[0] == 100 && v4[1]&0xc0 == 64:
 			return true
-		case v4[0] == 192 && v4[1] == 0 && v4[2] == 0: // 192.0.0.0/24
+		case v4[0] == 192 && v4[1] == 0 && v4[2] == 0:
 			return true
-		case v4[0] == 198 && v4[1]&0xfe == 18: // 198.18.0.0/15 benchmarking
+		case v4[0] == 198 && v4[1]&0xfe == 18:
 			return true
-		case v4[0] >= 240: // 240.0.0.0/4 reserved + broadcast
+		case v4[0] >= 240:
 			return true
 		}
 		return false
 	}
-	// fc00::/7 unique-local; net.IP.IsPrivate covers fc00::/7 already on new
-	// Go versions, this stays as an explicit belt for older byte layouts.
 	if len(ip) == net.IPv6len && ip[0]&0xfe == 0xfc {
 		return true
 	}
@@ -267,8 +267,6 @@ func isPrivateIP(ip net.IP) bool {
 func isTextual(contentType string) bool {
 	mime := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 	if mime == "" {
-		// Servers that omit Content-Type are common enough; treat as text and
-		// let the model judge the body.
 		return true
 	}
 	if strings.HasPrefix(mime, "text/") {

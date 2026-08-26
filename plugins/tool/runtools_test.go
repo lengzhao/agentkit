@@ -26,14 +26,16 @@ func newRunToolsFixture(t *testing.T) (todo, finish agentkit.Tool, sess agentkit
 		t.Fatal(err)
 	}
 	store := singleSessionStore{sess: sess}
-	todo, err = tool.NewTodo(tool.TodoConfig{}, tool.TodoDeps{SessionStore: store})
+	todoPack, err := tool.NewTodo(tool.TodoConfig{}, tool.TodoDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
-	finish, err = tool.NewFinish(tool.FinishConfig{}, tool.FinishDeps{SessionStore: store})
+	finishPack, err := tool.NewFinish(tool.FinishConfig{}, tool.FinishDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
+	finish = agentkit.First(finishPack)
+	todo = agentkit.First(todoPack)
 	ctx = context.WithValue(context.Background(), agentkit.KeySessionID, sess.ID())
 	return todo, finish, sess, ctx
 }

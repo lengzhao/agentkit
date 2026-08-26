@@ -9,13 +9,13 @@ import (
 
 func TestPluginDoc(t *testing.T) {
 	t.Parallel()
-	out, err := pluginDoc("tool/grep")
+	out, err := pluginDoc("tool/fs-workspace")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"go doc github.com/lengzhao/agentkit/plugins/tool.NewGrep",
-		"tool/grep",
+		"go doc github.com/lengzhao/agentkit/plugins/tool.NewFSWorkspace",
+		"tool/fs-workspace",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
@@ -25,12 +25,12 @@ func TestPluginDoc(t *testing.T) {
 
 func TestDocSymbol(t *testing.T) {
 	t.Parallel()
-	spec, ok := pluginkit.Lookup("shell/bash")
+	spec, ok := pluginkit.Lookup("tool/shell-bash")
 	if !ok {
-		t.Fatal("shell/bash not registered")
+		t.Fatal("tool/shell-bash not registered")
 	}
 	symbol := docSymbol(spec)
-	if want := "github.com/lengzhao/agentkit/plugins/shell.New"; symbol != want {
+	if want := "github.com/lengzhao/agentkit/plugins/tool.NewShellBash"; symbol != want {
 		t.Fatalf("got %q, want %q", symbol, want)
 	}
 }

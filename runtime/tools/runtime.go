@@ -22,7 +22,7 @@ type RuntimeConfig struct {
 }
 
 type RuntimeDeps struct {
-	Tools    []agentkit.Tool      `json:"tools"`
+	Tools    []agentkit.ToolPack  `json:"tools"`
 	Policies []agentkit.Policy    `json:"policies,omitempty"`
 	Approval agentkit.Approval    `json:"approval,omitempty"`
 	Hooks    agentkit.HookRuntime `json:"hooks,omitempty"`
@@ -45,16 +45,18 @@ type Runtime struct {
 //   - Policies are the enforcement plane; hooks only observe and rewrite. Put a security rule in a policy.
 //   - The approval dep is consulted only for ask decisions, so it never sees an allowed or denied call.
 func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, error) {
-	tools := make(map[string]agentkit.Tool, len(deps.Tools))
-	for _, tool := range deps.Tools {
-		if tool == nil {
-			continue
+	tools := make(map[string]agentkit.Tool)
+	for _, pack := range deps.Tools {
+		for _, tool := range pack {
+			if tool == nil {
+				continue
+			}
+			name := tool.Name()
+			if _, ok := tools[name]; ok {
+				return nil, fmt.Errorf("duplicate tool name %q", name)
+			}
+			tools[name] = tool
 		}
-		name := tool.Name()
-		if _, ok := tools[name]; ok {
-			return nil, fmt.Errorf("duplicate tool name %q", name)
-		}
-		tools[name] = tool
 	}
 	toolTimeouts := make(map[string]time.Duration, len(cfg.ToolTimeouts))
 	for name, seconds := range cfg.ToolTimeouts {

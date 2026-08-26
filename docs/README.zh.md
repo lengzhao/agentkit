@@ -75,7 +75,7 @@ Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预
 
 Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
 
-Phase 3 网络能力已实现：`web/http-fetch`（HTML → 文本、dial 时拦截私网地址）、`web/exa-search`（缺 key 不阻断构造）、`web/scripted-*` 无网络替身、`tool/web-fetch` / `tool/web-search` / `tool/ask-user`（HIL 由 Loop + platform 承载，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
+Phase 3 网络能力已实现：`tool/web-fetch-http`（HTML → 文本、dial 时拦截私网地址）、`tool/web-search-exa`（缺 key 不阻断构造）、`tool/web-*-scripted` 无网络替身、`tool/ask-user`（HIL 由 Loop + platform 承载，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
 
 Phase 3 守护外壳已实现：`platform/worker`（headless 任务，不读 stdin；带 `cron` 时转常驻定时模式）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 

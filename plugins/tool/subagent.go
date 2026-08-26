@@ -33,12 +33,12 @@ type SubagentOutput struct {
 //   - Pair with prompt/section/subagents, which lists the valid agent names; this tool's description is static and cannot.
 //   - Mount it only on the main agent's tools runtime. The subagent spawner needs a separate runtime without it, both to break a dependency cycle and to keep children from delegating further.
 //   - Bump toolTimeouts for delegate: a child agent runs many steps and will blow through the default tool timeout.
-func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
+func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.ToolPack, error) {
 	if deps.Subagent == nil {
 		return nil, fmt.Errorf("tool/subagent requires subagent dependency")
 	}
 	spawner := deps.Subagent
-	return agentkit.NewTool[SubagentInput, SubagentOutput]("delegate", func(ctx context.Context, input SubagentInput) (SubagentOutput, error) {
+	tool, err := agentkit.NewTool[SubagentInput, SubagentOutput]("delegate", func(ctx context.Context, input SubagentInput) (SubagentOutput, error) {
 		result, err := spawner.Run(ctx, subagent.Request{Agent: input.Agent, Task: input.Task})
 		if err != nil {
 			return SubagentOutput{}, err
@@ -55,4 +55,8 @@ func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
 			"Use this to keep bulky exploration out of this conversation: the subagent's own steps stay in its session and only its summary comes back. " +
 			"The subagent cannot see this conversation, so put every fact it needs into task. It runs to completion before you regain control.").
 		Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }

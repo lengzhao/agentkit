@@ -17,7 +17,7 @@
 | variant 表示实现 | `fs/sandbox-landlock` | 可选 |
 | 同一 kind 进程内唯一 | — | 重复 Register panic |
 
-**返回值类型决定运行时角色**，不是 kind 字符串本身。例如 `tool/read-file` 返回 `agentkit.Tool`，`fs/local` 返回 `filesystem.Service`。
+**返回值类型决定运行时角色**。例如 `tool/fs-workspace` 返回 `agentkit.ToolPack`，`tools/runtime` 返回 `agentkit.ToolRuntime`。
 
 ## 2. 插件分类总览
 
@@ -127,28 +127,25 @@ flowchart TB
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
 
-### 3.3 Tool Consumers（模型可见工具）
+### 3.3 Tool 插件（模型可见工具）
 
-Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
+Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通过 `tools/runtime` 聚合后暴露给模型。
 
-| Kind | 依赖 | 职责 | 参考 |
+| Kind | 依赖 | 模型工具名 | 职责 |
 |---|---|---|---|
-| `tool/read-file` | `fs` | 读文件，支持截断 | Pi `read` |
-| `tool/write-file` | `fs` | 写文件 | Pi `write` |
-| `tool/edit-file` | `fs` | 结构化编辑 | Pi `edit` |
-| `tool/grep` | `fs` | 内容搜索 | Pi `grep` |
-| `tool/find` | `fs` | 文件查找 | Pi `find` |
-| `tool/list-dir` | `fs` | 目录列表 | Pi `ls` |
-| `tool/shell` | `shell`, `approval?` | Shell 命令执行 | Pi `bash` / DSH `tool-bash` |
-| `tool/web-search` | `web`（`web.Searcher`） | 网络搜索（工具名 `web_search`）：返回 title / url / snippet；snippet 是摘录，要正文得再调 `web_fetch` | DSH `tool-web` |
-| `tool/web-fetch` | `web`（`web.Fetcher`） | URL 抓取（工具名 `web_fetch`）：HTML → 文本、大小上限、私网地址拦截 | DSH `tool-web` |
-| `tool/skill` | `skills` | Skill 发现与加载 | DSH/Pi skill tool |
-| `tool/subagent` | `subagent` | 子 Agent 委派（工具名 `delegate`）：阻塞等子 agent 跑完，返回 status + summary + 子 session id；只挂在主 agent 的 tools runtime 上 | DSH `tool-subagent` |
-| `tool/ask-user` | — | 向用户提问（工具名 `ask_user`）：单选 + 自由文本；通过 `cap/interaction.Session` 走 HIL，platform 不支持交互时返回 `answered:false` + guidance 而不是阻塞或报错。**不要挂在子 agent 上**——它跑在 `delegate` 背后，提问没人看见。见 [web.zh.md §4](web.zh.md#4-提问ask_user-与-human-in-the-loop) 与 [platform-interaction.zh.md](platform-interaction.zh.md) | DSH `tool-ask-user` |
-| `tool/todo` | `sessionStore` | durable 任务清单；写 `todo/update` 事件，自主运行据此判断是否还有活 | DSH `tool-todo` |
-| `tool/finish` | `sessionStore` | 显式收尾；写 `run/finish` 事件，自主运行的唯一"干净退出"信号 | — |
-| `tool/schedule` | `schedule` | agent 自主排期：add / list / remove cron job，与 worker 的 cron 引擎共用 registry | — |
-| `tool/session-query` | `session-query` | 跨 Session 检索 | DSH `tool-session-query` |
+| `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力 |
+| `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
+| `tool/shell-bash` | `workspace` | `bash` | Shell 命令执行 |
+| `tool/web-search-exa` | `credentials?` | `web_search` | Exa 搜索；缺 key 不阻断构造 |
+| `tool/web-fetch-http` | — | `web_fetch` | HTTP 抓取；私网地址在 dial 时拦截 |
+| `tool/web-search-scripted` | — | `web_search` | 预置命中，测试与冒烟 |
+| `tool/web-fetch-scripted` | — | `web_fetch` | 预置页面，测试与冒烟 |
+| `tool/skill` | `skills`, `sessionStore` | `skill` | Skill 发现与加载 |
+| `tool/subagent` | `subagent` | `delegate` | 子 Agent 委派 |
+| `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
+| `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
+| `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
+| `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 
 ### 3.4 Policy & Safety
 
@@ -175,38 +172,9 @@ Tool 插件返回 `agentkit.Tool`，通过 `Deps` 注入 Capability Provider。
 | `hook/repeat-tool-reminder` | `agentkit.HookProvider` | 重复工具调用提醒 | DSH repeat-tool-reminder |
 | `hook/timeout` | `agentkit.HookProvider` | Turn/Step 超时 | DSH timeout-policy |
 
-### 3.6 Capability Providers
+### 3.6 共享运行时插件
 
-Provider 返回能力接口；Consumer（Tool）通过 `deps` 绑定，不 import 具体 Provider 包。
-
-#### Filesystem
-
-| Kind | 返回类型 | 说明 |
-|---|---|---|
-| `fs/local` | `filesystem.Service` | 本地工作区 |
-| `fs/memory` | `filesystem.Service` | 内存 FS（测试） |
-| `fs/sandbox` | `filesystem.Service` | 沙箱包装 local |
-| `fs/readonly` | `filesystem.Service` | 只读包装 |
-
-#### Shell & Process
-
-| Kind | 返回类型 | 说明 |
-|---|---|---|
-| `shell/bash` | `shell.Executor` | Bash 执行 |
-| `shell/pwsh` | `shell.Executor` | PowerShell |
-| `process/local` | `process.Service` | 本地子进程 |
-| `process/sandbox` | `process.Service` | 沙箱子进程 |
-
-#### Web
-
-| Kind | 返回类型 | 说明 |
-|---|---|---|
-| `web/http-fetch` | `web.Fetcher` | HTTP 抓取：HTML → 文本、`maxBytes` / `maxRedirects` / 超时、scheme 白名单、host allow/deny；私网地址在 **dial 时**按解析后的 IP 拦截，因此覆盖重定向与 DNS rebinding。无需任何凭据 |
-| `web/exa-search` | `web.Searcher` | Exa 搜索：`x-api-key` + `highlights`；key 走 `apiKeyRef` + `deps.credentials`，**缺 key 不阻断构造**，调用时返回模型可读的提示 |
-| `web/scripted-fetch` | `web.Fetcher` | 预置页面，测试与无 key 冒烟用 |
-| `web/scripted-search` | `web.Searcher` | 预置命中，测试与无 key 冒烟用 |
-
-抓取与搜索是两个接口而不是一个 `Service`：pluginkit 按 Go 接口类型匹配 deps，拆开之后"没有搜索 key 也能单独挂抓取"是实例图的形状决定的，不是代码里的 if。详见 [web.zh.md §1](web.zh.md#1-为什么抓取和搜索是两个接口)。
+以下插件仍独立存在，供多个 tool / runtime 复用：
 
 #### Skills & Subagent
 

@@ -38,22 +38,16 @@ runner.default:
                 use: tools/runtime
                 deps:
                   tools:
-                    - use: tool/read-file
+                    - use: tool/fs-memory
+                      config:
+                        files:
+                          README.md: "# AgentKit\n\nhello"
+                    - use: tool/shell-bash
+                      config:
+                        workDir: .
+                        timeoutSeconds: 30
                       deps:
-                        fs:
-                          use: fs/memory
-                          config:
-                            files:
-                              README.md: "# AgentKit\n\nhello"
-                    - use: tool/shell
-                      deps:
-                        shell:
-                          use: shell/bash
-                          config:
-                            workDir: .
-                            timeoutSeconds: 30
-                          deps:
-                            workspace: workspace.default
+                        workspace: workspace.default
                   policies:
                     - use: policy/deny-dangerous-shell
 

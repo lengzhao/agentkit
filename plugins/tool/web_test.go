@@ -3,99 +3,68 @@ package tool_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/interaction"
-	capweb "github.com/lengzhao/agentkit/cap/web"
 	"github.com/lengzhao/agentkit/plugins/tool"
 )
 
-type fakeFetcher struct {
-	got    capweb.FetchRequest
-	result capweb.FetchResult
-	err    error
-}
-
-func (f *fakeFetcher) Fetch(_ context.Context, req capweb.FetchRequest) (capweb.FetchResult, error) {
-	f.got = req
-	return f.result, f.err
-}
-
-type fakeSearcher struct {
-	got    capweb.SearchRequest
-	result capweb.SearchResult
-	err    error
-}
-
-func (f *fakeSearcher) Search(_ context.Context, req capweb.SearchRequest) (capweb.SearchResult, error) {
-	f.got = req
-	return f.result, f.err
-}
-
-type fakeSessionInteraction struct {
-	got    interaction.Human
-	result interaction.Result
-	err    error
-}
-
-func (f *fakeSessionInteraction) Run(_ context.Context, req interaction.Human) (interaction.Result, error) {
-	f.got = req
-	return f.result, f.err
-}
-
-func TestWebFetchToolMapsResultAndCapsBytes(t *testing.T) {
+func TestWebFetchHTTPToolSchema(t *testing.T) {
 	t.Parallel()
 
-	fetcher := &fakeFetcher{result: capweb.FetchResult{
-		URL:         "https://example.com/final",
-		Status:      200,
-		ContentType: "text/html",
-		Title:       "Doc",
-		Content:     "body text",
-		Truncated:   true,
-	}}
-	fetch, err := tool.NewWebFetch(tool.WebFetchConfig{MaxBytes: 4096}, tool.WebFetchDeps{Web: fetcher})
+	pack, err := tool.NewWebFetchHTTP(tool.WebFetchHTTPConfig{MaxBytes: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}
+	fetch := agentkit.First(pack)
 	if fetch.Name() != "web_fetch" {
 		t.Fatalf("tool name = %q", fetch.Name())
 	}
 	if !slices.Contains(fetch.InputSchema().Required, "url") {
 		t.Errorf("required = %v, want url", fetch.InputSchema().Required)
 	}
+}
+
+func TestWebFetchScriptedMapsResult(t *testing.T) {
+	t.Parallel()
+
+	pack, err := tool.NewWebFetchScripted(tool.WebFetchScriptedConfig{
+		Pages: map[string]string{
+			"example.com": "<html><head><title>Doc</title></head><body>body text</body></html>",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetch := agentkit.First(pack)
 
 	out := callTool(t, context.Background(), fetch, `{"url":"https://example.com/start","raw":true}`)
 	var got tool.WebFetchOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
-	if got.URL != "https://example.com/final" {
-		t.Errorf("url = %q, want the post-redirect url so the model cites the right source", got.URL)
+	if got.URL != "https://example.com/start" {
+		t.Errorf("url = %q", got.URL)
 	}
-	if got.Title != "Doc" || got.Content != "body text" || !got.Truncated {
+	if got.Title != "" {
+		t.Errorf("title = %q, want empty when raw=true", got.Title)
+	}
+	if !strings.Contains(got.Content, "body text") {
 		t.Errorf("output = %+v", got)
-	}
-	if fetcher.got.MaxBytes != 4096 || !fetcher.got.Raw {
-		t.Errorf("request = %+v, want the config cap and raw passed through", fetcher.got)
 	}
 }
 
-func TestWebFetchToolReportsErrorWithoutFailingTheTurn(t *testing.T) {
+func TestWebFetchHTTPReportsPrivateHostWithoutFailingTurn(t *testing.T) {
 	t.Parallel()
 
-	fetch, err := tool.NewWebFetch(tool.WebFetchConfig{}, tool.WebFetchDeps{
-		Web: &fakeFetcher{err: fmt.Errorf("refusing to fetch non-public address 127.0.0.1")},
-	})
+	pack, err := tool.NewWebFetchHTTP(tool.WebFetchHTTPConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// callTool fails the test if Call returns an error, so reaching the assertion
-	// is itself the proof that a refused fetch stays a readable tool result.
+	fetch := agentkit.First(pack)
 	out := callTool(t, context.Background(), fetch, `{"url":"http://127.0.0.1/"}`)
 	if !strings.Contains(out, "non-public address") {
 		t.Errorf("result = %q, want the refusal text", out)
@@ -105,38 +74,29 @@ func TestWebFetchToolReportsErrorWithoutFailingTheTurn(t *testing.T) {
 func TestWebFetchToolRequiresURL(t *testing.T) {
 	t.Parallel()
 
-	fetch, err := tool.NewWebFetch(tool.WebFetchConfig{}, tool.WebFetchDeps{Web: &fakeFetcher{}})
+	pack, err := tool.NewWebFetchScripted(tool.WebFetchScriptedConfig{Default: "ok"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	fetch := agentkit.First(pack)
 	if out := callTool(t, context.Background(), fetch, `{"url":"  "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
 }
 
-func TestWebFetchToolRequiresDep(t *testing.T) {
+func TestWebSearchScriptedResultLimit(t *testing.T) {
 	t.Parallel()
 
-	if _, err := tool.NewWebFetch(tool.WebFetchConfig{}, tool.WebFetchDeps{}); err == nil {
-		t.Fatal("built without a web dep")
-	}
-	if _, err := tool.NewWebSearch(tool.WebSearchConfig{}, tool.WebSearchDeps{}); err == nil {
-		t.Fatal("built without a web dep")
-	}
-}
-
-func TestWebSearchToolResultLimitPrecedence(t *testing.T) {
-	t.Parallel()
-
-	searcher := &fakeSearcher{result: capweb.SearchResult{
-		Query:    "loop",
-		Provider: "exa",
-		Results:  []capweb.SearchHit{{Title: "Loop", URL: "https://example.com/loop", Snippet: "serialized"}},
-	}}
-	search, err := tool.NewWebSearch(tool.WebSearchConfig{MaxResults: 5}, tool.WebSearchDeps{Web: searcher})
+	pack, err := tool.NewWebSearchScripted(tool.WebSearchScriptedConfig{
+		MaxResults: 5,
+		ByQuery: map[string][]tool.WebSearchHit{
+			"loop": {{Title: "Loop", URL: "https://example.com/loop", Snippet: "serialized"}},
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	search := agentkit.First(pack)
 	if search.Name() != "web_search" {
 		t.Fatalf("tool name = %q", search.Name())
 	}
@@ -149,16 +109,30 @@ func TestWebSearchToolResultLimitPrecedence(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("decode output: %v (%s)", err, out)
 	}
-	if len(got.Results) != 1 || got.Results[0].URL != "https://example.com/loop" || got.Provider != "exa" {
+	if len(got.Results) != 1 || got.Results[0].URL != "https://example.com/loop" || got.Provider != "scripted" {
 		t.Errorf("output = %+v", got)
 	}
-	if searcher.got.MaxResults != 5 {
-		t.Errorf("maxResults = %d, want the config default when the model omits one", searcher.got.MaxResults)
-	}
 
-	callTool(t, context.Background(), search, `{"query":"loop","maxResults":2}`)
-	if searcher.got.MaxResults != 2 {
-		t.Errorf("maxResults = %d, want the model's explicit value to win", searcher.got.MaxResults)
+	out = callTool(t, context.Background(), search, `{"query":"loop","maxResults":0}`)
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decode output: %v (%s)", err, out)
+	}
+	if len(got.Results) != 1 {
+		t.Errorf("output = %+v", got)
+	}
+}
+
+func TestWebSearchExaRequiresKeyAtCallTime(t *testing.T) {
+	t.Parallel()
+
+	pack, err := tool.NewWebSearchExa(tool.WebSearchExaConfig{}, tool.WebSearchExaDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	search := agentkit.First(pack)
+	out := callTool(t, context.Background(), search, `{"query":"anything"}`)
+	if !strings.Contains(out, "no API key") {
+		t.Errorf("result = %q", out)
 	}
 }
 
@@ -166,10 +140,11 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 	t.Parallel()
 
 	si := &fakeSessionInteraction{result: interaction.Result{Answered: true, Text: "sqlite", Selected: 1}}
-	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
+	pack, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ask := agentkit.First(pack)
 	if ask.Name() != "ask_user" {
 		t.Fatalf("tool name = %q", ask.Name())
 	}
@@ -198,10 +173,11 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	t.Parallel()
 
 	si := &fakeSessionInteraction{result: interaction.Result{Selected: -1, Reason: "this run is unattended"}}
-	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
+	pack, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ask := agentkit.First(pack)
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, si)
 	out := callTool(t, ctx, ask, `{"question":"which store?"}`)
 	var got tool.AskUserOutput
@@ -222,12 +198,24 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 func TestAskUserToolRequiresQuestion(t *testing.T) {
 	t.Parallel()
 
-	ask, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
+	pack, err := tool.NewAskUser(tool.AskUserConfig{}, tool.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ask := agentkit.First(pack)
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, &fakeSessionInteraction{})
 	if out := callTool(t, ctx, ask, `{"question":"   "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
+}
+
+type fakeSessionInteraction struct {
+	got    interaction.Human
+	result interaction.Result
+	err    error
+}
+
+func (f *fakeSessionInteraction) Run(_ context.Context, req interaction.Human) (interaction.Result, error) {
+	f.got = req
+	return f.result, f.err
 }

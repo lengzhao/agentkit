@@ -20,43 +20,13 @@ func TestGrepFindListDirTools(t *testing.T) {
 			"deps": map[string]any{
 				"tools": []any{
 					map[string]any{
-						"use": "tool/grep",
-						"deps": map[string]any{
-							"fs": map[string]any{
-								"use": "fs/memory",
-								"config": map[string]any{
-									"files": map[string]string{
-										"main.go": "package main\nfunc main() {}\n",
-									},
-								},
+						"use": "tool/fs-memory",
+						"config": map[string]any{
+							"files": map[string]string{
+								"main.go":     "package main\nfunc main() {}\n",
+								"pkg/util.go": "package pkg\n",
 							},
-						},
-					},
-					map[string]any{
-						"use": "tool/find",
-						"deps": map[string]any{
-							"fs": map[string]any{
-								"use": "fs/memory",
-								"config": map[string]any{
-									"files": map[string]string{
-										"main.go": "package main\n",
-									},
-								},
-							},
-						},
-					},
-					map[string]any{
-						"use": "tool/list-dir",
-						"deps": map[string]any{
-							"fs": map[string]any{
-								"use": "fs/memory",
-								"config": map[string]any{
-									"files": map[string]string{
-										"main.go":     "package main\n",
-										"pkg/util.go": "package pkg\n",
-									},
-								},
-							},
+							"tools": []string{"grep", "find", "ls"},
 						},
 					},
 				},

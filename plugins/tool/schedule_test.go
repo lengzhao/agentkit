@@ -24,7 +24,7 @@ func newScheduleTool(t *testing.T, cfg tool.ScheduleConfig) (agentkit.Tool, caps
 	if err != nil {
 		t.Fatal(err)
 	}
-	return tl, registry
+	return agentkit.First(tl), registry
 }
 
 func decodeSchedule(t *testing.T, raw string) tool.ScheduleOutput {

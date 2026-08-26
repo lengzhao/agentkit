@@ -44,7 +44,6 @@ platform.default:
   deps:
     schedule: schedule.default
     workspace: workspace.default
-    shell: shell.bash.default
 
 # job 表落在工作区里，agent 加的 job 因此能跨重启存活。
 # 写入走临时文件 + rename：进程在写一半时被杀，回来不会读到截断的 job 表。
@@ -65,13 +64,8 @@ tools.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.read-file.default
-      - tool.write-file.default
-      - tool.edit-file.default
-      - tool.grep.default
-      - tool.find.default
-      - tool.list-dir.default
-      - tool.shell.default
+      - tool.fs-workspace.default
+      - tool.shell-bash.default
       - tool.skill.default
       - tool.todo.default
       - tool.finish.default

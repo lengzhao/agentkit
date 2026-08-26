@@ -13,17 +13,19 @@ sessionStore.default:
     workspace: workspace.default
 
 # local 根为 .agentkit；文件工具与 shell 通过 .. 落到项目根目录。
-fs.workspace.default:
-  use: fs/local
+tool.fs-workspace.default:
+  use: tool/fs-workspace
   config:
     root: ..
+    maxBytes: 1048576
   deps:
     workspace: workspace.default
 
-shell.bash.default:
-  use: shell/bash
+tool.shell-bash.default:
+  use: tool/shell-bash
   config:
     workDir: ..
+    timeoutSeconds: 60
   deps:
     workspace: workspace.default
 

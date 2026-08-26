@@ -58,7 +58,7 @@ const defaultMaxAgentJobs = 32
 // Best practices:
 //   - Ids are assigned by the registry (agent-1, agent-2, ...); read them back with op=list before op=remove.
 //   - Needs a schedule registry that platform/worker also uses, or nothing will fire the jobs.
-func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
+func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.ToolPack, error) {
 	if deps.Schedule == nil {
 		return nil, fmt.Errorf("tool/schedule requires schedule dependency")
 	}
@@ -68,7 +68,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	}
 	registry := deps.Schedule
 
-	return agentkit.NewTool[ScheduleInput, ScheduleOutput]("schedule", func(ctx context.Context, input ScheduleInput) (ScheduleOutput, error) {
+	tool, err := agentkit.NewTool[ScheduleInput, ScheduleOutput]("schedule", func(ctx context.Context, input ScheduleInput) (ScheduleOutput, error) {
 		switch strings.ToLower(strings.TrimSpace(input.Op)) {
 		case scheduleOpList, "":
 			jobs, err := registry.List(ctx)
@@ -135,6 +135,10 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	}).
 		Description("Put work on the calendar. op=add with a cron expression to run a task later or repeatedly (e.g. cron \"0 9 * * 1-5\" for weekday mornings), op=list to review, op=remove to cancel. Scheduled jobs survive restarts and run as their own session, so state the task in full.").
 		Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }
 
 func countSource(jobs []schedule.Job, source string) int {

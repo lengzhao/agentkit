@@ -13,6 +13,22 @@ type Tool interface {
 	Call(context.Context, ToolCall) (ToolResult, error)
 }
 
+// ToolPack is one plugin instance that exposes one or more model-visible tools.
+type ToolPack []Tool
+
+// Pack returns a ToolPack from individual tools.
+func Pack(tools ...Tool) ToolPack {
+	return tools
+}
+
+// First returns the only tool in a single-tool pack.
+func First(pack ToolPack) Tool {
+	if len(pack) == 0 {
+		return nil
+	}
+	return pack[0]
+}
+
 type ToolSpec struct {
 	Name        string
 	Description string

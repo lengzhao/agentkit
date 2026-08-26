@@ -29,12 +29,12 @@ type FinishOutput struct {
 //
 // Best practices:
 //   - This is the only signal that stops a run early; otherwise it runs to budget.
-func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
+func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.ToolPack, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/finish requires sessionStore dependency")
 	}
 	store := deps.SessionStore
-	return agentkit.NewTool[FinishInput, FinishOutput]("finish", func(ctx context.Context, input FinishInput) (FinishOutput, error) {
+	tool, err := agentkit.NewTool[FinishInput, FinishOutput]("finish", func(ctx context.Context, input FinishInput) (FinishOutput, error) {
 		summary := strings.TrimSpace(input.Summary)
 		if summary == "" {
 			return FinishOutput{}, fmt.Errorf("finish requires a summary")
@@ -62,4 +62,8 @@ func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 	}).
 		Description("End the run. Call this once the task is complete (status=completed) or cannot continue (status=blocked), with a summary of the outcome.").
 		Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
 }

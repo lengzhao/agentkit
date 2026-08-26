@@ -62,16 +62,12 @@ func TestCodingAgentReadsFile(t *testing.T) {
 					"deps": map[string]any{
 						"tools": []any{
 							map[string]any{
-								"use": "tool/read-file",
-								"deps": map[string]any{
-									"fs": map[string]any{
-										"use": "fs/memory",
-										"config": map[string]any{
-											"files": map[string]string{
-												"README.md": "hello from readme",
-											},
-										},
+								"use": "tool/fs-memory",
+								"config": map[string]any{
+									"files": map[string]string{
+										"README.md": "hello from readme",
 									},
+									"tools": []string{"read"},
 								},
 							},
 						},

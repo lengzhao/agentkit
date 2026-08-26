@@ -1,4 +1,4 @@
-package web
+package tool
 
 import (
 	"bytes"
@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/cap/web"
-	"github.com/lengzhao/pluginkit"
 )
 
 const (
@@ -23,7 +22,7 @@ const (
 	defaultSnippetChars  = 800
 )
 
-type ExaConfig struct {
+type WebSearchExaConfig struct {
 	// APIKeyRef is credential ref resolved via deps.credentials, e.g. "env:EXA_API_KEY".
 	APIKeyRef string `json:"apiKeyRef,omitempty"`
 	// APIKey is literal key; prefer APIKeyRef so the secret stays out of config files.
@@ -48,11 +47,29 @@ type ExaConfig struct {
 	ExcludeDomains []string `json:"excludeDomains,omitempty"`
 }
 
-type ExaDeps struct {
+type WebSearchExaDeps struct {
 	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 
-type Exa struct {
+type WebSearchHit struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Snippet     string `json:"snippet,omitempty"`
+	PublishedAt string `json:"publishedAt,omitempty"`
+}
+
+type WebSearchInput struct {
+	Query      string `json:"query" jsonschema:"required,description=What to search for, as a natural-language query"`
+	MaxResults int    `json:"maxResults,omitempty" jsonschema:"description=Maximum hits to return"`
+}
+
+type WebSearchOutput struct {
+	Query    string         `json:"query"`
+	Provider string         `json:"provider,omitempty"`
+	Results  []WebSearchHit `json:"results"`
+}
+
+type exaSearcher struct {
 	client       *http.Client
 	apiKey       string
 	baseURL      string
@@ -65,48 +82,6 @@ type Exa struct {
 	exclude      []string
 }
 
-func init() {
-	pluginkit.Register("web/exa-search", NewExa)
-}
-
-// NewExa registers web/exa-search: Search the web through the Exa API.
-//
-// Best practices:
-//   - A missing key is reported at call time, not at build time, so mounting search never breaks a keyless preset.
-//   - Search returns snippets; pair it with tool/web-fetch when the model needs the full page.
-func NewExa(cfg ExaConfig, deps ExaDeps) (web.Searcher, error) {
-	timeout := 30 * time.Second
-	if cfg.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
-	}
-	maxResults := cfg.MaxResults
-	if maxResults <= 0 {
-		maxResults = defaultExaMaxResults
-	}
-	snippetChars := cfg.SnippetChars
-	if snippetChars <= 0 {
-		snippetChars = defaultSnippetChars
-	}
-	baseURL := strings.TrimRight(cfg.BaseURL, "/")
-	if baseURL == "" {
-		baseURL = defaultExaBaseURL
-	}
-	return &Exa{
-		client:       &http.Client{Timeout: timeout},
-		apiKey:       resolveSearchKey(cfg.APIKey, cfg.APIKeyRef, "EXA_API_KEY", deps.Credentials),
-		baseURL:      baseURL,
-		maxResults:   maxResults,
-		searchType:   cfg.Type,
-		category:     cfg.Category,
-		includeText:  cfg.IncludeText,
-		snippetChars: snippetChars,
-		include:      cfg.IncludeDomains,
-		exclude:      cfg.ExcludeDomains,
-	}, nil
-}
-
-// exaContents mirrors Exa's camelCase request shape; the Python SDK's snake_case
-// is an SDK convention, not the wire format.
 type exaContents struct {
 	Highlights bool           `json:"highlights,omitempty"`
 	Text       *exaTextConfig `json:"text,omitempty"`
@@ -136,15 +111,67 @@ type exaResponse struct {
 	} `json:"results"`
 }
 
-func (e *Exa) Search(ctx context.Context, req web.SearchRequest) (web.SearchResult, error) {
-	query := strings.TrimSpace(req.Query)
-	if query == "" {
-		return web.SearchResult{}, fmt.Errorf("query is required")
+// NewWebSearchExa registers tool/web-search-exa: Search the web through Exa (tool name: web_search).
+//
+// Best practices:
+//   - A missing key is reported at call time, not at build time.
+//   - Search returns snippets; pair with tool/web-fetch-http when the model needs the full page.
+func NewWebSearchExa(cfg WebSearchExaConfig, deps WebSearchExaDeps) (agentkit.ToolPack, error) {
+	timeout := 30 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
+	maxResults := cfg.MaxResults
+	if maxResults <= 0 {
+		maxResults = defaultExaMaxResults
+	}
+	snippetChars := cfg.SnippetChars
+	if snippetChars <= 0 {
+		snippetChars = defaultSnippetChars
+	}
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = defaultExaBaseURL
+	}
+	e := &exaSearcher{
+		client:       &http.Client{Timeout: timeout},
+		apiKey:       resolveSearchKey(cfg.APIKey, cfg.APIKeyRef, "EXA_API_KEY", deps.Credentials),
+		baseURL:      baseURL,
+		maxResults:   maxResults,
+		searchType:   cfg.Type,
+		category:     cfg.Category,
+		includeText:  cfg.IncludeText,
+		snippetChars: snippetChars,
+		include:      cfg.IncludeDomains,
+		exclude:      cfg.ExcludeDomains,
+	}
+
+	tool, err := agentkit.NewTool[WebSearchInput, WebSearchOutput]("web_search", func(ctx context.Context, input WebSearchInput) (WebSearchOutput, error) {
+		query := strings.TrimSpace(input.Query)
+		if query == "" {
+			return WebSearchOutput{}, fmt.Errorf("query is required")
+		}
+		max := input.MaxResults
+		if max <= 0 {
+			max = e.maxResults
+		}
+		result, err := e.search(ctx, query, max)
+		if err != nil {
+			return WebSearchOutput{}, err
+		}
+		return result, nil
+	}).Description("Search the web and return ranked results with snippets. Snippets are excerpts, not the whole page: fetch a result's url when you need its details.").Build()
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.Pack(tool), nil
+}
+
+func (e *exaSearcher) search(ctx context.Context, query string, maxResults int) (WebSearchOutput, error) {
 	if e.apiKey == "" {
-		return web.SearchResult{}, fmt.Errorf("web/exa-search has no API key: set EXA_API_KEY, or config.apiKeyRef with a credentials dep")
+		return WebSearchOutput{}, fmt.Errorf("tool/web-search-exa has no API key: set EXA_API_KEY, or config.apiKeyRef with a credentials dep")
 	}
-	n := req.MaxResults
+	n := maxResults
 	if n <= 0 || n > e.maxResults {
 		n = e.maxResults
 	}
@@ -163,54 +190,51 @@ func (e *Exa) Search(ctx context.Context, req web.SearchRequest) (web.SearchResu
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return web.SearchResult{}, err
+		return WebSearchOutput{}, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL+"/search", bytes.NewReader(body))
 	if err != nil {
-		return web.SearchResult{}, err
+		return WebSearchOutput{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", e.apiKey)
 
 	resp, err := e.client.Do(httpReq)
 	if err != nil {
-		return web.SearchResult{}, fmt.Errorf("exa search: %w", err)
+		return WebSearchOutput{}, fmt.Errorf("exa search: %w", err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return web.SearchResult{}, fmt.Errorf("exa search: read response: %w", err)
+		return WebSearchOutput{}, fmt.Errorf("exa search: read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return web.SearchResult{}, fmt.Errorf("exa search: http %d: %s", resp.StatusCode, truncate(strings.TrimSpace(string(raw)), 300))
+		return WebSearchOutput{}, fmt.Errorf("exa search: http %d: %s", resp.StatusCode, truncateText(strings.TrimSpace(string(raw)), 300))
 	}
 
 	var decoded exaResponse
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return web.SearchResult{}, fmt.Errorf("exa search: decode response: %w", err)
+		return WebSearchOutput{}, fmt.Errorf("exa search: decode response: %w", err)
 	}
 
-	out := web.SearchResult{Query: query, Provider: "exa"}
+	out := WebSearchOutput{Query: query, Provider: "exa"}
 	for _, r := range decoded.Results {
 		snippet := strings.TrimSpace(strings.Join(r.Highlights, " … "))
 		if snippet == "" {
 			snippet = strings.TrimSpace(r.Text)
 		}
-		out.Results = append(out.Results, web.SearchHit{
+		out.Results = append(out.Results, WebSearchHit{
 			Title:       strings.TrimSpace(r.Title),
 			URL:         r.URL,
-			Snippet:     truncate(collapse(snippet), e.snippetChars),
+			Snippet:     truncateText(collapse(snippet), e.snippetChars),
 			PublishedAt: r.PublishedDate,
 		})
 	}
 	return out, nil
 }
 
-// resolveSearchKey mirrors runtime/llm's precedence (literal, then ref, then
-// env) but never fails the build: a search provider without a key is a tool
-// that reports a missing key, not a broken instance graph.
 func resolveSearchKey(apiKey, apiKeyRef, envVar string, store credentials.Store) string {
 	if apiKey != "" {
 		return apiKey
@@ -227,11 +251,10 @@ func resolveSearchKey(apiKey, apiKeyRef, envVar string, store credentials.Store)
 	return os.Getenv(envVar)
 }
 
-func truncate(s string, max int) string {
+func truncateText(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
 	}
-	// Cut on a rune boundary so the result stays valid UTF-8.
 	cut := max
 	for cut > 0 && s[cut]&0xc0 == 0x80 {
 		cut--

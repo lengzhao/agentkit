@@ -61,13 +61,11 @@ runner.default:
                 use: tools/runtime
                 deps:
                   tools:
-                    - use: tool/read-file
-                      deps:
-                        fs:
-                          use: fs/memory
-                          config:
-                            files:
-                              README.md: "# AgentKit\n\nhello"
+                    - use: tool/fs-memory
+                      config:
+                        files:
+                          README.md: "# AgentKit\n\nhello"
+                        tools: [read]
                     - use: tool/todo
                       deps:
                         sessionStore: sessionStore.default
