@@ -168,7 +168,7 @@ prompt.subagent.default:
 prompt.agents-md.default:
   use: prompt/section/agents-md
   config:
-    root: .
+    root: work
   deps:
     workspace: workspace.default
 
@@ -229,10 +229,11 @@ tools.subagent.default:
       - policy.dangerous-shell.default
     approval: approval.cli.default
 
+# scope 默认根放 runtime（sessions、mcp.json 等）；fs/shell 只在 work/ 子目录读写。
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
-    root: .
+    root: work
     maxBytes: 1048576
   deps:
     workspace: workspace.default
@@ -240,7 +241,7 @@ tool.fs-workspace.default:
 tool.fs-workspace.readonly.default:
   use: tool/fs-workspace
   config:
-    root: .
+    root: work
     maxBytes: 1048576
     readOnly: true
     tools:
@@ -254,7 +255,7 @@ tool.fs-workspace.readonly.default:
 tool.shell-bash.default:
   use: tool/shell-bash
   config:
-    workDir: .
+    workDir: work
     timeoutSeconds: 60
   deps:
     workspace: workspace.default

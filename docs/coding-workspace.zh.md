@@ -6,7 +6,7 @@ Coding preset 的文件与 Shell 边界策略。
 
 `workspace/default` 同时定义 **global**（默认 `~/.agentkit`）与 **local**（默认 `<cwd>/.agentkit`）两个根，并通过 `scope` 选择默认使用哪一个（L0 默认 `global`）。
 
-AgentKit 运行时数据（session、schedule、agents 定义等）落在 **local 根** 下，避免把临时文件散进项目源码树。文件工具与 shell 在 coding preset 里通过 `..` 解析到**项目根目录**。
+AgentKit 运行时数据（session、schedule、agents 定义等）落在 **scope 默认根** 下。L0 默认 `scope: global`，工具只在 `work/` 子目录读写，避免误伤 `sessions/` 或 `mcp.json`。coding preset 覆盖为 `scope: local`，并通过 `..` 解析到**项目根目录**。
 
 需要解析相对路径的插件（`tool/fs-workspace`、`tool/shell-bash`、`session/store`、`skill/filesystem` 等）调用 `workspace.Resolve(ctx, rel)`。路径可加前缀显式指定根：
 
@@ -21,11 +21,13 @@ AgentKit 运行时数据（session、schedule、agents 定义等）落在 **loca
 | 实例 | Kind | 配置 | 解析结果 |
 |---|---|---|---|
 | `workspace.default` | `workspace/default` | `global` + `local` + `scope` | 默认根由 scope 决定 |
+| `tool.fs-workspace.default` | `tool/fs-workspace` | `root: work`（L0） | `~/.agentkit/work/`（scope=global） |
 | `tool.fs-workspace.default` | `tool/fs-workspace` | `root: ..`（coding preset） | 项目根目录 |
+| `tool.shell-bash.default` | `tool/shell-bash` | `workDir: work`（L0） | `~/.agentkit/work/`（scope=global） |
 | `tool.shell-bash.default` | `tool/shell-bash` | `workDir: ..`（coding preset） | 项目根目录 |
 | `sessionStore.default` | `session/store` | `dir: sessions` | `<cwd>/.agentkit/sessions`（scope=local） |
 
-`config.base.yaml`（L0）默认 `scope: global`；`presets/coding.yaml`（L1）覆盖为 `scope: local`，并把 fs/shell 指到 `..`（项目根）。
+`config.base.yaml`（L0）默认 `scope: global`，fs/shell 在 `work/` 子目录操作；`presets/coding.yaml`（L1）覆盖为 `scope: local`，并把 fs/shell 指到 `..`（项目根）。
 
 Session 日志不属于工具 FS 工作区，但目录同样通过 `workspace` 解析。
 
