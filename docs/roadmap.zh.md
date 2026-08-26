@@ -80,6 +80,22 @@ HIL interaction **没有复用 `cap/approval`**。approval 回答的是"这个�
 
 **验收**（已通过）：`presets/web.yaml,presets/web-smoke.yaml` 跑通"搜索 → 抓取 → 提问降级 → 引用来源回答"；`env -u EXA_API_KEY` 下实例图照常构建、`web/http-fetch` 单独可用、搜索返回一句模型可读的"没有 key"；抓取/搜索失败均为模型可读结果，turn 不中断。
 
+## M1.5 — 多租户内核（已落地）
+
+**为什么插在这里**：一个进程服务多个 Slack 频道时，缺口不在 spine，而在"每个群在哪个目录干活"。`workspace.Service.Resolve` 本来就带 ctx，且全部文件访问都经它 —— 所以这一层是加插件，不改接口。详见 [multi-tenant.zh.md](multi-tenant.zh.md)。
+
+| 项 | 落点 | 说明 |
+|---|---|---|
+| 租户键推导 | `cap/tenant` | 从 `SessionID` 取平台段 + 第一个路由段；三种会话粒度落在同一租户上 |
+| 按租户分工作目录 | `workspace/tenant` | `global` 共享 + `local` 一租户一根；默认隔离，`tenants` 可钉到已有项目 |
+| 越权边界 | `cap/workspace.ResolveRelStrict` | 租户根之间并列，`..` 一律不解析（与 `workspace/default` 的唯一行为差异） |
+| 用户归属 | `SessionEvent.UserID` + `derive.go` | 共用会话时回放渲染 `<user id="U123">`；`UserID` 为空则逐字节不变 |
+| 会话粒度 | `session.SlackSessionIDForScope` | 整群共用 / 按 thread / 按人 |
+| MCP 池分槽 | `tool/mcp` | 客户端池按 `(租户键, server 名)` 建 key，两个租户不再互相踢连接 |
+| Preset | `presets/multi-tenant.yaml` | 放开 `maxConcurrentTurns`（租户根分开后共享工作区的前提不再成立） |
+
+**未做**：`platform/slack` 本体仍在 M3。入站 platform 的义务只有两件 —— 生成 `SessionID`、填 `MessageEvent.UserID`。
+
 ## M2 — 隔离 + 守护收尾
 
 **M1 完成后这就是下一步。为什么排第二**：`presets/autonomous.yaml` + `approval/auto-allow` **已经上线**，而 `plugins/shell/shell.go` 里没有任何 sandbox 接入——当前唯一防线是 `policy/shell-allowlist` 与 `policy/path-denylist` 这两个字符串匹配的裁决。这是已交付功能的安全债，越晚越贵。

@@ -57,7 +57,22 @@ func Resolve(path string) (string, error) {
 }
 
 // ResolveRel maps rel against base. Absolute paths and ~/ bypass base.
+// Resolving one level above base is allowed: when the local root is
+// <project>/.agentkit, tools reach the project itself through "..".
 func ResolveRel(base, rel string) (string, error) {
+	return resolveRel(base, rel, true)
+}
+
+// ResolveRelStrict is ResolveRel with the parent-directory exemption removed:
+// nothing outside base resolves, not even one level up. Use it for roots that
+// are an isolation boundary rather than a convenience default — a per-tenant
+// root sits next to its siblings, so allowing ".." there would let one tenant
+// read and write another's workdir.
+func ResolveRelStrict(base, rel string) (string, error) {
+	return resolveRel(base, rel, false)
+}
+
+func resolveRel(base, rel string, allowParent bool) (string, error) {
 	if rel == "" {
 		rel = "."
 	}
@@ -82,6 +97,9 @@ func ResolveRel(base, rel string) (string, error) {
 	}
 	if !strings.HasPrefix(relToBase, "..") {
 		return abs, nil
+	}
+	if !allowParent {
+		return "", fmt.Errorf("path escapes work dir: %s", rel)
 	}
 	// When local root is <project>/.agentkit, allow resolving into the parent
 	// directory (project root) but not above it.

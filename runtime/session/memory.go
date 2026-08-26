@@ -104,11 +104,18 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 	if err != nil {
 		return err
 	}
-	_, err = s.Append(ctx, agentkit.SessionEvent{
+	event := agentkit.SessionEvent{
 		AgentID: agentID,
 		Type:    typ,
 		Data:    raw,
-	})
+	}
+	// Attribute user turns to whoever sent them. Only user messages carry this:
+	// stamping the assistant with the user who prompted it would make the reply
+	// look like that person's words on replay.
+	if typ == agentkit.EventUserMessage {
+		event.UserID, _ = ctx.Value(agentkit.KeyUserID).(string)
+	}
+	_, err = s.Append(ctx, event)
 	return err
 }
 

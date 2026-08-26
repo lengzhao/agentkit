@@ -73,6 +73,10 @@ func TestPresetsChainedBuild(t *testing.T) {
 		{"autonomous.yaml", "cron.yaml"},
 		{"subagent.yaml", "subagent-smoke.yaml"},
 		{"web.yaml", "web-smoke.yaml"},
+		// A multi-tenant IM deployment is usually unattended, so the two
+		// overlays have to compose: autonomous swaps the platform and tool set,
+		// multi-tenant swaps the workspace under it.
+		{"autonomous.yaml", "multi-tenant.yaml"},
 	}
 	for _, chain := range chains {
 		t.Run(strings.Join(chain, "+"), func(t *testing.T) {

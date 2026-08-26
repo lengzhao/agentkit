@@ -12,12 +12,17 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/tenant"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
 
 type clientPool struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+	// sessions is keyed by tenant and server name, not server name alone. Two
+	// tenants routinely declare the same server ("filesystem") pointed at their
+	// own workspace; sharing a slot made every alternating call evict the other
+	// tenant's client and respawn its subprocess.
 	sessions map[string]*serverSession
 }
 
@@ -42,7 +47,7 @@ func (p *clientPool) tools(ctx context.Context, server serverConfig, creds crede
 	}
 	result, err := client.ListTools(ctx, mcplib.ListToolsRequest{})
 	if err != nil {
-		p.evict(server.Name)
+		p.evict(poolKey(ctx, server))
 		return nil, err
 	}
 	var out []toolDefinition
@@ -83,37 +88,45 @@ func (p *clientPool) call(ctx context.Context, server serverConfig, toolName str
 		},
 	})
 	if err != nil {
-		p.evict(server.Name)
+		p.evict(poolKey(ctx, server))
 		return mcpCallOutcome{}, err
 	}
 	return convertCallResult(result), nil
 }
 
+// poolKey scopes a pooled client to the tenant that opened it. Within one tenant
+// the fingerprint still decides replacement, so editing mcp.json reconnects
+// rather than accumulating a second client.
+func poolKey(ctx context.Context, server serverConfig) string {
+	return tenant.FromContext(ctx) + "\x00" + server.Name
+}
+
 func (p *clientPool) ensure(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {
 	fp := server.fingerprint()
+	key := poolKey(ctx, server)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if sess, ok := p.sessions[server.Name]; ok && sess.fingerprint == fp && sess.client != nil {
+	if sess, ok := p.sessions[key]; ok && sess.fingerprint == fp && sess.client != nil {
 		return sess.client, nil
 	}
-	if sess, ok := p.sessions[server.Name]; ok && sess.client != nil {
+	if sess, ok := p.sessions[key]; ok && sess.client != nil {
 		sess.client.Close()
 	}
 	client, err := connectServer(ctx, server, creds)
 	if err != nil {
 		return nil, err
 	}
-	p.sessions[server.Name] = &serverSession{fingerprint: fp, client: client}
+	p.sessions[key] = &serverSession{fingerprint: fp, client: client}
 	return client, nil
 }
 
-func (p *clientPool) evict(name string) {
+func (p *clientPool) evict(key string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if sess, ok := p.sessions[name]; ok && sess.client != nil {
+	if sess, ok := p.sessions[key]; ok && sess.client != nil {
 		sess.client.Close()
 	}
-	delete(p.sessions, name)
+	delete(p.sessions, key)
 }
 
 func connectServer(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {

@@ -100,3 +100,34 @@ func TestResolveRelAbsolute(t *testing.T) {
 		t.Fatalf("Resolve(abs)=%q want %q", got, abs)
 	}
 }
+
+func TestResolveRelStrictRefusesParent(t *testing.T) {
+	t.Parallel()
+
+	base := filepath.Join(t.TempDir(), "tenant-a")
+	for _, rel := range []string{"..", "../tenant-b", "../../etc", "sub/../../tenant-b"} {
+		if got, err := ResolveRelStrict(base, rel); err == nil {
+			t.Fatalf("ResolveRelStrict(%q) = %q, want error", rel, got)
+		}
+	}
+}
+
+func TestResolveRelStrictAllowsOwnSubtree(t *testing.T) {
+	t.Parallel()
+
+	base := filepath.Join(t.TempDir(), "tenant-a")
+	got, err := ResolveRelStrict(base, "sessions/log.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(base, "sessions", "log.jsonl"); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	// "." is the root itself, and a path that dips out and back stays inside.
+	if got, err := ResolveRelStrict(base, "."); err != nil || got != base {
+		t.Fatalf("dot = %q, %v", got, err)
+	}
+	if got, err := ResolveRelStrict(base, "a/../b"); err != nil || got != filepath.Join(base, "b") {
+		t.Fatalf("a/../b = %q, %v", got, err)
+	}
+}

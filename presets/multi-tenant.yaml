@@ -1,0 +1,87 @@
+# L1 preset：多租户 IM 接入（Slack 等群聊）。
+#
+# 三条隔离语义各由一处负责，互不牵连：
+#
+#   会话隔离   —— platform 生成的 SessionID 决定「接到哪段历史」。
+#                Loop 按 SessionID 串行加锁，session/store 一个 SessionID 一个 JSONL。
+#   用户识别   —— MessageEvent.UserID 落在 user 消息的事件信封上，
+#                回放时渲染成 <user id="U123">，同一个群里谁说的话分得清。
+#   工作目录   —— cap/tenant 从 SessionID 推出租户键（平台段 + 第一个路由段），
+#                workspace/tenant 按租户键给出 local 根。
+#
+# 关键性质：三种会话粒度（整群共用 / 按 thread / 按人）都落在同一个租户键上，
+# 所以「历史切多细」与「在哪个目录干活」可以分别决定 —— 一个群换成按 thread 建会话，
+# 工作目录不会跟着分裂。
+#
+# 本 preset 只装内核。入站 platform 需自行接入（platform/slack 尚未实现），
+# platform 侧只需两件事：用 runtime/session.SlackSessionIDForScope 生成 SessionID，
+# 并在 MessageEvent.UserID 填上发言人。
+
+workspace.default:
+  use: workspace/tenant
+  config:
+    # 全租户共享的根：技能库、子 agent 定义、公共 mcp.json 放这里（global: 前缀）。
+    global: ~/.agentkit
+    # 每个租户一个子目录：~/.agentkit/tenants/slack_C123ABC。
+    # 没在 tenants 里列出的群走这条默认规则 —— 新群接进来零配置，默认就是隔离的。
+    localBase: ~/.agentkit/tenants
+    # 不带前缀的路径落在调用方自己的租户根下。
+    scope: local
+    # 只有需要把某个群钉到已有项目目录时才列出来。
+    # 键是租户键（平台段 + 频道），不是 SessionID：该频道下所有 thread、所有人共用这一条。
+    # YAML 里键含冒号，必须加引号。
+    tenants: {}
+    # tenants:
+    #   "slack:C123ABC":
+    #     root: ~/work/project-a
+    #   "slack:C456DEF":
+    #     root: ~/work/project-b
+
+# 租户根之间是隔离边界，workspace/tenant 里 ".." 一律不解析（这是它与
+# workspace/default 唯一的行为差异）。所以文件工具与 shell 直接以租户根为工作目录，
+# 不像 coding preset 那样靠 ".." 落到项目根。
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: .
+    maxBytes: 1048576
+  deps:
+    workspace: workspace.default
+
+tool.shell-bash.default:
+  use: tool/shell-bash
+  config:
+    workDir: .
+    timeoutSeconds: 60
+  deps:
+    workspace: workspace.default
+
+# 每个租户一份 sessions/ ，落在自己的根下。
+sessionStore.default:
+  use: session/store
+  config:
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+# 租户私有技能 + 全局共享技能库。
+skills.default:
+  use: skill/filesystem
+  config:
+    dirs:
+      - local:skills
+      - global:skills
+  deps:
+    workspace: workspace.default
+
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+    # maxConcurrentTurns 默认是 1，因为不同 session 的 turn 共享同一个工作区 ——
+    # 两个 agent 并发跑 go build 是真实风险。租户根分开之后这个前提不再成立，
+    # 所以这里放开：不同群真正并行，同一 session 内的顺序仍由 Loop 保证。
+    maxConcurrentTurns: 4
+  deps:
+    platform: platform.default
+    loop: loop.default

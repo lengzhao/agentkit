@@ -1299,11 +1299,7 @@ func TestReadFileTool(t *testing.T) {
 | `presets/*.yaml` | `sessionStore` 在 `agent.*.deps`；Loop 不再依赖 `session` |
 | 测试 | `TurnInput` 不再传 `Session`；通过 context key + `SessionStore` 断言 |
 
-待办（非本次范围）：
-
-| 区域 | 改造点 |
-|---|---|
-| `runtime/session/id.go` | Slack 线程段改为 cc-connect 的 `:t:`（当前为 `:thread:`） |
+待办（非本次范围）：暂无。`runtime/session/id.go` 的 Slack 线程段已改为 cc-connect 的 `:t:`，并补上 `SlackSessionIDForScope`（整群 / thread / 按人三种粒度），见 [multi-tenant.zh.md](multi-tenant.zh.md)。
 
 ## 15. 总结
 

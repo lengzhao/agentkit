@@ -87,6 +87,12 @@ type SessionEvent struct {
 	Type      EventType
 	Data      json.RawMessage
 	CreatedAt time.Time
+	// UserID attributes the event to an end user. It is set on user messages
+	// when the platform knows who spoke, and is what makes a session shared by a
+	// whole Slack channel legible: without it the model reads one undifferentiated
+	// stream of user turns. Empty for single-user transports such as the CLI, and
+	// for everything the agent itself produces.
+	UserID string
 }
 
 // MessageEvent is the inbound envelope from Platform to Loop. SessionID is
