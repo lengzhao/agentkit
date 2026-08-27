@@ -2,20 +2,19 @@
 #
 # 三条隔离语义各由一处负责，互不牵连：
 #
-#   会话隔离   —— platform 生成的 SessionID 决定「接到哪段历史」。
-#                Loop 按 SessionID 串行加锁，session/store 一个 SessionID 一个 JSONL。
+#   会话隔离   —— runner.config.sessionScope 折叠 platform delivery SessionID，
+#                得到 effective SessionID；Loop 按 effective 串行加锁，session/store 一 ID 一 JSONL。
 #   用户识别   —— MessageEvent.UserID 落在 user 消息的事件信封上，
 #                回放时渲染成 <user id="U123">，同一个群里谁说的话分得清。
-#   工作目录   —— cap/tenant 从 SessionID 推出租户键（平台段 + 第一个路由段），
+#   工作目录   —— cap/tenant 从 effective SessionID 推出租户键（平台段 + 第一个路由段），
 #                workspace/tenant 按租户键给出 local 根。
 #
-# 关键性质：三种会话粒度（整群共用 / 按 thread / 按人）都落在同一个租户键上，
-# 所以「历史切多细」与「在哪个目录干活」可以分别决定 —— 一个群换成按 thread 建会话，
-# 工作目录不会跟着分裂。
+# 关键性质：三种 sessionScope（channel / thread / user）都落在同一个租户键上，
+# 所以「历史切多细」与「在哪个目录干活」可以分别决定。
 #
 # 本 preset 只装内核。入站 platform 需自行接入（platform/slack 尚未实现），
-# platform 侧只需两件事：用 runtime/session.SlackSessionIDForScope 生成 SessionID，
-# 并在 MessageEvent.UserID 填上发言人。
+# platform 侧只需两件事：用 session.BuildDeliverySessionID 生成 delivery SessionID，
+# 并在 MessageEvent.UserID 填上发言人。sessionScope 由 runner 配置，默认 channel。
 
 workspace.default:
   use: workspace/tenant
@@ -87,10 +86,7 @@ runner.default:
   use: runner
   config:
     shutdownTimeoutSeconds: 10
-    # maxConcurrentTurns 默认是 1，因为不同 session 的 turn 共享同一个工作区 ——
-    # 两个 agent 并发跑 go build 是真实风险。租户根分开之后这个前提不再成立，
-    # 所以这里放开：不同群真正并行，同一 session 内的顺序仍由 Loop 保证。
-    maxConcurrentTurns: 4
+    sessionScope: channel
   deps:
     platform: platform.default
     loop: loop.default

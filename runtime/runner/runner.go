@@ -13,20 +13,21 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
+
+const defaultMaxConcurrentTurns = 64
 
 type Config struct {
 	// ShutdownTimeoutSeconds bounds how long shutdown waits for in-flight turns
 	// to finish. 0 waits indefinitely.
 	ShutdownTimeoutSeconds int `json:"shutdownTimeoutSeconds"`
-	// MaxConcurrentTurns caps how many turns run at once. Defaults to 1, i.e.
-	// fully serial, because turns from different sessions share one workspace:
-	// two agents running `go build` or editing the same file concurrently is a
-	// real hazard. Raise it for multi-conversation transports (IM, HTTP) where
-	// sessions are genuinely independent.
-	//
-	// Ordering within a session is always preserved, whatever the value.
+	// SessionScope collapses platform delivery SessionIDs for Loop locking and
+	// history: "channel" (default), "thread", or "user".
+	SessionScope string `json:"sessionScope"`
+	// MaxConcurrentTurns caps how many turns run at once across distinct effective
+	// sessions. Defaults to 64. Ordering within one session is always preserved.
 	MaxConcurrentTurns int `json:"maxConcurrentTurns"`
 }
 
@@ -38,6 +39,7 @@ type Deps struct {
 type Root struct {
 	platform        agentkit.Platform
 	loop            agentkit.Loop
+	sessionScope    session.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
 }
@@ -45,6 +47,7 @@ type Root struct {
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
 //
 // Best practices:
+//   - Platforms emit delivery SessionIDs; runner applies sessionScope before dispatch.
 //   - Ordering within a session is preserved at any concurrency; only cross-session turns overlap.
 //   - A panicking or failing turn is reported on its session and never kills the process.
 func New(cfg Config, deps Deps) (agentkit.Runner, error) {
@@ -59,7 +62,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	}
 	maxConcurrent := cfg.MaxConcurrentTurns
 	if maxConcurrent == 0 {
-		maxConcurrent = 1
+		maxConcurrent = defaultMaxConcurrentTurns
 	}
 	var shutdownTimeout time.Duration
 	if cfg.ShutdownTimeoutSeconds > 0 {
@@ -68,6 +71,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	return &Root{
 		platform:        deps.Platform,
 		loop:            deps.Loop,
+		sessionScope:    session.ParseScope(cfg.SessionScope),
 		maxConcurrent:   maxConcurrent,
 		shutdownTimeout: shutdownTimeout,
 	}, nil
@@ -94,6 +98,21 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	return err
 }
 
+func (r *Root) scopedEvent(event agentkit.MessageEvent) (delivery, effective agentkit.SessionID, scoped agentkit.MessageEvent) {
+	delivery = event.SessionID
+	effective = session.ApplyScope(delivery, r.sessionScope, event.UserID)
+	scoped = event
+	scoped.SessionID = effective
+	return delivery, effective, scoped
+}
+
+func deliverySessionID(req agentkit.LoopRequest) agentkit.SessionID {
+	if req.DeliverySessionID != "" {
+		return req.DeliverySessionID
+	}
+	return req.Event.SessionID
+}
+
 // receiveLoop reads inbound events without holding concurrency slots. Permission
 // replies are delivered immediately; new turns are queued for the scheduler.
 func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- error) {
@@ -103,20 +122,19 @@ func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- er
 			done <- err
 			return
 		}
-		if r.loop.TryDeliverPermission(event) {
+		deliveryID, _, scoped := r.scopedEvent(event)
+		if r.loop.TryDeliverPermission(scoped) {
 			continue
 		}
 		if event.Message.Role != "" {
-			r.loop.SupersedePendingForInbound(event)
+			r.loop.SupersedePendingForInbound(scoped)
 		}
 		if event.Message.Role == "" {
 			continue
 		}
 		fmt.Fprintln(os.Stderr)
 		emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
-			if out.SessionID == "" {
-				out.SessionID = event.SessionID
-			}
+			out.SessionID = deliveryID
 			if out.AgentID == "" {
 				out.AgentID = event.AgentID
 			}
@@ -129,9 +147,10 @@ func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- er
 			return r.platform.Send(ctx, out)
 		}
 		sched.submit(ctx, agentkit.LoopRequest{
-			Event:        event,
-			Emit:         emit,
-			Capability:   permissionCapability(r.platform, event.PlatformID),
+			Event:             scoped,
+			DeliverySessionID: deliveryID,
+			Emit:              emit,
+			Capability:        permissionCapability(r.platform, event.PlatformID),
 		})
 	}
 }
@@ -139,20 +158,22 @@ func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- er
 // reportTurnError surfaces a failed turn on its own session's channel and keeps
 // the process serving. A turn failure is never fatal to the runner.
 func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, err error) {
+	deliveryID := deliverySessionID(req)
 	slog.Error("loop dispatch failed",
 		"session_id", req.Event.SessionID,
+		"delivery_session_id", deliveryID,
 		"agent_id", req.Event.AgentID,
 		"err", err,
 	)
 	if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{
-		SessionID:  req.Event.SessionID,
+		SessionID:  deliveryID,
 		AgentID:    req.Event.AgentID,
 		PlatformID: req.Event.PlatformID,
 		UserID:     req.Event.UserID,
 		Type:       "error",
 		Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
 	}); sendErr != nil {
-		slog.Error("reporting turn error failed", "session_id", req.Event.SessionID, "err", sendErr)
+		slog.Error("reporting turn error failed", "session_id", deliveryID, "err", sendErr)
 	}
 }
 
@@ -169,6 +190,7 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 		}
 		slog.Error("turn panicked",
 			"session_id", req.Event.SessionID,
+			"delivery_session_id", deliverySessionID(req),
 			"agent_id", req.Event.AgentID,
 			"panic", fmt.Sprint(recovered),
 			"stack", string(debug.Stack()),

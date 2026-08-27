@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/runner"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // scriptedPlatform feeds a fixed set of events then reports EOF, and records
@@ -96,7 +97,7 @@ func TestRunSurvivesPanickingTurn(t *testing.T) {
 		userEvent("s:2", "this one works"),
 	}}
 	loop := &panickyLoop{}
-	root, err := runner.New(runner.Config{}, runner.Deps{Platform: platform, Loop: loop})
+	root, err := runner.New(runner.Config{MaxConcurrentTurns: 1}, runner.Deps{Platform: platform, Loop: loop})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,4 +328,81 @@ func TestRunKeepsServingAfterTurnError(t *testing.T) {
 	if errors != 2 {
 		t.Fatalf("error events = %d, want 2", errors)
 	}
+}
+
+func TestSessionScopeChannelCollapsesDistinctUsers(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	order := make([]agentkit.SessionID, 0, 2)
+	loop := &recordingLoop{hold: func(req agentkit.LoopRequest) {
+		mu.Lock()
+		order = append(order, req.Event.SessionID)
+		mu.Unlock()
+	}}
+
+	events := []agentkit.MessageEvent{
+		{
+			SessionID: session.BuildDeliverySessionID("slack", "C001", "111.0", "U111"),
+			UserID:    "U111",
+			Message: agentkit.ModelMessage{
+				Role:    "user",
+				Content: []agentkit.ContentPart{{Type: "text", Text: "one"}},
+			},
+		},
+		{
+			SessionID: session.BuildDeliverySessionID("slack", "C001", "222.0", "U222"),
+			UserID:    "U222",
+			Message: agentkit.ModelMessage{
+				Role:    "user",
+				Content: []agentkit.ContentPart{{Type: "text", Text: "two"}},
+			},
+		},
+	}
+	runToCompletion(t, runner.Config{SessionScope: "channel"}, &scriptedPlatform{events: events}, loop)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) != 2 {
+		t.Fatalf("dispatches = %d, want 2", len(order))
+	}
+	for _, id := range order {
+		if id != agentkit.SessionID("slack:C001") {
+			t.Fatalf("effective session = %q, want slack:C001", id)
+		}
+	}
+}
+
+func TestOutboundUsesDeliverySessionID(t *testing.T) {
+	t.Parallel()
+
+	delivery := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
+	platform := &scriptedPlatform{events: []agentkit.MessageEvent{{
+		SessionID: delivery,
+		UserID:    "U111",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
+		},
+	}}}
+	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{
+		Platform: platform,
+		Loop:     errorLoop{err: io.ErrUnexpectedEOF},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Run(context.Background(), nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for _, out := range platform.sentEvents() {
+		if out.Type != "error" {
+			continue
+		}
+		if out.SessionID != delivery {
+			t.Fatalf("error outbound session = %q, want delivery %q", out.SessionID, delivery)
+		}
+		return
+	}
+	t.Fatal("expected error outbound event")
 }

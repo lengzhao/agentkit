@@ -13,10 +13,11 @@ func NewCLISessionID() agentkit.SessionID {
 	return agentkit.SessionID("cli:" + time.Now().UTC().Format("20060102-150405.000"))
 }
 
-// SessionScope selects how one group's messages map to sessions. It is the
-// platform's decision and is deliberately independent of the working directory:
-// every scope below derives the same cap/tenant key, so a channel keeps one
-// workdir no matter how finely its history is split.
+// SessionScope selects how delivery SessionIDs collapse for Loop scheduling
+// and session history. It is configured on runner.config.sessionScope and is
+// deliberately independent of the working directory: every scope below derives
+// the same cap/tenant key, so a channel keeps one workdir no matter how finely
+// its history is split.
 type SessionScope string
 
 const (
@@ -42,23 +43,13 @@ func SlackSessionID(channelID, threadTS string) agentkit.SessionID {
 	return agentkit.SessionID("slack:" + channelID + ":t:" + threadTS)
 }
 
-// SlackSessionIDForScope builds the session key for a given scope. Arguments not
-// used by the scope are ignored, so a platform can pass everything it has and
-// let the configured scope decide.
-//
-// An unknown scope falls back to ScopeThread rather than erroring: over-sharing
-// a session is a privacy problem, and thread scope is the narrower default of
-// the two candidates a typo could land between.
+// SlackSessionIDForScope builds the effective session id for Slack components.
+// Prefer ApplyScope(BuildDeliverySessionID(...), scope, userID) in new code;
+// this helper remains for tests and direct agent invocations.
 func SlackSessionIDForScope(scope SessionScope, channelID, threadTS, userID string) agentkit.SessionID {
-	switch scope {
-	case ScopeChannel:
-		return agentkit.SessionID("slack:" + channelID)
-	case ScopeUser:
-		if userID == "" {
-			return agentkit.SessionID("slack:" + channelID)
-		}
-		return agentkit.SessionID("slack:" + channelID + ":u:" + userID)
-	default:
-		return SlackSessionID(channelID, threadTS)
+	delivery := BuildDeliverySessionID("slack", channelID, threadTS, userID)
+	if delivery == "" {
+		return ""
 	}
+	return ApplyScope(delivery, scope, userID)
 }

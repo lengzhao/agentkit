@@ -29,7 +29,7 @@ func TestSlackSessionIDForScope(t *testing.T) {
 		{"channel shares one session", session.ScopeChannel, "slack:C001"},
 		{"thread splits per thread", session.ScopeThread, "slack:C001:t:123.456"},
 		{"user splits per person", session.ScopeUser, "slack:C001:u:U777"},
-		{"unknown scope falls back to thread", session.SessionScope("bogus"), "slack:C001:t:123.456"},
+		{"unknown scope falls back to channel", session.SessionScope("bogus"), "slack:C001"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

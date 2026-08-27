@@ -92,7 +92,7 @@ HIL **没有复用 `cap/approval` 插件来回答 question**。`approval` 插件
 | 按租户分工作目录 | `workspace/tenant` | `global` 共享 + `local` 一租户一根；默认隔离，`tenants` 可钉到已有项目 |
 | 越权边界 | `cap/workspace.ResolveRelStrict` | 租户根之间并列，`..` 一律不解析（与 `workspace/default` 的唯一行为差异） |
 | 用户归属 | `SessionEvent.UserID` + `derive.go` | 共用会话时回放渲染 `<user id="U123">`；`UserID` 为空则逐字节不变 |
-| 会话粒度 | `session.SlackSessionIDForScope` | 整群共用 / 按 thread / 按人 |
+| 会话粒度 | `runner.config.sessionScope` + `session.ApplyScope` | 整群共用 / 按 thread / 按人（默认 channel） |
 | MCP 池分槽 | `tool/mcp` | 客户端池按 `(租户键, server 名)` 建 key，两个租户不再互相踢连接 |
 | Preset | `presets/multi-tenant.yaml` | 放开 `maxConcurrentTurns`（租户根分开后共享工作区的前提不再成立） |
 
@@ -133,7 +133,7 @@ landlock / seatbelt、`sandbox/*`、`process/sandbox`、`fs/sandbox` **短期不
 
 这些是地基，**没有具体需求牵引时容易过度设计**，建议等 M1–M3 冒出真实痛点再插入：
 
-- subagent 并行 fan-out（在 `Run` 旁边**加** `Start` / `Handle`，先解决共享 workspace 写冲突——与 `runner.maxConcurrentTurns` 默认 1 是同一个问题，见 [subagent.zh.md §7](subagent.zh.md#7-本期不做)）
+- subagent 并行 fan-out（在 `Run` 旁边**加** `Start` / `Handle`，先解决共享 workspace 写冲突——单租户 coding 场景可在 preset 调低 `maxConcurrentTurns`，见 [subagent.zh.md §7](subagent.zh.md#7-本期不做)）
 - `loop/harness` + AgentSet 多 lane
 - `hook/llm-request`（`BeforeLLMRequest` 接口）
 - `BeforeStep` → `StepDecision`（reject / enter）

@@ -48,8 +48,8 @@ func (l *recordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) er
 
 func (l *recordingLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *recordingLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
-func (l *recordingLoop) TryDeliverPermission(agentkit.MessageEvent) bool      { return false }
-func (l *recordingLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
+func (l *recordingLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }
+func (l *recordingLoop) SupersedePendingForInbound(agentkit.MessageEvent)      {}
 
 func (l *recordingLoop) snapshot() ([]string, int) {
 	l.mu.Lock()
@@ -169,36 +169,35 @@ func TestConcurrencyIsCappedByConfig(t *testing.T) {
 	}
 }
 
-// TestDefaultIsSerialExecution pins the conservative default: turns from
-// different sessions share one workspace, so parallelism must be opt-in. The
-// receive loop may read ahead while a turn runs, but only one turn executes at
-// a time at the default concurrency cap.
-func TestDefaultIsSerialExecution(t *testing.T) {
+// TestDefaultAllowsParallelSessions pins the default concurrency cap: distinct
+// effective sessions should overlap without explicit runner config.
+func TestDefaultAllowsParallelSessions(t *testing.T) {
 	t.Parallel()
 
-	platform := &countingPlatform{scriptedPlatform: scriptedPlatform{events: []agentkit.MessageEvent{
-		userEvent("s:1", "one"),
-		userEvent("s:2", "two"),
-		userEvent("s:3", "three"),
-	}}}
+	const sessions = 3
+	gate := make(chan struct{})
+	var once sync.Once
+	arrived := make(chan struct{}, sessions)
 
-	var maxReadAhead int
-	loop := &recordingLoop{}
-	loop.hold = func(agentkit.LoopRequest) {
-		dispatched, _ := loop.snapshot()
-		if ahead := platform.received() - len(dispatched); ahead > maxReadAhead {
-			maxReadAhead = ahead
+	loop := &recordingLoop{hold: func(agentkit.LoopRequest) {
+		arrived <- struct{}{}
+		if len(arrived) == sessions {
+			once.Do(func() { close(gate) })
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		select {
+		case <-gate:
+		case <-time.After(5 * time.Second):
+		}
+	}}
 
-	runToCompletion(t, runner.Config{}, platform, loop)
-
-	if _, peak := loop.snapshot(); peak != 1 {
-		t.Fatalf("peak concurrency = %d, want 1 by default", peak)
+	events := make([]agentkit.MessageEvent, 0, sessions)
+	for i := 0; i < sessions; i++ {
+		events = append(events, userEvent(agentkit.SessionID(fmt.Sprintf("s:%d", i)), "go"))
 	}
-	if maxReadAhead == 0 {
-		t.Fatal("expected receive to read ahead while a turn was running")
+	runToCompletion(t, runner.Config{}, &scriptedPlatform{events: events}, loop)
+
+	if _, peak := loop.snapshot(); peak != sessions {
+		t.Fatalf("peak concurrency = %d, want %d with default runner config", peak, sessions)
 	}
 }
 
@@ -217,12 +216,6 @@ func (p *countingPlatform) Receive(ctx context.Context) (agentkit.MessageEvent, 
 		p.mu.Unlock()
 	}
 	return event, err
-}
-
-func (p *countingPlatform) received() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.count
 }
 
 // TestShutdownWaitsForInFlightTurns matters because a cut-off turn never records

@@ -17,16 +17,15 @@ type Runner interface {
 }
 
 // Platform adapts external transports into AgentKit message events. Every
-// inbound MessageEvent must carry a stable SessionID; every outbound
-// OutboundEvent must echo the same SessionID so replies reach the correct
-// conversation. SessionID generation and delivery-target encoding are platform-
-// specific; Loop and Agent treat SessionID as opaque.
+// inbound MessageEvent must carry a delivery SessionID (finest grain); runner
+// applies sessionScope for scheduling and history. OutboundEvent.SessionID must
+// be the delivery id so replies reach the correct IM target.
 //
 // Concurrency contract:
 //   - Receive is called from a single goroutine and may block.
-//   - Send must be safe for concurrent use. Runner can run turns from different
-//     sessions in parallel (runner config maxConcurrentTurns), and each turn
-//     emits from its own goroutine.
+//   - Send must be safe for concurrent use. Runner runs turns from different
+//     effective sessions in parallel (runner.config.maxConcurrentTurns, default
+//     64); each turn emits from its own goroutine.
 type Platform interface {
 	Receive(context.Context) (MessageEvent, error)
 	Send(context.Context, OutboundEvent) error

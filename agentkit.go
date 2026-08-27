@@ -32,22 +32,20 @@ const (
 	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
 )
 
-// SessionID is an opaque conversation routing key. Platforms (platform/slack,
-// platform/feishu, platform/cli, ...) generate it following cc-connect
-// conventions:
+// SessionID identifies a conversation unit. Platforms emit a delivery SessionID
+// (finest grain: channel + optional :t:thread + optional :u:user). Runner applies
+// sessionScope to derive the effective SessionID used for Loop locking and
+// session history; outbound replies still use the delivery id.
 //
-//	<platform>:<segment>[:<segment>...]
-//
-// Examples:
+// Delivery examples:
 //
 //	slack:C123ABC
-//	slack:C123ABC:U456
-//	slack:C123ABC:t:1712345678.123456
-//	feishu:oc_xxx:root:om_yyy
+//	slack:C123ABC:t:1712345678.123456:u:U456
+//	feishu:oc_xxx:om_yyy
 //	cli:default
 //
-// Loop and Agent treat SessionID as opaque; they never parse platform segments.
-// Only platform plugins may encode or decode delivery targets from a SessionID.
+// Loop and Agent treat the effective SessionID as opaque. Only platform plugins
+// decode delivery SessionIDs into IM routing targets.
 type SessionID string
 
 type ToolCallID string
@@ -88,11 +86,11 @@ type SessionEvent struct {
 	UserID string
 }
 
-// MessageEvent is the inbound envelope from Platform to Loop. SessionID is
-// required on every message; platforms must assign a stable ID per conversation
-// unit (channel, thread, DM, CLI session, etc.).
+// MessageEvent is the inbound envelope from Platform to Loop. SessionID is the
+// delivery target (finest grain); runner collapses it per sessionScope before
+// Loop dispatch.
 type MessageEvent struct {
-	SessionID  SessionID // required
+	SessionID  SessionID // required: platform delivery id
 	AgentID    AgentID
 	PlatformID string
 	UserID     string

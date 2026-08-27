@@ -4,46 +4,57 @@
 
 | 问题 | 由谁回答 | 落点 |
 |---|---|---|
-| 这条消息接到哪段历史后面？ | Platform 生成的 `SessionID` | `runtime/session.SlackSessionIDForScope` |
+| 这条消息接到哪段历史后面？ | `runner.config.sessionScope` 折叠 delivery SessionID | `runtime/session.ApplyScope` |
 | 这句话是谁说的？ | `MessageEvent.UserID` → 事件信封 → 回放渲染 | `SessionEvent.UserID`、`runtime/session/derive.go` |
-| 这个 turn 在哪个目录干活？ | `SessionID` 推出的**租户键** | `cap/tenant.Key`、`workspace/tenant` |
+| 这个 turn 在哪个目录干活？ | effective SessionID 推出的**租户键** | `cap/tenant.Key`、`workspace/tenant` |
 
-把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种粒度推出的租户键都是同一个。
+把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种 scope 推出的租户键都是同一个。
 
 ```mermaid
 flowchart LR
   Msg["Slack 消息<br/>channel=C001 user=U111 thread=17.9"]
-  Msg -->|SessionIDForScope| SID["SessionID<br/>slack:C001:t:17.9"]
+  Msg -->|BuildDeliverySessionID| D["delivery SessionID<br/>slack:C001:t:17.9:u:U111"]
+  D -->|runner sessionScope| E["effective SessionID<br/>slack:C001"]
   Msg -->|UserID| UID["U111"]
-  SID -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 SessionID 一个 JSONL"]
+  E -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 effective ID 一个 JSONL"]
   UID -->|"落在 user 事件信封上"| Attr["回放渲染 &lt;user id=\"U111\"&gt;"]
-  SID -->|"cap/tenant.Key<br/>取平台段 + 第一个路由段"| TK["租户键<br/>slack:C001"]
+  E -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
   Root --> Runtime["sessions / agents / mcp / skills"]
   Root --> Work["work/ — fs 与 shell 操作区"]
+  D -->|"OutboundEvent 仍用 delivery"| Reply["Platform.Send 投递"]
 ```
 
 ## 1. 会话隔离
 
-`SessionID` 对 Loop 与 Agent 是不透明的路由键，只有 platform 插件能编解码。Loop 按 `SessionID` 串行加锁，`session/store` 一个 `SessionID` 一个 JSONL 文件 —— 所以**不同群天然是不同会话**，这一层不需要额外机制。
+Platform 只生成 **delivery SessionID**（最细粒度，含 channel / thread / user 路由信息）。Runner 按 `sessionScope` 折叠为 **effective SessionID**，Loop 按 effective 串行加锁，`session/store` 一个 effective ID 一个 JSONL。Outbound 仍回写 delivery ID，platform 据此投递。
 
-platform 侧用 `SlackSessionIDForScope` 表达粒度：
+Platform 侧：
 
 ```go
-id := session.SlackSessionIDForScope(scope, channelID, threadTS, userID)
+delivery := session.BuildDeliverySessionID("slack", channelID, threadTS, userID)
+// MessageEvent.SessionID = delivery
 ```
 
-| scope | SessionID | 语义 |
-|---|---|---|
-| `ScopeChannel` | `slack:C001` | 整群共用一段历史，靠用户归属区分发言人 |
-| `ScopeThread` | `slack:C001:t:1712345678.9` | 每个 thread 一段历史，群里的顶层消息共用一段 |
-| `ScopeUser` | `slack:C001:u:U456` | 共享工作目录、各自私有历史 |
+Runner 侧（`config.base.yaml` 或 preset）：
 
-未知 scope 回落到 `ScopeThread` 而不是报错：会话被过度共享是隐私问题，两个候选里 thread 是更窄的那个。
+```yaml
+runner.default:
+  config:
+    sessionScope: channel   # channel | thread | user，默认 channel
+```
+
+| sessionScope | effective SessionID | 语义 |
+|---|---|---|
+| `channel` | `slack:C001` | 整群共用一段历史，靠用户归属区分发言人 |
+| `thread` | `slack:C001:t:1712345678.9` | 每个 thread 一段历史，群里的顶层消息共用一段 |
+| `user` | `slack:C001:u:U456` | 共享工作目录、各自私有历史 |
+
+未知 scope 配置值回落到 `channel`。
 
 ## 2. 识别不同用户
 
-`ScopeChannel` 下整个频道共用一段历史，模型看到的是一串 user 消息。如果不标注发言人，它分不清"这是刚才那个人的追问"还是"另一个人的新需求"，也注意不到"我问的人和回答我的人不是同一个"。
+`sessionScope: channel` 下整个频道共用一段历史，模型看到的是一串 user 消息。如果不标注发言人，它分不清"这是刚才那个人的追问"还是"另一个人的新需求"，也注意不到"我问的人和回答我的人不是同一个"。
 
 所以 `UserID` 落在**事件信封**上（`SessionEvent.UserID`），而不是只存在于 turn 的 ctx 里 —— 重启后回放依然认得。`derive.go` 在回放时把 user 消息包成：
 
@@ -114,11 +125,11 @@ tool.fs-workspace.default:
 
 ## 4. 并发
 
-`runner.maxConcurrentTurns` 默认 1，理由写在 `config.base.yaml` 里：不同 session 的 turn 共享同一个工作区，两个 agent 并发跑 `go build` 或改同一个文件是真实风险。
+`runner.maxConcurrentTurns` 默认 **64**，限制跨 effective session 的并行 turn 数。同一 effective session 内的顺序始终由 Loop 的 per-session 锁 + scheduler FIFO 保证。
 
-**租户根分开之后这个前提不再成立**，所以 `presets/multi-tenant.yaml` 把它放开到 4。同一 session 内的顺序始终由 Loop 的 per-session 锁保证。
+单租户 coding CLI 若多个 session 共享同一工作区、担心并发写冲突，可在 L1 显式调低 `maxConcurrentTurns`。多租户场景下租户根已分开，默认 64 即可。
 
-同一租户内若配了多种会话粒度（例如按 thread 建会话），这些 session 仍然共享一个工作目录 —— 它们之间的并发写冲突风险和单租户时一样，需要靠粒度选择或并发上限控制。
+同一租户内若把 `sessionScope` 设为 `thread` 或 `user`，这些 effective session 仍共享一个工作目录 —— 它们之间的并发写冲突需要靠 scope 选择或调低并发上限控制。
 
 ## 5. MCP 客户端池按租户分槽
 
@@ -137,16 +148,18 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 `presets/multi-tenant.yaml` 只装内核。**入站 platform 需自行接入**（`platform/slack` 尚未实现，见 [roadmap.zh.md](roadmap.zh.md) M3）。platform 侧的全部义务就两件：
 
-1. 用 `session.SlackSessionIDForScope` 生成 `MessageEvent.SessionID`；
+1. 用 `session.BuildDeliverySessionID` 生成 `MessageEvent.SessionID`（delivery，最细粒度）；
 2. 在 `MessageEvent.UserID` 填上发言人。
 
-出站 `OutboundEvent` 回带同一个 `SessionID`，由 platform 自己解析投递目标。
+`sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent` 回带 **delivery** SessionID，由 platform 解析投递目标。
 
 ## 7. 验收
 
 | 测试 | 覆盖 |
 |---|---|
 | `multitenant_test.go` | 两个群写 `work/` 下同一相对路径 → 落在各自根下；某群钉到项目 `.agentkit/`；同群两人共用一段历史且各自具名 |
+| `runtime/session/scope_test.go` | ApplyScope 三种粒度、legacy delivery 格式、CLI passthrough |
+| `runtime/runner/runner_test.go` | scope 折叠调度键、outbound 仍用 delivery ID |
 | `runtime/workspace/tenant_test.go` | 默认隔离、三种粒度同租户、pin 生效、`global:` 共享、`..` 越权被拒、无 session 落 `_default` |
 | `runtime/session/attribution_test.go` | 只标 user 消息、无 `UserID` 不改变回放、重启后归属仍在、图片消息也具名 |
 | `cap/tenant/tenant_test.go` | 租户键推导规则、目录名不可能变成 `..` |

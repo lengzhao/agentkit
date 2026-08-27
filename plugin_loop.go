@@ -20,11 +20,12 @@ type Loop interface {
 	SupersedePendingForInbound(MessageEvent)
 }
 
-// LoopRequest wraps one inbound message. Event.SessionID is required; Dispatch
-// copies Event.SessionID, Event.AgentID, Event.PlatformID and Event.UserID into
-// context keys before invoking Agent.RunTurn.
+// LoopRequest wraps one inbound message. Runner rewrites Event.SessionID to the
+// effective id (after sessionScope) before Dispatch; DeliverySessionID keeps the
+// platform routing target for outbound Send.
 type LoopRequest struct {
-	Event      MessageEvent
-	Emit       OutboundEmit
-	Capability any // permission.Capability, resolved by runner from the inbound platform
+	Event             MessageEvent
+	DeliverySessionID SessionID // platform delivery target; empty means Event.SessionID
+	Emit              OutboundEmit
+	Capability        any // permission.Capability, resolved by runner from the inbound platform
 }
