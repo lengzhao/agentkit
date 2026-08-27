@@ -4,7 +4,7 @@ import "context"
 
 // PromptAssembler builds the model request prompt from registered sections.
 type PromptAssembler interface {
-	Assemble(context.Context, PromptRequest) (Prompt, error)
+	Assemble(context.Context, PromptRequest) ([]ModelMessage, error)
 }
 
 type SectionProvider interface {
@@ -21,14 +21,10 @@ type Section struct {
 // not duplicated here.
 type PromptRequest struct {
 	Messages []ModelMessage
-	Tools    []ToolSpec
 }
 
-type Prompt struct {
-	Messages []ModelMessage
-	Sections []PromptSection
-}
-
+// PromptSection is one section provider contribution before it is folded into
+// the leading system message.
 type PromptSection struct {
 	Name    string
 	Content string

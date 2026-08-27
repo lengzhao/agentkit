@@ -22,8 +22,8 @@ type MCPConfig struct {
 }
 
 type MCPDeps struct {
-	Workspace   workspace.Service   `json:"workspace"`
-	Credentials credentials.Store   `json:"credentials,omitempty"`
+	Workspace   workspace.Service `json:"workspace"`
+	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 
 type mcpProvider struct {
@@ -166,29 +166,10 @@ func (t *mcpTool) InputSchema() agentkit.JSONSchema {
 	return agentkit.JSONSchema{Raw: raw}
 }
 
-func (t *mcpTool) Call(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-	result, err := t.provider.callTool(ctx, t.def.ExposedName, call.Input)
+func (t *mcpTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	result, err := t.provider.callTool(ctx, t.def.ExposedName, input)
 	if err != nil {
-		return agentkit.ToolResult{
-			ID:   call.ID,
-			Name: call.Name,
-			Content: []agentkit.ContentPart{{
-				Type: "text",
-				Text: err.Error(),
-			}},
-		}, nil
+		return err.Error(), nil
 	}
-	audit := map[string]string{
-		"mcp_server": t.def.Server,
-		"mcp_tool":   t.def.OriginalName,
-	}
-	if result.IsError {
-		audit["mcp_error"] = "true"
-	}
-	return agentkit.ToolResult{
-		ID:      call.ID,
-		Name:    call.Name,
-		Content: result.Content,
-		Audit:   audit,
-	}, nil
+	return result.Content, nil
 }

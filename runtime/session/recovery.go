@@ -155,7 +155,7 @@ func InterruptedToolResult(call agentkit.ToolCall) agentkit.ToolResult {
 	return agentkit.ToolResult{
 		ID:      call.ID,
 		Name:    call.Name,
-		Content: []agentkit.ContentPart{{Type: "text", Text: InterruptedToolResultText}},
+		Content: InterruptedToolResultText,
 		Audit:   map[string]string{"decision": interruptedDecision},
 	}
 }

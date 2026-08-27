@@ -20,11 +20,11 @@ type ScheduleDeps struct {
 }
 
 type ScheduleInput struct {
-	Op     string `json:"op" jsonschema:"required,description=list to see the schedule; add to create a job; remove to delete one"`
-	Cron   string `json:"cron" jsonschema:"description=5-field cron expression (minute hour day-of-month month day-of-week) or @daily/@hourly/@weekly/@monthly; required for add"`
-	Prompt string `json:"prompt" jsonschema:"description=The task to run when the schedule fires; required for add"`
-	ID     string `json:"id" jsonschema:"description=Job id; required for remove"`
-	Note   string `json:"note" jsonschema:"description=Optional context for your future self"`
+	Op     string `json:"op" jsonschema:"list to see the schedule; add to create a job; remove to delete one"`
+	Cron   string `json:"cron,omitempty" jsonschema:"5-field cron expression (minute hour day-of-month month day-of-week) or @daily/@hourly/@weekly/@monthly; required for add"`
+	Prompt string `json:"prompt,omitempty" jsonschema:"The task to run when the schedule fires; required for add"`
+	ID     string `json:"id,omitempty" jsonschema:"Job id; required for remove"`
+	Note   string `json:"note,omitempty" jsonschema:"Optional context for your future self"`
 }
 
 // ScheduleEntry is one job as reported to the model, with the next fire time

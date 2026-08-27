@@ -43,7 +43,7 @@ func crashedSession(t *testing.T) agentkit.Session {
 	if err := session.AppendToolResult(ctx, sess, "coder", agentkit.ToolResult{
 		ID:      "call-a",
 		Name:    "read",
-		Content: []agentkit.ContentPart{{Type: "text", Text: "package a"}},
+		Content: "package a",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestDeriveAnswersOrphanToolCalls(t *testing.T) {
 	var interrupted int
 	for _, msg := range messages {
 		for _, result := range msg.ToolResults {
-			if strings.Contains(textOfParts(result.Content), "interrupted") {
+			if strings.Contains(result.Content, "interrupted") {
 				interrupted++
 			}
 		}
@@ -229,7 +229,7 @@ func TestDeriveKeepsRepeatedToolCallIDsPaired(t *testing.T) {
 		if err := session.AppendToolResult(ctx, sess, "coder", agentkit.ToolResult{
 			ID:      "read-call",
 			Name:    "read",
-			Content: []agentkit.ContentPart{{Type: "text", Text: "package a"}},
+			Content: "package a",
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +242,7 @@ func TestDeriveKeepsRepeatedToolCallIDsPaired(t *testing.T) {
 	assertToolCallsAnswered(t, messages)
 	for _, msg := range messages {
 		for _, result := range msg.ToolResults {
-			if strings.Contains(textOfParts(result.Content), "interrupted") {
+			if strings.Contains(result.Content, "interrupted") {
 				t.Fatalf("a properly answered call was treated as orphaned:\n%+v", messages)
 			}
 		}
@@ -268,12 +268,4 @@ func assertToolCallsAnswered(t *testing.T, messages []agentkit.ModelMessage) {
 			}
 		}
 	}
-}
-
-func textOfParts(parts []agentkit.ContentPart) string {
-	var b strings.Builder
-	for _, part := range parts {
-		b.WriteString(part.Text)
-	}
-	return b.String()
 }

@@ -395,9 +395,8 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	if err != nil {
 		return stepOutcome{}, err
 	}
-	prompt, err := a.prompt.Assemble(ctx, agentkit.PromptRequest{
+	messages, err := a.prompt.Assemble(ctx, agentkit.PromptRequest{
 		Messages: history,
-		Tools:    specs,
 	})
 	if err != nil {
 		return stepOutcome{}, err
@@ -405,7 +404,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 
 	stream, err := a.llm.Stream(ctx, agentkit.LLMRequest{
 		Model:    a.model,
-		Messages: prompt.Messages,
+		Messages: messages,
 		Tools:    specs,
 	})
 	if err != nil {

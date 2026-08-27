@@ -133,7 +133,7 @@ func charEstimate(messages []agentkit.ModelMessage, charsPerToken int) int {
 			chars += len(call.Name) + len(call.Input)
 		}
 		for _, result := range msg.ToolResults {
-			chars += len(result.Name) + partsChars(result.Content)
+			chars += len(result.Name) + len(result.Content)
 		}
 	}
 	return chars / charsPerToken

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,11 +24,11 @@ type RuntimeConfig struct {
 }
 
 type RuntimeDeps struct {
-	Tools        []agentkit.ToolPack      `json:"tools"`
-	DynamicTools []agentkit.ToolProvider  `json:"dynamicTools,omitempty"`
-	Policies     []agentkit.Policy        `json:"policies,omitempty"`
-	Approval     agentkit.Approval        `json:"approval,omitempty"`
-	Hooks        agentkit.HookRuntime     `json:"hooks,omitempty"`
+	Tools        []agentkit.ToolPack     `json:"tools"`
+	DynamicTools []agentkit.ToolProvider `json:"dynamicTools,omitempty"`
+	Policies     []agentkit.Policy       `json:"policies,omitempty"`
+	Approval     agentkit.Approval       `json:"approval,omitempty"`
+	Hooks        agentkit.HookRuntime    `json:"hooks,omitempty"`
 }
 
 // Runtime executes tools through the policy and approval pipeline.
@@ -163,7 +162,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 		tool, ok = r.dynamicTools[call.Name]
 		r.dynamicMu.Unlock()
 		if !ok {
-			return deniedResult(call, "tool not found"), nil
+			return deniedResult(call, "tool not found", nil), nil
 		}
 	}
 
@@ -173,7 +172,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	}
 	switch decision.Kind {
 	case agentkit.DecisionDeny:
-		return deniedResult(call, decision.Reason), nil
+		return deniedResult(call, decision.Reason, decision.Audit), nil
 	case agentkit.DecisionAsk:
 		allowed, reason, err := r.resolveAskDecision(ctx, &call, decision.Reason)
 		if err != nil {
@@ -183,7 +182,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 			if reason == "" {
 				reason = "approval denied"
 			}
-			return deniedResult(call, reason), nil
+			return deniedResult(call, reason, nil), nil
 		}
 	}
 
@@ -201,7 +200,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	defer cancel()
 
 	slog.Info("tool execute", "tool", call.Name, "session_id", sessionID, "agent_id", agentID)
-	result, err := tool.Call(execCtx, call)
+	output, err := tool.Call(execCtx, call.Input)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(execCtx.Err(), context.DeadlineExceeded) {
 			return timeoutResult(call), nil
@@ -211,6 +210,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
 		return timeoutResult(call), nil
 	}
+	result := agentkit.ResultFromCall(call, output)
 
 	if r.hooks != nil {
 		if err := r.hooks.AfterTool(ctx, &result); err != nil {
@@ -289,39 +289,31 @@ func (r *Runtime) evaluatePolicies(ctx context.Context, call agentkit.ToolCall) 
 	return agentkit.Allow(), nil
 }
 
-func deniedResult(call agentkit.ToolCall, reason string) agentkit.ToolResult {
+func deniedResult(call agentkit.ToolCall, reason string, audit map[string]string) agentkit.ToolResult {
 	if reason == "" {
 		reason = "denied"
 	}
+	merged := map[string]string{"decision": "deny", "reason": reason}
+	for k, v := range audit {
+		merged[k] = v
+	}
 	return agentkit.ToolResult{
-		ID:   call.ID,
-		Name: call.Name,
-		Content: []agentkit.ContentPart{{
-			Type: "text",
-			Text: reason,
-		}},
-		Audit: map[string]string{"decision": "deny", "reason": reason},
+		ID:      call.ID,
+		Name:    call.Name,
+		Content: reason,
+		Audit:   merged,
 	}
 }
 
 func timeoutResult(call agentkit.ToolCall) agentkit.ToolResult {
 	return agentkit.ToolResult{
-		ID:   call.ID,
-		Name: call.Name,
-		Content: []agentkit.ContentPart{{
-			Type: "text",
-			Text: "tool execution timed out",
-		}},
-		Audit: map[string]string{"decision": "timeout"},
+		ID:      call.ID,
+		Name:    call.Name,
+		Content: "tool execution timed out",
+		Audit:   map[string]string{"decision": "timeout"},
 	}
 }
 
 func ResultText(result agentkit.ToolResult) string {
-	var b strings.Builder
-	for _, part := range result.Content {
-		if part.Type == "text" {
-			b.WriteString(part.Text)
-		}
-	}
-	return b.String()
+	return result.Content
 }

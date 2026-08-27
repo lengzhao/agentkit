@@ -10,3 +10,4 @@ func init() {
 }
 
 var _ agentkit.Agent = (*Runtime)(nil)
+var _ agentkit.CommandProvider = (*Runtime)(nil)

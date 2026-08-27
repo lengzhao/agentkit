@@ -48,7 +48,7 @@ func TestGrepFindListDirTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grep call: %v", err)
 	}
-	if len(grepResult.Content) == 0 || !strings.Contains(grepResult.Content[0].Text, "main.go") {
+	if grepResult.Content == "" || !strings.Contains(grepResult.Content, "main.go") {
 		t.Fatalf("unexpected grep result: %+v", grepResult)
 	}
 
@@ -60,7 +60,7 @@ func TestGrepFindListDirTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find call: %v", err)
 	}
-	if len(findResult.Content) == 0 || !strings.Contains(findResult.Content[0].Text, "main.go") {
+	if findResult.Content == "" || !strings.Contains(findResult.Content, "main.go") {
 		t.Fatalf("unexpected find result: %+v", findResult)
 	}
 
@@ -72,7 +72,7 @@ func TestGrepFindListDirTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ls call: %v", err)
 	}
-	if len(lsResult.Content) == 0 || !strings.Contains(lsResult.Content[0].Text, "main.go") {
+	if lsResult.Content == "" || !strings.Contains(lsResult.Content, "main.go") {
 		t.Fatalf("unexpected ls result: %+v", lsResult)
 	}
 }

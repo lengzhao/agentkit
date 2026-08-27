@@ -189,10 +189,8 @@ func containsInterruptedResult(messages []agentkit.ModelMessage, id agentkit.Too
 			if result.ID != id {
 				continue
 			}
-			for _, part := range result.Content {
-				if strings.Contains(part.Text, "interrupted") {
-					return true
-				}
+			if strings.Contains(result.Content, "interrupted") {
+				return true
 			}
 		}
 	}

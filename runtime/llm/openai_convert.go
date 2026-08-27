@@ -41,7 +41,7 @@ func toChatCompletionMessages(messages []agentkit.ModelMessage) []openai.ChatCom
 					Role:       openai.ChatMessageRoleTool,
 					ToolCallID: string(result.ID),
 					Name:       result.Name,
-					Content:    textOf(result.Content),
+					Content:    result.Content,
 				})
 			}
 		}
@@ -183,7 +183,7 @@ func toResponsesInput(messages []agentkit.ModelMessage) (string, any) {
 				items = append(items, openai.ResponseFunctionCallOutput{
 					Type:   "function_call_output",
 					CallID: string(result.ID),
-					Output: textOf(result.Content),
+					Output: result.Content,
 				})
 			}
 		}

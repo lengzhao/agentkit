@@ -6,11 +6,15 @@ import (
 )
 
 // Tool is the model-visible consumer plugin type.
+//
+// Call receives only the raw arguments and returns model-visible text. The tool
+// runtime stamps call identity onto a ToolResult before writing to session or
+// sending back to the model.
 type Tool interface {
 	Name() string
 	Description() string
 	InputSchema() JSONSchema
-	Call(context.Context, ToolCall) (ToolResult, error)
+	Call(context.Context, json.RawMessage) (string, error)
 }
 
 // ToolProvider supplies tools whose definitions may change between turns.
@@ -47,11 +51,23 @@ type ToolCall struct {
 	Input json.RawMessage
 }
 
+// ToolResult is a tool output bound to a specific call, used by session history,
+// hooks, and LLM wire-up. Audit is populated by the tool runtime (policy deny,
+// timeout, etc.), not by Tool.Call.
 type ToolResult struct {
 	ID      ToolCallID
 	Name    string
-	Content []ContentPart
+	Content string
 	Audit   map[string]string
+}
+
+// ResultFromCall attaches call identity to a tool output.
+func ResultFromCall(call ToolCall, output string) ToolResult {
+	return ToolResult{
+		ID:      call.ID,
+		Name:    call.Name,
+		Content: output,
+	}
 }
 
 type ToolRuntime interface {

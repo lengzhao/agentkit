@@ -16,8 +16,8 @@ type FinishDeps struct {
 }
 
 type FinishInput struct {
-	Status  string `json:"status" jsonschema:"description=completed when the task is done; blocked when it cannot proceed"`
-	Summary string `json:"summary" jsonschema:"required,description=What was accomplished, or what is blocking"`
+	Status  string `json:"status,omitempty" jsonschema:"completed when the task is done; blocked when it cannot proceed"`
+	Summary string `json:"summary" jsonschema:"What was accomplished, or what is blocking"`
 }
 
 type FinishOutput struct {

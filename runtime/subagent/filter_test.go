@@ -28,7 +28,7 @@ func (f *fakeTools) Execute(_ context.Context, call agentkit.ToolCall) (agentkit
 	return agentkit.ToolResult{
 		ID:      call.ID,
 		Name:    call.Name,
-		Content: []agentkit.ContentPart{{Type: "text", Text: "ran " + call.Name}},
+		Content: "ran " + call.Name,
 	}, nil
 }
 
@@ -110,14 +110,10 @@ func TestNewFilteredToolsAllNamesUnknown(t *testing.T) {
 // stubAssembler stands in for the shared prompt pipeline.
 type stubAssembler struct {
 	messages []agentkit.ModelMessage
-	sections []agentkit.PromptSection
 }
 
-func (s *stubAssembler) Assemble(_ context.Context, req agentkit.PromptRequest) (agentkit.Prompt, error) {
-	return agentkit.Prompt{
-		Messages: append(append([]agentkit.ModelMessage(nil), s.messages...), req.Messages...),
-		Sections: s.sections,
-	}, nil
+func (s *stubAssembler) Assemble(_ context.Context, req agentkit.PromptRequest) ([]agentkit.ModelMessage, error) {
+	return append(append([]agentkit.ModelMessage(nil), s.messages...), req.Messages...), nil
 }
 
 func TestDefinitionPromptExtendsExistingSystemMessage(t *testing.T) {
@@ -128,10 +124,9 @@ func TestDefinitionPromptExtendsExistingSystemMessage(t *testing.T) {
 			Role:    "system",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "shared rules"}},
 		}},
-		sections: []agentkit.PromptSection{{Name: "static", Content: "shared rules"}},
 	}
 	p := &definitionPrompt{inner: inner, body: "you are the reviewer"}
-	prompt, err := p.Assemble(context.Background(), agentkit.PromptRequest{
+	messages, err := p.Assemble(context.Background(), agentkit.PromptRequest{
 		Messages: []agentkit.ModelMessage{{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}}},
 	})
 	if err != nil {
@@ -139,7 +134,7 @@ func TestDefinitionPromptExtendsExistingSystemMessage(t *testing.T) {
 	}
 
 	var systems int
-	for _, msg := range prompt.Messages {
+	for _, msg := range messages {
 		if msg.Role == "system" {
 			systems++
 		}
@@ -147,7 +142,7 @@ func TestDefinitionPromptExtendsExistingSystemMessage(t *testing.T) {
 	if systems != 1 {
 		t.Fatalf("system messages = %d, want 1", systems)
 	}
-	text := systemText(prompt.Messages)
+	text := systemText(messages)
 	if !strings.Contains(text, "shared rules") || !strings.Contains(text, "you are the reviewer") {
 		t.Fatalf("system text = %q, want both the shared sections and the persona", text)
 	}
@@ -156,28 +151,25 @@ func TestDefinitionPromptExtendsExistingSystemMessage(t *testing.T) {
 	if !strings.Contains(text, "shared rules\n\nyou are the reviewer") {
 		t.Errorf("system text = %q, want a blank line between the two", text)
 	}
-	if len(prompt.Sections) != 2 || prompt.Sections[1].Name != "subagent" {
-		t.Errorf("sections = %#v, want a trailing subagent section", prompt.Sections)
-	}
 }
 
 func TestDefinitionPromptAddsSystemMessageWhenAbsent(t *testing.T) {
 	t.Parallel()
 
 	p := &definitionPrompt{inner: &stubAssembler{}, body: "you are the reviewer"}
-	prompt, err := p.Assemble(context.Background(), agentkit.PromptRequest{
+	messages, err := p.Assemble(context.Background(), agentkit.PromptRequest{
 		Messages: []agentkit.ModelMessage{{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(prompt.Messages) != 2 {
-		t.Fatalf("messages = %#v, want system then user", prompt.Messages)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v, want system then user", messages)
 	}
-	if prompt.Messages[0].Role != "system" {
-		t.Fatalf("first message role = %q, want system", prompt.Messages[0].Role)
+	if messages[0].Role != "system" {
+		t.Fatalf("first message role = %q, want system", messages[0].Role)
 	}
-	if got := systemText(prompt.Messages); got != "you are the reviewer" {
+	if got := systemText(messages); got != "you are the reviewer" {
 		t.Errorf("system text = %q", got)
 	}
 }

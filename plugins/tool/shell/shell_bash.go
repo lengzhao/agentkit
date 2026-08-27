@@ -25,7 +25,7 @@ type ShellBashDeps struct {
 }
 
 type ShellInput struct {
-	Command string `json:"command" jsonschema:"required,description=Shell command to execute"`
+	Command string `json:"command" jsonschema:"Shell command to execute"`
 }
 
 type ShellOutput struct {

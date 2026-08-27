@@ -14,7 +14,7 @@
 |---|---|---|
 | 小写 + 连字符 | `tool/read-file` | 不用 camelCase |
 | role 表示运行时角色 | `llm/openai` | 不是包路径 |
-| variant 表示实现 | `fs/sandbox-landlock` | 可选 |
+| variant 表示实现 | `workspace/tenant` | 可选 |
 | 同一 kind 进程内唯一 | — | 重复 Register panic |
 
 **返回值类型决定运行时角色**。例如 `tool/fs-workspace` 返回 `agentkit.ToolPack`，`tools/runtime` 返回 `agentkit.ToolRuntime`。
@@ -53,7 +53,6 @@ flowchart TB
     Web["web/*"]
     Skill["skill/*"]
     Subagent["subagent/*"]
-    Sandbox["sandbox/*"]
     Compaction["compaction/*"]
   end
 
@@ -148,6 +147,16 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 | `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [mcp.zh.md](mcp.zh.md) |
 
+**`tool/fs-workspace` 模型参数**（插件 `config` 另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
+
+| 工具 | 关键参数 | 行为要点 |
+|---|---|---|
+| `read` | `offset`, `limit` | 返回带行号的纯文本；大文件截断并在末尾附续读 hint |
+| `edit` | `edits[]` | 每条 `oldText` 均对**原文**匹配后再一次性应用；返回 `Edited path` / `No changes applied` |
+| `grep` | `pattern`, `path`, `limit`, `literal`, `context` | 返回 `path:line:` 纯文本；无匹配时 `No matches found` |
+| `find` | `pattern`, `path`, `limit` | 返回路径列表纯文本；无结果时 `No files found` |
+| `ls` | `path`, `limit` | 返回目录条目纯文本；目录以 `/` 结尾 |
+
 ### 3.4 Policy & Safety
 
 | Kind | 返回类型 | 职责 | 参考 |
@@ -193,14 +202,6 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 |---|---|---|
 | `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表；临时文件 + rename 写入，agent 排的 job 跨重启存活 |
 
-#### Sandbox
-
-| Kind | 返回类型 | 说明 |
-|---|---|---|
-| `sandbox/none` | `sandbox.Service` | 无沙箱（透传） |
-| `sandbox/landlock` | `sandbox.Service` | Linux Landlock |
-| `sandbox/seatbelt` | `sandbox.Service` | macOS Seatbelt |
-
 #### Compaction & Context
 
 | Kind | 返回类型 | 说明 |
@@ -232,6 +233,9 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 
 | 贡献方 | 命令 |
 |---|---|
+| `commands/registry` | `/plugin` |
+| `agent/coding` | `/agent` |
+| `subagent/inprocess` | `/subagent` |
 | `session/store` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |
 | `hook/turn-continue` | `/status` |
@@ -250,39 +254,38 @@ commands:
     deny: [compact]
 ```
 
-## 4. 三角色能力包结构
+## 4. 能力包与工具结构
 
 单个能力域推荐按以下结构组织（详见架构文档 [§7](go-agent-harness-architecture.zh.md#7-能力扩展模型)）：
 
 ```text
 cap/<domain>/
-  definition.go      # 能力接口（如 filesystem.Service）
-  doc.go             # 接口文档
+  *.go               # 可替换能力接口（workspace、compaction、permission…）
+  doc.go             # 接口文档（可选）
+
+cap/filesystem/      # 例外：grep/find DTO + gitignore，非 Provider 边界
 
 plugins/
-  fs/                # local、memory、readonly 三个 kind
-  tool/              # read-file、write-file、edit-file、grep、find、list-dir、shell、skill
+  tool/fs/           # tool/fs-workspace、tool/fs-memory（内聚实现，共用 cap/filesystem 类型）
+  tool/              # shell、web、skill、subagent…
   compaction/        # summary、prune-tool-results
   approval/          # cli、auto-deny、auto-allow
-  ask/               # cli、unavailable
-  web/               # http-fetch、exa-search、scripted-fetch、scripted-search
+  web/               # http-fetch、exa-search…
   prompt/            # section/agents-md、section/static、section/skills
   skill/             # filesystem
-  shell/             # bash
   policy/            # deny-dangerous-shell
   hook/              # before-step
   credentials/       # env
   schedule/          # file
   settings/          # file
+  workspace/         # default、tenant（runtime/workspace）
 ```
-
-同一能力域内多个 kind 共用一个 Go package，通过 `register.go` 集中注册；各 kind 保留独立的 Config/Deps 与构造函数（如 `NewLocal`、`NewReadFile`）。
 
 **规则**：
 
-- Consumer（`tool/*`）只依赖 Definition 接口。
-- Provider（`fs/*`, `shell/*`）只实现能力，不决定模型 schema。
-- 换 Provider 不换 Tool：修改 deps 指向即可（如 `fs/local` → `fs/sandbox`）。
+- 文件/Shell 等模型工具优先单插件内聚；共享 deps 通常是 `workspace.Service`，不是 `filesystem.Service`。
+- 只有 workspace、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
+- 换 workspace Provider（如 `workspace/default` → `workspace/tenant`）不换 tool kind：修改 deps 指向即可。
 
 ## 5. 配置示例：Coding Agent 最小 Preset
 
@@ -390,14 +393,13 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 | Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，见 `presets/subagent.yaml`；并行 fan-out 待做） |
 | MCP | `tool/mcp`（`mcpServers` JSON 动态工具，见 `docs/mcp.zh.md`） |
 | Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user`（HIL 由 Loop + platform 承载 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 [web.zh.md](web.zh.md) 与 [platform-interaction.zh.md](platform-interaction.zh.md)） |
-| Sandbox | `sandbox/landlock`, `fs/sandbox`, `process/sandbox`（未做 → [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)） |
 | Platform | `platform/http`, `platform/rpc`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)；`platform/multiplex` / `timer` / `worker` 已落地） |
 | Multi-Agent | `loop/harness`, AgentSet 配置（未做 → [roadmap M4](roadmap.zh.md#m4--并行与多-agent需求驱动)） |
-| Policy | `policy/path-denylist` 已落地；`policy/plan-mode` 未做；`policy/network-deny` 未做（SSRF 约束现落在 `web/http-fetch` 里 → [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)） |
+| Policy | `policy/path-denylist` 已落地；`policy/plan-mode` 未做；`policy/network-deny` 未做（SSRF 约束现落在 `web/http-fetch` 里 → [roadmap M2](roadmap.zh.md#m2--守护收尾)） |
 
 ### Phase 4 — 专项（按需）
 
-Terminal/PTY、LSP、Workflow、Jobs、Web UI、ACP、E2B 远程沙箱等 — 参考 DSH 子系统文档，按产品需求逐个添加 Kind。
+Terminal/PTY、LSP、Workflow、Jobs、Web UI、ACP、**OS 级沙箱**（landlock / seatbelt / bwrap，短期不规划，见 [roadmap §暂缓](roadmap.zh.md#暂缓os-级沙箱)）、E2B 远程沙箱等 — 参考 DSH 子系统文档，按产品需求逐个添加 Kind。
 
 ## 7. 与参考项目的 Kind 映射
 
@@ -428,7 +430,7 @@ Terminal/PTY、LSP、Workflow、Jobs、Web UI、ACP、E2B 远程沙箱等 — �
 - [ ] Config struct 字段有 `json` tag；未知字段 decode 失败
 - [ ] Deps 字段类型为接口，非具体 Provider
 - [ ] 需生命周期时实现 `agentkit.StartStop`
-- [ ] 构造函数与 Config 字段写好 godoc（`// NewXxx registers <kind>:` + 字段注释）；CLI `/help plugin <kind>` 通过 `go doc` 展示
+- [ ] 构造函数与 Config 字段写好 godoc（`// NewXxx registers <kind>:` + 字段注释）；CLI `/plugin <kind>` 通过 `go doc` 展示
 - [ ] 工具/注入内容写入 Session，满足 Model-visible ⟺ Logged
 - [ ] Policy 裁决走 `agentkit.Policy`；Hook 不充当 deny 通道
 - [ ] 加入 import 生成器 manifest

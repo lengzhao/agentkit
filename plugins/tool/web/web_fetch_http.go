@@ -48,8 +48,8 @@ type httpFetcher struct {
 }
 
 type WebFetchInput struct {
-	URL string `json:"url" jsonschema:"required,description=Absolute http or https URL to fetch"`
-	Raw bool   `json:"raw,omitempty" jsonschema:"description=Return the body as served instead of extracting readable text from HTML"`
+	URL string `json:"url" jsonschema:"Absolute http or https URL to fetch"`
+	Raw bool   `json:"raw,omitempty" jsonschema:"Return the body as served instead of extracting readable text from HTML"`
 }
 
 type WebFetchOutput struct {

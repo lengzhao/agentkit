@@ -47,7 +47,7 @@ tool.fs-workspace.default:
     workspace: workspace.default
 ```
 
-- **read / grep / find / ls** 走只读包装，即使工具实现有 write 能力也无法落盘。
+- **read / grep / find / ls** 走只读包装，即使工具实现有 write 能力也无法落盘。`grep` / `find` 会跳过 `.gitignore` 匹配路径（并默认忽略 `.git`、`node_modules`、`.agent`）。
 - **write / edit** 直接绑定 workspace，可修改项目内文件。
 - **shell** 在 workspace 解析后的 workDir 执行，与文件工具路径语义一致。
 

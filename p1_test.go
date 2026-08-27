@@ -22,14 +22,15 @@ func TestCompactionPruneToolResults(t *testing.T) {
 	long := strings.Repeat("x", 100)
 	messages := []agentkit.ModelMessage{{
 		Role: "tool",
-		Content: []agentkit.ContentPart{{
-			Type: "text",
-			Text: long,
+		ToolResults: []agentkit.ToolResult{{
+			ID:      "call-1",
+			Name:    "read",
+			Content: long,
 		}},
 	}}
 	pruned := compaction.PruneToolResults(messages, 20)
-	if len(pruned[0].Content[0].Text) >= len(long) {
-		t.Fatalf("expected truncated tool result, got len=%d", len(pruned[0].Content[0].Text))
+	if len(pruned[0].ToolResults[0].Content) >= len(long) {
+		t.Fatalf("expected truncated tool result, got len=%d", len(pruned[0].ToolResults[0].Content))
 	}
 }
 

@@ -1,4 +1,5 @@
-package cli
+// Package helpdoc resolves pluginkit kind documentation for slash commands.
+package helpdoc
 
 import (
 	"bytes"
@@ -11,29 +12,67 @@ import (
 	"github.com/lengzhao/pluginkit"
 )
 
-func formatPluginList() string {
-	kinds := pluginkit.ListKinds()
+const (
+	AgentKindPrefix    = "agent/"
+	SubagentKindPrefix = "subagent/"
+)
+
+func kindsWithPrefix(prefix string) []string {
+	var out []string
+	for _, kind := range pluginkit.ListKinds() {
+		if prefix == "" || strings.HasPrefix(kind, prefix) {
+			out = append(out, kind)
+		}
+	}
+	return out
+}
+
+func FormatKindList(title, prefix, command, nameHint string) string {
+	kinds := kindsWithPrefix(prefix)
 	width := 0
 	for _, kind := range kinds {
 		width = max(width, len(kind))
 	}
 	var b strings.Builder
-	b.WriteString("Registered plugin kinds:\n")
+	b.WriteString(title)
+	b.WriteString(":\n")
 	for _, kind := range kinds {
 		fmt.Fprintf(&b, "  %-*s\n", width, kind)
 	}
-	b.WriteString("\nUse /help plugin <kind> to view godoc.")
+	b.WriteString(fmt.Sprintf("\nUse /%s %s for details.", command, nameHint))
 	return b.String()
 }
 
-func pluginDoc(kind string) (string, error) {
-	kind = strings.TrimSpace(kind)
+func resolveKind(prefix, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if strings.Contains(name, "/") {
+		return name
+	}
+	if prefix != "" {
+		return prefix + name
+	}
+	return name
+}
+
+func KindDoc(prefix, name string) (string, error) {
+	kind := resolveKind(prefix, name)
 	if kind == "" {
-		return "", fmt.Errorf("plugin kind is required")
+		return "", fmt.Errorf("kind is required")
+	}
+	if prefix != "" && !strings.HasPrefix(kind, prefix) {
+		label := strings.TrimSuffix(prefix, "/")
+		return "", fmt.Errorf("unknown %s kind %q (try /%s)", label, kind, label)
 	}
 	spec, ok := pluginkit.Lookup(kind)
 	if !ok {
-		return "", fmt.Errorf("unknown plugin kind %q (try /help plugin -l)", kind)
+		label := strings.TrimSuffix(prefix, "/")
+		if label == "" {
+			label = "plugin"
+		}
+		return "", fmt.Errorf("unknown %s kind %q (try /%s)", label, kind, label)
 	}
 	symbol := docSymbol(spec)
 	if symbol == "" {

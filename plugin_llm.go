@@ -37,7 +37,6 @@ type LLMEvent struct {
 	Delta        string
 	ToolCall     *ToolCall
 	Usage        *Usage
-	Raw          []byte
 }
 
 type Usage struct {

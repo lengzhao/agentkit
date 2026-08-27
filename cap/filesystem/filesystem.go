@@ -1,20 +1,12 @@
+// Package filesystem holds shared request/result types and gitignore helpers
+// used by file tools. It is not a swappable capability: tools implement their
+// own ops surface and only import these DTOs for grep/find/list formatting.
 package filesystem
 
-import "context"
-
-type Service interface {
-	ReadText(context.Context, string, int) (string, error)
-	WriteText(context.Context, string, string) error
-	Edit(context.Context, EditRequest) (EditResult, error)
-	ListDir(context.Context, string) ([]DirEntry, error)
-	Grep(context.Context, GrepRequest) (GrepResult, error)
-	Find(context.Context, FindRequest) (FindResult, error)
-}
-
 type DirEntry struct {
-	Name  string `json:"name"`
-	Path  string `json:"path"`
-	IsDir bool   `json:"isDir"`
+	Name  string
+	Path  string
+	IsDir bool
 }
 
 type GrepRequest struct {
@@ -22,18 +14,22 @@ type GrepRequest struct {
 	Path       string
 	Glob       string
 	IgnoreCase bool
+	Literal    bool
+	Context    int
 	MaxMatches int
 }
 
 type GrepMatch struct {
-	Path    string `json:"path"`
-	Line    int    `json:"line"`
-	Content string `json:"content"`
+	Path    string
+	Line    int
+	Content string
 }
 
 type GrepResult struct {
-	Matches   []GrepMatch `json:"matches"`
-	Truncated bool        `json:"truncated,omitempty"`
+	Matches   []GrepMatch
+	Truncated bool
+	Text      string
+	Hint      string
 }
 
 type FindRequest struct {
@@ -43,17 +39,8 @@ type FindRequest struct {
 }
 
 type FindResult struct {
-	Paths     []string `json:"paths"`
-	Truncated bool     `json:"truncated,omitempty"`
-}
-
-type EditRequest struct {
-	Path      string
-	OldString string
-	NewString string
-}
-
-type EditResult struct {
-	Path    string
-	Applied bool
+	Paths     []string
+	Truncated bool
+	Text      string
+	Hint      string
 }

@@ -56,7 +56,7 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 		t.Fatal(err)
 	}
 	finish := agentkit.First(finishPack)
-	echo, err := agentkit.NewTool[echoInput, echoOutput]("echo", func(_ context.Context, in echoInput) (echoOutput, error) {
+	echo, err := agentkit.NewTool("echo", func(_ context.Context, in echoInput) (echoOutput, error) {
 		return echoOutput(in), nil
 	}).Description("echo text back").Build()
 	if err != nil {

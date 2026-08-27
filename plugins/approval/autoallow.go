@@ -17,7 +17,7 @@ type AutoAllowConfig struct {
 //
 // Best practices:
 //   - Never use alone. It filters nothing, so the Policy plane is the only enforcement left: pair it with policy/shell-allowlist and policy/path-denylist.
-//   - Every decision is logged and audited, so an unattended run stays reviewable after the fact.
+//   - Every decision is logged via slog, so an unattended run stays reviewable after the fact.
 func NewAutoAllow(cfg AutoAllowConfig) (agentkit.Approval, error) {
 	reason := cfg.Reason
 	if reason == "" {
@@ -44,9 +44,5 @@ func (a autoAllow) Ask(ctx context.Context, req agentkit.ApprovalRequest) (agent
 	return agentkit.ApprovalDecision{
 		Allowed: true,
 		Reason:  a.reason,
-		Audit: map[string]string{
-			"decision":      "auto-allow",
-			"policy_reason": req.Reason,
-		},
 	}, nil
 }

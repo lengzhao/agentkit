@@ -23,7 +23,8 @@ const (
 type Decision struct {
 	Kind   DecisionKind
 	Reason string
-	Audit  map[string]string
+	// Audit is merged into ToolResult.Audit when the tool runtime denies a call.
+	Audit map[string]string
 }
 
 type Approval interface {
@@ -38,5 +39,4 @@ type ApprovalRequest struct {
 type ApprovalDecision struct {
 	Allowed bool
 	Reason  string
-	Audit   map[string]string
 }

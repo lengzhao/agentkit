@@ -240,7 +240,7 @@ interface Agent {
   - **`inject()`** 是独立能力（审批结果、子任务完成通知），AgentKit 仅有 steer/follow-up，缺少「静默注入」。
   - **`AgentCancelCause`** 结构化（user/parent/hook/disposed），比单纯 reason 字符串更可观测。
   - **`whenIdle()`** 便于测试与编排（子 agent 等待父 agent 空闲）。
-- AgentKit 建议：`Inject` 的落点是 `runtime/loop.Control` + Agent 侧窄接口（根包已无 `SessionControl` 类型可加），并顺带补 `Cancel` 的 `keepQueue`；队列持久化见 [roadmap M2](roadmap.zh.md#m2--隔离--守护收尾)。
+- AgentKit 建议：`Inject` 的落点是 `runtime/loop.Control` + Agent 侧窄接口（根包已无 `SessionControl` 类型可加），并顺带补 `Cancel` 的 `keepQueue`；队列持久化见 [roadmap M2](roadmap.zh.md#m2--守护收尾)。
 
 ---
 
@@ -294,7 +294,7 @@ type SessionStore interface {
 
 ```go
 type PromptAssembler interface {
-    Assemble(ctx, PromptRequest) (Prompt, error)
+    Assemble(ctx, PromptRequest) ([]ModelMessage, error)
 }
 type SectionProvider interface {
     Sections() []Section  // Name, Order, Build func
@@ -334,13 +334,21 @@ type SectionProvider interface {
 
 ```go
 type Tool interface {
-    Name() / Description() / InputSchema() / Call(ctx, ToolCall) (ToolResult, error)
+    Name() / Description() / InputSchema() / Call(ctx, json.RawMessage) (string, error)
+}
+type ToolResult struct {
+    ID ToolCallID
+    Name string
+    Content string
+    Audit map[string]string // runtime-only; not returned by Tool.Call
 }
 type ToolRuntime interface {
     Visible(context.Context) ([]ToolSpec, error)
     Execute(ctx, ToolCall) (ToolResult, error)
 }
 ```
+
+`agentkit.NewTool` 是 typed handler 到运行时接口的适配层：`string` 输出直接返回，其他结构化 Go 值 JSON 化为文本。MCP 等多模态结果在 adapter 层降级为文本（例如附件路径、MIME、摘要）。
 
 **DSH 等价**：`ctx.tools`（`dsh-tools`）
 
@@ -464,7 +472,7 @@ type LLMProvider interface {
     Stream(ctx, LLMRequest) (LLMStream, error)
 }
 type LLMRequest struct { Model, Messages, Tools }
-type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
+type LLMEvent struct { Type, Message, Delta, ToolCall, Usage }
 ```
 
 **DSH 等价**：`ctx.llm`（`dsh-llm`）
@@ -507,7 +515,9 @@ type LLMEvent struct { Type, Message, Delta, ToolCall, Usage, Raw }
 | Scope 隔离 | 隐含于 context key | **仍缺**：只有 context key，无分层 restrict | `dsh-scope` 多层 |
 | Telemetry | `telemetry/*` | **仍缺**：`cap/telemetry` 是空壳，`usage` 事件无人汇总 | `ctx.sessionTelemetry` |
 | Session Query | `tool/session-query` | **仍缺**：`cap/sessionquery` 是空壳 | SQLite 投影 + 全文检索 |
-| Web / Sandbox | `web/*`、`sandbox/*` | **仍缺**：`cap/web`、`cap/sandbox`、`cap/process` 均为空壳 | `dsh-web-*`、landlock / bwrap / seatbelt |
+| Web | `web/*` + `tool/web-*` | **已落地**（M1） | `dsh-web-*` |
+| OS 沙箱 | — | **暂缓**（无 `cap/sandbox` 占位；见 [roadmap](roadmap.zh.md#暂缓os-级沙箱)） | landlock / bwrap / seatbelt |
+| Process 隔离 | `process/*` | **仍缺**：`cap/process` 空壳，与沙箱同属暂缓项 | DSH bash sandbox ops |
 
 ## 5. 综合取长补短
 

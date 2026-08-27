@@ -1,13 +1,12 @@
 package fs
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -22,8 +21,10 @@ type FSWorkspaceConfig struct {
 	MaxBytes int `json:"maxBytes,omitempty"`
 	// MaxMatches is grep cap per call; defaults to 100.
 	MaxMatches int `json:"maxMatches,omitempty"`
-	// MaxResults is find cap per call; defaults to 200.
+	// MaxResults is find cap per call; defaults to 1000.
 	MaxResults int `json:"maxResults,omitempty"`
+	// MaxListEntries is ls cap per call; defaults to 500.
+	MaxListEntries int `json:"maxListEntries,omitempty"`
 	// ReadOnly rejects write and edit operations.
 	ReadOnly bool `json:"readOnly,omitempty"`
 	// Tools limits which model tools are registered; empty means all six (read, write, edit, grep, find, ls).
@@ -40,11 +41,7 @@ type workspaceFS struct {
 	readOnly  bool
 }
 
-var skipDirNames = map[string]struct{}{
-	".git":         {},
-	"node_modules": {},
-	".agent":       {},
-}
+var _ workspaceFSOps = (*workspaceFS)(nil)
 
 // NewFSWorkspace registers tool/fs-workspace: Workspace file tools (read, write, edit, grep, find, ls).
 func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolPack, error) {
@@ -65,10 +62,14 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 	}
 	maxResults := cfg.MaxResults
 	if maxResults <= 0 {
-		maxResults = 200
+		maxResults = defaultFindLimit
+	}
+	maxListEntries := cfg.MaxListEntries
+	if maxListEntries <= 0 {
+		maxListEntries = defaultListLimit
 	}
 	fs := &workspaceFS{relRoot: root, workspace: deps.Workspace, readOnly: cfg.ReadOnly}
-	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, cfg.Tools)
+	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
 }
 
 // workspaceFSOps is the filesystem surface used by buildWorkspaceTools.
@@ -80,65 +81,99 @@ type workspaceFSOps interface {
 	find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error)
 }
 
-func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults int, only []string) (agentkit.ToolPack, error) {
-	read, err := agentkit.NewTool[ReadInput, ReadOutput]("read", func(ctx context.Context, input ReadInput) (ReadOutput, error) {
-		content, err := fs.readText(ctx, input.Path, maxBytes)
+func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, maxListEntries int, only []string) (agentkit.ToolPack, error) {
+	read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
+		raw, err := fs.readText(ctx, input.Path, 0)
 		if err != nil {
-			return ReadOutput{}, err
+			return "", err
 		}
-		return ReadOutput{Content: content}, nil
-	}).Description("Read a text file from the workspace.").Build()
+		sliced, err := sliceReadContent(raw, readSliceOptions{
+			MaxBytes: maxBytes,
+			Offset:   input.Offset,
+			Limit:    input.Limit,
+		})
+		if err != nil {
+			return "", err
+		}
+		startLine := 1
+		if input.Offset > 0 {
+			startLine = input.Offset
+		}
+		return formatReadText(input.Path, startLine, sliced), nil
+	}).Description("Read a text file from the workspace. Large files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
 	if err != nil {
 		return nil, err
 	}
 
-	write, err := agentkit.NewTool[WriteInput, WriteOutput]("write", func(ctx context.Context, input WriteInput) (WriteOutput, error) {
+	write, err := agentkit.NewTool[WriteInput, string]("write", func(ctx context.Context, input WriteInput) (string, error) {
 		if err := fs.writeText(ctx, input.Path, input.Content); err != nil {
-			return WriteOutput{}, err
+			return "", err
 		}
-		return WriteOutput{Path: input.Path}, nil
+		return formatWriteResult(input.Path), nil
 	}).Description("Write content to a file in the workspace.").Build()
 	if err != nil {
 		return nil, err
 	}
 
-	edit, err := agentkit.NewTool("edit", applyWorkspaceEdits(fs)).
-		Description("Make precise file edits with exact text replacement. Each oldText is matched against the original file.").Build()
+	edit, err := agentkit.NewTool[EditInput, string]("edit", applyWorkspaceEdits(fs)).
+		Description("Make precise file edits with exact text replacement. Each edits[].oldText is matched against the original file, not incrementally. Do not emit overlapping edits.").Build()
 	if err != nil {
 		return nil, err
 	}
 
-	grep, err := agentkit.NewTool[GrepInput, GrepOutput]("grep", func(ctx context.Context, input GrepInput) (GrepOutput, error) {
-		return fs.grep(ctx, filesystem.GrepRequest{
+	grep, err := agentkit.NewTool[GrepInput, string]("grep", func(ctx context.Context, input GrepInput) (string, error) {
+		limit := effectiveLimit(input.Limit, maxMatches, defaultGrepLimit)
+		result, err := fs.grep(ctx, filesystem.GrepRequest{
 			Pattern:    input.Pattern,
 			Path:       input.Path,
 			Glob:       input.Glob,
 			IgnoreCase: input.IgnoreCase,
-			MaxMatches: maxMatches,
+			Literal:    input.Literal,
+			Context:    input.Context,
+			MaxMatches: limit,
 		})
-	}).Description("Search file contents in the workspace using a regular expression.").Build()
+		if err != nil {
+			return "", err
+		}
+		return formatGrepResult(result), nil
+	}).Description("Search file contents in the workspace using a regular expression or literal string. Respects .gitignore.").Build()
 	if err != nil {
 		return nil, err
 	}
 
-	find, err := agentkit.NewTool[FindInput, FindOutput]("find", func(ctx context.Context, input FindInput) (FindOutput, error) {
-		return fs.find(ctx, filesystem.FindRequest{
+	find, err := agentkit.NewTool[FindInput, string]("find", func(ctx context.Context, input FindInput) (string, error) {
+		limit := effectiveLimit(input.Limit, maxResults, defaultFindLimit)
+		result, err := fs.find(ctx, filesystem.FindRequest{
 			Pattern:    input.Pattern,
 			Path:       input.Path,
-			MaxResults: maxResults,
+			MaxResults: limit,
 		})
-	}).Description("Find files in the workspace by filename glob pattern (e.g. *.go). Paths are matched relative to the search directory; ** recursive glob is not supported.").Build()
+		if err != nil {
+			return "", err
+		}
+		return formatFindResult(result), nil
+	}).Description("Find files by glob pattern (e.g. *.go, **/*.json). Paths are relative to the search directory. Respects .gitignore.").Build()
 	if err != nil {
 		return nil, err
 	}
 
-	listDir, err := agentkit.NewTool[ListDirInput, ListDirOutput]("ls", func(ctx context.Context, input ListDirInput) (ListDirOutput, error) {
+	listDir, err := agentkit.NewTool[ListDirInput, string]("ls", func(ctx context.Context, input ListDirInput) (string, error) {
 		entries, err := fs.listDir(ctx, input.Path)
 		if err != nil {
-			return ListDirOutput{}, err
+			return "", err
 		}
-		return ListDirOutput{Entries: entries}, nil
-	}).Description("List files and directories in a workspace path.").Build()
+		limit := effectiveLimit(input.Limit, maxListEntries, defaultListLimit)
+		truncated := len(entries) > limit
+		if truncated {
+			entries = entries[:limit]
+		}
+		text := formatListEntries(entries)
+		hint := ""
+		if truncated {
+			hint = fmt.Sprintf("%d entries limit reached. Use limit=%d for more", limit, limit*2)
+		}
+		return formatListResult(text, hint), nil
+	}).Description("List files and directories in a workspace path. Output includes dotfiles and marks directories with a trailing slash.").Build()
 	if err != nil {
 		return nil, err
 	}
@@ -164,100 +199,70 @@ func filterToolPack(pack agentkit.ToolPack, only []string) agentkit.ToolPack {
 }
 
 type ReadInput struct {
-	Path string `json:"path" jsonschema:"required,description=File path relative to the workspace"`
-}
-
-type ReadOutput struct {
-	Content string `json:"content"`
+	Path   string `json:"path" jsonschema:"File path relative to the workspace"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Line number to start reading from (1-indexed)"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of lines to read"`
 }
 
 type WriteInput struct {
-	Path    string `json:"path" jsonschema:"required,description=File path relative to the workspace"`
-	Content string `json:"content" jsonschema:"required,description=Full file content to write"`
-}
-
-type WriteOutput struct {
-	Path string `json:"path"`
+	Path    string `json:"path" jsonschema:"File path relative to the workspace"`
+	Content string `json:"content" jsonschema:"Full file content to write"`
 }
 
 type FileEdit struct {
-	OldText string `json:"oldText" jsonschema:"required,description=Exact text to replace in the original file"`
-	NewText string `json:"newText" jsonschema:"required,description=Replacement text"`
+	OldText string `json:"oldText" jsonschema:"Exact text to replace in the original file; must be unique and non-overlapping with other edits in the same call"`
+	NewText string `json:"newText" jsonschema:"Replacement text"`
 }
 
 type EditInput struct {
-	Path  string     `json:"path" jsonschema:"required,description=Path to the file to edit"`
-	Edits []FileEdit `json:"edits" jsonschema:"required"`
-}
-
-type EditOutput struct {
-	Path    string `json:"path"`
-	Applied bool   `json:"applied"`
+	Path  string     `json:"path" jsonschema:"Path to the file to edit"`
+	Edits []FileEdit `json:"edits" jsonschema:"One or more targeted replacements matched against the original file"`
 }
 
 type GrepInput struct {
-	Pattern    string `json:"pattern" jsonschema:"required,description=Regular expression to search for"`
-	Path       string `json:"path" jsonschema:"description=Directory or file to search (default: workspace root)"`
-	Glob       string `json:"glob" jsonschema:"description=Optional filename glob filter, e.g. *.go"`
-	IgnoreCase bool   `json:"ignoreCase" jsonschema:"description=Case-insensitive search"`
+	Pattern    string `json:"pattern" jsonschema:"Search pattern (regex or literal string)"`
+	Path       string `json:"path,omitempty" jsonschema:"Directory or file to search (default: workspace root)"`
+	Glob       string `json:"glob,omitempty" jsonschema:"Optional filename glob filter, e.g. *.go"`
+	IgnoreCase bool   `json:"ignoreCase,omitempty" jsonschema:"Case-insensitive search"`
+	Literal    bool   `json:"literal,omitempty" jsonschema:"Treat pattern as a literal string instead of a regex"`
+	Context    int    `json:"context,omitempty" jsonschema:"Lines of context to show before and after each match"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of matches to return (default: 100)"`
 }
-
-type GrepOutput = filesystem.GrepResult
 
 type FindInput struct {
-	Pattern string `json:"pattern" jsonschema:"required,description=Filename glob pattern, e.g. *.go"`
-	Path    string `json:"path" jsonschema:"description=Directory to search (default: workspace root)"`
+	Pattern string `json:"pattern" jsonschema:"Glob pattern to match files, e.g. *.go or **/*.json"`
+	Path    string `json:"path,omitempty" jsonschema:"Directory to search (default: workspace root)"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"Maximum number of results (default: 1000)"`
 }
-
-type FindOutput = filesystem.FindResult
 
 type ListDirInput struct {
-	Path string `json:"path" jsonschema:"description=Directory path relative to the workspace (default: root)"`
+	Path  string `json:"path,omitempty" jsonschema:"Directory path relative to the workspace (default: root)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum number of entries to return (default: 500)"`
 }
 
-type ListDirOutput struct {
-	Entries []filesystem.DirEntry `json:"entries"`
-}
-
-func applyWorkspaceEdits(fs workspaceFSOps) func(context.Context, EditInput) (EditOutput, error) {
-	return func(ctx context.Context, input EditInput) (EditOutput, error) {
+func applyWorkspaceEdits(fs workspaceFSOps) func(context.Context, EditInput) (string, error) {
+	return func(ctx context.Context, input EditInput) (string, error) {
 		if input.Path == "" {
-			return EditOutput{}, fmt.Errorf("path is required")
+			return "", fmt.Errorf("path is required")
 		}
 		if len(input.Edits) == 0 {
-			return EditOutput{}, fmt.Errorf("at least one edit is required")
+			return "", fmt.Errorf("at least one edit is required")
 		}
 		content, err := fs.readText(ctx, input.Path, 0)
 		if err != nil {
-			return EditOutput{}, err
+			return "", err
 		}
-		for i, edit := range input.Edits {
-			if edit.OldText == "" {
-				return EditOutput{}, fmt.Errorf("edits[%d].oldText is required", i)
-			}
-			if !strings.Contains(content, edit.OldText) {
-				return EditOutput{}, fmt.Errorf("edits[%d].oldText not found in file", i)
-			}
-			if strings.Count(content, edit.OldText) > 1 {
-				return EditOutput{}, fmt.Errorf("edits[%d].oldText is not unique in file", i)
-			}
-		}
-		updated := content
-		applied := false
-		for _, edit := range input.Edits {
-			if !strings.Contains(updated, edit.OldText) {
-				continue
-			}
-			updated = strings.Replace(updated, edit.OldText, edit.NewText, 1)
-			applied = true
+		updated, err := applyEditsOnOriginal(content, input.Edits)
+		if err != nil {
+			return "", err
 		}
 		if updated == content {
-			return EditOutput{Path: input.Path, Applied: false}, nil
+			return formatEditResult(input.Path, false), nil
 		}
 		if err := fs.writeText(ctx, input.Path, updated); err != nil {
-			return EditOutput{}, err
+			return "", err
 		}
-		return EditOutput{Path: input.Path, Applied: applied}, nil
+		return formatEditResult(input.Path, true), nil
 	}
 }
 
@@ -339,6 +344,12 @@ func (s *workspaceFS) listDir(ctx context.Context, path string) ([]filesystem.Di
 			IsDir: entry.IsDir(),
 		})
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].IsDir != out[j].IsDir {
+			return out[i].IsDir
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
 	return out, nil
 }
 
@@ -350,17 +361,22 @@ func (s *workspaceFS) grep(ctx context.Context, req filesystem.GrepRequest) (fil
 	if searchPath == "" {
 		searchPath = "."
 	}
-	maxMatches := req.MaxMatches
-	if maxMatches <= 0 {
-		maxMatches = 100
+	limit := req.MaxMatches
+	if limit <= 0 {
+		limit = defaultGrepLimit
 	}
-	pattern := req.Pattern
-	if req.IgnoreCase {
-		pattern = "(?i)" + pattern
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return filesystem.GrepResult{}, fmt.Errorf("invalid pattern: %w", err)
+
+	var re *regexp.Regexp
+	if !req.Literal {
+		pattern := req.Pattern
+		if req.IgnoreCase {
+			pattern = "(?i)" + pattern
+		}
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return filesystem.GrepResult{}, fmt.Errorf("invalid pattern: %w", err)
+		}
+		re = compiled
 	}
 
 	root, err := s.resolve(ctx, searchPath)
@@ -371,23 +387,22 @@ func (s *workspaceFS) grep(ctx context.Context, req filesystem.GrepRequest) (fil
 	if err != nil {
 		return filesystem.GrepResult{}, err
 	}
+	ignore, err := filesystem.LoadIgnoreMatcher(workspaceRoot)
+	if err != nil {
+		return filesystem.GrepResult{}, err
+	}
 	rootInfo, err := os.Stat(root)
 	if err != nil {
 		return filesystem.GrepResult{}, err
 	}
 
-	result := filesystem.GrepResult{Matches: []filesystem.GrepMatch{}}
-	appendMatch := func(rel string, line int, content string) bool {
-		result.Matches = append(result.Matches, filesystem.GrepMatch{
-			Path:    rel,
-			Line:    line,
-			Content: strings.TrimRight(content, "\r\n"),
-		})
-		if len(result.Matches) >= maxMatches {
-			result.Truncated = true
-			return false
+	collector := newGrepCollector(limit)
+	scanFile := func(fullPath, rel string) error {
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			return err
 		}
-		return true
+		return grepFileBytes(data, rel, req.Pattern, req.IgnoreCase, req.Literal, re, req.Context, collector)
 	}
 
 	if !rootInfo.IsDir() {
@@ -397,29 +412,35 @@ func (s *workspaceFS) grep(ctx context.Context, req filesystem.GrepRequest) (fil
 				return filesystem.GrepResult{}, fmt.Errorf("invalid glob: %w", err)
 			}
 			if !matched {
-				return result, nil
+				return collector.Result(), nil
 			}
 		}
 		rel, err := filepath.Rel(workspaceRoot, root)
 		if err != nil {
 			return filesystem.GrepResult{}, err
 		}
-		if err := grepFile(root, filepath.ToSlash(rel), re, appendMatch); err != nil {
+		if err := scanFile(root, filepath.ToSlash(rel)); err != nil {
 			return filesystem.GrepResult{}, err
 		}
-		return result, nil
+		return collector.Result(), nil
 	}
 
 	err = filepath.WalkDir(root, func(fullPath string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() {
-			if fullPath != root {
-				if _, skip := skipDirNames[entry.Name()]; skip {
-					return filepath.SkipDir
-				}
+		rel, err := filepath.Rel(workspaceRoot, fullPath)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if ignore.Ignored(rel, entry.IsDir()) {
+			if entry.IsDir() && fullPath != root {
+				return filepath.SkipDir
 			}
+			return nil
+		}
+		if entry.IsDir() {
 			return nil
 		}
 		if req.Glob != "" {
@@ -431,41 +452,15 @@ func (s *workspaceFS) grep(ctx context.Context, req filesystem.GrepRequest) (fil
 				return nil
 			}
 		}
-		rel, err := filepath.Rel(workspaceRoot, fullPath)
-		if err != nil {
-			return err
-		}
-		if result.Truncated {
+		if collector.Truncated {
 			return filepath.SkipAll
 		}
-		return grepFile(fullPath, filepath.ToSlash(rel), re, appendMatch)
+		return scanFile(fullPath, rel)
 	})
 	if err != nil {
 		return filesystem.GrepResult{}, err
 	}
-	return result, nil
-}
-
-func grepFile(fullPath, rel string, re *regexp.Regexp, appendMatch func(string, int, string) bool) error {
-	data, err := os.ReadFile(fullPath)
-	if err != nil {
-		return err
-	}
-	if bytes.IndexByte(data, 0) >= 0 {
-		return nil
-	}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	lineNo := 0
-	for scanner.Scan() {
-		lineNo++
-		line := scanner.Text()
-		if re.MatchString(line) {
-			if !appendMatch(rel, lineNo, line) {
-				return nil
-			}
-		}
-	}
-	return scanner.Err()
+	return collector.Result(), nil
 }
 
 func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
@@ -476,9 +471,9 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 	if searchPath == "" {
 		searchPath = "."
 	}
-	maxResults := req.MaxResults
-	if maxResults <= 0 {
-		maxResults = 200
+	limit := req.MaxResults
+	if limit <= 0 {
+		limit = defaultFindLimit
 	}
 
 	root, err := s.resolve(ctx, searchPath)
@@ -486,6 +481,10 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 		return filesystem.FindResult{}, err
 	}
 	workspaceRoot, err := s.rootDir(ctx)
+	if err != nil {
+		return filesystem.FindResult{}, err
+	}
+	ignore, err := filesystem.LoadIgnoreMatcher(workspaceRoot)
 	if err != nil {
 		return filesystem.FindResult{}, err
 	}
@@ -497,18 +496,11 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 	result := filesystem.FindResult{Paths: []string{}}
 	appendPath := func(rel string) bool {
 		result.Paths = append(result.Paths, rel)
-		if len(result.Paths) >= maxResults {
+		if len(result.Paths) >= limit {
 			result.Truncated = true
 			return false
 		}
 		return true
-	}
-
-	matchName := func(name, rel string) (bool, error) {
-		if strings.Contains(req.Pattern, "/") {
-			return filepath.Match(req.Pattern, rel)
-		}
-		return filepath.Match(req.Pattern, name)
 	}
 
 	if !rootInfo.IsDir() {
@@ -517,13 +509,16 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 			return filesystem.FindResult{}, err
 		}
 		rel = filepath.ToSlash(rel)
-		matched, err := matchName(filepath.Base(root), rel)
+		matched, err := matchFilePattern(req.Pattern, rel)
 		if err != nil {
 			return filesystem.FindResult{}, fmt.Errorf("invalid pattern: %w", err)
 		}
 		if matched {
 			appendPath(rel)
 		}
+		text, hint := formatFindPaths(result.Paths, result.Truncated, limit)
+		result.Text = text
+		result.Hint = hint
 		return result, nil
 	}
 
@@ -531,20 +526,21 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() {
-			if fullPath != root {
-				if _, skip := skipDirNames[entry.Name()]; skip {
-					return filepath.SkipDir
-				}
-			}
-			return nil
-		}
 		rel, err := filepath.Rel(workspaceRoot, fullPath)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		matched, err := matchName(entry.Name(), rel)
+		if ignore.Ignored(rel, entry.IsDir()) {
+			if entry.IsDir() && fullPath != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		matched, err := matchFilePattern(req.Pattern, rel)
 		if err != nil {
 			return fmt.Errorf("invalid pattern: %w", err)
 		}
@@ -558,5 +554,9 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 	if err != nil {
 		return filesystem.FindResult{}, err
 	}
+	sort.Strings(result.Paths)
+	text, hint := formatFindPaths(result.Paths, result.Truncated, limit)
+	result.Text = text
+	result.Hint = hint
 	return result, nil
 }

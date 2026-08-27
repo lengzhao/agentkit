@@ -13,7 +13,7 @@ import (
 
 type stubTool struct {
 	name string
-	fn   func(context.Context, agentkit.ToolCall) (agentkit.ToolResult, error)
+	fn   func(context.Context, json.RawMessage) (string, error)
 }
 
 func (t stubTool) Name() string        { return t.name }
@@ -21,8 +21,8 @@ func (t stubTool) Description() string { return t.name }
 func (t stubTool) InputSchema() agentkit.JSONSchema {
 	return agentkit.JSONSchema{Type: "object"}
 }
-func (t stubTool) Call(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-	return t.fn(ctx, call)
+func (t stubTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.fn(ctx, input)
 }
 
 type stubHooks struct {
@@ -52,16 +52,9 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
 		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
-			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-				seenInput = string(call.Input)
-				return agentkit.ToolResult{
-					ID:   call.ID,
-					Name: call.Name,
-					Content: []agentkit.ContentPart{{
-						Type: "text",
-						Text: "payload",
-					}},
-				}, nil
+			fn: func(_ context.Context, input json.RawMessage) (string, error) {
+				seenInput = string(input)
+				return "payload", nil
 			},
 		})},
 		Hooks: stubHooks{
@@ -70,7 +63,7 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 				return nil
 			},
 			afterTool: func(_ context.Context, result *agentkit.ToolResult) error {
-				result.Content[0].Text = "trimmed"
+				result.Content = "trimmed"
 				return nil
 			},
 		},
@@ -101,15 +94,8 @@ func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{MaxResultBytes: 20}, tools.RuntimeDeps{
 		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
-			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-				return agentkit.ToolResult{
-					ID:   call.ID,
-					Name: call.Name,
-					Content: []agentkit.ContentPart{{
-						Type: "text",
-						Text: "01234567890123456789012345",
-					}},
-				}, nil
+			fn: func(_ context.Context, input json.RawMessage) (string, error) {
+				return "01234567890123456789012345", nil
 			},
 		})},
 	})
@@ -141,16 +127,12 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 	}, tools.RuntimeDeps{
 		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "slow",
-			fn: func(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+			fn: func(ctx context.Context, input json.RawMessage) (string, error) {
 				select {
 				case <-time.After(200 * time.Millisecond):
-					return agentkit.ToolResult{
-						ID:      call.ID,
-						Name:    call.Name,
-						Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
-					}, nil
+					return "done", nil
 				case <-ctx.Done():
-					return agentkit.ToolResult{}, ctx.Err()
+					return "", ctx.Err()
 				}
 			},
 		})},
@@ -171,15 +153,47 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 	}
 }
 
+func TestRuntimeExecuteCopiesPolicyAuditOnDeny(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+			name: "demo",
+			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+				t.Fatal("tool body should not run")
+				return "", nil
+			},
+		})},
+		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
+			return agentkit.Decision{
+				Kind:   agentkit.DecisionDeny,
+				Reason: "blocked",
+				Audit:  map[string]string{"policy": "path-denylist", "pattern": ".env"},
+			}
+		})},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if result.Audit["policy"] != "path-denylist" || result.Audit["pattern"] != ".env" {
+		t.Fatalf("audit = %#v, want policy metadata", result.Audit)
+	}
+}
+
 func TestRuntimeExecuteDeniesBeforeHooks(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
 		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
-			fn: func(_ context.Context, _ agentkit.ToolCall) (agentkit.ToolResult, error) {
+			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
 				t.Fatal("tool body should not run")
-				return agentkit.ToolResult{}, nil
+				return "", nil
 			},
 		})},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
@@ -214,12 +228,8 @@ func TestRuntimeExecuteUsesPermissionBrokerForAsk(t *testing.T) {
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
 		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
-			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-				return agentkit.ToolResult{
-					ID:      call.ID,
-					Name:    call.Name,
-					Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
-				}, nil
+			fn: func(_ context.Context, input json.RawMessage) (string, error) {
+				return "ok", nil
 			},
 		})},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
@@ -250,12 +260,8 @@ func TestRuntimeExecuteAutoAllowSkipsBroker(t *testing.T) {
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
 		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
 			name: "demo",
-			fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-				return agentkit.ToolResult{
-					ID:      call.ID,
-					Name:    call.Name,
-					Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
-				}, nil
+			fn: func(_ context.Context, input json.RawMessage) (string, error) {
+				return "ok", nil
 			},
 		})},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
@@ -308,12 +314,8 @@ func TestRuntimeVisibleIncludesDynamicTools(t *testing.T) {
 
 	dynamic := &stubProvider{tools: []agentkit.Tool{stubTool{
 		name: "mcp__ping",
-		fn: func(_ context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-			return agentkit.ToolResult{
-				ID:      call.ID,
-				Name:    call.Name,
-				Content: []agentkit.ContentPart{{Type: "text", Text: "pong"}},
-			}, nil
+		fn: func(_ context.Context, input json.RawMessage) (string, error) {
+			return "pong", nil
 		},
 	}}}
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{

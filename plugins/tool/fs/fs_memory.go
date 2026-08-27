@@ -20,8 +20,10 @@ type FSMemoryConfig struct {
 	MaxBytes int `json:"maxBytes,omitempty"`
 	// MaxMatches is grep cap per call; defaults to 100.
 	MaxMatches int `json:"maxMatches,omitempty"`
-	// MaxResults is find cap per call; defaults to 200.
+	// MaxResults is find cap per call; defaults to 1000.
 	MaxResults int `json:"maxResults,omitempty"`
+	// MaxListEntries is ls cap per call; defaults to 500.
+	MaxListEntries int `json:"maxListEntries,omitempty"`
 	// Tools limits which model tools are registered; empty means all six.
 	Tools []string `json:"tools,omitempty"`
 }
@@ -47,10 +49,14 @@ func NewFSMemory(cfg FSMemoryConfig) (agentkit.ToolPack, error) {
 	}
 	maxResults := cfg.MaxResults
 	if maxResults <= 0 {
-		maxResults = 200
+		maxResults = defaultFindLimit
+	}
+	maxListEntries := cfg.MaxListEntries
+	if maxListEntries <= 0 {
+		maxListEntries = defaultListLimit
 	}
 	fs := &memoryWorkspaceFS{inner: &memoryFS{files: files}}
-	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, cfg.Tools)
+	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
 }
 
 // memoryWorkspaceFS adapts memoryFS to workspaceFS operations.
@@ -131,23 +137,28 @@ func (s *memoryWorkspaceFS) grep(_ context.Context, req filesystem.GrepRequest) 
 		return filesystem.GrepResult{}, fmt.Errorf("pattern is required")
 	}
 	searchPath := normalizeMemPath(req.Path)
-	maxMatches := req.MaxMatches
-	if maxMatches <= 0 {
-		maxMatches = 100
+	limit := req.MaxMatches
+	if limit <= 0 {
+		limit = defaultGrepLimit
 	}
-	pattern := req.Pattern
-	if req.IgnoreCase {
-		pattern = "(?i)" + pattern
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return filesystem.GrepResult{}, fmt.Errorf("invalid pattern: %w", err)
+
+	var re *regexp.Regexp
+	if !req.Literal {
+		pattern := req.Pattern
+		if req.IgnoreCase {
+			pattern = "(?i)" + pattern
+		}
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return filesystem.GrepResult{}, fmt.Errorf("invalid pattern: %w", err)
+		}
+		re = compiled
 	}
 
 	s.inner.mu.RLock()
 	defer s.inner.mu.RUnlock()
 
-	result := filesystem.GrepResult{Matches: []filesystem.GrepMatch{}}
+	collector := newGrepCollector(limit)
 	for path, content := range s.inner.files {
 		if !pathUnderMem(searchPath, path) {
 			continue
@@ -161,23 +172,14 @@ func (s *memoryWorkspaceFS) grep(_ context.Context, req filesystem.GrepRequest) 
 				continue
 			}
 		}
-		lines := strings.Split(content, "\n")
-		for i, line := range lines {
-			if !re.MatchString(line) {
-				continue
-			}
-			result.Matches = append(result.Matches, filesystem.GrepMatch{
-				Path:    path,
-				Line:    i + 1,
-				Content: strings.TrimRight(line, "\r"),
-			})
-			if len(result.Matches) >= maxMatches {
-				result.Truncated = true
-				return result, nil
-			}
+		if err := grepFileBytes([]byte(content), path, req.Pattern, req.IgnoreCase, req.Literal, re, req.Context, collector); err != nil {
+			return filesystem.GrepResult{}, err
+		}
+		if collector.Truncated {
+			break
 		}
 	}
-	return result, nil
+	return collector.Result(), nil
 }
 
 func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
@@ -185,9 +187,9 @@ func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) 
 		return filesystem.FindResult{}, fmt.Errorf("pattern is required")
 	}
 	searchPath := normalizeMemPath(req.Path)
-	maxResults := req.MaxResults
-	if maxResults <= 0 {
-		maxResults = 200
+	limit := req.MaxResults
+	if limit <= 0 {
+		limit = defaultFindLimit
 	}
 
 	s.inner.mu.RLock()
@@ -198,7 +200,7 @@ func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) 
 		if !pathUnderMem(searchPath, path) {
 			continue
 		}
-		matched, err := matchMemPattern(req.Pattern, path)
+		matched, err := matchFilePattern(req.Pattern, path)
 		if err != nil {
 			return filesystem.FindResult{}, fmt.Errorf("invalid pattern: %w", err)
 		}
@@ -206,13 +208,15 @@ func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) 
 			continue
 		}
 		result.Paths = append(result.Paths, path)
-		if len(result.Paths) >= maxResults {
+		if len(result.Paths) >= limit {
 			result.Truncated = true
-			sort.Strings(result.Paths)
-			return result, nil
+			break
 		}
 	}
 	sort.Strings(result.Paths)
+	text, hint := formatFindPaths(result.Paths, result.Truncated, limit)
+	result.Text = text
+	result.Hint = hint
 	return result, nil
 }
 
@@ -257,11 +261,4 @@ func pathUnderMem(dir, path string) bool {
 		return true
 	}
 	return path == dir || strings.HasPrefix(path, dir+"/")
-}
-
-func matchMemPattern(pattern, path string) (bool, error) {
-	if strings.Contains(pattern, "/") {
-		return filepath.Match(pattern, path)
-	}
-	return filepath.Match(pattern, filepath.Base(path))
 }

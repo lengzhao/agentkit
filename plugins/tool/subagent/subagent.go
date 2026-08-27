@@ -15,8 +15,8 @@ type SubagentDeps struct {
 }
 
 type SubagentInput struct {
-	Agent string `json:"agent" jsonschema:"required,description=Name of the subagent to delegate to, from the subagent list in the system prompt"`
-	Task  string `json:"task" jsonschema:"required,description=Self-contained instructions. The subagent starts from an empty session and cannot see this conversation"`
+	Agent string `json:"agent" jsonschema:"Name of the subagent to delegate to, from the subagent list in the system prompt"`
+	Task  string `json:"task" jsonschema:"Self-contained instructions. The subagent starts from an empty session and cannot see this conversation"`
 }
 
 type SubagentOutput struct {

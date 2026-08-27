@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/tenant"
 	mcpclient "github.com/mark3labs/mcp-go/client"
@@ -32,7 +31,7 @@ type serverSession struct {
 }
 
 type mcpCallOutcome struct {
-	Content []agentkit.ContentPart
+	Content string
 	IsError bool
 }
 
@@ -249,41 +248,40 @@ func toolInputSchema(tool mcplib.Tool) json.RawMessage {
 
 func convertCallResult(result *mcplib.CallToolResult) mcpCallOutcome {
 	out := mcpCallOutcome{IsError: result.IsError}
+	var b strings.Builder
+	appendMCPText := func(text string) {
+		if text == "" {
+			return
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(text)
+	}
 	for _, content := range result.Content {
 		switch c := content.(type) {
 		case mcplib.TextContent:
-			out.Content = append(out.Content, agentkit.ContentPart{Type: "text", Text: c.Text})
+			appendMCPText(c.Text)
 		case mcplib.ImageContent:
-			out.Content = append(out.Content, agentkit.ContentPart{
-				Type: "text",
-				Text: fmt.Sprintf("[image %s]", c.MIMEType),
-			})
+			appendMCPText(fmt.Sprintf("[image %s]", c.MIMEType))
 		case mcplib.AudioContent:
-			out.Content = append(out.Content, agentkit.ContentPart{
-				Type: "text",
-				Text: fmt.Sprintf("[audio %s]", c.MIMEType),
-			})
+			appendMCPText(fmt.Sprintf("[audio %s]", c.MIMEType))
 		case mcplib.EmbeddedResource:
 			if encoded, err := json.Marshal(c); err == nil {
-				out.Content = append(out.Content, agentkit.ContentPart{
-					Type: "text",
-					Text: string(encoded),
-				})
+				appendMCPText(string(encoded))
 			}
 		default:
 			if encoded, err := json.Marshal(c); err == nil {
-				out.Content = append(out.Content, agentkit.ContentPart{Type: "text", Text: string(encoded)})
+				appendMCPText(string(encoded))
 			}
 		}
 	}
 	if result.StructuredContent != nil {
 		if encoded, err := json.Marshal(result.StructuredContent); err == nil {
-			out.Content = append(out.Content, agentkit.ContentPart{Type: "text", Text: string(encoded)})
+			appendMCPText(string(encoded))
 		}
 	}
-	if len(out.Content) == 0 {
-		out.Content = []agentkit.ContentPart{{Type: "text", Text: ""}}
-	}
+	out.Content = b.String()
 	return out
 }
 

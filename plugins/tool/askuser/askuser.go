@@ -14,9 +14,9 @@ type AskUserConfig struct{}
 type AskUserDeps struct{}
 
 type AskUserInput struct {
-	Question string   `json:"question" jsonschema:"required,description=One specific question whose answer changes what you do next"`
-	Options  []string `json:"options,omitempty" jsonschema:"description=Offer concrete choices when the answer is one of a few known options"`
-	Default  string   `json:"default,omitempty" jsonschema:"description=Answer to assume when the user just presses enter"`
+	Question string   `json:"question" jsonschema:"One specific question whose answer changes what you do next"`
+	Options  []string `json:"options,omitempty" jsonschema:"Offer concrete choices when the answer is one of a few known options"`
+	Default  string   `json:"default,omitempty" jsonschema:"Answer to assume when the user just presses enter"`
 }
 
 type AskUserOutput struct {

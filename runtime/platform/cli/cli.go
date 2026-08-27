@@ -275,13 +275,11 @@ func (p *Platform) printWelcome() {
 func (p *Platform) printHelp(args string) {
 	args = strings.TrimSpace(args)
 	if args != "" {
-		p.printHelpArgs(args)
+		p.dispatchHelpTopic(args)
 		return
 	}
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  /help, /h, /?              show this help")
-	fmt.Fprintln(os.Stderr, "  /help plugin -l            list registered plugin kinds")
-	fmt.Fprintln(os.Stderr, "  /help plugin <kind>        show plugin godoc")
+	fmt.Fprintln(os.Stderr, "  /help, /h, /?              show this help (or /help <command> for details)")
 	fmt.Fprintln(os.Stderr, "  /exit, /quit               exit the session")
 	if p.commands != nil {
 		for _, cmd := range p.commands.List() {
@@ -295,30 +293,25 @@ func (p *Platform) printHelp(args string) {
 	fmt.Fprintln(os.Stderr, "  Ctrl+D                     exit when the input line is empty")
 }
 
-func (p *Platform) printHelpArgs(args string) {
+func (p *Platform) dispatchHelpTopic(args string) {
+	if p.commands == nil {
+		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
+		return
+	}
 	fields := splitArgs(args)
-	if len(fields) == 0 || fields[0] != "plugin" {
-		fmt.Fprintln(os.Stderr, "usage: /help plugin -l")
-		fmt.Fprintln(os.Stderr, "       /help plugin <kind>")
-		return
-	}
-	if len(fields) == 1 {
-		fmt.Fprintln(os.Stderr, "usage: /help plugin -l")
-		fmt.Fprintln(os.Stderr, "       /help plugin <kind>")
-		return
-	}
-	switch fields[1] {
-	case "-l", "--list":
-		fmt.Fprintln(os.Stderr, formatPluginList())
-		return
-	}
-	kind := strings.TrimSpace(strings.Join(fields[1:], " "))
-	text, err := pluginDoc(kind)
+	cmdCtx := context.WithValue(context.Background(), agentkit.KeySessionID, p.sessionID)
+	result, err := p.commands.Dispatch(cmdCtx, fields[0], fields[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "help error: %v\n", err)
 		return
 	}
-	fmt.Fprintln(os.Stderr, text)
+	if result == nil {
+		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
+		return
+	}
+	if result.Output != "" {
+		fmt.Fprintln(os.Stderr, result.Output)
+	}
 }
 
 func parseSlashCommand(line string) (name, args string, ok bool) {

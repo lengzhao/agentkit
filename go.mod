@@ -10,7 +10,7 @@ require (
 )
 
 require (
-	github.com/google/jsonschema-go v0.4.2 // indirect
+	github.com/google/jsonschema-go v0.4.2
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mark3labs/mcp-go v0.58.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect

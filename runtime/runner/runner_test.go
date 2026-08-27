@@ -144,9 +144,10 @@ func (l errorLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
 type permissionLoop struct {
 	mu sync.Mutex
 
-	turnBlocked chan struct{}
-	releaseTurn chan struct{}
-	delivered   int
+	turnBlocked   chan struct{}
+	releaseTurn   chan struct{}
+	delivered     int
+	deliveredDone chan struct{}
 }
 
 func (l *permissionLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error {
@@ -178,7 +179,11 @@ func (l *permissionLoop) TryDeliverPermission(event agentkit.MessageEvent) bool 
 	}
 	l.mu.Lock()
 	l.delivered++
+	done := l.deliveredDone
 	l.mu.Unlock()
+	if done != nil {
+		close(done)
+	}
 	return true
 }
 
@@ -246,9 +251,11 @@ func TestReceiveDeliversPermissionWhileTurnBlocked(t *testing.T) {
 	turnBlocked := make(chan struct{})
 	releaseTurn := make(chan struct{})
 	replySent := make(chan struct{}, 1)
+	deliveredDone := make(chan struct{})
 	loop := &permissionLoop{
-		turnBlocked: turnBlocked,
-		releaseTurn: releaseTurn,
+		turnBlocked:   turnBlocked,
+		releaseTurn:   releaseTurn,
+		deliveredDone: deliveredDone,
 	}
 	platform := &stagedPermissionPlatform{
 		turnBlocked: turnBlocked,
@@ -273,6 +280,11 @@ func TestReceiveDeliversPermissionWhileTurnBlocked(t *testing.T) {
 	case <-replySent:
 	case <-time.After(2 * time.Second):
 		t.Fatal("permission reply was not received while turn was blocked")
+	}
+	select {
+	case <-deliveredDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("permission reply was not delivered while turn was blocked")
 	}
 	if got := loop.deliveredCount(); got != 1 {
 		t.Fatalf("delivered = %d, want 1", got)

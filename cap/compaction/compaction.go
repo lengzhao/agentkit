@@ -59,7 +59,7 @@ func pruneMessage(msg agentkit.ModelMessage, maxBytes int) agentkit.ModelMessage
 		results := make([]agentkit.ToolResult, len(msg.ToolResults))
 		for i, result := range msg.ToolResults {
 			results[i] = result
-			results[i].Content = pruneToolContent(result.Content, maxBytes)
+			results[i].Content = pruneToolText(result.Content, maxBytes)
 		}
 		out.ToolResults = results
 	}
@@ -80,18 +80,11 @@ func pruneParts(parts []agentkit.ContentPart, maxBytes int) []agentkit.ContentPa
 	return out
 }
 
-func pruneToolContent(parts []agentkit.ContentPart, maxBytes int) []agentkit.ContentPart {
-	if len(parts) == 0 {
-		return parts
+func pruneToolText(text string, maxBytes int) string {
+	if maxBytes <= 0 || len(text) <= maxBytes {
+		return text
 	}
-	out := make([]agentkit.ContentPart, len(parts))
-	for i, part := range parts {
-		out[i] = part
-		if part.Type == "text" && len(part.Text) > maxBytes {
-			out[i].Text = part.Text[:maxBytes] + "\n...[truncated]"
-		}
-	}
-	return out
+	return text[:maxBytes] + "\n...[truncated]"
 }
 
 // TruncateToolResult truncates oversized tool result content after execution.
@@ -100,6 +93,6 @@ func TruncateToolResult(result agentkit.ToolResult, maxBytes int) agentkit.ToolR
 		return result
 	}
 	out := result
-	out.Content = pruneToolContent(result.Content, maxBytes)
+	out.Content = pruneToolText(result.Content, maxBytes)
 	return out
 }

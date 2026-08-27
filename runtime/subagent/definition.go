@@ -18,6 +18,21 @@ import (
 // child agents, then falls back to the user-global set.
 var defaultDirs = []string{"local:agents", "global:agents"}
 
+// DefaultDefinitionDirs returns the dirs scanned when config.dirs is empty.
+func DefaultDefinitionDirs() []string {
+	return append([]string(nil), defaultDirs...)
+}
+
+// LoadDefinitions scans dirs in precedence order and returns subagent definitions.
+func LoadDefinitions(ctx context.Context, ws workspace.Service, dirs []string) ([]subagent.Definition, error) {
+	return loadDefinitions(ctx, ws, dirs)
+}
+
+// FindDefinition looks up a definition by name, case-insensitively.
+func FindDefinition(defs []subagent.Definition, name string) (subagent.Definition, bool) {
+	return findDefinition(defs, name)
+}
+
 var (
 	errNoDescription = errors.New("definition needs a description")
 	errNoPrompt      = errors.New("definition needs a body to use as the system prompt")

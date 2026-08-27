@@ -62,7 +62,6 @@ type ModelMessage struct {
 	Content     []ContentPart
 	ToolCalls   []ToolCall
 	ToolResults []ToolResult
-	Raw         json.RawMessage
 }
 
 type ContentPart struct {

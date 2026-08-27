@@ -73,7 +73,7 @@ func (f *filteredTools) Execute(ctx context.Context, call agentkit.ToolCall) (ag
 		return agentkit.ToolResult{
 			ID:      call.ID,
 			Name:    call.Name,
-			Content: []agentkit.ContentPart{{Type: "text", Text: "tool not available to this subagent"}},
+			Content: "tool not available to this subagent",
 			Audit:   map[string]string{"decision": "deny", "reason": "not in subagent tool allowlist"},
 		}, nil
 	}
@@ -95,29 +95,25 @@ type definitionPrompt struct {
 	body  string
 }
 
-func (d *definitionPrompt) Assemble(ctx context.Context, req agentkit.PromptRequest) (agentkit.Prompt, error) {
-	prompt, err := d.inner.Assemble(ctx, req)
+func (d *definitionPrompt) Assemble(ctx context.Context, req agentkit.PromptRequest) ([]agentkit.ModelMessage, error) {
+	messages, err := d.inner.Assemble(ctx, req)
 	if err != nil {
-		return agentkit.Prompt{}, err
+		return nil, err
 	}
-	section := agentkit.PromptSection{Name: "subagent", Content: d.body}
-	prompt.Sections = append(prompt.Sections, section)
-
 	// The assembler already merged its sections into one leading system message;
 	// extend that one rather than emitting a second system message, which some
 	// providers reject.
-	for i, msg := range prompt.Messages {
+	for i, msg := range messages {
 		if msg.Role != "system" {
 			continue
 		}
-		prompt.Messages[i] = appendSystemText(msg, d.body)
-		return prompt, nil
+		messages[i] = appendSystemText(msg, d.body)
+		return messages, nil
 	}
-	prompt.Messages = append([]agentkit.ModelMessage{{
+	return append([]agentkit.ModelMessage{{
 		Role:    "system",
 		Content: []agentkit.ContentPart{{Type: "text", Text: d.body}},
-	}}, prompt.Messages...)
-	return prompt, nil
+	}}, messages...), nil
 }
 
 // appendSystemText adds one more text part. Providers concatenate a message's

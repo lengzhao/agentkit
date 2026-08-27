@@ -17,7 +17,7 @@ type SkillDeps struct {
 }
 
 type SkillInput struct {
-	Name string `json:"name" jsonschema:"required,description=Skill name to load"`
+	Name string `json:"name" jsonschema:"Skill name to load"`
 }
 
 type SkillOutput struct {

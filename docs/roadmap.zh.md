@@ -18,14 +18,14 @@
 | §9.2 执行 | Filesystem / Shell / Policy / Approval | **全部落地** |
 | §9.3 上下文与记忆 | Compaction / Skills / AGENTS.md / Credentials / Settings | 落地（Credentials 仅 `env`，无 `file`） |
 | §9.4 协作与编排 | Subagent（串行）/ Commands / Web / User Questions | 落地（Web 见 [M1](#m1--网络能力已落地)） |
-| | **Sandbox** | **未做** |
+| | **Sandbox** | **暂缓**（见 [roadmap](roadmap.zh.md#暂缓os-级沙箱)） |
 | §9.5 平台与观测 | Session Persistence（jsonl） | 落地（`session/sqlite` 未做） |
 | | **Session Query / Telemetry / Host Adapters** | **未做** |
 | §9.6 专项 | Terminal/PTY、LSP、Workflow、Jobs、Plan Mode… | 未做 |
 
-一句话：**spine 与"单机 coding 闭环"已经完整，缺口集中在"把它变成可对外运营的东西"**——M1 之后已经伸得出本机（web 抓取 + 搜索），但仍然关不住（无 sandbox）、看不见（无 telemetry / query）、进不来（只有 CLI / timer / worker / multiplex）。
+一句话：**spine 与"单机 coding 闭环"已经完整，缺口集中在"把它变成可对外运营的东西"**——M1 之后已经伸得出本机（web 抓取 + 搜索），但仍然看不见（无 telemetry / query）、进不来（只有 CLI / timer / worker / multiplex）。OS 级沙箱（landlock / seatbelt 等）**短期不做**，无人值守场景继续靠 policy 字符串匹配与 tool 内硬约束。
 
-`cap/` 下仍是空壳（`struct{}` 占位）的 4 个：`sandbox`、`process`、`sessionquery`、`telemetry`。它们是下面 M2–M3 的落点（`cap/web` 已在 M1 填掉）。
+`cap/` 下仍是空壳（`struct{}` 占位）的 3 个：`process`、`sessionquery`、`telemetry`（`cap/web` 已在 M1 填掉）。**不预留 `cap/sandbox`**——真要做隔离时再引入接口，避免占位代码与 catalog 误导。
 
 ### 0.2 接口层真缺口
 
@@ -98,24 +98,27 @@ HIL **没有复用 `cap/approval` 插件来回答 question**。`approval` 插件
 
 **未做**：`platform/slack` 本体仍在 M3。入站 platform 的义务只有两件 —— 生成 `SessionID`、填 `MessageEvent.UserID`。
 
-## M2 — 隔离 + 守护收尾
+## M2 — 守护收尾
 
-**M1 完成后这就是下一步。为什么排第二**：`presets/autonomous.yaml` + `approval/auto-allow` **已经上线**，而 `plugins/shell/shell.go` 里没有任何 sandbox 接入——当前唯一防线是 `policy/shell-allowlist` 与 `policy/path-denylist` 这两个字符串匹配的裁决。这是已交付功能的安全债，越晚越贵。
+**为什么排第二**：`platform/worker`、follow-up 队列与常驻 preset 已经存在，但 `Root.Stop` 仍是空实现、follow-up inbox 纯内存——进程退出时 session 与排队消息不可靠。这与 OS 级隔离无关，应先行补齐。
 
 | 项 | kind | 说明 |
 |---|---|---|
-| 沙箱 | `sandbox/none`、`sandbox/seatbelt`（darwin）、`sandbox/landlock`（linux） | 填 `cap/sandbox` 的 `WrapExec` / `AuthorizePath` |
-| 受限执行 | `process/local`、`process/sandbox` | 填 `cap/process`；`shell/bash` 改为经它执行 |
-| 受限文件 | `fs/sandbox` | 与 `fs/readonly` 组合 |
-| 网络裁决 | `policy/network-deny` | 把 M1 落在 `web/http-fetch` 里的 SSRF 约束提升为 policy 层裁决，并覆盖 shell 子进程发起的连接 |
 | 生命周期 | `StartStop` + `Root.Stop` 真实实现 | 有序停组件、flush session |
 | 队列持久化 | follow-up inbox 事件 | 常驻模式崩溃后可恢复排队消息 |
+| 网络裁决 | `policy/network-deny` | 把 M1 落在 `web/http-fetch` 里的 SSRF 约束提升为 policy 层裁决（shell 出站仍靠 allowlist，无 OS 沙箱） |
 
-**验收**：`presets/autonomous.yaml` 叠上 sandbox 后，子进程写工作区外路径 / 发起外网连接被 OS 层拦截（不只靠 policy 字符串匹配）；`Ctrl-C` 关停 daemon 时 session 文件完整、队列可恢复。
+**验收**：`Ctrl-C` 关停 daemon 时 session 文件完整、follow-up 队列可恢复；`policy/network-deny` 能拒绝模型可见的网络类 tool 调用。
+
+### 暂缓：OS 级沙箱
+
+landlock / seatbelt、`sandbox/*`、`process/sandbox`、`fs/sandbox` **短期不规划**。原因：实现与维护成本高，当前单机 coding / 可控 preset 下 policy + approval 足够；真要做时再设计 `cap/*` 接口，不在仓库留空壳。
+
+无人值守（`presets/autonomous.yaml` + `approval/auto-allow`）的防线仍是 `policy/shell-allowlist`、`policy/path-denylist` 与各 tool provider 内约束——文档里明确这是**已知限制**，不是"下一 sprint 就填"的占位 kind。
 
 ## M3 — 可运营（观测 + 接入）
 
-**依赖 M2**：没有隔离就对外开端口不合适。
+**依赖 M2 生命周期部分**：没有有序关停就对外开端口不合适；OS 沙箱不是 M3 前置条件。
 
 | 项 | kind | 说明 |
 |---|---|---|

@@ -59,8 +59,8 @@ type WebSearchHit struct {
 }
 
 type WebSearchInput struct {
-	Query      string `json:"query" jsonschema:"required,description=What to search for, as a natural-language query"`
-	MaxResults int    `json:"maxResults,omitempty" jsonschema:"description=Maximum hits to return"`
+	Query      string `json:"query" jsonschema:"What to search for, as a natural-language query"`
+	MaxResults int    `json:"maxResults,omitempty" jsonschema:"Maximum hits to return"`
 }
 
 type WebSearchOutput struct {

@@ -16,15 +16,15 @@ type TodoDeps struct {
 }
 
 type TodoItemInput struct {
-	ID     string `json:"id" jsonschema:"description=Stable id of the task; omit on set to derive it from the position"`
-	Title  string `json:"title" jsonschema:"description=What needs doing"`
-	Status string `json:"status" jsonschema:"description=pending | in_progress | done"`
+	ID     string `json:"id,omitempty" jsonschema:"Stable id of the task; omit on set to derive it from the position"`
+	Title  string `json:"title,omitempty" jsonschema:"What needs doing"`
+	Status string `json:"status,omitempty" jsonschema:"pending | in_progress | done"`
 }
 
 type TodoInput struct {
-	Op    string          `json:"op" jsonschema:"required,description=list to read the current plan; set to replace it; complete to mark ids done"`
-	Items []TodoItemInput `json:"items" jsonschema:"description=Full task list for set; for complete only the ids matter"`
-	IDs   []string        `json:"ids" jsonschema:"description=Task ids to mark done when op is complete"`
+	Op    string          `json:"op" jsonschema:"list to read the current plan; set to replace it; complete to mark ids done"`
+	Items []TodoItemInput `json:"items,omitempty" jsonschema:"Full task list for set; for complete only the ids matter"`
+	IDs   []string        `json:"ids,omitempty" jsonschema:"Task ids to mark done when op is complete"`
 }
 
 type TodoOutput struct {

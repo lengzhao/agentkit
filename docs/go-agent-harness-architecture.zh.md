@@ -35,7 +35,7 @@
 | **Plugin Instance** | `build.Build` 成功构造出的实例，拥有稳定 `id`、`use` 和 Go 值。 |
 | **Root Plugin** | 实例图入口。AgentKit 进程的 root id 通常是 `runner`，返回值实现 `agentkit.Runner`。 |
 | **Deps** | 插件构造函数的第二个参数 struct，用字段类型和 `json` tag 声明依赖。 |
-| **Capability Interface** | Agent 能力的 Go 接口，例如 `filesystem.Service`、`shell.Executor`、`llm.Provider`。 |
+| **Capability Interface** | Agent 能力的 Go 接口，例如 `workspace.Service`、`shell.Executor`、`llm.Provider`。 |
 | **Runtime Component** | Platform、Loop、Agent、Tool、LLM provider、Policy、Hook、Session backend 等被 Runner root 依赖和组合的语义组件。 |
 | **Feature** | `agentkit` 配置层的可复用片段，最终会展开为 `pluginkit` 可识别的实例图；Feature 本身不注册 Go 插件类型。 |
 | **Resolved Graph** | Preset、Feature、override 合并后的 `pluginkit` 实例图，供构建、诊断和测试使用。 |
@@ -62,14 +62,17 @@ func New(cfg Config, deps Deps) (T, error)
 
 ### 3.1 工具插件
 
+文件类工具内聚实现读写逻辑，只依赖 `workspace.Service` 解析路径；`cap/filesystem` 仅提供 grep/find 等共享 DTO，不是可替换 Provider。
+
 ```go
-package readfile
+package fs
 
 import (
     "context"
+    "os"
 
     "github.com/lengzhao/agentkit"
-    "github.com/lengzhao/agentkit/cap/filesystem"
+    "github.com/lengzhao/agentkit/cap/workspace"
     "github.com/lengzhao/pluginkit"
 )
 
@@ -78,39 +81,38 @@ type Config struct {
 }
 
 type Deps struct {
-    FS filesystem.Service `json:"fs"`
+    Workspace workspace.Service `json:"workspace"`
 }
 
-type Input struct {
-    Path string `json:"path" jsonschema:"required,description=File path relative to the workspace"`
-}
-
-type Output struct {
-    Content string `json:"content"`
+type ReadInput struct {
+    Path string `json:"path" jsonschema:"File path relative to the workspace"`
 }
 
 func init() {
-    pluginkit.Register("tool/read-file", New)
+    pluginkit.Register("tool/fs-workspace", New)
 }
 
-func New(cfg Config, deps Deps) (agentkit.Tool, error) {
-    return agentkit.NewTool[Input, Output]("read_file", readFile(deps.FS, cfg)).
-        Description("Read a text file from the workspace.").
-        Build()
-}
-
-func readFile(fs filesystem.Service, cfg Config) func(context.Context, Input) (Output, error) {
-    return func(ctx context.Context, input Input) (Output, error) {
-        content, err := fs.ReadText(ctx, input.Path, cfg.MaxBytes)
+func New(cfg Config, deps Deps) (agentkit.ToolPack, error) {
+    read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
+        abs, err := deps.Workspace.Resolve(ctx, input.Path)
         if err != nil {
-            return Output{}, err
+            return "", err
         }
-        return Output{Content: content}, nil
+        data, err := os.ReadFile(abs)
+        if err != nil {
+            return "", err
+        }
+        // truncate, line numbers, etc. omitted
+        return string(data), nil
+    }).Description("Read a text file from the workspace.").Build()
+    if err != nil {
+        return nil, err
     }
+    return agentkit.ToolPack{read}, nil
 }
 ```
 
-工具插件作者声明自身 kind、配置、依赖和 typed handler。依赖来自 `Deps`，不是从 `context.Context` 或包级变量中查找。JSON Schema 可以由 `agentkit` 根据输入输出类型生成，工具执行顺序由 Tool Runtime 控制。
+工具插件作者声明自身 kind、配置、依赖和 typed handler。依赖来自 `Deps`，不是从 `context.Context` 或包级变量中查找。`Tool.Call` 返回模型可见的纯文本；JSON Schema 由输入类型生成，执行顺序由 Tool Runtime 控制。
 
 ### 3.2 模型提供方
 
@@ -160,21 +162,24 @@ func evaluateShell(ctx context.Context, in agentkit.PolicyInput) agentkit.Decisi
 
 ### 3.4 能力 Provider
 
+只有跨多个插件共享、且需要换实现的能力才注册 Provider。例如工作区根路径解析：
+
 ```go
 func init() {
-    pluginkit.Register("fs/local", New)
+    pluginkit.Register("workspace/default", New)
 }
 
 type Config struct {
-    Root string `json:"root"`
+    GlobalRoot string `json:"globalRoot"`
+    LocalRoot  string `json:"localRoot"`
 }
 
-func New(cfg Config) (filesystem.Service, error) {
-    return filesystem.NewLocal(cfg.Root)
+func New(cfg Config) (workspace.Service, error) {
+    return newDefaultWorkspace(cfg)
 }
 ```
 
-Provider 负责实现某个能力接口。Consumer 依赖能力接口，不依赖具体 Provider；实例图里由 `deps` 决定 Consumer 绑定哪个 Provider。
+Provider 实现 `cap/*` 里的能力接口。Consumer（如 `tool/fs-workspace`、`tool/shell-bash`）通过 `deps` 注入接口，不依赖具体 Provider kind。
 
 ## 4. 总体分层
 
@@ -384,7 +389,9 @@ type StartStop interface {
 - 构造函数注释以 `// NewXxx registers <kind>:` 开头，写一句话说明；`Best practices:` 段落列简短使用建议。
 - Config 字段注释写语义与约束（对应 json 字段名）；字段清单本身由类型定义提供，不另维护一份。
 - `pluginkit.Describe(kind)` 提供配置字段的结构化元信息，供配置工作台等程序消费。
-- CLI 内置 `/help plugin -l` 与 `/help plugin <kind>`；后者通过本地 `go doc` 展示对应构造函数文档（例如 `/help plugin llm/openai-compatible`）。模块发布到 pkg.go.dev 后也可直接浏览在线文档。
+- CLI 内置 `/plugin -l` 与 `/plugin <kind>`（`commands/registry` 贡献）；后者通过本地 `go doc` 展示对应构造函数文档（例如 `/plugin llm/openai-compatible`）。`/help plugin …` 等价于 `/plugin …`。模块发布到 pkg.go.dev 后也可直接浏览在线文档。
+- `agent/coding` 贡献 `/agent` 与 `/agent <name>`，列出 `agent/*` kind 并通过 `go doc` 展示文档。
+- `subagent/inprocess` 贡献 `/subagent` 与 `/subagent <name>`：前者列出当前 workspace 默认目录（`local:agents`、`global:agents`）下的子 Agent 定义；后者展示定义详情，若名称匹配不到定义则回退到 `subagent/*` kind 的 `go doc`。
 
 ### 5.4 Typed Hooks
 
@@ -992,7 +999,7 @@ type Section struct {
 }
 ```
 
-`prompt/assembler/default` 按 `deps.sections` 列表顺序组装，不再使用显式 `order` 字段。
+`prompt/assembler/default` 按 `deps.sections` 列表顺序组装，不再使用显式 `order` 字段。`PromptRequest` 只携带历史 `Messages`；工具 schema 由 Agent 直接传给 LLM，不经过 Prompt 组装器。`PromptAssembler.Assemble` 直接返回 `[]ModelMessage`（section 在组装时合并进 leading system message）。
 
 插件可以作为 `prompt/section/*` 返回 Section 或 SectionProvider。Prompt 组装结果必须能追溯到 Session 日志和当前配置；临时运行态信息如果进入模型，也需要对应事件或可重建来源。
 
@@ -1009,12 +1016,19 @@ type Section struct {
 ```go
 type Tool interface {
     Name() string
-    Schema() ToolSchema
-    Run(context.Context, json.RawMessage) (ToolResult, error)
+    Description() string
+    InputSchema() JSONSchema
+    Call(context.Context, json.RawMessage) (string, error)
+}
+type ToolResult struct {
+    ID      ToolCallID
+    Name    string
+    Content string
+    Audit   map[string]string // runtime-only
 }
 ```
 
-工具作者仍使用泛型输入输出；`agentkit.NewTool` 负责把 typed handler 包装为运行时接口。
+工具作者仍使用泛型输入输出；`agentkit.NewTool` 负责把 typed handler 包装为运行时接口。handler 返回 `string` 时直接作为 tool result；其他 Go 值 JSON 化为文本。`Tool.Call` 返回纯文本；Tool Runtime 补上 `ID`/`Name` 及可选 `Audit` 后写入 Session。Policy `Decision.Audit` 在 deny 时会合并进 `ToolResult.Audit`。
 
 ### 6.8 LLM
 
@@ -1063,7 +1077,7 @@ plugins/tool/
 
 | 插件 kind | 模型工具名 | 说明 |
 |---|---|---|
-| `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.tools` 可限制暴露子集 |
+| `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`read` 分页、`grep`/`find`/`ls` 可调 `limit`，`grep` 支持 `literal`/`context`，`find` 支持 `**`，`grep`/`find` 尊重 `.gitignore`；`edit` 对原文批量匹配；详见 [plugin-catalog.zh.md](plugin-catalog.zh.md) |
 | `tool/fs-memory` | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `bash` | bash 执行，依赖 `workspace` |
 | `tool/web-fetch-http` | `web_fetch` | HTTP 抓取，无需凭据 |
@@ -1075,7 +1089,7 @@ plugins/tool/
 
 `tools/runtime` 的 `deps.tools` 元素类型是 `agentkit.ToolPack`（`[]Tool` 的具名切片）。一个插件实例可返回多个模型工具。
 
-`cap/*` 包仍保留领域接口（如 `cap/filesystem`、`cap/web`），供库内复用与测试；**不再强制每个 tool 都通过 cap provider 注入**。
+`cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`compaction.Service`）；`cap/filesystem` 仅是 grep/find 共享类型与 gitignore 工具，**不是 Provider 边界**。Tool 内聚实现为主，只有 workspace、credentials、session 等运行时共享能力继续作为 deps 注入。
 
 设计规则：
 
@@ -1255,7 +1269,7 @@ func TestReadFileTool(t *testing.T) {
 
 ### Phase 2：安全与组合
 
-- approval、sandbox、credentials、settings。
+- approval、credentials、settings（OS 级沙箱暂缓，见 [roadmap](roadmap.zh.md#暂缓os-级沙箱)）。
 - Feature 合并、override 与完整 Resolved Graph 校验。
 - scoped tools 和 restrictions。
 - hook 诊断与插件依赖图。

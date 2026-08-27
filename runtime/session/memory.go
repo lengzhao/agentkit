@@ -81,12 +81,6 @@ func (s *Memory) DeriveMessages(_ context.Context) ([]agentkit.ModelMessage, err
 }
 
 func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {
-	text := ""
-	for _, part := range result.Content {
-		if part.Type == "text" {
-			text += part.Text
-		}
-	}
 	return agentkit.ModelMessage{
 		Role: "tool",
 		ToolResults: []agentkit.ToolResult{{
@@ -95,7 +89,6 @@ func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {
 			Content: result.Content,
 			Audit:   result.Audit,
 		}},
-		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	}
 }
 

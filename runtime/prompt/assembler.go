@@ -32,7 +32,7 @@ func NewAssembler(_ AssemblerConfig, deps AssemblerDeps) (agentkit.PromptAssembl
 	return &Assembler{sections: sections}, nil
 }
 
-func (a *Assembler) Assemble(ctx context.Context, req agentkit.PromptRequest) (agentkit.Prompt, error) {
+func (a *Assembler) Assemble(ctx context.Context, req agentkit.PromptRequest) ([]agentkit.ModelMessage, error) {
 	var built []agentkit.PromptSection
 	for _, section := range a.sections {
 		if section.Build == nil {
@@ -40,7 +40,7 @@ func (a *Assembler) Assemble(ctx context.Context, req agentkit.PromptRequest) (a
 		}
 		ps, err := section.Build(ctx, req)
 		if err != nil {
-			return agentkit.Prompt{}, err
+			return nil, err
 		}
 		if strings.TrimSpace(ps.Content) == "" {
 			continue
@@ -59,5 +59,5 @@ func (a *Assembler) Assemble(ctx context.Context, req agentkit.PromptRequest) (a
 			Content: []agentkit.ContentPart{{Type: "text", Text: strings.TrimSpace(b.String())}},
 		}}, messages...)
 	}
-	return agentkit.Prompt{Messages: messages, Sections: built}, nil
+	return messages, nil
 }
