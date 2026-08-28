@@ -116,7 +116,9 @@ agentkit/
 ├── runtime/            # Runner、Loop、Agent、Session、Platform、LLM
 ├── plugins/            # 工具、Hook、Policy、Prompt 等插件实现
 ├── cap/                # 能力接口（filesystem、workspace、compaction …）
-├── examples/agents/    # 子 Agent 定义示例
+├── examples/
+│   ├── agents/       # 子 Agent 定义示例
+│   └── skills/       # Agent Skill 示例（插件开发与配置更新）
 └── docs/               # 架构与设计文档（中文）
 ```
 

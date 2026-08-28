@@ -66,7 +66,7 @@ type WebFetchOutput struct {
 // Best practices:
 //   - Needs no credentials, so it works without any API key.
 //   - Leave allowPrivateHosts off to block cloud metadata and internal admin endpoints.
-func NewWebFetchHTTP(cfg WebFetchHTTPConfig) (agentkit.ToolPack, error) {
+func NewWebFetchHTTP(cfg WebFetchHTTPConfig) (agentkit.Tool, error) {
 	timeout := defaultFetchTimeout
 	if cfg.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
@@ -135,7 +135,7 @@ func NewWebFetchHTTP(cfg WebFetchHTTPConfig) (agentkit.ToolPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func (f *httpFetcher) fetch(ctx context.Context, target string, raw bool) (WebFetchOutput, error) {

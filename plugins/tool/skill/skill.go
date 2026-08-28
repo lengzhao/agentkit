@@ -30,7 +30,7 @@ type SkillOutput struct {
 //
 // Best practices:
 //   - Load a skill once per task, then follow its instructions.
-func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.ToolPack, error) {
+func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("tool/skill requires skills dependency")
 	}
@@ -66,5 +66,5 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.ToolPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }

@@ -26,7 +26,7 @@ func TestExecuteRecordsToolObservation(t *testing.T) {
 
 	rec := &telemetry.RecordingExporter{}
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{{echoTool{}}},
+		Tools: []agentkit.Tool{echoTool{}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -46,7 +46,7 @@ const (
 // Best practices:
 //   - op=set replaces the whole list, op=complete closes ids, op=list reads it.
 //   - Pair with tool/finish: an empty pending list alone does not end a run.
-func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.ToolPack, error) {
+func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/todo requires sessionStore dependency")
 	}
@@ -107,7 +107,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.ToolPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func normalizeTodoItems(items []TodoItemInput) ([]session.Todo, error) {

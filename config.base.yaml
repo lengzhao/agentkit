@@ -210,7 +210,6 @@ tools.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.fs-workspace.default
       - tool.shell-bash.default
       - tool.skill.default
       - tool.subagent.default
@@ -218,6 +217,8 @@ tools.default:
       - tool.web-search.default
       - tool.ask-user.default
       - tool.send.default
+    toolPacks:
+      - tool.fs-workspace.default
     dynamicTools:
       - mcp.default
     policies:
@@ -232,10 +233,11 @@ tools.subagent.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.fs-workspace.readonly.default
       - tool.finish.default
       - tool.web-fetch-http.default
       - tool.web-search.default
+    toolPacks:
+      - tool.fs-workspace.readonly.default
     policies:
       - policy.dangerous-shell.default
 

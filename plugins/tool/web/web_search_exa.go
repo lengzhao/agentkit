@@ -116,7 +116,7 @@ type exaResponse struct {
 // Best practices:
 //   - A missing key is reported at call time, not at build time.
 //   - Search returns snippets; pair with tool/web-fetch-http when the model needs the full page.
-func NewWebSearchExa(cfg WebSearchExaConfig, deps WebSearchExaDeps) (agentkit.ToolPack, error) {
+func NewWebSearchExa(cfg WebSearchExaConfig, deps WebSearchExaDeps) (agentkit.Tool, error) {
 	timeout := 30 * time.Second
 	if cfg.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
@@ -164,7 +164,7 @@ func NewWebSearchExa(cfg WebSearchExaConfig, deps WebSearchExaDeps) (agentkit.To
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func (e *exaSearcher) search(ctx context.Context, query string, maxResults int) (WebSearchOutput, error) {

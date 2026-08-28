@@ -25,7 +25,8 @@ type RuntimeConfig struct {
 }
 
 type RuntimeDeps struct {
-	Tools        []agentkit.ToolPack     `json:"tools"`
+	Tools        []agentkit.Tool         `json:"tools,omitempty"`
+	ToolPacks    []agentkit.ToolPack     `json:"toolPacks,omitempty"`
 	DynamicTools []agentkit.ToolProvider `json:"dynamicTools,omitempty"`
 	Policies     []agentkit.Policy       `json:"policies,omitempty"`
 	Approval     agentkit.Approval       `json:"approval,omitempty"`
@@ -53,16 +54,16 @@ type Runtime struct {
 //   - The approval dep is consulted only for ask decisions, so it never sees an allowed or denied call.
 func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, error) {
 	tools := make(map[string]agentkit.Tool)
-	for _, pack := range deps.Tools {
+	for _, tool := range deps.Tools {
+		if err := addTool(tools, tool); err != nil {
+			return nil, err
+		}
+	}
+	for _, pack := range deps.ToolPacks {
 		for _, tool := range pack {
-			if tool == nil {
-				continue
+			if err := addTool(tools, tool); err != nil {
+				return nil, err
 			}
-			name := tool.Name()
-			if _, ok := tools[name]; ok {
-				return nil, fmt.Errorf("duplicate tool name %q", name)
-			}
-			tools[name] = tool
 		}
 	}
 	toolTimeouts := make(map[string]time.Duration, len(cfg.ToolTimeouts))
@@ -87,6 +88,18 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		maxResultBytes:   cfg.MaxResultBytes,
 		toolTimeouts:     toolTimeouts,
 	}, nil
+}
+
+func addTool(tools map[string]agentkit.Tool, tool agentkit.Tool) error {
+	if tool == nil {
+		return nil
+	}
+	name := tool.Name()
+	if _, ok := tools[name]; ok {
+		return fmt.Errorf("duplicate tool name %q", name)
+	}
+	tools[name] = tool
+	return nil
 }
 
 func (r *Runtime) refreshDynamic(ctx context.Context) error {

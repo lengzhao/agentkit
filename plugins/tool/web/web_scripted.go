@@ -18,7 +18,7 @@ type WebSearchScriptedConfig struct {
 }
 
 // NewWebSearchScripted registers tool/web-search-scripted: Canned search results for tests and keyless smoke runs.
-func NewWebSearchScripted(cfg WebSearchScriptedConfig) (agentkit.ToolPack, error) {
+func NewWebSearchScripted(cfg WebSearchScriptedConfig) (agentkit.Tool, error) {
 	maxResults := cfg.MaxResults
 	if maxResults <= 0 {
 		maxResults = defaultExaMaxResults
@@ -48,7 +48,7 @@ func NewWebSearchScripted(cfg WebSearchScriptedConfig) (agentkit.ToolPack, error
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 type WebFetchScriptedConfig struct {
@@ -59,7 +59,7 @@ type WebFetchScriptedConfig struct {
 }
 
 // NewWebFetchScripted registers tool/web-fetch-scripted: Canned page bodies for tests and keyless smoke runs.
-func NewWebFetchScripted(cfg WebFetchScriptedConfig) (agentkit.ToolPack, error) {
+func NewWebFetchScripted(cfg WebFetchScriptedConfig) (agentkit.Tool, error) {
 	tool, err := agentkit.NewTool[WebFetchInput, WebFetchOutput]("web_fetch", func(_ context.Context, input WebFetchInput) (WebFetchOutput, error) {
 		target := strings.TrimSpace(input.URL)
 		if target == "" {
@@ -91,5 +91,5 @@ func NewWebFetchScripted(cfg WebFetchScriptedConfig) (agentkit.ToolPack, error) 
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }

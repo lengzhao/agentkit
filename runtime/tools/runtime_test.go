@@ -25,6 +25,62 @@ func (t stubTool) Call(ctx context.Context, input json.RawMessage) (string, erro
 	return t.fn(ctx, input)
 }
 
+func TestRuntimeDepsAcceptsSingleTools(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{
+			name: "single",
+			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+				return "ok", nil
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "single"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "ok" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+}
+
+func TestRuntimeDepsAcceptsToolPacks(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		ToolPacks: []agentkit.ToolPack{agentkit.Pack(
+			stubTool{
+				name: "first",
+				fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+					return "one", nil
+				},
+			},
+			stubTool{
+				name: "second",
+				fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+					return "two", nil
+				},
+			},
+		)},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "second"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "two" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+}
+
 type stubHooks struct {
 	beforeTool func(context.Context, *agentkit.ToolCall) error
 	afterTool  func(context.Context, *agentkit.ToolResult) error
@@ -50,13 +106,13 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 
 	var seenInput string
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "demo",
 			fn: func(_ context.Context, input json.RawMessage) (string, error) {
 				seenInput = string(input)
 				return "payload", nil
 			},
-		})},
+		}},
 		Hooks: stubHooks{
 			beforeTool: func(_ context.Context, call *agentkit.ToolCall) error {
 				call.Input = json.RawMessage(`{"mutated":true}`)
@@ -92,12 +148,12 @@ func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{MaxResultBytes: 20}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "demo",
 			fn: func(_ context.Context, input json.RawMessage) (string, error) {
 				return "01234567890123456789012345", nil
 			},
-		})},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -125,7 +181,7 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 			"slow": 1,
 		},
 	}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "slow",
 			fn: func(ctx context.Context, input json.RawMessage) (string, error) {
 				select {
@@ -135,7 +191,7 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 					return "", ctx.Err()
 				}
 			},
-		})},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -157,13 +213,13 @@ func TestRuntimeExecuteCopiesPolicyAuditOnDeny(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "demo",
 			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
 				t.Fatal("tool body should not run")
 				return "", nil
 			},
-		})},
+		}},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
 			return agentkit.Decision{
 				Kind:   agentkit.DecisionDeny,
@@ -189,13 +245,13 @@ func TestRuntimeExecuteDeniesBeforeHooks(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "demo",
 			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
 				t.Fatal("tool body should not run")
 				return "", nil
 			},
-		})},
+		}},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
 			return agentkit.Deny("blocked")
 		})},
@@ -226,12 +282,12 @@ func TestRuntimeExecuteUsesPermissionBrokerForAsk(t *testing.T) {
 
 	broker := &stubPermissionBroker{allow: true}
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "demo",
 			fn: func(_ context.Context, input json.RawMessage) (string, error) {
 				return "ok", nil
 			},
-		})},
+		}},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
 			return agentkit.Decision{Kind: agentkit.DecisionAsk, Reason: "confirm demo"}
 		})},
@@ -258,12 +314,12 @@ func TestRuntimeExecuteAutoAllowSkipsBroker(t *testing.T) {
 
 	broker := &stubPermissionBroker{allow: false}
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(stubTool{
+		Tools: []agentkit.Tool{stubTool{
 			name: "demo",
 			fn: func(_ context.Context, input json.RawMessage) (string, error) {
 				return "ok", nil
 			},
-		})},
+		}},
 		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
 			return agentkit.Decision{Kind: agentkit.DecisionAsk, Reason: "confirm demo"}
 		})},
@@ -319,7 +375,7 @@ func TestRuntimeVisibleIncludesDynamicTools(t *testing.T) {
 		},
 	}}}
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools:        []agentkit.ToolPack{agentkit.Pack(stubTool{name: "static"})},
+		Tools:        []agentkit.Tool{stubTool{name: "static"}},
 		DynamicTools: []agentkit.ToolProvider{dynamic},
 	})
 	if err != nil {

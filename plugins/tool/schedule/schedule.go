@@ -58,7 +58,7 @@ const defaultMaxAgentJobs = 32
 // Best practices:
 //   - Ids are assigned by the registry (agent-1, agent-2, ...); read them back with op=list before op=remove.
 //   - Needs a schedule registry that schedule/cron also uses, or nothing will fire the jobs.
-func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.ToolPack, error) {
+func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	if deps.Schedule == nil {
 		return nil, fmt.Errorf("tool/schedule requires schedule dependency")
 	}
@@ -138,7 +138,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.ToolPack, erro
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func countSource(jobs []schedule.Job, source string) int {

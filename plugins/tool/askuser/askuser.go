@@ -33,7 +33,7 @@ type AskUserOutput struct {
 //   - Routes through the inbound platform via permission.Broker; interactive CLI renders permission/request, IM platforms render cards/buttons.
 //   - Headless platforms return answered=false immediately; it is never an error and never blocks the turn.
 //   - Do not mount it on subagents: a child agent runs behind a delegate call, where nobody is watching its stdout.
-func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.ToolPack, error) {
+func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.Tool, error) {
 	tool, err := agentkit.NewTool("ask_user", func(ctx context.Context, input AskUserInput) (AskUserOutput, error) {
 		question := strings.TrimSpace(input.Question)
 		if question == "" {
@@ -66,7 +66,7 @@ func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.ToolPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func mapAskUserOutput(result permission.Result) AskUserOutput {

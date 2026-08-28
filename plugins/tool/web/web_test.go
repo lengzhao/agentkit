@@ -17,11 +17,10 @@ import (
 func TestWebFetchHTTPToolSchema(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebFetchHTTP(web.WebFetchHTTPConfig{MaxBytes: 4096})
+	fetch, err := web.NewWebFetchHTTP(web.WebFetchHTTPConfig{MaxBytes: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetch := agentkit.First(pack)
 	if fetch.Name() != "web_fetch" {
 		t.Fatalf("tool name = %q", fetch.Name())
 	}
@@ -33,7 +32,7 @@ func TestWebFetchHTTPToolSchema(t *testing.T) {
 func TestWebFetchScriptedMapsResult(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebFetchScripted(web.WebFetchScriptedConfig{
+	fetch, err := web.NewWebFetchScripted(web.WebFetchScriptedConfig{
 		Pages: map[string]string{
 			"example.com": "<html><head><title>Doc</title></head><body>body text</body></html>",
 		},
@@ -41,7 +40,6 @@ func TestWebFetchScriptedMapsResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetch := agentkit.First(pack)
 
 	out := testutil.CallTool(t, context.Background(), fetch, `{"url":"https://example.com/start","raw":true}`)
 	var got web.WebFetchOutput
@@ -62,11 +60,10 @@ func TestWebFetchScriptedMapsResult(t *testing.T) {
 func TestWebFetchHTTPReportsPrivateHostWithoutFailingTurn(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebFetchHTTP(web.WebFetchHTTPConfig{})
+	fetch, err := web.NewWebFetchHTTP(web.WebFetchHTTPConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetch := agentkit.First(pack)
 	out := testutil.CallTool(t, context.Background(), fetch, `{"url":"http://127.0.0.1/"}`)
 	if !strings.Contains(out, "non-public address") {
 		t.Errorf("result = %q, want the refusal text", out)
@@ -76,11 +73,10 @@ func TestWebFetchHTTPReportsPrivateHostWithoutFailingTurn(t *testing.T) {
 func TestWebFetchToolRequiresURL(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebFetchScripted(web.WebFetchScriptedConfig{Default: "ok"})
+	fetch, err := web.NewWebFetchScripted(web.WebFetchScriptedConfig{Default: "ok"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetch := agentkit.First(pack)
 	if out := testutil.CallTool(t, context.Background(), fetch, `{"url":"  "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)
 	}
@@ -89,7 +85,7 @@ func TestWebFetchToolRequiresURL(t *testing.T) {
 func TestWebSearchScriptedResultLimit(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebSearchScripted(web.WebSearchScriptedConfig{
+	search, err := web.NewWebSearchScripted(web.WebSearchScriptedConfig{
 		MaxResults: 5,
 		ByQuery: map[string][]web.WebSearchHit{
 			"loop": {{Title: "Loop", URL: "https://example.com/loop", Snippet: "serialized"}},
@@ -98,7 +94,6 @@ func TestWebSearchScriptedResultLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	search := agentkit.First(pack)
 	if search.Name() != "web_search" {
 		t.Fatalf("tool name = %q", search.Name())
 	}
@@ -127,11 +122,10 @@ func TestWebSearchScriptedResultLimit(t *testing.T) {
 func TestWebSearchTavilyRequiresKeyAtCallTime(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebSearchTavily(web.WebSearchTavilyConfig{}, web.WebSearchTavilyDeps{})
+	search, err := web.NewWebSearchTavily(web.WebSearchTavilyConfig{}, web.WebSearchTavilyDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	search := agentkit.First(pack)
 	out := testutil.CallTool(t, context.Background(), search, `{"query":"anything"}`)
 	if !strings.Contains(out, "no API key") {
 		t.Errorf("result = %q", out)
@@ -141,11 +135,10 @@ func TestWebSearchTavilyRequiresKeyAtCallTime(t *testing.T) {
 func TestWebSearchExaRequiresKeyAtCallTime(t *testing.T) {
 	t.Parallel()
 
-	pack, err := web.NewWebSearchExa(web.WebSearchExaConfig{}, web.WebSearchExaDeps{})
+	search, err := web.NewWebSearchExa(web.WebSearchExaConfig{}, web.WebSearchExaDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	search := agentkit.First(pack)
 	out := testutil.CallTool(t, context.Background(), search, `{"query":"anything"}`)
 	if !strings.Contains(out, "no API key") {
 		t.Errorf("result = %q", out)
@@ -159,11 +152,10 @@ func TestAskUserToolAnsweredPath(t *testing.T) {
 		Outcome: permission.OutcomeResolved,
 		Answer:  &permission.QuestionResult{Text: "sqlite", Selected: []int{1}},
 	}}
-	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
+	ask, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ask := agentkit.First(pack)
 	if ask.Name() != "ask_user" {
 		t.Fatalf("tool name = %q", ask.Name())
 	}
@@ -192,15 +184,14 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 	t.Parallel()
 
 	broker := &fakePermissionBroker{result: permission.Result{
-		Outcome: permission.OutcomeNoHuman,
-		Reason:  "this run is unattended",
+		Outcome:  permission.OutcomeNoHuman,
+		Reason:   "this run is unattended",
 		Guidance: "Nobody answered. Do not ask again: pick the most reasonable option yourself, state the assumption you made, and continue.",
 	}}
-	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
+	ask, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ask := agentkit.First(pack)
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, broker)
 	out := testutil.CallTool(t, ctx, ask, `{"question":"which store?"}`)
 	var got askuser.AskUserOutput
@@ -221,11 +212,10 @@ func TestAskUserToolUnansweredCarriesGuidance(t *testing.T) {
 func TestAskUserToolRequiresQuestion(t *testing.T) {
 	t.Parallel()
 
-	pack, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
+	ask, err := askuser.NewAskUser(askuser.AskUserConfig{}, askuser.AskUserDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ask := agentkit.First(pack)
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, &fakePermissionBroker{})
 	if out := testutil.CallTool(t, ctx, ask, `{"question":"   "}`); !strings.Contains(out, "required") {
 		t.Errorf("result = %q", out)

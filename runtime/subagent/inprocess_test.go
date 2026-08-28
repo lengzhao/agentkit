@@ -51,11 +51,10 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishPack, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+	finishTool, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
-	finish := agentkit.First(finishPack)
 	echo, err := agentkit.NewTool("echo", func(_ context.Context, in echoInput) (echoOutput, error) {
 		return echoOutput(in), nil
 	}).Description("echo text back").Build()
@@ -63,7 +62,7 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 		t.Fatal(err)
 	}
 	toolRuntime, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.ToolPack{agentkit.Pack(finish, echo)},
+		Tools: []agentkit.Tool{finishTool, echo},
 	})
 	if err != nil {
 		t.Fatal(err)

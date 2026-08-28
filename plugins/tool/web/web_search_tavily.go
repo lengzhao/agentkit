@@ -87,7 +87,7 @@ type tavilyResponse struct {
 // Best practices:
 //   - A missing key is reported at call time, not at build time.
 //   - Search returns snippets; pair with tool/web-fetch-http when the model needs the full page.
-func NewWebSearchTavily(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) (agentkit.ToolPack, error) {
+func NewWebSearchTavily(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) (agentkit.Tool, error) {
 	t := newTavilySearcher(cfg, deps)
 
 	tool, err := agentkit.NewTool[WebSearchInput, WebSearchOutput]("web_search", func(ctx context.Context, input WebSearchInput) (WebSearchOutput, error) {
@@ -108,7 +108,7 @@ func NewWebSearchTavily(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) (ag
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func newTavilySearcher(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) *tavilySearcher {

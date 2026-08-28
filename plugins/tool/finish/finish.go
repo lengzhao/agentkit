@@ -29,7 +29,7 @@ type FinishOutput struct {
 //
 // Best practices:
 //   - This is the only signal that stops a run early; otherwise it runs to budget.
-func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.ToolPack, error) {
+func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/finish requires sessionStore dependency")
 	}
@@ -65,5 +65,5 @@ func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.ToolPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }

@@ -60,12 +60,13 @@ runner.default:
               tools:
                 use: tools/runtime
                 deps:
-                  tools:
+                  toolPacks:
                     - use: tool/fs-memory
                       config:
                         files:
                           README.md: "# AgentKit\n\nhello"
                         tools: [read]
+                  tools:
                     - use: tool/todo
                       deps:
                         sessionStore: sessionStore.default

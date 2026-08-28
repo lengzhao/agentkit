@@ -30,7 +30,7 @@ type webSearchAuto struct {
 }
 
 // NewWebSearchAuto registers tool/web-search-auto: Tavily when keyed, otherwise DuckDuckGo (tool name: web_search).
-func NewWebSearchAuto(cfg WebSearchAutoConfig, deps WebSearchAutoDeps) (agentkit.ToolPack, error) {
+func NewWebSearchAuto(cfg WebSearchAutoConfig, deps WebSearchAutoDeps) (agentkit.Tool, error) {
 	maxResults := cfg.MaxResults
 	if maxResults <= 0 {
 		maxResults = defaultTavilyMaxResults
@@ -64,7 +64,7 @@ func NewWebSearchAuto(cfg WebSearchAutoConfig, deps WebSearchAutoDeps) (agentkit
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func (a *webSearchAuto) search(ctx context.Context, input WebSearchInput) (WebSearchOutput, error) {

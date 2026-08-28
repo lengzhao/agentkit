@@ -103,11 +103,12 @@ tools.default:
   deps:
     hooks: hooks.default
     tools:
-      - tool.fs-workspace.default
       - tool.shell-bash.default
       - tool.skill.default
       - tool.todo.default
       - tool.finish.default
+    toolPacks:
+      - tool.fs-workspace.default
     dynamicTools:
       - mcp.default
     policies:

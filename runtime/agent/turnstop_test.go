@@ -93,7 +93,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{Tools: []agentkit.ToolPack{readPack}})
+	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{ToolPacks: []agentkit.ToolPack{readPack}})
 	if err != nil {
 		t.Fatal(err)
 	}

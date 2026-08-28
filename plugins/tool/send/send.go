@@ -41,7 +41,7 @@ type SendOutput struct {
 //   - Wire the same platform instance runner uses (platform.default).
 //   - Text and path may be sent together (text first, then file). Path needs the workspace dep.
 //   - Platform/channel routing comes from context. Target sessionId, userId, or neither (current inbox).
-func NewSend(_ SendConfig, deps SendDeps) (agentkit.ToolPack, error) {
+func NewSend(_ SendConfig, deps SendDeps) (agentkit.Tool, error) {
 	if deps.Platform == nil {
 		return nil, fmt.Errorf("tool/send requires platform dependency")
 	}
@@ -82,7 +82,7 @@ func NewSend(_ SendConfig, deps SendDeps) (agentkit.ToolPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 type route struct {

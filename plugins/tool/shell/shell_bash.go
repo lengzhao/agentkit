@@ -45,7 +45,7 @@ type bashExecutor struct {
 // Best practices:
 //   - Keep commands non-interactive; avoid pagers and prompts.
 //   - For unattended runs pair with policy/shell-allowlist in strict mode.
-func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.ToolPack, error) {
+func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("tool/shell-bash requires workspace")
 	}
@@ -65,7 +65,7 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.ToolPack, e
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, error) {

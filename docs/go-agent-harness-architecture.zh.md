@@ -92,7 +92,7 @@ func init() {
     pluginkit.Register("tool/fs-workspace", New)
 }
 
-func New(cfg Config, deps Deps) (agentkit.ToolPack, error) {
+func New(cfg Config, deps Deps) (agentkit.Tool, error) {
     read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
         abs, err := deps.Workspace.Resolve(ctx, input.Path)
         if err != nil {
@@ -108,11 +108,11 @@ func New(cfg Config, deps Deps) (agentkit.ToolPack, error) {
     if err != nil {
         return nil, err
     }
-    return agentkit.ToolPack{read}, nil
+    return read, nil
 }
 ```
 
-工具插件作者声明自身 kind、配置、依赖和 typed handler。依赖来自 `Deps`，不是从 `context.Context` 或包级变量中查找。`Tool.Call` 返回模型可见的纯文本；JSON Schema 由输入类型生成，执行顺序由 Tool Runtime 控制。
+工具插件作者声明自身 kind、配置、依赖和 typed handler。单工具插件返回 `agentkit.Tool`，多工具插件返回 `agentkit.ToolPack`，动态发现工具的插件返回 `agentkit.ToolProvider`。依赖来自 `Deps`，不是从 `context.Context` 或包级变量中查找。`Tool.Call` 返回模型可见的纯文本；JSON Schema 由输入类型生成，执行顺序由 Tool Runtime 控制。
 
 ### 3.2 模型提供方
 
@@ -1088,7 +1088,7 @@ plugins/tool/
 | `tool/subagent` | `delegate` | 子 agent 委派 |
 | `tool/ask-user` | `ask_user` | HIL 提问 |
 
-`tools/runtime` 的 `deps.tools` 元素类型是 `agentkit.ToolPack`（`[]Tool` 的具名切片）。一个插件实例可返回多个模型工具。
+`tools/runtime` 按工具来源分开挂载：`deps.tools` 接收单个 `agentkit.Tool`，`deps.toolPacks` 接收 `agentkit.ToolPack`（一个插件实例暴露多个模型工具），`deps.dynamicTools` 接收运行时动态发现的 `agentkit.ToolProvider`。
 
 `cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`compaction.Service`）；`cap/filesystem` 仅是 grep/find 共享类型与 gitignore 工具，**不是 Provider 边界**。Tool 内聚实现为主，只有 workspace、credentials、session 等运行时共享能力继续作为 deps 注入。
 

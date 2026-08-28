@@ -66,7 +66,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 				"tools": map[string]any{
 					"use": "tools/runtime",
 					"deps": map[string]any{
-						"tools": []any{
+						"toolPacks": []any{
 							map[string]any{
 								"use": "tool/fs-workspace",
 								"config": map[string]any{

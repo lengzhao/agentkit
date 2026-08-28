@@ -37,11 +37,12 @@ runner.default:
               tools:
                 use: tools/runtime
                 deps:
-                  tools:
+                  toolPacks:
                     - use: tool/fs-memory
                       config:
                         files:
                           README.md: "# AgentKit\n\nhello"
+                  tools:
                     - use: tool/shell-bash
                       config:
                         workDir: .

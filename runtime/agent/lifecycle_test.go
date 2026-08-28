@@ -58,7 +58,7 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 				"tools": map[string]any{
 					"use": "tools/runtime",
 					"deps": map[string]any{
-						"tools": []any{
+						"toolPacks": []any{
 							map[string]any{
 								"use": "tool/fs-memory",
 								"config": map[string]any{

@@ -8,8 +8,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
-	"github.com/lengzhao/agentkit/plugins/tool/todo"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
+	"github.com/lengzhao/agentkit/plugins/tool/todo"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -28,16 +28,14 @@ func newRunToolsFixture(t *testing.T) (todoTool, finishTool agentkit.Tool, sess 
 		t.Fatal(err)
 	}
 	store := singleSessionStore{sess: sess}
-	todoPack, err := todo.NewTodo(todo.TodoConfig{}, todo.TodoDeps{SessionStore: store})
+	todoTool, err = todo.NewTodo(todo.TodoConfig{}, todo.TodoDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishPack, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+	finishTool, err = finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishTool = agentkit.First(finishPack)
-	todoTool = agentkit.First(todoPack)
 	ctx = context.WithValue(context.Background(), agentkit.KeySessionID, sess.ID())
 	return todoTool, finishTool, sess, ctx
 }

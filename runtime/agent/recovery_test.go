@@ -74,7 +74,7 @@ func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLM
 	if err != nil {
 		t.Fatal(err)
 	}
-	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{Tools: []agentkit.ToolPack{readPack}})
+	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{ToolPacks: []agentkit.ToolPack{readPack}})
 	if err != nil {
 		t.Fatal(err)
 	}

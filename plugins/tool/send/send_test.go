@@ -28,11 +28,10 @@ func TestSendUsesEmitForCurrentInbox(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	pack, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := agentkit.First(pack)
 
 	var emitted []agentkit.OutboundEvent
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
@@ -59,11 +58,10 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	pack, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := agentkit.First(pack)
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
 	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C001:t:111.0:u:U456"))
@@ -84,11 +82,10 @@ func TestSendUserIDTarget(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	pack, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := agentkit.First(pack)
 
 	inbox := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
@@ -115,11 +112,10 @@ func TestSendFilePath(t *testing.T) {
 
 	platform := &recordingPlatform{}
 	ws := workspace.Static(t.TempDir())
-	pack, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := agentkit.First(pack)
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C1"))
 	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C1"))
@@ -145,11 +141,10 @@ func TestSendTextAndPath(t *testing.T) {
 
 	platform := &recordingPlatform{}
 	ws := workspace.Static(t.TempDir())
-	pack, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := agentkit.First(pack)
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
 	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("cli:default"))

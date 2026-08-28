@@ -45,7 +45,7 @@ type duckduckgoSearcher struct {
 // NewWebSearchDuckDuckGo registers tool/web-search-duckduckgo: Search via DuckDuckGo HTML (tool name: web_search).
 //
 // No API key is required. Results come from html.duckduckgo.com and may be rate-limited by DuckDuckGo.
-func NewWebSearchDuckDuckGo(cfg WebSearchDuckDuckGoConfig) (agentkit.ToolPack, error) {
+func NewWebSearchDuckDuckGo(cfg WebSearchDuckDuckGoConfig) (agentkit.Tool, error) {
 	d := newDuckDuckGoSearcher(cfg)
 
 	tool, err := agentkit.NewTool[WebSearchInput, WebSearchOutput]("web_search", func(ctx context.Context, input WebSearchInput) (WebSearchOutput, error) {
@@ -62,7 +62,7 @@ func NewWebSearchDuckDuckGo(cfg WebSearchDuckDuckGoConfig) (agentkit.ToolPack, e
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.Pack(tool), nil
+	return tool, nil
 }
 
 func newDuckDuckGoSearcher(cfg WebSearchDuckDuckGoConfig) *duckduckgoSearcher {

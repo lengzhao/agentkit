@@ -17,7 +17,7 @@
 | variant 表示实现 | `workspace/tenant` | 可选 |
 | 同一 kind 进程内唯一 | — | 重复 Register panic |
 
-**返回值类型决定运行时角色**。例如 `tool/fs-workspace` 返回 `agentkit.ToolPack`，`tools/runtime` 返回 `agentkit.ToolRuntime`。
+**返回值类型决定运行时角色和挂载槽位**。例如单工具插件返回 `agentkit.Tool`，`tool/fs-workspace` 返回 `agentkit.ToolPack`，`tool/mcp` 返回 `agentkit.ToolProvider`，`tools/runtime` 返回 `agentkit.ToolRuntime`。
 
 ## 2. 插件分类总览
 
@@ -128,7 +128,7 @@ flowchart TB
 
 ### 3.3 Tool 插件（模型可见工具）
 
-Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通过 `tools/runtime` 聚合后暴露给模型。
+Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.Tool`，多工具插件返回 `agentkit.ToolPack`，动态工具插件返回 `agentkit.ToolProvider`。它们分别经 `tools/runtime` 的 `deps.tools`、`deps.toolPacks`、`deps.dynamicTools` 聚合后暴露给模型。
 
 | Kind | 依赖 | 模型工具名 | 职责 |
 |---|---|---|---|
