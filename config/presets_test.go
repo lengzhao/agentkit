@@ -25,6 +25,8 @@ var presetsChainOnly = map[string]string{
 
 func TestPresetsBuild(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
 	presets, err := filepath.Glob(filepath.Join("..", "presets", "*.yaml"))
 	if err != nil {

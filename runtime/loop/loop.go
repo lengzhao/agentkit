@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 type Config struct {
@@ -17,13 +19,15 @@ type Config struct {
 }
 
 type Deps struct {
-	Agents []agentkit.Agent `json:"agents"`
+	Agents    []agentkit.Agent    `json:"agents"`
+	Telemetry telemetry.Exporter `json:"telemetry,omitempty"`
 }
 
 type Default struct {
 	agents          map[agentkit.AgentID]agentkit.Agent
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
+	telemetry       telemetry.Exporter
 	sessionLocks    sync.Map // SessionID -> *sync.Mutex
 	sessionControls sync.Map // SessionID -> *Control
 }
@@ -48,10 +52,15 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 	if len(deps.Agents) == 0 {
 		return nil, fmt.Errorf("loop requires at least one agent")
 	}
+	exp := deps.Telemetry
+	if exp == nil {
+		exp = telemetry.Noop
+	}
 	return &Default{
 		agents:       agents,
 		defaultAgent: defaultID,
 		followUpMode: mode,
+		telemetry:    exp,
 	}, nil
 }
 
@@ -72,12 +81,13 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
 	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
+	ctx = telemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
 		Emit:    req.Emit,
 	}
-	if err := ag.RunTurn(ctx, turnInput); err != nil {
+	if err := l.runTurn(ctx, req, agentID, ag, turnInput); err != nil {
 		return err
 	}
 
@@ -90,7 +100,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 			break
 		}
 		for _, msg := range followUps {
-			if err := ag.RunTurn(ctx, agentkit.TurnInput{
+			if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 				Message: msg,
 				Emit:    req.Emit,
 			}); err != nil {
@@ -103,6 +113,29 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	}
 
 	return nil
+}
+
+func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
+	turnID := uuid.NewString()
+	meta := telemetry.TurnMeta{
+		TurnID:            turnID,
+		SessionID:         string(req.Event.SessionID),
+		DeliverySessionID: string(deliverySessionID(req)),
+		AgentID:           string(agentID),
+		PlatformID:        req.Event.PlatformID,
+		UserID:            req.Event.UserID,
+		Input:             telemetry.SummarizeMessage(input.Message),
+	}
+	ctx, endTurn := telemetry.BeginTurn(ctx, meta)
+	var runErr error
+	defer func() {
+		endTurn(telemetry.TurnEnd{
+			Err: runErr,
+		})
+	}()
+	ctx = context.WithValue(ctx, agentkit.KeyTurnID, turnID)
+	runErr = ag.RunTurn(ctx, input)
+	return runErr
 }
 
 func (l *Default) Steer(ctx context.Context, msg agentkit.ModelMessage) error {

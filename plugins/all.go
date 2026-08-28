@@ -12,6 +12,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/settings"
 	_ "github.com/lengzhao/agentkit/plugins/skill"
+	_ "github.com/lengzhao/agentkit/plugins/telemetry"
 	_ "github.com/lengzhao/agentkit/plugins/tool/askuser"
 	_ "github.com/lengzhao/agentkit/plugins/tool/finish"
 	_ "github.com/lengzhao/agentkit/plugins/tool/fs"

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -152,6 +153,9 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 			return err
 		}
 		if !extended {
+			telemetry.RecordEvent(ctx, "turn.completed", map[string]string{
+				"steps": fmt.Sprint(run.completed),
+			})
 			return nil
 		}
 	}
@@ -402,12 +406,25 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		return stepOutcome{}, err
 	}
 
+	inputSummary := telemetry.SummarizeMessages(messages, 8192, false)
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+		Name:  "llm.generation",
+		Kind:  telemetry.KindGeneration,
+		Model: a.model,
+		Input: inputSummary,
+	})
+	var observationEnd telemetry.ObservationEnd
+	defer func() {
+		endObservation(observationEnd)
+	}()
+
 	stream, err := a.llm.Stream(ctx, agentkit.LLMRequest{
 		Model:    a.model,
 		Messages: messages,
 		Tools:    specs,
 	})
 	if err != nil {
+		observationEnd.Err = err
 		return stepOutcome{}, err
 	}
 	defer stream.Close()
@@ -418,6 +435,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	var usage *agentkit.Usage
 	for {
 		if err := ctx.Err(); err != nil {
+			observationEnd.Err = err
 			return stepOutcome{}, err
 		}
 		ev, err := stream.Recv()
@@ -428,12 +446,14 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 			usage = ev.Usage
 		}
 		if consumeErr := streamOut.consume(ev); consumeErr != nil {
+			observationEnd.Err = consumeErr
 			return stepOutcome{}, consumeErr
 		}
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
+			observationEnd.Err = err
 			return stepOutcome{}, err
 		}
 	}
@@ -441,13 +461,31 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		assistant.Role = "assistant"
 	}
 	if err := streamOut.finalize(assistant); err != nil {
+		observationEnd.Err = err
 		return stepOutcome{}, err
 	}
 
 	if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+		observationEnd.Err = err
 		return stepOutcome{}, err
 	}
 	slog.Info("assistant step", "agent_id", a.id, "session_id", sess.ID(), "tool_calls", len(assistant.ToolCalls))
+
+	var usageOut *telemetry.Usage
+	if usage != nil {
+		total := usage.TotalTokens
+		if total == 0 {
+			total = usage.InputTokens + usage.OutputTokens
+		}
+		usageOut = &telemetry.Usage{
+			InputTokens:  usage.InputTokens,
+			OutputTokens: usage.OutputTokens,
+			TotalTokens:  total,
+		}
+	}
+	observationEnd.Output = telemetry.SummarizeMessage(assistant)
+	observationEnd.Usage = usageOut
+
 	return stepOutcome{message: assistant, usage: usage}, nil
 }
 

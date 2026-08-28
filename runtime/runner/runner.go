@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -32,15 +33,17 @@ type Config struct {
 }
 
 type Deps struct {
-	Platform  agentkit.Platform      `json:"platform"`
-	Loop      agentkit.Loop          `json:"loop"`
-	Schedules []capschedule.Runtime  `json:"schedules,omitempty"`
+	Platform  agentkit.Platform     `json:"platform"`
+	Loop      agentkit.Loop         `json:"loop"`
+	Schedules []capschedule.Runtime `json:"schedules,omitempty"`
+	Telemetry telemetry.Exporter    `json:"telemetry,omitempty"`
 }
 
 type Root struct {
 	platform        agentkit.Platform
 	loop            agentkit.Loop
 	schedules       []capschedule.Runtime
+	telemetry       telemetry.Exporter
 	sessionScope    session.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
@@ -62,6 +65,10 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if cfg.MaxConcurrentTurns < 0 {
 		return nil, fmt.Errorf("runner maxConcurrentTurns must not be negative")
 	}
+	exp := deps.Telemetry
+	if exp == nil {
+		exp = telemetry.Noop
+	}
 	maxConcurrent := cfg.MaxConcurrentTurns
 	if maxConcurrent == 0 {
 		maxConcurrent = defaultMaxConcurrentTurns
@@ -74,6 +81,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 		platform:        deps.Platform,
 		loop:            deps.Loop,
 		schedules:       deps.Schedules,
+		telemetry:       exp,
 		sessionScope:    session.ParseScope(cfg.SessionScope),
 		maxConcurrent:   maxConcurrent,
 		shutdownTimeout: shutdownTimeout,
@@ -191,7 +199,12 @@ func attachCommands(result *build.Result) error {
 	)
 }
 
-func (r *Root) Stop(context.Context) error { return nil }
+func (r *Root) Stop(ctx context.Context) error {
+	if r.telemetry == nil {
+		return nil
+	}
+	return r.telemetry.Shutdown(ctx)
+}
 
 // Loop exposes the turn scheduler so RPC/TUI integrations can steer or queue
 // follow-ups; agentkit.Loop already carries Steer/FollowUp.

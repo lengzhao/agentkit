@@ -218,12 +218,13 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 |---|---|---|
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `cap/tenant` 租户键一租户一个（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录）；`..` 一律不解析 |
-| `credentials/env` | `credentials.Store` | 环境变量 |
+| `credentials/env` | `credentials.Store` | 环境变量；可选 `config.files` 读取 dotenv 文件，进程环境变量优先 |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
-| `telemetry/otel` | `telemetry.Exporter` | OpenTelemetry |
+| `telemetry/langfuse` | `telemetry.Exporter` | Langfuse OTLP/HTTP 导出 |
 | `telemetry/none` | `telemetry.Exporter` | 无遥测 |
+| `telemetry/otel` | `telemetry.Exporter` | 通用 OpenTelemetry（未做） |
 
 ### 3.8 Commands（不经过模型）
 
@@ -385,7 +386,7 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 | 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |
 | Session | `session/sqlite`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)） |
 | Settings | `settings/file` |
-| Telemetry | `telemetry/otel`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)） |
+| Telemetry | `telemetry/none`、`telemetry/langfuse`（已落地）；`telemetry/otel` 未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入) |
 | Commands | `commands/registry` + `CommandProvider` |
 
 ### Phase 3 — 高级编排

@@ -1,0 +1,21 @@
+# L1 preset：启用 Langfuse OTLP 导出。
+#
+#   export LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   export LANGFUSE_SECRET_KEY=sk-lf-...
+#   go run ./cmd/agent -config presets/langfuse.yaml "hello"
+#
+# config.base.yaml 已将 runner.default 与 loop.default 指向 telemetry.default；
+# 本 preset 只替换 telemetry 实例即可。
+
+telemetry.default:
+  use: telemetry/langfuse
+  config:
+    baseUrl: https://cloud.langfuse.com
+    publicKeyRef: env:LANGFUSE_PUBLIC_KEY
+    secretKeyRef: env:LANGFUSE_SECRET_KEY
+    environment: development
+    maxPayloadBytes: 8192
+    redactInputs: true
+    redactOutputs: true
+  deps:
+    credentials: credentials.default

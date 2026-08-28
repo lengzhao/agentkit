@@ -23,6 +23,7 @@ runner.default:
   deps:
     platform: platform.default
     loop: loop.default
+    telemetry: telemetry.default
 
 platform.default:
   use: platform/cli
@@ -40,6 +41,10 @@ loop.default:
   deps:
     agents:
       - agent.coder.default
+    telemetry: telemetry.default
+
+telemetry.default:
+  use: telemetry/none
 
 agent.coder.default:
   use: agent/coding
@@ -100,6 +105,10 @@ subagent.default:
 
 credentials.default:
   use: credentials/env
+  config:
+    # L1 可覆盖为 [".env"]，从当前工作目录读取 dotenv 文件；
+    # context secret 与进程环境变量优先级更高。
+    files: []
 
 llm.default:
   use: llm/openai-compatible

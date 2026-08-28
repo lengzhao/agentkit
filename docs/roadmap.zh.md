@@ -16,7 +16,7 @@
 |---|---|---|
 | §9.1 Spine | Runner / Platform / Loop / Agent / Session / Prompt / Tools / LLM | **全部落地** |
 | §9.2 执行 | Filesystem / Shell / Policy / Approval | **全部落地** |
-| §9.3 上下文与记忆 | Compaction / Skills / AGENTS.md / Credentials / Settings | 落地（Credentials 仅 `env`，无 `file`） |
+| §9.3 上下文与记忆 | Compaction / Skills / AGENTS.md / Credentials / Settings | 落地（Credentials 为 `env`，支持可选 dotenv 文件；无独立 `credentials/file`） |
 | §9.4 协作与编排 | Subagent（串行）/ Commands / Web / User Questions | 落地（Web 见 [M1](#m1--网络能力已落地)） |
 | | **Sandbox** | **暂缓**（见 [roadmap](roadmap.zh.md#暂缓os-级沙箱)） |
 | §9.5 平台与观测 | Session Persistence（jsonl） | 落地（`session/sqlite` 未做） |
@@ -25,7 +25,7 @@
 
 一句话：**spine 与"单机 coding 闭环"已经完整，缺口集中在"把它变成可对外运营的东西"**——M1 之后已经伸得出本机（web 抓取 + 搜索），但仍然看不见（无 telemetry / query）、进不来（只有 CLI / timer / worker / multiplex）。OS 级沙箱（landlock / seatbelt 等）**短期不做**，无人值守场景继续靠 policy 字符串匹配与 tool 内硬约束。
 
-`cap/` 下仍是空壳（`struct{}` 占位）的 3 个：`process`、`sessionquery`、`telemetry`（`cap/web` 已在 M1 填掉）。**不预留 `cap/sandbox`**——真要做隔离时再引入接口，避免占位代码与 catalog 误导。
+`cap/` 下仍是空壳（`struct{}` 占位）的 2 个：`process`、`sessionquery`（`cap/web` 已在 M1 填掉，`cap/telemetry` 已落地）。**不预留 `cap/sandbox`**——真要做隔离时再引入接口，避免占位代码与 catalog 误导。
 
 ### 0.2 接口层真缺口
 
@@ -123,7 +123,7 @@ landlock / seatbelt、`sandbox/*`、`process/sandbox`、`fs/sandbox` **短期不
 | 项 | kind | 说明 |
 |---|---|---|
 | HTTP 接入 | `platform/http`（后续 `platform/rpc`） | 与 `platform/multiplex` 组合，多入口并存 |
-| 观测 | `telemetry/none`、`telemetry/otel` | 填 `cap/telemetry`；`usage` 事件目前只被 `runtime/agent/budget.go` 消费，没人汇总 |
+| 观测 | `telemetry/none`、`telemetry/langfuse`（OTLP） | 填 `cap/telemetry`；`usage` 事件目前只被 `runtime/agent/budget.go` 消费，没人汇总；后续可加 `telemetry/otel` |
 | 成本汇总 | — | 回答"昨晚 cron 花了多少 token / 多少钱" |
 | 检索 | `session/sqlite` + `cap/sessionquery` + `tool/session-query` | 跨 session 检索与 lineage |
 
@@ -143,7 +143,7 @@ landlock / seatbelt、`sandbox/*`、`process/sandbox`、`fs/sandbox` **短期不
 ## 随时可插入的小项
 
 - **`llm/replay`** — 录制真实 session 回放成测试。目前所有端到端验证只能手写 `llm/scripted` 脚本（见 `presets/*-smoke.yaml`），成本低、杠杆高。
-- **`credentials/file`** — 目前只有 `env`。
+- **`credentials/file`** — 目前只有 `env`（已支持可选 dotenv 文件，但还不是通用文件密钥存储）。
 - **`hook/before-tool` / `hook/after-tool` 独立插件** — 接口已在 `plugin_hook.go`，但只注册了 `hook/before-step` 与 `hook/turn-continue`。
 
 ## 怎么维护这份路线图

@@ -3,6 +3,7 @@ package credentials
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
@@ -30,6 +31,47 @@ func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 func TestResolveFallsBackToEnvironment(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
 	store, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-env" {
+		t.Fatalf("value=%q, want from-env", secret.Value)
+	}
+}
+
+func TestResolveFallsBackToEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(Config{Files: []string{path}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-file" {
+		t.Fatalf("value=%q, want from-file", secret.Value)
+	}
+}
+
+func TestResolveEnvironmentOverridesEnvFile(t *testing.T) {
+	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(Config{Files: []string{path}})
 	if err != nil {
 		t.Fatal(err)
 	}

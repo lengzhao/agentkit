@@ -9,6 +9,18 @@ workspace.default:
     local: .agentkit
     scope: local
 
+# 示例：从 .env 读取密钥（进程环境变量仍然优先）
+# credentials.default:
+#   use: credentials/env
+#   config:
+#     files:
+#       - .env
+#
+# .env:
+#   OPENAI_API_KEY=sk-...
+#   LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   LANGFUSE_SECRET_KEY=sk-lf-...
+
 # 示例：覆盖模型（需写完整实例块）
 # 此实例同时供 agent 与 compaction/summary 使用；覆盖 apiKey 一处即可。
 llm.default:

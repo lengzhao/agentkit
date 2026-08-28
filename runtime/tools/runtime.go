@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 type RuntimeConfig struct {
@@ -153,6 +154,27 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
 
+	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+		Name:  "tool." + call.Name,
+		Kind:  telemetry.KindTool,
+		Input: string(call.Input),
+	})
+	var observationEnd telemetry.ObservationEnd
+	defer func() {
+		endObservation(observationEnd)
+	}()
+
+	result, err := r.execute(ctx, call, sessionID, agentID)
+	if err != nil {
+		observationEnd.Err = err
+		return result, err
+	}
+	observationEnd.Output = result.Content
+	return result, nil
+}
+
+func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID agentkit.SessionID, agentID agentkit.AgentID) (agentkit.ToolResult, error) {
 	tool, ok := r.tools[call.Name]
 	if !ok {
 		if err := r.refreshDynamic(ctx); err != nil {
