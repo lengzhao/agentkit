@@ -25,7 +25,7 @@ platform.default:
       - platform.chat-api
       - platform.slack
       - platform.feishu
-      - platform.telegram
+      # - platform.telegram # 实现 platform/telegram 后取消注释
 
 platform.chat-api:
   use: platform/chat-api
@@ -47,8 +47,8 @@ platform.chat-api:
 platform.slack:
   use: platform/slack
   config:
-    botToken: ""
-    appToken: ""
+    botToken: "xoxb-REPLACE_ME"
+    appToken: "xapp-REPLACE_ME"
     # agentId: ""
     # domain: "https://slack.com/api/"
     allowFrom: ""
@@ -61,8 +61,8 @@ platform.slack:
 platform.feishu:
   use: platform/feishu
   config:
-    appId: ""
-    appSecret: ""
+    appId: "cli_REPLACE_ME"
+    appSecret: "REPLACE_ME"
     # agentId: ""
     # domain: "https://open.feishu.cn"
     allowFrom: ""

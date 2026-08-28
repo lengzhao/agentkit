@@ -43,7 +43,3 @@ tool.fs-workspace.default:
     root: ..
   deps:
     workspace: workspace.default
-
-llm.default:
-  config:
-    apiKeyRef: OPENAI_API_KEY

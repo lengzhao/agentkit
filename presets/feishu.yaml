@@ -14,8 +14,8 @@ runner.default:
 platform.default:
   use: platform/feishu
   config:
-    appId: ""
-    appSecret: ""
+    appId: "cli_REPLACE_ME"
+    appSecret: "REPLACE_ME"
     # agentId: "" # 可选：路由到指定 Agent；留空使用 loop.defaultAgent
     # domain: "https://open.feishu.cn" # Lark：https://open.larksuite.com
     allowFrom: ""
@@ -63,7 +63,3 @@ tool.shell-bash.default:
     workDir: ..
   deps:
     workspace: workspace.default
-
-llm.default:
-  config:
-    apiKeyRef: OPENAI_API_KEY
