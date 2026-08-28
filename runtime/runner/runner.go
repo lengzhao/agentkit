@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"runtime/debug"
 	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -32,13 +32,15 @@ type Config struct {
 }
 
 type Deps struct {
-	Platform agentkit.Platform `json:"platform"`
-	Loop     agentkit.Loop     `json:"loop"`
+	Platform  agentkit.Platform      `json:"platform"`
+	Loop      agentkit.Loop          `json:"loop"`
+	Schedules []capschedule.Runtime  `json:"schedules,omitempty"`
 }
 
 type Root struct {
 	platform        agentkit.Platform
 	loop            agentkit.Loop
+	schedules       []capschedule.Runtime
 	sessionScope    session.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
@@ -71,6 +73,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	return &Root{
 		platform:        deps.Platform,
 		loop:            deps.Loop,
+		schedules:       deps.Schedules,
 		sessionScope:    session.ParseScope(cfg.SessionScope),
 		maxConcurrent:   maxConcurrent,
 		shutdownTimeout: shutdownTimeout,
@@ -85,8 +88,10 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	// Let in-flight turns record turn/end before the process goes away.
 	defer sched.wait(r.shutdownTimeout)
 
+	runtimes := attachScheduleRuntimes(ctx, r, sched)
+
 	recvDone := make(chan error, 1)
-	go r.receiveLoop(ctx, sched, recvDone)
+	go r.receiveLoop(ctx, sched, recvDone, len(runtimes) > 0)
 
 	err := <-recvDone
 	if err == nil {
@@ -115,43 +120,20 @@ func deliverySessionID(req agentkit.LoopRequest) agentkit.SessionID {
 
 // receiveLoop reads inbound events without holding concurrency slots. Permission
 // replies are delivered immediately; new turns are queued for the scheduler.
-func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- error) {
+// When keepAlive is true, platform EOF keeps the process serving schedule runtimes.
+func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- error, keepAlive bool) {
 	for {
 		event, err := r.platform.Receive(ctx)
 		if err != nil {
+			if keepAlive && errors.Is(err, io.EOF) {
+				<-ctx.Done()
+				done <- ctx.Err()
+				return
+			}
 			done <- err
 			return
 		}
-		deliveryID, _, scoped := r.scopedEvent(event)
-		if r.loop.TryDeliverPermission(scoped) {
-			continue
-		}
-		if event.Message.Role != "" {
-			r.loop.SupersedePendingForInbound(scoped)
-		}
-		if event.Message.Role == "" {
-			continue
-		}
-		fmt.Fprintln(os.Stderr)
-		emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
-			out.SessionID = deliveryID
-			if out.AgentID == "" {
-				out.AgentID = event.AgentID
-			}
-			if out.PlatformID == "" {
-				out.PlatformID = event.PlatformID
-			}
-			if out.UserID == "" {
-				out.UserID = event.UserID
-			}
-			return r.platform.Send(ctx, out)
-		}
-		sched.submit(ctx, agentkit.LoopRequest{
-			Event:             scoped,
-			DeliverySessionID: deliveryID,
-			Emit:              emit,
-			Capability:        permissionCapability(r.platform, event.PlatformID),
-		})
+		r.handleInbound(ctx, sched, event)
 	}
 }
 
@@ -201,22 +183,12 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 }
 
 func attachCommands(result *build.Result) error {
-	if result == nil {
-		return nil
-	}
-	providers := build.Collect[agentkit.CommandProvider](result)
-	if len(providers) == 0 {
-		return nil
-	}
-	for _, collector := range build.Collect[agentkit.CommandCollector](result) {
-		if collector == nil {
-			continue
-		}
-		if err := collector.SetCommands(providers); err != nil {
-			return err
-		}
-	}
-	return nil
+	return build.WireContributions(
+		result,
+		func(collector agentkit.CommandCollector, providers []agentkit.CommandProvider) error {
+			return collector.SetCommands(providers)
+		},
+	)
 }
 
 func (r *Root) Stop(context.Context) error { return nil }

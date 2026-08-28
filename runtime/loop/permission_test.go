@@ -19,11 +19,11 @@ func interactiveCapability() permission.Capability {
 	}
 }
 
-func turnContext(parent context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID, userID string, ctrl *Control, emit agentkit.OutboundEmit, cap permission.Capability) context.Context {
+func turnContext(parent context.Context, sessionID, deliverySessionID agentkit.SessionID, agentID agentkit.AgentID, platformID, userID string, ctrl *Control, emit agentkit.OutboundEmit, cap permission.Capability) context.Context {
 	if ctrl != nil {
 		ctrl.setTurnCapability(cap)
 	}
-	return withTurnContext(parent, sessionID, agentID, platformID, userID, ctrl, emit)
+	return withTurnContext(parent, sessionID, deliverySessionID, agentID, platformID, userID, ctrl, emit)
 }
 
 type stubAgent struct{}
@@ -47,7 +47,7 @@ func TestAwaitQuestionResolvedAsync(t *testing.T) {
 		}
 		return nil
 	}
-	ctx := turnContext(context.Background(), "feishu:oc_test", "coder", "feishu", "U1", ctrl, emit, interactiveCapability())
+	ctx := turnContext(context.Background(), "feishu:oc_test", "feishu:oc_test", "coder", "feishu", "U1", ctrl, emit, interactiveCapability())
 
 	done := make(chan permission.Result, 1)
 	go func() {
@@ -102,7 +102,7 @@ func TestAwaitNoHuman(t *testing.T) {
 	t.Parallel()
 
 	ctrl := NewControl()
-	ctx := turnContext(context.Background(), "worker:job", "coder", "worker", "", ctrl, nil, permission.Capability{})
+	ctx := turnContext(context.Background(), "worker:job", "worker:job", "coder", "worker", "", ctrl, nil, permission.Capability{})
 
 	result, err := ctrl.Await(ctx, permission.Request{
 		Kind:     permission.KindQuestion,
@@ -121,7 +121,7 @@ func TestAwaitTimeout(t *testing.T) {
 
 	ctrl := NewControl()
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
-	ctx := turnContext(context.Background(), "feishu:oc_test", "coder", "feishu", "", ctrl, emit, permission.Capability{
+	ctx := turnContext(context.Background(), "feishu:oc_test", "feishu:oc_test", "coder", "feishu", "", ctrl, emit, permission.Capability{
 		Interactive:    true,
 		DefaultTimeout: 20 * time.Millisecond,
 	})
@@ -143,7 +143,7 @@ func TestDeliverPermissionReplyScopeAsker(t *testing.T) {
 
 	ctrl := NewControl()
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
-	ctx := turnContext(context.Background(), "slack:C1:U1", "coder", "slack", "U1", ctrl, emit, permission.Capability{
+	ctx := turnContext(context.Background(), "slack:C1:U1", "slack:C1:U1", "coder", "slack", "U1", ctrl, emit, permission.Capability{
 		Interactive: true,
 		AnswerScope: permission.ScopeAsker,
 	})
@@ -185,7 +185,7 @@ func TestSupersedePending(t *testing.T) {
 
 	ctrl := NewControl()
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
-	ctx := turnContext(context.Background(), "feishu:oc_test", "coder", "feishu", "", ctrl, emit, interactiveCapability())
+	ctx := turnContext(context.Background(), "feishu:oc_test", "feishu:oc_test", "coder", "feishu", "", ctrl, emit, interactiveCapability())
 
 	done := make(chan permission.Result, 1)
 	go func() {
@@ -220,7 +220,7 @@ func TestAwaitReentrantPending(t *testing.T) {
 
 	ctrl := NewControl()
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
-	ctx := turnContext(context.Background(), "cli:default", "coder", "cli", "", ctrl, emit, permission.Capability{
+	ctx := turnContext(context.Background(), "cli:default", "cli:default", "coder", "cli", "", ctrl, emit, permission.Capability{
 		Interactive: true,
 	})
 

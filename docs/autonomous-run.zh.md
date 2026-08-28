@@ -172,7 +172,7 @@ $ 崩溃后重新运行
 | 配置 | 形态 | 用途 |
 |---|---|---|
 | `platform/worker` | 跑完 task 列表就 EOF 退出 | 批处理、CI、系统 cron 的执行体 |
-| `platform/worker` + task 带 `cron` | 常驻，按 cron 表达式发起 turn | 日历型定时（[§7.4](#74-日历型定时worker-的-cron-模式)），agent 可自主排期 |
+| `schedule/cron` | 常驻，按 registry 里的 cron 发起 turn | 日历型定时（[§7.4](#74-日历型定时schedulecron)），与 `tool/schedule` 共用 registry |
 | `platform/timer` | 常驻，按固定间隔发起 turn | 简单的"每 N 分钟看一眼" |
 
 它们都**从不读 stdin**。这是它们与 `platform/cli once=true` 的关键区别：在 systemd、cron、容器、CI 里 stdin 是 `/dev/null`，CLI 平台会挂在等输入上。
@@ -209,30 +209,37 @@ platform.default:
 
 `fixed` 复用一个 session，能跨 tick 记事，**但必须配 `compaction/token-limit`**：每天巡检往同一份历史里追加，几天后必然撑爆窗口；即使配了压缩，也只是把无限增长换成无限摘要。所以默认是 fresh。
 
-### 7.4 日历型定时：worker 的 cron 模式
+### 7.4 日历型定时：schedule/cron
 
-`platform/timer` 只有固定间隔，表达不了"工作日早上 9 点"。worker 的 task 带上 `cron` 就变成常驻定时模式：
+`platform/timer` 只有固定间隔，表达不了"工作日早上 9 点"。日历 cron 由 `schedule/cron` 负责：它 watch 共享的 `schedule.Registry`，到期后由 runner submit inbound turn。`platform/worker` 只做启动时的一次性 task，跑完 EOF。
 
 ```yaml
+runner.default:
+  deps:
+    schedules:
+      - schedule.cron
+
 platform.default:
   use: platform/worker
   config:
     tasks:
-      # 无 cron：启动时立刻跑一次，跑完才进入 cron 等待
       - prompt: "启动巡检：看看工作区状态"
-      # 带 cron + prompt：注册成定时 agent 任务
+
+schedule.cron:
+  use: schedule/cron
+  config:
+    jobs:
       - id: weekday-morning
         cron: "0 9 * * 1-5"
         prompt: "工作日早班巡检"
-      # 带 cron + script：直接执行 bash 脚本，不经过 agent
       - id: nightly
         cron: "0 3 * * *"
-        script: scripts/nightly.sh
+        script: scripts/nightly.sh   # 与 prompt 互斥
     pollSeconds: 30
   deps:
-    schedule: schedule.default   # 没有它，带 cron 的 task 是配置错误而不是被静默忽略
-    workspace: workspace.default # script 路径通过 workspace 解析
-    shell: shell.bash.default    # script 任务通过 shell 执行
+    schedule: schedule.default
+    workspace: workspace.default
+    shell: shell.bash.default      # script job 需要
 ```
 
 支持完整 5 段式（分 时 日 月 周）：`*`、`N`、`a-b`、`a,b,c`、`*/n`、`a-b/n`，月份和星期可用 `jan` / `mon` 之类的名字，另有 `@hourly` / `@daily` / `@weekly` / `@monthly` / `@yearly`。星期 0 和 7 都是周日。
@@ -252,7 +259,7 @@ platform.default:
 
 ### 7.5 agent 自主排期：tool/schedule
 
-job 表是一个能力（`cap/schedule`），worker 的 cron 引擎和 `tool/schedule` **共用同一个 registry 实例**。于是 agent 可以给自己安排后续工作：
+job 表是一个能力（`cap/schedule`），`schedule/cron` 和 `tool/schedule` **共用同一个 registry 实例**。于是 agent 可以给自己安排后续工作：
 
 ```
 schedule(op="add", cron="*/30 * * * *", prompt="再看一眼那个部署有没有恢复", note="等 SRE 回复")
@@ -260,7 +267,7 @@ schedule(op="add", cron="*/30 * * * *", prompt="再看一眼那个部署有没�
 
 因此：
 
-- 新加的 job **不用重启就会被拾起**，最迟一个 `pollSeconds` 之后（这也是 worker 轮询而不是直接睡到下一个 boundary 的原因）。
+- 新加的 job **不用重启就会被拾起**，最迟一个 `pollSeconds` 之后（`schedule/cron` 轮询而不是直接睡到下一个 boundary）。
 - job 表落在工作区的 `schedule.json`，**跨重启存活**。写入走临时文件 + rename：进程在写一半被杀，回来不会读到截断的 job 表。
 - `nextRun` 由工具算好返回，agent 不必自己解析 cron。
 

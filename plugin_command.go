@@ -3,8 +3,8 @@ package agentkit
 import "context"
 
 // CommandProvider contributes human-facing commands from a built plugin
-// instance. It is designed to work with pluginkit/build.Collect so commands
-// can live next to the capability that owns their behavior.
+// instance. It is designed to work with pluginkit/build.WireContributions so
+// commands can live next to the capability that owns their behavior.
 type CommandProvider interface {
 	Commands() []Command
 }
@@ -30,7 +30,7 @@ type Commands interface {
 }
 
 // CommandCollector receives CommandProvider contributions after pluginkit build.
-// Runner calls SetCommands on every built commands/registry instance.
+// Runner wires them with build.WireContributions during Run.
 type CommandCollector interface {
 	SetCommands(providers []CommandProvider) error
 }

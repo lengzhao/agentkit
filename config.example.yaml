@@ -53,11 +53,23 @@ prompt.custom.default:
 # 完整能力栈建议链 preset：-config presets/autonomous.yaml,presets/cron.yaml
 # 下面展示如何在 config.yaml 里手写核心片段。
 #
+# runner.default:
+#   deps:
+#     schedules:
+#       - schedule.cron
+#
 # platform.default:
 #   use: platform/worker
 #   config:
 #     tasks:
 #       - prompt: "启动巡检"
+#     sessionMode: fresh
+#     sessionID: cron
+#
+# schedule.cron:
+#   use: schedule/cron
+#   config:
+#     jobs:
 #       - id: weekday-morning
 #         cron: "0 9 * * 1-5"
 #         prompt: "工作日早班巡检"

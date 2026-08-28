@@ -15,15 +15,33 @@
 #   2. 不必为每次触发付进程启动 + 配置装配的开销
 # 需要抗重启就把这个进程交给 systemd（Restart=always）。
 
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+    sessionScope: channel
+  deps:
+    platform: platform.default
+    loop: loop.default
+    schedules:
+      - schedule.cron
+
 platform.default:
   use: platform/worker
   config:
     tasks:
-      # 无 cron 的 task：启动时立刻跑一次，跑完才进入 cron 等待。
-      # prompt 发给 agent；script 直接执行 bash 脚本（二者互斥）。
+      # 启动时立刻跑一次，跑完 worker 退出；日历 job 由 schedule/cron 继续触发。
       - prompt: "启动巡检：看看工作区当前状态，有问题用 todo 记下来处理，没问题直接 finish。"
-      # 带 cron 的 task：注册成定时 job。cron 为 5 段式
-      # （分 时 日 月 周），也支持 @hourly / @daily / @weekly / @monthly / @yearly。
+    sessionMode: fresh
+    sessionID: cron
+    output: text
+    stream: false
+
+schedule.cron:
+  use: schedule/cron
+  config:
+    jobs:
+      # cron 为 5 段式（分 时 日 月 周），也支持 @hourly / @daily / @weekly / @monthly / @yearly。
       - id: weekday-morning
         cron: "0 9 * * 1-5"
         prompt: "工作日早班巡检：跑测试、看有没有未提交改动，汇总后 finish。"
@@ -34,12 +52,8 @@ platform.default:
       - id: nightly
         cron: "0 3 * * *"
         prompt: "夜间巡检：检查依赖与构建是否正常，有问题记 todo 并处理。"
-    # 每个 job 一次独立 session。日常巡检共用一个 session 几天后必然撑爆窗口。
     sessionMode: fresh
     sessionID: cron
-    output: text
-    stream: false
-    # 多久回读一次 job 表。这决定了 agent 通过 tool/schedule 新加的 job 最迟多久被发现。
     pollSeconds: 30
   deps:
     schedule: schedule.default
@@ -54,7 +68,7 @@ schedule.default:
   deps:
     workspace: workspace.default
 
-# 把 tool/schedule 挂给 agent —— 与 worker 的 cron 引擎共用同一个 registry，
+# 把 tool/schedule 挂给 agent —— 与 schedule/cron 共用同一个 registry，
 # 所以 agent 新加的 job 不重启就会被拾起，且跨重启存活。
 tools.default:
   use: tools/runtime

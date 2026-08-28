@@ -39,10 +39,10 @@ type fileState struct {
 	Jobs []schedule.Job `json:"jobs"`
 }
 
-// NewFile registers schedule/file: Durable cron job table, shared by platform/worker and tool/schedule.
+// NewFile registers schedule/file: Durable cron job table, shared by schedule/cron and tool/schedule.
 //
 // Best practices:
-//   - Point the worker and tool/schedule at one instance, or the agent will schedule jobs nothing fires.
+//   - Point schedule/cron and tool/schedule at one instance, or the agent will schedule jobs nothing fires.
 //   - Jobs carry a source: config jobs are reconciled against the preset on every start, agent jobs are left alone.
 //   - Writes go through a temp file and rename, so a process killed mid-write leaves no truncated table.
 func NewFile(cfg FileConfig, deps FileDeps) (schedule.Registry, error) {

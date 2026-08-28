@@ -122,6 +122,32 @@ func parseDelivery(id, fallbackUser string) deliveryParts {
 	return p
 }
 
+// DeliveryWithUser returns a delivery SessionID with the :u: segment set or replaced.
+// Non-routable ids (cli:default, sub:...) are returned unchanged.
+func DeliveryWithUser(delivery agentkit.SessionID, userID string) agentkit.SessionID {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return delivery
+	}
+	parts := parseDelivery(string(delivery), "")
+	if !parts.routable {
+		return delivery
+	}
+	parts.user = userID
+	return parts.deliveryID()
+}
+
+func (p deliveryParts) deliveryID() agentkit.SessionID {
+	id := p.platform + ":" + p.channel
+	if p.thread != "" {
+		id += ":t:" + p.thread
+	}
+	if p.user != "" {
+		id += ":u:" + p.user
+	}
+	return agentkit.SessionID(id)
+}
+
 func (p deliveryParts) effective(scope SessionScope) agentkit.SessionID {
 	base := p.platform + ":" + p.channel
 	switch scope {

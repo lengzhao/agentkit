@@ -17,6 +17,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/fs"
 	_ "github.com/lengzhao/agentkit/plugins/tool/mcp"
 	_ "github.com/lengzhao/agentkit/plugins/tool/schedule"
+	_ "github.com/lengzhao/agentkit/plugins/tool/send"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shell"
 	_ "github.com/lengzhao/agentkit/plugins/tool/skill"
 	_ "github.com/lengzhao/agentkit/plugins/tool/subagent"

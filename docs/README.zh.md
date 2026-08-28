@@ -80,7 +80,7 @@ Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 
 
 Phase 3 网络能力已实现：`tool/web-fetch-http`（HTML → 文本、dial 时拦截私网地址）、`tool/web-search-exa`（缺 key 不阻断构造）、`tool/web-*-scripted` 无网络替身、`tool/ask-user`（Permission 协议 + platform 渲染/回传，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
 
-Phase 3 守护外壳已实现：`platform/worker`（headless 任务，不读 stdin；带 `cron` 时转常驻定时模式）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
+Phase 3 守护外壳已实现：`platform/worker`（headless 一次性任务，不读 stdin）、`schedule/cron`（日历调度 runtime）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 
 新增插件后运行 `go generate ./...` 更新 `plugins/all.go` 的 blank import。
 

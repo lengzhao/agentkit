@@ -68,7 +68,7 @@ sessionStore.default:
   deps:
     workspace: workspace.default
 
-# cron job 表持久化；worker 的 cron 模式与 tool/schedule 共用此 registry。
+# cron job 表持久化；schedule/cron 与 tool/schedule 共用此 registry。
 # 写入走临时文件 + rename，进程写一半被杀不会留下截断的 job 表。
 schedule.default:
   use: schedule/file
@@ -208,6 +208,7 @@ tools.default:
       - tool.web-fetch-http.default
       - tool.web-search-exa.default
       - tool.ask-user.default
+      - tool.send.default
     dynamicTools:
       - mcp.default
     policies:
@@ -303,6 +304,12 @@ tool.web-search-exa.default:
 
 tool.ask-user.default:
   use: tool/ask-user
+
+tool.send.default:
+  use: tool/send
+  deps:
+    platform: platform.default
+    workspace: workspace.default
 
 mcp.default:
   use: tool/mcp

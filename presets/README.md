@@ -20,7 +20,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 | [autonomous-smoke.yaml](autonomous-smoke.yaml) | 自主运行冒烟 | scripted LLM，验证 turn-continue / todo / finish |
 | [worker.yaml](worker.yaml) | headless 一次性 | 不读 stdin，适合 CI / 系统 cron；**需链 autonomous** |
 | [daemon.yaml](daemon.yaml) | 固定间隔守护 | `platform/timer`，每 N 秒巡检；**需链 autonomous** |
-| [cron.yaml](cron.yaml) | cron 守护 | 5 段 cron + `tool/schedule`；task 支持 `prompt` 与 `script` |
+| [cron.yaml](cron.yaml) | cron 守护 | `schedule/cron` + `tool/schedule`；worker 只做启动 task |
 | [subagent.yaml](subagent.yaml) | 子 agent 委派 | 纳入 `examples/agents/` 演示定义 |
 | [subagent-smoke.yaml](subagent-smoke.yaml) | 子 agent 冒烟 | scripted LLM；**需链 subagent** |
 | [web.yaml](web.yaml) | 网络能力 | 搜索 + 抓取 + 向用户提问 |

@@ -93,14 +93,14 @@ flowchart TB
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop，管理 StartStop；`sessionScope` 折叠 delivery SessionID（默认 channel）；`maxConcurrentTurns` 控制跨 session 并发（默认 64，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
+| `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop + `schedule.Runtime`，管理 StartStop；`sessionScope` 折叠 delivery SessionID（默认 channel）；`maxConcurrentTurns` 控制跨 session 并发（默认 64，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
 | `platform/cli` | `agentkit.Platform` + `permission.Capable` | 终端 stdin/stdout；启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话，`/new` 会换新 id 并更新软链；allow/deny 与 ask 经 Permission 协议读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
-| `platform/worker` | `agentkit.Platform` | headless 任务 runner（从不读 stdin，`output` 支持 text / json）。task 带 `cron` 时转为常驻定时模式，需 `deps.schedule`；task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`） | DSH headless |
+| `platform/worker` | `agentkit.Platform` | headless 一次性任务 runner（从不读 stdin，`output` 支持 text / json）。task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`）；日历 cron 用 `schedule/cron` | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
 ### 3.2 Agent Spine
@@ -145,6 +145,7 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
+| `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；L0 `tools.default` 已启用 |
 | `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [mcp.zh.md](mcp.zh.md) |
 
 **`tool/fs-workspace` 模型参数**（插件 `config` 另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
@@ -201,6 +202,7 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | Kind | 返回类型 | 说明 |
 |---|---|---|
 | `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表；临时文件 + rename 写入，agent 排的 job 跨重启存活 |
+| `schedule/cron` | `schedule.Runtime` | 常驻日历调度：轮询 registry、到期后 submit inbound turn；由 runner 启动，与 `tool/schedule` 共用 registry |
 
 #### Compaction & Context
 
@@ -225,7 +227,7 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 
 ### 3.8 Commands（不经过模型）
 
-Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/registry` 汇总命令并支持 `allow` / `deny` 过滤（默认全部启用）；`runner` 在 `Run(ctx, buildResult)` 时通过 `build.Collect[CommandProvider]` 自动收集并调用 `CommandCollector.SetCommands`。Platform 通过 `deps.commands` 依赖 registry 实例。
+Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/registry` 汇总命令并支持 `allow` / `deny` 过滤（默认全部启用）；`runner` 在 `Run(ctx, buildResult)` 时通过 `build.WireContributions` 自动收集并调用 `CommandCollector.SetCommands`。Platform 通过 `deps.commands` 依赖 registry 实例。
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
@@ -276,7 +278,7 @@ plugins/
   policy/            # deny-dangerous-shell
   hook/              # before-step
   credentials/       # env
-  schedule/          # file
+  schedule/          # file、cron
   settings/          # file
   workspace/         # default、tenant（runtime/workspace）
 ```
@@ -377,7 +379,7 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 | Compaction | `compaction/summary`, `compaction/prune-tool-results`, `compaction/token-limit`, `hook/before-step` |
 | 崩溃恢复 | Agent 内置：`ScanIncomplete` / `RepairIncomplete` + `session/recovery` 事件 |
 | 守护外壳 | `platform/worker`, `platform/timer`；runner 并发分发 + per-turn panic 隔离 + 优雅关停；overlay 链式合并 |
-| 日历定时 | `schedule/file` + worker cron 模式 + `tool/schedule`（agent 自主排期） |
+| 日历定时 | `schedule/file` + `schedule/cron` + `tool/schedule`（agent 自主排期） |
 | 自主运行 | `hook/turn-continue`, `tool/todo`, `tool/finish`, `approval/auto-allow`, `policy/shell-allowlist`, `policy/path-denylist` |
 | Skills | `skill/filesystem`, `tool/skill`, `prompt/section/skills` |
 | 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |

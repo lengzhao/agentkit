@@ -71,7 +71,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	control := l.controlFor(sessionID)
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
-	ctx = withTurnContext(ctx, sessionID, agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
+	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
 
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
@@ -144,8 +144,11 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit) context.Context {
+func withTurnContext(ctx context.Context, sessionID, deliverySessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit) context.Context {
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
+	if deliverySessionID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliverySessionID)
+	}
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
 	if platformID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyPlatformID, platformID)
@@ -168,6 +171,13 @@ func permissionCapability(raw any) permission.Capability {
 		return permission.Capability{}
 	}
 	return capab
+}
+
+func deliverySessionID(req agentkit.LoopRequest) agentkit.SessionID {
+	if req.DeliverySessionID != "" {
+		return req.DeliverySessionID
+	}
+	return req.Event.SessionID
 }
 
 func sessionIDFromContext(ctx context.Context) (agentkit.SessionID, error) {

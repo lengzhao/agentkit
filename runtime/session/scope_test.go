@@ -82,3 +82,14 @@ func TestBuildDeliverySessionID(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
+
+func TestDeliveryWithUser(t *testing.T) {
+	t.Parallel()
+
+	delivery := session.BuildDeliverySessionID("slack", "C001", "123.456", "U111")
+	got := session.DeliveryWithUser(delivery, "U222")
+	want := session.BuildDeliverySessionID("slack", "C001", "123.456", "U222")
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}

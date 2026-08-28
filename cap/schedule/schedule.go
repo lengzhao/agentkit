@@ -1,5 +1,5 @@
 // Package schedule defines the calendar-scheduling capability: a durable set of
-// cron jobs that a platform fires and a tool can edit. Splitting it this way is
+// cron jobs that schedule/cron fires and a tool can edit. Splitting it this way is
 // what lets the agent schedule its own follow-up work without knowing who runs
 // it.
 package schedule
@@ -35,7 +35,7 @@ type Job struct {
 }
 
 // Registry is the durable job set. Implementations must be safe for concurrent
-// use: the firing platform and the agent's tool touch it from different
+// use: the firing runtime and the agent's tool touch it from different
 // goroutines.
 type Registry interface {
 	List(ctx context.Context) ([]Job, error)

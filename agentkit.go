@@ -30,6 +30,10 @@ const (
 	// Agent.RunTurn so tools and permission waits can emit outbound events
 	// through the same channel as assistant streaming.
 	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
+	// KeyDeliverySessionID is the inbound delivery SessionID for the current turn
+	// (finest grain). Outbound routing should prefer this over KeySessionID when
+	// both are present.
+	KeyDeliverySessionID contextKey = "agentkit.delivery_session_id"
 )
 
 // SessionID identifies a conversation unit. Platforms emit a delivery SessionID
