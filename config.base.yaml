@@ -348,7 +348,7 @@ mcp.default:
   use: tool/mcp
   config:
     files:
-      - .cursor/mcp.json
+      - local:mcp.json
       - global:mcp.json
   deps:
     workspace: workspace.default
