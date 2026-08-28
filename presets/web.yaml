@@ -4,7 +4,7 @@
 #   go run ./cmd/agent -config presets/web.yaml "查一下 xxx 的官方文档怎么说，给我结论并附来源"
 #
 # 设计约定：
-#   1. tool/web-fetch-http 不需要任何凭据；tool/web-search-tavily 缺 key 不阻断构造，调用时返回可读错误。
+#   1. tool/web-fetch-http 不需要任何凭据；tool/web-search-auto 有 TAVILY_API_KEY 时走 Tavily，否则 fallback DuckDuckGo。
 #   2. 私网地址默认禁止，在 tool/web-fetch-http 的 dial 路径拦截。
 #   3. ask_user 超时单独放宽；headless platform 自动降级为 answered:false。
 
@@ -25,7 +25,7 @@ tools.default:
       - tool.skill.default
       - tool.subagent.default
       - tool.web-fetch-http.default
-      - tool.web-search-tavily.default
+      - tool.web-search.default
       - tool.ask-user.default
     dynamicTools:
       - mcp.default
@@ -43,6 +43,6 @@ tools.subagent.default:
       - tool.fs-workspace.readonly.default
       - tool.finish.default
       - tool.web-fetch-http.default
-      - tool.web-search-tavily.default
+      - tool.web-search.default
     policies:
       - policy.dangerous-shell.default

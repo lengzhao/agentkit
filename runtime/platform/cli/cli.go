@@ -33,7 +33,8 @@ type Deps struct {
 }
 
 type Platform struct {
-	mu sync.Mutex
+	mu    sync.Mutex
+	turnMu sync.Mutex
 
 	initialPrompt string
 	once          bool
@@ -43,6 +44,7 @@ type Platform struct {
 	commands      agentkit.Commands
 	sessionID     agentkit.SessionID
 	pending       *permissionPrompt
+	turnDone      chan struct{}
 }
 
 // New registers platform/cli: Interactive terminal platform with slash commands.
@@ -102,6 +104,11 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	}
 
 	waitingPermission := p.hasPending()
+	if !waitingPermission {
+		if err := p.waitTurnIdle(ctx); err != nil {
+			return agentkit.MessageEvent{}, err
+		}
+	}
 	text, err := p.readInput(waitingPermission)
 	if err != nil {
 		return agentkit.MessageEvent{}, err
@@ -121,6 +128,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	if p.once {
 		p.done = true
 	}
+	p.beginTurnWait()
 	return agentkit.MessageEvent{
 		SessionID:  p.sessionID,
 		PlatformID: platformID,
@@ -239,6 +247,20 @@ func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
 		p.pending = nil
 		p.mu.Unlock()
 		return nil
+	case agentkit.EventTurnStart:
+		p.beginTurnWait()
+		fmt.Fprint(os.Stderr, formatTurnStart())
+		return nil
+	case agentkit.EventTurnEnd:
+		var payload struct {
+			Steps int `json:"steps"`
+		}
+		if err := json.Unmarshal(event.Data, &payload); err != nil {
+			return err
+		}
+		fmt.Fprint(os.Stderr, formatTurnEnd(payload.Steps))
+		p.endTurnWait()
+		return nil
 	case agentkit.EventTurnContinue:
 		var payload struct {
 			Segment int    `json:"segment"`
@@ -251,21 +273,31 @@ func (p *Platform) Send(_ context.Context, event agentkit.OutboundEvent) error {
 		fmt.Fprintf(os.Stderr, "\n[continue #%d after %d step(s): %s]\n",
 			payload.Segment, payload.Steps, payload.Reason)
 		return nil
+	case agentkit.EventSessionRecovery:
+		fmt.Fprintf(os.Stderr, "\n[recovered interrupted turn: %s]\n", string(event.Data))
+		return nil
 	case "error":
 		var payload struct {
 			Error string `json:"error"`
 		}
 		if err := json.Unmarshal(event.Data, &payload); err == nil && payload.Error != "" {
 			fmt.Fprintf(os.Stderr, "error: %s\n", payload.Error)
+			p.endTurnWait()
 			return nil
 		}
 		fallthrough
 	default:
-		if len(event.Data) > 0 {
-			fmt.Println(string(event.Data))
-		}
+		return nil
 	}
 	return nil
+}
+
+func formatTurnStart() string {
+	return "\n[⏳ turn started]\n"
+}
+
+func formatTurnEnd(steps int) string {
+	return fmt.Sprintf("\n[✓ turn done · %d step(s)]\n", steps)
 }
 
 func (p *Platform) printWelcome() {

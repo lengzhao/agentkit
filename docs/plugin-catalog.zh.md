@@ -135,7 +135,9 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力 |
 | `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `workspace` | `bash` | Shell 命令执行 |
-| `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索（L0 默认）；缺 key 不阻断构造 |
+| `tool/web-search-auto` | `credentials?` | `web_search` | L0 默认：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
+| `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索 |
+| `tool/web-search-duckduckgo` | — | `web_search` | DuckDuckGo HTML 抓取，无需 key |
 | `tool/web-search-exa` | `credentials?` | `web_search` | Exa 搜索（可选替代） |
 | `tool/web-fetch-http` | — | `web_fetch` | HTTP 抓取；私网地址在 dial 时拦截 |
 | `tool/web-search-scripted` | — | `web_search` | 预置命中，测试与冒烟 |

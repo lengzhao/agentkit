@@ -11,20 +11,24 @@
 | 插件 kind | 模型工具名 | 凭据 |
 |---|---|---|
 | `tool/web-fetch-http` | `web_fetch` | 不需要 |
+| `tool/web-search-auto` | `web_search` | L0 默认；有 `TAVILY_API_KEY` 走 Tavily，否则 DuckDuckGo |
 | `tool/web-search-tavily` | `web_search` | `TAVILY_API_KEY` / `apiKeyRef` |
+| `tool/web-search-duckduckgo` | `web_search` | 不需要 |
 | `tool/web-search-exa` | `web_search` | `EXA_API_KEY` / `apiKeyRef`（可选替代） |
 | `tool/web-fetch-scripted` | `web_fetch` | 测试替身 |
 | `tool/web-search-scripted` | `web_search` | 测试替身 |
 
-没有 Tavily key 时实例图照常构建；搜索在调用时返回模型可读的错误，抓取不受影响。
+缺 Tavily key 时实例图照常构建；`tool/web-search-auto` 会自动 fallback 到 DuckDuckGo。
 
 ```mermaid
 flowchart LR
   TF["tool/web-fetch-http<br/>web_fetch"] --> HTTP["HTTP 客户端<br/>无需凭据"]
-  TS["tool/web-search-tavily<br/>web_search"] --> TV["Tavily API<br/>需要 key"]
+  TS["tool/web-search-auto<br/>web_search"] --> TV{"TAVILY_API_KEY?"}
+  TV -->|有| Tavily["Tavily API"]
+  TV -->|无或失败| DDG["DuckDuckGo HTML"]
   TA["tool/ask-user<br/>ask_user"] --> Loop["runtime/loop<br/>pending HIL"]
   Loop --> Platform["platform/*"]
-  TV --> CR["credentials/env"]
+  Tavily --> CR["credentials/env"]
 ```
 
 ## 2. 抓取：`tool/web-fetch-http`
@@ -39,21 +43,13 @@ flowchart LR
 
 HTML 走内置扫描器转成文本；非文本响应返回占位说明。私网地址在 **dial 时**按解析后的 IP 拦截，覆盖重定向与 DNS rebinding。
 
-## 3. 搜索：`tool/web-search-tavily`
+## 3. 搜索：`tool/web-search-auto`
 
-L0 默认搜索 provider 是 Tavily（每月 1000 次免费额度，无需信用卡）。
+L0 默认搜索插件。有 `TAVILY_API_KEY` 时优先走 Tavily（每月 1000 次免费额度）；缺 key 或 Tavily 调用失败时自动 fallback 到 DuckDuckGo HTML 抓取（无需 key，但可能被限流）。
 
-key 解析：`config.apiKey` → `config.apiKeyRef`（经 `deps.credentials`）→ `TAVILY_API_KEY`。
+也可单独挂载 `tool/web-search-tavily` 或 `tool/web-search-duckduckgo`。
 
-缺 key 时构造期只 `slog.Warn`，调用时返回：
-
-```
-tool/web-search-tavily has no API key: set TAVILY_API_KEY, or config.apiKeyRef with a credentials dep
-```
-
-请求走 `POST /search`，header 是 `Authorization: Bearer <key>`。默认 `searchDepth: basic`（1 credit/次），`includeAnswer: false` 只返回结果 snippet。
-
-如需切换 Exa，在 L1 把 `tool.web-search-tavily.default` 换成 `tool/web-search-exa` 实例即可。
+Tavily key 解析：`config.tavily.apiKey` → `config.tavily.apiKeyRef`（经 `deps.credentials`）→ `TAVILY_API_KEY`。
 
 ## 4. 提问：`ask_user` 与 Human-in-the-loop
 
@@ -71,12 +67,14 @@ tool.web-fetch-http.default:
     maxBytes: 1048576
     allowPrivateHosts: false
 
-tool.web-search-tavily.default:
-  use: tool/web-search-tavily
+tool.web-search.default:
+  use: tool/web-search-auto
   config:
-    apiKeyRef: env:TAVILY_API_KEY
     maxResults: 5
-    searchDepth: basic
+    tavily:
+      apiKeyRef: env:TAVILY_API_KEY
+      searchDepth: basic
+    duckduckgo: {}
   deps:
     credentials: credentials.default
 
@@ -86,8 +84,8 @@ tools.default:
     tools:
       - tool.fs-workspace.default
       - tool.web-fetch-http.default
-      - tool.web-search-tavily.default
+      - tool.web-search.default
       - tool.ask-user.default
 ```
 
-冒烟时把 `tool/web-search-tavily` 和 `tool/web-fetch-http` 换成 `tool/web-search-scripted` / `tool/web-fetch-scripted` 即可，见 `presets/web-smoke.yaml`。
+冒烟时把 `tool/web-search.default` 和 `tool/web-fetch-http` 换成 `tool/web-search-scripted` / `tool/web-fetch-scripted` 即可，见 `presets/web-smoke.yaml`。

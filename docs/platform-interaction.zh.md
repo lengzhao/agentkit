@@ -298,7 +298,7 @@ type MessageEvent struct {
 删除 `InteractionReplyTo`（不改名为 `PermissionReplyTo`——requestID 已经在 `Reply` 里）。
 
 **判定责任在 Platform**：它 `Send` 时就知道自己渲染了哪个 requestID，回传时理应带上。
-- CLI：`Send(permission/request)` 记下 id → `Receive` 读到的行包成 `Reply{RequestID: id, Text: line}` → `permission/resolved` 时清除。这也顺带回答了「CLI 怎么区分答案行和新 prompt 行」。
+- CLI：`Send(permission/request)` 记下 id → `Receive` 读到的行包成 `Reply{RequestID: id, Text: line}` → `permission/resolved` 时清除。permission 作答不等待 `turn/end`；新的用户 turn 则必须等当前 turn 结束后再出现主 `>` prompt。
 - IM：按钮 callback 自带 id；纯文本回复则看是否 reply 到那条卡片消息。
 
 **`Reply` 为空但存在 pending**（用户改主意、插话）：`SupersedePending` → pending 以 `OutcomeSuperseded` 收尾，消息再按 steer / 新 turn 处理。
@@ -382,7 +382,7 @@ read-ahead 由 session 队列容量界定，不再由 slot 界定。`LoopRequest
 
 | 平台 | Capability | 展示 | 回传 |
 |---|---|---|---|
-| `platform/cli` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | `Send` → stderr | `Receive` 文本行 → 包成 `Reply` |
+| `platform/cli` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | 助手正文 → stdout；进度/诊断（`turn/start`、`turn/end`、`tool:*`、`continue` 等）→ stderr | 主 prompt 等 `turn/end` 后再读；permission 进行中走独立 prompt，不占主 `>` |
 | `platform/feishu`（待建） | `Interactive`, `MultiSelect`, `DefaultTimeout≥10m`, `ScopeAsker` | 卡片 + inline button | 按钮 callback 或 reply-to 卡片 |
 | `platform/headless` | `Interactive=false` | 无 | Broker 直接 `NoHuman` |
 | `platform/multiplex` | **转发 leaf 的 Capability** | 按 `PlatformID` 路由子平台 `Send` | 子平台 `Receive` 原样上送 |

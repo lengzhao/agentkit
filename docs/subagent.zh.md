@@ -89,7 +89,7 @@ tools.subagent.default:      # 只读 + web 搜索/抓取 + finish，没有 dele
       - tool.fs-workspace.readonly.default
       - tool.finish.default
       - tool.web-fetch-http.default
-      - tool.web-search-tavily.default
+      - tool.web-search.default
 ```
 
 这个约束和产品要求同向：兄弟实例里没挂 `tool/subagent`，**"只有主 Agent 能委派"就成了结构性事实**——子 Agent 的工具列表里根本没有 `delegate`，不靠深度计数兜底。（Spawner 内部另有一个 ctx 标记做第二道锁，只在有人把配置接错时才会触发。）

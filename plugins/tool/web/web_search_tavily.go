@@ -88,34 +88,7 @@ type tavilyResponse struct {
 //   - A missing key is reported at call time, not at build time.
 //   - Search returns snippets; pair with tool/web-fetch-http when the model needs the full page.
 func NewWebSearchTavily(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) (agentkit.ToolPack, error) {
-	timeout := 30 * time.Second
-	if cfg.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
-	}
-	maxResults := cfg.MaxResults
-	if maxResults <= 0 {
-		maxResults = defaultTavilyMaxResults
-	}
-	snippetChars := cfg.SnippetChars
-	if snippetChars <= 0 {
-		snippetChars = defaultSnippetChars
-	}
-	baseURL := strings.TrimRight(cfg.BaseURL, "/")
-	if baseURL == "" {
-		baseURL = defaultTavilyBaseURL
-	}
-	t := &tavilySearcher{
-		client:         &http.Client{Timeout: timeout},
-		apiKey:         resolveSearchKey(cfg.APIKey, cfg.APIKeyRef, "TAVILY_API_KEY", deps.Credentials),
-		baseURL:        baseURL,
-		maxResults:     maxResults,
-		searchDepth:    cfg.SearchDepth,
-		topic:          cfg.Topic,
-		includeAnswer:  cfg.IncludeAnswer,
-		snippetChars:   snippetChars,
-		includeDomains: cfg.IncludeDomains,
-		excludeDomains: cfg.ExcludeDomains,
-	}
+	t := newTavilySearcher(cfg, deps)
 
 	tool, err := agentkit.NewTool[WebSearchInput, WebSearchOutput]("web_search", func(ctx context.Context, input WebSearchInput) (WebSearchOutput, error) {
 		query := strings.TrimSpace(input.Query)
@@ -136,6 +109,37 @@ func NewWebSearchTavily(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) (ag
 		return nil, err
 	}
 	return agentkit.Pack(tool), nil
+}
+
+func newTavilySearcher(cfg WebSearchTavilyConfig, deps WebSearchTavilyDeps) *tavilySearcher {
+	timeout := 30 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	maxResults := cfg.MaxResults
+	if maxResults <= 0 {
+		maxResults = defaultTavilyMaxResults
+	}
+	snippetChars := cfg.SnippetChars
+	if snippetChars <= 0 {
+		snippetChars = defaultSnippetChars
+	}
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = defaultTavilyBaseURL
+	}
+	return &tavilySearcher{
+		client:         &http.Client{Timeout: timeout},
+		apiKey:         resolveSearchKey(cfg.APIKey, cfg.APIKeyRef, "TAVILY_API_KEY", deps.Credentials),
+		baseURL:        baseURL,
+		maxResults:     maxResults,
+		searchDepth:    cfg.SearchDepth,
+		topic:          cfg.Topic,
+		includeAnswer:  cfg.IncludeAnswer,
+		snippetChars:   snippetChars,
+		includeDomains: cfg.IncludeDomains,
+		excludeDomains: cfg.ExcludeDomains,
+	}
 }
 
 func (t *tavilySearcher) search(ctx context.Context, query string, maxResults int) (WebSearchOutput, error) {

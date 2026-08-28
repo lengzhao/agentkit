@@ -215,7 +215,7 @@ tools.default:
       - tool.skill.default
       - tool.subagent.default
       - tool.web-fetch-http.default
-      - tool.web-search-tavily.default
+      - tool.web-search.default
       - tool.ask-user.default
       - tool.send.default
     dynamicTools:
@@ -235,7 +235,7 @@ tools.subagent.default:
       - tool.fs-workspace.readonly.default
       - tool.finish.default
       - tool.web-fetch-http.default
-      - tool.web-search-tavily.default
+      - tool.web-search.default
     policies:
       - policy.dangerous-shell.default
 
@@ -300,6 +300,18 @@ tool.web-fetch-http.default:
     maxBytes: 1048576
     maxRedirects: 5
     allowPrivateHosts: false
+
+tool.web-search.default:
+  use: tool/web-search-auto
+  config:
+    maxResults: 5
+    snippetChars: 800
+    tavily:
+      apiKeyRef: env:TAVILY_API_KEY
+      searchDepth: basic
+    duckduckgo: {}
+  deps:
+    credentials: credentials.default
 
 tool.web-search-tavily.default:
   use: tool/web-search-tavily
