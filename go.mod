@@ -5,6 +5,7 @@ go 1.26.1
 require gopkg.in/yaml.v3 v3.0.1
 
 require (
+	github.com/coder/acp-go-sdk v0.13.5
 	github.com/henomis/langfuse-go v0.0.3
 	github.com/lengzhao/pluginkit v0.1.1
 	github.com/sashabaranov/go-openai v1.42.0

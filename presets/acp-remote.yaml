@@ -1,0 +1,64 @@
+# L1 preset：通过 ACP 调用 Cursor CLI（agent acp）。
+#
+# 前置：安装 Cursor CLI 并登录
+#   curl https://cursor.com/install -fsS | bash
+#   agent login          # 或 export CURSOR_API_KEY=...
+#
+# 用法：
+#   go run . -preset presets/acp-remote.yaml
+#
+# 其他 ACP Agent（如 Claude Code）只需改 command / authMethod，见 docs/acp-remote.zh.md。
+
+runner.default:
+  use: runner
+  deps:
+    platform:
+      use: platform/cli
+      config:
+        once: false
+    loop:
+      use: loop/default
+      config:
+        defaultAgent: acp
+      deps:
+        agents:
+          - agent.acp.default
+
+agent.acp.default:
+  use: agent/acp-remote
+  config:
+    id: acp
+    command:
+      - agent
+      - acp
+    authMethod: cursor_login
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+
+session.default:
+  use: session/memory
+  config:
+    id: cli:default
+
+sessionStore.default:
+  use: session/static
+  deps:
+    session: session.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
+
+platform.default:
+  use: platform/cli
+  config:
+    once: false
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+
+commands.default:
+  use: commands/registry
