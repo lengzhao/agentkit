@@ -2,7 +2,7 @@
 
 本文描述 `github.com/lengzhao/agentkit` 的 Go Agent 运行时设计。项目使用 `github.com/lengzhao/pluginkit` 作为插件装配基础设施：`pluginkit` 负责插件类型注册、配置解析和实例图构建；`agentkit` 只在其上提供 Agent 语义、运行时接口和开发者体验。
 
-相关参考：[reference-analysis.zh.md](reference-analysis.zh.md)（DSH / Pi 对比与通用能力提炼）、[plugin-catalog.zh.md](plugin-catalog.zh.md)（Plugin Kind 目录与分阶段范围）。
+相关参考：[plugin-catalog.zh.md](plugin-catalog.zh.md)（Plugin Kind 目录与分阶段范围）、[roadmap.zh.md](roadmap.zh.md)（现状与规划）。
 
 ## 1. 设计目标
 
@@ -422,7 +422,7 @@ func OnTurnStopping(h func(context.Context, *TurnStopping) error) Hook
 | 硬预算优先于 hook | `Budget.Exhausted` 时 `Continue` 被忽略；hook 仍会被调用以便记录/收尾 |
 | 续跑消息必须落盘 | Agent 以 `turn/continue` 事件记录注入内容，derive 再把它回放成 user 消息 |
 
-续跑策略（判断"做完没有"）属于插件，不属于 Agent；Agent 只负责执行与硬预算。详见 [autonomous-run.zh.md](autonomous-run.zh.md)。
+续跑策略（判断"做完没有"）属于插件，不属于 Agent；Agent 只负责执行与硬预算。详见 [guides/autonomous-run.zh.md](guides/autonomous-run.zh.md)。
 
 ### 5.5 工具执行路径
 
@@ -763,7 +763,7 @@ agents:
 
 ### 5.10 子 Agent 委派（subagent）
 
-AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"。已落地的是后者的串行版（`subagent/inprocess` + `tool/subagent` + `prompt/section/subagents`），子 Agent 不是配置里的实例，而是工作目录 `agents/*.md` 里的定义文件——加一个子 Agent = 加一个文件，不改实例图。使用手册见 [subagent.zh.md](subagent.zh.md)。
+AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"。已落地的是后者的串行版（`subagent/inprocess` + `tool/subagent` + `prompt/section/subagents`），子 Agent 不是配置里的实例，而是工作目录 `agents/*.md` 里的定义文件——加一个子 Agent = 加一个文件，不改实例图。使用手册见 [guides/subagent.zh.md](guides/subagent.zh.md)。
 
 **为什么值得做**：委派的收益是**上下文隔离**，不是并发。子 Agent 烧掉的十几轮 grep 输出留在它自己的 Session 里，回到父 Session 的只有一段结论——父 Agent 的 turn 因此不必靠 compaction 去救那些一次性的探索输出。
 
@@ -783,7 +783,7 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 
 ### 5.11 MCP 动态工具
 
-MCP server 使用与 Cursor 等项目相同的 `mcpServers` JSON（默认 `.cursor/mcp.json` + `global:mcp.json`），由 `tool/mcp` 加载并作为动态工具源，经 `tools/runtime` 的 `deps.dynamicTools` 暴露给模型。每次工具发现前重读配置并重连变更的 server；模型看到的是带 prefix 的原生 MCP 工具 schema，而不是泛化 `mcp_call`。使用手册见 [mcp.zh.md](mcp.zh.md)。
+MCP server 使用与 Cursor 等项目相同的 `mcpServers` JSON（默认 `.cursor/mcp.json` + `global:mcp.json`），由 `tool/mcp` 加载并作为动态工具源，经 `tools/runtime` 的 `deps.dynamicTools` 暴露给模型。每次工具发现前重读配置并重连变更的 server；模型看到的是带 prefix 的原生 MCP 工具 schema，而不是泛化 `mcp_call`。使用手册见 [guides/tools.zh.md](guides/tools.zh.md)。
 
 ## 6. Agent Spine
 
@@ -809,7 +809,7 @@ Session backend 必须守住两条不变量，否则依赖 seq 的一切（compa
 | **seq 单调递增** | 重新打开已有 session 后，编号必须从既有最大值之上继续，不能从 1 重新开始 |
 | **派生历史始终可回放** | `DeriveMessages` 不得输出没有对应结果的 tool call —— provider 会直接拒收这种历史。中断留下的 orphan call 由 derive 补一条"被中断"的 stand-in 结果 |
 
-崩溃（SIGKILL / panic / 断电）会留下 `turn/start` 无 `turn/end`、tool call 无结果的日志。Agent 在每个 turn 开始前扫描并修复它，写 `session/recovery` 事件留痕；详见 [autonomous-run.zh.md §6](autonomous-run.zh.md)。
+崩溃（SIGKILL / panic / 断电）会留下 `turn/start` 无 `turn/end`、tool call 无结果的日志。Agent 在每个 turn 开始前扫描并修复它，写 `session/recovery` 事件留痕；详见 [guides/autonomous-run.zh.md §6](guides/autonomous-run.zh.md#6-崩溃恢复)。
 
 #### 6.1.1 多会话路由（IM / Slack）
 
@@ -1131,6 +1131,45 @@ Policy Plane 判定已可见调用以及能力操作：
 - scoped 注册必须绑定生命周期，Agent 结束后自动释放。
 - 若要换一套能力实例，创建另一个 Agent 实例或 Runner root graph，或在构造期注入包装后的接口。
 
+### 8.1 Workspace 路径
+
+`workspace/default` 定义 **global**（默认 `~/.agentkit`）与 **local**（默认 `<cwd>/.agentkit`）两个根，通过 `scope` 选择默认根（L0 默认 `global`）。
+
+需要解析相对路径的插件（`tool/fs-workspace`、`tool/shell-bash`、`session/store`、`skill/filesystem` 等）调用 `workspace.Resolve(ctx, rel)`：
+
+| 写法 | 含义 |
+|---|---|
+| `sessions` | 相对当前 `scope` 默认根 |
+| `global:skills` | `~/.agentkit/skills` |
+| `local:skills` | `<cwd>/.agentkit/skills` |
+| `..` | 项目根（`workspace/default`）；`workspace/tenant` 禁止 `..` |
+| `~/foo` | 绝对路径 |
+
+| 场景 | fs/shell 根 | 说明 |
+|---|---|---|
+| L0 默认 | `work` | `~/.agentkit/work/`，避免误伤 `sessions/` |
+| `presets/coding.yaml` | `..` | 项目根目录读写 |
+| `presets/multi-tenant.yaml` | `work` | 租户根下操作区，禁止 `..` 越权 |
+
+```yaml
+# coding preset 典型绑定
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: ..
+  deps:
+    workspace: workspace.default
+```
+
+Skills 目录叠加示例：`dirs: [local:skills, local:.agentkit/skills, global:skills]`，先命中者优先。
+
+多租户路径语义见 [guides/multi-tenant.zh.md](guides/multi-tenant.zh.md)。
+
 ## 9. 插件发现与开发工作流
 
 Go 无法运行时扫描 `.go` 文件并执行新包的 `init()`，本设计也永远不解释 Go 源码。平台通过 import 生成器提供接近“放目录即启用”的体验。
@@ -1208,6 +1247,23 @@ go run ./cmd/agent --preset coding "inspect this repo"
 | `LLMError` | 鉴权、限流、上下文超限、流中断、provider 响应非法 |
 | `SessionError` | 持久化、读取、重放、事件版本不兼容 |
 
+### 10.1 Langfuse 导出
+
+`telemetry/langfuse` 经 `cap/telemetry` 旁路导出 turn 链路到 Langfuse UI。Session JSONL 仍是权威事实源；导出失败写 `slog.Warn`，不阻断 turn。
+
+| AgentKit | Langfuse | 插入点 |
+|---|---|---|
+| RunTurn | Trace `agent.turn` | `loop.Dispatch` |
+| LLM 调用 | Generation | `agent.runStep` |
+| Tool 执行 | Tool observation | `tools.Execute` |
+| Token 用量 | `usage_details` | `agent.recordUsage` |
+
+```sh
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+go run ./cmd/agent -config presets/langfuse.yaml "hello"
+```
+
 ## 11. 测试策略
 
 平台应内建 testkit，而不是让插件作者手写大量 runtime 装配。测试仍应走 `pluginkit` 注册和构建路径，避免生产与测试两套装配逻辑。
@@ -1249,42 +1305,9 @@ func TestReadFileTool(t *testing.T) {
 | Session golden test | 验证模型可见内容能从日志重建 |
 | Preset smoke test | 用真实配置 `build.Build[agentkit.Runner]` 启动最小 Runner |
 
-## 12. 分阶段落地
+分阶段落地与后续目标见 [roadmap.zh.md](roadmap.zh.md)。
 
-### Phase 1：可用 Runner root
-
-- 引入 `github.com/lengzhao/pluginkit`，所有插件类型使用 `pluginkit.Register`。
-- 定义 `agentkit.Runner` root plugin，使用 `build.Build[agentkit.Runner](ctx, graph, "runner")` 构造。
-- 定义 `Platform` 和 `Loop` 接口，消息入口由 Platform 进入 Runner，循环处理由 Loop 调度 Agent。
-- 工具、LLM provider、Session backend、Policy 都建模为 `pluginkit` 实例。
-- 构造期 `Deps` 注入接口；请求路径没有 `Use(Key)`，也不得使用包级能力单例。
-- 工具路径：可见性 → Policy →（可选审批）→ `OnBeforeTool` → Runtime 超时/取消 → body → `OnAfterTool` → Session。
-- 内存 Session + JSONL persistence。
-- 单 Agent、单 Turn、多 Step。
-- OpenAI 兼容 LLM provider。
-- read/write file、shell 两个工具。
-- 一份可直接解析的 root graph coding 配置；Preset / Feature 可以先作为薄转换层。
-- import generator + `go run` watcher。
-
-验收：`go run ./cmd/agent "列出当前目录并读取 README"` 能通过 `pluginkit/build` 构造 Runner，由 CLI Platform 产生消息事件，Loop 调度 coding Agent，最终产出 Session 日志，并可 replay 出同一模型上下文。未被 root graph 依赖的 hook / policy 不运行；工具命中构造期注入的 FS / shell。
-
-### Phase 2：安全与组合
-
-- approval、credentials、settings（OS 级沙箱暂缓，见 [roadmap](roadmap.zh.md#暂缓os-级沙箱)）。
-- Feature 合并、override 与完整 Resolved Graph 校验。
-- scoped tools 和 restrictions。
-- hook 诊断与插件依赖图。
-- fake LLM replay testkit。
-
-### Phase 3：规模化
-
-- SQLite Session backend 和查询索引。
-- subagent、compaction、background jobs。
-- HTTP / SDK host。
-- 多 provider 选择和策略路由。
-- RPC 或 WASM 插件隔离。
-
-## 13. 关键取舍
+## 12. 关键取舍
 
 | 主题 | 建议 |
 |---|---|
@@ -1299,22 +1322,7 @@ func TestReadFileTool(t *testing.T) {
 | 安全 | 策略在执行路径 enforcement，不能只靠 prompt 或工具隐藏 |
 | 日志 | 使用 `slog`，所有关键日志带稳定对象 ID |
 
-## 14. 接口重整后续（runtime 已同步）
-
-公开接口按 SessionID 中心化重整后，`runtime/*`、插件与测试已对齐：
-
-| 区域 | 状态 |
-|---|---|
-| `runtime/loop` | `Control` 内联于 loop 包；`Dispatch` 写入 `KeySessionControl` |
-| `runtime/agent` | `Deps` 含 `SessionStore`；`RunTurn` 从 `ctx.Value(KeySessionID)` 取 ID 后 `Get` |
-| `runtime/platform/cli` | 启动读 `cli_current.jsonl` 软链定 `SessionID`；`/new` 更新软链；`PlatformID=cli` |
-| `runtime/session/static` | 单会话 `SessionStore` 适配器，供 CLI smoke preset 使用 |
-| `presets/*.yaml` | `sessionStore` 在 `agent.*.deps`；Loop 不再依赖 `session` |
-| 测试 | `TurnInput` 不再传 `Session`；通过 context key + `SessionStore` 断言 |
-
-待办（非本次范围）：暂无。`runtime/session/id.go` 的 Slack 线程段已改为 cc-connect 的 `:t:`，并补上 `SlackSessionIDForScope`（整群 / thread / 按人三种粒度），见 [multi-tenant.zh.md](multi-tenant.zh.md)。
-
-## 15. 总结
+## 13. 总结
 
 Go 版 Agent Harness 的核心不是自研一套插件内核，而是在 `pluginkit` 的最小装配模型上提供低心智负担的 Agent 平台。插件作者只注册 Go 构造函数并返回语义接口；应用组装者通过 root graph 声明 Runner、Platform、Loop、Agent、LLM、Tools、Policy、Session 的组合；运行时维护者把复杂度集中在 Agent Spine、Policy Plane、Session replay 和诊断工具中。
 

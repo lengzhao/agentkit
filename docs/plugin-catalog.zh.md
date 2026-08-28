@@ -2,7 +2,7 @@
 
 本文定义 AgentKit 的 **Plugin Kind** 命名规范、分类体系和分阶段落地范围。Kind 通过 `pluginkit.Register(kind, New)` 注册；配置中使用 `use: <kind>` 引用。
 
-相关文档：[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)、[reference-analysis.zh.md](reference-analysis.zh.md)。
+相关文档：[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)、[roadmap.zh.md](roadmap.zh.md)。
 
 ## 1. 命名规范
 
@@ -96,7 +96,9 @@ flowchart TB
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop + `schedule.Runtime`，管理 StartStop；`sessionScope` 折叠 delivery SessionID（默认 channel）；`maxConcurrentTurns` 控制跨 session 并发（默认 64，同 session 内始终保序），per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
 | `platform/cli` | `agentkit.Platform` + `permission.Capable` | 终端 stdin/stdout；启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话，`/new` 会换新 id 并更新软链；allow/deny 与 ask 经 Permission 协议读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
-| `platform/feishu` | `agentkit.Platform` | 飞书/Lark；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
+| `platform/feishu` | `agentkit.Platform` | 飞书 WebSocket；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
+| `platform/lark` | `agentkit.Platform` | 国际版 Lark（`platform/feishu` 的 domain 预设） | cc-connect `platform/feishu` |
+| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话发现与消息 API | — |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 回写 |
 | `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
@@ -110,7 +112,7 @@ flowchart TB
 | `loop/default` | `agentkit.Loop` | Turn/Step 调度、按 SessionID 串行，并向 ctx 写入 agentkit context key | DSH `agent-loop` / Pi `agentLoop` |
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；从 `ctx.Value(KeySessionID)` 取 ID 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
-| `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等）；见 [acp-remote.zh.md](acp-remote.zh.md) | DSH `dsh-acp`（Client 侧） |
+| `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
@@ -126,6 +128,8 @@ flowchart TB
 | `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API | Pi anthropic-messages |
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
+
+**`agent/acp-remote`**：`command` 启动 ACP 子进程；`authMethod`（如 `cursor_login`）；`autoApprove` 自动批准工具权限。deps：`workspace`（必填）、`sessionStore`（可选）。preset：`presets/acp-remote.yaml`。
 
 ### 3.3 Tool 插件（模型可见工具）
 
@@ -150,7 +154,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 | `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；L0 `tools.default` 已启用 |
-| `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [mcp.zh.md](mcp.zh.md) |
+| `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
 **`tool/fs-workspace` 模型参数**（插件 `config` 另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
 
@@ -174,7 +178,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `approval/auto-deny` | `approval.Service` | 自动拒绝 ask | 测试 / CI |
 | `approval/auto-allow` | `approval.Service` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
 
-> **说明**：交互式终端审批不再使用 `approval/cli` 插件——policy `DecisionAsk` 在无 `approval` 插件时走 platform 可选能力 `permission.Capable` / `CapabilityRouter`（见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
+> **说明**：交互式终端审批走 platform `permission.Capable`（见 [guides/platform-interaction.zh.md](guides/platform-interaction.zh.md)）。
 
 ### 3.5 Hooks（观察与改写，非裁决）
 
@@ -198,7 +202,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md |
 | `skill/badge` | `skill.Registry` | Badge 元数据 |
-| `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [subagent.zh.md](subagent.zh.md) |
+| `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent |
 
 #### Schedule
@@ -361,74 +365,11 @@ graph:
 
 ## 6. 分阶段落地
 
-Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什么以 [roadmap.zh.md](roadmap.zh.md) 为准**——下表已按 2026-08-25 的代码标注状态。
+**接下来做什么以 [roadmap.zh.md](roadmap.zh.md) 为准。** 本节 §3 的 Kind 目录是完整清单；roadmap 标注各能力的落地状态与优先级。
 
-### Phase 1 — 可运行 Runner（MVP）
+未做项速查：`session/sqlite`、`platform/http`、`platform/rpc`、`telemetry/otel`、`policy/network-deny`、`policy/plan-mode`、`loop/harness`、OS 级沙箱。
 
-| 类别 | Kind |
-|---|---|
-| Root | `runner` |
-| Platform | `platform/cli` |
-| Spine | `loop/default`, `agent/coding`, `session/jsonl`, `session/memory` |
-| LLM | `llm/openai-compatible` |
-| Tools | `tool/read-file`, `tool/edit-file`, `tool/write-file`, `tool/shell` |
-| Cap | `fs/local`, `fs/memory`, `shell/bash` |
-| Safety | `policy/deny-dangerous-shell`, Platform Permission（交互式 ask）, `approval/auto-deny` |
-| Prompt | `prompt/assembler/default`, `prompt/section/agents-md` |
-| Infra | `credentials/env` |
-
-### Phase 2 — 长会话与扩展
-
-| 类别 | Kind |
-|---|---|
-| Compaction | `compaction/summary`, `compaction/prune-tool-results`, `compaction/token-limit`, `hook/before-step` |
-| 崩溃恢复 | Agent 内置：`ScanIncomplete` / `RepairIncomplete` + `session/recovery` 事件 |
-| 守护外壳 | `platform/worker`, `platform/timer`；runner 并发分发 + per-turn panic 隔离 + 优雅关停；overlay 链式合并 |
-| 日历定时 | `schedule/file` + `schedule/cron` + `tool/schedule`（agent 自主排期） |
-| 自主运行 | `hook/turn-continue`, `tool/todo`, `tool/finish`, `approval/auto-allow`, `policy/shell-allowlist`, `policy/path-denylist` |
-| Skills | `skill/filesystem`, `tool/skill`, `prompt/section/skills` |
-| 更多 Tools | `tool/grep`, `tool/find`, `tool/list-dir` |
-| Session | `session/sqlite`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)） |
-| Settings | `settings/file` |
-| Telemetry | `telemetry/none`、`telemetry/langfuse`（已落地）；`telemetry/otel` 未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入) |
-| Commands | `commands/registry` + `CommandProvider` |
-
-### Phase 3 — 高级编排
-
-| 类别 | Kind |
-|---|---|
-| Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，L0 默认挂载；并行 fan-out 待做） |
-| MCP | `tool/mcp`（`mcpServers` JSON 动态工具，见 `docs/mcp.zh.md`） |
-| Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user`（HIL 由 Loop + platform 承载 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 [web.zh.md](web.zh.md) 与 [platform-interaction.zh.md](platform-interaction.zh.md)） |
-| Platform | `platform/http`, `platform/rpc`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)；`platform/multiplex` / `timer` / `worker` 已落地） |
-| Multi-Agent | `loop/harness`, AgentSet 配置（未做 → [roadmap M4](roadmap.zh.md#m4--并行与多-agent需求驱动)） |
-| Policy | `policy/path-denylist` 已落地；`policy/plan-mode` 未做；`policy/network-deny` 未做（SSRF 约束现落在 `web/http-fetch` 里 → [roadmap M2](roadmap.zh.md#m2--守护收尾)） |
-
-### Phase 4 — 专项（按需）
-
-Terminal/PTY、LSP、Workflow、Jobs、Web UI、ACP、**OS 级沙箱**（landlock / seatbelt / bwrap，短期不规划，见 [roadmap §暂缓](roadmap.zh.md#暂缓os-级沙箱)）、E2B 远程沙箱等 — 参考 DSH 子系统文档，按产品需求逐个添加 Kind。
-
-## 7. 与参考项目的 Kind 映射
-
-| AgentKit Kind | DSH 包 | Pi 等价 |
-|---|---|---|
-| `runner` | Cordis Loader + bundles | AgentSession 外层 |
-| `loop/default` | `dsh-agent-loop` | `agentLoop` |
-| `agent/coding` | `dsh-agent` + presets | Agent + 内置工具 |
-| `session/jsonl` | `dsh-session-persistence-jsonl` | SessionManager |
-| `tool/read-file` | `dsh-tool-fs` (read) | `read` tool |
-| `tool/shell` | `dsh-tool-bash` | `bash` tool |
-| `fs/local` | `dsh-fs-local` | 默认 Operations |
-| `shell/bash` | `dsh-bash-local` | bash 执行器 |
-| `llm/openai-compatible` | `dsh-llm-*` | pi-ai provider |
-| `policy/deny-dangerous-shell` | permission-presets | extension 示例 |
-| Platform Permission（CLI） | `dsh-approval` | `ctx.ui.confirm` |
-| `compaction/summary` | `dsh-compaction-basic` | `session_before_compact` |
-| `skill/filesystem` | `dsh-skill-filesystem` | skills 目录 |
-| `hook/before-step` | `agent/pre-step` listeners | `context` event |
-| `platform/rpc` | `dsh-sdk-server` | RPC 模式 |
-
-## 8. 新增插件 Checklist
+## 7. 新增插件 Checklist
 
 新增 Plugin Kind 时确认：
 

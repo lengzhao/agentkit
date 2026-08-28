@@ -12,7 +12,7 @@
 # 关键性质：三种 sessionScope（channel / thread / user）都落在同一个租户键上，
 # 所以「历史切多细」与「在哪个目录干活」可以分别决定。
 #
-# 本 preset 只装内核。入站 platform 需自行接入（platform/slack 尚未实现），
+# 本 preset 只装内核。可与 presets/slack.yaml、presets/feishu.yaml 等 overlay 组合；
 # platform 侧只需两件事：用 session.BuildDeliverySessionID 生成 delivery SessionID，
 # 并在 MessageEvent.UserID 填上发言人。sessionScope 由 runner 配置，默认 channel。
 

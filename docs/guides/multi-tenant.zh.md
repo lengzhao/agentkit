@@ -121,7 +121,7 @@ tool.fs-workspace.default:
 
 多租户 preset 进一步把 tool 根限制在 `work/` 子目录：`tool/fs-workspace` 在解析用户路径时还会拒绝 `../` 逃出 `work/`。路径只能落在 local/global 根下的子树里，不能靠 `..` 访问兄弟租户、父目录或 `sessions/`。
 
-要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`，工具在 `work/` 下操作。若必须直接改项目源码树，用 [coding.yaml](../presets/coding.yaml)（单租户 CLI）或自行把 `work/` 换成项目内其他子目录名。
+要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`，工具在 `work/` 下操作。若必须直接改项目源码树，用 [coding.yaml](../../presets/coding.yaml)（单租户 CLI）或自行把 `work/` 换成项目内其他子目录名。
 
 ## 4. 并发
 
@@ -146,7 +146,7 @@ go run ./cmd/agent -config presets/multi-tenant.yaml
 go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 ```
 
-`presets/multi-tenant.yaml` 只装内核。**入站 platform 需自行接入**（`platform/slack` 尚未实现，见 [roadmap.zh.md](roadmap.zh.md) M3）。platform 侧的全部义务就两件：
+`presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就两件：
 
 1. 用 `session.BuildDeliverySessionID` 生成 `MessageEvent.SessionID`（delivery，最细粒度）；
 2. 在 `MessageEvent.UserID` 填上发言人。

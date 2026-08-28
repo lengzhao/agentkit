@@ -242,7 +242,7 @@ func (p *Platform) runForSession(sessionID agentkit.SessionID) *runState {
 	return nil
 }
 
-func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEvent) error {
+func (p *Platform) handleOutbound(_ context.Context, event agentkit.OutboundEvent) error {
 	run := p.runForSession(event.SessionID)
 	if run == nil {
 		return nil

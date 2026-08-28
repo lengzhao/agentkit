@@ -2,7 +2,7 @@
 
 本文描述 AgentKit 的子 Agent：定义文件长什么样、目录怎么查、子 Agent 能用哪些工具、结论怎么回到主 Agent，以及为什么这一版只做串行。
 
-相关文档：[go-agent-harness-architecture.zh.md §5.10](go-agent-harness-architecture.zh.md#510-子-agent-委派subagent)、[plugin-catalog.zh.md](plugin-catalog.zh.md)。
+相关文档：[go-agent-harness-architecture.zh.md §5.10](../go-agent-harness-architecture.zh.md#510-子-agent-委派subagent)、[plugin-catalog.zh.md](../plugin-catalog.zh.md)。
 
 ## 1. 为什么要委派
 
@@ -65,7 +65,7 @@ subagent.default:
     timeoutSeconds: 600
 ```
 
-`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 默认扫描 `local:agents`（`<cwd>/.agentkit/agents`）、`local:../examples/agents`（`<cwd>/examples/agents`，不存在则跳过）与 `global:agents`（`~/.agentkit/agents`）。
+`local:` / `global:` 前缀由 workspace 解析（见 [架构文档 §8.1](../go-agent-harness-architecture.zh.md#81-workspace-路径)）。L0 默认扫描 `local:agents`（`<cwd>/.agentkit/agents`）、`local:../examples/agents`（`<cwd>/examples/agents`，不存在则跳过）与 `global:agents`（`~/.agentkit/agents`）。
 
 定义是**每次委派前重读**的，改完 md 文件不用重启进程。
 

@@ -2,7 +2,6 @@ package chatapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -176,7 +175,7 @@ func (p *Platform) sessionsDirForChannel(ctx context.Context, channelKey, rel st
 	return p.workspace.Resolve(ctx, rel)
 }
 
-func conversationIDFromSessionFile(channelKey, filename, prefix string) (string, bool) {
+func conversationIDFromSessionFile(_, filename, prefix string) (string, bool) {
 	base := strings.TrimSuffix(filename, ".jsonl")
 	if !strings.HasPrefix(base, prefix) {
 		return "", false
@@ -216,7 +215,7 @@ func sessionEventBounds(events []agentkit.SessionEvent) (created, updated time.T
 	created, updated = now, now
 	for _, ev := range events {
 		if !ev.CreatedAt.IsZero() {
-			if created == now || ev.CreatedAt.Before(created) {
+			if time.Time.Equal(created, now) || ev.CreatedAt.Before(created) {
 				created = ev.CreatedAt
 			}
 			if ev.CreatedAt.After(updated) {
@@ -225,20 +224,6 @@ func sessionEventBounds(events []agentkit.SessionEvent) (created, updated time.T
 		}
 	}
 	return created, updated
-}
-
-// sessionFilePathFor tests and diagnostics.
-func sessionFilePathFor(dir, channelKey, conversationID string) string {
-	name := safeSessionFileSegment(engineSessionKey(channelKey, conversationID)) + ".jsonl"
-	return filepath.Join(dir, name)
-}
-
-func conversationPreviewFromSession(ctx context.Context, sess agentkit.Session, conversationID string) string {
-	items, err := historyMessagesFromSession(ctx, conversationID, sess)
-	if err != nil || len(items) == 0 {
-		return ""
-	}
-	return lastMessagePreview(items)
 }
 
 // staticWorkspace is used in tests.
@@ -263,24 +248,6 @@ func (s tenantStaticWorkspace) Resolve(ctx context.Context, rel string) (string,
 	return workspace.ResolveRel(filepath.Join(s.localBase, dir), rel)
 }
 
-func staticWorkspaceRoot(root string) workspace.Service {
-	return staticWorkspace{root: root}
-}
-
 func tenantWorkspaceRoot(localBase string) workspace.Service {
 	return tenantStaticWorkspace{localBase: localBase}
-}
-
-func writeTestSessionFile(dir, channel, convID string, content string) error {
-	path := sessionFilePathFor(dir, channel, convID)
-	return os.WriteFile(path, []byte(content), 0o644)
-}
-
-func mustSessionLine(typ agentkit.EventType, data string) string {
-	ev := agentkit.SessionEvent{
-		Type: typ,
-		Data: json.RawMessage(data),
-	}
-	raw, _ := json.Marshal(ev)
-	return string(raw) + "\n"
 }

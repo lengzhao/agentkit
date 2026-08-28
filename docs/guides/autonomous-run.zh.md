@@ -2,7 +2,7 @@
 
 本文描述 AgentKit 让 Agent **无人干预地连续推进一个任务** 的机制：turn 如何延展、凭什么判断该停、以及无人值守时靠什么守住危险操作。
 
-相关文档：[go-agent-harness-architecture.zh.md §5.4](go-agent-harness-architecture.zh.md#54-typed-hooks)、[plugin-catalog.zh.md](plugin-catalog.zh.md)。
+相关文档：[go-agent-harness-architecture.zh.md §5.4](../go-agent-harness-architecture.zh.md#54-typed-hooks)、[plugin-catalog.zh.md](../plugin-catalog.zh.md)。
 
 ## 1. Turn / Segment 模型
 
@@ -376,6 +376,6 @@ print(collections.Counter(json.loads(l)['Type'] for l in open(f)))
 
 仍缺的长期运行能力：
 
-- **HTTP / RPC 触发**：`platform/http`、`platform/rpc` 仍未实现，外部系统目前只能通过 OS cron + worker 触发
+- **通用 HTTP / RPC 触发**：`platform/http`、`platform/rpc` 仍未实现；可用 `platform/chat-api` 或 OS cron + worker
 - **进程级自动重启**：panic 隔离保住了单个 turn，但进程真的挂掉（OOM、被 kill）仍需外部 supervisor（systemd `Restart=always`）兜底
-- `telemetry/*` 落地、异步审批、verifier 子 agent 二次确认
+- 成本汇总 CLI、异步审批、verifier 子 agent 二次确认

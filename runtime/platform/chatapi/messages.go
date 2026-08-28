@@ -6,13 +6,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
-
-const previewMaxRunes = 200
 
 type historyMessage struct {
 	ID        string
@@ -75,24 +72,6 @@ func historyMessageToAPI(m historyMessage) map[string]any {
 		msg["answer"] = m.Content
 	}
 	return msg
-}
-
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	if utf8.RuneCountInString(s) <= max {
-		return s
-	}
-	runes := []rune(s)
-	return string(runes[:max])
-}
-
-func lastMessagePreview(messages []historyMessage) string {
-	if len(messages) == 0 {
-		return ""
-	}
-	return truncateRunes(messages[len(messages)-1].Content, previewMaxRunes)
 }
 
 func historyUserID(c *conversation, headerUser string) string {

@@ -128,20 +128,16 @@ agentkit/
 
 ```mermaid
 flowchart LR
-  A["reference-analysis<br/>业界共性"] --> B["plugin-catalog<br/>插件边界"]
-  B --> C["go-agent-harness-architecture<br/>实现细节"]
-  C --> D["roadmap<br/>现状与规划"]
+  A["plugin-catalog<br/>插件边界"] --> B["go-agent-harness-architecture<br/>实现细节"]
+  B --> C["roadmap<br/>现状与规划"]
 ```
 
 | 文档 | 说明 |
 |---|---|
 | [go-agent-harness-architecture.zh.md](docs/go-agent-harness-architecture.zh.md) | 完整架构：Runner、Spine、装配模型、生命周期 |
 | [plugin-catalog.zh.md](docs/plugin-catalog.zh.md) | Plugin Kind 目录与分阶段落地 |
-| [autonomous-run.zh.md](docs/autonomous-run.zh.md) | 自主运行：预算、todo/finish、崩溃恢复 |
-| [subagent.zh.md](docs/subagent.zh.md) | 子 Agent 委派 |
-| [mcp.zh.md](docs/mcp.zh.md) | MCP 动态工具接入 |
-| [multi-tenant.zh.md](docs/multi-tenant.zh.md) | 多租户与会话隔离 |
 | [roadmap.zh.md](docs/roadmap.zh.md) | 现状基线与路线图 |
+| [guides/](docs/guides/) | 场景专题：自主运行、多租户、工具、人机交互等 |
 
 ## 开发
 
