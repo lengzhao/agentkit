@@ -46,6 +46,12 @@ type ObservationMeta struct {
 	Kind  ObservationKind
 	Model string
 	Input string
+	// AgentID labels which agent produced this observation.
+	AgentID string
+	// SessionID labels the session that produced this observation.
+	SessionID string
+	// Scope marks a span that should parent nested generations (e.g. subagent.turn).
+	Scope bool
 }
 
 // ObservationEnd closes an observation.

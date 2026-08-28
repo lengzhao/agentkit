@@ -2,12 +2,14 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
 // RecordingExporter captures telemetry calls for tests.
 type RecordingExporter struct {
 	mu           sync.Mutex
+	nextObsID    int
 	Turns        []RecordedTurn
 	Observations []RecordedObservation
 	Events       []RecordedEvent
@@ -21,8 +23,10 @@ type RecordedTurn struct {
 }
 
 type RecordedObservation struct {
-	Meta ObservationMeta
-	End  ObservationEnd
+	ID       string
+	Meta     ObservationMeta
+	End      ObservationEnd
+	ParentID string
 }
 
 type RecordedEvent struct {
@@ -41,10 +45,27 @@ func (r *RecordingExporter) BeginTurn(ctx context.Context, meta TurnMeta) (conte
 }
 
 func (r *RecordingExporter) BeginObservation(ctx context.Context, meta ObservationMeta) (context.Context, func(ObservationEnd)) {
+	parentID := ToolParentFrom(ctx)
+	if meta.Kind == KindGeneration {
+		parentID = ScopeParentFrom(ctx)
+	}
+	r.mu.Lock()
+	r.nextObsID++
+	obsID := fmt.Sprintf("obs-%d", r.nextObsID)
+	r.mu.Unlock()
+	ctx = WithToolParent(ctx, obsID)
+	if meta.Scope {
+		ctx = WithScopeParent(ctx, obsID)
+	}
 	return ctx, func(end ObservationEnd) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		r.Observations = append(r.Observations, RecordedObservation{Meta: meta, End: end})
+		r.Observations = append(r.Observations, RecordedObservation{
+			ID:       obsID,
+			Meta:     meta,
+			End:      end,
+			ParentID: parentID,
+		})
 	}
 }
 

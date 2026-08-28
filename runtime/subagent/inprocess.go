@@ -24,6 +24,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/subagent"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -191,8 +192,8 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	return result, runErr
 }
 
-func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID) (subagent.Result, error) {
-	out := subagent.Result{Agent: def.Name, Session: string(childID)}
+func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID) (out subagent.Result, runErr error) {
+	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	tools, err := newFilteredTools(ctx, s.tools, def.Tools)
 	if err != nil {
@@ -230,9 +231,23 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		defer cancel()
 	}
 
+	childCtx, endSubagentObs := telemetry.BeginObservation(childCtx, telemetry.ObservationMetaFromContext(childCtx, telemetry.ObservationMeta{
+		Name:  "subagent." + def.Name,
+		Kind:  telemetry.KindSpan,
+		Input: task,
+		Scope: true,
+	}))
+	defer func() {
+		end := telemetry.ObservationEnd{Output: out.Summary}
+		if runErr != nil {
+			end.Err = runErr
+		}
+		endSubagentObs(end)
+	}()
+
 	// Emit is nil so the child's token deltas do not interleave with the
 	// parent's output stream; the parent only ever sees the summary.
-	runErr := child.RunTurn(childCtx, agentkit.TurnInput{
+	runErr = child.RunTurn(childCtx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: task}},

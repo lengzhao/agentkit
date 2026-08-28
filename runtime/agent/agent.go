@@ -232,13 +232,17 @@ func (a *Runtime) runSegment(
 
 		assistant := outcome.message
 		toolInterrupted := false
+		toolBaseCtx := outcome.ctx
+		if toolBaseCtx == nil {
+			toolBaseCtx = stepCtx
+		}
 		for _, call := range assistant.ToolCalls {
 			if err := session.AppendToolCall(ctx, sess, a.id, call); err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
-			toolCtx := withToolContext(stepCtx, sess.ID(), a.id)
+			toolCtx := withToolContext(toolBaseCtx, sess.ID(), a.id)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
 				if ctrl.ShouldContinueAfterInterrupt(ctx, stepCtx, err) {
@@ -388,6 +392,8 @@ func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *t
 type stepOutcome struct {
 	message agentkit.ModelMessage
 	usage   *agentkit.Usage
+	// ctx carries telemetry parent ids for tool calls spawned by this step.
+	ctx context.Context
 }
 
 func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit) (stepOutcome, error) {
@@ -407,12 +413,12 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	}
 
 	inputSummary := telemetry.SummarizeMessages(messages, 8192, false)
-	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
 		Name:  "llm.generation",
 		Kind:  telemetry.KindGeneration,
 		Model: a.model,
 		Input: inputSummary,
-	})
+	}))
 	var observationEnd telemetry.ObservationEnd
 	defer func() {
 		endObservation(observationEnd)
@@ -486,7 +492,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	observationEnd.Output = telemetry.SummarizeMessage(assistant)
 	observationEnd.Usage = usageOut
 
-	return stepOutcome{message: assistant, usage: usage}, nil
+	return stepOutcome{message: assistant, usage: usage, ctx: ctx}, nil
 }
 
 func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session) ([]agentkit.ModelMessage, error) {

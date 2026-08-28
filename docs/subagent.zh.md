@@ -27,7 +27,7 @@ flowchart LR
 ---
 name: researcher          # 可省，默认取文件名（researcher.md → researcher）
 description: 只读调研：读代码、搜索、定位实现，返回结论与文件行号，不改任何文件
-tools: [read, grep, find, ls, finish]
+tools: [read, grep, find, ls, web_search, web_fetch, finish]
 model: ""                 # 可省，默认用 Spawner 的 llm dep 的默认模型
 maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxSteps
 ---
@@ -59,12 +59,13 @@ subagent.default:
   config:
     dirs:
       - local:agents      # 项目自带
+      - local:../examples/agents
       - global:agents     # ~/.agentkit/agents，跨项目复用
     maxSteps: 20
     timeoutSeconds: 600
 ```
 
-`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 默认 `local: .agentkit`，即 `local:agents` = `<cwd>/.agentkit/agents`；`presets/subagent.yaml` 额外用 `../examples/agents` 纳入开箱 demo。
+`local:` / `global:` 前缀由 workspace 解析（见 [coding-workspace.zh.md](coding-workspace.zh.md)）。L0 默认扫描 `local:agents`（`<cwd>/.agentkit/agents`）、`local:../examples/agents`（`<cwd>/examples/agents`，不存在则跳过）与 `global:agents`（`~/.agentkit/agents`）。
 
 定义是**每次委派前重读**的，改完 md 文件不用重启进程。
 
@@ -81,15 +82,14 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 pluginkit 在 build 阶段直接判 dependency cycle，所以必须给子 Agent 一份兄弟实例：
 
 ```yaml
-tools.subagent.default:      # 只读 + finish，没有 delegate
+tools.subagent.default:      # 只读 + web 搜索/抓取 + finish，没有 delegate
   use: tools/runtime
   deps:
     tools:
-      - tool.read-file.default
-      - tool.grep.default
-      - tool.find.default
-      - tool.list-dir.default
+      - tool.fs-workspace.readonly.default
       - tool.finish.default
+      - tool.web-fetch-http.default
+      - tool.web-search-tavily.default
 ```
 
 这个约束和产品要求同向：兄弟实例里没挂 `tool/subagent`，**"只有主 Agent 能委派"就成了结构性事实**——子 Agent 的工具列表里根本没有 `delegate`，不靠深度计数兜底。（Spawner 内部另有一个 ctx 标记做第二道锁，只在有人把配置接错时才会触发。）
@@ -126,24 +126,17 @@ tools.subagent.default:      # 只读 + finish，没有 delegate
 
 ## 6. 跑起来
 
-L0 默认已挂载 `tool/subagent`（`delegate`）与 `prompt/section/subagents`。在 `.agentkit/agents/`（或 `global:agents`）放好 `*.md` 定义后即可委派：
+L0 默认已挂载 `tool/subagent`（`delegate`）与 `prompt/section/subagents`，并扫描 `local:agents`、`local:../examples/agents` 与 `global:agents`。在 `.agentkit/agents/` 放好 `*.md` 定义后即可委派；仓库自带的 `examples/agents/` 也会被自动纳入：
 
 ```sh
 go run ./cmd/agent
 > 让 researcher 查清 runtime/loop 是怎么保证同一 session 串行的，然后给我结论
 ```
 
-要用仓库自带的示例子 agent，可叠 `presets/subagent.yaml`（把 `local` 根改为 `.` 并纳入 `examples/agents/`）：
-
-```sh
-go run ./cmd/agent -config presets/subagent.yaml
-> 让 researcher 查清 runtime/loop 是怎么保证同一 session 串行的，然后给我结论
-```
-
 不想花 API Key 就先看一遍事件流：
 
 ```sh
-go run ./cmd/agent -config presets/subagent.yaml,presets/subagent-smoke.yaml "调研一下"
+go run ./cmd/agent -config presets/subagent-smoke.yaml "调研一下"
 ```
 
 scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步走完，跑完可以对着 session 文件核对：父 session 里是 `subagent/start` + `subagent/end` + 一条 delegate 的 `tool/result`，子 session 是独立文件、装着它自己那两步。

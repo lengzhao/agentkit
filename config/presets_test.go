@@ -15,12 +15,11 @@ import (
 
 // presetsChainOnly lists overlays that extend another preset and cannot build on L0 alone.
 var presetsChainOnly = map[string]string{
-	"worker.yaml":         "requires autonomous capability stack",
-	"daemon.yaml":         "requires autonomous capability stack",
-	"cron.yaml":           "requires autonomous capability stack",
-	"subagent-smoke.yaml": "requires subagent capability stack",
-	"web-smoke.yaml":      "requires web capability stack",
-	"p1-context.yaml":     "capability fragment, not a full overlay",
+	"worker.yaml":     "requires autonomous capability stack",
+	"daemon.yaml":     "requires autonomous capability stack",
+	"cron.yaml":       "requires autonomous capability stack",
+	"web-smoke.yaml":  "requires web capability stack",
+	"p1-context.yaml": "capability fragment, not a full overlay",
 }
 
 func TestPresetsBuild(t *testing.T) {
@@ -73,7 +72,7 @@ func TestPresetsChainedBuild(t *testing.T) {
 		{"autonomous.yaml", "worker.yaml"},
 		{"autonomous.yaml", "daemon.yaml"},
 		{"autonomous.yaml", "cron.yaml"},
-		{"subagent.yaml", "subagent-smoke.yaml"},
+		{"subagent-smoke.yaml"},
 		{"web.yaml", "web-smoke.yaml"},
 		// A multi-tenant IM deployment is usually unattended, so the two
 		// overlays have to compose: autonomous swaps the platform and tool set,

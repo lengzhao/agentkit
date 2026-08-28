@@ -1054,7 +1054,7 @@ LLM Runtime 负责：
 plugins/tool/
   fs/           # tool/fs-workspace, tool/fs-memory
   shell/        # tool/shell-bash
-  web/          # tool/web-fetch-http, tool/web-search-exa, ...
+  web/          # tool/web-fetch-http, tool/web-search-tavily, tool/web-search-exa, ...
   mcp/          # tool/mcp
   subagent/     # tool/subagent
   todo/         # tool/todo
@@ -1081,7 +1081,8 @@ plugins/tool/
 | `tool/fs-memory` | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `bash` | bash 执行，依赖 `workspace` |
 | `tool/web-fetch-http` | `web_fetch` | HTTP 抓取，无需凭据 |
-| `tool/web-search-exa` | `web_search` | Exa 搜索，缺 key 不阻断构造 |
+| `tool/web-search-tavily` | `web_search` | Tavily 搜索（L0 默认），缺 key 不阻断构造 |
+| `tool/web-search-exa` | `web_search` | Exa 搜索（可选替代） |
 | `tool/web-fetch-scripted` / `tool/web-search-scripted` | 同上 | 无网络替身 |
 | `tool/skill` | `skill` | 依赖 `skills` + `sessionStore` |
 | `tool/subagent` | `delegate` | 子 agent 委派 |

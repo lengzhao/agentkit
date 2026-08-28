@@ -1,6 +1,6 @@
-# L1 overlay：子 agent 委派冒烟（scripted LLM，无需 API Key）。叠在 subagent.yaml 之上：
+# L1 overlay：子 agent 委派冒烟（scripted LLM，无需 API Key）。L0 已默认挂载 subagent：
 #
-#   go run ./cmd/agent -config presets/subagent.yaml,presets/subagent-smoke.yaml "调研一下"
+#   go run ./cmd/agent -config presets/subagent-smoke.yaml "调研一下"
 #
 # scripted provider 的游标是全进程共享的，而委派是串行的，所以步骤按"父 → 子 → 父"顺序消费：
 #

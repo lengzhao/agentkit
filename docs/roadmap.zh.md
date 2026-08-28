@@ -62,7 +62,7 @@
 | 项 | kind | 落点 |
 |---|---|---|
 | HTTP 抓取 | `web/http-fetch` | 填 `cap/web` 的 `Fetch`；HTML → 文本、大小上限、超时、重定向与私网地址约束 |
-| 搜索 | `web/exa-search` | 填 `cap/web` 的 `Search`；key 走 `credentials/env`，与 `llm/openai-compatible` 的 `apiKeyRef` 同构 |
+| 搜索 | `tool/web-search-tavily` | L0 默认；key 走 `credentials/env`，与 `llm/openai-compatible` 的 `apiKeyRef` 同构 |
 | 无网络替身 | `web/scripted-fetch`、`web/scripted-search` | 给测试与冒烟 preset 用，同 `llm/scripted` |
 | 模型可见工具 | `tool/web-fetch`、`tool/web-search` | 照 `plugins/tool/skill.go` 的写法 |
 | 结构化提问 | `tool/ask-user` | Loop HIL + platform 渲染/回传，见 [platform-interaction.zh.md](platform-interaction.zh.md) |
@@ -72,7 +72,7 @@
 
 | 待定项 | 决定 | 理由 |
 |---|---|---|
-| 搜索 provider 选谁 | **Exa**（`web/exa-search`） | `plugin-catalog.zh.md` §3.6 早就预留了这个 kind 名；wire 格式（`x-api-key` header、camelCase body、`contents.highlights`）是查官方文档确认的，不是猜的。接口是 `web.Searcher`，再加 Brave / Tavily 只是多一个 kind |
+| 搜索 provider 选谁 | **Tavily**（`tool/web-search-tavily`） | L0 默认；每月 1000 次免费额度，面向 AI agent/RAG。Exa（`tool/web-search-exa`）保留为可选替代 |
 | `tool/ask-user` 无人可问时的降级 | **既不阻塞也不报错**：返回 `answered:false` + `reason` + `guidance`，让模型自己拍板并声明假设 | 与本仓库一贯的"deny 是模型可读的结果而不是 error"一致（`tool_builder.go` 把 handler error 也转成文本 result）。headless platform `Interactive=false` 时自动降级 |
 | SSRF 边界要不要做成 `policy/network-deny` | **先落在 `web/http-fetch` 里**（dial 时校验解析后的 IP + scheme 白名单 + host allow/deny + 重定向重校验），`policy/network-deny` 不在本期创建 | 私网校验必须发生在 DNS 解析之后才挡得住重定向与 DNS rebinding，这个位置只有 provider 有。它是 M2 那个 policy 的雏形，不是它的替代 |
 
@@ -80,7 +80,7 @@ HIL **没有复用 `cap/approval` 插件来回答 question**。`approval` 插件
 
 **已落地**（见 [platform-interaction.zh.md](platform-interaction.zh.md)）：`cap/permission` + Loop `PermissionBroker`，`ask_user` 与 `DecisionAsk`（无 `approval` 插件时）共用 pending；`auto-allow` 仍在 runtime 短路，不回答 question kind。
 
-**验收**（已通过）：`presets/web.yaml,presets/web-smoke.yaml` 跑通"搜索 → 抓取 → 提问降级 → 引用来源回答"；`env -u EXA_API_KEY` 下实例图照常构建、`web/http-fetch` 单独可用、搜索返回一句模型可读的"没有 key"；抓取/搜索失败均为模型可读结果，turn 不中断。
+**验收**（已通过）：`presets/web.yaml,presets/web-smoke.yaml` 跑通"搜索 → 抓取 → 提问降级 → 引用来源回答"；`env -u TAVILY_API_KEY` 下实例图照常构建、`web/http-fetch` 单独可用、搜索返回一句模型可读的"没有 key"；抓取/搜索失败均为模型可读结果，turn 不中断。
 
 ## M1.5 — 多租户内核（已落地）
 

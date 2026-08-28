@@ -98,8 +98,8 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 |---|---|
 | 交互式 coding | `go run ./cmd/agent -config presets/coding.yaml` |
 | 自主长跑 | `go run ./cmd/agent -config presets/autonomous.yaml "多轮任务"` |
-| 子 Agent 委派 | `go run ./cmd/agent -config presets/subagent.yaml "让 researcher 调研 …"` |
-| 网络搜索 + 抓取 | `export EXA_API_KEY=...` 后 `-config presets/web.yaml` |
+| 子 Agent 委派 | `go run ./cmd/agent "让 researcher 调研 …"`（L0 默认；冒烟见 `presets/subagent-smoke.yaml`） |
+| 网络搜索 + 抓取 | `export TAVILY_API_KEY=...` 后 `-config presets/web.yaml` |
 | Headless 批处理 | `-config presets/autonomous.yaml,presets/worker.yaml` |
 | 定时守护 | `-config presets/autonomous.yaml,presets/cron.yaml` |
 | 配置管理 Web UI | `go run ./cmd/agent -manager -addr :8080` |

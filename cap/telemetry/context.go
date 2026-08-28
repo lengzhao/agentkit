@@ -7,6 +7,8 @@ type ctxKey int
 const (
 	keyExporter ctxKey = iota
 	keyTurnID
+	keyToolParent
+	keyScopeParent
 )
 
 // WithExporter stores an exporter on the context for downstream runtime code.
@@ -39,6 +41,44 @@ func TurnIDFrom(ctx context.Context) string {
 	return id
 }
 
+// WithToolParent marks the observation that should parent nested tool spans.
+func WithToolParent(ctx context.Context, observationID string) context.Context {
+	if observationID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, keyToolParent, observationID)
+}
+
+// ToolParentFrom returns the active tool parent observation id when present.
+func ToolParentFrom(ctx context.Context) string {
+	id, _ := ctx.Value(keyToolParent).(string)
+	return id
+}
+
+// WithParentObservationID is an alias for WithToolParent.
+func WithParentObservationID(ctx context.Context, observationID string) context.Context {
+	return WithToolParent(ctx, observationID)
+}
+
+// ParentObservationIDFrom is an alias for ToolParentFrom.
+func ParentObservationIDFrom(ctx context.Context) string {
+	return ToolParentFrom(ctx)
+}
+
+// WithScopeParent marks the span that should parent nested generations.
+func WithScopeParent(ctx context.Context, observationID string) context.Context {
+	if observationID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, keyScopeParent, observationID)
+}
+
+// ScopeParentFrom returns the active scope parent observation id when present.
+func ScopeParentFrom(ctx context.Context) string {
+	id, _ := ctx.Value(keyScopeParent).(string)
+	return id
+}
+
 // BeginTurn starts a turn on the exporter stored in ctx.
 func BeginTurn(ctx context.Context, meta TurnMeta) (context.Context, func(TurnEnd)) {
 	return ExporterFrom(ctx).BeginTurn(ctx, meta)
@@ -51,5 +91,5 @@ func BeginObservation(ctx context.Context, meta ObservationMeta) (context.Contex
 
 // RecordEvent records a point-in-time event on the active trace.
 func RecordEvent(ctx context.Context, name string, attrs map[string]string) {
-	ExporterFrom(ctx).RecordEvent(ctx, name, attrs)
+	ExporterFrom(ctx).RecordEvent(ctx, name, EnrichEventAttrs(ctx, attrs))
 }

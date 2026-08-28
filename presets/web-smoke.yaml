@@ -23,7 +23,7 @@ tool.web-fetch-http.default:
         </body></html>
     default: "<p>这个 URL 没有脚本页面。</p>"
 
-tool.web-search-exa.default:
+tool.web-search-tavily.default:
   use: tool/web-search-scripted
   config:
     byQuery:

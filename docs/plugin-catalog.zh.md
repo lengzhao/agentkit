@@ -135,7 +135,8 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力 |
 | `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `workspace` | `bash` | Shell 命令执行 |
-| `tool/web-search-exa` | `credentials?` | `web_search` | Exa 搜索；缺 key 不阻断构造 |
+| `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索（L0 默认）；缺 key 不阻断构造 |
+| `tool/web-search-exa` | `credentials?` | `web_search` | Exa 搜索（可选替代） |
 | `tool/web-fetch-http` | — | `web_fetch` | HTTP 抓取；私网地址在 dial 时拦截 |
 | `tool/web-search-scripted` | — | `web_search` | 预置命中，测试与冒烟 |
 | `tool/web-fetch-scripted` | — | `web_fetch` | 预置页面，测试与冒烟 |
@@ -222,7 +223,7 @@ Tool 插件返回 `agentkit.ToolPack`（一个或多个 `agentkit.Tool`），通
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
-| `telemetry/langfuse` | `telemetry.Exporter` | Langfuse OTLP/HTTP 导出 |
+| `telemetry/langfuse` | `telemetry.Exporter` | Langfuse Go SDK（ingestion API）导出 |
 | `telemetry/none` | `telemetry.Exporter` | 无遥测 |
 | `telemetry/otel` | `telemetry.Exporter` | 通用 OpenTelemetry（未做） |
 
@@ -393,7 +394,7 @@ Phase 1–3 是历史分期，记录"当初打算怎么走"。**接下来做什�
 
 | 类别 | Kind |
 |---|---|
-| Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，见 `presets/subagent.yaml`；并行 fan-out 待做） |
+| Subagent | `subagent/inprocess`, `tool/subagent`, `prompt/section/subagents`（串行版已落地，L0 默认挂载；并行 fan-out 待做） |
 | MCP | `tool/mcp`（`mcpServers` JSON 动态工具，见 `docs/mcp.zh.md`） |
 | Web | `web/http-fetch`, `web/exa-search`, `tool/web-fetch`, `tool/web-search`, `tool/ask-user`（HIL 由 Loop + platform 承载 → [roadmap M1](roadmap.zh.md#m1--网络能力已落地)，见 [web.zh.md](web.zh.md) 与 [platform-interaction.zh.md](platform-interaction.zh.md)） |
 | Platform | `platform/http`, `platform/rpc`（未做 → [roadmap M3](roadmap.zh.md#m3--可运营观测--接入)；`platform/multiplex` / `timer` / `worker` 已落地） |

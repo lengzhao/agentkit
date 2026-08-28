@@ -43,6 +43,7 @@ prompt.default:
       - prompt.custom.default
       - prompt.agents-md.default
       - prompt.skills.default
+      - prompt.subagents.default
 prompt.custom.default:
   use: prompt/section/static
   config:

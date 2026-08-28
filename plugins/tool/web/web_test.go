@@ -124,6 +124,20 @@ func TestWebSearchScriptedResultLimit(t *testing.T) {
 	}
 }
 
+func TestWebSearchTavilyRequiresKeyAtCallTime(t *testing.T) {
+	t.Parallel()
+
+	pack, err := web.NewWebSearchTavily(web.WebSearchTavilyConfig{}, web.WebSearchTavilyDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	search := agentkit.First(pack)
+	out := testutil.CallTool(t, context.Background(), search, `{"query":"anything"}`)
+	if !strings.Contains(out, "no API key") {
+		t.Errorf("result = %q", out)
+	}
+}
+
 func TestWebSearchExaRequiresKeyAtCallTime(t *testing.T) {
 	t.Parallel()
 

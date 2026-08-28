@@ -21,8 +21,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 | [worker.yaml](worker.yaml) | headless 一次性 | 不读 stdin，适合 CI / 系统 cron；**需链 autonomous** |
 | [daemon.yaml](daemon.yaml) | 固定间隔守护 | `platform/timer`，每 N 秒巡检；**需链 autonomous** |
 | [cron.yaml](cron.yaml) | cron 守护 | `schedule/cron` + `tool/schedule`；worker 只做启动 task |
-| [subagent.yaml](subagent.yaml) | 子 agent 委派 | 纳入 `examples/agents/` 演示定义 |
-| [subagent-smoke.yaml](subagent-smoke.yaml) | 子 agent 冒烟 | scripted LLM；**需链 subagent** |
+| [subagent-smoke.yaml](subagent-smoke.yaml) | 子 agent 冒烟 | scripted LLM；L0 已默认挂载 subagent |
 | [web.yaml](web.yaml) | 网络能力 | 搜索 + 抓取 + 向用户提问 |
 | [web-smoke.yaml](web-smoke.yaml) | 网络能力冒烟 | scripted web；**需链 web** |
 | [multi-tenant.yaml](multi-tenant.yaml) | 多租户 IM | 按群分目录；tool 在 `work/` 子目录；放开并发；**入站 platform 需自行接入** |

@@ -45,13 +45,12 @@ go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读�
 go run ./cmd/agent -config presets/autonomous.yaml "你的多轮任务"
 go run ./cmd/agent -config presets/autonomous-smoke.yaml "整理这个目录并收尾"
 
-# 子 Agent 委派：主 agent 把子任务交给 agents/*.md 定义的子 agent，只把结论带回（见 subagent.zh.md）
-# L0 已内置 delegate；以下 preset 额外纳入 examples/agents 并把 local 根改为项目目录
-go run ./cmd/agent -config presets/subagent.yaml "让 researcher 查清 runtime/loop 的并发模型，再据此给我结论"
-go run ./cmd/agent -config presets/subagent.yaml,presets/subagent-smoke.yaml "调研一下"   # 无 API Key 冒烟
+# 子 Agent 委派：L0 已默认挂载 delegate；主 agent 把子任务交给 agents/*.md 定义的子 agent，只把结论带回（见 subagent.zh.md）
+go run ./cmd/agent "让 researcher 查清 runtime/loop 的并发模型，再据此给我结论"
+go run ./cmd/agent -config presets/subagent-smoke.yaml "调研一下"   # 无 API Key 冒烟
 
-# 网络能力：搜索 + 抓取 + 向用户提问（搜索需要 EXA_API_KEY，抓取不需要；见 web.zh.md）
-export EXA_API_KEY=...
+# 网络能力：搜索 + 抓取 + 向用户提问（搜索需要 TAVILY_API_KEY，抓取不需要；见 web.zh.md）
+export TAVILY_API_KEY=...
 go run ./cmd/agent -config presets/web.yaml "查一下 xxx 的官方说法，给我结论并附来源"
 go run ./cmd/agent -config presets/web.yaml,presets/web-smoke.yaml "loop 怎么保证同一 session 串行？"   # 无 key、无真实请求
 
@@ -78,7 +77,7 @@ Phase 2 自主运行已实现：`TurnStopping` hook seam、跨 segment 运行预
 
 Phase 2 长跑韧性已实现：崩溃恢复（中断 turn 的 orphan tool call 修补 + `session/recovery` 审计）、`compaction/token-limit` 按 token 阈值触发压缩。
 
-Phase 3 网络能力已实现：`tool/web-fetch-http`（HTML → 文本、dial 时拦截私网地址）、`tool/web-search-exa`（缺 key 不阻断构造）、`tool/web-*-scripted` 无网络替身、`tool/ask-user`（Permission 协议 + platform 渲染/回传，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
+Phase 3 网络能力已实现：`tool/web-fetch-http`（HTML → 文本、dial 时拦截私网地址）、`tool/web-search-tavily`（L0 默认，缺 key 不阻断构造）、`tool/web-search-exa`（可选替代）、`tool/web-*-scripted` 无网络替身、`tool/ask-user`（Permission 协议 + platform 渲染/回传，见 [platform-interaction.zh.md](platform-interaction.zh.md)）。
 
 Phase 3 守护外壳已实现：`platform/worker`（headless 一次性任务，不读 stdin）、`schedule/cron`（日历调度 runtime）、`platform/timer`（固定间隔）、`cap/schedule` + `schedule/file` 持久化 job 表、`tool/schedule`（agent 自主排期）、runner 并发分发（跨 session 并行 + 同 session 保序 + per-turn panic 隔离 + 优雅关停）、overlay 链式合并。
 

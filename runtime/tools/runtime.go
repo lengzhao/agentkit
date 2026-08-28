@@ -155,11 +155,11 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
 
 	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
-	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
 		Name:  "tool." + call.Name,
 		Kind:  telemetry.KindTool,
 		Input: string(call.Input),
-	})
+	}))
 	var observationEnd telemetry.ObservationEnd
 	defer func() {
 		endObservation(observationEnd)

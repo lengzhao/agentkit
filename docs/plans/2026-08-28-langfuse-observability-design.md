@@ -31,11 +31,18 @@ flowchart TB
 |---|---|---|
 | 一次 RunTurn | Trace `agent.turn` | `loop.Dispatch` |
 | LLM 调用 | Generation | `agent.runStep` |
-| Tool 执行 | Tool observation | `tools.Execute` |
+| Tool 执行 | Tool observation（generation 子节点） | `tools.Execute` |
 | Token 用量 | `usage_details` | `agent.recordUsage` |
 | Turn 错误 | Trace/span error | `runner.dispatch` |
+| 子 Agent 委派 | `tool.delegate` → `subagent.<name>` scope span → 子 generation/tool | `subagent/inprocess` + `tools.Execute` |
 
-Langfuse v4 推荐经 OTLP/HTTP 写入 `{baseUrl}/api/public/otel`，使用 `langfuse.*` 语义属性。
+子 agent 与父 agent 共享同一 Langfuse trace（一次用户 turn）。层级规则：
+
+- 父 agent 的 generation 挂在 trace 根下；同一步触发的 tool 挂在该 generation 下。
+- `tool.delegate` 执行期间，子 agent 包在 `subagent.<name>` scope span 内；子 agent 的 generation/tool 挂在此 span 下。
+- 每个 observation 的 metadata 携带 `agent_id` 与 `session_id`，用于在 UI 中区分 `coder` 与 `sub:researcher` 等活动。
+
+Go 侧通过 `github.com/henomis/langfuse-go` SDK 写入 `{baseUrl}/api/public/ingestion`（Langfuse 无官方 Go SDK）。
 
 ## 配置
 
@@ -75,4 +82,4 @@ runner.default:
 
 - `telemetry/otel`：通用 OTel 后端。
 - `session/sqlite` + 成本汇总 CLI。
-- subagent lineage 与 schedule fire 独立 trace。
+- schedule fire 独立 trace。
