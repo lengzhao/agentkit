@@ -1,0 +1,58 @@
+# L1：Slack Socket Mode + coding agent
+# 凭证：在 config 中填写 botToken / appToken，或复制为 config.yaml 后编辑。
+
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+    maxConcurrentTurns: 4
+    # sessionScope: channel # channel（默认）| thread | user；折叠 platform delivery SessionID
+  deps:
+    platform: platform.default
+    loop: loop.default
+
+platform.default:
+  use: platform/slack
+  config:
+    botToken: ""
+    appToken: ""
+    # agentId: "" # 可选：路由到指定 Agent；留空使用 loop.defaultAgent
+    # domain: "https://slack.com/api/" # 可选：Slack Web API 基址（代理/私有化；可写 https://host 自动补 /api/）
+    allowFrom: ""
+    # allowChannels: "" # 频道白名单（ID 或 #name，逗号分隔）；空=全部；私信不受限
+    groupReplyAll: false # false：频道内仅 @ 提及；私信始终接收
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
+
+sessionStore.default:
+  use: session/store
+  config:
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: ..
+    maxBytes: 1048576
+  deps:
+    workspace: workspace.default
+
+tool.shell-bash.default:
+  use: tool/shell-bash
+  config:
+    workDir: ..
+    timeoutSeconds: 60
+  deps:
+    workspace: workspace.default
+
+llm.default:
+  config:
+    apiKeyRef: OPENAI_API_KEY

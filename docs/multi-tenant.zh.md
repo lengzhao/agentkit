@@ -153,6 +153,15 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 `sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent` 回带 **delivery** SessionID，由 platform 解析投递目标。
 
+`platform/chat-api` 在 workspace 下维护两层持久化：
+
+| 层 | 路径 | 用途 |
+|---|---|---|
+| 会话索引 | `chat-api/conversations/<channel>.json` | 重启后恢复会话列表 |
+| 展示历史 | `sessions/chat-api_<channel>_t_<conv>.jsonl` | 调试页 / messages API 按 conversation 隔离 |
+
+Runner 仍按 `sessionScope` 把 agent 上下文写入 effective session（如 channel 级 `chat-api_<channel>.jsonl`）。每轮结束后 chat-api 会把 user/assistant 摘要镜像到 delivery session，类似 cc-connect 的 `Session.AddHistory` 与 agent 后端 session 分离。
+
 ## 7. 验收
 
 | 测试 | 覆盖 |

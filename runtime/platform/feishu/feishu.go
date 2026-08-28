@@ -1,0 +1,3613 @@
+package feishu
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html"
+	"io"
+	"log/slog"
+	"math/rand/v2"
+	"net"
+	"net/http"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
+	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
+	larkapplication "github.com/larksuite/oapi-sdk-go/v3/service/application/v6"
+	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
+)
+
+// sanitizingLogger wraps a logger and masks sensitive URL parameters.
+type sanitizingLogger struct {
+	inner larkcore.Logger
+}
+
+func (l *sanitizingLogger) maskURL(args ...interface{}) []interface{} {
+	masked := make([]interface{}, len(args))
+	for i, arg := range args {
+		if s, ok := arg.(string); ok {
+			masked[i] = l.sanitize(s)
+		} else {
+			masked[i] = arg
+		}
+	}
+	return masked
+}
+
+func (l *sanitizingLogger) sanitize(s string) string {
+	// Mask sensitive query parameters in URLs
+	sensitiveParams := []string{
+		"device_id=", "access_key=", "ticket=", "conn_id=",
+		"secret=", "token=", "password=", "key=",
+	}
+	for _, param := range sensitiveParams {
+		if idx := strings.Index(s, param); idx != -1 {
+			// Find the end of the value (either & or end of string)
+			end := idx + len(param)
+			for end < len(s) && s[end] != '&' && s[end] != ' ' {
+				end++
+			}
+			s = s[:idx+len(param)] + "***" + s[end:]
+		}
+	}
+	return s
+}
+
+func (l *sanitizingLogger) Debug(ctx context.Context, args ...interface{}) {
+	for _, arg := range args {
+		s, ok := arg.(string)
+		if !ok {
+			continue
+		}
+		msg := strings.ToLower(s)
+		if strings.Contains(msg, "ping success") || strings.Contains(msg, "receive pong") {
+			return
+		}
+	}
+	l.inner.Debug(ctx, l.maskURL(args...)...)
+}
+
+func (l *sanitizingLogger) Info(ctx context.Context, args ...interface{}) {
+	l.inner.Info(ctx, l.maskURL(args...)...)
+}
+
+func (l *sanitizingLogger) Warn(ctx context.Context, args ...interface{}) {
+	l.inner.Warn(ctx, l.maskURL(args...)...)
+}
+
+func (l *sanitizingLogger) Error(ctx context.Context, args ...interface{}) {
+	l.inner.Error(ctx, l.maskURL(args...)...)
+}
+
+type replyContext struct {
+	messageID  string
+	chatID     string
+	sessionKey string
+}
+
+type Platform struct {
+	platformTag                string
+	defaultDomain              string
+	domain                     string
+	appID                      string
+	appSecret                  string
+	progressStyle              string
+	useInteractiveCard         bool
+	reactionEmoji              string
+	doneEmoji                  string
+	allowFrom                  string
+	allowChat                  string
+	groupOnly                  bool
+	groupReplyAll              bool
+	respondToAtEveryoneAndHere bool
+	shareSessionInChannel      bool
+	threadIsolation            bool
+	noReplyToTrigger           bool
+	resolveMentions            bool
+	cfg                        Config
+	agentID                    agentkit.AgentID
+	commands                   agentkit.Commands
+	inbox                      *common.Inbox
+	outbound                   *common.Outbound
+	deliveries                 sync.Map
+	streams                    sync.Map
+	client                     *lark.Client
+	replayClient               *lark.Client
+	replayClientMu             sync.Mutex
+	wsClient                   *larkws.Client
+	cancel                     context.CancelFunc
+	dedup                      *common.MessageDedup
+	botOpenID                  string
+	peerBots                   map[string]string
+	userNameCache              sync.Map
+	chatNameCache              sync.Map
+	chatMemberCache            sync.Map
+	recalledMu                 sync.Mutex
+	recalledMsgIDs             map[string]time.Time
+	server                     *http.Server
+	port                       string
+	callbackPath               string
+	encryptKey                 string
+	eventHandler               *dispatcher.EventDispatcher
+	cardActionMsgMu            sync.Mutex
+	cardActionMsgIDs           map[string]string
+	startOnce                  sync.Once
+}
+
+type feishuRequestFunc func(client *lark.Client, options ...larkcore.RequestOptionFunc) error
+
+func (p *Platform) tag() string { return p.platformTag }
+
+func (p *Platform) shouldUseWebhookMode() bool {
+	return strings.TrimSpace(p.encryptKey) != ""
+}
+
+// startWebSocketMode starts the WebSocket long connection mode.
+// startWebhookMode starts the HTTP webhook server mode (for Lark international version)
+func (p *Platform) startWebhookMode() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc(p.callbackPath, p.webhookHandler)
+
+	p.server = &http.Server{
+		Addr:    ":" + p.port,
+		Handler: mux,
+	}
+
+	_, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
+
+	go func() {
+		slog.Info(p.tag()+": webhook server listening", "port", p.port, "path", p.callbackPath)
+		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error(p.tag()+": webhook server error", "error", err)
+		}
+	}()
+
+	return nil
+}
+
+// webhookHandler handles HTTP webhook requests from Lark international version
+func (p *Platform) webhookHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Error(p.tag()+": read webhook body failed", "error", err)
+		http.Error(w, "read body failed", http.StatusBadRequest)
+		return
+	}
+
+	// Build EventReq from HTTP request
+	req := &larkevent.EventReq{
+		Header:     r.Header,
+		Body:       body,
+		RequestURI: r.RequestURI,
+	}
+
+	// Use the SDK's event dispatcher to handle the request
+	resp := p.eventHandler.Handle(r.Context(), req)
+
+	// Write response
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(resp.Body)
+}
+
+// onCardAction handles card.action.trigger callbacks via the official SDK event dispatcher.
+// Three prefixes are supported:
+//   - nav:/xxx   — render a card page and update the original card in-place
+//   - act:/xxx   — execute an action, then render and update the card in-place
+//   - cmd:/xxx   — legacy: dispatch as a user command (sends a new message)
+func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
+	if event.Event == nil || event.Event.Action == nil {
+		return nil, nil
+	}
+
+	// Check allow_chat filter: skip card actions from chats this platform doesn't own.
+	if event.Event.Context != nil && event.Event.Context.OpenChatID != "" {
+		if !common.AllowList(p.allowChat, event.Event.Context.OpenChatID) {
+			return nil, nil
+		}
+	}
+
+	actionVal, _ := event.Event.Action.Value["action"].(string)
+
+	// select_static callbacks put the chosen value in event.Event.Action.Option
+	if actionVal == "" && event.Event.Action.Option != "" {
+		actionVal = event.Event.Action.Option
+	}
+	if actionVal == "" {
+		switch event.Event.Action.Name {
+		case "delete_mode_submit":
+			actionVal = "act:/delete-mode form-submit"
+		case "delete_mode_cancel":
+			actionVal = "act:/delete-mode cancel"
+		}
+	}
+	if actionVal == "act:/delete-mode form-submit" {
+		ids := collectDeleteModeSelectedFromFormValue(event.Event.Action.FormValue)
+		if len(ids) > 0 {
+			actionVal += " " + strings.Join(ids, ",")
+		}
+	}
+
+	userID := ""
+	if event.Event.Operator != nil {
+		userID = event.Event.Operator.OpenID
+	}
+	chatID := ""
+	messageID := ""
+	if event.Event.Context != nil {
+		chatID = event.Event.Context.OpenChatID
+		messageID = event.Event.Context.OpenMessageID
+	}
+	if chatID == "" {
+		chatID = userID
+	}
+	sessionKey := p.sessionKeyFromCardAction(chatID, userID, event.Event.Action.Value)
+	extra := map[string]string{}
+	for k, v := range event.Event.Action.Value {
+		if s, ok := v.(string); ok {
+			extra[k] = s
+		}
+	}
+	if sessionKey == "" && chatID != "" && userID != "" {
+		sessionKey = p.makeSessionKey(nil, chatID, userID)
+	}
+	if reply, ok := common.PermissionReplyFromAction(actionVal, userID, extra); ok {
+		if !common.AllowList(p.allowFrom, userID) {
+			return nil, nil
+		}
+		question := extra["askq_question"]
+		p.pushPermissionReply(context.Background(), sessionKey, reply)
+		answer := reply.Text
+		if answer == "" {
+			answer = reply.Decision
+		}
+		confirmed := common.ConfirmedPermissionCard(question, answer)
+		return &callback.CardActionTriggerResponse{
+			Card: &callback.Card{
+				Type: "raw",
+				Data: renderCardMap(confirmed, sessionKey),
+			},
+		}, nil
+	}
+
+	// nav: / act: — synchronous card update
+	if strings.HasPrefix(actionVal, "nav:") || strings.HasPrefix(actionVal, "act:") {
+		if messageID != "" {
+			p.cardActionMsgMu.Lock()
+			if p.cardActionMsgIDs == nil {
+				p.cardActionMsgIDs = make(map[string]string)
+			}
+			p.cardActionMsgIDs[sessionKey] = messageID
+			p.cardActionMsgMu.Unlock()
+		}
+		// Feishu uses native form checker for delete-mode toggle,
+		// so return a toast without calling cardNavHandler to avoid a full card refresh.
+		if strings.HasPrefix(actionVal, "act:/delete-mode toggle ") {
+			return &callback.CardActionTriggerResponse{
+				Toast: &callback.Toast{
+					Type:    "info",
+					Content: "已记录选择（Selection recorded）",
+				},
+			}, nil
+		}
+		if strings.HasPrefix(actionVal, "act:") {
+			slog.Debug(p.tag()+": card action produced no card update", "action", actionVal)
+			return nil, nil
+		}
+		slog.Warn(p.tag()+": card nav returned nil, ignoring", "action", actionVal)
+		return nil, nil
+	}
+
+	// cmd: — async command dispatch
+	if strings.HasPrefix(actionVal, "cmd:") {
+		cmdText := strings.TrimPrefix(actionVal, "cmd:")
+		rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
+
+		slog.Info(p.tag()+": card action dispatched as command", "cmd", cmdText, "user", userID)
+
+		go p.dispatchInbound(context.Background(), inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey),
+			userID:    userID,
+			content:   cmdText,
+			rctx:      rctx,
+		})
+	}
+
+	return nil, nil
+}
+
+func (p *Platform) addReaction(messageID string) string {
+	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
+}
+
+func (p *Platform) addReactionWithEmoji(messageID, emojiType string) string {
+	if emojiType == "" {
+		return ""
+	}
+	resp, err := p.client.Im.MessageReaction.Create(context.Background(),
+		larkim.NewCreateMessageReactionReqBuilder().
+			MessageId(messageID).
+			Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+				ReactionType(&larkim.Emoji{EmojiType: &emojiType}).
+				Build()).
+			Build())
+	if err != nil {
+		slog.Debug(p.tag()+": add reaction failed", "error", err)
+		return ""
+	}
+	if !resp.Success() {
+		slog.Debug(p.tag()+": add reaction failed", "code", resp.Code, "msg", resp.Msg)
+		return ""
+	}
+	if resp.Data != nil && resp.Data.ReactionId != nil {
+		return *resp.Data.ReactionId
+	}
+	return ""
+}
+
+func (p *Platform) removeReaction(messageID, reactionID string) {
+	if reactionID == "" || messageID == "" {
+		return
+	}
+	resp, err := p.client.Im.MessageReaction.Delete(context.Background(),
+		larkim.NewDeleteMessageReactionReqBuilder().
+			MessageId(messageID).
+			ReactionId(reactionID).
+			Build())
+	if err != nil {
+		slog.Debug(p.tag()+": remove reaction failed", "error", err)
+		return
+	}
+	if !resp.Success() {
+		slog.Debug(p.tag()+": remove reaction failed", "code", resp.Code, "msg", resp.Msg)
+	}
+}
+
+// StartTyping adds an emoji reaction to the user's message and returns a stop
+// function that removes the reaction when processing is complete.
+func (p *Platform) StartTyping(ctx context.Context, rctx any) (stop func()) {
+	rc, ok := rctx.(replyContext)
+	if !ok || rc.messageID == "" {
+		return func() {}
+	}
+	reactionID := p.addReaction(rc.messageID)
+	return func() {
+		go p.removeReaction(rc.messageID, reactionID)
+	}
+}
+
+// AddDoneReaction adds a "done" emoji reaction so the user gets a push
+// notification when the agent finishes a multi-round turn in quiet mode.
+func (p *Platform) AddDoneReaction(rctx any) {
+	if p.doneEmoji == "" {
+		return
+	}
+	rc, ok := rctx.(replyContext)
+	if !ok || rc.messageID == "" {
+		return
+	}
+	go p.addReactionWithEmoji(rc.messageID, p.doneEmoji)
+}
+
+const recalledMessageTTL = 10 * time.Minute
+
+func (p *Platform) markMessageRecalled(messageID string) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return
+	}
+
+	now := time.Now()
+	p.recalledMu.Lock()
+	defer p.recalledMu.Unlock()
+
+	if p.recalledMsgIDs == nil {
+		p.recalledMsgIDs = make(map[string]time.Time)
+	}
+	for id, markedAt := range p.recalledMsgIDs {
+		if now.Sub(markedAt) > recalledMessageTTL {
+			delete(p.recalledMsgIDs, id)
+		}
+	}
+	p.recalledMsgIDs[messageID] = now
+}
+
+func (p *Platform) isMessageRecalled(messageID string) bool {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return false
+	}
+
+	now := time.Now()
+	p.recalledMu.Lock()
+	defer p.recalledMu.Unlock()
+
+	markedAt, ok := p.recalledMsgIDs[messageID]
+	if !ok {
+		return false
+	}
+	if now.Sub(markedAt) > recalledMessageTTL {
+		delete(p.recalledMsgIDs, messageID)
+		return false
+	}
+	return true
+}
+
+func isMessageWithdrawnCode(code int, msg string) bool {
+	msg = strings.ToLower(strings.TrimSpace(msg))
+	if code == 230011 {
+		return true
+	}
+	for _, needle := range []string{"withdrawn", "recalled", "recall", "deleted", "not found", "not exist", "撤回"} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Platform) IsMessageRecalled(ctx context.Context, rctx any) (bool, error) {
+	rc, ok := rctx.(replyContext)
+	if !ok || strings.TrimSpace(rc.messageID) == "" {
+		return false, nil
+	}
+	messageID := strings.TrimSpace(rc.messageID)
+	if p.isMessageRecalled(messageID) {
+		return true, nil
+	}
+	if p.client == nil {
+		return false, fmt.Errorf("%s: client not initialized", p.tag())
+	}
+
+	req := larkim.NewGetMessageReqBuilder().
+		MessageId(messageID).
+		UserIdType(larkim.UserIdTypeOpenId).
+		Build()
+
+	var resp *larkim.GetMessageResp
+	if err := p.withTransientRetry(ctx, "get message", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "get message", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			var err error
+			resp, err = client.Im.Message.Get(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: get message api call: %w", p.tag(), err)
+			}
+			if !resp.Success() {
+				return fmt.Errorf("%s: get message failed code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+			}
+			return nil
+		})
+	}); err != nil {
+		if resp != nil && isMessageWithdrawnCode(resp.Code, resp.Msg) {
+			p.markMessageRecalled(messageID)
+			return true, nil
+		}
+		if isMessageWithdrawnError(err) {
+			p.markMessageRecalled(messageID)
+			return true, nil
+		}
+		return false, err
+	}
+
+	if resp == nil || resp.Data == nil || len(resp.Data.Items) == 0 {
+		p.markMessageRecalled(messageID)
+		return true, nil
+	}
+	for _, item := range resp.Data.Items {
+		if item != nil && item.Deleted != nil && *item.Deleted {
+			p.markMessageRecalled(messageID)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func isMessageWithdrawnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return isMessageWithdrawnCode(0, err.Error())
+}
+
+func (p *Platform) onMessageRecalled(_ context.Context, event *larkim.P2MessageRecalledV1) error {
+	if event == nil || event.Event == nil {
+		return nil
+	}
+
+	messageID := stringValue(event.Event.MessageId)
+	chatID := stringValue(event.Event.ChatId)
+	if messageID == "" {
+		slog.Debug(p.tag()+": recall event without message id", "chat_id", chatID)
+		return nil
+	}
+	if chatID != "" && !common.AllowList(p.allowChat, chatID) {
+		slog.Debug(p.tag()+": recall event from unauthorized chat", "chat_id", chatID, "message_id", messageID)
+		return nil
+	}
+
+	p.markMessageRecalled(messageID)
+	slog.Info(p.tag()+": message recalled",
+		"message_id", messageID,
+		"chat_id", chatID,
+		"recall_type", stringValue(event.Event.RecallType),
+	)
+
+	return nil
+}
+
+func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+	msg := event.Event.Message
+	sender := event.Event.Sender
+
+	msgType := ""
+	if msg.MessageType != nil {
+		msgType = *msg.MessageType
+	}
+
+	chatID := ""
+	if msg.ChatId != nil {
+		chatID = *msg.ChatId
+	}
+	userID := userIDFromEvent(sender.SenderId)
+	// userName and chatName are resolved in dispatchMessage to avoid blocking
+	// the SDK dispatcher goroutine with synchronous HTTP calls.
+
+	messageID := ""
+	if msg.MessageId != nil {
+		messageID = *msg.MessageId
+	}
+
+	if p.isMessageRecalled(messageID) {
+		slog.Debug(p.tag()+": recalled message ignored before dispatch", "message_id", messageID)
+		return nil
+	}
+
+	if p.dedup.IsDuplicate(messageID) {
+		slog.Debug(p.tag()+": duplicate message ignored", "message_id", messageID)
+		return nil
+	}
+
+	if msg.CreateTime != nil {
+		if ms, err := strconv.ParseInt(*msg.CreateTime, 10, 64); err == nil {
+			msgTime := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+			if common.IsOldMessage(msgTime) {
+				slog.Debug(p.tag()+": ignoring old message after restart", "create_time", *msg.CreateTime)
+				return nil
+			}
+		}
+	}
+
+	chatType := ""
+	if msg.ChatType != nil {
+		chatType = *msg.ChatType
+	}
+	mentionCount := len(msg.Mentions)
+	slog.Debug(p.tag()+": inbound message",
+		"message_id", messageID,
+		"chat_id", chatID,
+		"chat_type", chatType,
+		"root_id", stringValue(msg.RootId),
+		"thread_id", stringValue(msg.ThreadId),
+		"parent_id", stringValue(msg.ParentId),
+		"mentions", mentionCount,
+		"group_reply_all", p.groupReplyAll,
+		"thread_isolation", p.threadIsolation,
+	)
+
+	if chatType == "group" && !p.groupReplyAll && p.botOpenID != "" {
+		if !isBotMentioned(msg.Mentions, p.botOpenID) {
+			// Feishu @all sends {"text":"@_all"} with 0 mentions.
+			if p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all") {
+				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
+			} else {
+				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
+				return nil
+			}
+		}
+	}
+
+	if !common.AllowList(p.allowFrom, userID) {
+		slog.Debug(p.tag()+": message from unauthorized user", "user", userID)
+		return nil
+	}
+
+	if chatType == "group" && !common.AllowList(p.allowChat, chatID) {
+		slog.Debug(p.tag()+": message from unauthorized chat", "chat_id", chatID)
+		return nil
+	}
+	if chatType != "group" && p.groupOnly {
+		slog.Debug(p.tag()+": p2p message skipped (group_only=true)", "chat_type", chatType)
+		return nil
+	}
+
+	if msg.Content == nil && msgType != "merge_forward" {
+		slog.Debug(p.tag()+": message content is nil", "message_id", messageID, "type", msgType)
+		return nil
+	}
+
+	// Capture content before going async — the SDK may reuse the event object.
+	content := ""
+	if msg.Content != nil {
+		content = *msg.Content
+	}
+	mentions := msg.Mentions
+	parentID := stringValue(msg.ParentId)
+
+	sessionKey := p.makeSessionKey(msg, chatID, userID)
+	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
+	slog.Debug(p.tag()+": routed inbound message",
+		"message_id", messageID,
+		"session_key", sessionKey,
+		"reply_in_thread", p.shouldReplyInThread(rctx),
+	)
+
+	// Dispatch message handling asynchronously so the SDK event loop is not
+	// blocked by IO-heavy operations (image/audio download, handler HTTP calls).
+	// The dedup and old-message checks above remain synchronous to guarantee
+	// correctness before spawning the goroutine.
+	go p.dispatchMessage(ctx, msgType, content, mentions, messageID, sessionKey, userID, chatID, rctx, parentID)
+
+	return nil
+}
+
+// dispatchMessage handles the message content parsing, media download, and
+// handler invocation. It runs in its own goroutine so that onMessage returns
+// quickly and does not block the SDK event loop.
+func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string) {
+	if p.isMessageRecalled(messageID) {
+		slog.Debug(p.tag()+": recalled message ignored in async dispatch", "message_id", messageID)
+		return
+	}
+
+	// Resolve user and chat names asynchronously so SDK dispatcher is not blocked.
+	_ = p.resolveUserName(userID)
+	_ = p.resolveChatName(chatID)
+
+	// If this message is a reply to another message, fetch the quoted content
+	// and prepend it so the agent has full context.
+	// Skip quote injection when thread_isolation is enabled and the message is
+	// inside a thread — the thread already provides conversational context, and
+	// long quoted prefixes can drown out the user's actual text (issue #764).
+	quotedPrefix := ""
+	if parentID != "" && !(p.threadIsolation && isThreadSessionKey(sessionKey)) {
+		quotedPrefix = p.fetchQuotedMessage(ctx, parentID)
+	}
+
+	switch msgType {
+	case "text":
+		var textBody struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(content), &textBody); err != nil {
+			slog.Error(p.tag()+": failed to parse text content", "error", err)
+			return
+		}
+		text := stripMentions(textBody.Text, mentions, p.botOpenID)
+		if text == "" {
+			slog.Debug(p.tag()+": dropping empty text after mention stripping",
+				"message_id", messageID,
+				"raw_text_len", len(textBody.Text),
+				"mentions", len(mentions),
+			)
+			return
+		}
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID:    agentkit.SessionID(sessionKey),
+			messageID:    messageID,
+			userID:       userID,
+			content:      text,
+			extraContent: quotedPrefix,
+			rctx:         rctx,
+		})
+
+	case "image":
+		var imgBody struct {
+			ImageKey string `json:"image_key"`
+		}
+		if err := json.Unmarshal([]byte(content), &imgBody); err != nil {
+			slog.Error(p.tag()+": failed to parse image content", "error", err)
+			return
+		}
+		imgData, mimeType, err := p.downloadImage(messageID, imgBody.ImageKey)
+		if err != nil {
+			slog.Error(p.tag()+": download image failed", "error", err)
+			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ Image download failed (network error). Please resend."); sendErr != nil {
+				slog.Error(p.tag()+": failed to notify user about image download failure", "error", sendErr)
+			}
+			return
+		}
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey),
+			messageID: messageID,
+			userID:    userID,
+			images:    []common.ImageAttachment{{MimeType: mimeType, Data: imgData}},
+			rctx:      rctx,
+		})
+
+	case "audio":
+		var audioBody struct {
+			FileKey  string `json:"file_key"`
+			Duration int    `json:"duration"` // milliseconds
+		}
+		if err := json.Unmarshal([]byte(content), &audioBody); err != nil {
+			slog.Error(p.tag()+": failed to parse audio content", "error", err)
+			return
+		}
+		slog.Debug(p.tag()+": audio received", "user", userID, "file_key", audioBody.FileKey)
+		audioData, err := p.downloadResource(messageID, audioBody.FileKey, "file")
+		if err != nil {
+			slog.Error(p.tag()+": download audio failed", "error", err)
+			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ Voice message download failed (network error). Please resend."); sendErr != nil {
+				slog.Error(p.tag()+": failed to notify user about audio download failure", "error", sendErr)
+			}
+			return
+		}
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey),
+			messageID: messageID,
+			userID:    userID,
+			audio: &common.AudioAttachment{
+				MimeType: "audio/opus",
+				Data:     audioData,
+				Format:   "ogg",
+				Duration: audioBody.Duration / 1000,
+			},
+			rctx: rctx,
+		})
+
+	case "post":
+		textParts, images := p.parsePostContent(messageID, content)
+		text := stripMentions(strings.Join(textParts, "\n"), mentions, p.botOpenID)
+		if text == "" && len(images) == 0 {
+			return
+		}
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID:    agentkit.SessionID(sessionKey),
+			messageID:    messageID,
+			userID:       userID,
+			content:      text,
+			extraContent: quotedPrefix,
+			images:       images,
+			rctx:         rctx,
+		})
+
+	case "file":
+		var fileBody struct {
+			FileKey  string `json:"file_key"`
+			FileName string `json:"file_name"`
+		}
+		if err := json.Unmarshal([]byte(content), &fileBody); err != nil {
+			slog.Error(p.tag()+": failed to parse file content", "error", err)
+			return
+		}
+		slog.Info(p.tag()+": file received", "user", userID, "file_key", fileBody.FileKey, "file_name", fileBody.FileName)
+		fileData, err := p.downloadResource(messageID, fileBody.FileKey, "file")
+		if err != nil {
+			slog.Error(p.tag()+": download file failed", "error", err)
+			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ File download failed (network error). Please resend."); sendErr != nil {
+				slog.Error(p.tag()+": failed to notify user about file download failure", "error", sendErr)
+			}
+			return
+		}
+		slog.Debug(p.tag()+": file downloaded", "file_name", fileBody.FileName, "size", len(fileData))
+		mimeType := detectMimeType(fileData)
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey),
+			messageID: messageID,
+			userID:    userID,
+			files: []common.FileAttachment{{
+				MimeType: mimeType,
+				Data:     fileData,
+				FileName: fileBody.FileName,
+			}},
+			rctx: rctx,
+		})
+
+	case "merge_forward":
+		text, images, files := p.parseMergeForward(messageID)
+		if text == "" && len(images) == 0 && len(files) == 0 {
+			slog.Warn(p.tag()+": merge_forward produced no content", "message_id", messageID)
+			return
+		}
+		coreMsg := &inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey),
+			messageID: messageID,
+			userID:    userID,
+			content:   text,
+			images:    images,
+			files:     files,
+			rctx:      rctx,
+		}
+		p.dispatchCoreMessage(coreMsg)
+
+	case "sticker":
+		var stickerBody struct {
+			FileKey string `json:"file_key"`
+		}
+		if err := json.Unmarshal([]byte(content), &stickerBody); err != nil {
+			slog.Error(p.tag()+": failed to parse sticker content", "error", err)
+			return
+		}
+		slog.Info(p.tag()+": sticker received", "user", userID, "file_key", stickerBody.FileKey)
+		imgData, mimeType, err := p.downloadImage(messageID, stickerBody.FileKey)
+		if err != nil {
+			slog.Warn(p.tag()+": download sticker failed, falling back to placeholder", "error", err)
+			p.dispatchCoreMessage(&inboundMessage{
+				sessionID:    agentkit.SessionID(sessionKey),
+				messageID:    messageID,
+				userID:       userID,
+				content:      "[sticker]",
+				extraContent: quotedPrefix,
+				rctx:         rctx,
+			})
+			return
+		}
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey),
+			messageID: messageID,
+			userID:    userID,
+			images:    []common.ImageAttachment{{MimeType: mimeType, Data: imgData}},
+			rctx:      rctx,
+		})
+
+	case "media":
+		var mediaBody struct {
+			FileKey  string `json:"file_key"`
+			ImageKey string `json:"image_key"`
+			FileName string `json:"file_name"`
+			Duration int    `json:"duration"`
+		}
+		if err := json.Unmarshal([]byte(content), &mediaBody); err != nil {
+			slog.Error(p.tag()+": failed to parse media content", "error", err)
+			return
+		}
+		slog.Info(p.tag()+": media received", "user", userID, "file_key", mediaBody.FileKey, "file_name", mediaBody.FileName)
+		text := "[video"
+		if mediaBody.FileName != "" {
+			text += ": " + mediaBody.FileName
+		}
+		if mediaBody.Duration > 0 {
+			text += fmt.Sprintf(", %ds", mediaBody.Duration/1000)
+		}
+		text += "]"
+		var images []common.ImageAttachment
+		if mediaBody.ImageKey != "" {
+			if thumbData, thumbMime, err := p.downloadImage(messageID, mediaBody.ImageKey); err == nil {
+				images = append(images, common.ImageAttachment{MimeType: thumbMime, Data: thumbData})
+			} else {
+				slog.Warn(p.tag()+": download media thumbnail failed", "error", err)
+			}
+		}
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID:    agentkit.SessionID(sessionKey),
+			messageID:    messageID,
+			userID:       userID,
+			content:      text,
+			extraContent: quotedPrefix,
+			images:       images, rctx: rctx,
+		})
+
+	default:
+		slog.Debug(p.tag()+": ignoring unsupported message type", "type", msgType)
+	}
+}
+
+// resolveUserName fetches a user's display name via the Contact API, with caching.
+func (p *Platform) resolveUserName(openID string) string {
+	if !isValidFeishuLookupID(openID) {
+		return openID
+	}
+	if cached, ok := p.userNameCache.Load(openID); ok {
+		return cached.(string)
+	}
+	resp, err := p.client.Contact.User.Get(context.Background(),
+		larkcontact.NewGetUserReqBuilder().
+			UserId(openID).
+			UserIdType("open_id").
+			Build())
+	if err != nil {
+		slog.Debug(p.tag()+": resolve user name failed", "open_id", openID, "error", err)
+		return openID
+	}
+	if !resp.Success() || resp.Data == nil || resp.Data.User == nil || resp.Data.User.Name == nil {
+		slog.Debug(p.tag()+": resolve user name: no data", "open_id", openID, "code", resp.Code)
+		return openID
+	}
+	name := *resp.Data.User.Name
+	p.userNameCache.Store(openID, name)
+	return name
+}
+
+func userIDFromEvent(id *larkim.UserId) string {
+	if id == nil {
+		return ""
+	}
+	if id.OpenId != nil && *id.OpenId != "" {
+		return *id.OpenId
+	}
+	if id.UserId != nil && *id.UserId != "" {
+		return *id.UserId
+	}
+	if id.UnionId != nil && *id.UnionId != "" {
+		return *id.UnionId
+	}
+	return ""
+}
+
+func isValidFeishuLookupID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '_' || r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// resolveUserNames batch-resolves open_ids to display names.
+func (p *Platform) resolveUserNames(openIDs []string) map[string]string {
+	names := make(map[string]string, len(openIDs))
+	for _, id := range openIDs {
+		if _, ok := names[id]; !ok {
+			names[id] = p.resolveUserName(id)
+		}
+	}
+	return names
+}
+
+// resolveChatName fetches a chat/group name via the IM API, with caching.
+func (p *Platform) resolveChatName(chatID string) string {
+	if chatID == "" {
+		return ""
+	}
+	if cached, ok := p.chatNameCache.Load(chatID); ok {
+		return cached.(string)
+	}
+	resp, err := p.client.Im.Chat.Get(context.Background(),
+		larkim.NewGetChatReqBuilder().ChatId(chatID).Build())
+	if err != nil {
+		slog.Debug(p.tag()+": resolve chat name failed", "chat_id", chatID, "error", err)
+		return chatID
+	}
+	if !resp.Success() || resp.Data == nil || resp.Data.Name == nil {
+		slog.Debug(p.tag()+": resolve chat name: no data", "chat_id", chatID, "code", resp.Code)
+		return chatID
+	}
+	name := *resp.Data.Name
+	if name == "" {
+		return chatID
+	}
+	p.chatNameCache.Store(chatID, name)
+	return name
+}
+
+// --- Mention resolution ---
+
+const chatMemberCacheTTL = 1 * time.Hour
+
+type chatMemberEntry struct {
+	members   map[string]string // displayName -> openID
+	fetchedAt time.Time
+}
+
+// fetchChatMembers retrieves all members of a chat and returns a name->openID map.
+func (p *Platform) fetchChatMembers(ctx context.Context, chatID string) (map[string]string, error) {
+	if p.client == nil {
+		return nil, fmt.Errorf("%s: client not initialized", p.tag())
+	}
+	members := make(map[string]string)
+	req := larkim.NewGetChatMembersReqBuilder().
+		ChatId(chatID).
+		MemberIdType("open_id").
+		PageSize(100).
+		Build()
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	token, err := p.fetchFreshTenantAccessToken(timeoutCtx)
+	if err != nil {
+		return nil, fmt.Errorf("%s: fetch tenant token for chat members: %w", p.tag(), err)
+	}
+	iter, err := p.client.Im.ChatMembers.GetByIterator(timeoutCtx, req, larkcore.WithTenantAccessToken(token))
+	if err != nil {
+		return nil, fmt.Errorf("%s: list chat members: %w", p.tag(), err)
+	}
+	for {
+		hasMore, member, err := iter.Next()
+		if err != nil {
+			slog.Debug(p.tag()+": fetch chat members page error", "chat_id", chatID, "error", err)
+			break
+		}
+		if member != nil && member.Name != nil && member.MemberId != nil {
+			name := *member.Name
+			if _, exists := members[name]; !exists {
+				members[name] = *member.MemberId
+			} else {
+				members[name] = ""
+			}
+		}
+		if !hasMore {
+			break
+		}
+	}
+	return members, nil
+}
+
+// getChatMembers returns the cached name->openID map for a chat, fetching if needed.
+func (p *Platform) getChatMembers(ctx context.Context, chatID string) map[string]string {
+	if v, ok := p.chatMemberCache.Load(chatID); ok {
+		entry := v.(*chatMemberEntry)
+		if time.Since(entry.fetchedAt) < chatMemberCacheTTL {
+			return entry.members
+		}
+	}
+	members, err := p.fetchChatMembers(ctx, chatID)
+	if err != nil {
+		slog.Debug(p.tag()+": fetch chat members failed", "chat_id", chatID, "error", err)
+		return nil
+	}
+	p.chatMemberCache.Store(chatID, &chatMemberEntry{members: members, fetchedAt: time.Now()})
+	return members
+}
+
+// resolveMentionsInContent replaces @name with Feishu at tags in raw content
+// (before JSON serialization). Reverse-matches against the chat member list,
+// longest name first. Uses the correct at syntax based on predicted message type.
+func (p *Platform) resolveMentionsInContent(ctx context.Context, chatID, content string) string {
+	if !p.resolveMentions || chatID == "" || !strings.Contains(content, "@") {
+		return content
+	}
+	members := p.getChatMembers(ctx, chatID)
+	if len(members) == 0 {
+		return content
+	}
+	// Sort names longest-first to avoid partial matches.
+	names := make([]string, 0, len(members))
+	for name := range members {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool { return len(names[i]) > len(names[j]) })
+
+	useCardFormat := predictMsgType(content) == larkim.MsgTypeInteractive
+	result := content
+	for _, name := range names {
+		pattern := "@" + name
+		if !strings.Contains(result, pattern) {
+			continue
+		}
+		openID := members[name]
+		if openID == "" {
+			slog.Debug(p.tag()+": skipping ambiguous mention", "name", name)
+			continue
+		}
+		var atTag string
+		if useCardFormat {
+			atTag = fmt.Sprintf(`<at id=%s></at>`, openID)
+		} else {
+			escapedName := html.EscapeString(name)
+			atTag = fmt.Sprintf(`<at user_id="%s">%s</at>`, openID, escapedName)
+		}
+		slog.Debug(p.tag()+": mention resolved", "name", name, "card_format", useCardFormat)
+		result = strings.ReplaceAll(result, pattern, atTag)
+	}
+	return result
+}
+
+// chainMessage holds extracted data from one message in a reply chain.
+type chainMessage struct {
+	senderName string
+	senderType string // "user" or "app"
+	text       string
+	parentID   string
+}
+
+// maxReplyChainDepth is the maximum number of parent messages to traverse
+// when building a reply chain. This limits API calls per inbound reply.
+const maxReplyChainDepth = 5
+
+// fetchQuotedMessage retrieves the content of a parent message that the user
+// is replying to, and returns a formatted prefix string for context injection.
+// For multi-level reply chains, it traces parent_id links up to maxReplyChainDepth
+// levels and returns the full conversation chain.
+// Returns empty string on any failure (graceful degradation — the user's own
+// message is still delivered without the quote).
+func (p *Platform) fetchQuotedMessage(ctx context.Context, parentID string) string {
+	chain := p.fetchReplyChain(ctx, parentID, maxReplyChainDepth)
+	if len(chain) == 0 {
+		return ""
+	}
+	return formatReplyChain(chain)
+}
+
+// resolveBotSenderName returns a display name for a bot sender in a quoted
+// reply chain. Feishu sets sender.id to the bot's app_id (globally stable,
+// not an open_id). We consult the peer_bots config to map app_id → alias;
+// if the app is unknown, we surface the app_id so operators can add it to
+// the config rather than seeing an ambiguous "Bot".
+func (p *Platform) resolveBotSenderName(appID string) string {
+	if appID == "" {
+		return "Bot"
+	}
+	if alias := p.peerBots[appID]; alias != "" {
+		return alias
+	}
+	return "Bot[" + appID + "]"
+}
+
+// fetchSingleMessage retrieves one message by ID from the Feishu API and
+// returns its extracted content as a chainMessage. Returns nil on any failure.
+func (p *Platform) fetchSingleMessage(ctx context.Context, messageID string) *chainMessage {
+	apiPath := fmt.Sprintf("/open-apis/im/v1/messages/%s?card_msg_content_type=raw_card_content", messageID)
+	apiResp, err := p.client.Get(ctx, apiPath, nil, larkcore.AccessTokenTypeTenant)
+	if err != nil {
+		slog.Debug(p.tag()+": fetch single message failed", "message_id", messageID, "error", err)
+		return nil
+	}
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Items []struct {
+				MsgType  string `json:"msg_type"`
+				ParentID string `json:"parent_id"`
+				Sender   struct {
+					ID         string `json:"id"`
+					SenderType string `json:"sender_type"`
+				} `json:"sender"`
+				Body struct {
+					Content string `json:"content"`
+				} `json:"body"`
+				Mentions []*larkim.Mention `json:"mentions"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(apiResp.RawBody, &resp); err != nil || resp.Code != 0 || len(resp.Data.Items) == 0 {
+		slog.Debug(p.tag()+": fetch single message: parse failed or no data", "message_id", messageID)
+		return nil
+	}
+
+	item := resp.Data.Items[0]
+	content := item.Body.Content
+	if content == "" {
+		return nil
+	}
+
+	// Extract plain text based on message type.
+	var text string
+	switch item.MsgType {
+	case "text":
+		var textBody struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(content), &textBody); err == nil {
+			text = replaceMentions(textBody.Text, item.Mentions)
+		}
+	case "post":
+		text = extractPostPlainText(content)
+	case "interactive":
+		text = extractInteractiveCardText(content)
+	default:
+		text = fmt.Sprintf("[%s]", item.MsgType)
+	}
+	if text == "" {
+		return nil
+	}
+
+	// Resolve sender name.
+	senderName := ""
+	if item.Sender.SenderType == "app" {
+		senderName = p.resolveBotSenderName(item.Sender.ID)
+	} else if item.Sender.ID != "" {
+		resolved := p.resolveUserName(item.Sender.ID)
+		if resolved != item.Sender.ID {
+			senderName = resolved
+		} else {
+			senderName = "User"
+		}
+	}
+	if senderName == "" {
+		senderName = "unknown"
+	}
+
+	return &chainMessage{
+		senderName: senderName,
+		senderType: item.Sender.SenderType,
+		text:       text,
+		parentID:   item.ParentID,
+	}
+}
+
+// fetchReplyChain iteratively traverses parent_id links to build a reply chain.
+// Returns messages in chronological order (oldest first). Stops on any failure,
+// circular reference, or when maxDepth is reached.
+func (p *Platform) fetchReplyChain(ctx context.Context, parentID string, maxDepth int) []chainMessage {
+	var chain []chainMessage
+	visited := make(map[string]struct{})
+	currentID := parentID
+
+	for currentID != "" && len(chain) < maxDepth {
+		if _, seen := visited[currentID]; seen {
+			slog.Debug(p.tag()+": reply chain: circular reference detected", "message_id", currentID)
+			break
+		}
+		visited[currentID] = struct{}{}
+
+		msg := p.fetchSingleMessage(ctx, currentID)
+		if msg == nil {
+			break
+		}
+		chain = append(chain, *msg)
+		currentID = msg.parentID
+	}
+
+	// Reverse to chronological order (oldest first).
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain
+}
+
+// formatReplyChain formats a slice of chain messages into a readable string.
+// Single-message chains use the legacy format for backward compatibility.
+// Multi-message chains use a numbered format with role labels.
+func formatReplyChain(chain []chainMessage) string {
+	if len(chain) == 0 {
+		return ""
+	}
+
+	// Single message: backward-compatible format.
+	if len(chain) == 1 {
+		return fmt.Sprintf("[Quoted message from %s]:\n%s\n\n", chain[0].senderName, chain[0].text)
+	}
+
+	// Multi-message: numbered chain format.
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- Reply chain (%d messages) ---\n", len(chain))
+	for i, msg := range chain {
+		role := "user"
+		if msg.senderType == "app" {
+			role = "assistant"
+		}
+		fmt.Fprintf(&b, "[%d] %s (%s):\n%s\n\n", i+1, msg.senderName, role, msg.text)
+	}
+	b.WriteString("---\n\n")
+	return b.String()
+}
+
+// extractPostPlainText extracts plain text from a Lark post (rich text) JSON content.
+func extractPostPlainText(content string) string {
+	var post struct {
+		Content [][]struct {
+			Tag      string `json:"tag"`
+			Text     string `json:"text"`
+			Language string `json:"language,omitempty"`
+			UserId   string `json:"user_id,omitempty"`
+			UserName string `json:"user_name,omitempty"`
+		} `json:"content"`
+		Title string `json:"title"`
+	}
+	// Post content may be wrapped in a locale key like {"zh_cn": {...}}.
+	// Try direct parse first, then try extracting from locale wrapper.
+	if err := json.Unmarshal([]byte(content), &post); err != nil || len(post.Content) == 0 {
+		var localeWrapper map[string]json.RawMessage
+		if err2 := json.Unmarshal([]byte(content), &localeWrapper); err2 == nil {
+			for _, v := range localeWrapper {
+				if err3 := json.Unmarshal(v, &post); err3 == nil && len(post.Content) > 0 {
+					break
+				}
+			}
+		}
+	}
+	if len(post.Content) == 0 {
+		return ""
+	}
+	var parts []string
+	if post.Title != "" {
+		parts = append(parts, post.Title)
+	}
+	for _, para := range post.Content {
+		var line []string
+		for _, elem := range para {
+			switch elem.Tag {
+			case "text":
+				if elem.Text != "" {
+					line = append(line, elem.Text)
+				}
+			case "a":
+				if elem.Text != "" {
+					line = append(line, elem.Text)
+				}
+			case "markdown":
+				if elem.Text != "" {
+					line = append(line, elem.Text)
+				}
+			case "at":
+				switch {
+				case elem.UserId == "all":
+					line = append(line, "@all")
+				case elem.UserName != "":
+					line = append(line, "@"+elem.UserName)
+				case elem.UserId != "":
+					line = append(line, "@user")
+				}
+			case "img":
+				line = append(line, "[image]")
+			case "code_block":
+				if elem.Text != "" {
+					lang := elem.Language
+					line = append(line, "```"+lang+"\n"+elem.Text+"\n```")
+				}
+			}
+		}
+		if len(line) > 0 {
+			parts = append(parts, strings.Join(line, ""))
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// extractInteractiveCardText extracts readable text from a Feishu interactive card JSON.
+// With raw_card_content, the response wraps the card in {"json_card": "...", ...}.
+// Supports schema 2.0 (body.property.elements with recursive nesting) and
+// legacy format (top-level title + elements).
+func extractInteractiveCardText(content string) string {
+	// Try raw_card_content format: {"json_card": "<escaped JSON>", ...}
+	var wrapper struct {
+		JsonCard string `json:"json_card"`
+	}
+	cardJSON := content
+	if json.Unmarshal([]byte(content), &wrapper) == nil && wrapper.JsonCard != "" {
+		cardJSON = wrapper.JsonCard
+	}
+
+	var card map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil {
+		return "[interactive card]"
+	}
+
+	var parts []string
+
+	// Schema 2.0: body may use property.elements (standard) or direct elements (simplified).
+	if raw, ok := card["body"]; ok {
+		var body struct {
+			Tag      string            `json:"tag"`
+			Elements []json.RawMessage `json:"elements"`
+			Property struct {
+				Elements []json.RawMessage `json:"elements"`
+			} `json:"property"`
+		}
+		if json.Unmarshal(raw, &body) == nil {
+			if body.Tag == "body" && len(body.Property.Elements) > 0 {
+				extractCardElements(body.Property.Elements, &parts)
+			} else if len(body.Elements) > 0 {
+				extractCardElements(body.Elements, &parts)
+			}
+		}
+	}
+
+	// Legacy: direct title string + flat/nested elements.
+	if len(parts) == 0 {
+		if raw, ok := card["header"]; ok {
+			var header struct {
+				Title struct {
+					Content string `json:"content"`
+				} `json:"title"`
+			}
+			if json.Unmarshal(raw, &header) == nil && header.Title.Content != "" {
+				parts = append(parts, header.Title.Content)
+			}
+		}
+		if len(parts) == 0 {
+			if raw, ok := card["title"]; ok {
+				var title string
+				if json.Unmarshal(raw, &title) == nil && title != "" {
+					parts = append(parts, title)
+				}
+			}
+		}
+		var elements []json.RawMessage
+		if raw, ok := card["elements"]; ok {
+			var nested [][]json.RawMessage
+			if json.Unmarshal(raw, &nested) == nil && len(nested) > 0 {
+				for _, row := range nested {
+					elements = append(elements, row...)
+				}
+			} else {
+				_ = json.Unmarshal(raw, &elements)
+			}
+		}
+		for _, raw := range elements {
+			var elem struct {
+				Tag  string `json:"tag"`
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(raw, &elem) == nil && elem.Tag == "text" && strings.TrimSpace(elem.Text) != "" {
+				parts = append(parts, elem.Text)
+			}
+		}
+	}
+
+	if len(parts) == 0 {
+		return "[interactive card]"
+	}
+	return strings.Join(parts, "\n")
+}
+
+// extractCardElements recursively extracts text from schema 2.0 card elements.
+// Handles: property.content, property.text (nested element), property.elements (recursive),
+// code_span, code_block (with tokenized contents), text_tag, hr, etc.
+func extractCardElements(elements []json.RawMessage, parts *[]string) {
+	for _, raw := range elements {
+		var elem struct {
+			Tag      string `json:"tag"`
+			Content  string `json:"content"`
+			Property struct {
+				Content  string            `json:"content"`
+				Contents json.RawMessage   `json:"contents"`
+				Language string            `json:"language"`
+				Elements []json.RawMessage `json:"elements"`
+				Text     json.RawMessage   `json:"text"`
+				Items    json.RawMessage   `json:"items"`
+				Columns  json.RawMessage   `json:"columns"`
+				Rows     json.RawMessage   `json:"rows"`
+			} `json:"property"`
+		}
+		if json.Unmarshal(raw, &elem) != nil {
+			continue
+		}
+		switch elem.Tag {
+		case "code_block":
+			var lines []struct {
+				Contents []struct {
+					Content string `json:"content"`
+				} `json:"contents"`
+			}
+			if json.Unmarshal(elem.Property.Contents, &lines) == nil {
+				var codeLines []string
+				for _, line := range lines {
+					var lineText string
+					for _, tok := range line.Contents {
+						lineText += tok.Content
+					}
+					codeLines = append(codeLines, lineText)
+				}
+				code := strings.Join(codeLines, "")
+				if strings.TrimSpace(code) != "" {
+					lang := elem.Property.Language
+					if lang != "" {
+						*parts = append(*parts, fmt.Sprintf("```%s\n%s```", lang, code))
+					} else {
+						*parts = append(*parts, fmt.Sprintf("```\n%s```", code))
+					}
+				}
+			}
+		case "code_span":
+			if elem.Property.Content != "" {
+				*parts = append(*parts, "`"+elem.Property.Content+"`")
+			}
+		case "hr":
+			*parts = append(*parts, "---")
+		case "table":
+			extractCardTable(elem.Property.Columns, elem.Property.Rows, parts)
+		case "list":
+			extractCardListItems(elem.Property.Items, parts)
+		default:
+			content := elem.Property.Content
+			if content == "" {
+				content = elem.Content
+			}
+			if content != "" {
+				*parts = append(*parts, content)
+			}
+			if len(elem.Property.Text) > 0 {
+				var textElem struct {
+					Property struct {
+						Content string `json:"content"`
+					} `json:"property"`
+				}
+				if json.Unmarshal(elem.Property.Text, &textElem) == nil && textElem.Property.Content != "" {
+					*parts = append(*parts, textElem.Property.Content)
+				}
+			}
+		}
+		if len(elem.Property.Elements) > 0 {
+			extractCardElements(elem.Property.Elements, parts)
+		}
+	}
+}
+
+// extractCardTable extracts text from a Feishu card table element.
+// Table structure: property.columns defines column names/headers,
+// property.rows is an array of row objects where each key is the column name
+// and the value has a "data" field containing a markdown/plain_text element.
+func extractCardTable(columnsRaw, rowsRaw json.RawMessage, parts *[]string) {
+	var columns []struct {
+		DisplayName string `json:"displayName"`
+		Name        string `json:"name"`
+	}
+	if err := json.Unmarshal(columnsRaw, &columns); err != nil || len(columns) == 0 {
+		return
+	}
+	var rows []map[string]struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(rowsRaw, &rows); err != nil {
+		return
+	}
+
+	// Build markdown table.
+	header := make([]string, len(columns))
+	for i, col := range columns {
+		header[i] = col.DisplayName
+	}
+	*parts = append(*parts, "| "+strings.Join(header, " | ")+" |")
+	sep := make([]string, len(columns))
+	for i := range sep {
+		sep[i] = "---"
+	}
+	*parts = append(*parts, "| "+strings.Join(sep, " | ")+" |")
+
+	for _, row := range rows {
+		cells := make([]string, len(columns))
+		for i, col := range columns {
+			cell := row[col.Name]
+			var cellParts []string
+			extractCardElements([]json.RawMessage{cell.Data}, &cellParts)
+			cells[i] = strings.Join(cellParts, " ")
+		}
+		*parts = append(*parts, "| "+strings.Join(cells, " | ")+" |")
+	}
+}
+
+// extractCardListItems extracts text from a Feishu card list element.
+// List structure: property.items is an array of items, each with an "elements" array.
+func extractCardListItems(itemsRaw json.RawMessage, parts *[]string) {
+	var items []struct {
+		Elements []json.RawMessage `json:"elements"`
+	}
+	if err := json.Unmarshal(itemsRaw, &items); err != nil {
+		return
+	}
+	for _, item := range items {
+		var itemParts []string
+		extractCardElements(item.Elements, &itemParts)
+		if len(itemParts) > 0 {
+			*parts = append(*parts, "- "+strings.Join(itemParts, " "))
+		}
+	}
+}
+
+// parseMergeForward fetches sub-messages of a merge_forward message via the
+// GET /open-apis/im/v1/messages/{message_id} API, then formats them into
+// readable text. Returns combined text, images, and files from the sub-messages.
+func (p *Platform) parseMergeForward(rootMessageID string) (string, []common.ImageAttachment, []common.FileAttachment) {
+	resp, err := p.client.Im.Message.Get(context.Background(),
+		larkim.NewGetMessageReqBuilder().
+			MessageId(rootMessageID).
+			Build())
+	if err != nil {
+		slog.Error(p.tag()+": fetch merge_forward sub-messages failed", "error", err)
+		return "", nil, nil
+	}
+	if !resp.Success() {
+		slog.Error(p.tag()+": fetch merge_forward sub-messages failed", "code", resp.Code, "msg", resp.Msg)
+		return "", nil, nil
+	}
+	if resp.Data == nil || len(resp.Data.Items) == 0 {
+		slog.Warn(p.tag()+": merge_forward has no sub-messages", "message_id", rootMessageID)
+		return "", nil, nil
+	}
+
+	items := resp.Data.Items
+	slog.Info(p.tag()+": merge_forward sub-messages fetched", "message_id", rootMessageID, "count", len(items))
+
+	// Build tree: group children by upper_message_id, collect sender IDs
+	childrenMap := make(map[string][]*larkim.Message)
+	senderIDs := make(map[string]struct{})
+	for _, item := range items {
+		if item.MessageId != nil && *item.MessageId == rootMessageID {
+			continue // skip root container
+		}
+		parentID := ""
+		if item.UpperMessageId != nil {
+			parentID = *item.UpperMessageId
+		}
+		if parentID == "" || parentID == rootMessageID {
+			parentID = rootMessageID
+		}
+		childrenMap[parentID] = append(childrenMap[parentID], item)
+		if item.Sender != nil && item.Sender.Id != nil {
+			senderIDs[*item.Sender.Id] = struct{}{}
+		}
+	}
+
+	// Resolve sender IDs to display names
+	uniqueIDs := make([]string, 0, len(senderIDs))
+	for id := range senderIDs {
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	nameMap := p.resolveUserNames(uniqueIDs)
+
+	var allImages []common.ImageAttachment
+	var allFiles []common.FileAttachment
+	var sb strings.Builder
+	sb.WriteString("<forwarded_messages>\n")
+	p.formatMergeForwardTree(rootMessageID, childrenMap, nameMap, &sb, &allImages, &allFiles, 0)
+	sb.WriteString("</forwarded_messages>")
+
+	return sb.String(), allImages, allFiles
+}
+
+// replaceMentions replaces @_user_N placeholders with real names from the Mentions list.
+func replaceMentions(text string, mentions []*larkim.Mention) string {
+	for _, m := range mentions {
+		if m.Key != nil && m.Name != nil {
+			text = strings.ReplaceAll(text, *m.Key, "@"+*m.Name)
+		}
+	}
+	return text
+}
+
+// formatMergeForwardTree recursively formats the sub-message tree.
+func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[string][]*larkim.Message, nameMap map[string]string, sb *strings.Builder, images *[]common.ImageAttachment, files *[]common.FileAttachment, depth int) {
+	if depth > 10 {
+		sb.WriteString(strings.Repeat("    ", depth))
+		sb.WriteString("[nested forwarding truncated]\n")
+		return
+	}
+	children := childrenMap[parentID]
+	indent := strings.Repeat("    ", depth)
+
+	for _, item := range children {
+		msgID := ""
+		if item.MessageId != nil {
+			msgID = *item.MessageId
+		}
+		msgType := ""
+		if item.MsgType != nil {
+			msgType = *item.MsgType
+		}
+		senderID := ""
+		if item.Sender != nil && item.Sender.Id != nil {
+			senderID = *item.Sender.Id
+		}
+		senderName := senderID
+		if name, ok := nameMap[senderID]; ok {
+			senderName = name
+		}
+
+		// Format timestamp
+		ts := ""
+		if item.CreateTime != nil {
+			if ms, err := strconv.ParseInt(*item.CreateTime, 10, 64); err == nil {
+				ts = time.Unix(ms/1000, 0).Format("2006-01-02 15:04:05")
+			}
+		}
+
+		content := ""
+		if item.Body != nil && item.Body.Content != nil {
+			content = *item.Body.Content
+		}
+
+		switch msgType {
+		case "text":
+			var textBody struct {
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal([]byte(content), &textBody); err == nil && textBody.Text != "" {
+				msgText := replaceMentions(textBody.Text, item.Mentions)
+				sb.WriteString(fmt.Sprintf("%s[%s] %s:\n", indent, ts, senderName))
+				for _, line := range strings.Split(msgText, "\n") {
+					sb.WriteString(fmt.Sprintf("%s    %s\n", indent, line))
+				}
+			}
+
+		case "post":
+			textParts, postImages := p.parsePostContent(msgID, content)
+			*images = append(*images, postImages...)
+			text := replaceMentions(strings.Join(textParts, "\n"), item.Mentions)
+			if text != "" {
+				sb.WriteString(fmt.Sprintf("%s[%s] %s:\n", indent, ts, senderName))
+				for _, line := range strings.Split(text, "\n") {
+					sb.WriteString(fmt.Sprintf("%s    %s\n", indent, line))
+				}
+			}
+
+		case "image":
+			var imgBody struct {
+				ImageKey string `json:"image_key"`
+			}
+			if err := json.Unmarshal([]byte(content), &imgBody); err == nil && imgBody.ImageKey != "" {
+				imgData, mimeType, err := p.downloadImage(msgID, imgBody.ImageKey)
+				if err != nil {
+					slog.Error(p.tag()+": download merge_forward image failed", "error", err)
+					sb.WriteString(fmt.Sprintf("%s[%s] %s: [image - download failed]\n", indent, ts, senderName))
+				} else {
+					*images = append(*images, common.ImageAttachment{MimeType: mimeType, Data: imgData})
+					sb.WriteString(fmt.Sprintf("%s[%s] %s: [image]\n", indent, ts, senderName))
+				}
+			}
+
+		case "file":
+			var fileBody struct {
+				FileKey  string `json:"file_key"`
+				FileName string `json:"file_name"`
+			}
+			if err := json.Unmarshal([]byte(content), &fileBody); err == nil && fileBody.FileKey != "" {
+				fileData, err := p.downloadResource(msgID, fileBody.FileKey, "file")
+				if err != nil {
+					slog.Error(p.tag()+": download merge_forward file failed", "error", err)
+					sb.WriteString(fmt.Sprintf("%s[%s] %s: [file: %s - download failed]\n", indent, ts, senderName, fileBody.FileName))
+				} else {
+					mt := detectMimeType(fileData)
+					*files = append(*files, common.FileAttachment{MimeType: mt, Data: fileData, FileName: fileBody.FileName})
+					sb.WriteString(fmt.Sprintf("%s[%s] %s: [file: %s]\n", indent, ts, senderName, fileBody.FileName))
+				}
+			}
+
+		case "merge_forward":
+			sb.WriteString(fmt.Sprintf("%s[%s] %s: [forwarded messages]\n", indent, ts, senderName))
+			p.formatMergeForwardTree(msgID, childrenMap, nameMap, sb, images, files, depth+1)
+
+		default:
+			sb.WriteString(fmt.Sprintf("%s[%s] %s: [%s message]\n", indent, ts, senderName, msgType))
+		}
+	}
+}
+
+func (p *Platform) Reply(ctx context.Context, rctx any, content string) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	content = p.resolveMentionsInContent(ctx, rc.chatID, content)
+	msgType, msgBody := buildReplyContent(content)
+
+	if !p.shouldUseThreadOrReplyAPI(rc) {
+		return p.sendNewMessageToChat(ctx, rc, msgType, msgBody)
+	}
+	return p.replyMessage(ctx, rc, msgType, msgBody)
+}
+
+// Send sends a message. When the original message ID is available, the message
+// is sent as a reply (quoting the original) so the conversation stays threaded.
+// Falls back to creating a standalone message when no message ID exists.
+func (p *Platform) sendIMContent(ctx context.Context, rctx any, content string) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	if p.shouldUseThreadOrReplyAPI(rc) {
+		return p.Reply(ctx, rctx, content)
+	}
+
+	content = p.resolveMentionsInContent(ctx, rc.chatID, content)
+	msgType, msgBody := buildReplyContent(content)
+	return p.sendNewMessageToChat(ctx, rc, msgType, msgBody)
+}
+
+func (p *Platform) SendImage(ctx context.Context, rctx any, img common.ImageAttachment) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("%s: SendImage: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	var uploadResp *larkim.CreateImageResp
+	if err := p.withTransientRetry(ctx, "upload image", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "upload image", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			req := larkim.NewCreateImageReqBuilder().
+				Body(larkim.NewCreateImageReqBodyBuilder().
+					ImageType("message").
+					Image(bytes.NewReader(img.Data)).
+					Build()).
+				Build()
+			var err error
+			uploadResp, err = client.Im.Image.Create(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: upload image: %w", p.tag(), err)
+			}
+			if !uploadResp.Success() {
+				return fmt.Errorf("%s: upload image code=%d msg=%s", p.tag(), uploadResp.Code, uploadResp.Msg)
+			}
+			return nil
+		})
+	}); err != nil {
+		return err
+	}
+	if uploadResp.Data == nil || uploadResp.Data.ImageKey == nil {
+		return fmt.Errorf("%s: upload image: no image_key returned", p.tag())
+	}
+
+	imageContent, err := (&larkim.MessageImage{ImageKey: *uploadResp.Data.ImageKey}).String()
+	if err != nil {
+		return fmt.Errorf("%s: build image message: %w", p.tag(), err)
+	}
+
+	return p.sendMediaMessage(ctx, rc, larkim.MsgTypeImage, imageContent)
+}
+
+func (p *Platform) SendFile(ctx context.Context, rctx any, file common.FileAttachment) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("%s: SendFile: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	fileName := file.FileName
+	if fileName == "" {
+		fileName = "attachment"
+	}
+	fileType := detectFeishuFileType(file.MimeType, fileName)
+	var uploadResp *larkim.CreateFileResp
+	if err := p.withTransientRetry(ctx, "upload file", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "upload file", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			req := larkim.NewCreateFileReqBuilder().
+				Body(larkim.NewCreateFileReqBodyBuilder().
+					FileType(fileType).
+					FileName(fileName).
+					File(bytes.NewReader(file.Data)).
+					Build()).
+				Build()
+			var err error
+			uploadResp, err = client.Im.File.Create(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: upload file: %w", p.tag(), err)
+			}
+			if !uploadResp.Success() {
+				return fmt.Errorf("%s: upload file code=%d msg=%s", p.tag(), uploadResp.Code, uploadResp.Msg)
+			}
+			return nil
+		})
+	}); err != nil {
+		return err
+	}
+	if uploadResp.Data == nil || uploadResp.Data.FileKey == nil {
+		return fmt.Errorf("%s: upload file: no file_key returned", p.tag())
+	}
+
+	fileContent, err := (&larkim.MessageFile{FileKey: *uploadResp.Data.FileKey}).String()
+	if err != nil {
+		return fmt.Errorf("%s: build file message: %w", p.tag(), err)
+	}
+
+	return p.sendMediaMessage(ctx, rc, larkim.MsgTypeFile, fileContent)
+}
+
+func (p *Platform) sendMediaMessage(ctx context.Context, rc replyContext, msgType, content string) error {
+	if p.shouldUseThreadOrReplyAPI(rc) {
+		return p.replyMessage(ctx, rc, msgType, content)
+	}
+	return p.createMessage(ctx, rc.chatID, msgType, content, "send media message")
+}
+
+func detectFeishuFileType(mimeType, fileName string) string {
+	name := strings.ToLower(fileName)
+	switch {
+	case mimeType == "application/pdf" || strings.HasSuffix(name, ".pdf"):
+		return larkim.CreateFileFileTypePdf
+	case strings.HasSuffix(name, ".doc") || strings.HasSuffix(name, ".docx"):
+		return larkim.CreateFileFileTypeDoc
+	case strings.HasSuffix(name, ".xls") || strings.HasSuffix(name, ".xlsx") || strings.HasSuffix(name, ".csv"):
+		return larkim.CreateFileFileTypeXls
+	case strings.HasSuffix(name, ".ppt") || strings.HasSuffix(name, ".pptx"):
+		return larkim.CreateFileFileTypePpt
+	case mimeType == "video/mp4" || strings.HasSuffix(name, ".mp4"):
+		return larkim.CreateFileFileTypeMp4
+	case mimeType == "audio/ogg" || mimeType == "audio/opus" || strings.HasSuffix(name, ".opus"):
+		return larkim.CreateFileFileTypeOpus
+	default:
+		return larkim.CreateFileFileTypeStream
+	}
+}
+
+func (p *Platform) downloadImage(messageID, imageKey string) ([]byte, string, error) {
+	resp, err := p.client.Im.MessageResource.Get(context.Background(),
+		larkim.NewGetMessageResourceReqBuilder().
+			MessageId(messageID).
+			FileKey(imageKey).
+			Type("image").
+			Build())
+	if err != nil {
+		return nil, "", fmt.Errorf("%s: image API: %w", p.tag(), err)
+	}
+	if !resp.Success() {
+		return nil, "", fmt.Errorf("%s: image API code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+	}
+	if resp.File == nil {
+		return nil, "", fmt.Errorf("%s: image API returned nil file body", p.tag())
+	}
+	data, err := io.ReadAll(resp.File)
+	if err != nil {
+		return nil, "", fmt.Errorf("%s: read image: %w", p.tag(), err)
+	}
+
+	mimeType := detectMimeType(data)
+	slog.Debug(p.tag()+": downloaded image", "key", imageKey, "size", len(data), "mime", mimeType)
+	return data, mimeType, nil
+}
+
+func (p *Platform) downloadResource(messageID, fileKey, resType string) ([]byte, error) {
+	resp, err := p.client.Im.MessageResource.Get(context.Background(),
+		larkim.NewGetMessageResourceReqBuilder().
+			MessageId(messageID).
+			FileKey(fileKey).
+			Type(resType).
+			Build())
+	if err != nil {
+		return nil, fmt.Errorf("%s: resource API: %w", p.tag(), err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("%s: resource API code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+	}
+	if resp.File == nil {
+		return nil, fmt.Errorf("%s: resource API returned nil file body", p.tag())
+	}
+	data, err := io.ReadAll(resp.File)
+	if err != nil {
+		return nil, fmt.Errorf("%s: read resource: %w", p.tag(), err)
+	}
+	slog.Debug(p.tag()+": downloaded resource", "key", fileKey, "type", resType, "size", len(data))
+	return data, nil
+}
+
+func detectMimeType(data []byte) string {
+	if len(data) >= 8 {
+		if data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' {
+			return "image/png"
+		}
+		if data[0] == 0xFF && data[1] == 0xD8 {
+			return "image/jpeg"
+		}
+		if string(data[:4]) == "GIF8" {
+			return "image/gif"
+		}
+		if string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
+			return "image/webp"
+		}
+	}
+	return "image/png"
+}
+
+// predictMsgType returns the message type that buildReplyContent will choose,
+// without actually building the content. Used to select the correct at syntax
+// before building.
+func predictMsgType(content string) string {
+	if !containsMarkdown(content) {
+		return larkim.MsgTypeText
+	}
+	if countMarkdownTables(content) <= maxCardTables {
+		return larkim.MsgTypeInteractive
+	}
+	return larkim.MsgTypePost
+}
+
+func buildReplyContent(content string) (msgType string, body string) {
+	if !containsMarkdown(content) {
+		b, _ := json.Marshal(map[string]string{"text": content})
+		return larkim.MsgTypeText, string(b)
+	}
+	// Prefer card for all markdown content — card schema 2.0 has the best
+	// markdown rendering (headings, blockquotes, code blocks, tables, links,
+	// strikethrough, etc.). Only fall back to post md tag when the content
+	// exceeds the card table limit (Feishu API error 11310: max 5 tables).
+	if countMarkdownTables(content) > maxCardTables {
+		return larkim.MsgTypePost, buildPostMdJSON(content)
+	}
+	return larkim.MsgTypeInteractive, buildCardJSON(sanitizeMarkdownURLs(preprocessFeishuMarkdown(content)))
+}
+
+// maxCardTables is the Feishu interactive card limit for table components.
+// A single card supports at most 5 tables; exceeding this causes API error 11310.
+const maxCardTables = 5
+
+// countMarkdownTables counts the number of distinct markdown tables in s.
+// A table is a group of consecutive lines where each line starts and ends with '|'.
+func countMarkdownTables(s string) int {
+	count := 0
+	inTable := false
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		isTableLine := len(trimmed) > 1 && trimmed[0] == '|' && trimmed[len(trimmed)-1] == '|'
+		if isTableLine && !inTable {
+			count++
+			inTable = true
+		} else if !isTableLine {
+			inTable = false
+		}
+	}
+	return count
+}
+
+// buildPostMdJSON builds a Feishu post message using the md tag,
+// which renders markdown at normal chat font size.
+func buildPostMdJSON(content string) string {
+	content = sanitizeMarkdownURLs(content)
+	post := map[string]any{
+		"zh_cn": map[string]any{
+			"content": [][]map[string]any{
+				{
+					{"tag": "md", "text": content},
+				},
+			},
+		},
+	}
+	b, _ := json.Marshal(post)
+	return string(b)
+}
+
+// preprocessFeishuMarkdown ensures code fences have a newline before them,
+// which prevents rendering issues in Feishu card markdown.
+// Tables, headings, blockquotes, etc. are rendered natively by the card markdown element.
+func preprocessFeishuMarkdown(md string) string {
+	// Ensure ``` has a newline before it (unless at start of text)
+	var b strings.Builder
+	b.Grow(len(md) + 32)
+	for i := 0; i < len(md); i++ {
+		if i > 0 && md[i] == '`' && i+2 < len(md) && md[i+1] == '`' && md[i+2] == '`' && md[i-1] != '\n' {
+			b.WriteByte('\n')
+		}
+		b.WriteByte(md[i])
+	}
+	return b.String()
+}
+
+var markdownIndicators = []string{
+	"```", "**", "~~", "`", "\n- ", "\n* ", "\n1. ", "\n# ", "---",
+}
+
+func containsMarkdown(s string) bool {
+	for _, ind := range markdownIndicators {
+		if strings.Contains(s, ind) {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidFeishuHref checks whether a URL is acceptable as a Feishu post href.
+// Feishu rejects non-HTTP(S) URLs with "invalid href" (code 230001).
+func isValidFeishuHref(u string) bool {
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
+}
+
+var mdLinkRe = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
+
+// sanitizeMarkdownURLs rewrites markdown links with non-HTTP(S) schemes
+// to plain text, preventing Feishu API rejection (code 230001).
+func sanitizeMarkdownURLs(md string) string {
+	return mdLinkRe.ReplaceAllStringFunc(md, func(match string) string {
+		parts := mdLinkRe.FindStringSubmatch(match)
+		if len(parts) < 3 {
+			return match
+		}
+		if isValidFeishuHref(parts[2]) {
+			return match
+		}
+		// Convert invalid-scheme link to "text (url)" plain text
+		return parts[1] + " (" + parts[2] + ")"
+	})
+}
+
+// fetchBotOpenID retrieves the bot's open_id via the Feishu bot info API.
+func (p *Platform) fetchBotOpenID() (string, error) {
+	resp, err := p.client.Get(context.Background(),
+		"/open-apis/bot/v3/info", nil, larkcore.AccessTokenTypeTenant)
+	if err != nil {
+		return "", fmt.Errorf("api call: %w", err)
+	}
+	var result struct {
+		Code int `json:"code"`
+		Bot  struct {
+			OpenID string `json:"open_id"`
+		} `json:"bot"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &result); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+	if result.Code != 0 {
+		return "", fmt.Errorf("api code=%d", result.Code)
+	}
+	return result.Bot.OpenID, nil
+}
+
+func isBotMentioned(mentions []*larkim.MentionEvent, botOpenID string) bool {
+	for _, m := range mentions {
+		if m.Id != nil && m.Id.OpenId != nil && *m.Id.OpenId == botOpenID {
+			return true
+		}
+	}
+	return false
+}
+
+// stripMentions processes @mention placeholders (e.g. @_user_1) in text.
+// The bot's own mention is removed; other user mentions are replaced with
+// their display name so the agent can see who was referenced.
+func stripMentions(text string, mentions []*larkim.MentionEvent, botOpenID string) string {
+	if len(mentions) == 0 {
+		return text
+	}
+	for _, m := range mentions {
+		if m.Key == nil {
+			continue
+		}
+		if botOpenID != "" && m.Id != nil && m.Id.OpenId != nil && *m.Id.OpenId == botOpenID {
+			text = strings.ReplaceAll(text, *m.Key, "")
+		} else if m.Name != nil && *m.Name != "" {
+			text = strings.ReplaceAll(text, *m.Key, "@"+*m.Name)
+		} else {
+			text = strings.ReplaceAll(text, *m.Key, "")
+		}
+	}
+	return strings.TrimSpace(text)
+}
+
+// makeSessionKey builds the finest-grain delivery SessionID for Feishu events.
+func (p *Platform) makeSessionKey(msg *larkim.EventMessage, chatID, userID string) string {
+	var thread string
+	if p.threadIsolation && msg != nil && stringValue(msg.ChatType) == "group" {
+		rootID := stringValue(msg.RootId)
+		if rootID == "" {
+			rootID = stringValue(msg.MessageId)
+		}
+		thread = rootID
+	}
+	return string(session.BuildDeliverySessionID(p.tag(), chatID, thread, userID))
+}
+
+func (p *Platform) sessionKeyFromCardAction(chatID, userID string, value map[string]any) string {
+	if value != nil {
+		if sessionKey, _ := value["session_key"].(string); sessionKey != "" {
+			return sessionKey
+		}
+	}
+	return string(session.BuildDeliverySessionID(p.tag(), chatID, "", userID))
+}
+
+func (p *Platform) shouldReplyInThread(rc replyContext) bool {
+	if rc.messageID == "" {
+		return false
+	}
+	return p.threadIsolation && isThreadSessionKey(rc.sessionKey)
+}
+
+// shouldUseThreadOrReplyAPI is true when we should call Im.Message.Reply (optionally with ReplyInThread).
+func (p *Platform) shouldUseThreadOrReplyAPI(rc replyContext) bool {
+	if rc.messageID == "" {
+		return false
+	}
+	return !p.noReplyToTrigger
+}
+
+func (p *Platform) sendNewMessageToChat(ctx context.Context, rc replyContext, msgType, content string) error {
+	if rc.chatID == "" {
+		return fmt.Errorf("%s: chatID is empty, cannot send new message", p.tag())
+	}
+	return p.createMessage(ctx, rc.chatID, msgType, content, "send")
+}
+
+func (p *Platform) buildReplyMessageReqBody(rc replyContext, msgType, content string) *larkim.ReplyMessageReqBody {
+	body := larkim.NewReplyMessageReqBodyBuilder().
+		MsgType(msgType).
+		Content(content)
+	if p.shouldReplyInThread(rc) {
+		body.ReplyInThread(true)
+	}
+	return body.Build()
+}
+
+func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, content string) error {
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(rc.messageID).
+		Body(p.buildReplyMessageReqBody(rc, msgType, content)).
+		Build()
+	return p.withTransientRetry(ctx, "reply", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "reply", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			resp, err := client.Im.Message.Reply(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: reply api call: %w", p.tag(), err)
+			}
+			if !resp.Success() {
+				return fmt.Errorf("%s: reply failed code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+			}
+			return nil
+		})
+	})
+}
+
+func (p *Platform) createMessage(ctx context.Context, chatID, msgType, content, op string) error {
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType("chat_id").
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(msgType).
+			Content(content).
+			Build()).
+		Build()
+	return p.withTransientRetry(ctx, op, func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, op, func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			resp, err := client.Im.Message.Create(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: %s api call: %w", p.tag(), op, err)
+			}
+			if !resp.Success() {
+				return fmt.Errorf("%s: %s failed code=%d msg=%s", p.tag(), op, resp.Code, resp.Msg)
+			}
+			return nil
+		})
+	})
+}
+
+func (p *Platform) withFreshTenantAccessTokenRetry(ctx context.Context, operation string, fn feishuRequestFunc) error {
+	err := fn(p.client)
+	if !isTenantAccessTokenInvalid(err) {
+		return err
+	}
+
+	freshToken, refreshErr := p.fetchFreshTenantAccessToken(ctx)
+	if refreshErr != nil {
+		return fmt.Errorf("%s: %s failed after token refresh attempt: %w (original error: %v)", p.tag(), operation, refreshErr, err)
+	}
+
+	slog.Warn(p.tag()+": retrying request with fresh tenant access token", "operation", operation)
+	return fn(p.replayAPIClient(), larkcore.WithTenantAccessToken(freshToken))
+}
+
+func (p *Platform) fetchFreshTenantAccessToken(ctx context.Context) (string, error) {
+	resp, err := p.replayAPIClient().GetTenantAccessTokenBySelfBuiltApp(ctx, &larkcore.SelfBuiltTenantAccessTokenReq{
+		AppID:     p.appID,
+		AppSecret: p.appSecret,
+	})
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch tenant access token: %w", p.tag(), err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("%s: fetch tenant access token code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+	}
+	if strings.TrimSpace(resp.TenantAccessToken) == "" {
+		return "", fmt.Errorf("%s: fetch tenant access token returned empty token", p.tag())
+	}
+	return resp.TenantAccessToken, nil
+}
+
+func (p *Platform) replayAPIClient() *lark.Client {
+	p.replayClientMu.Lock()
+	defer p.replayClientMu.Unlock()
+	if p.replayClient == nil {
+		p.replayClient = newFeishuReplayClient(p.appID, p.appSecret, p.domain)
+	}
+	return p.replayClient
+}
+
+func newFeishuReplayClient(appID, appSecret, domain string) *lark.Client {
+	var opts []lark.ClientOptionFunc
+	opts = append(opts, lark.WithEnableTokenCache(false))
+	if domain != "" && domain != lark.FeishuBaseUrl {
+		opts = append(opts, lark.WithOpenBaseUrl(domain))
+	}
+	return lark.NewClient(appID, appSecret, opts...)
+}
+
+func isTenantAccessTokenInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "99991663") || strings.Contains(msg, "invalid access token")
+}
+
+// Transient retry constants for network-level failures.
+const (
+	maxTransientRetries    = 3
+	transientRetryInitial  = 500 * time.Millisecond
+	transientRetryMaxDelay = 5 * time.Second
+)
+
+// isTransientError returns true if the error is a transient network error
+// that warrants a retry (connection reset, timeout, EOF, etc.).
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Typed syscall checks — more robust than string matching.
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	// net.Error covers timeouts and temporary errors from the stdlib.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	// EOF usually means the server closed the connection mid-response.
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	// Unwrapped string checks for common transient symptoms that may
+	// appear in wrapped Feishu SDK errors.
+	msg := err.Error()
+	for _, substr := range []string{
+		"connection reset by peer",
+		"broken pipe",
+		"i/o timeout",
+		"TLS handshake timeout",
+		"server misbehaving",
+		"connection refused",
+	} {
+		if strings.Contains(msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// withTransientRetry wraps an operation with exponential-backoff retry on
+// transient network errors. Non-transient errors are returned immediately.
+// Jitter (up to +25% of delay) is added to prevent thundering-herd retries.
+func (p *Platform) withTransientRetry(ctx context.Context, operation string, fn func() error) error {
+	var lastErr error
+	delay := transientRetryInitial
+	for attempt := 0; attempt <= maxTransientRetries; attempt++ {
+		lastErr = fn()
+		if lastErr == nil {
+			if attempt > 0 {
+				slog.Info(p.tag()+": transient retry succeeded",
+					"operation", operation,
+					"attempt", attempt+1,
+				)
+			}
+			return nil
+		}
+		if !isTransientError(lastErr) {
+			return lastErr
+		}
+		if attempt == maxTransientRetries {
+			break
+		}
+		// Add jitter: up to +25% of delay to spread out concurrent retries.
+		jitter := time.Duration(rand.Int64N(int64(delay / 4)))
+		actualDelay := delay + jitter
+		slog.Warn(p.tag()+": transient error, retrying",
+			"operation", operation,
+			"attempt", attempt+1,
+			"max_retries", maxTransientRetries,
+			"delay", actualDelay,
+			"error", lastErr,
+		)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s: %s retry cancelled: %w (last error: %v)", p.tag(), operation, ctx.Err(), lastErr)
+		case <-time.After(actualDelay):
+		}
+		delay = min(delay*2, transientRetryMaxDelay)
+	}
+	return fmt.Errorf("%s failed after %d retries: %w", operation, maxTransientRetries, lastErr)
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
+	parts := session.ParseDelivery(agentkit.SessionID(sessionKey), "")
+	if !parts.Routable || parts.Platform != p.platformTag {
+		return nil, fmt.Errorf("%s: invalid session key %q", p.tag(), sessionKey)
+	}
+	rc := replyContext{chatID: parts.Channel, sessionKey: sessionKey}
+	if parts.Thread != "" {
+		rc.messageID = parts.Thread
+	}
+	return rc, nil
+}
+
+func isThreadSessionKey(sessionKey string) bool {
+	parts := session.ParseDelivery(agentkit.SessionID(sessionKey), "")
+	return parts.Thread != ""
+}
+
+// feishuPreviewHandle stores the message ID for an editable preview message.
+// Card 2.0 path needs mu/status/lastContent to let SetPreviewStatus patch
+// the header color without re-rendering the whole card.
+type feishuPreviewHandle struct {
+	mu          sync.Mutex
+	messageID   string
+	chatID      string
+	status      cardStatus
+	lastContent string
+}
+
+// buildCardJSON builds a Feishu interactive card JSON string with a markdown element.
+// Uses schema 2.0 which supports code blocks, tables, and inline formatting.
+// Card font is inherently smaller than Post/Text — this is a Feishu platform limitation.
+func buildCardJSON(content string) string {
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"wide_screen_mode": true,
+		},
+		"body": map[string]any{
+			"elements": []map[string]any{
+				{
+					"tag":     "markdown",
+					"content": content,
+				},
+			},
+		},
+	}
+	b, _ := json.Marshal(card)
+	return string(b)
+}
+
+func isZhLikeProgressLang(lang string) bool {
+	l := strings.ToLower(strings.TrimSpace(lang))
+	return strings.HasPrefix(l, "zh")
+}
+
+func progressAgentLabel(agent string) string {
+	agent = strings.TrimSpace(agent)
+	if agent == "" {
+		return "Agent"
+	}
+	return agent
+}
+
+func progressStateMeta(state common.ProgressCardState, lang string, agent string) (title string, template string, footer string) {
+	zh := isZhLikeProgressLang(lang)
+	switch state {
+	case common.ProgressCardStateCompleted:
+		if zh {
+			return fmt.Sprintf("%s · 已完成", agent), "green", "本过程卡片已停止更新，完整答复见下一条消息。"
+		}
+		return fmt.Sprintf("%s · Completed", agent), "green", "This progress card is no longer updating. Full response is in the next message."
+	case common.ProgressCardStateFailed:
+		if zh {
+			return fmt.Sprintf("%s · 失败", agent), "red", "本过程卡片已停止更新（失败），完整错误说明见下一条消息。"
+		}
+		return fmt.Sprintf("%s · Failed", agent), "red", "This progress card has stopped (failed). See the next message for details."
+	default:
+		if zh {
+			return fmt.Sprintf("%s · 进行中", agent), "blue", ""
+		}
+		return fmt.Sprintf("%s · Running", agent), "blue", ""
+	}
+}
+
+func progressKindLabel(kind common.ProgressCardEntryKind, lang string) string {
+	zh := isZhLikeProgressLang(lang)
+	switch kind {
+	case common.ProgressEntryThinking:
+		if zh {
+			return "思考"
+		}
+		return "Thinking"
+	case common.ProgressEntryToolUse:
+		if zh {
+			return "工具调用"
+		}
+		return "Tool"
+	case common.ProgressEntryToolResult:
+		if zh {
+			return "工具结果"
+		}
+		return "Result"
+	case common.ProgressEntryError:
+		if zh {
+			return "错误"
+		}
+		return "Error"
+	default:
+		if zh {
+			return "更新"
+		}
+		return "Update"
+	}
+}
+
+func normalizeProgressItems(payload *common.ProgressCardPayload) []common.ProgressCardEntry {
+	if payload == nil {
+		return nil
+	}
+	if len(payload.Items) > 0 {
+		return payload.Items
+	}
+	out := make([]common.ProgressCardEntry, 0, len(payload.Entries))
+	for _, entry := range payload.Entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		kind := common.ProgressEntryInfo
+		switch {
+		case strings.HasPrefix(entry, "💭"):
+			kind = common.ProgressEntryThinking
+		case strings.HasPrefix(entry, "🔧"), strings.Contains(entry, "**Tool #"):
+			kind = common.ProgressEntryToolUse
+		case strings.HasPrefix(entry, "🧾"):
+			kind = common.ProgressEntryToolResult
+		case strings.HasPrefix(entry, "❌"):
+			kind = common.ProgressEntryError
+		}
+		out = append(out, common.ProgressCardEntry{Kind: kind, Text: entry})
+	}
+	return out
+}
+
+func inlineCodeText(s string) string {
+	return strings.ReplaceAll(strings.TrimSpace(s), "`", "'")
+}
+
+func isBashToolName(toolName string) bool {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "bash", "shell", "run_shell_command":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTodoWriteToolName(toolName string) bool {
+	return strings.EqualFold(strings.TrimSpace(toolName), "todowrite")
+}
+
+// todoItem represents a single todo item from TodoWrite tool input.
+type todoItem struct {
+	ActiveForm string `json:"activeForm"`
+	Content    string `json:"content"`
+	Status     string `json:"status"`
+}
+
+// todoWriteInput represents the TodoWrite tool input structure.
+type todoWriteInput struct {
+	Todos []todoItem `json:"todos"`
+}
+
+// formatTodoWriteInput formats TodoWrite JSON input into a readable markdown list.
+// Returns empty string if parsing fails or input is invalid.
+func formatTodoWriteInput(text string, _ string) string {
+	var input todoWriteInput
+	if err := json.Unmarshal([]byte(text), &input); err != nil {
+		return "" // Fall back to default formatting
+	}
+	if len(input.Todos) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, todo := range input.Todos {
+		var icon string
+		switch strings.ToLower(strings.TrimSpace(todo.Status)) {
+		case "completed":
+			icon = "✅"
+		case "in_progress":
+			icon = "🔄"
+		case "pending":
+			icon = "⏳"
+		default:
+			icon = "•"
+		}
+
+		content := strings.TrimSpace(todo.Content)
+		if content == "" {
+			continue
+		}
+
+		// Escape markdown special characters
+		content = strings.ReplaceAll(content, "`", "'")
+
+		sb.WriteString(icon)
+		sb.WriteString(" ")
+		sb.WriteString(content)
+
+		activeForm := strings.TrimSpace(todo.ActiveForm)
+		if activeForm != "" && activeForm != content {
+			sb.WriteString(" _(")
+			sb.WriteString(strings.ReplaceAll(activeForm, "`", "'"))
+			sb.WriteString(")_")
+		}
+		sb.WriteString("\n")
+	}
+
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
+func formatProgressToolInput(toolName, text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	// Special handling for TodoWrite tool - format JSON as readable list
+	if isTodoWriteToolName(toolName) {
+		if formatted := formatTodoWriteInput(text, ""); formatted != "" {
+			return formatted
+		}
+		// JSON parsing failed or empty todos - show raw input as text block
+		return fmt.Sprintf("```text\n%s\n```", text)
+	}
+
+	text = preprocessFeishuMarkdown(sanitizeMarkdownURLs(text))
+	if strings.Contains(text, "```") {
+		return text
+	}
+	if isBashToolName(toolName) {
+		return fmt.Sprintf("```bash\n%s\n```", text)
+	}
+	if strings.Contains(text, "\n") || len(text) > 180 {
+		return fmt.Sprintf("```text\n%s\n```", text)
+	}
+	return fmt.Sprintf("`%s`", inlineCodeText(text))
+}
+
+func formatProgressToolResult(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = preprocessFeishuMarkdown(sanitizeMarkdownURLs(text))
+	if strings.Contains(text, "```") {
+		return text
+	}
+	if strings.Contains(text, "\n") || len(text) > 220 {
+		return fmt.Sprintf("```\n%s\n```", text)
+	}
+	return text
+}
+
+func progressNoOutputText(lang string) string {
+	if isZhLikeProgressLang(lang) {
+		return "无输出"
+	}
+	return "No output"
+}
+
+func progressResultDot(item common.ProgressCardEntry) string {
+	if item.Success != nil {
+		if *item.Success {
+			return "🟢"
+		}
+		return "🔴"
+	}
+	if item.ExitCode != nil {
+		if *item.ExitCode == 0 {
+			return "🟢"
+		}
+		return "🔴"
+	}
+	if strings.EqualFold(strings.TrimSpace(item.Status), "completed") || strings.EqualFold(strings.TrimSpace(item.Status), "success") || strings.EqualFold(strings.TrimSpace(item.Status), "succeeded") || strings.EqualFold(strings.TrimSpace(item.Status), "ok") {
+		return "🟢"
+	}
+	if strings.EqualFold(strings.TrimSpace(item.Status), "failed") || strings.EqualFold(strings.TrimSpace(item.Status), "error") {
+		return "🔴"
+	}
+	return "⚪"
+}
+
+func renderProgressEntryElement(item common.ProgressCardEntry, lang string) map[string]any {
+	text := strings.TrimSpace(item.Text)
+	if text == "" {
+		text = " "
+	}
+	switch item.Kind {
+	case common.ProgressEntryThinking:
+		return map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    "💭 " + inlineCodeText(text),
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		}
+	case common.ProgressEntryToolUse:
+		toolName := strings.TrimSpace(item.Tool)
+		if toolName == "" {
+			toolName = "Tool"
+		}
+		content := fmt.Sprintf("<text_tag color='blue'>%s</text_tag> `%s`", progressKindLabel(item.Kind, lang), inlineCodeText(toolName))
+		if body := formatProgressToolInput(toolName, text); body != "" {
+			content += "\n" + body
+		}
+		return map[string]any{
+			"tag":     "markdown",
+			"content": content,
+		}
+	case common.ProgressEntryToolResult:
+		toolName := strings.TrimSpace(item.Tool)
+		content := fmt.Sprintf("<text_tag color='turquoise'>%s</text_tag>", progressKindLabel(item.Kind, lang))
+		if toolName != "" {
+			content += " `" + inlineCodeText(toolName) + "`"
+		}
+		dot := progressResultDot(item)
+		meta := dot
+		if item.ExitCode != nil {
+			meta += fmt.Sprintf(" exit code: `%d`", *item.ExitCode)
+		}
+		content += "\n" + meta
+		if body := formatProgressToolResult(item.Text); body != "" {
+			content += "\n" + body
+		} else {
+			content += "\n_" + progressNoOutputText(lang) + "_"
+		}
+		return map[string]any{
+			"tag":     "markdown",
+			"content": content,
+		}
+	case common.ProgressEntryError:
+		content := fmt.Sprintf("<text_tag color='red'>%s</text_tag>\n%s", progressKindLabel(item.Kind, lang), preprocessFeishuMarkdown(sanitizeMarkdownURLs(text)))
+		return map[string]any{
+			"tag":     "markdown",
+			"content": content,
+		}
+	default:
+		return map[string]any{
+			"tag":     "markdown",
+			"content": preprocessFeishuMarkdown(sanitizeMarkdownURLs(text)),
+		}
+	}
+}
+
+func buildProgressCardJSONFromPayload(payload *common.ProgressCardPayload) string {
+	items := normalizeProgressItems(payload)
+	if len(items) == 0 {
+		return buildCardJSON(" ")
+	}
+
+	agent := progressAgentLabel(payload.Agent)
+	title, template, footer := progressStateMeta(payload.State, payload.Lang, agent)
+
+	elements := make([]map[string]any, 0, len(items)+3)
+	if payload.Truncated {
+		truncatedText := "Showing latest updates only."
+		if isZhLikeProgressLang(payload.Lang) {
+			truncatedText = "仅显示最近更新。"
+		}
+		elements = append(elements, map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    truncatedText,
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		})
+		elements = append(elements, map[string]any{"tag": "hr"})
+	}
+
+	for i, item := range items {
+		elements = append(elements, renderProgressEntryElement(item, payload.Lang))
+		if i < len(items)-1 {
+			elements = append(elements, map[string]any{"tag": "hr"})
+		}
+	}
+	if footer != "" {
+		elements = append(elements, map[string]any{"tag": "hr"})
+		elements = append(elements, map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    footer,
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		})
+	}
+
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"wide_screen_mode": true,
+		},
+		"header": map[string]any{
+			"title": map[string]any{
+				"tag":     "plain_text",
+				"content": title,
+			},
+			"template": template,
+		},
+		"body": map[string]any{
+			"elements": elements,
+		},
+	}
+	b, _ := json.Marshal(card)
+	return string(b)
+}
+
+func buildPreviewCardJSON(content string) string {
+	if payload, ok := common.ParseProgressCardPayload(content); ok {
+		return buildProgressCardJSONFromPayload(payload)
+	}
+	return buildCardJSON(sanitizeMarkdownURLs(content))
+}
+
+// SendPreviewStart sends a new card message and returns a handle for subsequent edits.
+// Using card (interactive) type for both preview and final message so updates
+// are in-place without needing to delete and resend.
+func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content string) (any, error) {
+	if !p.useInteractiveCard {
+		return nil, errNotSupported
+	}
+
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return nil, fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	chatID := rc.chatID
+	if chatID == "" {
+		return nil, fmt.Errorf("%s: chatID is empty", p.tag())
+	}
+
+	// Card 2.0 path: engine passes a pre-built rich card JSON; pass it through.
+	var cardJSON string
+	if isCardJSON(content) {
+		cardJSON = content
+	} else {
+		cardJSON = buildPreviewCardJSON(content)
+	}
+
+	var msgID string
+	if p.shouldUseThreadOrReplyAPI(rc) {
+		req := larkim.NewReplyMessageReqBuilder().
+			MessageId(rc.messageID).
+			Body(p.buildReplyMessageReqBody(rc, larkim.MsgTypeInteractive, cardJSON)).
+			Build()
+		var resp *larkim.ReplyMessageResp
+		if err := p.withTransientRetry(ctx, "send preview", func() error {
+			return p.withFreshTenantAccessTokenRetry(ctx, "send preview", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+				var err error
+				resp, err = client.Im.Message.Reply(ctx, req, options...)
+				if err != nil {
+					return fmt.Errorf("%s: send preview (reply): %w", p.tag(), err)
+				}
+				if !resp.Success() {
+					return fmt.Errorf("%s: send preview (reply) code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+				}
+				return nil
+			})
+		}); err != nil {
+			return nil, err
+		}
+		if resp.Data != nil && resp.Data.MessageId != nil {
+			msgID = *resp.Data.MessageId
+		}
+	} else {
+		req := larkim.NewCreateMessageReqBuilder().
+			ReceiveIdType("chat_id").
+			Body(larkim.NewCreateMessageReqBodyBuilder().
+				ReceiveId(chatID).
+				MsgType(larkim.MsgTypeInteractive).
+				Content(cardJSON).
+				Build()).
+			Build()
+		var resp *larkim.CreateMessageResp
+		if err := p.withTransientRetry(ctx, "send preview", func() error {
+			return p.withFreshTenantAccessTokenRetry(ctx, "send preview", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+				var err error
+				resp, err = client.Im.Message.Create(ctx, req, options...)
+				if err != nil {
+					return fmt.Errorf("%s: send preview: %w", p.tag(), err)
+				}
+				if !resp.Success() {
+					return fmt.Errorf("%s: send preview code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+				}
+				return nil
+			})
+		}); err != nil {
+			return nil, err
+		}
+		if resp.Data != nil && resp.Data.MessageId != nil {
+			msgID = *resp.Data.MessageId
+		}
+	}
+
+	if msgID == "" {
+		return nil, fmt.Errorf("%s: send preview: no message ID returned", p.tag())
+	}
+
+	return &feishuPreviewHandle{messageID: msgID, chatID: chatID}, nil
+}
+
+// UpdateMessage edits an existing card message identified by previewHandle.
+// Uses the Patch API (HTTP PATCH) which is required for interactive card messages.
+func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content string) error {
+	if !p.useInteractiveCard {
+		return errNotSupported
+	}
+
+	h, ok := previewHandle.(*feishuPreviewHandle)
+	if !ok {
+		return fmt.Errorf("%s: invalid preview handle type %T", p.tag(), previewHandle)
+	}
+
+	cardJSON := ""
+	if isCardJSON(content) {
+		// Card 2.0: engine passes full card JSON directly, skip all processing.
+		cardJSON = content
+		h.mu.Lock()
+		h.lastContent = content
+		h.mu.Unlock()
+	} else if payload, ok := common.ParseProgressCardPayload(content); ok {
+		cardJSON = buildProgressCardJSONFromPayload(payload)
+	} else {
+		processed := content
+		if containsMarkdown(content) {
+			processed = preprocessFeishuMarkdown(content)
+		}
+		cardJSON = buildCardJSON(sanitizeMarkdownURLs(processed))
+	}
+	req := larkim.NewPatchMessageReqBuilder().
+		MessageId(h.messageID).
+		Body(larkim.NewPatchMessageReqBodyBuilder().
+			Content(cardJSON).
+			Build()).
+		Build()
+	return p.withTransientRetry(ctx, "patch message", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "patch message", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			resp, err := client.Im.Message.Patch(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: patch message: %w", p.tag(), err)
+			}
+			if !resp.Success() {
+				return fmt.Errorf("%s: patch message code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+			}
+			return nil
+		})
+	})
+}
+
+// DeletePreviewMessage removes a preview message so the caller can send a
+// separate final message without leaving a stale interactive card behind.
+func (p *Platform) DeletePreviewMessage(ctx context.Context, previewHandle any) error {
+	if !p.useInteractiveCard {
+		return errNotSupported
+	}
+
+	h, ok := previewHandle.(*feishuPreviewHandle)
+	if !ok {
+		return fmt.Errorf("%s: invalid preview handle type %T", p.tag(), previewHandle)
+	}
+
+	req := larkim.NewDeleteMessageReqBuilder().
+		MessageId(h.messageID).
+		Build()
+	return p.withTransientRetry(ctx, "delete preview message", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "delete preview message", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			resp, err := client.Im.Message.Delete(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: delete preview message: %w", p.tag(), err)
+			}
+			if !resp.Success() {
+				return fmt.Errorf("%s: delete preview message code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
+			}
+			return nil
+		})
+	})
+}
+
+// SendAudio uploads audio bytes to Feishu and sends a voice message.
+// Implements core.AudioSender interface.
+// Feishu audio messages require opus format; non-opus input is converted via ffmpeg.
+func (p *Platform) SendAudio(ctx context.Context, rctx any, audio []byte, format string) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("%s: Sendaudio: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	if format != "opus" {
+		converted, err := convertAudioToOpus(ctx, audio, format)
+		if err != nil {
+			return fmt.Errorf("%s: convert to opus: %w", p.tag(), err)
+		}
+		audio = converted
+		format = "opus"
+	}
+
+	var uploadResp *larkim.CreateFileResp
+	if err := p.withTransientRetry(ctx, "upload audio", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "upload audio", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			req := larkim.NewCreateFileReqBuilder().
+				Body(larkim.NewCreateFileReqBodyBuilder().
+					FileType(larkim.CreateFileFileTypeOpus).
+					FileName("tts_audio.opus").
+					File(bytes.NewReader(audio)).
+					Build()).
+				Build()
+			var err error
+			uploadResp, err = client.Im.File.Create(ctx, req, options...)
+			if err != nil {
+				return fmt.Errorf("%s: upload audio: %w", p.tag(), err)
+			}
+			if !uploadResp.Success() {
+				return fmt.Errorf("%s: upload audio code=%d msg=%s", p.tag(), uploadResp.Code, uploadResp.Msg)
+			}
+			return nil
+		})
+	}); err != nil {
+		return err
+	}
+	if uploadResp.Data == nil || uploadResp.Data.FileKey == nil {
+		return fmt.Errorf("%s: upload audio: no file_key returned", p.tag())
+	}
+	fileKey := *uploadResp.Data.FileKey
+
+	slog.Debug(p.tag()+": audio uploaded", "file_key", fileKey, "format", format, "size", len(audio))
+
+	audioMsg := larkim.MessageAudio{FileKey: fileKey}
+	audioContent, err := audioMsg.String()
+	if err != nil {
+		return fmt.Errorf("%s: build audio message: %w", p.tag(), err)
+	}
+
+	return p.sendMediaMessage(ctx, rc, larkim.MsgTypeAudio, audioContent)
+}
+
+type postElement struct {
+	Tag      string `json:"tag"`
+	Text     string `json:"text,omitempty"`
+	Language string `json:"language,omitempty"`
+	ImageKey string `json:"image_key,omitempty"`
+	Href     string `json:"href,omitempty"`
+	UserId   string `json:"user_id,omitempty"`
+	UserName string `json:"user_name,omitempty"`
+}
+
+type postLang struct {
+	Title   string          `json:"title"`
+	Content [][]postElement `json:"content"`
+}
+
+// parsePostContent handles both formats of feishu post content:
+// 1. {"title":"...", "content":[[...]]}  (receive event)
+// 2. {"zh_cn":{"title":"...", "content":[[...]]}}  (some SDK versions)
+func (p *Platform) parsePostContent(messageID, raw string) ([]string, []common.ImageAttachment) {
+	// try flat format first
+	var flat postLang
+	if err := json.Unmarshal([]byte(raw), &flat); err == nil && flat.Content != nil {
+		return p.extractPostParts(messageID, &flat)
+	}
+	// try language-keyed format
+	var langMap map[string]postLang
+	if err := json.Unmarshal([]byte(raw), &langMap); err == nil {
+		for _, lang := range langMap {
+			return p.extractPostParts(messageID, &lang)
+		}
+	}
+	slog.Error(p.tag()+": failed to parse post content", "raw", raw)
+	return nil, nil
+}
+
+func (p *Platform) extractPostParts(messageID string, post *postLang) ([]string, []common.ImageAttachment) {
+	var textParts []string
+	var images []common.ImageAttachment
+	if post.Title != "" {
+		textParts = append(textParts, post.Title)
+	}
+	for _, line := range post.Content {
+		for _, elem := range line {
+			switch elem.Tag {
+			case "text":
+				if elem.Text != "" {
+					textParts = append(textParts, elem.Text)
+				}
+			case "a":
+				if elem.Text != "" {
+					textParts = append(textParts, elem.Text)
+				}
+			case "code_block":
+				if elem.Text != "" {
+					lang := elem.Language
+					textParts = append(textParts, "```"+lang+"\n"+elem.Text+"\n```")
+				}
+			case "markdown":
+				if elem.Text != "" {
+					textParts = append(textParts, elem.Text)
+				}
+			case "at":
+				if p.botOpenID != "" && elem.UserId == p.botOpenID {
+					continue
+				}
+				switch {
+				case elem.UserId == "all":
+					textParts = append(textParts, "@all")
+				case elem.UserName != "":
+					textParts = append(textParts, "@"+elem.UserName)
+				case elem.UserId != "":
+					textParts = append(textParts, "@"+p.resolveUserName(elem.UserId))
+				}
+			case "img":
+				if elem.ImageKey != "" {
+					imgData, mimeType, err := p.downloadImage(messageID, elem.ImageKey)
+					if err != nil {
+						slog.Error(p.tag()+": download post image failed", "error", err, "key", elem.ImageKey)
+						continue
+					}
+					images = append(images, common.ImageAttachment{MimeType: mimeType, Data: imgData})
+				}
+			}
+		}
+	}
+	return textParts, images
+}
+
+// onBotMenu handles bot custom menu click events. When a menu item's
+// event_key starts with "/", it is dispatched as a slash command.
+// This allows users to configure menu items in the Feishu developer
+// console with event_key set to commands like "/help", "/status", etc.
+func (p *Platform) onBotMenu(event *larkapplication.P2BotMenuV6) error {
+	if event == nil || event.Event == nil || event.Event.EventKey == nil {
+		return nil
+	}
+	eventKey := *event.Event.EventKey
+
+	userID := ""
+	if event.Event.Operator != nil && event.Event.Operator.OperatorId != nil && event.Event.Operator.OperatorId.OpenId != nil {
+		userID = *event.Event.Operator.OperatorId.OpenId
+	}
+	if userID == "" {
+		slog.Debug(p.tag()+": bot menu event without user id", "event_key", eventKey)
+		return nil
+	}
+
+	if !common.AllowList(p.allowFrom, userID) {
+		slog.Debug(p.tag()+": menu event from unauthorized user", "user", userID, "event_key", eventKey)
+		return nil
+	}
+	if p.groupOnly {
+		slog.Debug(p.tag()+": bot menu skipped (group_only=true)", "user", userID)
+		return nil
+	}
+
+	slog.Info(p.tag()+": bot menu clicked", "event_key", eventKey, "user", userID)
+
+	content := eventKey
+	if !strings.HasPrefix(content, "/") {
+		content = "/" + content
+	}
+
+	sessionKey := string(session.BuildDeliverySessionID(p.platformTag, userID, "", userID))
+
+	p.dispatchInbound(context.Background(), inboundMessage{
+		sessionID: agentkit.SessionID(sessionKey),
+		content:   content,
+		userID:    userID,
+		rctx:      replyContext{chatID: userID, sessionKey: sessionKey},
+	})
+	return nil
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Card 2.0 rich card support (based on upstream PR #309 + #306,
+// extended with "agent reply elapsed time" in the footer).
+// ═══════════════════════════════════════════════════════════════
+
+const defaultToolIcon = "setting-inter_outlined"
+
+var toolIconMap = map[string]string{
+	"Bash":      "terminal-two_outlined",
+	"Edit":      "edit_outlined",
+	"Read":      "file-open_outlined",
+	"Write":     "notes_outlined",
+	"Glob":      "folder-open_outlined",
+	"Grep":      "search_outlined",
+	"WebFetch":  "internet_outlined",
+	"WebSearch": "internet_outlined",
+	"Agent":     "robot_outlined",
+	"Skill":     "code_outlined",
+	"LSP":       "code_outlined",
+}
+
+var thinkingVerbs = []string{
+	"Churning", "Clauding", "Coalescing", "Cogitating", "Computing",
+	"Combobulating", "Concocting", "Conjuring", "Considering", "Contemplating",
+	"Cooking", "Crafting", "Creating", "Crunching", "Deciphering",
+	"Deliberating", "Divining", "Effecting", "Elucidating", "Enchanting",
+	"Envisioning", "Finagling", "Forging", "Generating", "Germinating",
+	"Hatching", "Ideating", "Imagining", "Incubating", "Inferring",
+	"Manifesting", "Marinating", "Meandering", "Mulling", "Musing",
+	"Noodling", "Percolating", "Perusing", "Pondering", "Processing",
+	"Puzzling", "Reticulating", "Ruminating", "Scheming", "Simmering",
+	"Spelunking", "Spinning", "Stewing", "Sussing", "Synthesizing",
+	"Thinking", "Tinkering", "Transmuting", "Unfurling", "Unravelling",
+	"Vibing", "Wandering", "Whirring", "Wizarding", "Working", "Wrangling",
+}
+
+func pickThinkingVerb() string {
+	idx := time.Now().Unix() % int64(len(thinkingVerbs))
+	return thinkingVerbs[idx] + "..."
+}
+
+var markdownTablePattern = regexp.MustCompile(`(?m)^\|.+\|\s*\n\|[\s:|-]+\|\s*\n(?:\|.+\|\s*\n?)+`)
+
+func getToolIcon(toolName string) string {
+	if icon, ok := toolIconMap[toolName]; ok {
+		return icon
+	}
+	return defaultToolIcon
+}
+
+func richStepDisplayName(step toolStep) string {
+	if step.Kind == toolStepKindThinking {
+		return "Thinking"
+	}
+	name := strings.TrimSpace(step.Name)
+	if name == "" {
+		return "Tool"
+	}
+	return name
+}
+
+func richStepBody(step toolStep) string {
+	name := richStepDisplayName(step)
+	summary := strings.TrimSpace(step.Summary)
+	if summary == "" {
+		summary = name
+	}
+	if step.Kind == toolStepKindThinking {
+		return summary
+	}
+
+	lines := []string{summary}
+	var statusParts []string
+	status := strings.TrimSpace(step.Status)
+	if status != "" {
+		statusParts = append(statusParts, "status: "+status)
+	} else if step.Success != nil {
+		if *step.Success {
+			statusParts = append(statusParts, "status: ok")
+		} else {
+			statusParts = append(statusParts, "status: failed")
+		}
+	}
+	if step.ExitCode != nil {
+		statusParts = append(statusParts, fmt.Sprintf("exit: %d", *step.ExitCode))
+	}
+	if len(statusParts) > 0 {
+		lines = append(lines, strings.Join(statusParts, " | "))
+	}
+	if result := strings.TrimSpace(step.Result); result != "" {
+		lines = append(lines, result)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isCardJSON returns true if content looks like a complete Feishu card JSON
+// (has "schema" and "body"). Used to avoid double-wrapping rich card output.
+func isCardJSON(content string) bool {
+	if len(content) < 10 || content[0] != '{' {
+		return false
+	}
+	return strings.Contains(content, `"schema"`) && strings.Contains(content, `"body"`)
+}
+
+// buildCardJSONWithStatus builds a Feishu card JSON with a colored header
+// reflecting the given status. Used as a fallback when rich-card assembly fails.
+func buildCardJSONWithStatus(content string, status cardStatus) string {
+	template := "grey"
+	switch status {
+	case cardStatusWorking, cardStatusThinking:
+		template = "blue"
+	case cardStatusDone:
+		template = "green"
+	case cardStatusError:
+		template = "red"
+	}
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"wide_screen_mode": true,
+		},
+		"header": map[string]any{
+			"template": template,
+			"title":    map[string]any{"tag": "plain_text", "content": ""},
+		},
+		"body": map[string]any{
+			"elements": []map[string]any{
+				{
+					"tag":     "markdown",
+					"content": content,
+				},
+			},
+		},
+	}
+	b, _ := json.Marshal(card)
+	return string(b)
+}
+
+// formatElapsedCN renders a human-readable duration in Chinese.
+// Examples: "3.2 秒", "1 分 23 秒", "1 小时 05 分"。
+func formatElapsedCN(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	totalSec := int64(d / time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%.1f 秒", d.Seconds())
+	case d < time.Hour:
+		m := totalSec / 60
+		s := totalSec % 60
+		return fmt.Sprintf("%d 分 %02d 秒", m, s)
+	default:
+		h := totalSec / 3600
+		m := (totalSec % 3600) / 60
+		return fmt.Sprintf("%d 小时 %02d 分", h, m)
+	}
+}
+
+// buildRichCard renders a Card 2.0 "single-card" turn with collapsible
+// tool-step panel, streaming markdown body, status-colored header, and
+// an elapsed-time footer.
+func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown string, streaming bool, elapsed time.Duration) string {
+	panelTitle := "Thinking..."
+	if len(steps) > 0 {
+		if streaming {
+			toolCount := 0
+			for _, step := range steps {
+				if step.Kind != toolStepKindThinking {
+					toolCount++
+				}
+			}
+			if toolCount > 0 {
+				panelTitle = fmt.Sprintf("Working on it (%d steps)", len(steps))
+			}
+		} else {
+			toolCounts := make(map[string]int)
+			var toolOrder []string
+			for _, s := range steps {
+				name := richStepDisplayName(s)
+				if toolCounts[name] == 0 {
+					toolOrder = append(toolOrder, name)
+				}
+				toolCounts[name]++
+			}
+			var toolParts []string
+			for _, name := range toolOrder {
+				if toolCounts[name] > 1 {
+					toolParts = append(toolParts, fmt.Sprintf("%s×%d", name, toolCounts[name]))
+				} else {
+					toolParts = append(toolParts, name)
+				}
+			}
+			toolSummary := strings.Join(toolParts, ", ")
+			preview := strings.TrimSpace(markdown)
+			if idx := strings.IndexByte(preview, '\n'); idx > 0 {
+				preview = preview[:idx]
+			}
+			if runes := []rune(preview); len(runes) > 20 {
+				preview = string(runes[:20]) + "..."
+			}
+			if preview != "" {
+				panelTitle = fmt.Sprintf("%s · %s", toolSummary, preview)
+			} else {
+				panelTitle = toolSummary
+			}
+		}
+	}
+
+	panelCap := len(steps)
+	if panelCap < 1 {
+		panelCap = 1
+	}
+	panelElements := make([]map[string]any, 0, panelCap)
+	if len(steps) == 0 {
+		panelElements = append(panelElements, map[string]any{
+			"tag":  "div",
+			"text": map[string]any{"tag": "plain_text", "content": "Thinking..."},
+		})
+	} else {
+		// Cap the number of step rows so the collapsible panel doesn't
+		// balloon into hundreds of elements (lark client renders that
+		// poorly and the whole card can hit the ~30KB API limit).
+		const maxPanelSteps = 30
+		visible := steps
+		overflow := 0
+		if len(steps) > maxPanelSteps {
+			visible = steps[:maxPanelSteps]
+			overflow = len(steps) - maxPanelSteps
+		}
+		for _, step := range visible {
+			summary := richStepBody(step)
+			panelElements = append(panelElements, map[string]any{
+				"tag":  "div",
+				"icon": map[string]any{"tag": "standard_icon", "token": getToolIcon(step.Name)},
+				"text": map[string]any{"tag": "plain_text", "content": summary},
+			})
+		}
+		if overflow > 0 {
+			panelElements = append(panelElements, map[string]any{
+				"tag":  "div",
+				"text": map[string]any{"tag": "plain_text", "content": fmt.Sprintf("… and %d more steps", overflow)},
+			})
+		}
+	}
+
+	panelMap := map[string]any{
+		"tag":              "collapsible_panel",
+		"expanded":         streaming,
+		"background_color": "grey",
+		"header": map[string]any{
+			"title": map[string]any{"tag": "plain_text", "content": panelTitle},
+		},
+		"border":           map[string]any{"color": "grey"},
+		"vertical_spacing": "8px",
+		"padding":          "4px 8px",
+		"elements":         panelElements,
+	}
+	markdownMap := map[string]any{
+		"tag":     "markdown",
+		"content": preprocessFeishuMarkdown(markdown),
+	}
+
+	// Footer shows elapsed time: "⏱ 运行中 12.3 秒..." during streaming,
+	// "⏱ 用时 1 分 23 秒" on completion. Skip when elapsed == 0 to avoid noise.
+	var footerMap map[string]any
+	if elapsed > 0 {
+		var footerText string
+		if streaming {
+			footerText = fmt.Sprintf("⏱ 运行中 %s...", formatElapsedCN(elapsed))
+		} else {
+			footerText = fmt.Sprintf("⏱ 用时 %s", formatElapsedCN(elapsed))
+		}
+		footerMap = map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":     "plain_text",
+				"content": footerText,
+			},
+		}
+	}
+
+	var elements []map[string]any
+	if len(steps) > 0 || streaming {
+		elements = append(elements, panelMap, markdownMap)
+	} else {
+		elements = append(elements, markdownMap)
+	}
+	if footerMap != nil {
+		elements = append(elements, footerMap)
+	}
+
+	// Header template color follows status.
+	headerTemplate := "blue"
+	headerTitle := pickThinkingVerb()
+	switch status {
+	case cardStatusDone:
+		headerTemplate = "green"
+		headerTitle = "Done"
+	case cardStatusError:
+		headerTemplate = "red"
+		headerTitle = "Error"
+	case cardStatusThinking, cardStatusWorking:
+		headerTemplate = "blue"
+		headerTitle = pickThinkingVerb()
+	}
+
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"streaming_mode":             streaming,
+			"update_multi":               true,
+			"enable_forward_interaction": true,
+		},
+		"header": map[string]any{
+			"template": headerTemplate,
+			"title":    map[string]any{"tag": "plain_text", "content": headerTitle},
+		},
+		"body": map[string]any{"elements": elements},
+	}
+
+	b, err := json.Marshal(card)
+	if err != nil {
+		slog.Debug("feishu: build rich card marshal failed, fallback to basic card", "error", err)
+		return buildCardJSONWithStatus(preprocessFeishuMarkdown(markdown), status)
+	}
+	// Feishu interactive card payload limit is ~30KB; over that the API
+	// rejects the whole card and the lark client may render it as a
+	// mangled JSON dump. Drop the panel and keep just the markdown body.
+	const maxCardJSONBytes = 28000
+	if len(b) > maxCardJSONBytes {
+		slog.Debug("feishu: rich card exceeds size limit, fallback to basic card", "size", len(b))
+		return buildCardJSONWithStatus(preprocessFeishuMarkdown(markdown), status)
+	}
+	return string(b)
+}
+
+func splitMarkdownByTables(md string, maxTables int) []string {
+	if maxTables <= 0 {
+		return []string{md}
+	}
+	matches := markdownTablePattern.FindAllStringIndex(md, -1)
+	if len(matches) <= maxTables {
+		return []string{md}
+	}
+	parts := make([]string, 0, len(matches)-maxTables+1)
+	firstEnd := len(md)
+	if len(matches) > maxTables {
+		firstEnd = matches[maxTables][0]
+	}
+	first := strings.TrimSpace(md[:firstEnd])
+	if first != "" {
+		parts = append(parts, first)
+	}
+	for _, match := range matches[maxTables:] {
+		block := strings.TrimSpace(md[match[0]:match[1]])
+		if block != "" {
+			parts = append(parts, block)
+		}
+	}
+	return parts
+}
+
+// BuildRichCard implements core.RichCardSupporter. Feishu engine passes an
+// elapsed duration via the preview handle; buildRichCard itself is the
+// renderer and must be called with the duration from engine state.
+func (p *Platform) BuildRichCard(status cardStatus, title string, steps []toolStep, markdown string, streaming bool, elapsed time.Duration) string {
+	return buildRichCard(status, title, steps, markdown, streaming, elapsed)
+}
+
+// SplitMarkdownByTables implements core.MarkdownTableSplitter.
+func (p *Platform) SplitMarkdownByTables(md string, maxTables int) []string {
+	return splitMarkdownByTables(md, maxTables)
+}
+
+// SetPreviewStatus updates the card header color to reflect the agent's current state.
+func (p *Platform) SetPreviewStatus(previewHandle any, status cardStatus) {
+	h, ok := previewHandle.(*feishuPreviewHandle)
+	if !ok {
+		return
+	}
+
+	h.mu.Lock()
+	h.status = status
+	lastContent := h.lastContent
+	h.mu.Unlock()
+
+	if lastContent == "" {
+		return
+	}
+	cardJSON := buildCardJSONWithStatus(lastContent, status)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := p.client.Im.Message.Patch(ctx, larkim.NewPatchMessageReqBuilder().
+		MessageId(h.messageID).
+		Body(larkim.NewPatchMessageReqBodyBuilder().
+			Content(cardJSON).
+			Build()).
+		Build())
+	if err != nil {
+		slog.Debug("feishu: set preview status patch failed", "error", err)
+		return
+	}
+	if !resp.Success() {
+		slog.Debug("feishu: set preview status patch failed", "code", resp.Code, "msg", resp.Msg)
+	}
+}

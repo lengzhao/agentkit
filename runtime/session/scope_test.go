@@ -31,12 +31,12 @@ func TestApplyScope(t *testing.T) {
 	}
 }
 
-func TestApplyScopeLegacySlackUserDelivery(t *testing.T) {
+func TestParseDelivery(t *testing.T) {
 	t.Parallel()
 
-	got := session.ApplyScope("slack:C001:U777", session.ScopeUser, "")
-	if got != agentkit.SessionID("slack:C001:u:U777") {
-		t.Fatalf("got %q", got)
+	got := session.ParseDelivery("slack:C001:t:123.456:u:U777", "")
+	if got.Platform != "slack" || got.Channel != "C001" || got.Thread != "123.456" || got.User != "U777" || !got.Routable {
+		t.Fatalf("got %+v", got)
 	}
 }
 

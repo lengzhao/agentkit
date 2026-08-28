@@ -5,13 +5,28 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
 )
 
+type stubAgent struct {
+	id   agentkit.AgentID
+	detail string
+}
+
+func (s stubAgent) ID() agentkit.AgentID { return s.id }
+
+func (s stubAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
+
+func (s stubAgent) AgentCatalogEntry() string { return s.detail }
+
 func TestAgentHelpCommand(t *testing.T) {
 	t.Parallel()
-	cmd := agent.HelpCommand()
+	agents := []agentkit.Agent{
+		stubAgent{id: "assistant", detail: "agent \"assistant\"\nkind: agent/coding\nmodel: gpt-5.4"},
+		stubAgent{id: "reviewer", detail: "agent \"reviewer\"\nkind: agent/coding"},
+	}
+	cmd := agent.HelpCommand(agents)
 	cases := []struct {
 		name string
 		args []string
@@ -20,23 +35,23 @@ func TestAgentHelpCommand(t *testing.T) {
 		{
 			name: "list",
 			args: nil,
-			want: []string{"Registered agent kinds:", "agent/coding", "Use /agent <name>"},
+			want: []string{"Registered agents:", "assistant", "reviewer", "Use /agent <id>"},
 		},
 		{
-			name: "kind",
-			args: []string{"coding"},
-			want: []string{"go doc github.com/lengzhao/agentkit/runtime/agent.New", "agent/coding"},
+			name: "detail",
+			args: []string{"assistant"},
+			want: []string{"agent \"assistant\"", "kind: agent/coding", "model: gpt-5.4"},
 		},
 		{
-			name: "unknown kind",
-			args: []string{"no/such-kind"},
-			want: []string{"unknown agent kind"},
+			name: "unknown agent",
+			args: []string{"no-such-agent"},
+			want: []string{"unknown agent"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := cmd.CommandExec(context.Background(), tc.args...)
-			if tc.name == "unknown kind" {
+			if tc.name == "unknown agent" {
 				if err == nil {
 					t.Fatal("expected error")
 				}

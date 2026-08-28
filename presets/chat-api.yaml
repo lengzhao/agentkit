@@ -1,0 +1,49 @@
+# L1：chat-api HTTP + SSE + coding agent
+
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+    maxConcurrentTurns: 8
+  deps:
+    platform: platform.default
+    loop: loop.default
+
+platform.default:
+  use: platform/chat-api
+  config:
+    listenAddr: ":8030"
+    path: /v1/
+    apiToken: ""
+    busyPolicy: queue
+    debugUi: true
+    # agents: ["assistant"] # 可选：调试页 Agent 下拉
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+    workspace: workspace.default
+
+workspace.default:
+  use: workspace/tenant
+  config:
+    global: ~/.agentkit
+    localBase: .agentkit
+    scope: local
+
+sessionStore.default:
+  use: session/store
+  config:
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: ..
+  deps:
+    workspace: workspace.default
+
+llm.default:
+  config:
+    apiKeyRef: OPENAI_API_KEY

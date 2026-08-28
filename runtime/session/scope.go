@@ -23,6 +23,28 @@ func ParseScope(raw string) SessionScope {
 	}
 }
 
+// DeliveryParts holds parsed segments of a platform delivery SessionID.
+type DeliveryParts struct {
+	Platform string
+	Channel  string
+	Thread   string
+	User     string
+	Routable bool
+}
+
+// ParseDelivery splits a delivery SessionID into routing segments.
+// fallbackUser fills a missing :u: segment when present on the event envelope.
+func ParseDelivery(id agentkit.SessionID, fallbackUser string) DeliveryParts {
+	p := parseDelivery(string(id), fallbackUser)
+	return DeliveryParts{
+		Platform: p.platform,
+		Channel:  p.channel,
+		Thread:   p.thread,
+		User:     p.user,
+		Routable: p.routable,
+	}
+}
+
 // BuildDeliverySessionID is the canonical finest-grain id platforms should emit.
 // Runner applies sessionScope to collapse it for scheduling and history.
 //
@@ -108,10 +130,6 @@ func parseDelivery(id, fallbackUser string) deliveryParts {
 			p.user = segments[i+1]
 			i += 2
 		default:
-			// Legacy slack user id without :u: marker: slack:C001:U456
-			if p.thread == "" && p.user == "" && i == 2 && len(segments) == 3 {
-				p.user = segments[i]
-			}
 			i++
 		}
 	}

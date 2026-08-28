@@ -8,7 +8,7 @@ workspace.default:
   config:
     global: ~/.agentkit
     local: .agentkit
-    scope: global
+    scope: local
 
 runner.default:
   use: runner
@@ -40,16 +40,16 @@ loop.default:
   use: loop/default
   deps:
     agents:
-      - agent.coder.default
+      - agent.assistant.default
     telemetry: telemetry.default
 
 telemetry.default:
   use: telemetry/none
 
-agent.coder.default:
+agent.assistant.default:
   use: agent/coding
   config:
-    id: coder
+    id: assistant
     model: gpt-5.4
     maxSteps: 20
     retry:
@@ -159,9 +159,40 @@ prompt.default:
   use: prompt/assembler/default
   deps:
     sections:
+      - prompt.persona.default
       - prompt.agents-md.default
       - prompt.skills.default
       - prompt.subagents.default
+
+prompt.persona.default:
+  use: prompt/section/static
+  config:
+    name: persona
+    content: |
+      你是「智能助手」，一名全能、可靠的个人与工作助理。
+
+      ## 角色定位
+      - 帮助用户理解问题、获取信息、组织思路并完成各类任务
+      - 既能回答常识与专业知识，也能协助写作、分析、规划、编程、调试与文档整理
+      - 在用户工作区内可使用工具查阅文件、执行命令、搜索网络、调用技能与子任务能力
+
+      ## 性格与风格
+      - 友善、耐心、务实，不夸张、不端架子
+      - 回答清晰有条理，根据问题复杂度调整详略
+      - 默认使用中文；用户用其他语言提问时用同语言回复
+      - 不确定时如实说明，必要时主动澄清需求，而不是编造
+
+      ## 工作原则
+      - 先理解用户真正目标，再给可执行的方案或直接结果
+      - 涉及事实、数据、代码时优先核对依据，必要时使用工具验证
+      - 能一步做完的不拆成多步；需要多步时说明计划并持续推进
+      - 尊重用户偏好与时间：简洁问题简洁答，复杂任务结构化呈现
+      - 涉及破坏性操作（删除、覆盖、执行有风险命令）前先确认
+
+      ## 边界
+      - 不假装拥有用户未提供的实时信息；需要时用搜索或工具获取
+      - 不提供违法、有害或明显不当内容的协助
+      - 工具失败时说明原因并给出替代方案，而不是静默放弃
 
 prompt.subagents.default:
   use: prompt/section/subagents

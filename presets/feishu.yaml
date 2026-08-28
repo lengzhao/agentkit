@@ -1,0 +1,69 @@
+# L1：飞书 WebSocket + coding agent
+# 国际版 Lark：将 use 改为 platform/lark，domain 设为 https://open.larksuite.com
+
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+    maxConcurrentTurns: 4
+    # sessionScope: channel # channel（默认）| thread | user；折叠 platform delivery SessionID
+  deps:
+    platform: platform.default
+    loop: loop.default
+
+platform.default:
+  use: platform/feishu
+  config:
+    appId: ""
+    appSecret: ""
+    # agentId: "" # 可选：路由到指定 Agent；留空使用 loop.defaultAgent
+    # domain: "https://open.feishu.cn" # Lark：https://open.larksuite.com
+    allowFrom: ""
+    # allowChat: "" # 群聊 chat_id 白名单，逗号分隔；空=全部
+    groupReplyAll: false # false：群内仅 @ 机器人时响应
+    # threadIsolation: false # true：群话题在 delivery SessionID 中带 :t:<rootID>
+    # reactionEmoji: OnIt # 处理中 reaction；none 关闭
+    # doneEmoji: "" # turn 结束 reaction；none 关闭
+    # groupOnly: false # true：仅群聊，忽略私聊
+    # respondToAtEveryoneAndHere: false # @_all 无 mention 时也响应
+    # replyToTrigger: true # false：出站不引用原消息（Im.Message.Create）
+    # resolveMentions: false # 出站 @用户名 解析为飞书 at
+    # enableFeishuCard: true # 流式 Interactive Card（message/update Patch）
+    # progressStyle: legacy # legacy | compact | card
+    # peerBots: {} # app_id -> 别名，引用链中识别其他 bot
+    # encryptKey: "" # 非空时走 webhook（Lark 国际版常用），见 port / callbackPath
+    # port: "8080"
+    # callbackPath: /feishu/webhook
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
+
+sessionStore.default:
+  use: session/store
+  config:
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: ..
+  deps:
+    workspace: workspace.default
+
+tool.shell-bash.default:
+  use: tool/shell-bash
+  config:
+    workDir: ..
+  deps:
+    workspace: workspace.default
+
+llm.default:
+  config:
+    apiKeyRef: OPENAI_API_KEY

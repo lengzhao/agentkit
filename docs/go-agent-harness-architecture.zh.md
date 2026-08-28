@@ -390,7 +390,7 @@ type StartStop interface {
 - Config 字段注释写语义与约束（对应 json 字段名）；字段清单本身由类型定义提供，不另维护一份。
 - `pluginkit.Describe(kind)` 提供配置字段的结构化元信息，供配置工作台等程序消费。
 - CLI 内置 `/plugin -l` 与 `/plugin <kind>`（`commands/registry` 贡献）；后者通过本地 `go doc` 展示对应构造函数文档（例如 `/plugin llm/openai-compatible`）。`/help plugin …` 等价于 `/plugin …`。模块发布到 pkg.go.dev 后也可直接浏览在线文档。
-- `agent/coding` 贡献 `/agent` 与 `/agent <name>`，列出 `agent/*` kind 并通过 `go doc` 展示文档。
+- `loop/default` 贡献 `/agent` 与 `/agent <id>`，列出当前图里已装配的 agent 实例 id 并展示详情；插件 kind 文档仍通过 `/plugin agent/coding` 查看。
 - `subagent/inprocess` 贡献 `/subagent` 与 `/subagent <name>`：前者列出当前 workspace 默认目录（`local:agents`、`global:agents`）下的子 Agent 定义；后者展示定义详情，若名称匹配不到定义则回退到 `subagent/*` kind 的 `go doc`。
 
 ### 5.4 Typed Hooks
@@ -828,7 +828,7 @@ type SessionStore interface {
 <platform>:<segment>[:<segment>...]
 ```
 
-示例：`slack:C123ABC`、`slack:C123ABC:U456`、`slack:C123ABC:t:1712345678.123456`、`feishu:oc_xxx:root:om_yyy`、`cli:default`。
+示例：`slack:C123ABC`、`slack:C123ABC:u:U456`、`slack:C123ABC:t:1712345678.123456`、`feishu:oc_xxx:t:om_yyy`、`chat-api:default_channel:t:conv_abc`、`cli:default`。
 
 路由约定：
 

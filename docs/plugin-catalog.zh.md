@@ -241,7 +241,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | 贡献方 | 命令 |
 |---|---|
 | `commands/registry` | `/plugin` |
-| `agent/coding` | `/agent` |
+| `loop/default` | `/agent` |
 | `subagent/inprocess` | `/subagent` |
 | `session/store` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |

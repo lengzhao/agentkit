@@ -71,8 +71,16 @@ func testHelpCommands(t *testing.T) agentkit.Commands {
 type agentProvider struct{}
 
 func (agentProvider) Commands() []agentkit.Command {
-	return []agentkit.Command{agent.HelpCommand()}
+	return []agentkit.Command{agent.HelpCommand([]agentkit.Agent{
+		stubHelpAgent{id: "assistant"},
+	})}
 }
+
+type stubHelpAgent struct{ id agentkit.AgentID }
+
+func (s stubHelpAgent) ID() agentkit.AgentID { return s.id }
+
+func (s stubHelpAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
 
 type subagentProvider struct {
 	ws cw.Service
@@ -125,12 +133,12 @@ func TestCLIHelpCommands(t *testing.T) {
 		{
 			name:   "agent list via help",
 			prompt: "/help agent",
-			want:   []string{"Registered agent kinds:", "agent/coding", "Use /agent <name>"},
+			want:   []string{"Registered agents:", "assistant", "Use /agent <id>"},
 		},
 		{
-			name:   "agent kind via help",
-			prompt: "/help agent coding",
-			want:   []string{"go doc github.com/lengzhao/agentkit/runtime/agent.New", "agent/coding"},
+			name:   "agent detail via help",
+			prompt: "/help agent assistant",
+			want:   []string{"agent \"assistant\""},
 		},
 		{
 			name:   "subagent list via help",

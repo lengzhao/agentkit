@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -83,6 +84,19 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
+
+func (a *Runtime) AgentCatalogEntry() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "agent %q\n", a.id)
+	b.WriteString("kind: agent/acp-remote\n")
+	if len(a.cfg.Command) > 0 {
+		fmt.Fprintf(&b, "command: %s\n", strings.Join(a.cfg.Command, " "))
+	}
+	if a.cfg.Cwd != "" {
+		fmt.Fprintf(&b, "cwd: %s\n", a.cfg.Cwd)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	sessionID, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)

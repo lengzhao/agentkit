@@ -26,6 +26,11 @@ type Agent interface {
 	RunTurn(context.Context, TurnInput) error
 }
 
+// AgentCatalogEntry optionally describes a built agent for /agent help output.
+type AgentCatalogEntry interface {
+	AgentCatalogEntry() string
+}
+
 // TurnInput carries one turn's payload. Routing context is available through
 // ctx.Value(KeySessionID), ctx.Value(KeyAgentID), ctx.Value(KeyUserID), and
 // related agentkit keys.

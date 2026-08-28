@@ -9,4 +9,7 @@ func init() {
 	pluginkit.Register("loop/default", New)
 }
 
-var _ agentkit.Loop = (*Default)(nil)
+var (
+	_ agentkit.Loop             = (*Default)(nil)
+	_ agentkit.CommandProvider  = (*Default)(nil)
+)

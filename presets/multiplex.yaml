@@ -1,0 +1,145 @@
+# L1：全部 IM 平台经 platform/multiplex 聚合为一个 Runner 入口。
+#
+# 用法：
+#   go run ./cmd/im-agent -config presets/coding.yaml,presets/multiplex.yaml
+# 或在 config.yaml 中按 instance id 覆盖各平台凭证。
+#
+# 未填写凭证的平台请从 deps.platforms 中移除，否则构建/启动会失败。
+# 飞书与 Lark 可各挂一个实例（不同 appId）；同一 app 也可挂多个实例（独立 WS + allowChat 过滤）。
+# 示例：platform.feishu.ops、platform.feishu.dev 均加入 deps.platforms 列表。
+
+runner.default:
+  use: runner
+  config:
+    shutdownTimeoutSeconds: 10
+    # 多平台并行 intake / HIL 回复需要 >1
+    maxConcurrentTurns: 8
+  deps:
+    platform: platform.default
+    loop: loop.default
+
+platform.default:
+  use: platform/multiplex
+  deps:
+    platforms:
+      - platform.chat-api
+      - platform.slack
+      - platform.feishu
+      - platform.telegram
+
+platform.chat-api:
+  use: platform/chat-api
+  config:
+    listenAddr: ":8030"
+    path: /v1/
+    apiToken: ""
+    # agentId: "" # 可选：路由到指定 Agent；留空使用 loop.defaultAgent
+    # agents: ["assistant", "reviewer"] # 可选：调试页可选 Agent 列表
+    busyPolicy: queue
+    debugUi: true
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+    workspace: workspace.default
+    # agents: # 可选：与 loop.deps.agents 引用同一实例，自动填充调试页列表
+    #   - agent.assistant
+
+platform.slack:
+  use: platform/slack
+  config:
+    botToken: ""
+    appToken: ""
+    # agentId: ""
+    # domain: "https://slack.com/api/"
+    allowFrom: ""
+    # allowChannels: ""
+    groupReplyAll: false
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+
+platform.feishu:
+  use: platform/feishu
+  config:
+    appId: ""
+    appSecret: ""
+    # agentId: ""
+    # domain: "https://open.feishu.cn"
+    allowFrom: ""
+    # allowChat: ""
+    groupReplyAll: false
+    # threadIsolation: false
+    # reactionEmoji: OnIt
+    # doneEmoji: ""
+    # enableFeishuCard: true
+    # progressStyle: legacy
+    # encryptKey: ""
+    # port: "8080"
+    # callbackPath: /feishu/webhook
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+
+# 第二个飞书实例示例（不同 allowChat / agentId）：
+# platform.feishu.ops:
+#   use: platform/feishu
+#   config:
+#     appId: ""
+#     appSecret: ""
+#     agentId: ops
+#     allowChat: "oc_xxx"
+#   deps:
+#     commands: commands.default
+#     sessionStore: sessionStore.default
+
+# 国际版 Lark（可与 feishu 并存，不同 appId）：
+# platform.lark:
+#   use: platform/lark
+#   config:
+#     appId: ""
+#     appSecret: ""
+#     # domain: "https://open.larksuite.com"
+#     allowFrom: ""
+#     groupReplyAll: false
+
+platform.telegram:
+  use: platform/telegram
+  config:
+    token: ""
+    # agentId: ""
+    allowFrom: ""
+    groupReplyAll: false
+    # proxy: "http://127.0.0.1:7890"
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+
+workspace.default:
+  use: workspace/tenant
+  config:
+    global: ~/.agentkit
+    localBase: .agentkit
+    scope: local
+
+sessionStore.default:
+  use: session/store
+  config:
+    dir: sessions
+  deps:
+    workspace: workspace.default
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: work
+    maxBytes: 40960
+  deps:
+    workspace: workspace.default
+
+tool.shell-bash.default:
+  use: tool/shell-bash
+  config:
+    workDir: work
+    timeoutSeconds: 60
+  deps:
+    workspace: workspace.default

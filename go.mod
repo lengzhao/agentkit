@@ -7,11 +7,17 @@ require gopkg.in/yaml.v3 v3.0.1
 require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/henomis/langfuse-go v0.0.3
+	github.com/larksuite/oapi-sdk-go/v3 v3.11.0
 	github.com/lengzhao/pluginkit v0.1.1
 	github.com/sashabaranov/go-openai v1.42.0
+	github.com/slack-go/slack v0.29.0
 )
 
-require github.com/henomis/restclientgo v1.2.0 // indirect
+require (
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/henomis/restclientgo v1.2.0 // indirect
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.2

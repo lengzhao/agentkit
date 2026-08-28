@@ -14,7 +14,7 @@ func TestKey(t *testing.T) {
 		"slack:C123ABC:U456":            "slack:C123ABC",
 		"slack:C123ABC:t:1712345678.99": "slack:C123ABC",
 		"slack:C123ABC:u:U456":          "slack:C123ABC",
-		"feishu:oc_xxx:root:om_yyy":     "feishu:oc_xxx",
+		"feishu:oc_xxx:t:om_yyy":        "feishu:oc_xxx",
 		"cli:default":                   "cli:default",
 		"  slack:C1  ":                  "slack:C1",
 		"":                              "",

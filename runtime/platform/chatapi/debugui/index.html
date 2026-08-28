@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>platformPlugin · AgentKit chat-api</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --elev: #1c2330;
+      --line: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-2: #3fb950;
+      --warn: #d29922;
+      --danger: #f85149;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
+      background: radial-gradient(900px 500px at 0% 0%, #1a2740 0%, transparent 55%), var(--bg);
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: 260px 1fr 300px;
+      grid-template-rows: auto 1fr;
+      height: 100%;
+    }
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(13, 17, 23, 0.9);
+    }
+    header h1 {
+      margin: 0;
+      font-family: var(--sans);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    header h1 span { color: var(--accent); font-weight: 500; }
+    .badge {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      margin-left: 10px;
+    }
+    .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+    .dot.ok { background: var(--accent-2); }
+    aside, main, .log-pane { min-height: 0; border-right: 1px solid var(--line); }
+    .log-pane { border-right: none; border-left: 1px solid var(--line); }
+    .panel { display: flex; flex-direction: column; height: 100%; background: var(--panel); }
+    .panel-hd {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-bd { padding: 12px; overflow: auto; flex: 1; }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    input, textarea, button {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    input, textarea {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 9px;
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 72px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    button {
+      border: 1px solid var(--line);
+      background: var(--elev);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: #238636; border-color: #2ea043; color: #fff; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+    .conv-list { display: flex; flex-direction: column; gap: 6px; }
+    .conv-item {
+      text-align: left;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      width: 100%;
+      cursor: pointer;
+    }
+    .conv-item.active { border-color: var(--accent); }
+    .conv-item .id { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .chat { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+    .messages {
+      flex: 1;
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bubble {
+      max-width: 85%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      align-self: flex-start;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.5;
+    }
+    .bubble.user { align-self: flex-end; background: #1f3a5f; border-color: #264a73; }
+    .bubble.thinking { border-color: #3d4f66; opacity: 0.9; }
+    .bubble.tool { border-color: #4a3f2a; font-size: 11px; }
+    .bubble.sys { border-style: dashed; color: var(--muted); font-size: 11px; }
+    .bubble .tag {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .bubble .tag .time {
+      text-transform: none;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 12px 16px;
+      background: var(--panel);
+    }
+    .composer-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .log {
+      height: 100%;
+      overflow: auto;
+      padding: 10px;
+      font-size: 11px;
+      line-height: 1.4;
+      background: #0a0e13;
+      color: #9db0c5;
+    }
+    .log .ev { margin-bottom: 6px; }
+    .log .k { color: var(--accent); }
+    .log .err { color: var(--danger); }
+    .modal-bg {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      width: min(480px, 92vw);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .modal h2 { margin: 0 0 8px; font-family: var(--sans); font-size: 15px; }
+    .modal .prompt { margin: 12px 0; line-height: 1.5; }
+    .modal .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .modal input { margin-top: 8px; }
+    @media (max-width: 1000px) {
+      .shell { grid-template-columns: 220px 1fr; }
+      .log-pane { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>platformPlugin <span>chat-api</span><span class="badge">AgentKit</span></h1>
+      </div>
+      <div class="status">
+        <div id="healthDot" class="dot"></div>
+        <span id="healthText">checking…</span>
+        <span id="runMeta"></span>
+      </div>
+    </header>
+
+    <aside class="panel">
+      <div class="panel-hd">
+        <span>连接</span>
+        <button type="button" id="btnHealth">ping</button>
+      </div>
+      <div class="panel-bd">
+        <label>API Base</label>
+        <input id="baseUrl" placeholder="同源自动 /v1" />
+        <label>Bearer Token</label>
+        <input id="token" placeholder="config apiToken，可留空" />
+        <div class="row">
+          <div>
+            <label>User</label>
+            <input id="userId" value="demo" />
+          </div>
+          <div>
+            <label>User Name</label>
+            <input id="userName" value="Demo" />
+          </div>
+        </div>
+        <label>Channel</label>
+        <input id="channel" value="default_channel" />
+        <label>Agent</label>
+        <select id="agentId" hidden></select>
+        <input id="agentIdCustom" placeholder="agent id（留空用默认）" />
+        <p class="hint" id="agentHint">
+          可在调试页切换 Loop Agent。留空时使用平台 <code>agentId</code> 或 <code>loop.defaultAgent</code>。
+        </p>
+        <p class="hint">
+          对应 Header <code>X-Chat-API-User</code> / <code>X-Chat-API-Channel</code>。
+          SessionID 形如 <code>chat-api:default_channel:conv_…</code>（按 channel 租户隔离）
+        </p>
+        <div class="btn-row">
+          <button type="button" id="btnSave" class="primary">保存</button>
+          <button type="button" id="btnNew">新会话</button>
+        </div>
+
+        <div class="panel-hd" style="margin:12px -12px 8px; border-top:1px solid var(--line);">
+          <span>会话</span>
+          <button type="button" id="btnRefresh">刷新</button>
+        </div>
+        <div id="convList" class="conv-list"></div>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <div id="messages" class="messages"></div>
+      <div class="composer">
+        <div class="composer-meta" id="convLabel">conversation: (new)</div>
+        <textarea id="query" rows="3" placeholder="输入消息… Enter 发送"></textarea>
+        <div class="composer-actions">
+          <button type="button" id="btnSend" class="primary">发送</button>
+        </div>
+      </div>
+    </main>
+
+    <div class="log-pane panel">
+      <div class="panel-hd">
+        <span>SSE 事件</span>
+        <button type="button" id="btnClearLog">清空</button>
+      </div>
+      <div id="sseLog" class="log panel-bd"></div>
+    </div>
+  </div>
+
+  <div id="ixModal" class="modal-bg">
+    <div class="modal">
+      <h2>Agent 提问</h2>
+      <div id="ixMeta" class="hint"></div>
+      <div id="ixPrompt" class="prompt"></div>
+      <div id="ixOptions" class="actions"></div>
+      <input id="ixAnswer" placeholder="输入回答后点提交" />
+      <div class="actions">
+        <button type="button" id="btnIxSubmit" class="primary">提交回答</button>
+        <button type="button" id="btnIxClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const LS_KEY = "platformplugin-chatapi-debug";
+    const $ = (id) => document.getElementById(id);
+
+    const state = {
+      conversationId: null,
+      runId: null,
+      sending: false,
+      activeInteractionId: null,
+      interactionRunId: null,
+      defaultAgent: "",
+      availableAgents: [],
+      preferredAgentId: "",
+    };
+
+    function selectedAgentId() {
+      const select = $("agentId");
+      if (!select.hidden) {
+        return select.value.trim();
+      }
+      return $("agentIdCustom").value.trim();
+    }
+
+    function setSelectedAgentId(id) {
+      const value = id || "";
+      const select = $("agentId");
+      if (!select.hidden) {
+        const hasOption = Array.from(select.options).some((opt) => opt.value === value);
+        select.value = hasOption ? value : "";
+        if (!hasOption && value) {
+          $("agentIdCustom").value = value;
+        } else {
+          $("agentIdCustom").value = "";
+        }
+        return;
+      }
+      $("agentIdCustom").value = value;
+    }
+
+    function renderAgentSelector() {
+      const select = $("agentId");
+      const custom = $("agentIdCustom");
+      const restore = state.preferredAgentId || selectedAgentId();
+      const agents = state.availableAgents || [];
+      if (!agents.length) {
+        select.hidden = true;
+        custom.hidden = false;
+        if (restore) setSelectedAgentId(restore);
+        return;
+      }
+      select.innerHTML = "";
+      const defaultOpt = document.createElement("option");
+      defaultOpt.value = "";
+      defaultOpt.textContent = state.defaultAgent
+        ? `默认 (${state.defaultAgent})`
+        : "默认 (loop.defaultAgent)";
+      select.appendChild(defaultOpt);
+      for (const id of agents) {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = id;
+        select.appendChild(opt);
+      }
+      select.hidden = false;
+      custom.hidden = true;
+      if (restore) setSelectedAgentId(restore);
+    }
+
+    async function loadDebugMeta() {
+      try {
+        const res = await fetch("/debug/config.json");
+        if (!res.ok) return;
+        const cfg = await res.json();
+        state.defaultAgent = cfg.default_agent || "";
+        state.availableAgents = Array.isArray(cfg.agents) ? cfg.agents : [];
+        renderAgentSelector();
+        if (state.preferredAgentId) {
+          setSelectedAgentId(state.preferredAgentId);
+        } else if (!selectedAgentId() && state.defaultAgent) {
+          setSelectedAgentId(state.defaultAgent);
+        }
+      } catch {}
+    }
+
+    function loadConfig() {
+      try {
+        const cfg = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+        for (const k of ["baseUrl", "token", "userId", "userName", "channel"]) {
+          if (cfg[k] != null) $(k).value = cfg[k];
+        }
+        if (cfg.agentId != null) {
+          state.preferredAgentId = cfg.agentId;
+          setSelectedAgentId(cfg.agentId);
+        }
+        if (cfg.conversationId) {
+          state.conversationId = cfg.conversationId;
+          setConvLabel();
+        }
+      } catch {}
+    }
+
+    function saveConfig() {
+      const cfg = {};
+      for (const k of ["baseUrl", "token", "userId", "userName", "channel"]) {
+        cfg[k] = $(k).value.trim();
+      }
+      state.preferredAgentId = selectedAgentId();
+      cfg.agentId = state.preferredAgentId;
+      cfg.conversationId = state.conversationId;
+      localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+    }
+
+    function apiBase() {
+      const raw = $("baseUrl").value.trim();
+      if (raw) return raw.replace(/\/$/, "");
+      const path = window.__CHAT_API_PATH__ || "/v1";
+      return window.location.origin.replace(/\/$/, "") + path.replace(/\/$/, "");
+    }
+
+    function authHeaders(extra = {}) {
+      const h = { ...extra };
+      const token = $("token").value.trim();
+      if (token) h.Authorization = "Bearer " + token;
+      const user = $("userId").value.trim();
+      if (user) h["X-Chat-API-User"] = user;
+      const name = $("userName").value.trim();
+      if (name) h["X-Chat-API-User-Name"] = name;
+      const channel = $("channel").value.trim();
+      if (channel) h["X-Chat-API-Channel"] = channel;
+      return h;
+    }
+
+    function setHealth(ok, text) {
+      $("healthDot").classList.toggle("ok", ok);
+      $("healthText").textContent = text;
+    }
+
+    function setConvLabel() {
+      const agent = selectedAgentId();
+      const agentLabel = agent ? ` · agent ${agent}` : "";
+      $("convLabel").textContent = "conversation: " + (state.conversationId || "(new)") + agentLabel;
+      $("runMeta").textContent = state.runId ? " · run " + state.runId : "";
+    }
+
+    function escapeHtml(s) {
+      return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    function logSSE(kind, payload, cls = "") {
+      const el = document.createElement("div");
+      el.className = "ev";
+      const data = typeof payload === "string" ? payload : JSON.stringify(payload);
+      el.innerHTML = `<span class="k${cls ? " " + cls : ""}">${escapeHtml(kind)}</span> ${escapeHtml(data)}`;
+      $("sseLog").appendChild(el);
+      $("sseLog").scrollTop = $("sseLog").scrollHeight;
+    }
+
+    function formatMessageTime(createdAt) {
+      const ts = Number(createdAt);
+      if (!ts) return "";
+      const d = new Date(ts * 1000);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    }
+
+    function addBubble(role, text, tag, createdAt) {
+      const el = document.createElement("div");
+      el.className = "bubble " + role;
+      const label = tag || (role === "sys" ? "system" : role);
+      const timeText = formatMessageTime(createdAt ?? Math.floor(Date.now() / 1000));
+      if (label || timeText) {
+        const t = document.createElement("div");
+        t.className = "tag";
+        const name = document.createElement("span");
+        name.textContent = label;
+        t.appendChild(name);
+        if (timeText) {
+          const time = document.createElement("span");
+          time.className = "time";
+          time.textContent = timeText;
+          t.appendChild(time);
+        }
+        el.appendChild(t);
+      }
+      const body = document.createElement("div");
+      body.textContent = text;
+      el.appendChild(body);
+      $("messages").appendChild(el);
+      $("messages").scrollTop = $("messages").scrollHeight;
+      return { el, body };
+    }
+
+    function requireChannel() {
+      const ch = $("channel").value.trim();
+      if (!ch) {
+        alert("请填写 Channel");
+        return false;
+      }
+      return true;
+    }
+
+    async function ping() {
+      try {
+        const user = encodeURIComponent($("userId").value.trim());
+        const res = await fetch(`${apiBase()}/conversations?limit=1&user=${user}`, { headers: authHeaders() });
+        if (!res.ok) {
+          setHealth(false, "HTTP " + res.status);
+          return false;
+        }
+        setHealth(true, "online · " + apiBase());
+        return true;
+      } catch (e) {
+        setHealth(false, e.message);
+        return false;
+      }
+    }
+
+    async function refreshConversations() {
+      const user = encodeURIComponent($("userId").value.trim());
+      const res = await fetch(`${apiBase()}/conversations?limit=50&user=${user}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        addBubble("sys", "list conversations: " + JSON.stringify(json));
+        return;
+      }
+      const list = $("convList");
+      list.innerHTML = "";
+      for (const c of json.data.conversations || []) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "conv-item" + (c.id === state.conversationId ? " active" : "");
+        btn.innerHTML = `<div>${escapeHtml(c.name || c.id)}</div><div class="id">${escapeHtml(c.id)}${c.agent_id ? " · " + escapeHtml(c.agent_id) : ""}</div>`;
+        btn.addEventListener("click", () => selectConversation(c.id));
+        list.appendChild(btn);
+      }
+    }
+
+    async function selectConversation(id) {
+      state.conversationId = id;
+      setConvLabel();
+      saveConfig();
+      $("messages").innerHTML = "";
+      await refreshConversations();
+      const metaRes = await fetch(`${apiBase()}/conversations/${encodeURIComponent(id)}`, {
+        headers: authHeaders(),
+      });
+      const metaJson = await metaRes.json().catch(() => ({}));
+      if (metaRes.ok && metaJson.ok && metaJson.data && metaJson.data.agent_id) {
+        state.preferredAgentId = metaJson.data.agent_id;
+        setSelectedAgentId(metaJson.data.agent_id);
+        saveConfig();
+        setConvLabel();
+      }
+      const res = await fetch(`${apiBase()}/conversations/${encodeURIComponent(id)}/messages?limit=50`, {
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        addBubble("sys", "load history failed: " + JSON.stringify(json));
+        return;
+      }
+      const msgs = (json.data.messages || []).slice().reverse();
+      for (const m of msgs) {
+        if (m.query) addBubble("user", m.query, m.user_name || m.user_id || "user", m.created_at);
+        if (m.answer) addBubble("assistant", m.answer, "assistant", m.created_at);
+      }
+    }
+
+    function newConversation() {
+      state.conversationId = null;
+      state.runId = null;
+      if (state.preferredAgentId) {
+        setSelectedAgentId(state.preferredAgentId);
+      }
+      setConvLabel();
+      $("messages").innerHTML = "";
+      saveConfig();
+      refreshConversations();
+    }
+
+    function parseSSEChunk(buffer, onEvent) {
+      const parts = buffer.split("\n\n");
+      const rest = parts.pop() || "";
+      for (const block of parts) {
+        let event = "message";
+        const dataLines = [];
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+        }
+        if (!dataLines.length) continue;
+        const raw = dataLines.join("\n");
+        let data = raw;
+        try { data = JSON.parse(raw); } catch {}
+        onEvent(event, data);
+      }
+      return rest;
+    }
+
+    function hasPendingInteraction() {
+      return state.activeInteractionId && state.interactionRunId;
+    }
+
+    function updateIxUI() {
+      const pending = hasPendingInteraction();
+      $("query").placeholder = pending
+        ? "Agent 等待你的回答 — 关闭弹窗后也可在此输入并发送"
+        : "输入消息… Enter 发送";
+      if (pending || !state.sending) {
+        $("btnSend").disabled = false;
+      }
+    }
+
+    function hideIxModal() {
+      $("ixModal").classList.remove("open");
+      $("ixOptions").innerHTML = "";
+      $("ixAnswer").value = "";
+      updateIxUI();
+    }
+
+    function clearPendingInteraction() {
+      state.activeInteractionId = null;
+      state.interactionRunId = null;
+      updateIxUI();
+    }
+
+    function closeIxModal() {
+      hideIxModal();
+      clearPendingInteraction();
+    }
+
+    async function respondInteraction(answer) {
+      const runId = state.interactionRunId || state.runId;
+      const ixId = state.activeInteractionId;
+      if (!runId || !ixId || !answer.trim()) return;
+      const res = await fetch(
+        `${apiBase()}/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(ixId)}/respond`,
+        {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ answer: answer.trim() }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      logSSE("respond", json, res.ok ? "" : "err");
+      if (!res.ok || json.ok === false) {
+        addBubble("sys", "respond failed: " + (json.error || res.status));
+        return;
+      }
+      addBubble("sys", "已提交回答");
+      closeIxModal();
+    }
+
+    function showIxModal(data) {
+      const id = String(data.interaction_id || "");
+      if (!id) return;
+      state.activeInteractionId = id;
+      state.interactionRunId = data.run_id || state.runId;
+      $("ixMeta").textContent = [
+        data.run_id ? "run=" + data.run_id : "",
+        "ix=" + id,
+        data.expires_at ? "expires=" + data.expires_at : "",
+      ].filter(Boolean).join(" · ");
+      $("ixPrompt").textContent = data.prompt || "";
+      const opts = $("ixOptions");
+      opts.innerHTML = "";
+      for (const a of data.actions || []) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = a.label || a.id;
+        btn.addEventListener("click", () => respondInteraction(a.label || a.id || ""));
+        opts.appendChild(btn);
+      }
+      updateIxUI();
+      $("ixModal").classList.add("open");
+      $("ixAnswer").focus();
+    }
+
+    async function sendMessage() {
+      const query = $("query").value.trim();
+      if (!query) return;
+      if (!requireChannel()) return;
+
+      if (hasPendingInteraction()) {
+        $("query").value = "";
+        addBubble("user", query, $("userId").value.trim());
+        await respondInteraction(query);
+        return;
+      }
+
+      if (state.sending) return;
+
+      state.sending = true;
+      $("btnSend").disabled = true;
+      saveConfig();
+
+      addBubble("user", query, $("userId").value.trim());
+      $("query").value = "";
+
+      let thinking = "";
+      let answer = "";
+      let lastBubble = null;
+
+      function streamBubble(role, key, tag) {
+        if (lastBubble && lastBubble.role === role && lastBubble.key === key) return lastBubble;
+        if (role === "thinking") thinking = "";
+        if (role === "assistant") answer = "";
+        const b = addBubble(role, "", tag);
+        lastBubble = { role, key, body: b.body };
+        return lastBubble;
+      }
+
+      const body = { query };
+      if (state.conversationId) body.conversation_id = state.conversationId;
+      const agentId = selectedAgentId();
+      if (agentId) body.agent_id = agentId;
+
+      try {
+        const res = await fetch(`${apiBase()}/chat-messages`, {
+          method: "POST",
+          headers: {
+            ...authHeaders(),
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          logSSE("http_error", text, "err");
+          if (res.status === 404 && state.conversationId) {
+            state.conversationId = null;
+            state.runId = null;
+            setConvLabel();
+            saveConfig();
+            addBubble("sys", "会话不存在，已清空选中会话。请点「新会话」或重新发送。");
+            return;
+          }
+          addBubble("sys", "HTTP " + res.status + ": " + text);
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          buf = parseSSEChunk(buf, (event, data) => {
+            logSSE(event, data, event === "error" ? "err" : "");
+            if (event === "message") {
+              if (data.conversation_id) {
+                state.conversationId = data.conversation_id;
+                setConvLabel();
+                saveConfig();
+              }
+              if (data.run_id) state.runId = data.run_id;
+              setConvLabel();
+            } else if (event === "thinking_delta") {
+              const b = streamBubble("thinking", "t", "thinking");
+              if (data.replace) thinking = data.text || "";
+              else thinking += data.text || "";
+              b.body.textContent = thinking;
+            } else if (event === "text_delta") {
+              const b = streamBubble("assistant", "a", "assistant");
+              if (data.replace) answer = data.text || "";
+              else answer += data.text || "";
+              b.body.textContent = answer;
+            } else if (event === "tool_call") {
+              const id = String(data.tool_call_id || "?");
+              const b = streamBubble("tool", id, "tool");
+              b.body.textContent = (data.name || "?") + (data.input ? "\n" + data.input : "");
+            } else if (event === "question_request" || event === "permission_request") {
+              showIxModal(data);
+            } else if (event === "error") {
+              addBubble("sys", "error: " + (data.error || JSON.stringify(data)));
+            } else if (event === "message_end") {
+              closeIxModal();
+              state.runId = null;
+              setConvLabel();
+            }
+          });
+        }
+      } catch (e) {
+        logSSE("client_error", e.message, "err");
+        addBubble("sys", e.message);
+      } finally {
+        state.sending = false;
+        updateIxUI();
+        refreshConversations().catch(() => {});
+      }
+    }
+
+    $("btnSave").addEventListener("click", () => { saveConfig(); setConvLabel(); ping(); });
+    $("btnHealth").addEventListener("click", ping);
+    $("btnRefresh").addEventListener("click", () => refreshConversations().catch(console.error));
+    $("btnNew").addEventListener("click", newConversation);
+    $("btnSend").addEventListener("click", () => sendMessage().catch(console.error));
+    $("btnClearLog").addEventListener("click", () => { $("sseLog").innerHTML = ""; });
+    $("btnIxSubmit").addEventListener("click", () => respondInteraction($("ixAnswer").value).catch(console.error));
+    $("btnIxClose").addEventListener("click", hideIxModal);
+    $("agentId").addEventListener("change", () => { saveConfig(); setConvLabel(); });
+    $("agentIdCustom").addEventListener("change", () => { saveConfig(); setConvLabel(); });
+    $("query").addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage().catch(console.error);
+      }
+    });
+
+    loadConfig();
+    loadDebugMeta().finally(() => {
+      ping().then((ok) => { if (ok) refreshConversations().catch(() => {}); });
+    });
+  </script>
+</body>
+</html>

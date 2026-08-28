@@ -9,5 +9,7 @@ func init() {
 	pluginkit.Register("agent/coding", New)
 }
 
-var _ agentkit.Agent = (*Runtime)(nil)
-var _ agentkit.CommandProvider = (*Runtime)(nil)
+var (
+	_ agentkit.Agent            = (*Runtime)(nil)
+	_ agentkit.AgentCatalogEntry = (*Runtime)(nil)
+)
