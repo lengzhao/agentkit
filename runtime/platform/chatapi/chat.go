@@ -19,9 +19,10 @@ import (
 const maxRequestBody = 10 << 20
 
 type chatRequest struct {
-	ConversationID string `json:"conversation_id"`
-	Query          string `json:"query"`
-	AgentID        string `json:"agent_id"`
+	ConversationID string      `json:"conversation_id"`
+	Query          string      `json:"query"`
+	AgentID        string      `json:"agent_id"`
+	Inputs         []chatInput `json:"inputs"`
 }
 
 func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +54,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := strings.TrimSpace(body.Query)
-	if query == "" {
+	if query == "" && len(body.Inputs) == 0 {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
@@ -107,6 +108,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run := newRunState(runID, user, channelKey, inboundAgentID, agentkit.SessionID(engineSessionKey), conv.ID, msgID, p, sse)
+	run.apiBase = p.apiBaseFromRequest(r)
 	run.userQuery = query
 	if !p.pending.create(run) {
 		_ = sse.Error("too many concurrent requests")
@@ -159,7 +161,12 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	case common.SlashNotCommand:
 	}
 
-	event := common.InboundMessage(inboundAgentID, agentkit.SessionID(engineSessionKey), "chat-api", user, query)
+	images, files, audio, filePaths, err := p.inputsToCore(r.Context(), channelKey, body.Inputs)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	event := common.InboundFromContent(inboundAgentID, agentkit.SessionID(engineSessionKey), "chat-api", user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)
@@ -233,7 +240,7 @@ func (p *Platform) runForSession(sessionID agentkit.SessionID) *runState {
 	return nil
 }
 
-func (p *Platform) handleOutbound(_ context.Context, event agentkit.OutboundEvent) error {
+func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEvent) error {
 	run := p.runForSession(event.SessionID)
 	if run == nil {
 		return nil
@@ -279,6 +286,9 @@ func (p *Platform) handleOutbound(_ context.Context, event agentkit.OutboundEven
 				run.mu.Lock()
 				run.answerText = text
 				run.mu.Unlock()
+			}
+			if err := p.emitAssistantMedia(ctx, run, msg); err != nil {
+				return err
 			}
 		}
 		return run.flushDeltas()

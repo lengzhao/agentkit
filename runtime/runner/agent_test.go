@@ -117,14 +117,15 @@ func TestRunnerResolvesLogicalStoreSessionFromFixedDelivery(t *testing.T) {
 	t.Parallel()
 
 	delivery := session.BuildDeliverySessionID("slack", "C001", "123", "U111")
-	logical := agentkit.SessionID(string(delivery) + ":new:20260829")
+	entry := session.ActiveSessionEntryKey("slack", delivery, session.ScopeChannel, "U111")
+	logical := agentkit.SessionID(string(entry) + ":new:20260829")
 	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := mapSessionStore{
 		sessions: map[agentkit.SessionID]agentkit.Session{logical: mem},
-		active:   map[agentkit.SessionID]agentkit.SessionID{delivery: logical},
+		active:   map[agentkit.SessionID]agentkit.SessionID{entry: logical},
 	}
 
 	loop := &agentRecordingLoop{}
@@ -141,6 +142,40 @@ func TestRunnerResolvesLogicalStoreSessionFromFixedDelivery(t *testing.T) {
 	}
 	if loop.lastSession != "slack:C001" {
 		t.Fatalf("effective session = %q, want slack:C001", loop.lastSession)
+	}
+	if loop.lastStoreSession != logical {
+		t.Fatalf("store session = %q, want %q", loop.lastStoreSession, logical)
+	}
+}
+
+func TestRunnerResolvesLogicalStoreSessionFromStableSlackDM(t *testing.T) {
+	t.Parallel()
+
+	stable := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
+	entry := session.ActiveSessionEntryKey("slack", stable, session.ScopeChannel, "U02LNUW8KV5")
+	logical := agentkit.SessionID(string(entry) + ":new:20260829")
+	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := mapSessionStore{
+		sessions: map[agentkit.SessionID]agentkit.Session{logical: mem},
+		active:   map[agentkit.SessionID]agentkit.SessionID{entry: logical},
+	}
+
+	loop := &agentRecordingLoop{}
+	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{
+		Platform: &scriptedPlatform{events: []agentkit.MessageEvent{
+			userEvent(stable, "hi"),
+		}},
+		Loop:         loop,
+		SessionStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Run(context.Background(), nil); err != nil {
+		t.Fatal(err)
 	}
 	if loop.lastStoreSession != logical {
 		t.Fatalf("store session = %q, want %q", loop.lastStoreSession, logical)

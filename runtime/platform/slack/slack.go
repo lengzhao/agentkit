@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/slack-go/slack"
@@ -29,6 +30,7 @@ type Config struct {
 type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Workspace    workspace.Service     `json:"workspace,omitempty"`
 }
 
 type delivery struct {
@@ -45,6 +47,8 @@ type Platform struct {
 	agentID    agentkit.AgentID
 	apiURL     string
 	commands   agentkit.Commands
+	sessionScope session.SessionScope
+	workspace  workspace.Service
 	inbox      *common.Inbox
 	outbound   *common.Outbound
 	deliveries sync.Map
@@ -81,11 +85,13 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		agentID:          cfg.ResolveAgentID(),
 		apiURL:           apiURL,
 		commands:         deps.Commands,
+		workspace:          deps.Workspace,
+		sessionScope:     session.ParseScope(cfg.SessionScope),
 		inbox:            common.NewInbox(64),
 		channelNameCache: make(map[string]string),
 		typingStops:      make(map[agentkit.SessionID]func()),
 	}
-	p.outbound = common.NewOutbound(p.sendText)
+	p.outbound = common.NewOutbound(p.sendText, p.sendMediaPart)
 	return p, nil
 }
 
@@ -301,7 +307,7 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 		return
 	}
 	direct := isDirectMessageChannel(channel, channelType)
-	sessionID := agentkit.SessionID(p.buildSessionKey(channel, user, threadRootTS(eventThreadTS, msgTS)))
+	sessionID := agentkit.SessionID(p.buildSessionKey(channel, user, deliveryThreadTS(eventThreadTS)))
 	d := delivery{
 		channel:       channel,
 		threadTS:      replyThreadTS(direct, eventThreadTS, msgTS),
@@ -314,7 +320,12 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 }
 
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
-	outcome, err := common.ProcessSlash(ctx, p.commands, d.sessionID, text)
+	outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
+		DeliverySessionID: d.sessionID,
+		PlatformID:        "slack",
+		SessionScope:      p.sessionScope,
+		UserID:            user,
+	}, text)
 	if err != nil {
 		_ = p.replyText(ctx, d, fmt.Sprintf("命令执行失败: %v", err))
 		return
@@ -322,7 +333,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 	switch outcome.Kind {
 	case common.SlashHandled:
 		if outcome.Reply != "" {
-			_ = p.replyText(ctx, d, outcome.Reply)
+			_ = p.replyText(ctx, d, formatSlashReply(text, outcome.Reply))
 		}
 		return
 	case common.SlashForward:
@@ -335,7 +346,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 	if react {
 		p.reactReceived(ctx, d)
 	}
-	event := common.InboundFromContent(p.agentID, d.sessionID, "slack", user, text, "", images, files, audio, nil)
+	event := common.InboundFromContent(p.agentID, d.sessionID, "slack", user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
 	_ = p.inbox.Push(ctx, event)
 }
 
@@ -393,6 +404,24 @@ func threadRootTS(threadTS, msgTS string) string {
 		return threadTS
 	}
 	return msgTS
+}
+
+// deliveryThreadTS is the thread segment for session keys. Only real Slack
+// thread timestamps are included so /new active-session mappings stay stable
+// across top-level DM and channel messages.
+func deliveryThreadTS(eventThreadTS string) string {
+	return strings.TrimSpace(eventThreadTS)
+}
+
+func formatSlashReply(command, reply string) string {
+	name, _, ok := common.ParseSlashCommand(command)
+	if !ok || name != "new" {
+		return reply
+	}
+	if strings.Contains(reply, ":new:") {
+		return "已开始新会话。"
+	}
+	return reply
 }
 
 func stripBotMention(text string) string {

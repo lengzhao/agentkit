@@ -148,6 +148,10 @@
     .bubble.user { align-self: flex-end; background: #1f3a5f; border-color: #264a73; }
     .bubble.thinking { border-color: #3d4f66; opacity: 0.9; }
     .bubble.tool { border-color: #4a3f2a; font-size: 11px; }
+    .bubble.file { border-color: #2d4a3e; }
+    .bubble.file .file-name { margin-bottom: 6px; }
+    .bubble.file a { color: var(--accent); text-decoration: underline; }
+    .bubble.file a:hover { color: #79b8ff; }
     .bubble.sys { border-style: dashed; color: var(--muted); font-size: 11px; }
     .bubble .tag {
       font-size: 10px;
@@ -170,7 +174,31 @@
       background: var(--panel);
     }
     .composer-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
-    .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; align-items: center; }
+    .attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 0; }
+    .attachment-chip {
+      font-size: 11px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .attachment-chip button {
+      padding: 0 4px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1;
+    }
+    .attachment-chip a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .attachment-chip a:hover { text-decoration: underline; }
     .log {
       height: 100%;
       overflow: auto;
@@ -271,8 +299,11 @@
       <div id="messages" class="messages"></div>
       <div class="composer">
         <div class="composer-meta" id="convLabel">conversation: (new)</div>
+        <div id="attachments" class="attachments"></div>
         <textarea id="query" rows="3" placeholder="输入消息… Enter 发送"></textarea>
         <div class="composer-actions">
+          <input type="file" id="fileInput" hidden multiple />
+          <button type="button" id="btnAttach">附件</button>
           <button type="button" id="btnSend" class="primary">发送</button>
         </div>
       </div>
@@ -314,6 +345,7 @@
       defaultAgent: "",
       availableAgents: [],
       preferredAgentId: "",
+      pendingFiles: [],
     };
 
     function selectedAgentId() {
@@ -499,6 +531,56 @@
       $("messages").appendChild(el);
       $("messages").scrollTop = $("messages").scrollHeight;
       return { el, body };
+    }
+
+    function fileDownloadHref(data) {
+      const channel = $("channel").value.trim();
+      if (data.url) return data.url;
+      let path = data.path;
+      if (!path && data.id) {
+        path = `${apiBase()}/files/${encodeURIComponent(data.id)}`;
+      }
+      if (!path) return "";
+      const u = new URL(path, window.location.origin);
+      if (channel && !u.searchParams.has("channel")) {
+        u.searchParams.set("channel", channel);
+      }
+      return u.toString();
+    }
+
+    function addFileBubble(data) {
+      const el = document.createElement("div");
+      el.className = "bubble file";
+      const t = document.createElement("div");
+      t.className = "tag";
+      const name = document.createElement("span");
+      name.textContent = "file";
+      t.appendChild(name);
+      const time = document.createElement("span");
+      time.className = "time";
+      time.textContent = formatMessageTime(Math.floor(Date.now() / 1000));
+      t.appendChild(time);
+      el.appendChild(t);
+
+      const body = document.createElement("div");
+      const label = data.filename || data.id || "file";
+      const title = document.createElement("div");
+      title.className = "file-name";
+      title.textContent = label;
+      body.appendChild(title);
+
+      const href = fileDownloadHref(data);
+      if (href) {
+        const a = document.createElement("a");
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = "点击下载";
+        body.appendChild(a);
+      }
+      el.appendChild(body);
+      $("messages").appendChild(el);
+      $("messages").scrollTop = $("messages").scrollHeight;
     }
 
     function requireChannel() {
@@ -687,9 +769,77 @@
       $("ixAnswer").focus();
     }
 
+    function renderAttachments() {
+      const box = $("attachments");
+      box.innerHTML = "";
+      for (const f of state.pendingFiles) {
+        const chip = document.createElement("div");
+        chip.className = "attachment-chip";
+        const href = fileDownloadHref(f);
+        if (href) {
+          const a = document.createElement("a");
+          a.href = href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = f.filename;
+          chip.appendChild(a);
+        } else {
+          const span = document.createElement("span");
+          span.textContent = f.filename;
+          chip.appendChild(span);
+        }
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "×";
+        btn.title = "移除";
+        btn.addEventListener("click", () => {
+          state.pendingFiles = state.pendingFiles.filter((x) => x.id !== f.id);
+          renderAttachments();
+        });
+        chip.appendChild(btn);
+        box.appendChild(chip);
+      }
+    }
+
+    async function uploadFile(file) {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const res = await fetch(`${apiBase()}/files`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: form,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "upload failed: HTTP " + res.status);
+      }
+      return json.data;
+    }
+
+    async function onFilesSelected(ev) {
+      const files = Array.from(ev.target.files || []);
+      ev.target.value = "";
+      if (!files.length) return;
+      if (!requireChannel()) return;
+      for (const file of files) {
+        try {
+          const data = await uploadFile(file);
+          state.pendingFiles.push({
+            id: data.id,
+            filename: data.filename || file.name,
+            url: data.url,
+            path: data.path,
+          });
+          renderAttachments();
+        } catch (e) {
+          addBubble("sys", "upload failed: " + e.message);
+        }
+      }
+    }
+
     async function sendMessage() {
       const query = $("query").value.trim();
-      if (!query) return;
+      if (!query && !state.pendingFiles.length) return;
       if (!requireChannel()) return;
 
       if (hasPendingInteraction()) {
@@ -705,8 +855,18 @@
       $("btnSend").disabled = true;
       saveConfig();
 
-      addBubble("user", query, $("userId").value.trim());
+      const userLabel = $("userId").value.trim();
+      const display = query || `[${state.pendingFiles.length} 个附件]`;
+      addBubble("user", display, userLabel);
       $("query").value = "";
+
+      const pendingInputs = state.pendingFiles.map((f) => ({
+        type: "file",
+        transfer_method: "local_file",
+        upload_file_id: f.id,
+      }));
+      state.pendingFiles = [];
+      renderAttachments();
 
       let thinking = "";
       let answer = "";
@@ -730,6 +890,7 @@
       }
 
       const body = { query };
+      if (pendingInputs.length) body.inputs = pendingInputs;
       if (state.conversationId) body.conversation_id = state.conversationId;
       const agentId = selectedAgentId();
       if (agentId) body.agent_id = agentId;
@@ -798,6 +959,8 @@
               const prefix = data.agent_id ? `[${data.agent_id}] ` : "";
               const input = data.input ? "\n" + data.input : "";
               b.body.textContent = prefix + (data.name || "?") + input;
+            } else if (event === "file_ready") {
+              addFileBubble(data);
             } else if (event === "question_request" || event === "permission_request") {
               showIxModal(data);
             } else if (event === "error") {
@@ -819,6 +982,8 @@
       }
     }
 
+    $("btnAttach").addEventListener("click", () => $("fileInput").click());
+    $("fileInput").addEventListener("change", (e) => onFilesSelected(e).catch(console.error));
     $("btnSave").addEventListener("click", () => { saveConfig(); setConvLabel(); ping(); });
     $("btnHealth").addEventListener("click", ping);
     $("btnRefresh").addEventListener("click", () => refreshConversations().catch(console.error));

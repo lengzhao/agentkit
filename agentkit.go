@@ -38,6 +38,12 @@ const (
 	// It may differ from KeySessionID when a stable IM delivery/effective key has
 	// been switched to a fresh history with /new.
 	KeyStoreSessionID contextKey = "agentkit.store_session_id"
+	// KeyMessageMetadata is optional platform metadata for the current inbound turn.
+	KeyMessageMetadata contextKey = "agentkit.message_metadata"
+	// KeyUserMessageTemplate overrides sessionStore.config.userMessageTemplate for
+	// DeriveMessages in the current context. Empty means use store config, which
+	// defaults to LegacyUserMessageTemplate when unset.
+	KeyUserMessageTemplate contextKey = "agentkit.user_message_template"
 )
 
 // SessionID identifies a conversation unit. Platforms emit a delivery SessionID
@@ -93,6 +99,9 @@ type SessionEvent struct {
 	// stream of user turns. Empty for single-user transports such as the CLI, and
 	// for everything the agent itself produces.
 	UserID string
+	// Metadata carries optional platform fields for replay-time user-message
+	// templates (display name, channel label, etc.). Persisted on user messages.
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // MessageEvent is the inbound envelope from Platform to Loop. SessionID is the
@@ -104,6 +113,8 @@ type MessageEvent struct {
 	PlatformID string
 	UserID     string
 	Message    ModelMessage
+	// Metadata is optional platform context copied onto persisted user messages.
+	Metadata map[string]any `json:"metadata,omitempty"`
 	// Reply carries a permission answer as JSON. Decode with permission.DecodeReply.
 	Reply json.RawMessage `json:"reply,omitempty"`
 }

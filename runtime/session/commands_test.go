@@ -70,15 +70,16 @@ func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
 	}
 
 	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, stable)
+	entry := session.ApplyScope(stable, session.ScopeChannel, "U111")
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, entry)
 	out, err := newCmd.CommandExec(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out, string(stable)+":new:") {
+	if !strings.HasPrefix(out, string(entry)+":new:") {
 		t.Fatalf("new logical session = %q", out)
 	}
-	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), stable)
+	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), entry)
 	if err != nil {
 		t.Fatal(err)
 	}

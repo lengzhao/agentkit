@@ -89,7 +89,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	control := l.controlFor(sessionID)
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
-	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), req.StoreSessionID, agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
+	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), req.StoreSessionID, agentID, req.Event.PlatformID, req.Event.UserID, req.Event.Metadata, control, req.Emit)
 	ctx = telemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
@@ -186,7 +186,7 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID, deliverySessionID, storeSessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit) context.Context {
+func withTurnContext(ctx context.Context, sessionID, deliverySessionID, storeSessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, metadata map[string]any, control *Control, emit agentkit.OutboundEmit) context.Context {
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	if deliverySessionID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliverySessionID)
@@ -200,6 +200,9 @@ func withTurnContext(ctx context.Context, sessionID, deliverySessionID, storeSes
 	}
 	if userID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyUserID, userID)
+	}
+	if len(metadata) > 0 {
+		ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, metadata)
 	}
 	if emit != nil {
 		ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, emit)

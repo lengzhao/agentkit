@@ -29,6 +29,10 @@ type TenantConfig struct {
 	// by cap/tenant.Key, not session ids: every thread and every user in a Slack
 	// channel shares the channel's entry.
 	Tenants map[string]TenantEntry `json:"tenants,omitempty"`
+	// OmitPlatformPrefix drops the platform segment from local directory names.
+	// slack:C123 -> C123 instead of slack_C123; chat-api:slack_x -> slack_x.
+	// Tenant map keys are unchanged; only the default localBase/<dir> layout moves.
+	OmitPlatformPrefix bool `json:"omitPlatformPrefix,omitempty"`
 }
 
 // TenantEntry is one tenant's pinned workspace root.
@@ -45,10 +49,11 @@ const DefaultTenantDir = "_default"
 // TenantService resolves paths against a shared global root and a per-tenant
 // local root.
 type TenantService struct {
-	globalRoot string
-	localBase  string
-	scope      string
-	roots      map[string]string
+	globalRoot         string
+	localBase          string
+	scope              string
+	omitPlatformPrefix bool
+	roots              map[string]string
 }
 
 func init() {
@@ -114,10 +119,11 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 	}
 
 	return &TenantService{
-		globalRoot: globalAbs,
-		localBase:  localBaseAbs,
-		scope:      scope,
-		roots:      roots,
+		globalRoot:         globalAbs,
+		localBase:          localBaseAbs,
+		scope:              scope,
+		omitPlatformPrefix: cfg.OmitPlatformPrefix,
+		roots:              roots,
 	}, nil
 }
 
@@ -151,7 +157,7 @@ func (s *TenantService) TenantRoot(ctx context.Context) string {
 	if root, ok := s.roots[key]; ok {
 		return root
 	}
-	dir := tenant.DirName(key)
+	dir := tenant.LocalDirName(key, s.omitPlatformPrefix)
 	if dir == "" {
 		dir = DefaultTenantDir
 	}

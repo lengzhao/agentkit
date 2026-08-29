@@ -8,8 +8,9 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 )
 
-func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
+func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int, userMessageTemplate string) []agentkit.ModelMessage {
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	tmpl := resolveUserMessageTemplate(ctx, userMessageTemplate)
 
 	var compactBefore agentkit.EventSeq
 	var summary *agentkit.ModelMessage
@@ -49,7 +50,7 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 				continue
 			}
 			if ev.Type == agentkit.EventUserMessage {
-				msg = attributeUser(msg, ev.UserID)
+				msg = applyUserMessageTemplate(msg, ev.UserID, ev.Metadata, tmpl)
 			}
 			out = append(out, msg)
 		case agentkit.EventToolResult:
@@ -89,37 +90,6 @@ func eventForAgent(ev agentkit.SessionEvent, agentID agentkit.AgentID) bool {
 		return true
 	}
 	return ev.AgentID == agentID
-}
-
-// attributeUser marks a user message with the end user who sent it. A session
-// shared by a whole Slack channel is one history with many speakers, and without
-// the tag the model cannot tell a follow-up from a different person's new
-// request — or notice that the person it just asked a question is not the one
-// who answered.
-//
-// Attribution is decided per event and only from that event's UserID, so
-// rendering is stable: a second speaker joining a session does not rewrite the
-// messages before them, which would invalidate the whole prompt cache at the
-// moment the conversation gets busier. Single-user transports leave UserID empty
-// and derive exactly the history they did before.
-func attributeUser(msg agentkit.ModelMessage, userID string) agentkit.ModelMessage {
-	if userID == "" {
-		return msg
-	}
-	open := "<user id=\"" + userID + "\">"
-	content := make([]agentkit.ContentPart, len(msg.Content))
-	copy(content, msg.Content)
-	msg.Content = content
-	for i, part := range content {
-		if part.Type != "text" {
-			continue
-		}
-		content[i].Text = open + "\n" + part.Text + "\n</user>"
-		return msg
-	}
-	// Nothing to wrap (an image-only turn, say): still name the speaker.
-	msg.Content = append([]agentkit.ContentPart{{Type: "text", Text: open + "</user>"}}, content...)
-	return msg
 }
 
 // answerOrphanToolCalls inserts a stand-in result for every tool call the

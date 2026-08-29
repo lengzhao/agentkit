@@ -3,6 +3,8 @@ package send_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -111,7 +113,15 @@ func TestSendFilePath(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	ws := workspace.Static(t.TempDir())
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "report.pdf"), []byte("pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := workspace.Static(root)
 	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +150,15 @@ func TestSendTextAndPath(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	ws := workspace.Static(t.TempDir())
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "report.pdf"), []byte("pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := workspace.Static(root)
 	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -160,5 +178,35 @@ func TestSendTextAndPath(t *testing.T) {
 	}
 	if len(msg.Content) != 2 || msg.Content[0].Text != "see attached" || msg.Content[1].Type != "document" {
 		t.Fatalf("content=%#v", msg.Content)
+	}
+}
+
+func TestSendInboundAttachmentPath(t *testing.T) {
+	t.Parallel()
+
+	platform := &recordingPlatform{}
+	root := t.TempDir()
+	attachDir := filepath.Join(root, "work", "upload")
+	if err := os.MkdirAll(attachDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(attachDir, "hello.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := workspace.Static(root)
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C1"))
+	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C1"))
+	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+
+	if _, err := tool.Call(ctx, []byte(`{"path":"upload/hello.go"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(platform.sent) != 1 {
+		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
 }

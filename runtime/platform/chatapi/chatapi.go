@@ -15,6 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 const (
@@ -38,6 +39,8 @@ type Config struct {
 	InteractionTimeout string   `json:"interactionTimeout"`
 	BusyPolicy         string   `json:"busyPolicy"`
 	MaxRuns            int      `json:"maxRuns"`
+	MaxUploadSize      int64    `json:"maxUploadSize"`
+	PublicBaseURL      string   `json:"publicBaseUrl"`
 	DebugUI            bool     `json:"debugUi"`
 	SessionsDir        string   `json:"sessionsDir"`
 	// Agents lists selectable agent ids for debug UI and request validation.
@@ -65,10 +68,13 @@ type Platform struct {
 	interactionTimeout  time.Duration
 	busyPolicy          string
 	maxRuns             int
+	maxUploadSize       int64
+	publicBaseURL       string
 	debugUI             bool
 	sessionStore        agentkit.SessionStore
 	workspace           workspace.Service
 	commands            agentkit.Commands
+	sessionScope        session.SessionScope
 	sessionsDirRel        string
 
 	inbox        *common.Inbox
@@ -124,6 +130,10 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if maxRuns <= 0 {
 		maxRuns = defaultMaxRuns
 	}
+	maxUpload := cfg.MaxUploadSize
+	if maxUpload <= 0 {
+		maxUpload = defaultMaxUploadSize
+	}
 
 	sessionsDir := strings.TrimSpace(cfg.SessionsDir)
 	if sessionsDir == "" {
@@ -144,6 +154,8 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		interactionTimeout: interactionTimeout,
 		busyPolicy:         busy,
 		maxRuns:            maxRuns,
+		maxUploadSize:      maxUpload,
+		publicBaseURL:      strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/"),
 		inbox:              common.NewInbox(128),
 		conversations:      newConversationStore(),
 		pending:            newPendingStore(maxRuns),
@@ -152,6 +164,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		sessionStore:       deps.SessionStore,
 		workspace:          deps.Workspace,
 		commands:           deps.Commands,
+		sessionScope:       session.ParseScope(cfg.SessionScope),
 		sessionsDirRel:       sessionsDir,
 	}, nil
 }
@@ -221,6 +234,8 @@ func (p *Platform) routes() http.Handler {
 	mux.HandleFunc(p.path+"conversations", wrap(p.handleConversations))
 	mux.HandleFunc(p.path+"conversations/", wrap(p.handleConversationSub))
 	mux.HandleFunc(p.path+"chat-messages", wrap(p.handleChatMessages))
+	mux.HandleFunc(p.path+"files", wrap(p.handleFiles))
+	mux.HandleFunc(p.path+"files/", wrap(p.handleFileRoutes))
 	mux.HandleFunc(p.path+"runs/", wrap(p.handleRunRoutes))
 	p.registerDebugUI(mux)
 	return mux

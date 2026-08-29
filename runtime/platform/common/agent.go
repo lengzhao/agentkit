@@ -11,6 +11,9 @@ import (
 // Empty agentId uses loop.defaultAgent.
 type AgentRoutingConfig struct {
 	AgentID agentkit.AgentID `json:"agentId"`
+	// SessionScope mirrors runner.config.sessionScope for platform-local slash
+	// commands (/new active-session mapping). Empty defaults to channel.
+	SessionScope string `json:"sessionScope"`
 }
 
 func (c AgentRoutingConfig) ResolveAgentID() agentkit.AgentID {

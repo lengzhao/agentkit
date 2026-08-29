@@ -54,6 +54,33 @@ func TestTenantRootsAreIsolatedByDefault(t *testing.T) {
 	}
 }
 
+func TestTenantOmitPlatformPrefix(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	svc := newTenantSvc(t, rw.TenantConfig{
+		Global:             t.TempDir(),
+		LocalBase:          base,
+		OmitPlatformPrefix: true,
+	})
+
+	got, err := svc.Resolve(tenantCtx("slack:C001"), "sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(base, "C001", "sessions"); got != want {
+		t.Fatalf("C001 = %q, want %q", got, want)
+	}
+
+	got, err = svc.Resolve(tenantCtx("chat-api:slack_D0AK8MAHW22:t:conv1"), "sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(base, "slack_D0AK8MAHW22", "sessions"); got != want {
+		t.Fatalf("chat-api channel = %q, want %q", got, want)
+	}
+}
+
 // Requirement: one channel keeps one working directory however its history is
 // split — threads and per-user sessions must not fork the workdir.
 func TestOneChannelKeepsOneRootAcrossSessionScopes(t *testing.T) {

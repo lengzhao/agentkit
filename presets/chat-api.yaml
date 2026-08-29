@@ -30,6 +30,8 @@ workspace.default:
     global: ~/.agentkit
     localBase: .agentkit
     scope: local
+    # 目录名不带 platform 前缀：slack:C123 -> .agentkit/C123
+    omitPlatformPrefix: true
 
 sessionStore.default:
   use: session/store

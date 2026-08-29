@@ -45,6 +45,42 @@ func TestDirName(t *testing.T) {
 	}
 }
 
+func TestRoutingSegment(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"slack:C123ABC":          "C123ABC",
+		"chat-api:slack_D0AK":    "slack_D0AK",
+		"cli:default":            "default",
+		"bare-id":                "bare-id",
+		"slack:C123ABC:u:U456":   "C123ABC",
+		"":                       "",
+	}
+	for in, want := range cases {
+		if got := tenant.RoutingSegment(in); got != want {
+			t.Errorf("RoutingSegment(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLocalDirNameOmitPlatform(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"slack:C123ABC":       "C123ABC",
+		"chat-api:slack_D0AK": "slack_D0AK",
+		"cli:default":         "default",
+	}
+	for in, want := range cases {
+		if got := tenant.LocalDirName(in, true); got != want {
+			t.Errorf("LocalDirName(%q, true) = %q, want %q", in, got, want)
+		}
+		if got := tenant.LocalDirName(in, false); got != tenant.DirName(in) {
+			t.Errorf("LocalDirName(%q, false) = %q, want DirName %q", in, got, tenant.DirName(in))
+		}
+	}
+}
+
 // A tenant key reaching a sibling tenant's directory would defeat the whole
 // point, so no key may survive as a traversal.
 func TestDirNameNeverTraverses(t *testing.T) {

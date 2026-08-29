@@ -40,6 +40,7 @@ type runState struct {
 	sessionID      agentkit.SessionID
 	conversationID string
 	messageID      string
+	apiBase        string
 
 	platform *Platform
 	sse      *sseWriter

@@ -30,15 +30,21 @@ func firstText(msg agentkit.ModelMessage) string {
 	return ""
 }
 
+func attributionTestStore(t *testing.T, dir string) agentkit.SessionStore {
+	t.Helper()
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
 // Requirement: one Slack channel shares a single session, and the model can
 // still tell the speakers apart.
 func TestSharedSessionAttributesEachSpeaker(t *testing.T) {
 	t.Parallel()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := attributionTestStore(t, t.TempDir())
 	// Channel scope: both users land on the same session id.
 	id := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
 	if other := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U222"); other != id {
@@ -116,10 +122,7 @@ func TestAttributionSurvivesReload(t *testing.T) {
 	dir := t.TempDir()
 	id := agentkit.SessionID("slack:C001")
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := attributionTestStore(t, dir)
 	sess, err := store.Get(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
@@ -128,10 +131,7 @@ func TestAttributionSurvivesReload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reopened, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	reopened := attributionTestStore(t, dir)
 	sess2, err := reopened.Get(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
@@ -152,10 +152,7 @@ func TestAttributionSurvivesReload(t *testing.T) {
 func TestAttributionWithoutTextPart(t *testing.T) {
 	t.Parallel()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := attributionTestStore(t, t.TempDir())
 	sess, err := store.Get(context.Background(), agentkit.SessionID("slack:C001"))
 	if err != nil {
 		t.Fatal(err)

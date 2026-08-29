@@ -13,8 +13,8 @@ type IgnoreMatcher struct {
 }
 
 type ignorePattern struct {
-	negate bool
-	dirOnly bool
+	negate   bool
+	dirOnly  bool
 	segments []string
 	raw      string
 }
@@ -26,7 +26,7 @@ func LoadIgnoreMatcher(workspaceRoot string) (*IgnoreMatcher, error) {
 		patterns: []ignorePattern{
 			{segments: []string{".git"}},
 			{segments: []string{"node_modules"}},
-			{segments: []string{".agent"}},
+			{segments: []string{".env"}},
 		},
 	}
 	path := filepath.Join(workspaceRoot, ".gitignore")

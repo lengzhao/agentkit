@@ -11,17 +11,22 @@ import (
 // TextSender delivers finalized assistant text to a conversation.
 type TextSender func(ctx context.Context, sessionID agentkit.SessionID, text string) error
 
+// MediaSender delivers a non-text assistant content part (image or document).
+type MediaSender func(ctx context.Context, sessionID agentkit.SessionID, part agentkit.ContentPart) error
+
 // Outbound handles agentkit outbound events with per-session text buffering.
 type Outbound struct {
-	send TextSender
-	mu   sync.Mutex
-	buf  map[agentkit.SessionID]string
+	send  TextSender
+	media MediaSender
+	mu    sync.Mutex
+	buf   map[agentkit.SessionID]string
 }
 
-func NewOutbound(send TextSender) *Outbound {
+func NewOutbound(send TextSender, media MediaSender) *Outbound {
 	return &Outbound{
-		send: send,
-		buf:  make(map[agentkit.SessionID]string),
+		send:  send,
+		media: media,
+		buf:   make(map[agentkit.SessionID]string),
 	}
 }
 
@@ -42,18 +47,30 @@ func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) err
 		return nil
 	case agentkit.EventMessageEnd, agentkit.EventAssistantMessage:
 		text := o.take(event.SessionID)
+		var msg agentkit.ModelMessage
 		if event.Type == agentkit.EventAssistantMessage {
-			var msg agentkit.ModelMessage
 			if err := json.Unmarshal(event.Data, &msg); err == nil {
 				if t := textOf(msg); t != "" {
 					text = t
 				}
 			}
 		}
-		if text == "" {
-			return nil
+		if text != "" {
+			if err := o.send(ctx, event.SessionID, text); err != nil {
+				return err
+			}
 		}
-		return o.send(ctx, event.SessionID, text)
+		if event.Type == agentkit.EventAssistantMessage && o.media != nil {
+			for _, part := range msg.Content {
+				if !isOutboundMediaPart(part.Type) {
+					continue
+				}
+				if err := o.media(ctx, event.SessionID, part); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	case agentkit.EventPermissionRequest:
 		// IM platforms send permission cards in Platform.Send; chat-api handles separately.
 		return nil
@@ -91,6 +108,15 @@ func (o *Outbound) take(id agentkit.SessionID) string {
 	delete(o.buf, id)
 	o.mu.Unlock()
 	return text
+}
+
+func isOutboundMediaPart(typ string) bool {
+	switch typ {
+	case "image", "document":
+		return true
+	default:
+		return false
+	}
 }
 
 func textOf(msg agentkit.ModelMessage) string {

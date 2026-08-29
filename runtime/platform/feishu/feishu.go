@@ -30,6 +30,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -121,9 +122,11 @@ type Platform struct {
 	threadIsolation            bool
 	noReplyToTrigger           bool
 	resolveMentions            bool
-	cfg                        Config
-	agentID                    agentkit.AgentID
-	commands                   agentkit.Commands
+		cfg                        Config
+		agentID                    agentkit.AgentID
+		commands                   agentkit.Commands
+		sessionScope               session.SessionScope
+		workspace                  workspace.Service
 	inbox                      *common.Inbox
 	outbound                   *common.Outbound
 	deliveries                 sync.Map

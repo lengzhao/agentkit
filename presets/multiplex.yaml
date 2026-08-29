@@ -57,6 +57,7 @@ platform.slack:
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
+    workspace: workspace.default
 
 platform.feishu:
   use: platform/feishu
@@ -79,6 +80,7 @@ platform.feishu:
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
+    workspace: workspace.default
 
 # 第二个飞书实例示例（不同 allowChat / agentId）：
 # platform.feishu.ops:
@@ -120,6 +122,7 @@ workspace.default:
     global: ~/.agentkit
     localBase: .agentkit
     scope: local
+    omitPlatformPrefix: true
 
 sessionStore.default:
   use: session/store

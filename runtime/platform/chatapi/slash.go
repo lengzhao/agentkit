@@ -13,16 +13,24 @@ type chatSlashResult struct {
 	outcome common.SlashOutcome
 }
 
+func (p *Platform) slashContext(delivery agentkit.SessionID) common.SlashContext {
+	return common.SlashContext{
+		DeliverySessionID: delivery,
+		PlatformID:        "chat-api",
+		SessionScope:      p.sessionScope,
+	}
+}
+
 func (p *Platform) processChatSlash(ctx context.Context, channelKey string, conv *conversation, engineSessionID agentkit.SessionID, query string) (chatSlashResult, error) {
 	name, args, ok := common.ParseSlashCommand(query)
 	if !ok {
-		out, err := common.ProcessSlash(ctx, p.commands, engineSessionID, query)
+		out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID), query)
 		return chatSlashResult{outcome: out}, err
 	}
 
 	switch name {
 	case "new":
-		out, err := common.ProcessSlash(ctx, p.commands, engineSessionID, query)
+		out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID), query)
 		return chatSlashResult{outcome: out}, err
 	case "session", "sess":
 		if strings.TrimSpace(args) != "" {
@@ -54,7 +62,7 @@ func (p *Platform) processChatSlash(ctx context.Context, channelKey string, conv
 		}
 	}
 
-	out, err := common.ProcessSlash(ctx, p.commands, engineSessionID, query)
+	out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID), query)
 	return chatSlashResult{outcome: out}, err
 }
 

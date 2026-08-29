@@ -74,3 +74,22 @@ func TestBuildSessionKey(t *testing.T) {
 		t.Fatalf("thread message: got %q", got)
 	}
 }
+
+func TestDeliveryThreadTS(t *testing.T) {
+	if got := deliveryThreadTS(""); got != "" {
+		t.Fatalf("top-level message: got %q", got)
+	}
+	if got := deliveryThreadTS("9.9"); got != "9.9" {
+		t.Fatalf("thread message: got %q", got)
+	}
+}
+
+func TestFormatSlashReplyNew(t *testing.T) {
+	got := formatSlashReply("/new", "slack:C1:u:U1:new:20260829-022702.522")
+	if got != "已开始新会话。" {
+		t.Fatalf("got %q", got)
+	}
+	if got := formatSlashReply("/help", "可用命令"); got != "可用命令" {
+		t.Fatalf("got %q", got)
+	}
+}

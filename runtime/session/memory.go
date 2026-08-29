@@ -14,15 +14,18 @@ type MemoryConfig struct {
 	ID agentkit.SessionID `json:"id"`
 	// MaxToolResultBytes truncates tool results as they are appended.
 	MaxToolResultBytes int `json:"maxToolResultBytes"`
+	// UserMessageTemplate overrides the default LegacyUserMessageTemplate on replay.
+	UserMessageTemplate string `json:"userMessageTemplate"`
 }
 
 // Memory is an in-memory session backend for tests and ephemeral runs.
 type Memory struct {
-	mu                 sync.RWMutex
-	id                 agentkit.SessionID
-	seq                agentkit.EventSeq
-	events             []agentkit.SessionEvent
-	maxToolResultBytes int
+	mu                  sync.RWMutex
+	id                  agentkit.SessionID
+	seq                 agentkit.EventSeq
+	events              []agentkit.SessionEvent
+	maxToolResultBytes  int
+	userMessageTemplate string
 }
 
 func newMemory(cfg MemoryConfig) (*Memory, error) {
@@ -30,7 +33,7 @@ func newMemory(cfg MemoryConfig) (*Memory, error) {
 	if id == "" {
 		id = agentkit.SessionID("mem-" + time.Now().UTC().Format("20060102-150405.000"))
 	}
-	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes}, nil
+	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes, userMessageTemplate: cfg.UserMessageTemplate}, nil
 }
 
 // NewMemory registers session/memory: Ephemeral in-memory session. Nothing survives the process.
@@ -77,7 +80,7 @@ func (s *Memory) Read(_ context.Context, from agentkit.EventSeq) ([]agentkit.Ses
 func (s *Memory) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return deriveMessages(ctx, s.events, s.maxToolResultBytes), nil
+	return deriveMessages(ctx, s.events, s.maxToolResultBytes, s.userMessageTemplate), nil
 }
 
 func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {
@@ -107,6 +110,9 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 	// look like that person's words on replay.
 	if typ == agentkit.EventUserMessage {
 		event.UserID, _ = ctx.Value(agentkit.KeyUserID).(string)
+		if md, ok := ctx.Value(agentkit.KeyMessageMetadata).(map[string]any); ok && len(md) > 0 {
+			event.Metadata = md
+		}
 	}
 	_, err = s.Append(ctx, event)
 	return err

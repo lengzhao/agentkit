@@ -237,11 +237,12 @@ func (s staticWorkspace) Resolve(_ context.Context, rel string) (string, error) 
 
 // tenantStaticWorkspace resolves local: paths under LocalBase/<tenantDir>/.
 type tenantStaticWorkspace struct {
-	localBase string
+	localBase          string
+	omitPlatformPrefix bool
 }
 
 func (s tenantStaticWorkspace) Resolve(ctx context.Context, rel string) (string, error) {
-	dir := tenant.DirName(tenant.FromContext(ctx))
+	dir := tenant.LocalDirName(tenant.FromContext(ctx), s.omitPlatformPrefix)
 	if dir == "" {
 		dir = "_default"
 	}

@@ -7,7 +7,7 @@ import (
 // Loop is the turn scheduler. It routes inbound MessageEvents to agents,
 // serializes work per SessionID, and owns per-session steer/follow-up control.
 // Loop seeds ctx with KeySessionID/KeyDeliverySessionID/KeyStoreSessionID/
-// KeyAgentID/KeyPlatformID/KeyUserID/KeySessionControl/KeyOutboundEmit before
+// KeyAgentID/KeyPlatformID/KeyUserID/KeyMessageMetadata/KeySessionControl/KeyOutboundEmit before
 // calling the agent. It does not resolve Session objects; that is the agent's responsibility.
 type Loop interface {
 	Dispatch(context.Context, LoopRequest) error

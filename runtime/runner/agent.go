@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, storeSessionID agentkit.SessionID) (agentkit.AgentID, error) {
@@ -36,21 +37,13 @@ func (r *Root) resolveStoreSessionID(ctx context.Context, event agentkit.Message
 	if !ok {
 		return defaultID, nil
 	}
-	if deliveryID != "" {
-		active, err := activeStore.ActiveSession(ctx, deliveryID)
+	entryKey := session.ActiveSessionEntryKey(event.PlatformID, deliveryID, r.sessionScope, event.UserID)
+	if entryKey != "" {
+		active, err := activeStore.ActiveSession(ctx, entryKey)
 		if err != nil {
 			return "", err
 		}
-		if active != deliveryID {
-			return active, nil
-		}
-	}
-	if effectiveSessionID != "" && effectiveSessionID != deliveryID {
-		active, err := activeStore.ActiveSession(ctx, effectiveSessionID)
-		if err != nil {
-			return "", err
-		}
-		if active != effectiveSessionID {
+		if active != entryKey {
 			return active, nil
 		}
 	}

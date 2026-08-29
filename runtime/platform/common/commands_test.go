@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type stubCommand struct {
@@ -24,12 +25,12 @@ type stubCommands struct {
 	byName map[string]agentkit.Command
 }
 
-func (s stubCommands) Dispatch(_ context.Context, name string, _ []string) (string, error) {
+func (s stubCommands) Dispatch(ctx context.Context, name string, _ []string) (string, error) {
 	cmd, ok := s.byName[name]
 	if !ok {
 		return "", agentkit.ErrCommandNotHandled
 	}
-	return cmd.CommandExec(context.Background())
+	return cmd.CommandExec(ctx)
 }
 
 func (s stubCommands) List() []agentkit.Command {
@@ -51,7 +52,11 @@ func TestParseSlashCommand(t *testing.T) {
 }
 
 func TestProcessSlashHelp(t *testing.T) {
-	out, err := ProcessSlash(context.Background(), nil, "slack:C:U", "/help")
+	out, err := ProcessSlash(context.Background(), nil, SlashContext{
+		DeliverySessionID: "slack:C:u:U",
+		PlatformID:        "slack",
+		SessionScope:      session.ScopeChannel,
+	}, "/help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +85,11 @@ func TestProcessSlashDispatch(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": stubCommand{name: "ping", out: "pong"},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, "slack:C:U", "/ping")
+	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
+		DeliverySessionID: "slack:C:u:U",
+		PlatformID:        "slack",
+		SessionScope:      session.ScopeChannel,
+	}, "/ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +98,47 @@ func TestProcessSlashDispatch(t *testing.T) {
 	}
 }
 
+func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
+	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
+	var gotSession agentkit.SessionID
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"new": captureSessionCommand{t: &gotSession},
+	}}
+	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
+		DeliverySessionID: delivery,
+		PlatformID:        "slack",
+		SessionScope:      session.ScopeChannel,
+		UserID:            "U02LNUW8KV5",
+	}, "/new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+	if gotSession != "slack:D0AK8MAHW22" {
+		t.Fatalf("command ctx session = %q, want slack:D0AK8MAHW22", gotSession)
+	}
+}
+
+type captureSessionCommand struct {
+	t *agentkit.SessionID
+}
+
+func (c captureSessionCommand) Name() string        { return "new" }
+func (c captureSessionCommand) Alias() string       { return "" }
+func (c captureSessionCommand) Description() string { return "capture" }
+func (c captureSessionCommand) CommandExec(ctx context.Context, _ ...string) (string, error) {
+	*c.t, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	return "ok", nil
+}
+
 func TestProcessSlashUnknownForwards(t *testing.T) {
-	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, "slack:C:U", "/missing")
+	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, SlashContext{
+		DeliverySessionID: "slack:C:u:U",
+		PlatformID:        "slack",
+		SessionScope:      session.ScopeChannel,
+	}, "/missing")
 	if err != nil {
 		t.Fatal(err)
 	}

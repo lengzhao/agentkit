@@ -18,7 +18,9 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 var errNotSupported = fmt.Errorf("feishu: not supported")
@@ -50,6 +52,7 @@ type Config struct {
 type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Workspace    workspace.Service     `json:"workspace,omitempty"`
 }
 
 type inboundMessage struct {
@@ -197,10 +200,12 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		cfg:                        cfg,
 		agentID:                    cfg.ResolveAgentID(),
 		commands:                   deps.Commands,
+		workspace:                  deps.Workspace,
+		sessionScope:               session.ParseScope(cfg.SessionScope),
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
 	}
-	p.outbound = common.NewOutbound(p.sendText)
+	p.outbound = common.NewOutbound(p.sendText, p.sendMediaPart)
 	return p, nil
 }
 
@@ -247,8 +252,11 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		return nil
 	case agentkit.EventMessageUpdate:
 		return p.handleStreamUpdate(ctx, event)
-	case agentkit.EventMessageEnd, agentkit.EventAssistantMessage:
+	case agentkit.EventMessageEnd:
 		return p.handleStreamEnd(ctx, event)
+	case agentkit.EventAssistantMessage:
+		// Proactive tool/send messages (text + files) bypass streaming cards.
+		return p.outbound.Handle(ctx, event)
 	default:
 		return p.outbound.Handle(ctx, event)
 	}
@@ -317,7 +325,12 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 
 	text := strings.TrimSpace(msg.content)
 	if text != "" {
-		outcome, err := common.ProcessSlash(ctx, p.commands, msg.sessionID, text)
+		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
+			DeliverySessionID: msg.sessionID,
+			PlatformID:        p.platformTag,
+			SessionScope:      p.sessionScope,
+			UserID:            msg.userID,
+		}, text)
 		if err != nil {
 			_ = p.sendText(ctx, msg.sessionID, fmt.Sprintf("命令执行失败: %v", err))
 			return
@@ -339,6 +352,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	_ = p.inbox.Push(ctx, common.InboundFromContent(
 		p.agentID, msg.sessionID, p.platformTag, msg.userID,
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
+		common.InboundOptsFor(p.workspace),
 	))
 }
 

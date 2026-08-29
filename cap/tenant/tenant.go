@@ -59,14 +59,53 @@ func Key(sessionID string) string {
 	return platform + ":" + segment
 }
 
+// RoutingSegment returns the first routing segment of a tenant key, dropping
+// the platform prefix.
+//
+//	slack:C123ABC     -> C123ABC
+//	chat-api:slack_x  -> slack_x
+//	cli:default       -> default
+//	bare-id           -> bare-id
+func RoutingSegment(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	_, rest, ok := strings.Cut(key, ":")
+	if !ok {
+		return key
+	}
+	segment, _, _ := strings.Cut(rest, ":")
+	return segment
+}
+
 // DirName maps a tenant key to a single safe path segment. Keys carry ':' and
 // platform-chosen characters; a tenant root must never be able to reach a
 // sibling tenant, so anything outside [A-Za-z0-9._-] becomes '_' and a run of
 // dots can not survive.
 func DirName(key string) string {
+	return LocalDirName(key, false)
+}
+
+// LocalDirName maps a tenant key to a single safe path segment under localBase.
+// When omitPlatform is true, only the first routing segment is used:
+//
+//	slack:C123              -> C123
+//	chat-api:slack_D0AK...  -> slack_D0AK...
+func LocalDirName(key string, omitPlatform bool) string {
 	if key == "" {
 		return ""
 	}
+	if omitPlatform {
+		key = RoutingSegment(key)
+		if key == "" {
+			return ""
+		}
+	}
+	return sanitizeDirSegment(key)
+}
+
+func sanitizeDirSegment(key string) string {
 	var b strings.Builder
 	b.Grow(len(key))
 	prevDot := false

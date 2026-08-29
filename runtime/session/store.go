@@ -15,6 +15,8 @@ import (
 type StoreConfig struct {
 	// Dir is root directory holding one file per session, resolved through the workspace.
 	Dir string `json:"dir"`
+	// UserMessageTemplate overrides the default LegacyUserMessageTemplate on replay.
+	UserMessageTemplate string `json:"userMessageTemplate"`
 }
 
 type StoreDeps struct {
@@ -24,12 +26,13 @@ type StoreDeps struct {
 // Store opens one JSONL session file per SessionID under Dir.
 // Suitable for IM platforms where each channel/thread maps to a distinct session.
 type Store struct {
-	relDir      string
-	workspace   workspace.Service
-	mu          sync.Mutex
-	cache       map[agentkit.SessionID]*JSONL
-	bindCache   sync.Map // SessionID -> bindCacheEntry
-	activeCache sync.Map // SessionID -> activeCacheEntry
+	relDir              string
+	workspace           workspace.Service
+	userMessageTemplate string
+	mu                  sync.Mutex
+	cache               map[agentkit.SessionID]*JSONL
+	bindCache           sync.Map // SessionID -> bindCacheEntry
+	activeCache         sync.Map // SessionID -> activeCacheEntry
 }
 
 // NewStore registers session/store: Resolve durable JSONL sessions by id; contributes /new and /session.
@@ -41,9 +44,10 @@ func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 		return nil, fmt.Errorf("session store dir is required")
 	}
 	return &Store{
-		relDir:    cfg.Dir,
-		workspace: deps.Workspace,
-		cache:     make(map[agentkit.SessionID]*JSONL),
+		relDir:              cfg.Dir,
+		workspace:           deps.Workspace,
+		userMessageTemplate: cfg.UserMessageTemplate,
+		cache:               make(map[agentkit.SessionID]*JSONL),
 	}, nil
 }
 
@@ -67,7 +71,11 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 	if err != nil {
 		return nil, err
 	}
-	sess, err := newJSONL(JSONLConfig{Path: path, ID: id})
+	sess, err := newJSONL(JSONLConfig{
+		Path:                path,
+		ID:                  id,
+		UserMessageTemplate: s.userMessageTemplate,
+	})
 	if err != nil {
 		return nil, err
 	}

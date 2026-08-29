@@ -15,16 +15,33 @@ const (
 
 func (p *Platform) authHTTP(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p.apiToken != "" {
-			auth := strings.TrimSpace(r.Header.Get("Authorization"))
-			token, ok := strings.CutPrefix(auth, "Bearer ")
-			if !ok || strings.TrimSpace(token) != p.apiToken {
-				writeErr(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
+		if p.apiToken != "" && !p.isAnonymousFileDownload(r) && !p.authenticated(r) {
+			writeErr(w, http.StatusUnauthorized, "unauthorized")
+			return
 		}
 		next(w, r)
 	}
+}
+
+func (p *Platform) isAnonymousFileDownload(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	prefix := strings.TrimRight(p.path, "/") + "/files/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		return false
+	}
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/")
+	if id == "" || strings.Contains(id, "/") {
+		return false
+	}
+	return fileIDPattern.MatchString(id)
+}
+
+func (p *Platform) authenticated(r *http.Request) bool {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	token, ok := strings.CutPrefix(auth, "Bearer ")
+	return ok && strings.TrimSpace(token) == p.apiToken
 }
 
 func (p *Platform) corsHTTP(next http.HandlerFunc) http.HandlerFunc {
@@ -92,7 +109,10 @@ func optionalUser(r *http.Request, userHeader string) string {
 }
 
 func (p *Platform) resolveChannel(w http.ResponseWriter, r *http.Request) (string, bool) {
-	channel := strings.TrimSpace(r.Header.Get(p.channelHeader))
+	channel := strings.TrimSpace(r.URL.Query().Get("channel"))
+	if channel == "" {
+		channel = strings.TrimSpace(r.Header.Get(p.channelHeader))
+	}
 	if channel == "" {
 		writeErr(w, http.StatusBadRequest, "channel required")
 		return "", false

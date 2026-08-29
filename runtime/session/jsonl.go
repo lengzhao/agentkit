@@ -18,6 +18,8 @@ type JSONLConfig struct {
 	Path string `json:"path"`
 	// ID is fixed session id.
 	ID agentkit.SessionID `json:"id"`
+	// UserMessageTemplate is forwarded to the in-memory replay backend.
+	UserMessageTemplate string `json:"userMessageTemplate"`
 }
 
 // JSONL persists session events as append-only JSON lines.
@@ -40,7 +42,7 @@ func newJSONL(cfg JSONLConfig) (*JSONL, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.Path), 0o755); err != nil {
 		return nil, err
 	}
-	mem, err := newMemory(MemoryConfig{ID: id})
+	mem, err := newMemory(MemoryConfig{ID: id, UserMessageTemplate: cfg.UserMessageTemplate})
 	if err != nil {
 		return nil, err
 	}

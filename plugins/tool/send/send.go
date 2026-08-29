@@ -3,6 +3,7 @@ package send
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -17,7 +18,11 @@ const (
 	contentDocument = "document"
 )
 
-type SendConfig struct{}
+type SendConfig struct {
+	// Root is the workspace subdirectory files are resolved from, matching
+	// tool/fs-workspace root (typically "work").
+	Root string `json:"root"`
+}
 
 type SendDeps struct {
 	Platform  agentkit.Platform `json:"platform"`
@@ -41,13 +46,17 @@ type SendOutput struct {
 //   - Wire the same platform instance runner uses (platform.default).
 //   - Text and path may be sent together (text first, then file). Path needs the workspace dep.
 //   - Platform/channel routing comes from context. Target sessionId, userId, or neither (current inbox).
-func NewSend(_ SendConfig, deps SendDeps) (agentkit.Tool, error) {
+func NewSend(cfg SendConfig, deps SendDeps) (agentkit.Tool, error) {
 	if deps.Platform == nil {
 		return nil, fmt.Errorf("tool/send requires platform dependency")
 	}
+	root := strings.TrimSpace(cfg.Root)
+	if root == "" {
+		root = "work"
+	}
 	platform := deps.Platform
 	tool, err := agentkit.NewTool[SendInput, SendOutput]("send", func(ctx context.Context, input SendInput) (SendOutput, error) {
-		parts, err := buildParts(ctx, input, deps.Workspace)
+		parts, err := buildParts(ctx, input, deps.Workspace, root)
 		if err != nil {
 			return SendOutput{}, err
 		}
@@ -124,7 +133,7 @@ func resolveRoute(ctx context.Context, input SendInput) (route, error) {
 	return r, nil
 }
 
-func buildParts(ctx context.Context, input SendInput, ws workspace.Service) ([]agentkit.ContentPart, error) {
+func buildParts(ctx context.Context, input SendInput, ws workspace.Service, root string) ([]agentkit.ContentPart, error) {
 	text := strings.TrimSpace(input.Text)
 	path := strings.TrimSpace(input.Path)
 	if text == "" && path == "" {
@@ -138,9 +147,16 @@ func buildParts(ctx context.Context, input SendInput, ws workspace.Service) ([]a
 		if ws == nil {
 			return nil, fmt.Errorf("path %q requires workspace dependency", path)
 		}
-		url, err := ws.Resolve(ctx, path)
+		rel := path
+		if root != "." {
+			rel = filepath.Join(root, path)
+		}
+		url, err := ws.Resolve(ctx, rel)
 		if err != nil {
 			return nil, err
+		}
+		if _, err := os.Stat(url); err != nil {
+			return nil, fmt.Errorf("file not found: %s", path)
 		}
 		if isImagePath(path) {
 			parts = append(parts, agentkit.ContentPart{Type: contentImage, URL: url})

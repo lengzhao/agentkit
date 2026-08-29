@@ -28,3 +28,18 @@ func TestIgnoreMatcherRootGitignore(t *testing.T) {
 		t.Fatal("expected .git to be ignored")
 	}
 }
+
+func TestIgnoreMatcherUploadVisible(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	m, err := filesystem.LoadIgnoreMatcher(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Ignored(".agent/sessions/foo.jsonl", false) {
+		t.Fatal("expected .agent runtime paths to stay ignored")
+	}
+	if m.Ignored("upload/hello.go", false) {
+		t.Fatal("inbound uploads should be searchable")
+	}
+}

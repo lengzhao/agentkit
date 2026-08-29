@@ -20,6 +20,7 @@ func TestWithTurnContextSetsUserID(t *testing.T) {
 		"U456",
 		nil,
 		nil,
+		nil,
 	)
 
 	userID, ok := ctx.Value(agentkit.KeyUserID).(string)
@@ -41,6 +42,7 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 		"",
 		nil,
 		nil,
+		nil,
 	)
 
 	if _, ok := ctx.Value(agentkit.KeyUserID).(string); ok {
@@ -59,6 +61,7 @@ func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
+		nil,
 		nil,
 		nil,
 	)
@@ -84,6 +87,7 @@ func TestWithTurnContextSetsStoreSessionID(t *testing.T) {
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
+		nil,
 		nil,
 		nil,
 	)

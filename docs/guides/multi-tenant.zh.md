@@ -5,7 +5,7 @@
 | 问题 | 由谁回答 | 落点 |
 |---|---|---|
 | 这条消息接到哪段历史后面？ | `runner.config.sessionScope` 折叠 delivery SessionID | `runtime/session.ApplyScope` |
-| 这句话是谁说的？ | `MessageEvent.UserID` → 事件信封 → 回放渲染 | `SessionEvent.UserID`、`runtime/session/derive.go` |
+| 这句话是谁说的？ | `MessageEvent.UserID` → 事件信封 → 回放模板 | `SessionEvent.UserID`、`sessionStore.config.userMessageTemplate` |
 | 这个 turn 在哪个目录干活？ | effective SessionID 推出的**租户键** | `cap/tenant.Key`、`workspace/tenant` |
 
 把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种 scope 推出的租户键都是同一个。
@@ -17,7 +17,7 @@ flowchart LR
   D -->|runner sessionScope| E["effective SessionID<br/>slack:C001"]
   Msg -->|UserID| UID["U111"]
   E -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 effective ID 一个 JSONL"]
-  UID -->|"落在 user 事件信封上"| Attr["回放渲染 &lt;user id=\"U111\"&gt;"]
+  UID -->|"落在 user 事件信封上"| Attr["回放按 userMessageTemplate 渲染"]
   E -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
   Root --> Runtime["sessions / agents / mcp / skills"]
@@ -78,21 +78,27 @@ Runner **不**维护静态路由表。channel / user 级绑定由 Platform 读�
 
 `sessionScope: channel` 下整个频道共用一段历史，模型看到的是一串 user 消息。如果不标注发言人，它分不清"这是刚才那个人的追问"还是"另一个人的新需求"，也注意不到"我问的人和回答我的人不是同一个"。
 
-所以 `UserID` 落在**事件信封**上（`SessionEvent.UserID`），而不是只存在于 turn 的 ctx 里 —— 重启后回放依然认得。`derive.go` 在回放时把 user 消息包成：
+所以 `UserID` 落在**事件信封**上（`SessionEvent.UserID`），而不是只存在于 turn 的 ctx 里 —— 重启后回放依然认得。Platform 还可选填 `MessageEvent.Metadata`（如 display name），一并持久化到 `SessionEvent.Metadata`，供模板引用。
 
-```
-<user id="U111">
-改一下 README
-</user>
-```
+`sessionStore.config.userMessageTemplate` 用 Go `text/template` 渲染 user 消息。模板数据：
+
+| 字段 | 含义 |
+|---|---|
+| `UserID` | 事件信封上的发言人 id |
+| `Text` | 该条 user 消息的文本 part |
+| `Metadata` | Platform 传入的 `map[string]any` |
+
+**默认**使用 `LegacyUserMessageTemplate`（`<user id="{{.UserID}}">` 包裹）。可在 `sessionStore.config.userMessageTemplate` 覆盖；若只要原文，设为 `{{.Text}}`。
+
+自定义示例：`[user id={{.UserID}}]\n{{.Text}}`，或 `[{{index .Metadata "name"}}]: {{.Text}}`。
 
 三条固定规则：
 
 - **只标 user 消息。** 把 assistant 也标成提问者，回放时那句回答会读成那个人说的话。
 - **逐条独立判定，只看该条事件自己的 `UserID`。** 不做"出现第二个人才追溯标注全部历史"—— 那会在对话刚变热闹的那一刻让整段 prompt cache 失效。
-- **`UserID` 为空就完全不动。** CLI、timer、worker 这些单用户入口不设 `UserID`，回放结果与没有这套机制时逐字节相同。
+- **`UserID` 为空就不渲染。** CLI、timer、worker 这些单用户入口不设 `UserID`，回放结果与没有这套机制时逐字节相同。
 
-platform 侧只需在 `MessageEvent.UserID` 填上发言人，其余自动。
+platform 侧在 `MessageEvent.UserID` 填发言人，按需填 `Metadata`；模板在 `sessionStore` 配置。
 
 ## 3. 不同群不同工作目录
 
@@ -130,6 +136,7 @@ tool.fs-workspace.default:
 ```
 
 - **默认就是隔离的。** 没在 `tenants` 里列出的群走 `localBase/<租户键>`，新群接进来零配置。
+- **`omitPlatformPrefix: true`** 时目录名只保留路由段：`slack:C001` → `C001`，`chat-api:slack_x` → `slack_x`（`tenants` 映射键仍是完整租户键）。
 - **`tenants` 的键是租户键，不是 SessionID。** 该频道下所有 thread、所有人共用这一条。
 - **`global:` 是唯一共享的根。** 装一次的技能库对所有群可见。
 - **没有 session 时落在 `localBase/_default`。** timer、cron、库直调不会掉进某个真实租户的目录里。
@@ -185,6 +192,29 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 Runner 仍按 `sessionScope` 折叠 delivery SessionID 做 Loop 加锁；chat-api 的 stable key 是 `conversation_id` 组成的 delivery id，`/new` 不再创建并切换新的 `conversation_id`，而是更新 `sessions/<stable>/current.json` 指向新的 logical SessionID。因此同一个 HTTP conversation 可以清空模型历史，展示与投递仍留在原 conversation。`DeriveMessages` 还会按当前 `agent_id` 过滤回放，避免同一会话文件里切换 agent 时串上下文。
 
 每轮结束后 chat-api 仍会把 user/assistant 摘要镜像到同一 delivery session，供 messages API / 调试页展示。
+
+### 文件上传
+
+chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对 `tool/fs-workspace` 根），agent 在 prompt 里看到的是 `upload/<filename>`，可被 `read` / `find` 命中。
+
+| API | 方法 | 说明 |
+|---|---|---|
+| `/v1/files` | `POST` multipart `file` | 上传用户文件，返回 `file_*` id |
+| `/v1/files` | `GET` | 列出当前 channel 的上传/下载文件 |
+| `/v1/files/{id}` | `GET` | 下载文件（上传或 agent 出站） |
+
+`POST /v1/chat-messages` 请求体可带 `inputs[]`：
+
+- `type`: `file` / `image` / `audio`
+- `transfer_method`: `local_file`（引用已上传 id）或 `base64`（内联 `data`）
+- `local_file` 时使用 `upload_file_id`
+
+Agent 通过 `tool/send` 发出的文件会以 SSE `file_ready` 事件推送，并落在 `work/download/`。事件与上传响应均包含：
+
+- `path`：相对站点根的路径，如 `/v1/files/file_xxx`
+- `url`：完整下载地址（从当前 HTTP 请求推导，或配置 `publicBaseUrl` 覆盖）
+
+下载只需 URL 查询参数 `?channel=`（与上传相同租户）；`GET /v1/files/{id}` 不校验 `apiToken`，便于浏览器直接打开。上传、列表等其它接口仍走 Bearer 鉴权。
 
 ## 7. 验收
 

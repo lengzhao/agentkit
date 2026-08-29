@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // SlashOutcomeKind describes how an inbound slash command was resolved.
@@ -25,6 +26,14 @@ const (
 type SlashOutcome struct {
 	Kind  SlashOutcomeKind
 	Reply string
+}
+
+// SlashContext carries delivery routing and sessionScope for slash commands.
+type SlashContext struct {
+	DeliverySessionID agentkit.SessionID
+	PlatformID        string
+	SessionScope      session.SessionScope
+	UserID            string
 }
 
 // IsSlashCommand reports whether text starts with a slash command.
@@ -53,7 +62,7 @@ func ParseSlashCommand(line string) (name, args string, ok bool) {
 
 // ProcessSlash resolves slash commands via the injected commands registry.
 // Non-slash input returns SlashNotCommand.
-func ProcessSlash(ctx context.Context, commands agentkit.Commands, sessionID agentkit.SessionID, text string) (SlashOutcome, error) {
+func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashContext, text string) (SlashOutcome, error) {
 	name, args, ok := ParseSlashCommand(text)
 	if !ok {
 		return SlashOutcome{Kind: SlashNotCommand}, nil
@@ -79,7 +88,17 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, sessionID age
 		}, nil
 	}
 
-	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, sessionID)
+	entryKey := session.ActiveSessionEntryKey(slash.PlatformID, slash.DeliverySessionID, slash.SessionScope, slash.UserID)
+	if entryKey == "" {
+		entryKey = slash.DeliverySessionID
+	}
+	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, entryKey)
+	if slash.DeliverySessionID != "" {
+		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyDeliverySessionID, slash.DeliverySessionID)
+	}
+	if slash.UserID != "" {
+		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, slash.UserID)
+	}
 	out, err := commands.Dispatch(cmdCtx, name, splitArgs(args))
 	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		return SlashOutcome{
