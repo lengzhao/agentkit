@@ -155,6 +155,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 | `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；L0 `tools.default` 已启用 |
 | `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json`（一份索引，条目指向外部 OpenAPI 文档或内联 `paths`）并把每个 operation 暴露为 HTTP 工具；经 `deps.dynamicTools` 挂载，定义缓存在内存中，`/openapi` 命令强制重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
 **`tool/fs-workspace` 模型参数**（插件 `config` 另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
 
@@ -226,7 +227,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `cap/tenant` 租户键一租户一个（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
-| `credentials/env` | `credentials.Store` | 环境变量；可选 `config.files` 读取 dotenv 文件，进程环境变量优先 |
+| `credentials/env` | `credentials.Store` | 环境变量；`config.files` 读取 dotenv 文件，进程环境变量优先；`/env add` 写入 `.env`，`/env -u` 重载 |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
@@ -250,6 +251,9 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `session/store` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |
 | `hook/turn-continue` | `/status` |
+| `credentials/env` | `/env`（查看缓存；`/env add KEY=VALUE` 写入 `.env` 并校验，失败回滚；`/env -u` 重读文件） |
+| `tool/mcp` | `/mcp`（查看工具；`/mcp add <name> <json>` 写入 `mcp.json` 并探活校验；`/mcp -u` 重读配置） |
+| `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
 
 示例：
 

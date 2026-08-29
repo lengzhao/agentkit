@@ -107,9 +107,10 @@ subagent.default:
 credentials.default:
   use: credentials/env
   config:
-    # L1 可覆盖为 [".env"]，从当前工作目录读取 dotenv 文件；
-    # context secret 与进程环境变量优先级更高。
-    files: []
+    files:
+      - local:.env
+  deps:
+    workspace: workspace.default
 
 llm.default:
   use: llm/openai-compatible
@@ -253,6 +254,7 @@ tools.default:
       - tool.fs-workspace.default
     dynamicTools:
       - mcp.default
+      - openapi.default
     policies:
       - policy.dangerous-shell.default
 
@@ -273,7 +275,7 @@ tools.subagent.default:
     policies:
       - policy.dangerous-shell.default
 
-# scope 默认根放 runtime（sessions、mcp.json 等）；fs/shell 只在 work/ 子目录读写。
+# scope 默认根放 runtime（sessions、mcp.json、api.json 等）；fs/shell 只在 work/ 子目录读写。
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
@@ -382,6 +384,16 @@ mcp.default:
     files:
       - local:mcp.json
       - global:mcp.json
+  deps:
+    workspace: workspace.default
+    credentials: credentials.default
+
+openapi.default:
+  use: tool/openapi
+  config:
+    files:
+      - local:api.json
+      - global:api.json
   deps:
     workspace: workspace.default
     credentials: credentials.default

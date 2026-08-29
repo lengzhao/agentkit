@@ -31,7 +31,7 @@ func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.New(plugincredentials.Config{})
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.New(plugincredentials.Config{})
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestLangfuseExporterNestsSubagentGeneration(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.New(plugincredentials.Config{})
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestLangfuseMissingCredentialFailsAtBuild(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "")
 	t.Setenv("LANGFUSE_SECRET_KEY", "")
 
-	store, err := plugincredentials.New(plugincredentials.Config{})
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}

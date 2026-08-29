@@ -79,6 +79,34 @@ func parseConfigFile(path string, raw []byte) ([]serverConfig, error) {
 	return out, nil
 }
 
+func parseServerJSON(name, source string, raw []byte) (serverConfig, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return serverConfig{}, fmt.Errorf("server name is required")
+	}
+	var rawCfg rawServerConfig
+	if err := json.Unmarshal(raw, &rawCfg); err != nil {
+		return serverConfig{}, fmt.Errorf("parse server json: %w", err)
+	}
+	cfg := serverConfig{
+		Name:           name,
+		Source:         source,
+		Command:        strings.TrimSpace(rawCfg.Command),
+		Args:           append([]string(nil), rawCfg.Args...),
+		Env:            cloneStringMap(rawCfg.Env),
+		URL:            strings.TrimSpace(rawCfg.URL),
+		Type:           strings.TrimSpace(rawCfg.Type),
+		Prefix:         strings.TrimSpace(rawCfg.Prefix),
+		AllowTools:     trimAll(rawCfg.AllowTools),
+		DenyTools:      trimAll(rawCfg.DenyTools),
+		TimeoutSeconds: rawCfg.TimeoutSeconds,
+	}
+	if cfg.Command == "" && cfg.URL == "" {
+		return serverConfig{}, fmt.Errorf("mcp server %q needs command or url", name)
+	}
+	return cfg, nil
+}
+
 func (s serverConfig) toolPrefix() string {
 	if s.Prefix != "" {
 		return s.Prefix
@@ -106,6 +134,36 @@ func (s serverConfig) allowsTool(name string) bool {
 func (s serverConfig) fingerprint() string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+func upsertMCPJSON(existing []byte, name string, raw json.RawMessage) ([]byte, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("server name is required")
+	}
+	var server rawServerConfig
+	if err := json.Unmarshal(raw, &server); err != nil {
+		return nil, fmt.Errorf("parse server json: %w", err)
+	}
+	if strings.TrimSpace(server.Command) == "" && strings.TrimSpace(server.URL) == "" {
+		return nil, fmt.Errorf("mcp server %q needs command or url", name)
+	}
+
+	var doc configDocument
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &doc); err != nil {
+			return nil, fmt.Errorf("parse mcp.json: %w", err)
+		}
+	}
+	if doc.MCPServers == nil {
+		doc.MCPServers = make(map[string]rawServerConfig)
+	}
+	doc.MCPServers[name] = server
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
