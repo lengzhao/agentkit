@@ -300,27 +300,6 @@ func parseEnvPair(pair string) (string, string, error) {
 
 var _ agentkit.CommandProvider = (*Store)(nil)
 
-func loadEnvFiles(files []string) (map[string]string, error) {
-	values := make(map[string]string)
-	for _, file := range files {
-		path := strings.TrimSpace(file)
-		if path == "" {
-			continue
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read env file %q: %w", path, err)
-		}
-		if err := parseEnvFile(path, data, values); err != nil {
-			return nil, err
-		}
-	}
-	return values, nil
-}
-
 func parseEnvFile(path string, data []byte, values map[string]string) error {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for lineNo := 1; scanner.Scan(); lineNo++ {
