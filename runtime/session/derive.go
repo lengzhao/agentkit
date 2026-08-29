@@ -8,12 +8,17 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 )
 
-func deriveMessages(events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
+func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
+	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+
 	var compactBefore agentkit.EventSeq
 	var summary *agentkit.ModelMessage
 
 	for _, ev := range events {
 		if ev.Type != agentkit.EventCompaction {
+			continue
+		}
+		if !eventForAgent(ev, agentID) {
 			continue
 		}
 		var data compaction.EventData
@@ -32,6 +37,9 @@ func deriveMessages(events []agentkit.SessionEvent, maxToolBytes int) []agentkit
 
 	for _, ev := range events {
 		if ev.Seq <= compactBefore {
+			continue
+		}
+		if !eventForAgent(ev, agentID) {
 			continue
 		}
 		switch ev.Type {
@@ -71,6 +79,16 @@ func deriveMessages(events []agentkit.SessionEvent, maxToolBytes int) []agentkit
 		out = compaction.PruneToolResults(out, maxToolBytes)
 	}
 	return out
+}
+
+// eventForAgent limits replay to the agent running the current turn. A session
+// file may hold multiple agents when chat-api switches agents mid-conversation
+// or when legacy channel-scoped files are still on disk.
+func eventForAgent(ev agentkit.SessionEvent, agentID agentkit.AgentID) bool {
+	if agentID == "" || ev.AgentID == "" {
+		return true
+	}
+	return ev.AgentID == agentID
 }
 
 // attributeUser marks a user message with the end user who sent it. A session

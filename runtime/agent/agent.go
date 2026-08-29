@@ -106,8 +106,8 @@ type turnRun struct {
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
-	sessionID, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	if !ok || sessionID == "" {
+	sessionID := session.AgentStoreSessionID(ctx)
+	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
 	}
 	sess, err := a.sessionStore.Get(ctx, sessionID)

@@ -74,10 +74,10 @@ func (s *Memory) Read(_ context.Context, from agentkit.EventSeq) ([]agentkit.Ses
 	return out, nil
 }
 
-func (s *Memory) DeriveMessages(_ context.Context) ([]agentkit.ModelMessage, error) {
+func (s *Memory) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return deriveMessages(s.events, s.maxToolResultBytes), nil
+	return deriveMessages(ctx, s.events, s.maxToolResultBytes), nil
 }
 
 func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {

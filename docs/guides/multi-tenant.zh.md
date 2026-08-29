@@ -160,7 +160,9 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 | 会话索引 | `chat-api/conversations/<channel>.json` | 重启后恢复会话列表 |
 | 展示历史 | `sessions/chat-api_<channel>_t_<conv>.jsonl` | 调试页 / messages API 按 conversation 隔离 |
 
-Runner 仍按 `sessionScope` 把 agent 上下文写入 effective session（如 channel 级 `chat-api_<channel>.jsonl`）。每轮结束后 chat-api 会把 user/assistant 摘要镜像到 delivery session，类似 cc-connect 的 `Session.AddHistory` 与 agent 后端 session 分离。
+Runner 仍按 `sessionScope` 折叠 delivery SessionID 做 Loop 加锁；**chat-api 的 agent 读写 session 时改用 delivery id**（`runtime/session.AgentStoreSessionID`），因此每个 `conversation_id` 对应独立 JSONL，新建会话不会读到 channel 级 `chat-api_<channel>.jsonl` 里其它会话或其它 agent 的历史。`DeriveMessages` 还会按当前 `agent_id` 过滤回放，避免同一会话文件里切换 agent 时串上下文。
+
+每轮结束后 chat-api 仍会把 user/assistant 摘要镜像到同一 delivery session，供 messages API / 调试页展示。
 
 ## 7. 验收
 
