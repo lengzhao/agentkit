@@ -38,6 +38,10 @@ const (
 	// It may differ from KeySessionID when a stable IM delivery/effective key has
 	// been switched to a fresh history with /new.
 	KeyStoreSessionID contextKey = "agentkit.store_session_id"
+	// KeyInSubagent marks a context running inside a delegated child agent. While
+	// set, session append/recovery must target KeySessionID only and must not
+	// inherit a parent's KeyStoreSessionID mapping.
+	KeyInSubagent contextKey = "agentkit.subagent.active"
 	// KeyMessageMetadata is optional platform metadata for the current inbound turn.
 	KeyMessageMetadata contextKey = "agentkit.message_metadata"
 	// KeyUserMessageTemplate overrides sessionStore.config.userMessageTemplate for

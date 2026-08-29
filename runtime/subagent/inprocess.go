@@ -49,13 +49,6 @@ type Deps struct {
 	Compaction   []compaction.Service     `json:"compaction,omitempty"`
 }
 
-// contextKey marks a context as already running inside a child agent. It is
-// package-private on purpose: nothing outside this package should be able to
-// clear it.
-type contextKey string
-
-const keyInSubagent contextKey = "agentkit.subagent.active"
-
 const defaultMaxSteps = 20
 
 type Spawner struct {
@@ -125,7 +118,7 @@ func (s *Spawner) Definitions(ctx context.Context) ([]subagent.Definition, error
 }
 
 func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Result, error) {
-	if ctx.Value(keyInSubagent) != nil {
+	if ctx.Value(agentkit.KeyInSubagent) != nil {
 		// Unreachable with the recommended wiring, since a child's tool runtime
 		// has no delegate tool. This is the second lock, for a mis-wired graph.
 		return subagent.Result{}, fmt.Errorf("a subagent cannot delegate further")
@@ -219,7 +212,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		return out, err
 	}
 
-	childCtx := context.WithValue(ctx, keyInSubagent, true)
+	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionID, childID)
 	childCtx = context.WithValue(childCtx, agentkit.KeyAgentID, child.ID())
 	// Drop the parent's turn control: steering and cancel reasons belong to the

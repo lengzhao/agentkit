@@ -22,6 +22,21 @@ func TestAgentStoreSessionIDUsesLogicalStoreSession(t *testing.T) {
 	}
 }
 
+func TestAgentStoreSessionIDIgnoresParentStoreInSubagent(t *testing.T) {
+	t.Parallel()
+
+	parentStore := agentkit.SessionID("chat-api:nex-channel")
+	child := agentkit.SessionID("sub:chat-api:nex-channel:meetingbot:4")
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, agentkit.KeyInSubagent, true)
+	ctx = context.WithValue(ctx, agentkit.KeySessionID, child)
+	ctx = context.WithValue(ctx, agentkit.KeyStoreSessionID, parentStore)
+
+	if got := session.AgentStoreSessionID(ctx); got != child {
+		t.Fatalf("got %q want child %q", got, child)
+	}
+}
+
 func TestAgentStoreSessionIDSlackKeepsEffective(t *testing.T) {
 	t.Parallel()
 

@@ -2,6 +2,7 @@ package subagent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -153,6 +154,77 @@ func TestRunTakesSummaryFromFinish(t *testing.T) {
 	}
 }
 
+func TestRunDoesNotRecoverParentTurnWithStoreSessionID(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{
+		{ToolCalls: []agentkit.ToolCall{llm.MustToolCall("finish", `{"status":"completed","summary":"done"}`)}},
+		{Text: "done"},
+	})
+
+	ctx := context.WithValue(f.ctx, agentkit.KeyStoreSessionID, f.parentID)
+
+	// Seed the parent session with an open turn and a pending delegate call, as
+	// if the parent agent is blocked inside tool/subagent.
+	parentSess, err := f.store.Get(ctx, f.parentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+		Role:      "assistant",
+		ToolCalls: []agentkit.ToolCall{{ID: "call-delegate", Name: "delegate", Input: []byte(`{"agent":"researcher"}`)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := f.spawner.Run(ctx, subagent.Request{Agent: "Researcher", Task: "summarize"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	parentEvents := f.events(t, f.parentID)
+	for _, ev := range parentEvents {
+		switch ev.Type {
+		case agentkit.EventSessionRecovery:
+			t.Fatalf("subagent must not recover parent session: %+v", ev)
+		case agentkit.EventTurnEnd:
+			t.Fatalf("subagent must not close parent turn: %+v", ev)
+		case agentkit.EventToolResult:
+			var tr agentkit.ToolResult
+			if err := json.Unmarshal(ev.Data, &tr); err != nil {
+				t.Fatal(err)
+			}
+			if tr.ID == "call-delegate" {
+				t.Fatalf("subagent must not synthesize delegate tool result: %+v", tr)
+			}
+		}
+	}
+
+	childEvents := f.events(t, agentkit.SessionID(result.Session))
+	if len(childEvents) == 0 {
+		t.Fatal("child session is empty")
+	}
+	if got := countEventType(childEvents, agentkit.EventTurnStart); got != 1 {
+		t.Fatalf("child turn/start = %d, want 1", got)
+	}
+}
+
+func countEventType(events []agentkit.SessionEvent, typ agentkit.EventType) int {
+	n := 0
+	for _, ev := range events {
+		if ev.Type == typ {
+			n++
+		}
+	}
+	return n
+}
+
 func TestRunFallsBackToLastAssistantText(t *testing.T) {
 	t.Parallel()
 
@@ -215,7 +287,7 @@ func TestRunRejectsNestedDelegation(t *testing.T) {
 
 	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{{Text: "unused"}})
 
-	ctx := context.WithValue(f.ctx, keyInSubagent, true)
+	ctx := context.WithValue(f.ctx, agentkit.KeyInSubagent, true)
 	if _, err := f.spawner.Run(ctx, subagent.Request{Agent: "researcher", Task: "delegate again"}); err == nil {
 		t.Fatal("a subagent must not be able to delegate further")
 	}

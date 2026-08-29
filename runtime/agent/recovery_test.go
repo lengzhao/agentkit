@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -143,6 +144,84 @@ func TestRunTurnRecoversCrashedSession(t *testing.T) {
 	if !containsInterruptedResult(sent, "crashed-call") {
 		t.Fatalf("the interrupted call was not answered in the request:\n%+v", sent)
 	}
+}
+
+func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
+	t.Parallel()
+
+	store, sessionID := crashedStore(t)
+	scripted, err := llm.NewScripted(llm.ScriptedConfig{Steps: []llm.ScriptedStep{{Text: "done"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readPack, err := fs.NewFSMemory(fs.FSMemoryConfig{
+		Files: map[string]string{"README.md": "hello"},
+		Tools: []string{"read"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{ToolPacks: []agentkit.ToolPack{readPack}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assembler, err := prompt.NewAssembler(prompt.AssemblerConfig{}, prompt.AssemblerDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := agent.New(agent.Config{ID: "sub:meetingbot", MaxSteps: 1}, agent.Deps{
+		SessionStore: store,
+		LLM:          scripted,
+		Tools:        toolRT,
+		Prompt:       assembler,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	if err := foreign.RunTurn(ctx, agentkit.TurnInput{
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "child"}},
+		},
+	}); err != nil {
+		t.Fatalf("foreign agent run: %v", err)
+	}
+
+	sess, err := store.Get(ctx, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := session.ReadAllEvents(ctx, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := countEvents(events, agentkit.EventSessionRecovery); got != 0 {
+		t.Fatalf("foreign agent must not repair parent turn: session/recovery = %d", got)
+	}
+	if got := countEvents(events, agentkit.EventTurnEnd); got != 1 {
+		t.Fatalf("turn/end events = %d, want only the foreign agent's own turn", got)
+	}
+	if containsInterruptedToolResult(events, "crashed-call") {
+		t.Fatal("foreign agent must not synthesize interrupted result on parent turn")
+	}
+}
+
+func containsInterruptedToolResult(events []agentkit.SessionEvent, id agentkit.ToolCallID) bool {
+	for _, ev := range events {
+		if ev.Type != agentkit.EventToolResult {
+			continue
+		}
+		var result agentkit.ToolResult
+		if err := json.Unmarshal(ev.Data, &result); err != nil {
+			continue
+		}
+		if result.ID == id && strings.Contains(result.Content, "interrupted") {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunTurnLeavesCleanSessionAlone(t *testing.T) {

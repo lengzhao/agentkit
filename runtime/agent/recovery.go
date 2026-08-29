@@ -21,6 +21,20 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 	if incomplete == nil {
 		return nil
 	}
+	// A subagent turn must only touch its own KeySessionID history. If a caller
+	// ever resolves the wrong session object, skip rather than repair a parent
+	// delegate turn — no KeyStoreSessionID mapping required.
+	if ctx.Value(agentkit.KeyInSubagent) != nil {
+		turnSessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+		if turnSessionID != "" && sess.ID() != turnSessionID {
+			return nil
+		}
+	}
+	// Only repair turns owned by this agent. A subagent that accidentally reads
+	// the parent session must not close out the parent's in-flight delegate.
+	if incomplete.AgentID != "" && incomplete.AgentID != a.id {
+		return nil
+	}
 	// Attribute the repair to this agent when the interrupted turn did not
 	// record one, so the synthesized events are never orphaned.
 	if incomplete.AgentID == "" {
