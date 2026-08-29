@@ -15,5 +15,5 @@ func (l *Default) Commands() []agentkit.Command {
 	sort.Slice(agents, func(i, j int) bool {
 		return agents[i].ID() < agents[j].ID()
 	})
-	return []agentkit.Command{agent.HelpCommand(agents)}
+	return []agentkit.Command{agent.Command(agents, l.sessionStore)}
 }

@@ -2,7 +2,9 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/lengzhao/agentkit"
@@ -37,6 +39,19 @@ func (r *Root) inboundSubmit(sched *scheduler) capschedule.SubmitFunc {
 
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
 	deliveryID, _, scoped := r.scopedEvent(event)
+	storeSessionID, err := r.resolveStoreSessionID(ctx, event, scoped.SessionID)
+	if err != nil {
+		r.reportInboundError(ctx, deliveryID, event, err)
+		return
+	}
+	agentID, err := r.resolveAgentID(ctx, event, storeSessionID)
+	if err != nil {
+		r.reportInboundError(ctx, deliveryID, event, err)
+		return
+	}
+	if agentID != "" {
+		scoped.AgentID = agentID
+	}
 	if r.loop.TryDeliverPermission(scoped) {
 		return
 	}
@@ -50,7 +65,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
 		out.SessionID = deliveryID
 		if out.AgentID == "" {
-			out.AgentID = event.AgentID
+			out.AgentID = scoped.AgentID
 		}
 		if out.PlatformID == "" {
 			out.PlatformID = event.PlatformID
@@ -63,8 +78,25 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	sched.submit(ctx, agentkit.LoopRequest{
 		Event:             scoped,
 		DeliverySessionID: deliveryID,
+		StoreSessionID:    storeSessionID,
 		Emit:              emit,
 		Capability:        permissionCapability(r.platform, event.PlatformID),
+	})
+}
+
+func (r *Root) reportInboundError(ctx context.Context, deliveryID agentkit.SessionID, event agentkit.MessageEvent, err error) {
+	slog.Error("inbound routing failed",
+		"session_id", event.SessionID,
+		"delivery_session_id", deliveryID,
+		"err", err,
+	)
+	_ = r.platform.Send(ctx, agentkit.OutboundEvent{
+		SessionID:  deliveryID,
+		AgentID:    event.AgentID,
+		PlatformID: event.PlatformID,
+		UserID:     event.UserID,
+		Type:       "error",
+		Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
 	})
 }
 

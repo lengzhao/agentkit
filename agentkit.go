@@ -34,6 +34,10 @@ const (
 	// (finest grain). Outbound routing should prefer this over KeySessionID when
 	// both are present.
 	KeyDeliverySessionID contextKey = "agentkit.delivery_session_id"
+	// KeyStoreSessionID is the logical SessionID used for model-visible history.
+	// It may differ from KeySessionID when a stable IM delivery/effective key has
+	// been switched to a fresh history with /new.
+	KeyStoreSessionID contextKey = "agentkit.store_session_id"
 )
 
 // SessionID identifies a conversation unit. Platforms emit a delivery SessionID
@@ -48,7 +52,8 @@ const (
 //	feishu:oc_xxx:om_yyy
 //	cli:default
 //
-// Loop and Agent treat the effective SessionID as opaque. Only platform plugins
+// Loop treats the effective SessionID as opaque. Agents read and append history
+// using the logical store SessionID resolved for the turn. Only platform plugins
 // decode delivery SessionIDs into IM routing targets.
 type SessionID string
 

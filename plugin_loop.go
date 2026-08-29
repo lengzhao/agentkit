@@ -6,8 +6,9 @@ import (
 
 // Loop is the turn scheduler. It routes inbound MessageEvents to agents,
 // serializes work per SessionID, and owns per-session steer/follow-up control.
-// Loop seeds ctx with KeySessionID/KeyDeliverySessionID/KeyAgentID/KeyPlatformID/KeyUserID/
-// KeySessionControl/KeyOutboundEmit before calling the agent. It does not resolve Session objects; that is the agent's responsibility.
+// Loop seeds ctx with KeySessionID/KeyDeliverySessionID/KeyStoreSessionID/
+// KeyAgentID/KeyPlatformID/KeyUserID/KeySessionControl/KeyOutboundEmit before
+// calling the agent. It does not resolve Session objects; that is the agent's responsibility.
 type Loop interface {
 	Dispatch(context.Context, LoopRequest) error
 	Steer(context.Context, ModelMessage) error
@@ -26,6 +27,7 @@ type Loop interface {
 type LoopRequest struct {
 	Event             MessageEvent
 	DeliverySessionID SessionID // platform delivery target; empty means Event.SessionID
+	StoreSessionID    SessionID // logical history id; empty means Event.SessionID
 	Emit              OutboundEmit
 	Capability        any // permission.Capability, resolved by runner from the inbound platform
 }

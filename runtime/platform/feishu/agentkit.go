@@ -25,26 +25,26 @@ var errNotSupported = fmt.Errorf("feishu: not supported")
 
 type Config struct {
 	common.AgentRoutingConfig
-	AppID                       string            `json:"appId"`
-	AppSecret                   string            `json:"appSecret"`
-	Domain                      string            `json:"domain"`
-	AllowFrom                   string            `json:"allowFrom"`
-	AllowChat                   string            `json:"allowChat"`
-	GroupReplyAll               bool              `json:"groupReplyAll"`
-	ShareSessionInChannel       bool              `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
-	ThreadIsolation             bool              `json:"threadIsolation"`
-	ReactionEmoji               string            `json:"reactionEmoji"`
-	DoneEmoji                   string            `json:"doneEmoji"`
-	GroupOnly                   bool              `json:"groupOnly"`
-	RespondToAtEveryoneAndHere  bool              `json:"respondToAtEveryoneAndHere"`
-	ReplyToTrigger              *bool             `json:"replyToTrigger"`
-	ResolveMentions             bool              `json:"resolveMentions"`
-	PeerBots                    map[string]string `json:"peerBots"`
-	ProgressStyle               string            `json:"progressStyle"`
-	EnableFeishuCard            *bool             `json:"enableFeishuCard"`
-	EncryptKey                  string            `json:"encryptKey"`
-	Port                        string            `json:"port"`
-	CallbackPath                string            `json:"callbackPath"`
+	AppID                      string            `json:"appId"`
+	AppSecret                  string            `json:"appSecret"`
+	Domain                     string            `json:"domain"`
+	AllowFrom                  string            `json:"allowFrom"`
+	AllowChat                  string            `json:"allowChat"`
+	GroupReplyAll              bool              `json:"groupReplyAll"`
+	ShareSessionInChannel      bool              `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
+	ThreadIsolation            bool              `json:"threadIsolation"`
+	ReactionEmoji              string            `json:"reactionEmoji"`
+	DoneEmoji                  string            `json:"doneEmoji"`
+	GroupOnly                  bool              `json:"groupOnly"`
+	RespondToAtEveryoneAndHere bool              `json:"respondToAtEveryoneAndHere"`
+	ReplyToTrigger             *bool             `json:"replyToTrigger"`
+	ResolveMentions            bool              `json:"resolveMentions"`
+	PeerBots                   map[string]string `json:"peerBots"`
+	ProgressStyle              string            `json:"progressStyle"`
+	EnableFeishuCard           *bool             `json:"enableFeishuCard"`
+	EncryptKey                 string            `json:"encryptKey"`
+	Port                       string            `json:"port"`
+	CallbackPath               string            `json:"callbackPath"`
 }
 
 type Deps struct {
@@ -193,12 +193,12 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		port:                       port,
 		callbackPath:               callbackPath,
 		encryptKey:                 cfg.EncryptKey,
-		peerBots:                     peerBots,
-		cfg:                          cfg,
-		agentID:                      cfg.ResolveAgentID(),
-		commands:                     deps.Commands,
-		inbox:                        common.NewInbox(64),
-		startOnce:                    sync.Once{},
+		peerBots:                   peerBots,
+		cfg:                        cfg,
+		agentID:                    cfg.ResolveAgentID(),
+		commands:                   deps.Commands,
+		inbox:                      common.NewInbox(64),
+		startOnce:                  sync.Once{},
 	}
 	p.outbound = common.NewOutbound(p.sendText)
 	return p, nil
@@ -324,10 +324,6 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}
 		switch outcome.Kind {
 		case common.SlashHandled:
-			if outcome.NewSession != "" {
-				p.migrateDelivery(msg.sessionID, outcome.NewSession)
-				msg.sessionID = outcome.NewSession
-			}
 			if outcome.Reply != "" {
 				_ = p.sendText(ctx, msg.sessionID, outcome.Reply)
 			}
@@ -348,12 +344,6 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 
 func (p *Platform) storeDelivery(sessionID agentkit.SessionID, rc replyContext) {
 	p.deliveries.Store(sessionID, rc)
-}
-
-func (p *Platform) migrateDelivery(oldSession, newSession agentkit.SessionID) {
-	if raw, ok := p.deliveries.LoadAndDelete(oldSession); ok {
-		p.deliveries.Store(newSession, raw)
-	}
 }
 
 func (p *Platform) deliveryFor(sessionID agentkit.SessionID) (replyContext, bool) {

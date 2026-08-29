@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,9 +23,8 @@ const (
 
 // SlashOutcome is the result of ProcessSlash.
 type SlashOutcome struct {
-	Kind       SlashOutcomeKind
-	Reply      string
-	NewSession agentkit.SessionID
+	Kind  SlashOutcomeKind
+	Reply string
 }
 
 // IsSlashCommand reports whether text starts with a slash command.
@@ -80,18 +80,17 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, sessionID age
 	}
 
 	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, sessionID)
-	result, err := commands.Dispatch(cmdCtx, name, splitArgs(args))
-	if err != nil {
-		return SlashOutcome{}, err
-	}
-	if result == nil {
+	out, err := commands.Dispatch(cmdCtx, name, splitArgs(args))
+	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		return SlashOutcome{
 			Kind:  SlashForward,
 			Reply: FormatUnknownCommand(name),
 		}, nil
 	}
-	out := SlashOutcome{Kind: SlashHandled, Reply: result.Output, NewSession: result.NewSession}
-	return out, nil
+	if err != nil {
+		return SlashOutcome{}, err
+	}
+	return SlashOutcome{Kind: SlashHandled, Reply: out}, nil
 }
 
 // FormatHelp renders a plain-text command list for IM platforms.

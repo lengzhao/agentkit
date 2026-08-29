@@ -1,6 +1,7 @@
 package session
 
 import (
+	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -11,6 +12,15 @@ const DefaultCLISessionID = agentkit.SessionID("cli:default")
 // NewCLISessionID returns a fresh opaque CLI session id.
 func NewCLISessionID() agentkit.SessionID {
 	return agentkit.SessionID("cli:" + time.Now().UTC().Format("20060102-150405.000"))
+}
+
+// NewSessionID returns a fresh logical session id derived from the current
+// stable session key. CLI keeps its historic cli:<timestamp> format.
+func NewSessionID(base agentkit.SessionID) agentkit.SessionID {
+	if strings.HasPrefix(string(base), "cli:") || base == "" {
+		return NewCLISessionID()
+	}
+	return agentkit.SessionID(string(base) + ":new:" + time.Now().UTC().Format("20060102-150405.000"))
 }
 
 // SessionScope selects how delivery SessionIDs collapse for Loop scheduling

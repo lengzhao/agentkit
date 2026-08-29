@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -48,15 +49,12 @@ func TestRegistryDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result == nil {
-		t.Fatal("expected handled result")
+	if result != "" {
+		t.Fatalf("unexpected output: %q", result)
 	}
-	result, err = r.Dispatch(context.Background(), "missing", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result != nil {
-		t.Fatal("expected unhandled result")
+	_, err = r.Dispatch(context.Background(), "missing", nil)
+	if !errors.Is(err, agentkit.ErrCommandNotHandled) {
+		t.Fatalf("missing command err = %v", err)
 	}
 }
 

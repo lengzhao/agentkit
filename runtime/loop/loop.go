@@ -19,8 +19,9 @@ type Config struct {
 }
 
 type Deps struct {
-	Agents    []agentkit.Agent    `json:"agents"`
-	Telemetry telemetry.Exporter `json:"telemetry,omitempty"`
+	Agents       []agentkit.Agent      `json:"agents"`
+	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Telemetry    telemetry.Exporter    `json:"telemetry,omitempty"`
 }
 
 type Default struct {
@@ -28,6 +29,7 @@ type Default struct {
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
 	telemetry       telemetry.Exporter
+	sessionStore    agentkit.SessionStore
 	sessionLocks    sync.Map // SessionID -> *sync.Mutex
 	sessionControls sync.Map // SessionID -> *Control
 }
@@ -61,6 +63,7 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 		defaultAgent: defaultID,
 		followUpMode: mode,
 		telemetry:    exp,
+		sessionStore: deps.SessionStore,
 	}, nil
 }
 
@@ -80,7 +83,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	control := l.controlFor(sessionID)
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
-	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
+	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), req.StoreSessionID, agentID, req.Event.PlatformID, req.Event.UserID, control, req.Emit)
 	ctx = telemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
@@ -177,10 +180,13 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID, deliverySessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit) context.Context {
+func withTurnContext(ctx context.Context, sessionID, deliverySessionID, storeSessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, control *Control, emit agentkit.OutboundEmit) context.Context {
 	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	if deliverySessionID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliverySessionID)
+	}
+	if storeSessionID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyStoreSessionID, storeSessionID)
 	}
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
 	if platformID != "" {

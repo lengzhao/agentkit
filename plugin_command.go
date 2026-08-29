@@ -1,6 +1,9 @@
 package agentkit
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // CommandProvider contributes human-facing commands from a built plugin
 // instance. It is designed to work with pluginkit/build.WireContributions so
@@ -17,15 +20,12 @@ type Command interface {
 	CommandExec(ctx context.Context, args ...string) (string, error)
 }
 
-// CommandResult is the outcome of a handled slash command.
-type CommandResult struct {
-	Output     string
-	NewSession SessionID
-}
+// ErrCommandNotHandled means the name is not a registered slash command.
+var ErrCommandNotHandled = errors.New("command not handled")
 
 // Commands is a post-build slash command catalog for platforms.
 type Commands interface {
-	Dispatch(ctx context.Context, name string, args []string) (*CommandResult, error)
+	Dispatch(ctx context.Context, name string, args []string) (string, error)
 	List() []Command
 }
 

@@ -27,13 +27,24 @@ func (c newCommand) CommandExec(ctx context.Context, args ...string) (string, er
 	if len(args) > 0 {
 		return "", fmt.Errorf("usage: /new")
 	}
-	id := NewCLISessionID()
+	current, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	id := NewSessionID(current)
 	if c.store != nil {
-		if err := c.store.SetCLICurrent(ctx, id); err != nil {
-			return "", err
+		if isCLISessionID(current) {
+			if err := c.store.SetCLICurrent(ctx, id); err != nil {
+				return "", err
+			}
+		} else if current != "" {
+			if err := c.store.SetActiveSession(ctx, current, id); err != nil {
+				return "", err
+			}
 		}
 	}
 	return string(id), nil
+}
+
+func isCLISessionID(id agentkit.SessionID) bool {
+	return id == "" || strings.HasPrefix(string(id), "cli:")
 }
 
 type showSessionCommand struct {

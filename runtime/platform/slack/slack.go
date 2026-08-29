@@ -321,10 +321,6 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 	}
 	switch outcome.Kind {
 	case common.SlashHandled:
-		if outcome.NewSession != "" {
-			p.migrateDelivery(d, outcome.NewSession)
-			d.sessionID = outcome.NewSession
-		}
 		if outcome.Reply != "" {
 			_ = p.replyText(ctx, d, outcome.Reply)
 		}
@@ -341,12 +337,6 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 	}
 	event := common.InboundFromContent(p.agentID, d.sessionID, "slack", user, text, "", images, files, audio, nil)
 	_ = p.inbox.Push(ctx, event)
-}
-
-func (p *Platform) migrateDelivery(d delivery, newSession agentkit.SessionID) {
-	p.deliveries.Delete(d.sessionID)
-	d.sessionID = newSession
-	p.deliveries.Store(newSession, d)
 }
 
 func (p *Platform) replyText(ctx context.Context, d delivery, text string) error {

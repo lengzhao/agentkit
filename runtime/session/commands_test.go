@@ -2,6 +2,8 @@ package session_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -44,5 +46,53 @@ func TestStoreCommands(t *testing.T) {
 		default:
 			t.Fatalf("unexpected command %q", cmd.Name())
 		}
+	}
+}
+
+func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := store.(agentkit.CommandProvider)
+	var newCmd agentkit.Command
+	for _, cmd := range provider.Commands() {
+		if cmd.Name() == "new" {
+			newCmd = cmd
+			break
+		}
+	}
+	if newCmd == nil {
+		t.Fatal("missing /new command")
+	}
+
+	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, stable)
+	out, err := newCmd.CommandExec(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, string(stable)+":new:") {
+		t.Fatalf("new logical session = %q", out)
+	}
+	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), stable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != agentkit.SessionID(out) {
+		t.Fatalf("active session = %q, want %q", active, out)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, session.CLICurrentLinkName)); !os.IsNotExist(err) {
+		t.Fatalf("cli current link err = %v, want not exist", err)
+	}
+	current, err := store.(session.CLICurrentStore).ResolveCLICurrent(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current != session.DefaultCLISessionID {
+		t.Fatalf("cli current = %q, want default", current)
 	}
 }

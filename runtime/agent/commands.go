@@ -9,25 +9,66 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+// Command exposes the agent catalog and session agent switching.
+func Command(agents []agentkit.Agent, store agentkit.SessionStore) agentkit.Command {
+	return agentCommand{agents: agents, store: store}
+}
+
 // HelpCommand exposes the agent catalog help slash command for built agent instances.
 func HelpCommand(agents []agentkit.Agent) agentkit.Command {
-	return agentHelpCommand{agents: agents}
+	return Command(agents, nil)
 }
 
-type agentHelpCommand struct {
+type agentCommand struct {
 	agents []agentkit.Agent
+	store  agentkit.SessionStore
 }
 
-func (agentHelpCommand) Name() string        { return "agent" }
-func (agentHelpCommand) Alias() string       { return "" }
-func (agentHelpCommand) Description() string { return "list agents or show agent details" }
+func (agentCommand) Name() string        { return "agent" }
+func (agentCommand) Alias() string       { return "" }
+func (agentCommand) Description() string { return "list agents, show details, or switch session agent" }
 
-func (c agentHelpCommand) CommandExec(_ context.Context, args ...string) (string, error) {
+func (c agentCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
+	if len(args) >= 2 && args[0] == "use" {
+		return c.useAgent(ctx, strings.TrimSpace(strings.Join(args[1:], " ")))
+	}
 	if len(args) == 0 || args[0] == "-l" || args[0] == "--list" {
 		return formatAgentList(c.agents), nil
 	}
 	name := strings.TrimSpace(strings.Join(args, " "))
 	return agentDoc(c.agents, name)
+}
+
+func (c agentCommand) useAgent(ctx context.Context, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("usage: /agent use <id>")
+	}
+	if _, err := agentDoc(c.agents, name); err != nil {
+		return "", err
+	}
+	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if sessionID == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	if c.store == nil {
+		return "", fmt.Errorf("session store is not configured")
+	}
+	bindStore, ok := c.store.(agentkit.AgentBindStore)
+	if !ok {
+		return "", fmt.Errorf("session store does not support agent binding")
+	}
+	if activeStore, ok := c.store.(agentkit.ActiveSessionStore); ok {
+		active, err := activeStore.ActiveSession(ctx, sessionID)
+		if err != nil {
+			return "", err
+		}
+		sessionID = active
+	}
+	if err := bindStore.SetAgentBind(ctx, sessionID, agentkit.AgentID(name)); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("session agent: %s", name), nil
 }
 
 func formatAgentList(agents []agentkit.Agent) string {
@@ -45,6 +86,7 @@ func formatAgentList(agents []agentkit.Agent) string {
 		fmt.Fprintf(&b, "  %-*s\n", width, id)
 	}
 	b.WriteString("\nUse /agent <id> for details.")
+	b.WriteString("\nUse /agent use <id> to switch this session.")
 	return b.String()
 }
 

@@ -14,6 +14,7 @@ func TestWithTurnContextSetsUserID(t *testing.T) {
 		context.Background(),
 		agentkit.SessionID("slack:C001"),
 		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
+		"",
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -34,6 +35,7 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 		context.Background(),
 		agentkit.SessionID("cli:default"),
 		agentkit.SessionID("cli:default"),
+		"",
 		agentkit.AgentID("coder"),
 		"cli",
 		"",
@@ -53,6 +55,7 @@ func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
 		context.Background(),
 		agentkit.SessionID("slack:C001"),
 		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
+		"",
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -67,5 +70,26 @@ func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
 	effective, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 	if effective != "slack:C001" {
 		t.Fatalf("effective session id = %q", effective)
+	}
+}
+
+func TestWithTurnContextSetsStoreSessionID(t *testing.T) {
+	t.Parallel()
+
+	ctx := withTurnContext(
+		context.Background(),
+		agentkit.SessionID("slack:C001"),
+		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
+		agentkit.SessionID("slack:C001:new:20260829"),
+		agentkit.AgentID("coder"),
+		"slack",
+		"U456",
+		nil,
+		nil,
+	)
+
+	store, ok := ctx.Value(agentkit.KeyStoreSessionID).(agentkit.SessionID)
+	if !ok || store != "slack:C001:new:20260829" {
+		t.Fatalf("store session id = %q, ok = %v", store, ok)
 	}
 }

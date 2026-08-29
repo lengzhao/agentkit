@@ -24,10 +24,12 @@ type StoreDeps struct {
 // Store opens one JSONL session file per SessionID under Dir.
 // Suitable for IM platforms where each channel/thread maps to a distinct session.
 type Store struct {
-	relDir    string
-	workspace workspace.Service
-	mu        sync.Mutex
-	cache     map[agentkit.SessionID]*JSONL
+	relDir      string
+	workspace   workspace.Service
+	mu          sync.Mutex
+	cache       map[agentkit.SessionID]*JSONL
+	bindCache   sync.Map // SessionID -> bindCacheEntry
+	activeCache sync.Map // SessionID -> activeCacheEntry
 }
 
 // NewStore registers session/store: Resolve durable JSONL sessions by id; contributes /new and /session.
@@ -94,6 +96,14 @@ func sessionFilePath(dir string, id agentkit.SessionID) (string, error) {
 }
 
 func safeSessionFileName(id agentkit.SessionID) (string, error) {
+	base, err := safeSessionName(id)
+	if err != nil {
+		return "", err
+	}
+	return base + ".jsonl", nil
+}
+
+func safeSessionName(id agentkit.SessionID) (string, error) {
 	raw := string(id)
 	if raw == "" {
 		return "", fmt.Errorf("empty session id")
@@ -110,5 +120,5 @@ func safeSessionFileName(id agentkit.SessionID) (string, error) {
 			b.WriteByte('_')
 		}
 	}
-	return b.String() + ".jsonl", nil
+	return b.String(), nil
 }

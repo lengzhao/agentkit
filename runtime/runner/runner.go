@@ -33,15 +33,17 @@ type Config struct {
 }
 
 type Deps struct {
-	Platform  agentkit.Platform     `json:"platform"`
-	Loop      agentkit.Loop         `json:"loop"`
-	Schedules []capschedule.Runtime `json:"schedules,omitempty"`
-	Telemetry telemetry.Exporter    `json:"telemetry,omitempty"`
+	Platform     agentkit.Platform      `json:"platform"`
+	Loop         agentkit.Loop          `json:"loop"`
+	SessionStore agentkit.SessionStore  `json:"sessionStore,omitempty"`
+	Schedules    []capschedule.Runtime  `json:"schedules,omitempty"`
+	Telemetry    telemetry.Exporter     `json:"telemetry,omitempty"`
 }
 
 type Root struct {
 	platform        agentkit.Platform
 	loop            agentkit.Loop
+	sessionStore    agentkit.SessionStore
 	schedules       []capschedule.Runtime
 	telemetry       telemetry.Exporter
 	sessionScope    session.SessionScope
@@ -52,7 +54,7 @@ type Root struct {
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
 //
 // Best practices:
-//   - Platforms emit delivery SessionIDs; runner applies sessionScope before dispatch.
+//   - Platforms emit delivery SessionIDs; runner applies sessionScope and agent routing before dispatch.
 //   - Ordering within a session is preserved at any concurrency; only cross-session turns overlap.
 //   - A panicking or failing turn is reported on its session and never kills the process.
 func New(cfg Config, deps Deps) (agentkit.Runner, error) {
@@ -80,6 +82,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	return &Root{
 		platform:        deps.Platform,
 		loop:            deps.Loop,
+		sessionStore:    deps.SessionStore,
 		schedules:       deps.Schedules,
 		telemetry:       exp,
 		sessionScope:    session.ParseScope(cfg.SessionScope),

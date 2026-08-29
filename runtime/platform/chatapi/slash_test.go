@@ -10,11 +10,22 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-func TestProcessChatSlashNewCreatesConversation(t *testing.T) {
-	p, err := New(Config{}, Deps{})
+func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) {
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{store.(agentkit.CommandProvider)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Config{}, Deps{SessionStore: store, Commands: commands})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,21 +36,23 @@ func TestProcessChatSlashNewCreatesConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := plat.processChatSlash(context.Background(), "default_channel", oldConv, agentkit.SessionID(engineSessionKey("default_channel", oldConv.ID)), "/new")
+	stable := agentkit.SessionID(engineSessionKey("default_channel", oldConv.ID))
+	result, err := plat.processChatSlash(context.Background(), "default_channel", oldConv, stable, "/new")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.outcome.Kind != common.SlashHandled {
 		t.Fatalf("kind = %v", result.outcome.Kind)
 	}
-	if !strings.HasPrefix(result.outcome.Reply, "已开始新会话：conv_") {
+	if !strings.HasPrefix(result.outcome.Reply, string(stable)+":new:") {
 		t.Fatalf("reply = %q", result.outcome.Reply)
 	}
-	if result.switchConversationID == "" || result.switchConversationID == oldConv.ID {
-		t.Fatalf("switchConversationID = %q", result.switchConversationID)
+	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), stable)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := plat.conversations.get(result.switchConversationID); got == nil {
-		t.Fatal("new conversation not registered")
+	if active != agentkit.SessionID(result.outcome.Reply) {
+		t.Fatalf("active session = %q, want %q", active, result.outcome.Reply)
 	}
 }
 
@@ -76,7 +89,15 @@ func TestProcessChatSlashSessionUsesConversation(t *testing.T) {
 }
 
 func TestServeNewConversationSlash(t *testing.T) {
-	p, err := New(Config{Path: "/v1/"}, Deps{})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{store.(agentkit.CommandProvider)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Config{Path: "/v1/"}, Deps{SessionStore: store, Commands: commands})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +115,8 @@ func TestServeNewConversationSlash(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	out := rec.Body.String()
-	if !strings.Contains(out, "已开始新会话：conv_") {
-		t.Fatalf("missing new conversation reply: %s", out)
+	if !strings.Contains(out, "chat-api:default_channel:t:") || !strings.Contains(out, ":new:") {
+		t.Fatalf("missing logical session reply: %s", out)
 	}
 	if strings.Contains(out, "cli:") {
 		t.Fatalf("should not return CLI session id: %s", out)

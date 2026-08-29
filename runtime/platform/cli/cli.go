@@ -155,20 +155,20 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	}
 
 	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, p.sessionID)
-	result, err := p.commands.Dispatch(cmdCtx, name, splitArgs(args))
+	out, err := p.commands.Dispatch(cmdCtx, name, splitArgs(args))
+	if errors.Is(err, agentkit.ErrCommandNotHandled) {
+		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
+		return true, nil
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "command error: %v\n", err)
 		return true, nil
 	}
-	if result == nil {
-		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
-		return true, nil
+	if out != "" {
+		fmt.Fprintln(os.Stderr, out)
 	}
-	if result.Output != "" {
-		fmt.Fprintln(os.Stderr, result.Output)
-	}
-	if result.NewSession != "" {
-		p.sessionID = result.NewSession
+	if name == "new" && out != "" {
+		p.sessionID = agentkit.SessionID(out)
 		fmt.Fprintf(os.Stderr, "new session: %s\n", p.sessionID)
 	}
 	return true, nil
@@ -332,17 +332,17 @@ func (p *Platform) dispatchHelpTopic(args string) {
 	}
 	fields := splitArgs(args)
 	cmdCtx := context.WithValue(context.Background(), agentkit.KeySessionID, p.sessionID)
-	result, err := p.commands.Dispatch(cmdCtx, fields[0], fields[1:])
+	out, err := p.commands.Dispatch(cmdCtx, fields[0], fields[1:])
+	if errors.Is(err, agentkit.ErrCommandNotHandled) {
+		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
+		return
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "help error: %v\n", err)
 		return
 	}
-	if result == nil {
-		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
-		return
-	}
-	if result.Output != "" {
-		fmt.Fprintln(os.Stderr, result.Output)
+	if out != "" {
+		fmt.Fprintln(os.Stderr, out)
 	}
 }
 

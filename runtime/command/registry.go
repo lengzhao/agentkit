@@ -115,24 +115,16 @@ func (r *Registry) register(cmd agentkit.Command) error {
 	return nil
 }
 
-func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (*agentkit.CommandResult, error) {
+func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (string, error) {
 	key := normalizeName(name)
 	if key == "" {
-		return nil, nil
+		return "", agentkit.ErrCommandNotHandled
 	}
 	cmd, ok := r.byName[key]
 	if !ok {
-		return nil, nil
+		return "", agentkit.ErrCommandNotHandled
 	}
-	out, err := cmd.CommandExec(ctx, args...)
-	if err != nil {
-		return nil, err
-	}
-	result := &agentkit.CommandResult{Output: out}
-	if cmd.Name() == "new" && out != "" {
-		result.NewSession = agentkit.SessionID(out)
-	}
-	return result, nil
+	return cmd.CommandExec(ctx, args...)
 }
 
 func (r *Registry) List() []agentkit.Command {

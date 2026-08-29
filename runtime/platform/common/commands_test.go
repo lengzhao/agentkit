@@ -24,16 +24,12 @@ type stubCommands struct {
 	byName map[string]agentkit.Command
 }
 
-func (s stubCommands) Dispatch(_ context.Context, name string, _ []string) (*agentkit.CommandResult, error) {
+func (s stubCommands) Dispatch(_ context.Context, name string, _ []string) (string, error) {
 	cmd, ok := s.byName[name]
 	if !ok {
-		return nil, nil
+		return "", agentkit.ErrCommandNotHandled
 	}
-	out, err := cmd.CommandExec(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return &agentkit.CommandResult{Output: out}, nil
+	return cmd.CommandExec(context.Background())
 }
 
 func (s stubCommands) List() []agentkit.Command {

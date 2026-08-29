@@ -63,11 +63,6 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isNewSlash(query) {
-		p.serveNewConversation(w, r, channelKey, user, requestAgentID)
-		return
-	}
-
 	var conv *conversation
 	if strings.TrimSpace(body.ConversationID) == "" {
 		c, err := p.createConversation(r.Context(), channelKey, user)
@@ -139,13 +134,6 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	outcome := slashResult.outcome
 	switch outcome.Kind {
 	case common.SlashHandled:
-		if slashResult.switchConversationID != "" {
-			_ = sse.Event("message", map[string]any{
-				"conversation_id": slashResult.switchConversationID,
-				"message_id":      msgID,
-				"run_id":          runID,
-			})
-		}
 		if outcome.Reply != "" {
 			run.mu.Lock()
 			run.answerText = outcome.Reply

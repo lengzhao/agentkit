@@ -27,7 +27,7 @@ flowchart LR
 
 ## 1. 会话隔离
 
-Platform 只生成 **delivery SessionID**（最细粒度，含 channel / thread / user 路由信息）。Runner 按 `sessionScope` 折叠为 **effective SessionID**，Loop 按 effective 串行加锁，`session/store` 一个 effective ID 一个 JSONL。Outbound 仍回写 delivery ID，platform 据此投递。
+Platform 只生成 **delivery SessionID**（最细粒度，含 channel / thread / user 路由信息）。Runner 按 `sessionScope` 折叠为 **effective SessionID**，Loop 按 effective 串行加锁。`/new` 不改变 IM 的 delivery key，而是在 `session/store` 里把稳定 key 映射到新的 **logical SessionID**；没有映射时 logical id 默认等于 effective id。Outbound 仍回写 delivery ID，platform 据此投递。
 
 Platform 侧：
 
@@ -51,6 +51,28 @@ runner.default:
 | `user` | `slack:C001:u:U456` | 共享工作目录、各自私有历史 |
 
 未知 scope 配置值回落到 `channel`。
+
+### `/new` 与 logical SessionID
+
+Slack / 飞书这类 IM 的 sessionKey 是固定投递地址，不能因为 `/new` 改掉。`/new` 只更新 active-session 映射：
+
+| key | value | 文件 |
+|---|---|---|
+| stable delivery/effective SessionID | 当前 logical SessionID | `sessions/<stable>/current.json` |
+
+Runner 每次入站先拿 delivery / effective key 查 active mapping，查到就把 logical id 写入 `KeyStoreSessionID`；Agent 读写历史时使用这个 logical id。这样同一个 IM 或 chat-api 入口可以切到新历史，回复仍投回原来的 channel/thread/user/conversation。
+
+### Agent 路由
+
+与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：折叠 effective SessionID 并解析 logical SessionID 后，从持久化存储读出绑定，写入 `MessageEvent.AgentID` 再交给 Loop。
+
+| 优先级 | 来源 | 存储 |
+|---|---|---|
+| 1 | 单条消息 | Platform 入站时填入 `MessageEvent.AgentID`（如 chat-api 请求体、platform 自己的索引） |
+| 2 | Session 绑定 | `sessions/<logical-id>/agent.json`（`/agent use <id>` 写入） |
+| 3 | 默认 | `loop.defaultAgent` |
+
+Runner **不**维护静态路由表。channel / user 级绑定由 Platform 读自己的配置或索引，在 `Receive` 时写入 `MessageEvent.AgentID`；session 级切换写入 logical session 工作目录下的 `agent.json`。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
 
 ## 2. 识别不同用户
 
@@ -82,7 +104,7 @@ local 根放**运行时与配置**，tool 只在 **`work/` 子目录**读写，�
 
 ```
 tenants/slack_C001/
-├── sessions/          # session/store
+├── sessions/          # session/store：*.jsonl + <stable>/current.json + <logical>/agent.json
 ├── agents/            # 子 agent 定义
 ├── mcp.json
 ├── skills/            # 租户私有 skill
@@ -160,7 +182,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 | 会话索引 | `chat-api/conversations/<channel>.json` | 重启后恢复会话列表 |
 | 展示历史 | `sessions/chat-api_<channel>_t_<conv>.jsonl` | 调试页 / messages API 按 conversation 隔离 |
 
-Runner 仍按 `sessionScope` 折叠 delivery SessionID 做 Loop 加锁；**chat-api 的 agent 读写 session 时改用 delivery id**（`runtime/session.AgentStoreSessionID`），因此每个 `conversation_id` 对应独立 JSONL，新建会话不会读到 channel 级 `chat-api_<channel>.jsonl` 里其它会话或其它 agent 的历史。`DeriveMessages` 还会按当前 `agent_id` 过滤回放，避免同一会话文件里切换 agent 时串上下文。
+Runner 仍按 `sessionScope` 折叠 delivery SessionID 做 Loop 加锁；chat-api 的 stable key 是 `conversation_id` 组成的 delivery id，`/new` 不再创建并切换新的 `conversation_id`，而是更新 `sessions/<stable>/current.json` 指向新的 logical SessionID。因此同一个 HTTP conversation 可以清空模型历史，展示与投递仍留在原 conversation。`DeriveMessages` 还会按当前 `agent_id` 过滤回放，避免同一会话文件里切换 agent 时串上下文。
 
 每轮结束后 chat-api 仍会把 user/assistant 摘要镜像到同一 delivery session，供 messages API / 调试页展示。
 

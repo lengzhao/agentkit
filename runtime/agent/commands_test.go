@@ -35,7 +35,7 @@ func TestAgentHelpCommand(t *testing.T) {
 		{
 			name: "list",
 			args: nil,
-			want: []string{"Registered agents:", "assistant", "reviewer", "Use /agent <id>"},
+			want: []string{"Registered agents:", "assistant", "reviewer", "Use /agent <id>", "Use /agent use <id>"},
 		},
 		{
 			name: "detail",
