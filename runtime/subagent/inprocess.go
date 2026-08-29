@@ -245,13 +245,12 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		endSubagentObs(end)
 	}()
 
-	// Emit is nil so the child's token deltas do not interleave with the
-	// parent's output stream; the parent only ever sees the summary.
 	runErr = child.RunTurn(childCtx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: task}},
 		},
+		Emit: forwardParentEmit(ctx, emitFromContext(ctx)),
 	})
 
 	// Read the outcome even when the turn failed: a child that worked for ten
@@ -280,6 +279,11 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		out.Summary = session.LastAssistantText(events, 0)
 	}
 	return out, runErr
+}
+
+func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
+	emit, _ := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit)
+	return emit
 }
 
 func findDefinition(defs []subagent.Definition, name string) (subagent.Definition, bool) {

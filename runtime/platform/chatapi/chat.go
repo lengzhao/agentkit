@@ -267,16 +267,8 @@ func (p *Platform) handleOutbound(_ context.Context, event agentkit.OutboundEven
 		case agentkit.AssistantEventThinkingDelta:
 			run.appendThinking(payload.AssistantMessageEvent.Delta)
 			return run.flushDeltas()
-		case agentkit.AssistantEventToolCallStart:
-			toolID := payload.AssistantMessageEvent.ID
-			if payload.AssistantMessageEvent.ToolCall != nil {
-				toolID = string(payload.AssistantMessageEvent.ToolCall.ID)
-			}
-			return run.sse.Event("tool_call", map[string]any{
-				"message_id":   run.messageID,
-				"tool_call_id": toolID,
-				"name":         payload.AssistantMessageEvent.ToolName,
-			})
+		case agentkit.AssistantEventToolCallStart, agentkit.AssistantEventToolCallEnd:
+			return run.emitToolCallSSE(event, payload)
 		}
 		return nil
 	case agentkit.EventMessageEnd:
@@ -345,6 +337,37 @@ func (p *Platform) handleOutbound(_ context.Context, event agentkit.OutboundEven
 		}
 	}
 	return nil
+}
+
+func (r *runState) emitToolCallSSE(event agentkit.OutboundEvent, payload agentkit.MessageUpdatePayload) error {
+	ame := payload.AssistantMessageEvent
+	toolID := ame.ID
+	name := ame.ToolName
+	var input string
+	if ame.ToolCall != nil {
+		if toolID == "" {
+			toolID = string(ame.ToolCall.ID)
+		}
+		if name == "" {
+			name = ame.ToolCall.Name
+		}
+		input = string(ame.ToolCall.Input)
+	}
+	if toolID == "" {
+		return nil
+	}
+	data := map[string]any{
+		"message_id":   r.messageID,
+		"tool_call_id": toolID,
+		"name":         name,
+	}
+	if input != "" {
+		data["input"] = input
+	}
+	if event.AgentID != "" {
+		data["agent_id"] = string(event.AgentID)
+	}
+	return r.sse.Event("tool_call", data)
 }
 
 func permissionPromptView(payload permission.RequestPayload) (prompt string, actions []map[string]string, options []string) {

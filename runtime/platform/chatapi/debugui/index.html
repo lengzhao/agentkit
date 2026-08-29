@@ -711,6 +711,14 @@
       let thinking = "";
       let answer = "";
       let lastBubble = null;
+      const toolBubbles = new Map();
+
+      function toolTag(agentId) {
+        const id = String(agentId || "");
+        if (id.startsWith("sub:")) return "subagent · " + id.slice(4);
+        if (id) return "tool · " + id;
+        return "tool";
+      }
 
       function streamBubble(role, key, tag) {
         if (lastBubble && lastBubble.role === role && lastBubble.key === key) return lastBubble;
@@ -782,8 +790,14 @@
               b.body.textContent = answer;
             } else if (event === "tool_call") {
               const id = String(data.tool_call_id || "?");
-              const b = streamBubble("tool", id, "tool");
-              b.body.textContent = (data.name || "?") + (data.input ? "\n" + data.input : "");
+              let b = toolBubbles.get(id);
+              if (!b) {
+                b = addBubble("tool", "", toolTag(data.agent_id));
+                toolBubbles.set(id, b);
+              }
+              const prefix = data.agent_id ? `[${data.agent_id}] ` : "";
+              const input = data.input ? "\n" + data.input : "";
+              b.body.textContent = prefix + (data.name || "?") + input;
             } else if (event === "question_request" || event === "permission_request") {
               showIxModal(data);
             } else if (event === "error") {
