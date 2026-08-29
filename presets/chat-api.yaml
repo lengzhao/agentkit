@@ -8,6 +8,7 @@ runner.default:
   deps:
     platform: platform.default
     loop: loop.default
+    sessionStore: sessionStore.default
 
 platform.default:
   use: platform/chat-api

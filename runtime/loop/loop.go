@@ -67,6 +67,18 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 	}, nil
 }
 
+// SessionStore returns the loop's session store dependency when wired.
+func (l *Default) SessionStore() agentkit.SessionStore { return l.sessionStore }
+
+// Agents returns configured agent instances in arbitrary order.
+func (l *Default) Agents() []agentkit.Agent {
+	out := make([]agentkit.Agent, 0, len(l.agents))
+	for _, ag := range l.agents {
+		out = append(out, ag)
+	}
+	return out
+}
+
 func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error {
 	ag, agentID, err := l.resolveAgent(req.Event.AgentID)
 	if err != nil {

@@ -66,6 +66,53 @@ func (s mapSessionStore) SetActiveSession(_ context.Context, id, active agentkit
 	return nil
 }
 
+type tenantScopedActiveStore struct {
+	mapSessionStore
+}
+
+func (s tenantScopedActiveStore) ActiveSession(ctx context.Context, id agentkit.SessionID) (agentkit.SessionID, error) {
+	effective, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if effective == "" {
+		return id, nil
+	}
+	return s.mapSessionStore.ActiveSession(ctx, id)
+}
+
+func TestRunnerResolvesLogicalStoreSessionRequiresInboundContext(t *testing.T) {
+	t.Parallel()
+
+	delivery := session.BuildDeliverySessionID("chat-api", "default_channel", "conv_test", "")
+	logical := agentkit.SessionID(string(delivery) + ":new:20260829")
+	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := tenantScopedActiveStore{
+		mapSessionStore: mapSessionStore{
+			sessions: map[agentkit.SessionID]agentkit.Session{logical: mem},
+			active:   map[agentkit.SessionID]agentkit.SessionID{delivery: logical},
+		},
+	}
+
+	loop := &agentRecordingLoop{}
+	event := userEvent(delivery, "today")
+	event.PlatformID = "chat-api"
+	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{
+		Platform:     &scriptedPlatform{events: []agentkit.MessageEvent{event}},
+		Loop:         loop,
+		SessionStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Run(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if loop.lastStoreSession != logical {
+		t.Fatalf("store session = %q, want %q", loop.lastStoreSession, logical)
+	}
+}
+
 func TestRunnerResolvesLogicalStoreSessionFromFixedDelivery(t *testing.T) {
 	t.Parallel()
 

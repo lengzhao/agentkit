@@ -96,6 +96,9 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	}, nil
 }
 
+// SessionStore returns the durable session backend used for turn history.
+func (a *Runtime) SessionStore() agentkit.SessionStore { return a.sessionStore }
+
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
 
 // turnRun holds mutable state for one turn, spanning every segment the

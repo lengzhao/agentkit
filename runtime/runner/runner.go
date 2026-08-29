@@ -14,6 +14,8 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -82,13 +84,40 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	return &Root{
 		platform:        deps.Platform,
 		loop:            deps.Loop,
-		sessionStore:    deps.SessionStore,
+		sessionStore:    resolveRunnerSessionStore(deps),
 		schedules:       deps.Schedules,
 		telemetry:       exp,
 		sessionScope:    session.ParseScope(cfg.SessionScope),
 		maxConcurrent:   maxConcurrent,
 		shutdownTimeout: shutdownTimeout,
 	}, nil
+}
+
+func resolveRunnerSessionStore(deps Deps) agentkit.SessionStore {
+	if deps.SessionStore != nil {
+		return deps.SessionStore
+	}
+	ld, ok := deps.Loop.(*loop.Default)
+	if !ok {
+		return nil
+	}
+	if store := ld.SessionStore(); store != nil {
+		return store
+	}
+	for _, ag := range ld.Agents() {
+		if store := agentSessionStore(ag); store != nil {
+			return store
+		}
+	}
+	return nil
+}
+
+func agentSessionStore(ag agentkit.Agent) agentkit.SessionStore {
+	runtime, ok := ag.(*agent.Runtime)
+	if !ok {
+		return nil
+	}
+	return runtime.SessionStore()
 }
 
 func (r *Root) Run(ctx context.Context, result *build.Result) error {
@@ -212,6 +241,9 @@ func (r *Root) Stop(ctx context.Context) error {
 // Loop exposes the turn scheduler so RPC/TUI integrations can steer or queue
 // follow-ups; agentkit.Loop already carries Steer/FollowUp.
 func (r *Root) Loop() agentkit.Loop { return r.loop }
+
+// SessionStore returns the durable session backend used for routing and bindings.
+func (r *Root) SessionStore() agentkit.SessionStore { return r.sessionStore }
 
 func permissionCapability(platform agentkit.Platform, platformID string) permission.Capability {
 	if router, ok := platform.(permission.CapabilityRouter); ok && platformID != "" {

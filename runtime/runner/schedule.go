@@ -38,8 +38,9 @@ func (r *Root) inboundSubmit(sched *scheduler) capschedule.SubmitFunc {
 }
 
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
-	deliveryID, _, scoped := r.scopedEvent(event)
-	storeSessionID, err := r.resolveStoreSessionID(ctx, event, scoped.SessionID)
+	deliveryID, effectiveID, scoped := r.scopedEvent(event)
+	ctx = withInboundRoutingContext(ctx, effectiveID, deliveryID)
+	storeSessionID, err := r.resolveStoreSessionID(ctx, event, effectiveID)
 	if err != nil {
 		r.reportInboundError(ctx, deliveryID, event, err)
 		return
@@ -82,6 +83,16 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		Emit:              emit,
 		Capability:        permissionCapability(r.platform, event.PlatformID),
 	})
+}
+
+func withInboundRoutingContext(ctx context.Context, effectiveID, deliveryID agentkit.SessionID) context.Context {
+	if effectiveID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeySessionID, effectiveID)
+	}
+	if deliveryID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliveryID)
+	}
+	return ctx
 }
 
 func (r *Root) reportInboundError(ctx context.Context, deliveryID agentkit.SessionID, event agentkit.MessageEvent, err error) {

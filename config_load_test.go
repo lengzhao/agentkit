@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/config"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -55,6 +56,29 @@ func TestPresetCodingOverlayBuilds(t *testing.T) {
 	_, _, err = build.Build[agentkit.Runner](context.Background(), doc.ToGraph(), doc.RootID)
 	if err != nil {
 		t.Fatalf("build runner: %v", err)
+	}
+}
+
+func TestPresetChatAPIOverlayBuilds(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	doc, err := config.LoadDocument(config.DefaultBasePath, "presets/chat-api.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.RootID != "runner.default" {
+		t.Fatalf("rootId=%q", doc.RootID)
+	}
+
+	runnerInst, _, err := build.Build[agentkit.Runner](context.Background(), doc.ToGraph(), doc.RootID)
+	if err != nil {
+		t.Fatalf("build runner: %v", err)
+	}
+	root, ok := runnerInst.(*runner.Root)
+	if !ok {
+		t.Fatalf("runner type = %T, want *runner.Root", runnerInst)
+	}
+	if root.SessionStore() == nil {
+		t.Fatal("chat-api preset runner must wire sessionStore for /new active mapping")
 	}
 }
 
