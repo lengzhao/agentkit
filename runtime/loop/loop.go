@@ -19,9 +19,8 @@ type Config struct {
 }
 
 type Deps struct {
-	Agents       []agentkit.Agent      `json:"agents"`
-	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
-	Telemetry    telemetry.Exporter    `json:"telemetry,omitempty"`
+	Agents    []agentkit.Agent      `json:"agents"`
+	Telemetry telemetry.Exporter    `json:"telemetry,omitempty"`
 }
 
 type Default struct {
@@ -29,7 +28,6 @@ type Default struct {
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
 	telemetry       telemetry.Exporter
-	sessionStore    agentkit.SessionStore
 	sessionLocks    sync.Map // SessionID -> *sync.Mutex
 	sessionControls sync.Map // SessionID -> *Control
 }
@@ -63,12 +61,8 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 		defaultAgent: defaultID,
 		followUpMode: mode,
 		telemetry:    exp,
-		sessionStore: deps.SessionStore,
 	}, nil
 }
-
-// SessionStore returns the loop's session store dependency when wired.
-func (l *Default) SessionStore() agentkit.SessionStore { return l.sessionStore }
 
 // Agents returns configured agent instances in arbitrary order.
 func (l *Default) Agents() []agentkit.Agent {

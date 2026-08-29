@@ -42,7 +42,6 @@ loop.default:
   deps:
     agents:
       - agent.assistant.default
-    sessionStore: sessionStore.default
     telemetry: telemetry.default
 
 telemetry.default:

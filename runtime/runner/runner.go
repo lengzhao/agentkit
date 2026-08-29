@@ -101,9 +101,6 @@ func resolveRunnerSessionStore(deps Deps) agentkit.SessionStore {
 	if !ok {
 		return nil
 	}
-	if store := ld.SessionStore(); store != nil {
-		return store
-	}
 	for _, ag := range ld.Agents() {
 		if store := agentSessionStore(ag); store != nil {
 			return store
