@@ -36,3 +36,4 @@ config.yaml
 /agent
 .claude/
 .cursor/
+.DS_Store

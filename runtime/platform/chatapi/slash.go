@@ -21,7 +21,7 @@ func (p *Platform) slashContext(delivery agentkit.SessionID) common.SlashContext
 	}
 }
 
-func (p *Platform) processChatSlash(ctx context.Context, channelKey string, conv *conversation, engineSessionID agentkit.SessionID, query string) (chatSlashResult, error) {
+func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *conversation, engineSessionID agentkit.SessionID, query string) (chatSlashResult, error) {
 	name, args, ok := common.ParseSlashCommand(query)
 	if !ok {
 		out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID), query)
