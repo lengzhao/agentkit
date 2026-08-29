@@ -18,7 +18,7 @@ func TestIntegrationSubagentSmokePreset(t *testing.T) {
 
 	result := presettest.RunOnce(t, "调研一下 loop 串行机制", "presets/subagent-smoke.yaml")
 	ctx := context.Background()
-	events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:default"))
+	events := agenttest.SessionEvents(t, ctx, result.Store, result.SessionID)
 	agenttest.AssertSubagentParentSession(t, events)
 }
 
@@ -29,7 +29,7 @@ func TestIntegrationAutonomousSmokePreset(t *testing.T) {
 
 	result := presettest.RunOnce(t, "读取 README 并汇报", "presets/autonomous-smoke.yaml")
 	ctx := context.Background()
-	events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:default"))
+	events := agenttest.SessionEvents(t, ctx, result.Store, result.SessionID)
 
 	if got := agenttest.CountEvents(events, agentkit.EventSessionRecovery); got != 0 {
 		t.Fatalf("session/recovery = %d, want 0", got)
@@ -40,6 +40,9 @@ func TestIntegrationAutonomousSmokePreset(t *testing.T) {
 	if got := agenttest.CountEvents(events, agentkit.EventTodoUpdate); got < 2 {
 		t.Fatalf("todo/update = %d, want at least 2", got)
 	}
+	if got := agenttest.CountEvents(events, agentkit.EventTurnContinue); got < 1 {
+		t.Fatalf("turn/continue = %d, want hook-driven continuation", got)
+	}
 }
 
 func TestIntegrationCodingSmokePreset(t *testing.T) {
@@ -49,7 +52,7 @@ func TestIntegrationCodingSmokePreset(t *testing.T) {
 
 	result := presettest.RunOnce(t, "列出目录并读取 README", "presets/coding-smoke.yaml")
 	ctx := context.Background()
-	events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:default"))
+	events := agenttest.SessionEvents(t, ctx, result.Store, result.SessionID)
 
 	if got := agenttest.CountEvents(events, agentkit.EventTurnEnd); got < 1 {
 		t.Fatalf("turn/end = %d, want at least 1", got)

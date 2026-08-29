@@ -89,3 +89,30 @@ func AssertNoToolResultWithContent(t *testing.T, events []agentkit.SessionEvent,
 		}
 	}
 }
+
+// AssertToolResultContains finds a tool result by call id and checks content.
+func AssertToolResultContains(t *testing.T, events []agentkit.SessionEvent, callID agentkit.ToolCallID, substr string) {
+	t.Helper()
+	for _, ev := range events {
+		if ev.Type != agentkit.EventToolResult {
+			continue
+		}
+		result := ToolResult(t, ev)
+		if result.ID != callID {
+			continue
+		}
+		if !strings.Contains(result.Content, substr) {
+			t.Fatalf("tool result for %s = %q, want substring %q", callID, result.Content, substr)
+		}
+		return
+	}
+	t.Fatalf("no tool result for %s", callID)
+}
+
+// AssertEventAtLeast fails when an event type appears fewer than min times.
+func AssertEventAtLeast(t *testing.T, events []agentkit.SessionEvent, typ agentkit.EventType, min int) {
+	t.Helper()
+	if got := CountEvents(events, typ); got < min {
+		t.Fatalf("%s = %d, want at least %d", typ, got, min)
+	}
+}

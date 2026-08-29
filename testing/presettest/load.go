@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,8 +48,9 @@ func MustBuildRunner(t *testing.T, doc manager.Document) (agentkit.Runner, *buil
 
 // RunOnceResult captures artifacts from a single preset once-run.
 type RunOnceResult struct {
-	Runner agentkit.Runner
-	Store  agentkit.SessionStore
+	Runner    agentkit.Runner
+	Store     agentkit.SessionStore
+	SessionID agentkit.SessionID
 }
 
 // RunOnce loads overlays, injects a CLI prompt, chdirs to repo root, and runs until exit.
@@ -67,6 +69,7 @@ func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult 
 
 	doc := Load(t, overlayPaths...)
 	graph := doc.ToGraph()
+	sessionID := injectIsolatedSession(graph, sanitizeTestName(t.Name()))
 	injectOncePrompt(graph, prompt)
 	prepareRunnableGraph(graph)
 
@@ -90,7 +93,38 @@ func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult 
 	if store == nil {
 		t.Fatal("runner session store is nil")
 	}
-	return RunOnceResult{Runner: runnerInst, Store: store}
+	return RunOnceResult{Runner: runnerInst, Store: store, SessionID: sessionID}
+}
+
+func injectIsolatedSession(graph map[string]any, suffix string) agentkit.SessionID {
+	id := agentkit.SessionID("cli:it-" + suffix)
+	patchSessionDefault(graph, id)
+	platform := resolvePlatformNode(graph)
+	if platform != nil {
+		cfg := asMap(platform["config"])
+		cfg["defaultSessionId"] = string(id)
+		platform["config"] = cfg
+	}
+	return id
+}
+
+func patchSessionDefault(graph map[string]any, id agentkit.SessionID) {
+	node, ok := graph["session.default"].(map[string]any)
+	if !ok {
+		graph["session.default"] = map[string]any{
+			"use":    "session/memory",
+			"config": map[string]any{"id": string(id)},
+		}
+		return
+	}
+	cfg := asMap(node["config"])
+	cfg["id"] = string(id)
+	node["config"] = cfg
+}
+
+func sanitizeTestName(name string) string {
+	replacer := strings.NewReplacer("/", "-", " ", "-", ":", "-")
+	return replacer.Replace(name)
 }
 
 func injectOncePrompt(graph map[string]any, prompt string) {

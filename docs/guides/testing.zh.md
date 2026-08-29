@@ -42,6 +42,29 @@ flowchart TB
 | `NewSubagentDelegateEnv` | 父→delegate→子 冒烟栈 |
 | `AssertSubagentParentSession` | 委派回归断言（无 recovery、单条 delegate result） |
 | `AssertDeriveMessagesToolCallsAnswered` | derive 后 tool call 均有 result |
+| `NewScriptedAgent` / `SeedCrashedToolCall` | 通用 agent 与崩溃 seed |
+| `DenyAllToolsPolicy` | 策略层 deny 场景 |
+| `AssertToolResultContains` / `AssertEventAtLeast` | 事件与 tool result 断言 |
+
+## 场景用例目录
+
+### Smoke（`testing/smoke/`，默认 CI）
+
+| 文件 | 用例 | 覆盖场景 |
+|---|---|---|
+| `smoke_test.go` | subagent 委派 4 变体 + 崩溃 recovery | delegate 全链路、store session 映射、loop dispatch |
+| `subagent_test.go` | 第二轮 turn、子 session 隔离 | 委派后连续 turn、子事件不泄漏 |
+| `loop_test.go` | 同 session 串行、跨 session 隔离 | loop 锁与 session 路由 |
+| `tool_test.go` | 多 tool derive、policy deny | read 工具链、策略拒绝 |
+| `recovery_test.go` | orphan read 修复、干净 session | recovery 合成 interrupted result、不误触发 |
+| `web_test.go` | scripted web_search / web_fetch | 网络工具脚本链（无 API Key） |
+
+### Integration（`integration/`，`-tags=integration`）
+
+| 文件 | 用例 | 覆盖场景 |
+|---|---|---|
+| `preset_smoke_test.go` | subagent / autonomous / coding preset | 真实 pluginkit 图 once-run |
+| `web_smoke_test.go` | web + web-smoke 链式 preset build | pluginkit 图可构建（ask_user 需交互，不做 once-run） |
 
 示例：
 
