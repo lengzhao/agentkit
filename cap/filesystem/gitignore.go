@@ -20,7 +20,7 @@ type ignorePattern struct {
 }
 
 // LoadIgnoreMatcher reads the workspace-root .gitignore when present and always
-// ignores .git and node_modules.
+// ignores .git, node_modules, and .env.
 func LoadIgnoreMatcher(workspaceRoot string) (*IgnoreMatcher, error) {
 	m := &IgnoreMatcher{
 		patterns: []ignorePattern{

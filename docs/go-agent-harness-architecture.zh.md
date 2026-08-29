@@ -1268,7 +1268,7 @@ go run ./cmd/agent -config presets/langfuse.yaml "hello"
 
 ## 11. 测试策略
 
-平台应内建 testkit，而不是让插件作者手写大量 runtime 装配。测试仍应走 `pluginkit` 注册和构建路径，避免生产与测试两套装配逻辑。
+平台内建 `testing/agenttest` testkit，而不是让插件作者手写大量 runtime 装配。测试仍应走 `pluginkit` 注册和构建路径，避免生产与测试两套装配逻辑。完整分层、命令与 CI 见 [guides/testing.zh.md](guides/testing.zh.md)。
 
 ```go
 func TestReadFileTool(t *testing.T) {
@@ -1286,11 +1286,9 @@ func TestReadFileTool(t *testing.T) {
         },
     }
 
-    tool, _, err := build.Build[agentkit.Tool](context.Background(), graph, "tool")
-    require.NoError(t, err)
-
-    result := agenttest.CallTool(t, tool, `{"path":"README.md"}`)
-    require.Equal(t, "hello", result.JSON("content"))
+    tool := agenttest.Build[agentkit.Tool](t, graph, "tool")
+    result := agenttest.CallTool(t, context.Background(), tool, `{"path":"README.md"}`)
+    // assert on result JSON...
 }
 ```
 

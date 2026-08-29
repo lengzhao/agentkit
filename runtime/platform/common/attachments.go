@@ -44,7 +44,6 @@ const (
 	// inboundAttachWorkRoot is the fs-workspace root relative to tenant local root.
 	inboundAttachWorkRoot = "work"
 	// inboundUploadDir is where user-uploaded files land under the work root.
-	// Keep outside .agent/ — find/grep skip .agent via built-in gitignore.
 	inboundUploadDir = "upload"
 )
 

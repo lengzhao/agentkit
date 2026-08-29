@@ -39,8 +39,8 @@ func TestDebugUIServesPage(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "platformPlugin") {
-		t.Fatalf("missing platformPlugin branding")
+	if !strings.Contains(body, "AgentKit") {
+		t.Fatalf("missing AgentKit branding in HTML shell")
 	}
 	if !strings.Contains(body, `window.__CHAT_API_PATH__=`) || !strings.Contains(body, `"/v1/"`) {
 		t.Fatalf("missing injected api path")
