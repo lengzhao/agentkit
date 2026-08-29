@@ -196,7 +196,7 @@ func TestTokenLimitGatesRealSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	summary, err := NewSummary(SummaryConfig{KeepRecent: 1}, SummaryDeps{LLM: &flakySummaryLLM{}})
+	summary, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: &flakySummaryLLM{}})
 	if err != nil {
 		t.Fatal(err)
 	}

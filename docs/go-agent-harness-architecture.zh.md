@@ -837,7 +837,7 @@ type SessionStore interface {
 | **Platform**（如 `platform/slack`） | 从 IM 事件生成稳定 `MessageEvent.SessionID`（必填）；出站 `OutboundEvent` 回带同一 ID，由 `Send` 解析投递目标（含主动发送） |
 | **Loop** | 按 `MessageEvent.SessionID` 选择 Agent 并串行调度；不调用 `SessionStore` |
 | **Agent** | `RunTurn` 从 `ctx.Value(agentkit.KeySessionID)` 读取 SessionID，并通过 `deps.sessionStore.Get` 加载 Session |
-| **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl` |
+| **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；进程内 LRU 缓存最近活跃的 session；内存只保留 compaction 标记 + 最近 `maxLoadedEvents` 条事件，压缩后裁剪已折叠历史；完整审计读盘 |
 
 所有入口（含 CLI）必须在 `MessageEvent` 上设置 `SessionID`。CLI 启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话（缺省指向 `cli:default`）；`/new` 创建新 id 并更新软链。配置示例：
 
@@ -852,6 +852,9 @@ session.store:
   use: session/store
   config:
     dir: .agent/sessions
+    maxCachedSessions: 64   # 0 = 不限制
+    cacheIdleTTL: 30m       # 可选；空闲超过该时长从内存淘汰
+    maxLoadedEvents: 256    # 0 = 全量加载；有 compaction 时自动跳过已折叠历史
 
 agent.coder:
   use: agent/coding

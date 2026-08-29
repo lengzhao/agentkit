@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/compaction"
 )
 
 type JSONLConfig struct {
@@ -20,15 +20,18 @@ type JSONLConfig struct {
 	ID agentkit.SessionID `json:"id"`
 	// UserMessageTemplate is forwarded to the in-memory replay backend.
 	UserMessageTemplate string `json:"userMessageTemplate"`
+	// MaxLoadedEvents limits non-compaction events kept in memory on load. Zero loads the full file.
+	MaxLoadedEvents int `json:"maxLoadedEvents"`
 }
 
 // JSONL persists session events as append-only JSON lines.
 type JSONL struct {
-	mu   sync.Mutex
-	id   agentkit.SessionID
-	path string
-	seq  agentkit.EventSeq
-	mem  *Memory
+	mu              sync.Mutex
+	id              agentkit.SessionID
+	path            string
+	seq             agentkit.EventSeq
+	maxLoadedEvents int
+	mem             *Memory
 }
 
 func newJSONL(cfg JSONLConfig) (*JSONL, error) {
@@ -46,7 +49,12 @@ func newJSONL(cfg JSONLConfig) (*JSONL, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &JSONL{id: id, path: cfg.Path, mem: mem}
+	s := &JSONL{
+		id:              id,
+		path:            cfg.Path,
+		maxLoadedEvents: cfg.MaxLoadedEvents,
+		mem:             mem,
+	}
 	if err := s.loadExisting(); err != nil {
 		return nil, err
 	}
@@ -62,43 +70,47 @@ func NewJSONL(cfg JSONLConfig) (agentkit.Session, error) {
 }
 
 func (s *JSONL) loadExisting() error {
-	f, err := os.Open(s.path)
+	events, maxSeq, trimmed, err := scanSessionFile(s.path, s.maxLoadedEvents)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
 		return err
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		var ev agentkit.SessionEvent
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
-			return err
-		}
-		s.mem.events = append(s.mem.events, ev)
-		if ev.Seq > s.seq {
-			s.seq = ev.Seq
-		}
-	}
-	if err := sc.Err(); err != nil {
-		return err
-	}
-	// Resume numbering above the loaded events. Without this a reopened session
-	// restarts at 1 and collides with its own history, which silently corrupts
-	// every seq comparison: compaction's cutoff, run-state scans, Read(from).
+	s.seq = maxSeq
+	s.mem.setLoadedEvents(events, cutoffsFromCompactions(compactionEvents(events)), trimmed)
 	s.mem.resumeSeq(s.seq)
 	return nil
+}
+
+func compactionEvents(events []agentkit.SessionEvent) []agentkit.SessionEvent {
+	out := make([]agentkit.SessionEvent, 0)
+	for _, ev := range events {
+		if ev.Type == agentkit.EventCompaction {
+			out = append(out, ev)
+		}
+	}
+	return out
 }
 
 func (s *JSONL) ID() agentkit.SessionID { return s.id }
 
 func (s *JSONL) FilePath() string { return s.path }
 
+// LatestSeq returns the highest event sequence in the durable log.
+func (s *JSONL) LatestSeq() agentkit.EventSeq {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.seq
+}
+
+func (s *JSONL) trimCompacted(agentID agentkit.AgentID, beforeSeq agentkit.EventSeq) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mem.trimCompacted(agentID, beforeSeq)
+}
+
 func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentkit.EventSeq, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	seq, err := s.mem.Append(ctx, event)
+	seq, err := s.mem.appendLocked(ctx, event)
 	if err != nil {
 		return 0, err
 	}
@@ -117,13 +129,36 @@ func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentk
 		return 0, err
 	}
 	s.seq = seq
+	if ev.Type == agentkit.EventCompaction {
+		var data compaction.EventData
+		if err := json.Unmarshal(ev.Data, &data); err == nil {
+			s.mem.trimCompacted(ev.AgentID, data.MemoryCutoffSeq())
+		}
+	}
 	return seq, nil
 }
 
 func (s *JSONL) Read(ctx context.Context, from agentkit.EventSeq) ([]agentkit.SessionEvent, error) {
-	return s.mem.Read(ctx, from)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if from == 0 && s.mem.isTrimmed() {
+		return readSessionFile(s.path, from)
+	}
+	return s.mem.readUnlocked(from), nil
 }
 
 func (s *JSONL) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {
 	return s.mem.DeriveMessages(ctx)
+}
+
+// appendLocked appends without acquiring Memory.mu; JSONL.mu must be held.
+func (m *Memory) appendLocked(_ context.Context, event agentkit.SessionEvent) (agentkit.EventSeq, error) {
+	m.seq++
+	event.Seq = m.seq
+	event.SessionID = m.id
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	m.events = append(m.events, event)
+	return event.Seq, nil
 }

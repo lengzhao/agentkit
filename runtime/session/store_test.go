@@ -137,3 +137,89 @@ func TestReopenedSessionContinuesSeqNumbering(t *testing.T) {
 		}
 	}
 }
+
+func TestStoreLRUCacheReloadsFromDisk(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	ctx := context.Background()
+	store, err := session.NewStore(session.StoreConfig{
+		Dir:               ".",
+		MaxCachedSessions: 2,
+	}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id1 := agentkit.SessionID("cache:s1")
+	id2 := agentkit.SessionID("cache:s2")
+	id3 := agentkit.SessionID("cache:s3")
+
+	s1a, err := store.Get(ctx, id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendMessage(ctx, s1a, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "persisted"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, id2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, id3); err != nil {
+		t.Fatal(err)
+	}
+
+	s1b, err := store.Get(ctx, id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s1a == s1b {
+		t.Fatal("expected cache miss to reload session from disk")
+	}
+	msgs, err := s1b.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content[0].Text != "persisted" {
+		t.Fatalf("reloaded messages: %+v", msgs)
+	}
+}
+
+func TestStoreHeldSessionSurvivesCacheEviction(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	ctx := context.Background()
+	store, err := session.NewStore(session.StoreConfig{
+		Dir:               ".",
+		MaxCachedSessions: 1,
+	}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	held, err := store.Get(ctx, agentkit.SessionID("held:s1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendMessage(ctx, held, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "still writable"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, agentkit.SessionID("held:s2")); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := held.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content[0].Text != "still writable" {
+		t.Fatalf("held session messages: %+v", msgs)
+	}
+}

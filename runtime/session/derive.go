@@ -12,32 +12,16 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
 	tmpl := resolveUserMessageTemplate(ctx, userMessageTemplate)
 
-	var compactBefore agentkit.EventSeq
-	var summary *agentkit.ModelMessage
-
-	for _, ev := range events {
-		if ev.Type != agentkit.EventCompaction {
-			continue
-		}
-		if !eventForAgent(ev, agentID) {
-			continue
-		}
-		var data compaction.EventData
-		if err := json.Unmarshal(ev.Data, &data); err != nil {
-			continue
-		}
-		compactBefore = data.BeforeSeq
-		s := data.Summary
-		summary = &s
-	}
+	compactAfterSeq, summary, retainedTail := latestCompactionView(events, agentID)
 
 	var out []agentkit.ModelMessage
 	if summary != nil {
 		out = append(out, *summary)
+		out = append(out, retainedTail...)
 	}
 
 	for _, ev := range events {
-		if ev.Seq <= compactBefore {
+		if ev.Seq <= compactAfterSeq {
 			continue
 		}
 		if !eventForAgent(ev, agentID) {
@@ -80,6 +64,22 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 		out = compaction.PruneToolResults(out, maxToolBytes)
 	}
 	return out
+}
+
+func latestCompactionView(events []agentkit.SessionEvent, agentID agentkit.AgentID) (compactAfterSeq agentkit.EventSeq, summary *agentkit.ModelMessage, retainedTail []agentkit.ModelMessage) {
+	seq, data, ok := latestCompactionForAgent(events, agentID)
+	if !ok {
+		return 0, nil, nil
+	}
+	compactAfterSeq = seq
+	s := data.Summary
+	summary = &s
+	if len(data.RetainedTail) > 0 {
+		return compactAfterSeq, summary, append([]agentkit.ModelMessage(nil), data.RetainedTail...)
+	}
+	// Legacy compaction entries without retainedTail replay events after BeforeSeq.
+	compactAfterSeq = data.BeforeSeq
+	return compactAfterSeq, summary, nil
 }
 
 // eventForAgent limits replay to the agent running the current turn. A session
@@ -173,7 +173,11 @@ func AppendCompaction(ctx context.Context, s agentkit.Session, agentID agentkit.
 		Type:    agentkit.EventCompaction,
 		Data:    raw,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	TrimCompacted(s, agentID, data.MemoryCutoffSeq())
+	return nil
 }
 
 func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, name, description, body string) error {
@@ -205,4 +209,16 @@ func LatestEventSeq(events []agentkit.SessionEvent) agentkit.EventSeq {
 
 func ReadAllEvents(ctx context.Context, s agentkit.Session) ([]agentkit.SessionEvent, error) {
 	return s.Read(ctx, 0)
+}
+
+// LatestSeq returns the highest durable event sequence for the session.
+func LatestSeq(ctx context.Context, s agentkit.Session) (agentkit.EventSeq, error) {
+	if seq, ok := s.(interface{ LatestSeq() agentkit.EventSeq }); ok {
+		return seq.LatestSeq(), nil
+	}
+	events, err := ReadAllEvents(ctx, s)
+	if err != nil {
+		return 0, err
+	}
+	return LatestEventSeq(events), nil
 }

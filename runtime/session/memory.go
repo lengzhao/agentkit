@@ -24,6 +24,8 @@ type Memory struct {
 	id                  agentkit.SessionID
 	seq                 agentkit.EventSeq
 	events              []agentkit.SessionEvent
+	cutoffByAgent       map[agentkit.AgentID]agentkit.EventSeq
+	trimmed             bool
 	maxToolResultBytes  int
 	userMessageTemplate string
 }
@@ -68,13 +70,14 @@ func (s *Memory) Append(_ context.Context, event agentkit.SessionEvent) (agentki
 func (s *Memory) Read(_ context.Context, from agentkit.EventSeq) ([]agentkit.SessionEvent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]agentkit.SessionEvent, 0)
-	for _, ev := range s.events {
-		if ev.Seq > from {
-			out = append(out, ev)
-		}
-	}
-	return out, nil
+	return s.readUnlocked(from), nil
+}
+
+// LatestSeq returns the highest event sequence issued by this session.
+func (s *Memory) LatestSeq() agentkit.EventSeq {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestSeq()
 }
 
 func (s *Memory) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {

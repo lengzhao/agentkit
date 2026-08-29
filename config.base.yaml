@@ -65,12 +65,15 @@ agent.assistant.default:
     tools: tools.default
     compaction:
       - compaction.prune.default
-      - compaction.summary.default
+      - compaction.token-limit.default
 
 sessionStore.default:
   use: session/store
   config:
     dir: sessions
+    maxCachedSessions: 64
+    cacheIdleTTL: 30m
+    maxLoadedEvents: 256
   deps:
     workspace: workspace.default
 
@@ -102,7 +105,7 @@ subagent.default:
     hooks: hooks.default
     compaction:
       - compaction.prune.default
-      - compaction.summary.default
+      - compaction.token-limit.default
 
 credentials.default:
   use: credentials/env
@@ -138,7 +141,7 @@ hook.before-step.default:
     sessionStore: sessionStore.default
     services:
       - compaction.prune.default
-      - compaction.summary.default
+      - compaction.token-limit.default
 
 compaction.prune.default:
   use: compaction/prune-tool-results
@@ -148,14 +151,24 @@ compaction.prune.default:
 compaction.summary.default:
   use: compaction/summary
   config:
-    minMessages: 30
-    keepRecent: 8
+    keepRecentTokens: 20000
+    reserveTokens: 16384
     retry:
       enabled: true
       maxRetries: 3
       baseDelayMs: 2000
   deps:
     llm: llm.default
+
+compaction.token-limit.default:
+  use: compaction/token-limit
+  config:
+    contextWindow: 200000
+    triggerRatio: 0.92
+    charsPerToken: 3
+  deps:
+    services:
+      - compaction.summary.default
 
 prompt.default:
   use: prompt/assembler/default

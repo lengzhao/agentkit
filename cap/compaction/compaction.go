@@ -26,9 +26,15 @@ type Result struct {
 }
 
 type EventData struct {
-	BeforeSeq agentkit.EventSeq     `json:"beforeSeq"`
-	Summary   agentkit.ModelMessage `json:"summary"`
-	Kind      string                `json:"kind"`
+	// BeforeSeq is legacy: highest summarized seq when FirstKeptSeq is unset.
+	BeforeSeq agentkit.EventSeq `json:"beforeSeq,omitempty"`
+	// FirstKeptSeq is the first retained event after compaction (Pi firstKeptEntryId).
+	FirstKeptSeq agentkit.EventSeq `json:"firstKeptSeq,omitempty"`
+	// RetainedTail is verbatim recent history kept for the model after compaction.
+	RetainedTail []agentkit.ModelMessage `json:"retainedTail,omitempty"`
+	TokensBefore int                   `json:"tokensBefore,omitempty"`
+	Summary      agentkit.ModelMessage `json:"summary"`
+	Kind         string                `json:"kind"`
 }
 
 const (

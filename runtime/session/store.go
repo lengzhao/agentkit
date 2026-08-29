@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -17,6 +18,12 @@ type StoreConfig struct {
 	Dir string `json:"dir"`
 	// UserMessageTemplate overrides the default LegacyUserMessageTemplate on replay.
 	UserMessageTemplate string `json:"userMessageTemplate"`
+	// MaxCachedSessions limits in-memory hot sessions (LRU). Zero keeps every opened session cached.
+	MaxCachedSessions int `json:"maxCachedSessions"`
+	// CacheIdleTTL evicts sessions unused for this duration (for example "30m"). Empty disables idle eviction.
+	CacheIdleTTL string `json:"cacheIdleTTL"`
+	// MaxLoadedEvents limits non-compaction events kept in memory per session on load. Zero loads the full file.
+	MaxLoadedEvents int `json:"maxLoadedEvents"`
 }
 
 type StoreDeps struct {
@@ -29,8 +36,9 @@ type Store struct {
 	relDir              string
 	workspace           workspace.Service
 	userMessageTemplate string
+	maxLoadedEvents     int
 	mu                  sync.Mutex
-	cache               map[agentkit.SessionID]*JSONL
+	cache               sessionCache
 	bindCache           sync.Map // SessionID -> bindCacheEntry
 	activeCache         sync.Map // SessionID -> activeCacheEntry
 }
@@ -43,12 +51,55 @@ func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("session store dir is required")
 	}
-	return &Store{
+	if cfg.MaxCachedSessions < 0 {
+		return nil, fmt.Errorf("session store maxCachedSessions must be >= 0")
+	}
+	if cfg.MaxLoadedEvents < 0 {
+		return nil, fmt.Errorf("session store maxLoadedEvents must be >= 0")
+	}
+	idleTTL, err := parseCacheIdleTTL(cfg.CacheIdleTTL)
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{
 		relDir:              cfg.Dir,
 		workspace:           deps.Workspace,
 		userMessageTemplate: cfg.UserMessageTemplate,
-		cache:               make(map[agentkit.SessionID]*JSONL),
-	}, nil
+		maxLoadedEvents:     cfg.MaxLoadedEvents,
+		cache:               newSessionCache(cfg.MaxCachedSessions, idleTTL, time.Now),
+	}
+	if idleTTL > 0 {
+		interval := idleTTL / 2
+		if interval < time.Minute {
+			interval = time.Minute
+		}
+		go s.runCacheJanitor(interval)
+	}
+	return s, nil
+}
+
+func parseCacheIdleTTL(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("session store cacheIdleTTL: %w", err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("session store cacheIdleTTL must be positive")
+	}
+	return d, nil
+}
+
+func (s *Store) runCacheJanitor(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.mu.Lock()
+		s.cache.evict(s.cache.now())
+		s.mu.Unlock()
+	}
 }
 
 func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Session, error) {
@@ -64,7 +115,7 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if sess, ok := s.cache[id]; ok {
+	if sess, ok := s.cache.get(id); ok {
 		return sess, nil
 	}
 	path, err := sessionFilePath(dir, id)
@@ -75,11 +126,12 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 		Path:                path,
 		ID:                  id,
 		UserMessageTemplate: s.userMessageTemplate,
+		MaxLoadedEvents:     s.maxLoadedEvents,
 	})
 	if err != nil {
 		return nil, err
 	}
-	s.cache[id] = sess
+	s.cache.put(id, sess)
 	return sess, nil
 }
 

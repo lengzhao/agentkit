@@ -50,8 +50,8 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 	llm := &flakySummaryLLM{}
 	enabled := true
 	svc, err := NewSummary(SummaryConfig{
-		MinMessages: 2,
-		KeepRecent:  1,
+		MinMessages:      2,
+		KeepRecentTokens: 1,
 		Retry: &capcompaction.RetryConfig{
 			Enabled:     &enabled,
 			MaxRetries:  3,
@@ -120,7 +120,7 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 	t.Parallel()
 
-	svc, err := NewSummary(SummaryConfig{KeepRecent: 6}, SummaryDeps{LLM: &flakySummaryLLM{}})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, SummaryDeps{LLM: &flakySummaryLLM{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,6 +150,6 @@ func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 		t.Fatalf("forced compaction: %v", err)
 	}
 	if result.Applied {
-		t.Fatal("nothing should be compacted when the history is shorter than keepRecent")
+		t.Fatal("nothing should be compacted when the history fits in keepRecentTokens")
 	}
 }
