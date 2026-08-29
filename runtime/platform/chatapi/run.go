@@ -26,8 +26,9 @@ type interactionState struct {
 }
 
 type pendingResult struct {
-	err    error
-	answer string
+	err               error
+	answer            string
+	skipHistoryMirror bool
 }
 
 type runState struct {

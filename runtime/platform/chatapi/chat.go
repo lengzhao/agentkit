@@ -140,8 +140,9 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 			run.mu.Unlock()
 			_ = run.flushDeltas()
 		}
-		p.persistConversationHistory(r.Context(), run, outcome.Reply)
-		p.pending.finish(runID, pendingResult{answer: outcome.Reply})
+		// Slash commands are local control-plane replies; do not mirror them into
+		// the delivery session file or the agent will see them on the next turn.
+		p.pending.finish(runID, pendingResult{answer: outcome.Reply, skipHistoryMirror: true})
 		p.clearActiveConv(conv.ID, runID)
 		return
 	case common.SlashForward:
@@ -190,7 +191,9 @@ func (p *Platform) emitTerminalSSE(run *runState, result pendingResult) {
 	if answer == "" {
 		answer = strings.TrimSpace(run.finalAnswer())
 	}
-	p.persistConversationHistory(context.Background(), run, answer)
+	if !result.skipHistoryMirror {
+		p.persistConversationHistory(context.Background(), run, answer)
+	}
 	_ = run.sse.Event("message_end", map[string]string{
 		"message_id":      run.messageID,
 		"conversation_id": run.conversationID,

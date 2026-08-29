@@ -122,3 +122,52 @@ func TestServeNewConversationSlash(t *testing.T) {
 		t.Fatalf("should not return CLI session id: %s", out)
 	}
 }
+
+func TestSlashCommandDoesNotPersistSessionHistory(t *testing.T) {
+	root := t.TempDir()
+	channel := "default_channel"
+	ws := workspace.Static(root)
+	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{store.(agentkit.CommandProvider)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Config{Path: "/v1/"}, Deps{SessionStore: store, Commands: commands, Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	conv, err := plat.conversations.create(channel, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(chatRequest{ConversationID: conv.ID, Query: "/help"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat-messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-Chat-API-Channel", channel)
+	req.Header.Set("X-Chat-API-User", "demo")
+	rec := httptest.NewRecorder()
+	plat.handleChatMessages(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	sess, err := store.Get(tenantCtx(channel, conv.ID), agentkit.SessionID(engineSessionKey(channel, conv.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := sess.Read(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.Type == agentkit.EventUserMessage || ev.Type == agentkit.EventAssistantMessage {
+			t.Fatalf("slash command must not be mirrored into session history: %+v", ev)
+		}
+	}
+}

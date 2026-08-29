@@ -9,9 +9,10 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-// persistConversationHistory mirrors one turn into the delivery session file for
-// this conversation. Runner may collapse agent history to channel/user scope;
-// chat-api keeps per-conversation display history like cc-connect Session.History.
+// persistConversationHistory mirrors one agent turn into the delivery session file
+// for this conversation. Slash commands are handled locally and are not mirrored.
+// Runner may collapse agent history to channel/user scope; chat-api keeps
+// per-conversation display history like cc-connect Session.History.
 func (p *Platform) persistConversationHistory(ctx context.Context, run *runState, answer string) {
 	if p.sessionStore == nil || run == nil {
 		return

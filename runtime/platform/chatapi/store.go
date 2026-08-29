@@ -47,12 +47,6 @@ func (s *conversationStore) create(channelKey, createdBy string) (*conversation,
 	return c, nil
 }
 
-func (s *conversationStore) get(id string) *conversation {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.byID[id]
-}
-
 func (s *conversationStore) findInChannel(channelKey, id string) *conversation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
