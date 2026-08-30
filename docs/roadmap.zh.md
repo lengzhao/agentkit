@@ -14,7 +14,7 @@
 | follow-up inbox 纯内存 | 崩溃后排队消息丢失 |
 | `hook/llm-request`、`BeforeStep` 决策类型 | 请求改写与步级 reject |
 | `session/sqlite` + `sessionquery` | 无法跨 session 检索 |
-| `platform/http`、`platform/rpc` | 通用 HTTP/RPC 接入 |
+| `platform/http`、`platform/rpc` | 通用 HTTP/RPC 接入（`platform/http` 已落地：服务 DefaultServeMux） |
 | `policy/network-deny` | SSRF 仍在 `web/http-fetch` 内 |
 | OS 级沙箱 | 暂缓，靠 policy + approval |
 

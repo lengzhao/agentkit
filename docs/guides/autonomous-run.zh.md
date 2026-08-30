@@ -380,6 +380,6 @@ print(collections.Counter(json.loads(l)['Type'] for l in open(f)))
 
 仍缺的长期运行能力：
 
-- **通用 HTTP / RPC 触发**：`platform/http`、`platform/rpc` 仍未实现；可用 `platform/chat-api` 或 OS cron + worker
+- **通用 HTTP / RPC 触发**：`platform/http` 可服务 `http.DefaultServeMux`（与 `chat-api.registerOnly` 组合）；`platform/rpc` 仍未实现；也可单独使用 `platform/chat-api` 或 OS cron + worker
 - **进程级自动重启**：panic 隔离保住了单个 turn，但进程真的挂掉（OOM、被 kill）仍需外部 supervisor（systemd `Restart=always`）兜底
 - 成本汇总 CLI、异步审批、verifier 子 agent 二次确认

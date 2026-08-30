@@ -29,6 +29,10 @@ const (
 type Config struct {
 	common.AgentRoutingConfig
 	ListenAddr         string   `json:"listenAddr"`
+	// RegisterOnly mounts routes on http.DefaultServeMux and does not listen.
+	// Use with platform/http (or any plugin that serves DefaultServeMux).
+	// listenAddr "-" is an alias for registerOnly.
+	RegisterOnly       bool     `json:"registerOnly"`
 	Path               string   `json:"path"`
 	APIToken           string   `json:"apiToken"`
 	UserHeader         string   `json:"userHeader"`
@@ -58,6 +62,7 @@ type Deps struct {
 
 type Platform struct {
 	listenAddr          string
+	registerOnly        bool
 	path                string
 	apiToken            string
 	agentID             agentkit.AgentID
@@ -94,8 +99,11 @@ type Platform struct {
 
 // New registers platform/chat-api: Dify-like HTTP + SSE API for custom apps and BFFs.
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
+	registerOnly := cfgRegisterOnly(cfg)
 	listen := strings.TrimSpace(cfg.ListenAddr)
-	if listen == "" {
+	if registerOnly {
+		listen = ""
+	} else if listen == "" {
 		listen = defaultListenAddr
 	}
 	path := normalizePath(cfg.Path)
@@ -143,8 +151,9 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		sessionsDir = defaultSessionsDir
 	}
 
-	return &Platform{
+	p := &Platform{
 		listenAddr:         listen,
+		registerOnly:       registerOnly,
 		path:               path,
 		apiToken:           strings.TrimSpace(cfg.APIToken),
 		agentID:            cfg.ResolveAgentID(),
@@ -170,7 +179,11 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		commands:           deps.Commands,
 		sessionScope:       session.ParseScope(cfg.SessionScope),
 		sessionsDirRel:       sessionsDir,
-	}, nil
+	}
+	if registerOnly {
+		p.registerDefaultHTTP()
+	}
+	return p, nil
 }
 
 func (p *Platform) PlatformID() string { return "chat-api" }
@@ -185,6 +198,9 @@ func (p *Platform) PermissionCapability() permission.Capability {
 
 func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	p.startOnce.Do(func() {
+		if p.registerOnly {
+			return
+		}
 		runCtx, cancel := context.WithCancel(ctx)
 		p.cancel = cancel
 		go p.serve(runCtx)
@@ -232,6 +248,11 @@ func (p *Platform) serve(ctx context.Context) {
 
 func (p *Platform) routes() http.Handler {
 	mux := http.NewServeMux()
+	p.mountRoutes(mux)
+	return mux
+}
+
+func (p *Platform) mountRoutes(mux *http.ServeMux) {
 	wrap := func(h http.HandlerFunc) http.HandlerFunc {
 		return p.corsHTTP(p.authHTTP(h))
 	}
@@ -242,7 +263,18 @@ func (p *Platform) routes() http.Handler {
 	mux.HandleFunc(p.path+"files/", wrap(p.handleFileRoutes))
 	mux.HandleFunc(p.path+"runs/", wrap(p.handleRunRoutes))
 	p.registerDebugUI(mux)
-	return mux
+}
+
+func (p *Platform) registerDefaultHTTP() {
+	http.Handle("/", p.routes())
+	slog.Info("chat-api: routes registered on http.DefaultServeMux", "path", p.path)
+	if p.debugUI {
+		slog.Info("chat-api: debug UI enabled", "url", "/debug/")
+	}
+}
+
+func cfgRegisterOnly(cfg Config) bool {
+	return cfg.RegisterOnly || strings.TrimSpace(cfg.ListenAddr) == "-"
 }
 
 func normalizePath(raw string) string {

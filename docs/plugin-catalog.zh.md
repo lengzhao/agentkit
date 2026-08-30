@@ -98,12 +98,32 @@ flowchart TB
 | `platform/slack` | `agentkit.Platform` | Slack Socket Mode；生成 cc-connect 风格 SessionID | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` | 飞书 WebSocket；生成 cc-connect 风格 SessionID | cc-connect `platform/feishu` |
 | `platform/lark` | `agentkit.Platform` | 国际版 Lark（`platform/feishu` 的 domain 预设） | cc-connect `platform/feishu` |
-| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API；文件上传下载 | — |
+| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | — |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 精确回写（`PlatformID` 为空则拒绝，不广播） |
-| `platform/http` | `agentkit.Platform` | HTTP/WebSocket API | DSH Web Host |
+| `platform/http` | `agentkit.Platform` | 监听并服务 `http.DefaultServeMux`；与 `chat-api.registerOnly` 或其它 `http.Handle` 扩展组合 | DSH Web Host |
 | `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
 | `platform/worker` | `agentkit.Platform` | headless 一次性任务 runner（从不读 stdin，`output` 支持 text / json）。task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`）；日历 cron 用 `schedule/cron` | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
+
+**HTTP 组合**：`chat-api` 默认自建监听（`listenAddr`，默认 `:8030`）。需要与其它 HTTP 路由共用同一端口时，设 `registerOnly: true`（或 `listenAddr: "-"`），由 `platform/http` 监听 `http.DefaultServeMux`；其它插件可在构建阶段 `http.Handle` 挂载自定义路由。
+
+```yaml
+platform.default:
+  use: platform/multiplex
+  deps:
+    platforms: [platform.chat-api, platform.http]
+
+platform.chat-api:
+  use: platform/chat-api
+  config:
+    registerOnly: true
+    path: /v1/
+
+platform.http:
+  use: platform/http
+  config:
+    listenAddr: ":8080"
+```
 
 ### 3.2 Agent Spine
 

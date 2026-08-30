@@ -36,6 +36,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/platform/cli"
 	_ "github.com/lengzhao/agentkit/runtime/platform/feishu"
 	_ "github.com/lengzhao/agentkit/runtime/platform/headless"
+	_ "github.com/lengzhao/agentkit/runtime/platform/http"
 	_ "github.com/lengzhao/agentkit/runtime/platform/multiplex"
 	_ "github.com/lengzhao/agentkit/runtime/platform/slack"
 	_ "github.com/lengzhao/agentkit/runtime/prompt"
