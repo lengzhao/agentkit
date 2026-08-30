@@ -948,7 +948,7 @@ type Agent interface {
 - **Active Session**：Slack / 飞书等 IM 以及 chat-api 的 delivery key 是固定投递地址，`/new` 不改变它，而是在 `session/store` 里记录 `sessions/<stable>/current.json`，把 stable delivery/effective key 指向新的 logical SessionID；没有映射时 logical id 默认等于 effective id，chat-api 的 stable key 由 `conversation_id` 组成。
 - **Agent 路由**：Runner 在解析 logical SessionID 后统一解析 agent，再交给 Loop。优先级为 `MessageEvent.AgentID`（Platform 从自己的存储/请求填入）→ delivery/logical session 工作目录下的 `agent.json` → `loop.defaultAgent`。channel / user 级绑定不由 Runner 静态配置，而由 Platform 在入站时写入 `AgentID`。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
-- **Loop.Steer/FollowUp**：从 `ctx.Value(agentkit.KeySessionID)` 路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl` 供 Agent step 级 steer 中断。
+- **Loop.Steer/FollowUp**：从 `ctx.Value(agentkit.KeySessionID)` 路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；有待处理的 steering 时重置 segment 内 `maxSteps` 计数，避免 steer 刚入队就因步数耗尽而结束 turn；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。
 - **Cancel**：设置取消原因并打断当前 step；与 steer 不同，会终止整个 turn。
 

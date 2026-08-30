@@ -62,6 +62,12 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	if event.Message.Role == "" {
 		return
 	}
+	if r.loop.IsSessionBusy(effectiveID) {
+		if err := r.loop.Steer(ctx, event.Message); err != nil {
+			r.reportInboundError(ctx, deliveryID, scoped, err)
+		}
+		return
+	}
 	fmt.Fprintln(os.Stderr)
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
 		out.SessionID = deliveryID

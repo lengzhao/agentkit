@@ -25,6 +25,7 @@ func (l *agentRecordingLoop) Dispatch(_ context.Context, req agentkit.LoopReques
 
 func (l *agentRecordingLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *agentRecordingLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l *agentRecordingLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 func (l *agentRecordingLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }
 func (l *agentRecordingLoop) SupersedePendingForInbound(agentkit.MessageEvent)      {}
 

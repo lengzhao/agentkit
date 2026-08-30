@@ -2,7 +2,6 @@ package loop
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	"github.com/lengzhao/agentkit"
@@ -43,7 +42,6 @@ func (c *Control) Steer(_ context.Context, msg agentkit.ModelMessage) error {
 	c.mu.Lock()
 	c.steering = append(c.steering, msg)
 	c.mu.Unlock()
-	c.cancelStep()
 	return nil
 }
 
@@ -114,20 +112,10 @@ func (c *Control) PopSteering() []agentkit.ModelMessage {
 	return out
 }
 
-func (c *Control) ShouldContinueAfterInterrupt(parentCtx, stepCtx context.Context, err error) bool {
-	if err == nil || !errors.Is(err, context.Canceled) {
-		return false
-	}
-	if errors.Is(parentCtx.Err(), context.Canceled) {
-		return false
-	}
-	if stepCtx.Err() == nil {
-		return false
-	}
-	if c.peekCancelReason() != "" {
-		return false
-	}
-	return c.hasSteering()
+func (c *Control) HasSteering() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.steering) > 0
 }
 
 func (c *Control) setStepCancel(cancel context.CancelFunc) {
@@ -147,16 +135,4 @@ func (c *Control) cancelStep() {
 	if cancel != nil {
 		cancel()
 	}
-}
-
-func (c *Control) hasSteering() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.steering) > 0
-}
-
-func (c *Control) peekCancelReason() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.cancelReason
 }

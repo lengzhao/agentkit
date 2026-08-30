@@ -218,11 +218,6 @@ func (a *Runtime) runSegment(
 
 		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, stepRetry, &overflowRecoveryAttempted)
 		if err != nil {
-			if ctrl.ShouldContinueAfterInterrupt(ctx, stepCtx, err) {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				continue
-			}
 			_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 			endStepOnce()
 			return "", err
@@ -234,7 +229,6 @@ func (a *Runtime) runSegment(
 		}
 
 		assistant := outcome.message
-		toolInterrupted := false
 		toolBaseCtx := outcome.ctx
 		if toolBaseCtx == nil {
 			toolBaseCtx = stepCtx
@@ -248,10 +242,6 @@ func (a *Runtime) runSegment(
 			toolCtx := withToolContext(toolBaseCtx, sess.ID(), a.id)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
-				if ctrl.ShouldContinueAfterInterrupt(ctx, stepCtx, err) {
-					toolInterrupted = true
-					break
-				}
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
@@ -270,7 +260,10 @@ func (a *Runtime) runSegment(
 		run.completed++
 		endStepOnce()
 
-		if toolInterrupted {
+		// Pending steering gets a fresh segment step budget so a late steer is not
+		// cut off by maxSteps exhausted on the work that was already in flight.
+		if ctrl.HasSteering() {
+			step = -1
 			continue
 		}
 

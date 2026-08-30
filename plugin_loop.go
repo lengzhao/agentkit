@@ -13,6 +13,8 @@ type Loop interface {
 	Dispatch(context.Context, LoopRequest) error
 	Steer(context.Context, ModelMessage) error
 	FollowUp(context.Context, ModelMessage) error
+	// IsSessionBusy reports whether a turn is currently executing for the session.
+	IsSessionBusy(SessionID) bool
 	// TryDeliverPermission consumes a typed permission reply. It returns true
 	// when the message was handled and must not start a new turn.
 	TryDeliverPermission(MessageEvent) bool

@@ -17,8 +17,8 @@ const (
 // routing fields in TurnInput.
 //
 // Steer/follow-up/cancel are owned by Loop per SessionID. Loop seeds
-// ctx.Value(KeySessionControl) before RunTurn; Agent reads it for step-level
-// steer interrupts.
+// ctx.Value(KeySessionControl) before RunTurn; Agent reads it to inject
+// queued steering messages at step boundaries without interrupting in-flight steps.
 //
 // Agent plugins declare SessionStore in their Deps struct (pluginkit injection).
 type Agent interface {

@@ -14,7 +14,7 @@ import (
 type Config struct {
 	// DefaultAgent is agent id used when the event names none; defaults to the single configured agent.
 	DefaultAgent agentkit.AgentID `json:"defaultAgent"`
-	// FollowUpMode is how a message arriving mid-turn is handled: queue it or steer the running turn.
+	// FollowUpMode is how follow-up messages are drained after a turn ends.
 	FollowUpMode agentkit.FollowUpMode `json:"followUpMode"`
 }
 
@@ -30,6 +30,7 @@ type Default struct {
 	telemetry       telemetry.Exporter
 	sessionLocks    sync.Map // SessionID -> *sync.Mutex
 	sessionControls sync.Map // SessionID -> *Control
+	sessionBusy     sync.Map // SessionID -> struct{}
 }
 
 // New registers loop/default: Route inbound messages to an agent and serialize turns per session.
@@ -85,6 +86,9 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 
 	unlock := l.lockSession(sessionID)
 	defer unlock()
+
+	l.markSessionBusy(sessionID, true)
+	defer l.markSessionBusy(sessionID, false)
 
 	control := l.controlFor(sessionID)
 	capab := permissionCapability(req.Capability)
@@ -161,6 +165,20 @@ func (l *Default) FollowUp(ctx context.Context, msg agentkit.ModelMessage) error
 		return err
 	}
 	return l.controlFor(sessionID).FollowUp(ctx, msg)
+}
+
+// IsSessionBusy reports whether a turn is currently executing for the session.
+func (l *Default) IsSessionBusy(sessionID agentkit.SessionID) bool {
+	_, ok := l.sessionBusy.Load(sessionID)
+	return ok
+}
+
+func (l *Default) markSessionBusy(sessionID agentkit.SessionID, busy bool) {
+	if busy {
+		l.sessionBusy.Store(sessionID, struct{}{})
+	} else {
+		l.sessionBusy.Delete(sessionID)
+	}
 }
 
 func (l *Default) controlFor(sessionID agentkit.SessionID) *Control {

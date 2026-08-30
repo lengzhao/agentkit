@@ -15,7 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
-// blockingLLM blocks the first Stream.Recv until steer cancels the step context.
+// blockingLLM blocks the first Stream.Recv until release is signaled.
 type blockingLLM struct {
 	release chan struct{}
 	started chan struct{}
@@ -64,7 +64,7 @@ func (s *blockingStream) Recv() (agentkit.LLMEvent, error) {
 
 func (s *blockingStream) Close() error { return nil }
 
-func TestSteerInterruptsInFlightStep(t *testing.T) {
+func TestSteerDoesNotInterruptInFlightStep(t *testing.T) {
 	t.Parallel()
 
 	block := &blockingLLM{
@@ -93,8 +93,8 @@ func TestSteerInterruptsInFlightStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
 	ctrl := loop.NewControl()
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	turnDone := make(chan error, 1)
 	go func() {
@@ -122,11 +122,19 @@ func TestSteerInterruptsInFlightStep(t *testing.T) {
 
 	select {
 	case err := <-turnDone:
+		t.Fatalf("turn finished early without releasing blocked LLM: %v", err)
+	default:
+	}
+
+	close(block.release)
+
+	select {
+	case err := <-turnDone:
 		if err != nil {
 			t.Fatalf("run turn: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for turn to finish after steer")
+		t.Fatal("timed out waiting for turn to finish after release")
 	}
 
 	msgs, err := mem.DeriveMessages(ctx)

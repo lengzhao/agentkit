@@ -68,6 +68,7 @@ func (l *panickyLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error 
 
 func (l *panickyLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *panickyLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l *panickyLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 func (l *panickyLoop) TryDeliverPermission(agentkit.MessageEvent) bool      { return false }
 func (l *panickyLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
 
@@ -137,6 +138,7 @@ type errorLoop struct{ err error }
 func (l errorLoop) Dispatch(context.Context, agentkit.LoopRequest) error  { return l.err }
 func (l errorLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l errorLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l errorLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 func (l errorLoop) TryDeliverPermission(agentkit.MessageEvent) bool        { return false }
 func (l errorLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
 
@@ -173,6 +175,7 @@ func (l *permissionLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) err
 
 func (l *permissionLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *permissionLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
+func (l *permissionLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 
 func (l *permissionLoop) TryDeliverPermission(event agentkit.MessageEvent) bool {
 	if len(event.Reply) == 0 {

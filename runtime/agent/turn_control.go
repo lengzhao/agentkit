@@ -12,7 +12,7 @@ type turnControl interface {
 	BeginStep(parent context.Context) (context.Context, func())
 	PopCancelReason() string
 	PopSteering() []agentkit.ModelMessage
-	ShouldContinueAfterInterrupt(parentCtx, stepCtx context.Context, err error) bool
+	HasSteering() bool
 }
 
 func turnControlFrom(ctx context.Context) turnControl {
@@ -34,6 +34,4 @@ func (noopTurnControl) PopCancelReason() string { return "" }
 
 func (noopTurnControl) PopSteering() []agentkit.ModelMessage { return nil }
 
-func (noopTurnControl) ShouldContinueAfterInterrupt(_, _ context.Context, err error) bool {
-	return false
-}
+func (noopTurnControl) HasSteering() bool { return false }
