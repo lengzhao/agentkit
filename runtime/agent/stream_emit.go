@@ -131,6 +131,9 @@ func (s *streamEmitter) finalize(msg agentkit.ModelMessage) error {
 	if s == nil {
 		return nil
 	}
+	if scheduleFireSuppressTurnEnd(s.ctx) {
+		return nil
+	}
 	if !s.started {
 		if err := s.emitStart(&msg); err != nil {
 			return err
@@ -218,4 +221,16 @@ func textOf(parts []agentkit.ContentPart) string {
 		}
 	}
 	return string(b)
+}
+
+func scheduleFireSuppressTurnEnd(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	fire, _ := ctx.Value(agentkit.KeyScheduleFireTurn).(bool)
+	if !fire {
+		return false
+	}
+	used, _ := ctx.Value(agentkit.KeyProactiveSendUsed).(bool)
+	return used
 }

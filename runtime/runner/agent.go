@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -28,7 +29,13 @@ func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, 
 }
 
 func (r *Root) resolveStoreSessionID(ctx context.Context, event agentkit.MessageEvent, effectiveSessionID agentkit.SessionID) (agentkit.SessionID, error) {
-	deliveryID := event.SessionID
+	if capschedule.IsFireStateless(event.Metadata) {
+		return effectiveSessionID, nil
+	}
+	deliveryID := r.inboundDeliveryID(event)
+	if deliveryID == "" {
+		deliveryID = event.SessionID
+	}
 	defaultID := effectiveSessionID
 	if event.PlatformID == "chat-api" && deliveryID != "" {
 		defaultID = deliveryID

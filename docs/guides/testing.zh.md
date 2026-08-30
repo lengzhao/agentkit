@@ -66,6 +66,8 @@ out := agenttest.CallTool(t, ctx, tool, `{"id":"42","verbose":true}`)
 
 ## 场景用例目录
 
+完整的能力维度梳理、E2E 用例编号（`SMK-` / `INT-` / `E2E-`）、优先级与落地 wave 见 **[e2e-scenarios.zh.md](e2e-scenarios.zh.md)**。
+
 ### Smoke（`testing/smoke/`，默认 CI）
 
 | 文件 | 用例 | 覆盖场景 |
@@ -74,6 +76,8 @@ out := agenttest.CallTool(t, ctx, tool, `{"id":"42","verbose":true}`)
 | `subagent_test.go` | 第二轮 turn、子 session 隔离 | 委派后连续 turn、子事件不泄漏 |
 | `loop_test.go` | 同 session 串行、跨 session 隔离 | loop 锁与 session 路由 |
 | `tool_test.go` | 多 tool derive、policy deny | read 工具链、策略拒绝 |
+| `mcp_test.go` | MCP stdio 动态工具 agent turn | tool/mcp + tools/runtime |
+| `permission_test.go` | policy ask allow/deny 经 Loop 审批 | permission 协议、tool 执行/拒绝 |
 | `recovery_test.go` | orphan read 修复、干净 session | recovery 合成 interrupted result、不误触发 |
 | `web_test.go` | scripted web_search / web_fetch | 网络工具脚本链（无 API Key） |
 | `openapi_test.go` | OpenAPI mock + bind + scripted turn | 动态 HTTP 工具、ctx bind、tool runtime 挂载 |
@@ -82,7 +86,12 @@ out := agenttest.CallTool(t, ctx, tool, `{"id":"42","verbose":true}`)
 
 | 文件 | 用例 | 覆盖场景 |
 |---|---|---|
-| `preset_smoke_test.go` | subagent / autonomous / coding preset | 真实 pluginkit 图 once-run |
+| `preset_smoke_test.go` | subagent / autonomous / coding / worker preset | 真实 pluginkit 图 once-run |
+| `session_persist_test.go` | jsonl session 重启后续跑 | 磁盘持久化 + derive 历史 |
+| `multi_tenant_test.go` | 多租户 work/ 写隔离 | workspace/tenant + fs-workspace |
+| `langfuse_test.go` | Langfuse turn 后 flush | mock ingestion API |
+
+chat-api HTTP 全链路见 `runtime/platform/chatapi/runner_e2e_test.go`；CLI `/new` 见 `runtime/platform/cli/session_new_e2e_test.go`。
 | `web_smoke_test.go` | web + web-smoke 链式 preset build | pluginkit 图可构建（ask_user 需交互，不做 once-run） |
 
 示例：

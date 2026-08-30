@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -140,9 +141,16 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	return err
 }
 
+func (r *Root) inboundDeliveryID(event agentkit.MessageEvent) agentkit.SessionID {
+	if id := strings.TrimSpace(string(event.DeliverySessionID)); id != "" {
+		return agentkit.SessionID(id)
+	}
+	return event.SessionID
+}
+
 func (r *Root) scopedEvent(event agentkit.MessageEvent) (delivery, effective agentkit.SessionID, scoped agentkit.MessageEvent) {
-	delivery = event.SessionID
-	effective = session.ApplyScope(delivery, r.sessionScope, event.UserID)
+	delivery = r.inboundDeliveryID(event)
+	effective = session.ApplyScope(event.SessionID, r.sessionScope, event.UserID)
 	scoped = event
 	scoped.SessionID = effective
 	return delivery, effective, scoped
@@ -220,12 +228,17 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 }
 
 func attachCommands(result *build.Result) error {
-	return build.WireContributions(
+	err := build.WireContributions(
 		result,
 		func(collector agentkit.CommandCollector, providers []agentkit.CommandProvider) error {
 			return collector.SetCommands(providers)
 		},
 	)
+	if errors.Is(err, build.ErrNoContributionsCollector) {
+		// Headless platforms (worker, timer, cron) do not wire a commands registry.
+		return nil
+	}
+	return err
 }
 
 func (r *Root) Stop(ctx context.Context) error {

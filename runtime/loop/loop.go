@@ -3,10 +3,12 @@ package loop
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 )
@@ -224,6 +226,12 @@ func withTurnContext(ctx context.Context, sessionID, deliverySessionID, storeSes
 	}
 	if len(metadata) > 0 {
 		ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, metadata)
+		if capschedule.IsFireTurn(metadata) {
+			ctx = context.WithValue(ctx, agentkit.KeyScheduleFireTurn, true)
+		}
+		if capschedule.IsFireStateless(metadata) {
+			ctx = context.WithValue(ctx, agentkit.KeyScheduleStateless, true)
+		}
 	}
 	if emit != nil {
 		ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, emit)
@@ -245,6 +253,9 @@ func permissionCapability(raw any) permission.Capability {
 func deliverySessionID(req agentkit.LoopRequest) agentkit.SessionID {
 	if req.DeliverySessionID != "" {
 		return req.DeliverySessionID
+	}
+	if id := strings.TrimSpace(string(req.Event.DeliverySessionID)); id != "" {
+		return agentkit.SessionID(id)
 	}
 	return req.Event.SessionID
 }

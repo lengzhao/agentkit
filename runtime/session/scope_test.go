@@ -83,6 +83,15 @@ func TestBuildDeliverySessionID(t *testing.T) {
 	}
 }
 
+func TestApplyScopeScheduleSideSessionIsOpaque(t *testing.T) {
+	t.Parallel()
+
+	side := agentkit.SessionID("schedule:agent-1:123456789")
+	if got := session.ApplyScope(side, session.ScopeChannel, ""); got != side {
+		t.Fatalf("ApplyScope = %q, want opaque %q", got, side)
+	}
+}
+
 func TestDeliveryWithUser(t *testing.T) {
 	t.Parallel()
 

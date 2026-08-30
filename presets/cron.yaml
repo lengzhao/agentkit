@@ -62,7 +62,7 @@ schedule.cron:
 # job 表落在工作区里，agent 加的 job 因此能跨重启存活。
 # 写入走临时文件 + rename：进程在写一半时被杀，回来不会读到截断的 job 表。
 schedule.default:
-  use: schedule/file
+  use: schedule/multi
   config:
     path: schedule.json
   deps:

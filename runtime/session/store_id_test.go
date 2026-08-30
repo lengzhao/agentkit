@@ -51,3 +51,18 @@ func TestAgentStoreSessionIDSlackKeepsEffective(t *testing.T) {
 		t.Fatalf("got %q want effective %q", got, effective)
 	}
 }
+
+func TestAgentStoreSessionIDIgnoresParentStoreInScheduleStateless(t *testing.T) {
+	t.Parallel()
+
+	parentStore := agentkit.SessionID("chat-api:nex-channel:t:conv_abc:new:20260829")
+	side := agentkit.SessionID("schedule:agent-3:123456789")
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, agentkit.KeyScheduleStateless, true)
+	ctx = context.WithValue(ctx, agentkit.KeySessionID, side)
+	ctx = context.WithValue(ctx, agentkit.KeyStoreSessionID, parentStore)
+
+	if got := session.AgentStoreSessionID(ctx); got != side {
+		t.Fatalf("got %q want side %q", got, side)
+	}
+}

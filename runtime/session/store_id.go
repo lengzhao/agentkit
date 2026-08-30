@@ -15,7 +15,7 @@ import (
 // Ignore KeyStoreSessionID there so a parent chat-api mapping cannot redirect
 // the child's turn lifecycle or recovery onto the parent's open delegate turn.
 func AgentStoreSessionID(ctx context.Context) agentkit.SessionID {
-	if ctx.Value(agentkit.KeyInSubagent) != nil {
+	if ctx.Value(agentkit.KeyInSubagent) != nil || ctx.Value(agentkit.KeyScheduleStateless) != nil {
 		if id, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID); ok && id != "" {
 			return id
 		}

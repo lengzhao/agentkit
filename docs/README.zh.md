@@ -15,7 +15,9 @@ docs/
     ├── subagent.zh.md                # 子 Agent 委派
     ├── multi-tenant.zh.md            # 多租户
     ├── tools.zh.md                   # 网络工具 + MCP
-    └── platform-interaction.zh.md    # Permission / HIL
+    ├── platform-interaction.zh.md    # Permission / HIL
+    ├── schedule-timer.zh.md          # 一次性提醒 Timer 设计（草案）
+    └── e2e-scenarios.zh.md           # E2E 场景梳理与用例目录
 ```
 
 Preset 用法见 [presets/README.md](../presets/README.md)。

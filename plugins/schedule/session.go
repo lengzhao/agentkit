@@ -8,21 +8,19 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-)
-
-const (
-	sessionFresh = "fresh"
-	sessionFixed = "fixed"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 )
 
 func resolveSessionMode(mode string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", sessionFresh:
-		return sessionFresh, nil
-	case sessionFixed:
-		return sessionFixed, nil
+	case "", capschedule.SessionModeStateless, capschedule.SessionModeFresh:
+		return capschedule.SessionModeStateless, nil
+	case capschedule.SessionModeReuse:
+		return capschedule.SessionModeReuse, nil
+	case capschedule.SessionModeFixed:
+		return capschedule.SessionModeFixed, nil
 	default:
-		return "", fmt.Errorf("unknown sessionMode %q: use fresh or fixed", mode)
+		return "", fmt.Errorf("unknown sessionMode %q: use stateless, reuse, or fixed", mode)
 	}
 }
 
@@ -47,8 +45,16 @@ func newSessionNamer(mode, base string, now func() time.Time) sessionNamer {
 }
 
 func (n sessionNamer) forRun(run int) agentkit.SessionID {
-	if n.mode == sessionFixed {
+	if n.mode == capschedule.SessionModeFixed {
 		return agentkit.SessionID(n.base + ":default")
 	}
 	return agentkit.SessionID(fmt.Sprintf("%s:%s:run-%d", n.base, n.stamp, run+1))
+}
+
+func statelessSessionID(job capschedule.Job, now time.Time) agentkit.SessionID {
+	id := strings.TrimSpace(job.ID)
+	if id == "" {
+		id = "job"
+	}
+	return agentkit.SessionID(fmt.Sprintf("schedule:%s:%d", id, now.UnixNano()))
 }

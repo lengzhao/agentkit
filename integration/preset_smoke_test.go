@@ -45,6 +45,35 @@ func TestIntegrationAutonomousSmokePreset(t *testing.T) {
 	}
 }
 
+func TestIntegrationAutonomousWorkerSmokePreset(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration preset run")
+	}
+
+	result := presettest.RunOnce(t, "读取 README 并汇报",
+		"presets/autonomous-smoke.yaml",
+		"presets/worker.yaml",
+	)
+	ctx := context.Background()
+	events := agenttest.SessionEvents(t, ctx, result.Store, result.SessionID)
+
+	if got := agenttest.CountEvents(events, agentkit.EventSessionRecovery); got != 0 {
+		t.Fatalf("session/recovery = %d, want 0", got)
+	}
+	if got := agenttest.CountEvents(events, agentkit.EventRunFinish); got < 1 {
+		t.Fatalf("run/finish = %d, want at least 1", got)
+	}
+	if got := agenttest.CountEvents(events, agentkit.EventTodoUpdate); got < 2 {
+		t.Fatalf("todo/update = %d, want at least 2", got)
+	}
+	if got := agenttest.CountEvents(events, agentkit.EventTurnContinue); got < 1 {
+		t.Fatalf("turn/continue = %d, want hook-driven continuation", got)
+	}
+	if got := agenttest.CountEvents(events, agentkit.EventTurnEnd); got < 1 {
+		t.Fatalf("turn/end = %d, want at least 1", got)
+	}
+}
+
 func TestIntegrationCodingSmokePreset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration preset run")

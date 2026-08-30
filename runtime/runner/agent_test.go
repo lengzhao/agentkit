@@ -299,3 +299,52 @@ func TestRunnerMessageAgentOverridesSessionBind(t *testing.T) {
 		t.Fatalf("agent = %q, want assistant", loop.lastAgent)
 	}
 }
+
+func TestRunnerScheduleStatelessIgnoresActiveSessionMapping(t *testing.T) {
+	t.Parallel()
+
+	delivery := session.BuildDeliverySessionID("chat-api", "default_channel", "conv_test", "")
+	logical := agentkit.SessionID(string(delivery) + ":new:20260829")
+	side := agentkit.SessionID("schedule:agent-1:123456789")
+	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := mapSessionStore{
+		sessions: map[agentkit.SessionID]agentkit.Session{logical: mem},
+		active:   map[agentkit.SessionID]agentkit.SessionID{delivery: logical},
+	}
+
+	loop := &agentRecordingLoop{}
+	event := agentkit.MessageEvent{
+		SessionID:         side,
+		DeliverySessionID: delivery,
+		PlatformID:        "chat-api",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "remind"}},
+		},
+		Metadata: map[string]any{
+			"schedule": map[string]any{
+				"fired":       true,
+				"jobId":       "agent-1",
+				"kind":        "delay",
+				"sessionMode": "stateless",
+			},
+		},
+	}
+	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{
+		Platform:     &scriptedPlatform{events: []agentkit.MessageEvent{event}},
+		Loop:         loop,
+		SessionStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Run(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if loop.lastStoreSession != side {
+		t.Fatalf("store session = %q, want side session %q", loop.lastStoreSession, side)
+	}
+}

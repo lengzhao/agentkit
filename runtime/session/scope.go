@@ -104,6 +104,12 @@ func parseDelivery(id, fallbackUser string) deliveryParts {
 		routable: true,
 	}
 
+	// Schedule side sessions are opaque ids, not IM delivery routes.
+	if p.platform == "schedule" {
+		p.routable = false
+		return p
+	}
+
 	// Single-segment transports (cli:default, sub:...) keep their id verbatim.
 	switch p.platform {
 	case "cli", "sub", "jsonl", "worker", "timer", "cron":

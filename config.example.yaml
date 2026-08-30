@@ -1,5 +1,7 @@
 # 复制为 config.yaml 做本地 override（L1 覆盖 L0 config.base.yaml）。
 # 同 id 的实例会整颗替换；只写需要改的实例即可。
+#
+# L0（config.base.yaml）已默认启用 schedule/cron + tool/schedule，agent 可自主排期并在到期后触发 turn。
 
 # 示例：切换工作区 scope（global=~/.agentkit，local=.agentkit）
 workspace.default:
@@ -53,76 +55,30 @@ prompt.custom.default:
       - 优先最小化 diff，不做无关改动
       - 修改后运行测试再声称完成
       - 用中文回复
+      - 用户要定时/延时提醒时，用 schedule 排期并在触发 prompt 里用 send 回传；未调用 schedule 不要声称已设置
 
-# 示例：自定义 cron job 表路径（默认 schedule.json，落在 workspace 根下）
+# 示例：全局 schedule.json，list/remove 按 channel 过滤（默认 schedule/multi）
 # schedule.default:
-#   use: schedule/file
+#   use: schedule/multi
 #   config:
-#     path: .agentkit/schedule.json
+#     path: global:schedules/schedule.json
 #   deps:
 #     workspace: workspace.default
 
-# 示例：常驻 cron 守护进程（日历型定时 + agent 自主排期）
-# 完整能力栈建议链 preset：-config presets/autonomous.yaml,presets/cron.yaml
-# 下面展示如何在 config.yaml 里手写核心片段。
-#
-# runner.default:
-#   deps:
-#     schedules:
-#       - schedule.cron
-#
-# platform.default:
-#   use: platform/worker
-#   config:
-#     tasks:
-#       - prompt: "启动巡检"
-#     sessionMode: fresh
-#     sessionID: cron
-#
+# 示例：在 L0 默认 schedule/cron 上追加 config 来源的固定 job（与 agent 自排 job 共用 registry）
 # schedule.cron:
 #   use: schedule/cron
 #   config:
 #     jobs:
 #       - id: weekday-morning
 #         cron: "0 9 * * 1-5"
-#         prompt: "工作日早班巡检"
-#       - id: nightly
-#         cron: "0 3 * * *"
-#         script: presets/scripts/nightly.sh
-#     sessionMode: fresh
-#     sessionID: cron
-#     pollSeconds: 30
+#         prompt: "工作日早班巡检：汇总工作区状态，有问题用 send 通知用户。"
+#     sessionMode: stateless
+#     sessionID: schedule
+#     pollSeconds: 15
 #   deps:
 #     schedule: schedule.default
 #     workspace: workspace.default
-#     shell: shell.bash.default
 #
-# tools.default:
-#   use: tools/runtime
-#   config:
-#     defaultTimeoutSeconds: 120
-#     maxResultBytes: 8192
-#   deps:
-#     hooks: hooks.default
-#     tools:
-#       - tool.read-file.default
-#       - tool.write-file.default
-#       - tool.edit-file.default
-#       - tool.grep.default
-#       - tool.find.default
-#       - tool.list-dir.default
-#       - tool.shell.default
-#       - tool.skill.default
-#       - tool.todo.default
-#       - tool.finish.default
-#       - tool.schedule.default
-#     policies:
-#       - policy.dangerous-shell.default
-#     # Interactive ask uses platform Permission; unattended runs use approval/auto-allow.
-#
-# tool.schedule.default:
-#   use: tool/schedule
-#   config:
-#     maxJobs: 16   # agent 创建的 job 上限；config 里声明的 job 不占此额度
-#   deps:
-#     schedule: schedule.default
+# 无人值守 headless 守护进程（platform/worker + 启动 task）见 presets/cron.yaml：
+#   go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml

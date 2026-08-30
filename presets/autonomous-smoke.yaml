@@ -7,13 +7,15 @@
 #              hook 看到 run/finish，Stop，进程退出
 # 期望 session 事件里出现 todo/update ×2、turn/continue ×1、run/finish ×1。
 
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+
 runner.default:
   use: runner
   deps:
-    platform:
-      use: platform/cli
-      config:
-        once: true
+    platform: platform.default
     loop:
       use: loop/default
       deps:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -51,7 +52,7 @@ func TestScheduleAddListRemove(t *testing.T) {
 	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
 	ctx := context.Background()
 
-	out := decodeSchedule(t, testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"0 9 * * 1-5","prompt":"weekday standup notes","note":"asked by me"}`))
+	out := decodeSchedule(t, testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"cron","cron":"0 9 * * 1-5","prompt":"weekday standup notes","note":"asked by me"}`))
 	if len(out.Jobs) != 1 {
 		t.Fatalf("jobs = %+v, want 1", out.Jobs)
 	}
@@ -97,10 +98,11 @@ func TestScheduleRejectsBadInput(t *testing.T) {
 
 	// The tool builder turns handler errors into text results, so assert on those.
 	cases := map[string]string{
-		`{"op":"add","prompt":"x"}`:                     "requires a cron",
-		`{"op":"add","cron":"@daily"}`:                  "requires a prompt",
-		`{"op":"add","cron":"nope","prompt":"x"}`:       "fields",
-		`{"op":"add","cron":"99 * * * *","prompt":"x"}`: "out of range",
+		`{"op":"add","prompt":"x"}`:                     "requires kind",
+		`{"op":"add","kind":"cron"}`:                    "requires a prompt",
+		`{"op":"add","kind":"cron","cron":"nope","prompt":"x"}`:       "fields",
+		`{"op":"add","kind":"cron","cron":"99 * * * *","prompt":"x"}`: "out of range",
+		`{"op":"add","kind":"delay","in":"1m","cron":"@daily","prompt":"x"}`: "only accepts in",
 		`{"op":"remove"}`:                               "requires an id",
 		`{"op":"remove","id":"ghost"}`:                  "no job with id",
 		`{"op":"frobnicate"}`:                           "unknown op",
@@ -120,17 +122,17 @@ func TestScheduleEnforcesJobLimit(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
-		out := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"job"}`)
+		out := testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"cron","cron":"@daily","prompt":"job"}`)
 		if strings.Contains(out, "limit") {
 			t.Fatalf("add %d unexpectedly hit the limit: %s", i, out)
 		}
 	}
-	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"one too many"}`); !strings.Contains(got, "limit of 2") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"cron","cron":"@daily","prompt":"one too many"}`); !strings.Contains(got, "limit of 2") {
 		t.Fatalf("third add = %q, want a limit error", got)
 	}
 
 	// A cron typo must report the cron problem, not the quota.
-	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"bogus","prompt":"x"}`); strings.Contains(got, "limit") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"cron","cron":"bogus","prompt":"x"}`); strings.Contains(got, "limit") {
 		t.Fatalf("invalid cron reported as a quota error: %q", got)
 	}
 }
@@ -149,11 +151,72 @@ func TestScheduleLimitCountsOnlyAgentJobs(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"agent job"}`); strings.Contains(got, "limit") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"cron","cron":"@daily","prompt":"agent job"}`); strings.Contains(got, "limit") {
 		t.Fatalf("config jobs consumed the agent quota: %q", got)
 	}
-	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","cron":"@daily","prompt":"second agent job"}`); !strings.Contains(got, "limit of 1") {
+	if got := testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"cron","cron":"@daily","prompt":"second agent job"}`); !strings.Contains(got, "limit of 1") {
 		t.Fatalf("second agent job = %q, want a limit error", got)
+	}
+}
+
+func TestScheduleAddDelayKind(t *testing.T) {
+	t.Parallel()
+
+	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
+	ctx := context.Background()
+
+	before := time.Now()
+	out := decodeSchedule(t, testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"delay","in":"2s","prompt":"ping","note":"test"}`))
+	if len(out.Jobs) != 1 {
+		t.Fatalf("jobs = %+v, want 1", out.Jobs)
+	}
+	job := out.Jobs[0]
+	if job.Kind != capschedule.KindDelay {
+		t.Fatalf("kind = %q, want delay", job.Kind)
+	}
+	if job.FireAt == "" {
+		t.Fatal("expected fireAt in tool output")
+	}
+
+	stored, err := registry.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 || stored[0].Kind != capschedule.KindDelay || stored[0].Cron != "" {
+		t.Fatalf("stored = %+v, want delay job without cron", stored)
+	}
+	if stored[0].FireAt.Before(before.Add(1500*time.Millisecond)) || stored[0].FireAt.After(before.Add(3*time.Second)) {
+		t.Fatalf("fireAt = %s, outside expected delay window", stored[0].FireAt)
+	}
+}
+
+func TestScheduleCapturesDeliveryFromContext(t *testing.T) {
+	t.Parallel()
+
+	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
+	ctx := context.WithValue(context.Background(), agentkit.KeyDeliverySessionID, agentkit.SessionID("chat-api:ch:t:conv"))
+	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "chat-api")
+	ctx = context.WithValue(ctx, agentkit.KeyUserID, "u1")
+	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("assistant"))
+
+	testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"delay","in":"1m","prompt":"remind"}`)
+
+	stored, err := registry.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("jobs = %+v", stored)
+	}
+	job := stored[0]
+	if job.DeliverySessionID != "chat-api:ch:t:conv" {
+		t.Fatalf("delivery = %q", job.DeliverySessionID)
+	}
+	if job.PlatformID != "chat-api" || job.UserID != "u1" || job.AgentID != "assistant" {
+		t.Fatalf("routing = %+v", job)
+	}
+	if job.Kind != capschedule.KindDelay || job.FireAt.IsZero() {
+		t.Fatalf("delay job missing fireAt, got %+v", job)
 	}
 }
 

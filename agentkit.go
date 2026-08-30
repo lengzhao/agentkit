@@ -46,6 +46,15 @@ const (
 	KeyInSubagent contextKey = "agentkit.subagent.active"
 	// KeyMessageMetadata is optional platform metadata for the current inbound turn.
 	KeyMessageMetadata contextKey = "agentkit.message_metadata"
+	// KeyProactiveSendUsed is set when tool/send delivers through the turn emit
+	// channel during the current turn.
+	KeyProactiveSendUsed contextKey = "agentkit.proactive_send_used"
+	// KeyScheduleFireTurn marks a turn started by schedule runtime. Turn-end
+	// assistant text may be suppressed when send already delivered the message.
+	KeyScheduleFireTurn contextKey = "agentkit.schedule_fire_turn"
+	// KeyScheduleStateless marks a schedule-fired turn that must not inherit the
+	// delivery conversation's active session history (similar to KeyInSubagent).
+	KeyScheduleStateless contextKey = "agentkit.schedule_stateless"
 	// KeyUserMessageTemplate overrides sessionStore.config.userMessageTemplate for
 	// DeriveMessages in the current context. Empty means use store config, which
 	// defaults to LegacyUserMessageTemplate when unset.
@@ -111,14 +120,15 @@ type SessionEvent struct {
 }
 
 // MessageEvent is the inbound envelope from Platform to Loop. SessionID is the
-// delivery target (finest grain); runner collapses it per sessionScope before
-// Loop dispatch.
+// conversation key for loop locking and history. When DeliverySessionID is set,
+// outbound routing uses it instead of SessionID (schedule side sessions).
 type MessageEvent struct {
-	SessionID  SessionID // required: platform delivery id
-	AgentID    AgentID
-	PlatformID string
-	UserID     string
-	Message    ModelMessage
+	SessionID         SessionID // required: loop/history id
+	DeliverySessionID SessionID // optional: platform delivery override
+	AgentID           AgentID
+	PlatformID        string
+	UserID            string
+	Message           ModelMessage
 	// Metadata is optional platform context copied onto persisted user messages.
 	Metadata map[string]any `json:"metadata,omitempty"`
 	// Reply carries a permission answer as JSON. Decode with permission.DecodeReply.

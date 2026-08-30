@@ -10,6 +10,7 @@ import (
 // Input owns one stdin stream for prompt lines and permission replies.
 type Input struct {
 	in io.Reader
+	br *bufio.Reader
 }
 
 func NewInput(in io.Reader) *Input {
@@ -21,8 +22,10 @@ func NewInput(in io.Reader) *Input {
 
 // ReadPrompt reads one line from stdin.
 func (t *Input) ReadPrompt() (string, error) {
-	r := bufio.NewReader(t.in)
-	line, err := r.ReadString('\n')
+	if t.br == nil {
+		t.br = bufio.NewReader(t.in)
+	}
+	line, err := t.br.ReadString('\n')
 	if err != nil {
 		if errors.Is(err, io.EOF) && len(line) > 0 {
 			return trimLine(line), nil

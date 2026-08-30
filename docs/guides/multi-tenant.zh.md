@@ -140,6 +140,7 @@ tool.fs-workspace.default:
 - **`tenants` 的键是租户键，不是 SessionID。** 该频道下所有 thread、所有人共用这一条。
 - **`global:` 是唯一共享的根。** 装一次的技能库对所有群可见。
 - **没有 session 时落在 `localBase/_default`。** timer、cron、库直调不会掉进某个真实租户的目录里。
+- **`schedule.json` 用 `global:` 前缀。** agent 排期与 `schedule/cron` 轮询共用全局 job 表；各 job 自带 `deliverySessionId`，触发时仍能回到原会话。
 - **钉项目目录时指 `.agentkit/` 而不是项目根。** 运行时落在 `<项目>/.agentkit/`，工具在 `<项目>/.agentkit/work/` 操作；项目源码树不会被 `sessions/` 污染。
 
 ### 与 `workspace/default` 唯一的行为差异：`..` 不解析

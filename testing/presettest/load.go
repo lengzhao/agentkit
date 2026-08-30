@@ -71,6 +71,7 @@ func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult 
 	graph := doc.ToGraph()
 	sessionID := injectIsolatedSession(graph, sanitizeTestName(t.Name()))
 	injectOncePrompt(graph, prompt)
+	injectWorkerPlatform(graph, sessionID)
 	prepareRunnableGraph(graph)
 
 	runnerInst, result, err := build.Build[agentkit.Runner](context.Background(), graph, doc.RootID)
@@ -100,7 +101,7 @@ func injectIsolatedSession(graph map[string]any, suffix string) agentkit.Session
 	id := agentkit.SessionID("cli:it-" + suffix)
 	patchSessionDefault(graph, id)
 	platform := resolvePlatformNode(graph)
-	if platform != nil {
+	if platform != nil && platformUse(platform) == "platform/cli" {
 		cfg := asMap(platform["config"])
 		cfg["defaultSessionId"] = string(id)
 		platform["config"] = cfg
@@ -134,28 +135,47 @@ func injectOncePrompt(graph map[string]any, prompt string) {
 	}
 	cfg := asMap(platform["config"])
 	cfg["prompt"] = prompt
-	cfg["once"] = true
+	if platformUse(platform) != "platform/worker" {
+		cfg["once"] = true
+	}
 	platform["config"] = cfg
 }
 
-func prepareRunnableGraph(graph map[string]any) {
-	if _, ok := graph["commands.default"]; !ok {
-		graph["commands.default"] = map[string]any{"use": "commands/registry"}
-	}
+// injectWorkerPlatform pins worker to a fixed session id that matches the
+// isolated static session store used in integration tests.
+func injectWorkerPlatform(graph map[string]any, sessionID agentkit.SessionID) {
 	platform := resolvePlatformNode(graph)
-	if platform == nil {
+	if platform == nil || platformUse(platform) != "platform/worker" {
 		return
 	}
-	deps := asMap(platform["deps"])
-	if _, ok := deps["commands"]; !ok {
-		deps["commands"] = "commands.default"
-	}
-	if _, ok := deps["sessionStore"]; !ok {
-		if _, has := graph["sessionStore.default"]; has {
-			deps["sessionStore"] = "sessionStore.default"
+	cfg := asMap(platform["config"])
+	cfg["sessionMode"] = "fixed"
+	cfg["sessionId"] = string(sessionID)
+	platform["config"] = cfg
+}
+
+func platformUse(platform map[string]any) string {
+	use, _ := platform["use"].(string)
+	return use
+}
+
+func prepareRunnableGraph(graph map[string]any) {
+	platform := resolvePlatformNode(graph)
+	if platform != nil && platformUse(platform) == "platform/cli" {
+		if _, ok := graph["commands.default"]; !ok {
+			graph["commands.default"] = map[string]any{"use": "commands/registry"}
 		}
+		deps := asMap(platform["deps"])
+		if _, ok := deps["commands"]; !ok {
+			deps["commands"] = "commands.default"
+		}
+		if _, ok := deps["sessionStore"]; !ok {
+			if _, has := graph["sessionStore.default"]; has {
+				deps["sessionStore"] = "sessionStore.default"
+			}
+		}
+		platform["deps"] = deps
 	}
-	platform["deps"] = deps
 }
 
 func resolvePlatformNode(graph map[string]any) map[string]any {

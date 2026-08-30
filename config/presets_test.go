@@ -70,6 +70,7 @@ func TestPresetsChainedBuild(t *testing.T) {
 
 	chains := [][]string{
 		{"autonomous.yaml", "worker.yaml"},
+		{"autonomous-smoke.yaml", "worker.yaml"},
 		{"autonomous.yaml", "daemon.yaml"},
 		{"autonomous.yaml", "cron.yaml"},
 		{"subagent-smoke.yaml"},

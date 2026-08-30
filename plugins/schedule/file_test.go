@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
+	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func newRegistry(t *testing.T) (capschedule.Registry, string) {
@@ -24,20 +26,55 @@ func newRegistry(t *testing.T) (capschedule.Registry, string) {
 	return reg, filepath.Join(dir, "schedule.json")
 }
 
+func TestGlobalPathSharedAcrossTenantContexts(t *testing.T) {
+	t.Parallel()
+
+	globalRoot := t.TempDir()
+	localBase := t.TempDir()
+	ws, err := workspaceplugin.NewTenant(workspaceplugin.TenantConfig{
+		Global:    globalRoot,
+		LocalBase: localBase,
+		Scope:     workspace.ScopeLocal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := schedule.NewFile(schedule.FileConfig{Path: "global:schedule.json"}, schedule.FileDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tenantCtx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("chat-api:nex-channel:t:conv_1"))
+	if _, err := reg.Add(tenantCtx, capschedule.Job{Kind: capschedule.KindCron, Cron: "@daily", Prompt: "remind"}); err != nil {
+		t.Fatal(err)
+	}
+
+	due, err := reg.Due(context.Background(), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 {
+		t.Fatalf("due = %+v, want job from global schedule file", due)
+	}
+	if _, err := os.Stat(filepath.Join(globalRoot, "schedule.json")); err != nil {
+		t.Fatalf("global schedule file: %v", err)
+	}
+}
+
 func TestAddValidatesAndPersists(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	reg, path := newRegistry(t)
 
-	if _, err := reg.Add(ctx, capschedule.Job{Cron: "not a cron", Prompt: "x"}); err == nil {
+	if _, err := reg.Add(ctx, capschedule.Job{Kind: capschedule.KindCron, Cron: "not a cron", Prompt: "x"}); err == nil {
 		t.Fatal("expected a cron validation error")
 	}
-	if _, err := reg.Add(ctx, capschedule.Job{Cron: "@daily"}); err == nil {
+	if _, err := reg.Add(ctx, capschedule.Job{Kind: capschedule.KindCron, Cron: "@daily"}); err == nil {
 		t.Fatal("expected an error for a job without a prompt")
 	}
 
-	job, err := reg.Add(ctx, capschedule.Job{Cron: "0 9 * * *", Prompt: "morning check"})
+	job, err := reg.Add(ctx, capschedule.Job{Kind: capschedule.KindCron, Cron: "0 9 * * *", Prompt: "morning check"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -74,12 +111,74 @@ func TestAddValidatesAndPersists(t *testing.T) {
 	}
 }
 
+func TestAddDelayJobAndMarkFired(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	reg, _ := newRegistry(t)
+	fireAt := time.Date(2026, 8, 30, 16, 45, 30, 0, time.UTC)
+
+	job, err := reg.Add(ctx, capschedule.Job{
+		Kind:   capschedule.KindDelay,
+		FireAt: fireAt,
+		Prompt: "drink water",
+	})
+	if err != nil {
+		t.Fatalf("add delay job: %v", err)
+	}
+	if job.Kind != capschedule.KindDelay {
+		t.Fatalf("kind = %q, want delay", job.Kind)
+	}
+	if !job.FireAt.Equal(fireAt) {
+		t.Fatalf("fireAt = %s, want %s", job.FireAt, fireAt)
+	}
+
+	due, err := reg.Due(ctx, fireAt.Add(-time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("due before fireAt = %+v", due)
+	}
+
+	due, err = reg.Due(ctx, fireAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 || due[0].ID != job.ID {
+		t.Fatalf("due = %+v, want delay job", due)
+	}
+
+	firedAt := fireAt.Add(100 * time.Millisecond)
+	if err := reg.MarkFired(ctx, job.ID, firedAt, nil); err != nil {
+		t.Fatalf("mark fired: %v", err)
+	}
+	jobs, err := reg.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %+v, want fired history retained", jobs)
+	}
+	if !jobs[0].Fired || !jobs[0].FiredAt.Equal(firedAt) {
+		t.Fatalf("fired state = %+v", jobs[0])
+	}
+
+	due, err = reg.Due(ctx, fireAt.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("fired one-shot was due again: %+v", due)
+	}
+}
+
 func TestRemoveReportsWhetherItExisted(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	reg, _ := newRegistry(t)
-	job, err := reg.Add(ctx, capschedule.Job{Cron: "@hourly", Prompt: "poll"})
+	job, err := reg.Add(ctx, capschedule.Job{Kind: capschedule.KindCron, Cron: "@hourly", Prompt: "poll"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +206,7 @@ func TestSyncSourceLeavesOtherSourcesAlone(t *testing.T) {
 	ctx := context.Background()
 	reg, _ := newRegistry(t)
 
-	agentJob, err := reg.Add(ctx, capschedule.Job{Cron: "@daily", Prompt: "agent's own follow-up"})
+	agentJob, err := reg.Add(ctx, capschedule.Job{Kind: capschedule.KindCron, Cron: "@daily", Prompt: "agent's own follow-up"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,5 +367,41 @@ func TestListSurvivesAMissingOrEmptyFile(t *testing.T) {
 	}
 	if _, err := reg.List(ctx); err == nil {
 		t.Fatal("expected an error for a corrupt schedule file")
+	}
+}
+
+func TestDueClaimsOneShotInFlight(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	reg, _ := newRegistry(t)
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	if _, err := reg.Add(ctx, capschedule.Job{
+		Kind:   capschedule.KindDelay,
+		FireAt: now,
+		Prompt: "ping",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	due, err := reg.Due(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 || !due[0].InFlight {
+		t.Fatalf("first due = %+v, want in-flight claim", due)
+	}
+	jobID := due[0].ID
+
+	due, err = reg.Due(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("second due = %+v, want none while in-flight", due)
+	}
+
+	if err := reg.MarkFired(ctx, jobID, now, nil); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -30,6 +30,7 @@ type FileDeps struct {
 type fileRegistry struct {
 	relPath   string
 	workspace workspace.Service
+	absPath   string
 
 	mu  sync.Mutex
 	now func() time.Time
@@ -67,15 +68,13 @@ func (r *fileRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 }
 
 func (r *fileRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job, error) {
-	if _, err := schedule.ParseCron(job.Cron); err != nil {
+	if err := validateJob(job, false); err != nil {
 		return schedule.Job{}, err
-	}
-	if strings.TrimSpace(job.Prompt) == "" {
-		return schedule.Job{}, fmt.Errorf("job requires a prompt")
 	}
 	if job.Source == "" {
 		job.Source = schedule.SourceAgent
 	}
+	job.Kind = schedule.JobKind(job)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -86,7 +85,10 @@ func (r *fileRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job,
 	if job.ID == "" {
 		job.ID = nextJobID(state.Jobs, job.Source)
 	}
-	if job.LastRun.IsZero() {
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = r.now()
+	}
+	if job.Kind == schedule.KindCron && job.LastRun.IsZero() {
 		// Anchor at creation time, otherwise the first Next() lands in the past
 		// and the job fires immediately instead of at its schedule.
 		job.LastRun = r.now()
@@ -135,11 +137,33 @@ func (r *fileRegistry) Remove(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
+func validateJob(job schedule.Job, allowScript bool) error {
+	if strings.TrimSpace(job.Prompt) == "" && (!allowScript || strings.TrimSpace(job.Script) == "") {
+		return fmt.Errorf("job requires a prompt")
+	}
+	switch schedule.JobKind(job) {
+	case schedule.KindCron:
+		if _, err := schedule.ParseCron(job.Cron); err != nil {
+			return err
+		}
+	case schedule.KindDelay, schedule.KindAt:
+		if job.FireAt.IsZero() {
+			return fmt.Errorf("%s job requires fireAt", schedule.JobKind(job))
+		}
+	default:
+		return fmt.Errorf("unknown schedule kind %q", job.Kind)
+	}
+	return nil
+}
+
 // SyncSource reconciles one source's jobs, preserving each surviving job's
 // LastRun so a restart does not re-anchor (and therefore delay) the schedule.
 func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []schedule.Job) error {
 	for i := range jobs {
-		if _, err := schedule.ParseCron(jobs[i].Cron); err != nil {
+		if jobs[i].Kind == "" {
+			jobs[i].Kind = schedule.KindCron
+		}
+		if err := validateJob(jobs[i], true); err != nil {
 			return fmt.Errorf("job %q: %w", jobs[i].ID, err)
 		}
 		jobs[i].Source = source
@@ -163,9 +187,12 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []sch
 	}
 	now := r.now()
 	for _, job := range jobs {
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = now
+		}
 		if old, ok := previous[job.ID]; ok && !old.LastRun.IsZero() {
 			job.LastRun = old.LastRun
-		} else if job.LastRun.IsZero() {
+		} else if job.Kind == schedule.KindCron && job.LastRun.IsZero() {
 			job.LastRun = now
 		}
 		kept = append(kept, job)
@@ -188,16 +215,30 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]schedule.Job, 
 	var due []schedule.Job
 	changed := false
 	for i, job := range state.Jobs {
-		if job.Disabled {
+		if job.Disabled || job.Fired {
 			continue
 		}
-		next, ok := schedule.NextFire(job, job.LastRun)
-		if !ok || next.After(now) {
-			continue
+		switch schedule.JobKind(job) {
+		case schedule.KindDelay, schedule.KindAt:
+			if job.FireAt.After(now) {
+				continue
+			}
+			if job.InFlight && !schedule.InFlightExpired(job, now) {
+				continue
+			}
+			state.Jobs[i].InFlight = true
+			state.Jobs[i].InFlightAt = now
+			changed = true
+			due = append(due, state.Jobs[i])
+		default:
+			next, ok := schedule.NextFire(job, job.LastRun)
+			if !ok || next.After(now) {
+				continue
+			}
+			state.Jobs[i].LastRun = now
+			changed = true
+			due = append(due, state.Jobs[i])
 		}
-		state.Jobs[i].LastRun = now
-		changed = true
-		due = append(due, state.Jobs[i])
 	}
 	if changed {
 		if err := r.save(ctx, state); err != nil {
@@ -209,7 +250,38 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]schedule.Job, 
 	return due, nil
 }
 
+func (r *fileRegistry) MarkFired(ctx context.Context, id string, firedAt time.Time, fireErr error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state, err := r.load(ctx)
+	if err != nil {
+		return err
+	}
+	if firedAt.IsZero() {
+		firedAt = r.now()
+	}
+	for i := range state.Jobs {
+		if state.Jobs[i].ID != id {
+			continue
+		}
+		state.Jobs[i].Fired = true
+		state.Jobs[i].FiredAt = firedAt
+		state.Jobs[i].InFlight = false
+		state.Jobs[i].InFlightAt = time.Time{}
+		if fireErr != nil {
+			state.Jobs[i].LastError = fireErr.Error()
+		} else {
+			state.Jobs[i].LastError = ""
+		}
+		return r.save(ctx, state)
+	}
+	return fmt.Errorf("%w: %q", schedule.ErrJobNotFound, id)
+}
+
 func (r *fileRegistry) resolve(ctx context.Context) (string, error) {
+	if strings.TrimSpace(r.absPath) != "" {
+		return r.absPath, nil
+	}
 	return r.workspace.Resolve(ctx, r.relPath)
 }
 
@@ -218,6 +290,10 @@ func (r *fileRegistry) load(ctx context.Context) (fileState, error) {
 	if err != nil {
 		return fileState{}, err
 	}
+	return loadStateAt(path)
+}
+
+func loadStateAt(path string) (fileState, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

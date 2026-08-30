@@ -164,4 +164,9 @@ func (s *TenantService) TenantRoot(ctx context.Context) string {
 	return filepath.Join(s.localBase, dir)
 }
 
+// LocalBaseDir reports the parent directory of per-tenant local roots.
+func (s *TenantService) LocalBaseDir() string {
+	return s.localBase
+}
+
 var _ cw.Service = (*TenantService)(nil)

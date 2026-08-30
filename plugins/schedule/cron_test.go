@@ -38,12 +38,6 @@ func (c *fakeClock) Sleep(_ context.Context, d time.Duration) error {
 	return nil
 }
 
-func (c *fakeClock) sleeps() []time.Duration {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]time.Duration(nil), c.slept...)
-}
-
 func newCronRuntime(t *testing.T, cfg pluginschedule.CronConfig) (capschedule.Runtime, capschedule.Registry, *fakeClock) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
@@ -95,9 +89,9 @@ func TestCronJobFiresOnItsSchedule(t *testing.T) {
 		})
 	}()
 
-	select {
+		select {
 	case prompt := <-got:
-		if prompt != "poll now" {
+		if !strings.Contains(prompt, "poll now") {
 			t.Fatalf("prompt = %q", prompt)
 		}
 	case <-time.After(5 * time.Second):
@@ -125,6 +119,7 @@ func TestAgentAddedJobIsPickedUpWithoutRestart(t *testing.T) {
 	}()
 
 	if _, err := registry.Add(ctx, capschedule.Job{
+		Kind:    capschedule.KindCron,
 		Cron:    "*/5 * * * *",
 		Prompt:  "the agent's own follow-up",
 		LastRun: clock.Now(),
@@ -134,11 +129,201 @@ func TestAgentAddedJobIsPickedUpWithoutRestart(t *testing.T) {
 
 	select {
 	case prompt := <-got:
-		if prompt != "the agent's own follow-up" {
+		if !strings.Contains(prompt, "the agent's own follow-up") {
 			t.Fatalf("prompt = %q", prompt)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for agent job")
+	}
+}
+
+func TestCronFiresWithStoredDeliverySession(t *testing.T) {
+	t.Parallel()
+
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 60})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	got := make(chan agentkit.MessageEvent, 1)
+	go func() {
+		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
+			got <- event
+			cancel()
+			return nil
+		})
+	}()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		Kind:              capschedule.KindCron,
+		Cron:              "*/5 * * * *",
+		Prompt:            "remind",
+		LastRun:           clock.Now(),
+		DeliverySessionID: "chat-api:default:t:conv_1",
+		PlatformID:        "chat-api",
+		UserID:            "user-1",
+		AgentID:           "assistant",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case event := <-got:
+		if event.SessionID == "chat-api:default:t:conv_1" {
+			t.Fatalf("schedule fire should use side session, got delivery session %q", event.SessionID)
+		}
+		if event.DeliverySessionID != "chat-api:default:t:conv_1" {
+			t.Fatalf("delivery = %q", event.DeliverySessionID)
+		}
+		if event.PlatformID != "chat-api" {
+			t.Fatalf("platform = %q", event.PlatformID)
+		}
+		if event.UserID != "user-1" {
+			t.Fatalf("user = %q", event.UserID)
+		}
+		if event.AgentID != "assistant" {
+			t.Fatalf("agent = %q", event.AgentID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for delivery-routed cron fire")
+	}
+}
+
+func TestCronReuseModeUsesDeliverySession(t *testing.T) {
+	t.Parallel()
+
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{
+		SessionMode: "reuse",
+		PollSeconds: 60,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	got := make(chan agentkit.MessageEvent, 1)
+	go func() {
+		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
+			got <- event
+			cancel()
+			return nil
+		})
+	}()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		Kind:              capschedule.KindCron,
+		Cron:              "*/5 * * * *",
+		Prompt:            "remind",
+		LastRun:           clock.Now(),
+		DeliverySessionID: "chat-api:default:t:conv_reuse",
+		PlatformID:        "chat-api",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case event := <-got:
+		if event.SessionID != "chat-api:default:t:conv_reuse" {
+			t.Fatalf("reuse session = %q, want delivery session", event.SessionID)
+		}
+		meta, ok := event.Metadata["schedule"].(map[string]any)
+		if !ok {
+			t.Fatal("missing schedule metadata")
+		}
+		if meta["sessionMode"] != "reuse" {
+			t.Fatalf("sessionMode = %v", meta["sessionMode"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for reuse cron fire")
+	}
+}
+
+func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
+	t.Parallel()
+
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{
+		SessionMode: "stateless",
+		PollSeconds: 60,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	got := make(chan agentkit.MessageEvent, 1)
+	go func() {
+		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
+			got <- event
+			cancel()
+			return nil
+		})
+	}()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		ID:                "agent-9",
+		Kind:              capschedule.KindCron,
+		Cron:              "*/5 * * * *",
+		Prompt:            "remind",
+		LastRun:           clock.Now(),
+		DeliverySessionID: "chat-api:default:t:conv_1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case event := <-got:
+		if !strings.HasPrefix(string(event.SessionID), "schedule:agent-9:") {
+			t.Fatalf("stateless session = %q", event.SessionID)
+		}
+		meta, ok := event.Metadata["schedule"].(map[string]any)
+		if !ok {
+			t.Fatal("missing schedule metadata")
+		}
+		if meta["sessionMode"] != "stateless" {
+			t.Fatalf("sessionMode = %v", meta["sessionMode"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for stateless cron fire")
+	}
+}
+
+func TestCronMarksDelayJobFiredAfterFire(t *testing.T) {
+	t.Parallel()
+
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 60})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fireAt := clock.Now().Add(5 * time.Minute)
+	if _, err := registry.Add(ctx, capschedule.Job{
+		Kind:   capschedule.KindDelay,
+		FireAt: fireAt,
+		Prompt: "remind once",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := make(chan struct{}, 1)
+	go func() {
+		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
+			if strings.Contains(textOfMessage(event.Message), "remind once") {
+				got <- struct{}{}
+				cancel()
+			}
+			return nil
+		})
+	}()
+
+	select {
+	case <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for one-shot cron fire")
+	}
+
+	jobs, err := registry.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs after one-shot fire = %+v, want fired history retained", jobs)
+	}
+	if !jobs[0].Fired || jobs[0].FiredAt.IsZero() {
+		t.Fatalf("fired state = %+v", jobs[0])
 	}
 }
 

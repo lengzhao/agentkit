@@ -25,6 +25,8 @@ runner.default:
     loop: loop.default
     sessionStore: sessionStore.default
     telemetry: telemetry.default
+    schedules:
+      - schedule.cron
 
 platform.default:
   use: platform/cli
@@ -80,10 +82,23 @@ sessionStore.default:
 # cron job 表持久化；schedule/cron 与 tool/schedule 共用此 registry。
 # 写入走临时文件 + rename，进程写一半被杀不会留下截断的 job 表。
 schedule.default:
-  use: schedule/file
+  use: schedule/multi
   config:
-    path: schedule.json
+    # 全局一份 schedule.json；list/remove 按 channel 过滤。
+    path: global:schedules/schedule.json
   deps:
+    workspace: workspace.default
+
+# 常驻日历调度：与 tool/schedule 共用 registry，agent 排的 job 跨重启存活。
+schedule.cron:
+  use: schedule/cron
+  config:
+    jobs: []
+    sessionMode: stateless
+    sessionID: schedule
+    pollSeconds: 15
+  deps:
+    schedule: schedule.default
     workspace: workspace.default
 
 # 子 agent 委派：定义在 local:agents / global:agents 下的 agents/*.md。
@@ -205,6 +220,13 @@ prompt.persona.default:
       - 尊重用户偏好与时间：简洁问题简洁答，复杂任务结构化呈现
       - 涉及破坏性操作（删除、覆盖、执行有风险命令）前先确认
 
+      ## 定时与提醒
+      - 用户要求「N 分钟后提醒」「每天几点」等定时任务时，必须用 schedule 工具排期；未调用 schedule 就不要声称已设置提醒
+      - 相对延时（如「1 分钟后」）用 schedule op=add kind=delay in=1m；prompt 只写提醒内容，触发后框架会注入定时前缀
+      - 重复任务（如「每天 9 点」）用 schedule op=add kind=cron cron="0 9 * * *"
+      - 用户也可用 /cron 查看当前 channel 的定时任务；/cron remove <id> 取消
+      - 触发后在新 turn 里用 send 把提醒发回用户即可
+
       ## 边界
       - 不假装拥有用户未提供的实时信息；需要时用搜索或工具获取
       - 不提供违法、有害或明显不当内容的协助
@@ -281,6 +303,7 @@ tools.default:
       - tool.web-search.default
       - tool.ask-user.default
       - tool.send.default
+      - tool.schedule.default
     toolPacks:
       - tool.fs-workspace.default
     dynamicTools:

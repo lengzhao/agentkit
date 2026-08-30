@@ -282,6 +282,10 @@ job 分两个来源，这个区分是必要的：
 
 `maxJobs`（默认 32）限制 agent 能排的数量，config 声明的 job 不占这个额度。
 
+### 7.6 一次性提醒：Schedule v2（设计草案）
+
+「N 分钟后提醒我」不适合用 cron 伪装（分钟精度、轮询延迟）。统一 `schedule` v2 用 `kind=delay|at|cron` 区分一次性与重复任务；全局一份 `schedule.json`，按 channel 过滤 list/remove，用户可用 `/cron` 查看，见 [schedule-timer.zh.md](schedule-timer.zh.md)。
+
 上手：
 
 ```sh

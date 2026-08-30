@@ -12,6 +12,7 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 const cronPlatformID = "schedule"
@@ -29,13 +30,16 @@ type CronJobSpec struct {
 type CronConfig struct {
 	// Jobs are reconciled into the registry on every start with source=config.
 	Jobs []CronJobSpec `json:"jobs"`
-	// SessionMode is fresh (default) or fixed.
+	// SessionMode is stateless (default), reuse, or fixed.
 	SessionMode string `json:"sessionMode"`
 	// SessionID is the id prefix used for inbound turns.
 	SessionID string `json:"sessionId"`
-	// PollSeconds bounds how long before a job the agent adds mid-run is noticed.
+	// PollSeconds is the idle backoff when no jobs are scheduled.
 	// Defaults to 30.
 	PollSeconds int `json:"pollSeconds"`
+	// MissedGraceSeconds is how long a missed one-shot job is still fired.
+	// Older one-shots are marked stale instead of backfilled. Defaults to 300.
+	MissedGraceSeconds int `json:"missedGraceSeconds"`
 }
 
 type CronDeps struct {
@@ -45,17 +49,20 @@ type CronDeps struct {
 }
 
 const defaultPollSeconds = 30
+const defaultMissedGraceSeconds = 300
 
 // Cron watches a shared registry and submits due jobs as inbound turns.
 type Cron struct {
-	registry  capschedule.Registry
-	workspace workspace.Service
-	shell     shell.Executor
-	jobs      []capschedule.Job
-	poll      time.Duration
-	naming    sessionNamer
-	now       func() time.Time
-	sleep     func(context.Context, time.Duration) error
+	registry    capschedule.Registry
+	workspace   workspace.Service
+	shell       shell.Executor
+	jobs        []capschedule.Job
+	poll        time.Duration
+	missedGrace time.Duration
+	naming      sessionNamer
+	sessionMode string
+	now         func() time.Time
+	wait        func(context.Context, time.Duration) error
 
 	mu       sync.Mutex
 	runCount int
@@ -91,15 +98,21 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 	if cfg.PollSeconds <= 0 {
 		poll = defaultPollSeconds * time.Second
 	}
+	missedGrace := time.Duration(cfg.MissedGraceSeconds) * time.Second
+	if cfg.MissedGraceSeconds <= 0 {
+		missedGrace = defaultMissedGraceSeconds * time.Second
+	}
 	return &Cron{
-		registry:  deps.Schedule,
-		workspace: deps.Workspace,
-		shell:     deps.Shell,
-		jobs:      jobs,
-		poll:      poll,
-		naming:    newSessionNamer(mode, sessionID, nil),
-		now:       time.Now,
-		sleep:     sleepContext,
+		registry:    deps.Schedule,
+		workspace:   deps.Workspace,
+		shell:       deps.Shell,
+		jobs:        jobs,
+		poll:        poll,
+		missedGrace: missedGrace,
+		naming:      newSessionNamer(mode, sessionID, nil),
+		sessionMode: mode,
+		now:         time.Now,
+		wait:        waitTimer,
 	}, nil
 }
 
@@ -123,6 +136,7 @@ func parseCronJobs(specs []CronJobSpec) ([]capschedule.Job, error) {
 		}
 		job := capschedule.Job{
 			ID:     spec.ID,
+			Kind:   capschedule.KindCron,
 			Cron:   spec.Cron,
 			Note:   spec.Note,
 			Source: capschedule.SourceConfig,
@@ -184,7 +198,7 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 			c.pushDue(due)
 			continue
 		}
-		if err := c.sleep(ctx, c.waitFor(ctx, now)); err != nil {
+		if err := c.wait(ctx, c.nextWake(ctx, now)); err != nil {
 			return err
 		}
 	}
@@ -196,12 +210,31 @@ func (c *Cron) fire(ctx context.Context, submit capschedule.SubmitFunc, job caps
 	if strings.TrimSpace(job.Script) != "" {
 		return c.runScript(ctx, job.Script)
 	}
+	now := c.now()
+	if c.isStaleOneShot(job, now) {
+		err := fmt.Errorf("missed by %v (stale)", now.Sub(job.FireAt))
+		slog.Warn("cron one-shot skipped as stale", "job_id", job.ID, "fire_at", job.FireAt, "err", err)
+		return c.registry.MarkFired(ctx, job.ID, now, err)
+	}
 	c.mu.Lock()
 	run := c.runCount
 	c.runCount++
 	c.mu.Unlock()
-	slog.Info("cron job firing", "job_id", job.ID, "cron", job.Cron, "source", job.Source)
-	return submit(ctx, c.event(run, job.Prompt))
+	slog.Info("cron job firing", "job_id", job.ID, "kind", capschedule.JobKind(job), "cron", job.Cron, "source", job.Source)
+	err := submit(ctx, c.event(run, job))
+	if capschedule.IsOneShot(job) {
+		if markErr := c.registry.MarkFired(ctx, job.ID, now, err); markErr != nil {
+			return fmt.Errorf("mark one-shot job %q fired: %w", job.ID, markErr)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Cron) isStaleOneShot(job capschedule.Job, now time.Time) bool {
+	return capschedule.IsOneShot(job) && !job.FireAt.IsZero() && now.Sub(job.FireAt) > c.missedGrace
 }
 
 func (c *Cron) runScript(ctx context.Context, scriptPath string) error {
@@ -225,26 +258,32 @@ func (c *Cron) runScript(ctx context.Context, scriptPath string) error {
 	return nil
 }
 
-func (c *Cron) waitFor(ctx context.Context, now time.Time) time.Duration {
-	wait := c.poll
+func (c *Cron) nextWake(ctx context.Context, now time.Time) time.Duration {
 	jobs, err := c.registry.List(ctx)
 	if err != nil {
-		return wait
+		return c.poll
 	}
+	var next time.Time
+	found := false
 	for _, job := range jobs {
-		if job.Disabled {
+		if job.Disabled || job.Fired {
 			continue
 		}
-		next, ok := capschedule.NextFire(job, job.LastRun)
+		fireAt, ok := capschedule.NextFire(job, job.LastRun)
 		if !ok {
 			continue
 		}
-		if until := next.Sub(now); until > 0 && until < wait {
-			wait = until
+		if !found || fireAt.Before(next) {
+			next = fireAt
+			found = true
 		}
 	}
-	if wait <= 0 {
-		wait = time.Second
+	if !found {
+		return c.poll
+	}
+	wait := next.Sub(now)
+	if wait < time.Millisecond {
+		return time.Millisecond
 	}
 	return wait
 }
@@ -266,31 +305,89 @@ func (c *Cron) pushDue(jobs []capschedule.Job) {
 	c.dueQueue = append(c.dueQueue, jobs...)
 }
 
-func (c *Cron) event(run int, prompt string) agentkit.MessageEvent {
-	return agentkit.MessageEvent{
-		SessionID:  c.naming.forRun(run),
-		PlatformID: cronPlatformID,
+func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
+	now := c.now()
+	platformID := cronPlatformID
+	deliverySessionID := agentkit.SessionID("")
+	if delivery := strings.TrimSpace(job.DeliverySessionID); delivery != "" {
+		deliverySessionID = agentkit.SessionID(delivery)
+		platformID = strings.TrimSpace(job.PlatformID)
+		if platformID == "" {
+			platformID = session.ParseDelivery(deliverySessionID, job.UserID).Platform
+		}
+	}
+
+	var sessionID agentkit.SessionID
+	switch c.sessionMode {
+	case capschedule.SessionModeReuse:
+		if deliverySessionID != "" {
+			sessionID = deliverySessionID
+		} else {
+			sessionID = c.naming.forRun(run)
+		}
+	case capschedule.SessionModeFixed:
+		sessionID = c.naming.forRun(run)
+	default:
+		sessionID = statelessSessionID(job, now)
+	}
+
+	prompt := scheduleInboundPrompt(job)
+	evt := agentkit.MessageEvent{
+		SessionID:         sessionID,
+		DeliverySessionID: deliverySessionID,
+		PlatformID:        platformID,
+		UserID:            strings.TrimSpace(job.UserID),
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: prompt}},
 		},
+		Metadata: map[string]any{
+			"schedule": map[string]any{
+				"fired":       true,
+				"jobId":       job.ID,
+				"kind":        capschedule.JobKind(job),
+				"sessionMode": c.sessionMode,
+			},
+		},
 	}
+	if agent := strings.TrimSpace(job.AgentID); agent != "" {
+		evt.AgentID = agentkit.AgentID(agent)
+	}
+	return evt
 }
 
-// SetClockForTest replaces the clock and sleep so cron behaviour can be asserted
+func scheduleInboundPrompt(job capschedule.Job) string {
+	kind := capschedule.JobKind(job)
+	desc := strings.TrimSpace(job.Note)
+	if desc == "" {
+		desc = strings.TrimSpace(job.Prompt)
+	}
+	if len([]rune(desc)) > 40 {
+		desc = string([]rune(desc)[:40]) + "…"
+	}
+	header := fmt.Sprintf("[schedule kind=%s id=%s]", kind, job.ID)
+	if desc != "" {
+		header += fmt.Sprintf(" ⏰ %s", desc)
+	}
+	return header + "\n\n" +
+		"这是一次定时任务触发。请用 send 把提醒发给用户（只发一次）。\n\n" +
+		strings.TrimSpace(job.Prompt)
+}
+
+// SetClockForTest replaces the clock and wait so cron behaviour can be asserted
 // without real waiting. Test-only.
-func (c *Cron) SetClockForTest(now func() time.Time, sleep func(context.Context, time.Duration) error) {
+func (c *Cron) SetClockForTest(now func() time.Time, wait func(context.Context, time.Duration) error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if now != nil {
 		c.now = now
 	}
-	if sleep != nil {
-		c.sleep = sleep
+	if wait != nil {
+		c.wait = wait
 	}
 }
 
-func sleepContext(ctx context.Context, d time.Duration) error {
+func waitTimer(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return ctx.Err()
 	}

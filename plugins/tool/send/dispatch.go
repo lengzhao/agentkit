@@ -43,6 +43,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	}
 	if useEmit(ctx, input) {
 		if emit, ok := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit); ok && emit != nil {
+			ctx = context.WithValue(ctx, agentkit.KeyProactiveSendUsed, true)
 			return emit(ctx, event)
 		}
 	}
