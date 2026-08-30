@@ -39,9 +39,11 @@ func TestParseSlashArgs(t *testing.T) {
 		wantErr bool
 	}{
 		{args: "slack:C001 ping", session: "slack:C001", text: "ping"},
+		{args: "D0AK8MAHW22 123", session: "D0AK8MAHW22", text: "123"},
 		{args: "@U222 hi there", user: "U222", text: "hi there"},
-		{args: "hello inbox", text: "hello inbox"},
-		{args: "not-a-target hello", text: "not-a-target hello"},
+		{args: "hello inbox", wantErr: true},
+		{args: "hello", wantErr: true},
+		{args: "not-a-target hello", wantErr: true},
 		{args: "", wantErr: true},
 		{args: "slack:C001", wantErr: true},
 		{args: "@U222", wantErr: true},
@@ -63,7 +65,7 @@ func TestParseSlashArgs(t *testing.T) {
 	}
 }
 
-func TestSendSlashCommandCurrentInbox(t *testing.T) {
+func TestSendSlashCommandRequiresTarget(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
@@ -73,14 +75,11 @@ func TestSendSlashCommandCurrentInbox(t *testing.T) {
 	}
 	bundle := tool.(*sendBundle)
 	ctx := withSendCtx(t.Context(), "slack:C001", "slack:C001")
-	out, err := bundle.Commands()[0].CommandExec(ctx, "hello inbox")
-	if err != nil {
-		t.Fatal(err)
+	_, err = bundle.Commands()[0].CommandExec(ctx, "hello inbox")
+	if err == nil {
+		t.Fatal("expected error for bare message")
 	}
-	if out != "sent to current inbox" {
-		t.Fatalf("reply = %q", out)
-	}
-	if len(platform.sent) != 1 || platform.sent[0].SessionID != "slack:C001" {
+	if len(platform.sent) != 0 {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
 }
@@ -100,7 +99,7 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != "sent to slack:C002" {
+	if out != "" {
 		t.Fatalf("reply = %q", out)
 	}
 	if len(platform.sent) != 1 || platform.sent[0].SessionID != "slack:C002" {
@@ -167,7 +166,7 @@ func TestSendSlashCommandRequiresPlatformID(t *testing.T) {
 	}
 	bundle := tool.(*sendBundle)
 	ctx := withSendCtx(t.Context(), "notvalid", "notvalid")
-	_, err = bundle.Commands()[0].CommandExec(ctx, "hello")
+	_, err = bundle.Commands()[0].CommandExec(ctx, "@U222 hello")
 	if !errors.Is(err, agentkit.ErrOutboundPlatformRequired) {
 		t.Fatalf("err = %v, want ErrOutboundPlatformRequired", err)
 	}

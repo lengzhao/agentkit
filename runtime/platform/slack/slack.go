@@ -376,11 +376,10 @@ func (p *Platform) ackSlashCommand(req *socketmode.Request) {
 }
 
 func (p *Platform) sendText(ctx context.Context, sessionID agentkit.SessionID, text string) error {
-	raw, ok := p.deliveries.Load(sessionID)
+	d, ok := p.deliveryForSend(sessionID)
 	if !ok {
 		return fmt.Errorf("slack: unknown session %s", sessionID)
 	}
-	d := raw.(delivery)
 	text = common.MarkdownToSlackMrkdwn(text)
 	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
 	if d.replyInThread() {
@@ -393,6 +392,17 @@ func (p *Platform) sendText(ctx context.Context, sessionID agentkit.SessionID, t
 		return fmt.Errorf("slack: post message: %w", err)
 	}
 	return nil
+}
+
+func (p *Platform) deliveryForSend(sessionID agentkit.SessionID) (delivery, bool) {
+	if raw, ok := p.deliveries.Load(sessionID); ok {
+		return raw.(delivery), true
+	}
+	d, err := parseSessionKey(string(sessionID))
+	if err != nil {
+		return delivery{}, false
+	}
+	return d, true
 }
 
 func (p *Platform) buildSessionKey(channel, user, threadTS string) string {

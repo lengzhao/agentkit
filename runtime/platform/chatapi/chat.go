@@ -136,15 +136,16 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	outcome := slashResult.outcome
 	switch outcome.Kind {
 	case common.SlashHandled:
-		if outcome.Reply != "" {
-			run.mu.Lock()
+		run.mu.Lock()
+		if strings.TrimSpace(run.answerText) == "" && outcome.Reply != "" {
 			run.answerText = outcome.Reply
-			run.mu.Unlock()
-			_ = run.flushDeltas()
 		}
+		answer := run.answerText
+		run.mu.Unlock()
+		_ = run.flushDeltas()
 		// Slash commands are local control-plane replies; do not mirror them into
 		// the delivery session file or the agent will see them on the next turn.
-		p.pending.finish(runID, pendingResult{answer: outcome.Reply, skipHistoryMirror: true})
+		p.pending.finish(runID, pendingResult{answer: answer, skipHistoryMirror: true})
 		p.clearActiveConv(conv.ID, runID)
 		return
 	case common.SlashForward:
@@ -243,6 +244,9 @@ func (p *Platform) runForSession(sessionID agentkit.SessionID) *runState {
 func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEvent) error {
 	run := p.runForSession(event.SessionID)
 	if run == nil {
+		if event.Type == agentkit.EventAssistantMessage {
+			return fmt.Errorf("chat-api: no active request for session %s", event.SessionID)
+		}
 		return nil
 	}
 

@@ -154,7 +154,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
-| `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；`/send` 管理面投递（当前 inbox / 指定 session / @user）；L0 `tools.default` 已启用 |
+| `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；`/send` 管理面投递（指定 session / Slack channel / @user）；L0 `tools.default` 已启用 |
 | `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 | `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
@@ -257,7 +257,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `tool/mcp` | `/mcp`（查看工具；`/mcp add <name> <json>` 写入 `mcp.json` 并探活校验；`/mcp -u` 重读配置） |
 | `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
 | `tool/shell-bash` | `/shell`、`/sh`（本地执行 shell 命令，不经过模型） |
-| `tool/send` | `/send`（向当前 inbox、指定 session 或 @user 主动发消息，不经过模型） |
+| `tool/send` | `/send`（向指定 session、Slack channel 或 @user 主动发消息，不经过模型） |
 | `learning/default` | `/learn`（查看/追加/删除个人 memory；`/learn session` 从当前会话沉淀） |
 
 示例：

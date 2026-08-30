@@ -54,7 +54,7 @@ func useEmit(_ context.Context, input SendInput) bool {
 //   - Wire the same platform instance runner uses (platform.default).
 //   - Text and path may be sent together (text first, then file). Path needs the workspace dep.
 //   - Platform/channel routing comes from context. Target sessionId, userId, or neither (current inbox).
-//   - Slash: /send <message> | /send <sessionId> <message> | /send @<userId> <message>
+//   - Slash: /send <sessionId|SlackChannelId> <message> | /send @<userId> <message>
 func NewSend(cfg SendConfig, deps SendDeps) (agentkit.Tool, error) {
 	if deps.Platform == nil {
 		return nil, fmt.Errorf("tool/send requires platform dependency")

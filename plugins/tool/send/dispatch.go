@@ -50,24 +50,23 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 }
 
 // ParseSlashArgs parses /send arguments.
-//   - /send <message>               → current inbox
-//   - /send <sessionId> <message>   → explicit session (contains ":")
-//   - /send @<userId> <message>     → user in current channel context
+//   - /send <sessionId> <message>      → explicit session (contains ":" or Slack channel id)
+//   - /send @<userId> <message>        → user in current channel context
 func ParseSlashArgs(args string) (SendInput, error) {
 	args = strings.TrimSpace(args)
 	if args == "" {
-		return SendInput{}, fmt.Errorf("usage: /send <message>\n       /send <sessionId> <message>\n       /send @<userId> <message>")
+		return SendInput{}, fmt.Errorf("usage: /send <sessionId> <message>\n       /send @<userId> <message>")
 	}
 	firstSpace := strings.IndexByte(args, ' ')
 	if firstSpace < 0 {
 		if isSlashTarget(args) {
 			return SendInput{}, fmt.Errorf("message is required")
 		}
-		return SendInput{Text: args}, nil
+		return SendInput{}, fmt.Errorf("usage: /send <sessionId> <message>\n       /send @<userId> <message>")
 	}
 	first := args[:firstSpace]
 	if !isSlashTarget(first) {
-		return SendInput{Text: args}, nil
+		return SendInput{}, fmt.Errorf("usage: /send <sessionId> <message>\n       /send @<userId> <message>")
 	}
 	message := strings.TrimSpace(args[firstSpace+1:])
 	if message == "" {
@@ -86,7 +85,46 @@ func isSlashTarget(token string) bool {
 	if strings.HasPrefix(token, "@") && len(token) > 1 {
 		return true
 	}
-	return strings.Contains(token, ":")
+	if strings.Contains(token, ":") {
+		return true
+	}
+	return isSlackChannelID(token)
+}
+
+// isSlackChannelID reports bare Slack conversation ids (C/G/D + alnum).
+// User ids (U…) should use @user syntax instead.
+func isSlackChannelID(token string) bool {
+	token = strings.TrimSpace(token)
+	if len(token) < 9 {
+		return false
+	}
+	switch token[0] {
+	case 'C', 'G', 'D':
+	default:
+		return false
+	}
+	for _, r := range token[1:] {
+		if r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func normalizeSlashSessionID(ctx context.Context, raw string) agentkit.SessionID {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.Contains(raw, ":") {
+		return agentkit.SessionID(raw)
+	}
+	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
+	if platformID == "slack" && isSlackChannelID(raw) {
+		return agentkit.SessionID("slack:" + raw)
+	}
+	return agentkit.SessionID(raw)
 }
 
 func resolveRoute(ctx context.Context, input SendInput) (route, error) {
@@ -98,7 +136,7 @@ func resolveRoute(ctx context.Context, input SendInput) (route, error) {
 	var r route
 	switch {
 	case strings.TrimSpace(input.SessionID) != "":
-		r.sessionID = agentkit.SessionID(strings.TrimSpace(input.SessionID))
+		r.sessionID = normalizeSlashSessionID(ctx, input.SessionID)
 	case strings.TrimSpace(input.UserID) != "":
 		r.sessionID = session.DeliveryWithUser(inbox, input.UserID)
 	default:

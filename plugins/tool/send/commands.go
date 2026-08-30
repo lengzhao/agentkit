@@ -3,8 +3,6 @@ package send
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -38,7 +36,7 @@ func (sendSlashCommand) Name() string { return "send" }
 func (sendSlashCommand) Alias() string { return "" }
 
 func (sendSlashCommand) Description() string {
-	return "send a proactive message to the current inbox, a target session, or a user without invoking the model"
+	return "send a proactive message to a target session or user without invoking the model"
 }
 
 func (c sendSlashCommand) CommandExec(ctx context.Context, args string) (string, error) {
@@ -49,16 +47,5 @@ func (c sendSlashCommand) CommandExec(ctx context.Context, args string) (string,
 	if err := Dispatch(ctx, c.bundle.deps, c.bundle.cfg, input); err != nil {
 		return "", err
 	}
-	target := formatSendTarget(input)
-	return fmt.Sprintf("sent to %s", target), nil
-}
-
-func formatSendTarget(input SendInput) string {
-	if id := strings.TrimSpace(input.SessionID); id != "" {
-		return id
-	}
-	if id := strings.TrimSpace(input.UserID); id != "" {
-		return "@" + id
-	}
-	return "current inbox"
+	return "", nil
 }

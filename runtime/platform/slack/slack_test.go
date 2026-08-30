@@ -84,6 +84,17 @@ func TestDeliveryThreadTS(t *testing.T) {
 	}
 }
 
+func TestDeliveryForSendParsesSessionKey(t *testing.T) {
+	p := &Platform{}
+	d, ok := p.deliveryForSend("slack:D0AK8MAHW22")
+	if !ok {
+		t.Fatal("expected parsed delivery")
+	}
+	if d.channel != "D0AK8MAHW22" {
+		t.Fatalf("channel = %q", d.channel)
+	}
+}
+
 func TestFormatSlashReplyNew(t *testing.T) {
 	got := formatSlashReply("/new", "slack:C1:u:U1:new:20260829-022702.522")
 	if got != "已开始新会话。" {

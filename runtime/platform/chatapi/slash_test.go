@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/plugins/tool/send"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -120,6 +121,53 @@ func TestServeNewConversationSlash(t *testing.T) {
 	}
 	if strings.Contains(out, "cli:") {
 		t.Fatalf("should not return CLI session id: %s", out)
+	}
+}
+
+func TestSendSlashDeliversMessageContent(t *testing.T) {
+	t.Parallel()
+
+	p, err := New(Config{Path: "/v1/"}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	sendTool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: plat})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{
+		sendTool.(agentkit.CommandProvider),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat.commands = commands
+
+	channel := "nex-channel"
+	conv, err := plat.conversations.create(channel, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionKey := engineSessionKey(channel, conv.ID)
+	body, _ := json.Marshal(chatRequest{ConversationID: conv.ID, Query: "/send " + sessionKey + " 123"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat-messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-Chat-API-Channel", channel)
+	req.Header.Set("X-Chat-API-User", "demo")
+	rec := httptest.NewRecorder()
+	plat.handleChatMessages(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	out := rec.Body.String()
+	if !strings.Contains(out, "123") {
+		t.Fatalf("missing sent text in SSE: %s", out)
+	}
+	if strings.Contains(out, "sent to ") {
+		t.Fatalf("meta slash reply must not replace sent content: %s", out)
 	}
 }
 
