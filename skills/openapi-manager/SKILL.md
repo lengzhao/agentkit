@@ -1,25 +1,27 @@
 ---
 name: openapi-manager
-description: OpenAPI 索引与 HTTP 动态工具的维护约定。编辑 api.json 或 api/*.json 前先加载本 Skill。
+description: 维护 AgentKit 的 OpenAPI HTTP 动态工具（api.json、api/*.json）。在添加 API 索引、配置 auth/bind/baseUrl、编写 OpenAPI spec 或修改后需重启 agent 时使用。
 ---
 
 # OpenAPI 维护指南
+
+## 运行态约定
+
+OpenAPI 配置在**进程启动时**由 `openapi.default` 读取；运行中不支持热更新。改完 `api.json` 或 `api/*.json` 后**请用户重启 agent**，不要声称工具已刷新。
 
 ## 文件布局
 
 - `api.json`：纯索引，顶层 `apis` 按名字列出每个 HTTP API 的 wiring。
 - `api/<name>.json`：独立 OpenAPI 3 文档（paths、schema、components）；不含 auth/bind/baseUrl。
-- 默认查找顺序：`local:api.json` → `global:api.json`（先命中者赢，按 `apis` 名字去重）。
+- 默认查找：`local:api.json` → `global:api.json`（先命中者赢，按 `apis` 名字去重）。
 
 路径经 workspace 解析，可用 `local:` / `global:` 前缀。
 
-## 推荐工作流
+## 工作流
 
-1. 用 `read` / `edit` / `write` 修改 `api.json` 或 `api/*.json`。
-2. 请用户执行 **`/openapi -u`** 重读磁盘并刷新动态 HTTP 工具（Agent 工具列表里没有 slash command）。
-3. 查看状态时请用户执行 **`/openapi`**（显示已加载 API 与帮助）。
-4. 追加单条索引时，用户也可用 **`/openapi add <name> <json>`**（校验、写盘、失败回滚）。
-5. 调用 `petstore__getPet` 等动态工具发起 HTTP 请求。
+1. 用 read / edit / write 修改 `api.json` 或 `api/*.json`。
+2. 请用户**重启 agent 进程**。
+3. 重启后调用 `petstore__getPet` 等 `<prefix><operationId>` 格式的动态工具。
 
 ## api.json 索引条目
 
@@ -47,7 +49,7 @@ description: OpenAPI 索引与 HTTP 动态工具的维护约定。编辑 api.jso
 | `path` | 指向 OpenAPI 文档（推荐） |
 | `specFile` | `path` 的遗留别名 |
 | `paths` | **遗留**：索引内联 paths；与 `path` 互斥 |
-| `baseUrl` | API 根地址；优先于 OpenAPI 文档里的 `servers` |
+| `baseUrl` | API 根地址；优先于 spec 里的 `servers` |
 | `prefix` | 工具名前缀，默认 `<name>__` |
 | `headers` | 每次请求附带的静态 header |
 | `auth` | `bearer` / `header` / `query` / `basic`；敏感值用 `env:NAME` |
@@ -57,7 +59,7 @@ description: OpenAPI 索引与 HTTP 动态工具的维护约定。编辑 api.jso
 
 ## bind 约定
 
-- `from` 必须为 `ctx:` 前缀（如 `ctx:user_id`、`ctx:metadata.org_id`）。
+- `from` 须 `ctx:` 前缀（如 `ctx:user_id`、`ctx:metadata.org_id`）。
 - `in`：`path` / `query` / `header`；`name` 为 HTTP 字段名，省略时用 bind key。
 - bind key 与 OpenAPI spec 参数名对应，用于从模型 schema 中隐藏该参数。
 - ctx 值为空时不发起 HTTP 请求。
@@ -68,6 +70,5 @@ description: OpenAPI 索引与 HTTP 动态工具的维护约定。编辑 api.jso
 
 ## 注意
 
-- 解析结果缓存在内存；改文件后必须 **`/openapi -u`**。
 - OpenAPI 文档支持 `$ref` / `components`，由 kin-openapi 解析。
-- 详细字段与 slash command 说明见 `docs/guides/tools.zh.md`。
+- 密钥用 `env:VAR_NAME` 引用，不写明文 secret。
