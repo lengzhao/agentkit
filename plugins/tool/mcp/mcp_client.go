@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/tenant"
 	mcpclient "github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -84,6 +85,7 @@ func (p *clientPool) call(ctx context.Context, server serverConfig, toolName str
 		Params: mcplib.CallToolParams{
 			Name:      toolName,
 			Arguments: args,
+			Meta:      callMetaFromBinds(ctx, server.Binds),
 		},
 	})
 	if err != nil {
@@ -133,10 +135,15 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", server.Name, err)
 	}
+	bindEnv, err := envFromBinds(ctx, server.Binds)
+	if err != nil {
+		return nil, fmt.Errorf("mcp server %q: %w", server.Name, err)
+	}
+	env = append(env, bindEnv...)
 	var client *mcpclient.Client
 	switch {
 	case server.URL != "":
-		client, err = connectURL(server.URL, server.Type)
+		client, err = connectURL(server)
 	case server.Command != "":
 		client, err = mcpclient.NewStdioMCPClient(server.Command, env, server.Args...)
 	default:
@@ -152,19 +159,20 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	return client, nil
 }
 
-func connectURL(url, transportType string) (*mcpclient.Client, error) {
-	switch strings.ToLower(transportType) {
+func connectURL(server serverConfig) (*mcpclient.Client, error) {
+	headerFn := headerBindFunc(server.Binds)
+	switch strings.ToLower(server.Type) {
 	case "sse":
-		return mcpclient.NewSSEMCPClient(url)
+		return mcpclient.NewSSEMCPClient(server.URL, mcpclient.WithHeaderFunc(headerFn))
 	case "http", "streamable", "streamable-http", "streamable_http":
-		return mcpclient.NewStreamableHttpClient(url)
+		return mcpclient.NewStreamableHttpClient(server.URL, transport.WithHTTPHeaderFunc(headerFn))
 	case "":
-		if client, err := mcpclient.NewStreamableHttpClient(url); err == nil {
+		if client, err := mcpclient.NewStreamableHttpClient(server.URL, transport.WithHTTPHeaderFunc(headerFn)); err == nil {
 			return client, nil
 		}
-		return mcpclient.NewSSEMCPClient(url)
+		return mcpclient.NewSSEMCPClient(server.URL, mcpclient.WithHeaderFunc(headerFn))
 	default:
-		return nil, fmt.Errorf("unsupported mcp transport type %q", transportType)
+		return nil, fmt.Errorf("unsupported mcp transport type %q", server.Type)
 	}
 }
 

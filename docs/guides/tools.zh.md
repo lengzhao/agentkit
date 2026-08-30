@@ -110,6 +110,56 @@ go run ./cmd/agent -config presets/web.yaml "查一下官方说法并附来源"
 | `type` | `sse`、`http` / `streamable`；留空先尝试 streamable 再 SSE |
 | `prefix` | 模型可见工具名前缀，默认 `<server>__` |
 | `allowTools` / `denyTools` | 原始 MCP 工具名白 / 黑名单 |
+| `bind` | 从 `context` 透传字段到 MCP server；见下文 |
+
+### 上下文绑定（`bind`）
+
+某些字段（如 `uid`、`trace_id`）不应由模型填写，而应从当前 turn 的 `context.Context` 注入到 MCP server。在 `mcpServers` 条目里用 `bind` 声明：
+
+```json
+{
+  "mcpServers": {
+    "remote": {
+      "url": "http://127.0.0.1:8080/mcp",
+      "type": "streamable",
+      "bind": {
+        "X-User-Id": { "from": "ctx:user_id", "in": "header" },
+        "X-Agent-Id": { "from": "ctx:agent_id", "in": "header" },
+        "trace_id": { "from": "ctx:turn_id", "in": "meta" },
+        "AGENTKIT_USER_ID": { "from": "ctx:user_id", "in": "env" }
+      }
+    }
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `from` | 值来源，必须为 `ctx:` 前缀 |
+| `in` | `header`（HTTP/SSE/Streamable）、`meta`（MCP `_meta`）、`env`（stdio 子进程环境变量） |
+| `name` | 目标字段名；省略时用 bind 的 key |
+
+支持的 `from` 值：
+
+| `from` | 对应 context |
+|---|---|
+| `ctx:user_id` | `KeyUserID` |
+| `ctx:session_id` | `KeySessionID` |
+| `ctx:store_session_id` | `KeyStoreSessionID` |
+| `ctx:delivery_session_id` | `KeyDeliverySessionID` |
+| `ctx:agent_id` | `KeyAgentID` |
+| `ctx:platform_id` | `KeyPlatformID` |
+| `ctx:turn_id` | `KeyTurnID` / telemetry turn id |
+| `ctx:tool_call_id` | `KeyToolCallID` |
+| `ctx:tenant` | 租户键（由 session 推导，如 `slack:C001`） |
+| `ctx:metadata.<key>` | `KeyMessageMetadata[key]` |
+
+行为：
+
+- `header` / `meta` 在**每次工具调用**时从当前 ctx 读取；HTTP 传输通过 `HeaderFunc` 注入，不破坏连接池
+- `meta` 写入 `CallTool` 请求的 `_meta` 字段，适用于所有传输（含 stdio）
+- `env` 仅在 **stdio 子进程启动时**从当时的 ctx 注入；per-call 字段（如 `trace_id`）请用 `meta`
+- ctx 值为空时跳过该 bind，不报错
 
 ### 文件查找与挂载
 

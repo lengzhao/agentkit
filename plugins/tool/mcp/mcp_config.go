@@ -20,6 +20,7 @@ type rawServerConfig struct {
 	AllowTools     []string          `json:"allowTools"`
 	DenyTools      []string          `json:"denyTools"`
 	TimeoutSeconds int               `json:"timeoutSeconds"`
+	Bind           map[string]rawBind `json:"bind,omitempty"`
 }
 
 type serverConfig struct {
@@ -34,6 +35,7 @@ type serverConfig struct {
 	AllowTools     []string
 	DenyTools      []string
 	TimeoutSeconds int
+	Binds          []bindConfig
 }
 
 type toolDefinition struct {
@@ -58,6 +60,10 @@ func parseConfigFile(path string, raw []byte) ([]serverConfig, error) {
 		if name == "" {
 			continue
 		}
+		binds, err := parseBinds(raw.Bind)
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %q in %s: %w", name, path, err)
+		}
 		cfg := serverConfig{
 			Name:           name,
 			Source:         path,
@@ -70,6 +76,7 @@ func parseConfigFile(path string, raw []byte) ([]serverConfig, error) {
 			AllowTools:     trimAll(raw.AllowTools),
 			DenyTools:      trimAll(raw.DenyTools),
 			TimeoutSeconds: raw.TimeoutSeconds,
+			Binds:          binds,
 		}
 		if cfg.Command == "" && cfg.URL == "" {
 			return nil, fmt.Errorf("mcp server %q in %s needs command or url", name, path)
@@ -88,6 +95,10 @@ func parseServerJSON(name, source string, raw []byte) (serverConfig, error) {
 	if err := json.Unmarshal(raw, &rawCfg); err != nil {
 		return serverConfig{}, fmt.Errorf("parse server json: %w", err)
 	}
+	binds, err := parseBinds(rawCfg.Bind)
+	if err != nil {
+		return serverConfig{}, fmt.Errorf("mcp server %q: %w", name, err)
+	}
 	cfg := serverConfig{
 		Name:           name,
 		Source:         source,
@@ -100,6 +111,7 @@ func parseServerJSON(name, source string, raw []byte) (serverConfig, error) {
 		AllowTools:     trimAll(rawCfg.AllowTools),
 		DenyTools:      trimAll(rawCfg.DenyTools),
 		TimeoutSeconds: rawCfg.TimeoutSeconds,
+		Binds:          binds,
 	}
 	if cfg.Command == "" && cfg.URL == "" {
 		return serverConfig{}, fmt.Errorf("mcp server %q needs command or url", name)

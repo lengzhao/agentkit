@@ -223,6 +223,7 @@ func mcpHelp() string {
 JSON format matches one mcpServers entry, e.g.:
   {"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path"]}
   {"url":"http://127.0.0.1:8080/mcp","type":"sse"}
+  {"url":"http://127.0.0.1:8080/mcp","bind":{"X-User-Id":{"from":"ctx:user_id","in":"header"}}}
 
 Notes:
   add writes to the local mcp.json file (config.files local: entry)

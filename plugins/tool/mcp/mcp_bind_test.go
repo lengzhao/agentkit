@@ -1,0 +1,152 @@
+package mcp
+
+import (
+	"context"
+	"testing"
+
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/telemetry"
+)
+
+func TestParseBinds(t *testing.T) {
+	t.Parallel()
+
+	binds, err := parseBinds(map[string]rawBind{
+		"X-User-Id": {From: "ctx:user_id", In: "header"},
+		"traceId":   {From: "ctx:turn_id", In: "meta", Name: "trace_id"},
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(binds) != 2 {
+		t.Fatalf("binds = %d, want 2", len(binds))
+	}
+}
+
+func TestParseBindsRejectsInvalid(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseBinds(map[string]rawBind{
+		"uid": {From: "user_id", In: "header"},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing ctx: prefix")
+	}
+
+	_, err = parseBinds(map[string]rawBind{
+		"uid": {From: "ctx:user_id", In: "query"},
+	})
+	if err == nil {
+		t.Fatal("expected error for unsupported in")
+	}
+}
+
+func TestResolveCtxValue(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, agentkit.KeyUserID, "u-42")
+	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("slack:C001:t:1"))
+	ctx = context.WithValue(ctx, agentkit.KeyTurnID, "turn-abc")
+	ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, map[string]any{"channel": "general"})
+
+	cases := []struct {
+		from string
+		want string
+	}{
+		{"ctx:user_id", "u-42"},
+		{"ctx:agent_id", "coder"},
+		{"ctx:session_id", "slack:C001:t:1"},
+		{"ctx:turn_id", "turn-abc"},
+		{"ctx:metadata.channel", "general"},
+		{"ctx:tenant", "slack:C001"},
+	}
+	for _, tc := range cases {
+		got, err := resolveCtxValue(ctx, tc.from)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.from, err)
+		}
+		if got != tc.want {
+			t.Fatalf("%s = %q, want %q", tc.from, got, tc.want)
+		}
+	}
+}
+
+func TestResolveCtxValueTurnIDFromTelemetry(t *testing.T) {
+	t.Parallel()
+
+	ctx := telemetry.WithTurnID(context.Background(), "telemetry-turn")
+	got, err := resolveCtxValue(ctx, "ctx:turn_id")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got != "telemetry-turn" {
+		t.Fatalf("turn_id = %q", got)
+	}
+}
+
+func TestCallMetaFromBindsSkipsEmpty(t *testing.T) {
+	t.Parallel()
+
+	meta := callMetaFromBinds(context.Background(), []bindConfig{
+		{Key: "uid", From: "ctx:user_id", In: "meta"},
+		{Key: "trace", From: "ctx:turn_id", In: "meta", Name: "trace_id"},
+	})
+	if meta != nil {
+		t.Fatalf("meta = %#v, want nil when all binds empty", meta)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeyTurnID, "trace-1")
+	meta = callMetaFromBinds(ctx, []bindConfig{
+		{Key: "uid", From: "ctx:user_id", In: "meta"},
+		{Key: "trace", From: "ctx:turn_id", In: "meta", Name: "trace_id"},
+	})
+	if meta == nil || meta.AdditionalFields["trace_id"] != "trace-1" {
+		t.Fatalf("meta = %#v", meta)
+	}
+	if _, ok := meta.AdditionalFields["uid"]; ok {
+		t.Fatal("empty uid bind should be skipped")
+	}
+}
+
+func TestHeaderBindFunc(t *testing.T) {
+	t.Parallel()
+
+	fn := headerBindFunc([]bindConfig{
+		{Key: "X-User-Id", From: "ctx:user_id", In: "header"},
+		{Key: "trace", From: "ctx:turn_id", In: "meta"},
+	})
+	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "u-7")
+	headers := fn(ctx)
+	if headers["X-User-Id"] != "u-7" {
+		t.Fatalf("headers = %#v", headers)
+	}
+}
+
+func TestParseConfigFileWithBind(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{
+  "mcpServers": {
+    "remote": {
+      "url": "http://127.0.0.1:8080/mcp",
+      "type": "sse",
+      "bind": {
+        "X-User-Id": { "from": "ctx:user_id", "in": "header" },
+        "traceId": { "from": "ctx:turn_id", "in": "meta", "name": "trace_id" }
+      }
+    }
+  }
+}`)
+	servers, err := parseConfigFile("/tmp/mcp.json", raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("servers = %d", len(servers))
+	}
+	if len(servers[0].Binds) != 2 {
+		t.Fatalf("binds = %d", len(servers[0].Binds))
+	}
+}

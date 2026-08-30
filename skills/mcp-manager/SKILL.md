@@ -60,6 +60,7 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取；运行中不支持热
 | `type` | `sse`、`http` / `streamable`；留空时先 streamable 再 SSE |
 | `prefix` | 工具名前缀，默认 `<serverName>__` |
 | `allowTools` / `denyTools` | 原始 MCP 工具名白/黑名单 |
+| `bind` | 从 `context` 透传到 MCP server（`header` / `meta` / `env`）；见 `docs/guides/tools.zh.md` |
 | `timeoutSeconds` | 单次调用墙钟超时 |
 
 每个 server 须提供 `command`（stdio）或 `url`（远程）之一。
