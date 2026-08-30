@@ -17,6 +17,7 @@ docs/
     ├── tools.zh.md                   # 网络工具 + MCP
     ├── platform-interaction.zh.md    # Permission / HIL
     ├── schedule-timer.zh.md          # 一次性提醒 Timer 设计（草案）
+    ├── config-simplification.zh.md   # 用户配置简化方案与路线
     └── e2e-scenarios.zh.md           # E2E 场景梳理与用例目录
 ```
 
@@ -35,6 +36,7 @@ go run ./cmd/agent -config presets/feishu.yaml              # 飞书
 go run ./cmd/agent -config presets/chat-api.yaml            # HTTP 调试台
 go run ./cmd/agent -config presets/langfuse.yaml "hello"    # Langfuse
 go run ./cmd/agent -manager                                 # Web 工作台
+go run ./cmd/agent scaffold tools                           # 生成 tools 配置片段（维护者）
 ```
 
 新增插件后：`go generate ./...`

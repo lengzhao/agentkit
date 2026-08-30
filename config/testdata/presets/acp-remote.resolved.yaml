@@ -1,0 +1,66 @@
+agent.acp.default:
+    config:
+        authMethod: cursor_login
+        autoApprove: false
+        command:
+            - agent
+            - acp
+        id: acp
+    deps:
+        sessionStore: sessionStore.default
+        workspace: workspace.default
+    use: agent/acp-remote
+runner.default:
+    config:
+        maxConcurrentTurns: 64
+        sessionScope: channel
+        shutdownTimeoutSeconds: 10
+    deps:
+        loop:
+            config:
+                defaultAgent: acp
+            deps:
+                agents:
+                    - agent.acp.default
+            use: loop/default
+        platform:
+            config:
+                once: false
+            use: platform/cli
+        schedules:
+            - schedule.cron
+        sessionStore: sessionStore.default
+        telemetry: telemetry.default
+    use: runner
+schedule.cron:
+    config:
+        jobs: []
+        pollSeconds: 15
+        sessionID: schedule
+        sessionMode: stateless
+    deps:
+        schedule: schedule.default
+        workspace: workspace.default
+    use: schedule/cron
+schedule.default:
+    config:
+        path: global:schedules/schedule.json
+    deps:
+        workspace: workspace.default
+    use: schedule/multi
+session.default:
+    config:
+        id: cli:default
+    use: session/memory
+sessionStore.default:
+    deps:
+        session: session.default
+    use: session/static
+telemetry.default:
+    use: telemetry/none
+workspace.default:
+    config:
+        global: ~/.agentkit
+        local: .agentkit
+        scope: local
+    use: workspace/default

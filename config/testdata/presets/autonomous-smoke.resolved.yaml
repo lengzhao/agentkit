@@ -1,0 +1,128 @@
+commands.default:
+    use: commands/registry
+hook.turn-continue.default:
+    config:
+        maxContinuations: 3
+        stallLimit: 3
+    deps:
+        sessionStore: sessionStore.default
+    use: hook/turn-continue
+hooks.default:
+    deps:
+        providers:
+            - hook.turn-continue.default
+    use: hooks/runtime
+platform.default:
+    config:
+        once: true
+    deps:
+        commands: commands.default
+        sessionStore: sessionStore.default
+    use: platform/cli
+runner.default:
+    config:
+        maxConcurrentTurns: 64
+        sessionScope: channel
+        shutdownTimeoutSeconds: 10
+    deps:
+        loop:
+            deps:
+                agents:
+                    - config:
+                        budget:
+                            maxContinuations: 3
+                            maxTotalSteps: 12
+                            wallClockSeconds: 120
+                        id: smoke
+                        maxSteps: 3
+                      deps:
+                        hooks: hooks.default
+                        llm:
+                            config:
+                                steps:
+                                    - text: 先记录任务清单。
+                                      toolCalls:
+                                        - id: call-todo-set
+                                          input: '{"op":"set","items":[{"id":"1","title":"读取 README","status":"in_progress"},{"id":"2","title":"汇报结论","status":"pending"}]}'
+                                          name: todo
+                                    - text: 读取 README。
+                                      toolCalls:
+                                        - id: call-read
+                                          input: '{"path":"README.md"}'
+                                          name: read
+                                    - text: README 已读取，本段先到这里。
+                                    - text: 标记任务完成。
+                                      toolCalls:
+                                        - id: call-todo-done
+                                          input: '{"op":"complete","ids":["1","2"]}'
+                                          name: todo
+                                    - text: 收尾。
+                                      toolCalls:
+                                        - id: call-finish
+                                          input: '{"status":"completed","summary":"读取 README 并汇报结论"}'
+                                          name: finish
+                                    - text: 全部完成。
+                            use: llm/scripted
+                        prompt:
+                            use: prompt/assembler/default
+                        sessionStore: sessionStore.default
+                        tools:
+                            deps:
+                                toolPacks:
+                                    - config:
+                                        files:
+                                            README.md: |-
+                                                # AgentKit
+
+                                                hello
+                                        tools:
+                                            - read
+                                      use: tool/fs-memory
+                                tools:
+                                    - deps:
+                                        sessionStore: sessionStore.default
+                                      use: tool/todo
+                                    - deps:
+                                        sessionStore: sessionStore.default
+                                      use: tool/finish
+                            use: tools/runtime
+                      use: agent/coding
+            use: loop/default
+        platform: platform.default
+        schedules:
+            - schedule.cron
+        sessionStore: sessionStore.default
+        telemetry: telemetry.default
+    use: runner
+schedule.cron:
+    config:
+        jobs: []
+        pollSeconds: 15
+        sessionID: schedule
+        sessionMode: stateless
+    deps:
+        schedule: schedule.default
+        workspace: workspace.default
+    use: schedule/cron
+schedule.default:
+    config:
+        path: global:schedules/schedule.json
+    deps:
+        workspace: workspace.default
+    use: schedule/multi
+session.default:
+    config:
+        id: cli:default
+    use: session/memory
+sessionStore.default:
+    deps:
+        session: session.default
+    use: session/static
+telemetry.default:
+    use: telemetry/none
+workspace.default:
+    config:
+        global: ~/.agentkit
+        local: .agentkit
+        scope: local
+    use: workspace/default

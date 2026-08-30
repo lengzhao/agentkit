@@ -9,7 +9,7 @@ require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/henomis/langfuse-go v0.0.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.11.0
-	github.com/lengzhao/pluginkit v0.1.1
+	github.com/lengzhao/pluginkit v0.1.2
 	github.com/sashabaranov/go-openai v1.42.0
 	github.com/slack-go/slack v0.29.0
 )

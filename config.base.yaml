@@ -126,7 +126,7 @@ credentials.default:
   use: credentials/env
   config:
     files:
-      - local:.env
+      - global:.env
   deps:
     workspace: workspace.default
 

@@ -393,3 +393,4 @@ graph:
 - [ ] 加入 import 生成器 manifest
 - [ ] 补充 Preset 示例或 Feature 片段
 - [ ] 更新本文档对应分类表
+- [ ] **tool 插件**：主 agent 默认经 scaffold 黑名单排除测试/替身实现；子 agent 须加入 `DefaultSubagentToolWhitelist()` 才会进入子 agent 工具集（见 [guides/config-simplification.zh.md](guides/config-simplification.zh.md)）

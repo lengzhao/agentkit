@@ -34,6 +34,8 @@ type Config struct {
 	UserHeader         string   `json:"userHeader"`
 	UserNameHeader     string   `json:"userNameHeader"`
 	ChannelHeader      string   `json:"channelHeader"`
+	// MetadataHeaders lists HTTP headers copied into MessageEvent.Metadata.
+	MetadataHeaders    []string `json:"metadataHeaders"`
 	CORSOrigins        []string `json:"corsOrigins"`
 	RequestTimeout     string   `json:"requestTimeout"`
 	InteractionTimeout string   `json:"interactionTimeout"`
@@ -63,6 +65,7 @@ type Platform struct {
 	userHeader          string
 	userNameHeader      string
 	channelHeader       string
+	metadataHeaders     []string
 	corsOrigins         []string
 	requestTimeout      time.Duration
 	interactionTimeout  time.Duration
@@ -149,6 +152,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		userHeader:         userHeader,
 		userNameHeader:     userNameHeader,
 		channelHeader:      channelHeader,
+		metadataHeaders:    resolveMetadataHeaders(cfg.MetadataHeaders),
 		corsOrigins:        cfg.CORSOrigins,
 		requestTimeout:     timeout,
 		interactionTimeout: interactionTimeout,

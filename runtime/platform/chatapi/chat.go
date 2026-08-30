@@ -168,6 +168,9 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event := common.InboundFromContent(inboundAgentID, agentkit.SessionID(engineSessionKey), "chat-api", user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
+	if md := p.metadataFromRequest(r); len(md) > 0 {
+		event.Metadata = md
+	}
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)

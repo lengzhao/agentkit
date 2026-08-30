@@ -53,10 +53,7 @@ func (p *Platform) corsHTTP(next http.HandlerFunc) http.HandlerFunc {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Vary", "Origin")
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", strings.Join([]string{
-						"Authorization", "Content-Type", "Accept",
-						p.userHeader, p.userNameHeader, p.channelHeader,
-					}, ", "))
+					w.Header().Set("Access-Control-Allow-Headers", strings.Join(p.corsAllowedHeaders(), ", "))
 					break
 				}
 			}

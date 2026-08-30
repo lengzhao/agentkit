@@ -249,6 +249,63 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 	t.Fatalf("expected text_delta then message_end, got: %s", rec.Body.String())
 }
 
+func TestChatMessageMetadataHeaders(t *testing.T) {
+	p, err := New(Config{
+		ListenAddr:      ":0",
+		MetadataHeaders: []string{"X-Org-Id", "X-Chat-API-User-Name"},
+	}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	body, _ := json.Marshal(chatRequest{Query: "hello"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat-messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-Chat-API-Channel", "default_channel")
+	req.Header.Set("X-Chat-API-User", "demo")
+	req.Header.Set("X-Org-Id", "org-42")
+	req.Header.Set("X-Chat-API-User-Name", "Bob")
+
+	rec := httptest.NewRecorder()
+	pushDone := make(chan agentkit.MessageEvent, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		ev, err := plat.Receive(ctx)
+		if err != nil {
+			t.Errorf("receive: %v", err)
+			return
+		}
+		pushDone <- ev
+	}()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		plat.handleChatMessages(rec, req)
+	}()
+
+	select {
+	case ev := <-pushDone:
+		if ev.Metadata == nil {
+			t.Fatal("metadata is nil")
+		}
+		if ev.Metadata["X-Org-Id"] != "org-42" {
+			t.Fatalf("org = %v", ev.Metadata["X-Org-Id"])
+		}
+		if ev.Metadata["X-Chat-API-User-Name"] != "Bob" {
+			t.Fatalf("name = %v", ev.Metadata["X-Chat-API-User-Name"])
+		}
+		// Unblock handleChatMessages waiting on run.done.
+		for _, runID := range plat.activeByConv {
+			plat.pending.finish(runID, pendingResult{answer: "ok"})
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for inbound event")
+	}
+}
+
 func TestSSEWriter(t *testing.T) {
 	rec := httptest.NewRecorder()
 	sse, err := newSSEWriter(rec)

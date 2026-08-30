@@ -179,7 +179,8 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 `presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就两件：
 
 1. 用 `session.BuildDeliverySessionID` 生成 `MessageEvent.SessionID`（delivery，最细粒度）；
-2. 在 `MessageEvent.UserID` 填上发言人。
+2. 在 `MessageEvent.UserID` 填上发言人；
+3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `userMessageTemplate` 与 tool `metadata.*` 绑定使用。
 
 `sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent` 回带 **delivery** SessionID，由 platform 解析投递目标。
 

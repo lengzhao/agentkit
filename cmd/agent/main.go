@@ -18,6 +18,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "scaffold" {
+		runScaffold(os.Args[2:])
+		return
+	}
 
 	managerMode := flag.Bool("manager", false, "start plugin manager web UI")
 	addr := flag.String("addr", ":8080", "manager HTTP listen address")

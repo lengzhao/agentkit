@@ -1,0 +1,94 @@
+runner.default:
+    config:
+        maxConcurrentTurns: 64
+        sessionScope: channel
+        shutdownTimeoutSeconds: 10
+    deps:
+        loop:
+            deps:
+                agents:
+                    - config:
+                        id: smoke
+                        maxSteps: 5
+                      deps:
+                        llm:
+                            config:
+                                steps:
+                                    - text: 当前目录内容需要通过 bash 工具列出，然后用 read 读取 README.md
+                                      toolCalls:
+                                        - id: call-ls
+                                          input: '{"command":"ls -la"}'
+                                          name: bash
+                                    - text: 已完成目录列表。
+                                      toolCalls:
+                                        - id: call-read
+                                          input: '{"path":"README.md"}'
+                                          name: read
+                                    - text: README 已读取完毕。
+                            use: llm/scripted
+                        prompt:
+                            use: prompt/assembler/default
+                        sessionStore: sessionStore.default
+                        tools:
+                            deps:
+                                policies:
+                                    - use: policy/deny-dangerous-shell
+                                toolPacks:
+                                    - config:
+                                        files:
+                                            README.md: |-
+                                                # AgentKit
+
+                                                hello
+                                      use: tool/fs-memory
+                                tools:
+                                    - config:
+                                        timeoutSeconds: 30
+                                        workDir: .
+                                      deps:
+                                        workspace: workspace.default
+                                      use: tool/shell-bash
+                            use: tools/runtime
+                      use: agent/coding
+            use: loop/default
+        platform:
+            config:
+                once: true
+            use: platform/cli
+        schedules:
+            - schedule.cron
+        sessionStore: sessionStore.default
+        telemetry: telemetry.default
+    use: runner
+schedule.cron:
+    config:
+        jobs: []
+        pollSeconds: 15
+        sessionID: schedule
+        sessionMode: stateless
+    deps:
+        schedule: schedule.default
+        workspace: workspace.default
+    use: schedule/cron
+schedule.default:
+    config:
+        path: global:schedules/schedule.json
+    deps:
+        workspace: workspace.default
+    use: schedule/multi
+session.default:
+    config:
+        id: cli:default
+    use: session/memory
+sessionStore.default:
+    deps:
+        session: session.default
+    use: session/static
+telemetry.default:
+    use: telemetry/none
+workspace.default:
+    config:
+        global: ~/.agentkit
+        local: .agentkit
+        scope: local
+    use: workspace/default

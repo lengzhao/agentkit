@@ -479,13 +479,18 @@ MVP 配置使用两层 YAML 合并后得到 `pluginkit` root graph：
 | 层 | 文件 | 说明 |
 |---|---|---|
 | L0 | `config.base.yaml` | 随版本发布的默认实例图；所有实例 id 以 `.default` 结尾 |
-| L1 | `config.yaml` 或 `-config` 指定路径 | 用户 override；**同 id 整颗替换** L0 实例 |
+| L1 | `config.yaml` 或 `-config` 指定路径 | 用户 override；同 id 按下方规则与 L0 合并 |
 
-合并规则：
+合并规则（`config/loader.go` `MergeYAML` / `ResolveYAML`）：
 
-1. 先加载 L0，再按 map key 用 L1 覆盖（整颗 `PluginNode` 替换，不做字段级 merge）。
-2. 以 `runner.default` 为 root，裁剪从 root 可达的顶层实例（含 inline deps 中对共享实例的引用）。
-3. 输出 merged graph 后调用 `build.Build`。
+1. **实例级**：L1 与 L0 同 id 时，若 L1 的 `use` 与 L0 不同（或 L0 无 `use` 而 L1 指定了 `use`），**整颗节点替换**；否则对 `config` / `deps` 等字段**递归深合并**。
+2. **字段级**（深合并时）：标量覆盖；列表整体覆盖；`key+: [...]` 追加到 base 列表尾部；`key: null` 删除该键。
+3. **`extends:`**（仅 YAML 层）：节点可 `extends: other.instance.id` 继承另一实例，在 `ResolveYAML` 展开后剥掉该键；需环检测。与深合并共用同一套 merge 函数。
+4. **插值**（解析后的树上）：任意字符串字段支持 `${env:VAR}`、`${env:VAR:-default}`、`${file:相对路径}`（路径相对当前 overlay 文件所在目录）。加载期展开；dump / 日志须脱敏。
+5. 以 `runner.default` 为 root，裁剪从 root 可达的顶层实例（含 inline deps 中对共享实例的引用）。
+6. 输出 merged graph 后调用 `build.Build`。
+
+详见 [config-simplification.zh.md](guides/config-simplification.zh.md)。
 
 ```yaml
 # config.yaml — 只写需要覆盖的实例
@@ -566,9 +571,11 @@ shell.default:
 - `config` 按 JSON 规则解码到构造函数的 Config 参数；未知字段失败。
 - `deps` 的值可以是已有实例 id、内联插件对象，或它们的列表。
 - 可复用实例放到顶层并通过 id 引用；私有实例优先内联在依赖处。
-- `agentkit config resolve`（规划中）对 Preset / Feature / override 展开，输出仍是 `pluginkit` root graph。
+- `agentkit config resolve`（即 `config.ResolveFiles` / `ResolveYAML`）对 L0 + L1 overlay、`extends:` 与插值展开，输出仍是 `pluginkit` root graph。见 [config-simplification.zh.md](guides/config-simplification.zh.md)。
 
 ### 5.7 Feature 与 Preset
+
+> **目标 API，当前未实现。** 节点级复用请先用 `extends:` + preset 链（`-config a.yaml,b.yaml`）。启动高层前端的判据见 [config-simplification.zh.md §8.2](guides/config-simplification.zh.md#82-启动判据)。
 
 `Feature` 是可复用能力片段，适合表达“coding shell”“只读文件系统”“安全 Web”等产品能力。Feature 不执行 Go 代码，也不拥有额外生命周期。
 
@@ -647,6 +654,8 @@ Feature 合并规则：
 - 两个 Feature 写入同一实例 id 且值不同，必须由 Preset 显式覆盖。
 - Feature 只能组合配置，不能注册 Plugin Kind。
 - 展开后必须生成合法 `pluginkit` root graph，再交给 `build.Build`。
+
+用户侧简化路线（Profile、Preset、Scaffold、resolve 分阶段）见 [guides/config-simplification.zh.md](guides/config-simplification.zh.md)。
 
 ### 5.8 Resolved Graph
 

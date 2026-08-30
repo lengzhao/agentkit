@@ -1,0 +1,100 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+var (
+	envInterpolationRe  = regexp.MustCompile(`^\$\{env:([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}$`)
+	fileInterpolationRe = regexp.MustCompile(`^\$\{file:(.+)\}$`)
+)
+
+func interpolateInstances(raw map[string]any, baseDir string) error {
+	for id, node := range raw {
+		nodeMap, ok := asStringMap(node)
+		if !ok {
+			return fmt.Errorf("instance %q: node must be an object", id)
+		}
+		if err := walkInterpolateMap(nodeMap, id, baseDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func walkInterpolateMap(m map[string]any, path, baseDir string) error {
+	for key, value := range m {
+		fieldPath := path + "." + key
+		switch v := value.(type) {
+		case map[string]any:
+			if err := walkInterpolateMap(v, fieldPath, baseDir); err != nil {
+				return err
+			}
+		case []any:
+			for i, item := range v {
+				if err := interpolateListItem(v, i, item, fmt.Sprintf("%s[%d]", fieldPath, i), baseDir); err != nil {
+					return err
+				}
+			}
+			m[key] = v
+		case string:
+			expanded, err := expandInterpolation(fieldPath, v, baseDir)
+			if err != nil {
+				return err
+			}
+			m[key] = expanded
+		}
+	}
+	return nil
+}
+
+func interpolateListItem(list []any, index int, item any, fieldPath, baseDir string) error {
+	switch v := item.(type) {
+	case map[string]any:
+		return walkInterpolateMap(v, fieldPath, baseDir)
+	case string:
+		expanded, err := expandInterpolation(fieldPath, v, baseDir)
+		if err != nil {
+			return err
+		}
+		list[index] = expanded
+	}
+	return nil
+}
+
+func expandInterpolation(path, raw, baseDir string) (string, error) {
+	if !strings.Contains(raw, "${") {
+		return raw, nil
+	}
+	if m := envInterpolationRe.FindStringSubmatch(raw); m != nil {
+		if val, ok := os.LookupEnv(m[1]); ok && val != "" {
+			return val, nil
+		}
+		if len(m) > 2 && m[2] != "" {
+			return m[2], nil
+		}
+		return "", fmt.Errorf("%s: environment variable %q is not set", path, m[1])
+	}
+	if m := fileInterpolationRe.FindStringSubmatch(raw); m != nil {
+		filePath := strings.TrimSpace(m[1])
+		if filePath == "" {
+			return "", fmt.Errorf("%s: file interpolation path is empty", path)
+		}
+		if !filepath.IsAbs(filePath) {
+			filePath = filepath.Join(baseDir, filePath)
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("%s: read file %q: %w", path, filePath, err)
+		}
+		return string(data), nil
+	}
+	if strings.Contains(raw, "${env:") || strings.Contains(raw, "${file:") {
+		return "", fmt.Errorf("%s: unsupported interpolation expression %q", path, raw)
+	}
+	return raw, nil
+}

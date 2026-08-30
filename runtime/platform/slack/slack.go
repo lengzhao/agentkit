@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
@@ -19,8 +20,10 @@ import (
 
 type Config struct {
 	common.AgentRoutingConfig
-	BotToken      string `json:"botToken"`
-	AppToken      string `json:"appToken"`
+	BotToken    string `json:"botToken"`
+	BotTokenRef string `json:"botTokenRef"`
+	AppToken    string `json:"appToken"`
+	AppTokenRef string `json:"appTokenRef"`
 	Domain        string `json:"domain"` // optional Slack Web API base URL override
 	AllowFrom     string `json:"allowFrom"`
 	AllowChannels string `json:"allowChannels"`
@@ -31,6 +34,7 @@ type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
 	Workspace    workspace.Service     `json:"workspace,omitempty"`
+	Credentials  credentials.Store     `json:"credentials,omitempty"`
 }
 
 type delivery struct {
@@ -72,8 +76,16 @@ type Platform struct {
 
 // New registers platform/slack: Slack Socket Mode; SessionID follows cc-connect slack conventions.
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
-	if cfg.BotToken == "" || cfg.AppToken == "" {
-		return nil, fmt.Errorf("platform/slack requires botToken and appToken")
+	botToken, err := resolveToken(context.Background(), cfg.BotToken, cfg.BotTokenRef, deps.Credentials, "botTokenRef")
+	if err != nil {
+		return nil, err
+	}
+	appToken, err := resolveToken(context.Background(), cfg.AppToken, cfg.AppTokenRef, deps.Credentials, "appTokenRef")
+	if err != nil {
+		return nil, err
+	}
+	if botToken == "" || appToken == "" {
+		return nil, fmt.Errorf("platform/slack requires botToken/botTokenRef and appToken/appTokenRef")
 	}
 	apiURL, err := common.NormalizeSlackAPIURL(cfg.Domain)
 	if err != nil {
@@ -81,7 +93,15 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	}
 	common.WarnAllowFromEmpty("slack", cfg.AllowFrom)
 	p := &Platform{
-		cfg:              cfg,
+		cfg: Config{
+			AgentRoutingConfig: cfg.AgentRoutingConfig,
+			BotToken:           botToken,
+			AppToken:           appToken,
+			Domain:             cfg.Domain,
+			AllowFrom:          cfg.AllowFrom,
+			AllowChannels:      cfg.AllowChannels,
+			GroupReplyAll:      cfg.GroupReplyAll,
+		},
 		agentID:          cfg.ResolveAgentID(),
 		apiURL:           apiURL,
 		commands:         deps.Commands,

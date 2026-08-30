@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -50,12 +51,23 @@ func ResolveFiles(basePath string, overlayPaths ...string) ([]byte, error) {
 		}
 		overlays = append(overlays, raw)
 	}
-	return ResolveYAML(baseRaw, overlays...)
+	interpDir := filepath.Dir(basePath)
+	for i := len(overlayPaths) - 1; i >= 0; i-- {
+		path := overlayPaths[i]
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			interpDir = filepath.Dir(path)
+			break
+		}
+	}
+	return ResolveYAML(interpDir, baseRaw, overlays...)
 }
 
-// ResolveYAML merges base with each overlay in order and prunes unreachable
-// instances.
-func ResolveYAML(base []byte, overlays ...[]byte) ([]byte, error) {
+// ResolveYAML merges base with each overlay in order, expands extends, interpolates
+// string values, then prunes unreachable instances.
+func ResolveYAML(interpDir string, base []byte, overlays ...[]byte) ([]byte, error) {
 	merged := base
 	for _, overlay := range overlays {
 		next, err := MergeYAML(merged, overlay)
@@ -68,6 +80,13 @@ func ResolveYAML(base []byte, overlays ...[]byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	raw, err = expandExtends(raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := interpolateInstances(raw, interpDir); err != nil {
+		return nil, err
+	}
 	rootID, err := resolveRootID(raw)
 	if err != nil {
 		return nil, err
@@ -75,7 +94,8 @@ func ResolveYAML(base []byte, overlays ...[]byte) ([]byte, error) {
 	return yaml.Marshal(pruneToReachable(raw, rootID))
 }
 
-// MergeYAML merges two instance graphs. Overlay keys replace base entries entirely.
+// MergeYAML merges two instance graphs. When overlay changes use, the whole node
+// is replaced; otherwise config and deps are deep-merged into the base node.
 func MergeYAML(base, overlay []byte) ([]byte, error) {
 	baseMap, err := parseInstanceMap(base)
 	if err != nil {
@@ -88,10 +108,8 @@ func MergeYAML(base, overlay []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse overlay: %w", err)
 	}
-	for id, node := range overlayMap {
-		baseMap[id] = node
-	}
-	return yaml.Marshal(baseMap)
+	merged := mergeInstanceMaps(baseMap, overlayMap)
+	return yaml.Marshal(merged)
 }
 
 // MergeFromFiles is an alias for ResolveFiles.
