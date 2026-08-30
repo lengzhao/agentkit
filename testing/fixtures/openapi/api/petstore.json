@@ -1,0 +1,58 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgentKit OpenAPI test petstore",
+    "version": "1.0.0"
+  },
+  "servers": [{"url": "https://petstore.example.com"}],
+  "paths": {
+    "/pets/{id}": {
+      "get": {
+        "operationId": "getPet",
+        "summary": "Get a pet by id",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "verbose", "in": "query", "schema": {"type": "boolean"}},
+          {"name": "uid", "in": "header", "required": true, "schema": {"type": "string"}}
+        ]
+      },
+      "delete": {
+        "operationId": "deletePet",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ]
+      }
+    },
+    "/pets": {
+      "post": {
+        "operationId": "createPet",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "parameters": [
+          {"name": "uid", "in": "header", "required": true, "schema": {"type": "string"}},
+          {"name": "page", "in": "query", "schema": {"type": "integer"}}
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "operationId": "ping"
+      }
+    }
+  }
+}

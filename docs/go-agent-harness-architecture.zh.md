@@ -1146,7 +1146,8 @@ Policy Plane 判定已可见调用以及能力操作：
 |---|---|
 | `sessions` | 相对当前 `scope` 默认根 |
 | `global:skills` | `~/.agentkit/skills` |
-| `local:skills` | `<cwd>/.agentkit/skills` |
+| `local:../skills` | `<cwd>/skills`（项目根，随仓库提交） |
+| `local:skills` | `<cwd>/.agentkit/skills`（运行时/租户私有覆盖） |
 | `..` | 项目根（`workspace/default`）；`workspace/tenant` 禁止 `..` |
 | `~/foo` | 绝对路径 |
 
@@ -1171,7 +1172,7 @@ tool.fs-workspace.default:
     workspace: workspace.default
 ```
 
-Skills 目录叠加示例：`dirs: [local:skills, local:.agentkit/skills, global:skills]`，先命中者优先。
+Skills 目录叠加示例：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 
 多租户路径语义见 [guides/multi-tenant.zh.md](guides/multi-tenant.zh.md)。
 

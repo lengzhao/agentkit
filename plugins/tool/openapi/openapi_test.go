@@ -198,7 +198,7 @@ func TestOpenAPIToolSpecFileEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "openapi", "petstore.json"), []byte(specJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	apiJSON := `{"apis": {"petstore": {"specFile": "openapi/petstore.json"}}}`
+	apiJSON := `{"apis": {"petstore": {"path": "openapi/petstore.json"}}}`
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +219,180 @@ func TestOpenAPIToolSpecFileEndToEnd(t *testing.T) {
 // TestOpenAPIToolCachingAndSyncCommand verifies that ListTools does not
 // re-read api.json after the first load, and that the "openapi" command
 // forces a reload picking up on-disk changes.
+func TestOpenAPIToolBindFromContext(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-User-Id"); got != "user-42" {
+			t.Errorf("X-User-Id = %q", got)
+		}
+		if got := r.URL.Query().Get("orgId"); got != "org-7" {
+			t.Errorf("orgId query = %q", got)
+		}
+		if got := r.URL.Query().Get("page"); got != "2" {
+			t.Errorf("page query = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	apiJSON := `{
+  "apis": {
+    "internal": {
+      "baseUrl": "` + server.URL + `",
+      "bind": {
+        "uid": {"from": "ctx:user_id", "in": "header", "name": "X-User-Id"},
+        "orgId": {"from": "ctx:metadata.org_id", "in": "query"}
+      },
+      "paths": {
+        "/orders": {
+          "get": {
+            "operationId": "listOrders",
+            "parameters": [
+              {"name": "uid", "in": "header", "required": true, "schema": {"type": "string"}},
+              {"name": "orgId", "in": "query", "required": true, "schema": {"type": "string"}},
+              {"name": "page", "in": "query", "schema": {"type": "integer"}}
+            ]
+          }
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, agentkit.KeyUserID, "user-42")
+	ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, map[string]any{"org_id": "org-7"})
+
+	tools, err := provider.ListTools(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("tools = %d", len(tools))
+	}
+	tool := tools[0]
+	schema := tool.InputSchema()
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	schemaText := string(raw)
+	for _, hidden := range []string{`"uid"`, `"orgId"`} {
+		if strings.Contains(schemaText, hidden) {
+			t.Fatalf("schema should hide bound param %s: %s", hidden, schemaText)
+		}
+	}
+	if !strings.Contains(schemaText, `"page"`) {
+		t.Fatalf("schema should still expose page: %s", schemaText)
+	}
+
+	out := agenttest.CallTool(t, ctx, tool, `{"page":2,"uid":"ignored","orgId":"ignored"}`)
+	var result callResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v (%s)", err, out)
+	}
+	if result.Status != http.StatusOK {
+		t.Fatalf("status = %d body=%s", result.Status, out)
+	}
+}
+
+func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-User-Id"); got != "user-99" {
+			t.Errorf("X-User-Id = %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	apiJSON := `{
+  "apis": {
+    "internal": {
+      "baseUrl": "` + server.URL + `",
+      "bind": {
+        "uid": {"from": "ctx:user_id", "in": "header", "name": "X-User-Id"}
+      },
+      "paths": {
+        "/ping": {
+          "get": {"operationId": "ping"}
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "user-99")
+	tools, err := provider.ListTools(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	out := agenttest.CallTool(t, ctx, tools[0], `{}`)
+	var result callResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v (%s)", err, out)
+	}
+	if result.Status != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", result.Status, out)
+	}
+}
+
+func TestOpenAPIToolBindMissingContext(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	apiJSON := `{
+  "apis": {
+    "internal": {
+      "baseUrl": "http://example.invalid",
+      "bind": {
+        "uid": {"from": "ctx:user_id", "in": "header", "name": "X-User-Id"}
+      },
+      "paths": {
+        "/ping": {
+          "get": {"operationId": "ping"}
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	tools, err := provider.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	out := agenttest.CallTool(t, context.Background(), tools[0], `{}`)
+	if !strings.Contains(out, "bind \"uid\"") {
+		t.Fatalf("output=%q, want bind error", out)
+	}
+}
+
 func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 	t.Parallel()
 

@@ -54,7 +54,7 @@ type openapiTool struct {
 //
 // Best practices:
 //   - Mount via tools/runtime deps.dynamicTools, not deps.tools, because definitions are discovered at runtime.
-//   - api.json is an index: each entry under "apis" points at an external OpenAPI document via specFile, or inlines paths directly.
+//   - api.json is an index: each entry under "apis" points at an OpenAPI document via path (specFile is a legacy alias).
 //   - Definitions are loaded once and cached; run the "openapi" command to reload api.json (and any specFile) from disk after editing it.
 //   - Secrets in auth (token/value/password) accept "env:NAME" and resolve through credentials, same as tool/mcp.
 func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, error) {
@@ -221,7 +221,7 @@ func openapiHelp() string {
 
 JSON format matches one apis entry in api.json, e.g.:
   {"baseUrl":"https://api.example.com","paths":{"/ping":{"get":{"operationId":"ping"}}}}
-  {"specFile":"openapi/petstore.json","baseUrl":"https://api.example.com","auth":{"type":"bearer","token":"env:TOKEN"}}
+  {"path":"api/petstore.json","baseUrl":"https://api.example.com","auth":{"type":"bearer","token":"env:TOKEN"}}
 
 Notes:
   add writes to the local api.json file (config.files local: entry)
@@ -355,6 +355,9 @@ func (t *openapiTool) InputSchema() agentkit.JSONSchema {
 	properties := make(map[string]any, len(t.op.Parameters)+1)
 	var required []string
 	for _, p := range t.op.Parameters {
+		if t.api.isBoundParameter(p.In, p.Name) {
+			continue
+		}
 		properties[p.Name] = paramSchema(p)
 		if p.Required {
 			required = append(required, p.Name)

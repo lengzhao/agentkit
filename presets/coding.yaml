@@ -33,6 +33,7 @@ skills.default:
   use: skill/filesystem
   config:
     dirs:
+      - local:../skills
       - local:skills
       - local:../.cursor/skills
       - global:skills

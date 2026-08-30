@@ -32,6 +32,9 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 	if err != nil {
 		return "", err
 	}
+	if err := applyBinds(ctx, api.Binds, args); err != nil {
+		return "", err
+	}
 
 	path, err := substitutePathParams(op, args)
 	if err != nil {
@@ -45,12 +48,12 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 		}
 		v, ok := args[param.Name]
 		if !ok {
-			if param.Required {
+			if param.Required && !api.isBoundParameter(param.In, param.Name) {
 				return "", fmt.Errorf("operation %q: missing required query parameter %q", op.OperationID, param.Name)
 			}
 			continue
 		}
-		query.Set(param.Name, stringifyValue(v))
+		query.Set(api.wireParamName(param.In, param.Name), stringifyValue(v))
 	}
 
 	headers := http.Header{}
@@ -63,12 +66,18 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 		}
 		v, ok := args[param.Name]
 		if !ok {
-			if param.Required {
+			if param.Required && !api.isBoundParameter(param.In, param.Name) {
 				return "", fmt.Errorf("operation %q: missing required header parameter %q", op.OperationID, param.Name)
 			}
 			continue
 		}
-		headers.Set(param.Name, stringifyValue(v))
+		headers.Set(api.wireParamName(param.In, param.Name), stringifyValue(v))
+	}
+	if err := applyBindOnlyParams(op, api.Binds, args, &path, query, headers); err != nil {
+		return "", err
+	}
+	if strings.Contains(path, "{") {
+		return "", fmt.Errorf("operation %q: path %q has unresolved placeholders", op.OperationID, op.Path)
 	}
 
 	if err := applyAuth(ctx, api.Auth, p.credentials, headers, query); err != nil {
@@ -142,9 +151,6 @@ func substitutePathParams(op operationConfig, args map[string]any) (string, erro
 			return "", fmt.Errorf("operation %q: missing required path parameter %q", op.OperationID, param.Name)
 		}
 		path = strings.ReplaceAll(path, "{"+param.Name+"}", url.PathEscape(stringifyValue(v)))
-	}
-	if strings.Contains(path, "{") {
-		return "", fmt.Errorf("operation %q: path %q has unresolved placeholders", op.OperationID, op.Path)
 	}
 	return path, nil
 }

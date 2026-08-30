@@ -46,6 +46,24 @@ flowchart TB
 | `DenyAllToolsPolicy` | 策略层 deny 场景 |
 | `AssertToolResultContains` / `AssertEventAtLeast` | 事件与 tool result 断言 |
 
+### OpenAPI（`testing/openapitest/` + `testing/fixtures/openapi/`）
+
+| 资源 | 用途 |
+|---|---|
+| `testing/fixtures/openapi/api.json` | 纯索引（auth、bind、`{{BASE_URL}}`、`path`） |
+| `testing/fixtures/openapi/api/petstore.json` | 独立 OpenAPI 文档 |
+| `openapitest.StartMock` | httptest mock petstore API |
+| `openapitest.Materialize` | 复制 fixture 并替换 `{{BASE_URL}}` |
+| `openapitest.NewProvider` | 构建 `tool/openapi` provider |
+
+```go
+mock := openapitest.StartMock(t)
+root := openapitest.Materialize(t, mock.URL)
+provider := openapitest.NewProvider(t, root)
+tool := openapitest.ToolByName(t, ctx, provider, "petstore__getPet")
+out := agenttest.CallTool(t, ctx, tool, `{"id":"42","verbose":true}`)
+```
+
 ## 场景用例目录
 
 ### Smoke（`testing/smoke/`，默认 CI）
@@ -58,6 +76,7 @@ flowchart TB
 | `tool_test.go` | 多 tool derive、policy deny | read 工具链、策略拒绝 |
 | `recovery_test.go` | orphan read 修复、干净 session | recovery 合成 interrupted result、不误触发 |
 | `web_test.go` | scripted web_search / web_fetch | 网络工具脚本链（无 API Key） |
+| `openapi_test.go` | OpenAPI mock + bind + scripted turn | 动态 HTTP 工具、ctx bind、tool runtime 挂载 |
 
 ### Integration（`integration/`，`-tags=integration`）
 

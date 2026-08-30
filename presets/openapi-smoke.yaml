@@ -1,0 +1,33 @@
+# L1 overlay：OpenAPI 动态工具冒烟（scripted LLM + testing/fixtures/openapi）。
+# 叠在 L0 config.base.yaml 之上；真实 HTTP 需 mock，见 testing/openapitest。
+#
+#   go test ./testing/smoke/ -run OpenAPI
+#
+# 手动 once-run 需先把 testing/fixtures/openapi/api.json 的 {{BASE_URL}} 换成可达地址并设置 OPENAPITEST_TOKEN。
+
+platform.default:
+  use: platform/cli
+  config:
+    once: true
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
+    local: testing/fixtures/openapi
+
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: "先通过 OpenAPI 工具查询宠物。"
+        toolCalls:
+          - id: call-get
+            name: petstore__getPet
+            input: '{"id":"42","verbose":true}'
+      - text: "再创建一只宠物。"
+        toolCalls:
+          - id: call-create
+            name: petstore__createPet
+            input: '{"body":{"name":"Fido"}}'
+      - text: "OpenAPI 工具调用完成。"

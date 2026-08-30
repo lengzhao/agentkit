@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +103,46 @@ func TestParseIndexFileInline(t *testing.T) {
 	}
 }
 
+func TestParseIndexFilePath(t *testing.T) {
+	t.Parallel()
+
+	specs := map[string][]byte{
+		"api/petstore.json": []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "petstore", "version": "1.0.0"},
+  "servers": [{"url": "https://fallback.example.com"}],
+  "paths": {"/ping": {"get": {}}}
+}`),
+	}
+	loadSpec := func(rel string) ([]byte, error) {
+		raw, ok := specs[rel]
+		if !ok {
+			return nil, fmt.Errorf("no such spec: %s", rel)
+		}
+		return raw, nil
+	}
+
+	raw := []byte(`{
+  "apis": {
+    "petstore": {"path": "api/petstore.json"}
+  }
+}`)
+	apis, err := parseIndexFile("/tmp/api.json", raw, loadSpec)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(apis) != 1 {
+		t.Fatalf("apis = %d, want 1", len(apis))
+	}
+	api := apis[0]
+	if api.BaseURL != "https://fallback.example.com" {
+		t.Fatalf("baseUrl = %q, want document servers[0].url fallback", api.BaseURL)
+	}
+	if len(api.Operations) != 1 || api.Operations[0].OperationID != "get_ping" {
+		t.Fatalf("operations = %+v, want auto-generated operationId", api.Operations)
+	}
+}
+
 func TestParseIndexFileSpecFile(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +181,141 @@ func TestParseIndexFileSpecFile(t *testing.T) {
 	}
 }
 
+func TestParseIndexFileBind(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{
+  "apis": {
+    "internal": {
+      "baseUrl": "https://api.example.com",
+      "bind": {
+        "uid": {"from": "ctx:user_id", "in": "header", "name": "X-User-Id"},
+        "orgId": {"from": "ctx:metadata.org_id", "in": "query"}
+      },
+      "paths": {
+        "/orders": {
+          "get": {
+            "operationId": "listOrders",
+            "parameters": [
+              {"name": "uid", "in": "header", "required": true, "schema": {"type": "string"}},
+              {"name": "orgId", "in": "query", "required": true, "schema": {"type": "string"}},
+              {"name": "page", "in": "query", "schema": {"type": "integer"}}
+            ]
+          }
+        }
+      }
+    }
+  }
+}`)
+
+	apis, err := parseIndexFile("/tmp/api.json", raw, noSpecLoader)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(apis) != 1 {
+		t.Fatalf("apis = %d, want 1", len(apis))
+	}
+	api := apis[0]
+	if len(api.Binds) != 2 {
+		t.Fatalf("binds = %d, want 2", len(api.Binds))
+	}
+	if !api.isBoundParameter("header", "uid") {
+		t.Fatal("uid header should be bound")
+	}
+	if !api.isBoundParameter("query", "orgId") {
+		t.Fatal("orgId query should be bound")
+	}
+	if api.isBoundParameter("query", "page") {
+		t.Fatal("page query should not be bound")
+	}
+}
+
+func TestParseIndexFileBindValidation(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "missing from",
+			raw:  `{"apis":{"x":{"baseUrl":"https://a.example.com","bind":{"uid":{"in":"header"}},"paths":{"/p":{"get":{}}}}}}`,
+		},
+		{
+			name: "bad from prefix",
+			raw:  `{"apis":{"x":{"baseUrl":"https://a.example.com","bind":{"uid":{"from":"user_id","in":"header"}},"paths":{"/p":{"get":{}}}}}}`,
+		},
+		{
+			name: "bad in",
+			raw:  `{"apis":{"x":{"baseUrl":"https://a.example.com","bind":{"uid":{"from":"ctx:user_id","in":"cookie"}},"paths":{"/p":{"get":{}}}}}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseIndexFile("/tmp/api.json", []byte(tc.raw), noSpecLoader)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestParseIndexFileSpecFileResolvesSchemaRef(t *testing.T) {
+	t.Parallel()
+
+	specs := map[string][]byte{
+		"specs/petstore.json": []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "petstore", "version": "1.0.0"},
+  "servers": [{"url": "https://api.example.com"}],
+  "paths": {
+    "/pets/{id}": {
+      "get": {
+        "operationId": "getPet",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {"$ref": "#/components/schemas/PetId"}
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PetId": {"type": "string", "description": "Pet identifier"}
+    }
+  }
+}`),
+	}
+	loadSpec := func(rel string) ([]byte, error) {
+		raw, ok := specs[rel]
+		if !ok {
+			return nil, fmt.Errorf("no such spec: %s", rel)
+		}
+		return raw, nil
+	}
+
+	raw := []byte(`{"apis": {"petstore": {"specFile": "specs/petstore.json"}}}`)
+	apis, err := parseIndexFile("/tmp/api.json", raw, loadSpec)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(apis) != 1 || len(apis[0].Operations) != 1 {
+		t.Fatalf("apis = %+v", apis)
+	}
+	schema := string(apis[0].Operations[0].Parameters[0].Schema)
+	if !strings.Contains(schema, `"type":"string"`) {
+		t.Fatalf("schema = %s, want resolved PetId schema", schema)
+	}
+	if strings.Contains(schema, "$ref") {
+		t.Fatalf("schema still contains $ref: %s", schema)
+	}
+}
+
 func TestParseIndexFileSpecFileBaseURLOverride(t *testing.T) {
 	t.Parallel()
 
@@ -160,6 +336,24 @@ func TestParseIndexFileSpecFileBaseURLOverride(t *testing.T) {
 	}
 }
 
+func TestParseIndexFilePathAndInlinePathsConflict(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{
+  "apis": {
+    "petstore": {
+      "path": "api/petstore.json",
+      "baseUrl": "https://api.example.com",
+      "paths": {"/ping": {"get": {}}}
+    }
+  }
+}`)
+	_, err := parseIndexFile("/tmp/api.json", raw, noSpecLoader)
+	if err == nil {
+		t.Fatal("expected error for path + inline paths conflict")
+	}
+}
+
 func TestParseIndexFileSpecFileAndInlinePathsConflict(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +369,24 @@ func TestParseIndexFileSpecFileAndInlinePathsConflict(t *testing.T) {
 	_, err := parseIndexFile("/tmp/api.json", raw, noSpecLoader)
 	if err == nil {
 		t.Fatal("expected error for specFile + inline paths conflict")
+	}
+}
+
+func TestParseIndexFilePathAndSpecFileConflict(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{
+  "apis": {
+    "petstore": {
+      "path": "api/a.json",
+      "specFile": "api/b.json",
+      "baseUrl": "https://api.example.com"
+    }
+  }
+}`)
+	_, err := parseIndexFile("/tmp/api.json", raw, noSpecLoader)
+	if err == nil {
+		t.Fatal("expected error for mismatched path and specFile")
 	}
 }
 

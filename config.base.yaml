@@ -238,6 +238,7 @@ skills.default:
   use: skill/filesystem
   config:
     dirs:
+      - local:../skills
       - local:skills
       - global:skills
   deps:

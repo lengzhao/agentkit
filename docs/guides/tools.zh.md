@@ -135,6 +135,8 @@ tools.default:
 
 先命中的文件赢。server 配置和每个 server 的工具列表**只加载一次并缓存在内存里**；`ListTools`/调用工具都读缓存，不会每次都重读 `mcp.json` 或重新对每个 server 发一次 `ListTools` RPC。编辑 `mcp.json`、或重启了某个 server 之后，运行 `/mcp -u` 强制重新读取配置并重新发现工具；也可用 `/mcp add <name> <json>` 将 server 写入本地 `mcp.json`（先探活校验，失败则回滚文件）。`tool/mcp` 通过 `agentkit.CommandProvider` 贡献这些 command，与模型可见的 Tool 是两套机制，命令本身不会出现在模型的工具列表里。单个 server 连不上只跳过该 server 并 `slog.Warn`。
 
+**配置约定与维护流程**见 Skill **`mcp-manager`**（`skills/mcp-manager/SKILL.md`，经 `skill(name="mcp-manager")` 加载）。Agent 用 read/edit 改配置后，需请用户执行 `/mcp -u` 刷新动态工具。
+
 多租户场景 MCP 客户端池按 `(租户键, server 名)` 分槽，见 [multi-tenant.zh.md](multi-tenant.zh.md)。
 
 ## OpenAPI 动态工具
@@ -143,53 +145,38 @@ tools.default:
 
 ### 配置格式
 
-`api.json` 是一个**索引文件**：顶层 `apis` 按名字列出若干 API，每个条目要么用 `specFile` 指向一个外部的 OpenAPI 文档（可以是原样下载的 spec，不用改动），要么直接内联 `paths`（写精简版时用）——两者二选一，同时给两个会报错。
+`api.json` 是**纯索引文件**：顶层 `apis` 按名字列出 API，每个条目只放 wiring（`path`、`baseUrl`、`auth`、`bind` 等）；OpenAPI 的 `paths`/schema 放在 `path` 指向的独立文档里（可以是原样下载的 spec）。
 
 ```json
 {
   "apis": {
     "petstore": {
-      "specFile": "openapi/petstore.json",
+      "path": "api/petstore.json",
       "baseUrl": "https://petstore.example.com",
       "prefix": "petstore__",
       "auth": { "type": "bearer", "token": "env:PETSTORE_TOKEN" },
+      "bind": {
+        "uid": { "from": "ctx:user_id", "in": "header", "name": "X-User-Id" }
+      },
       "allowOperations": ["getPet", "createPet"],
       "timeoutSeconds": 30
     },
-    "internal": {
-      "baseUrl": "https://internal.example.com",
-      "paths": {
-        "/pets/{id}": {
-          "get": {
-            "operationId": "getPet",
-            "summary": "Get a pet by id",
-            "parameters": [
-              { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
-              { "name": "verbose", "in": "query", "schema": { "type": "boolean" } }
-            ]
-          }
-        },
-        "/pets": {
-          "post": {
-            "operationId": "createPet",
-            "requestBody": {
-              "required": true,
-              "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" } } } } }
-            }
-          }
-        }
-      }
+    "orders": {
+      "path": "api/orders.json",
+      "baseUrl": "https://orders.example.com"
     }
   }
 }
 ```
 
-`specFile` 指向的文件就是一份普通 OpenAPI 文档（顶层 `servers` + `paths`，没有 wiring 字段），路径经 `workspace.Resolve` 解析，与 `api.json` 自身走同一套 `local:`/`global:` 前缀规则。
+`path` 指向的文件是一份普通 OpenAPI 文档（`openapi` + `info` + `servers` + `paths`，不含 wiring 字段），路径经 `workspace.Resolve` 解析，与 `api.json` 走同一套 `local:`/`global:` 前缀规则。
 
 | 字段 | 说明 |
 |---|---|
-| `specFile` | 指向外部 OpenAPI 文档，取其 `paths`；与内联 `paths` 二选一 |
-| `baseUrl` / `servers[0].url` | API 根地址；条目自身 `baseUrl` 优先，其次条目 `servers`，再其次 `specFile` 里的 `servers` |
+| `path` | 指向 OpenAPI 文档（推荐） |
+| `specFile` | `path` 的遗留别名，二者语义相同；若同时出现且值不同则报错 |
+| `paths` | **遗留**：在索引条目内联 OpenAPI paths（仅适合极小 hand-written API）；与 `path` 互斥 |
+| `baseUrl` / `servers[0].url` | API 根地址；条目自身 `baseUrl` 优先，其次条目 `servers`，再其次 OpenAPI 文档里的 `servers` |
 | `prefix` | 模型可见工具名前缀，默认 `<name>__` |
 | `headers` | 每次请求都带上的静态 header |
 | `auth` | `bearer` / `header` / `query` / `basic`；敏感字段（`token`/`value`/`password`）支持 `env:NAME`，经 credentials 解析，同 `tool/mcp` |
@@ -197,6 +184,62 @@ tools.default:
 | `timeoutSeconds` | 单次请求墙钟，默认 30 |
 | `paths.<path>.<method>.parameters[].in` | `path` / `query` / `header` 三种位置，`path` 段用 `{name}` 占位 |
 | `paths.<path>.<method>.requestBody` | 仅取 `content["application/json"].schema`，模型侧对应输入的 `body` 字段 |
+| `$ref` / `components` | 由 [kin-openapi](https://github.com/getkin/kin-openapi) 解析并展开；OpenAPI 文档内的外部文件引用经 workspace 相对路径加载 |
+| `bind` | 从 `context` 程序化注入参数，不暴露给模型；见下文 |
+
+### 上下文绑定（`bind`）
+
+某些参数（如 `uid`、租户 id）不应由模型填写，而应从当前 turn 的 `context.Context` 注入。在 `api.json` 条目里用 `bind` 声明（与 `auth`、`headers` 同属 wiring 层，不必改 OpenAPI spec）：
+
+```json
+{
+  "apis": {
+    "internal": {
+      "path": "api/orders.json",
+      "baseUrl": "https://api.example.com",
+      "bind": {
+        "uid": {
+          "from": "ctx:user_id",
+          "in": "header",
+          "name": "X-User-Id"
+        },
+        "orgId": {
+          "from": "ctx:metadata.org_id",
+          "in": "query"
+        }
+      }
+    }
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `from` | 值来源，必须为 `ctx:` 前缀 |
+| `in` | `path` / `query` / `header` |
+| `name` | HTTP 参数名；省略时用 bind 的 key |
+| bind key | 与 OpenAPI spec 中的参数名对应（用于隐藏 schema）；`name` 仅改变实际 HTTP 字段名 |
+
+支持的 `from` 值：
+
+| `from` | 对应 context |
+|---|---|
+| `ctx:user_id` | `KeyUserID` |
+| `ctx:session_id` | `KeySessionID` |
+| `ctx:store_session_id` | `KeyStoreSessionID` |
+| `ctx:delivery_session_id` | `KeyDeliverySessionID` |
+| `ctx:agent_id` | `KeyAgentID` |
+| `ctx:platform_id` | `KeyPlatformID` |
+| `ctx:metadata.<key>` | `KeyMessageMetadata[key]` |
+
+行为：
+
+- 被 bind 的参数**不会**出现在模型可见的 tool input schema 里
+- 调用时从 ctx 解析并注入；ctx 值**覆盖**模型传入的同名字段
+- ctx 值为空时返回错误，不发起 HTTP 请求
+- OpenAPI spec 里可以保留该参数（文档用途）；实际是否注入由 `bind` 决定
+- 未在 spec 中出现的 bind（如仅 wiring 层的 header）也会照常注入
+
 
 每个工具的输入 schema 由 `parameters` + `requestBody` 拼成一个 object：parameter 用各自的 `name` 作为属性名，`requestBody` 对应 `body` 属性。调用结果统一编码为 `{"status":..,"headers":{...},"body":..}` 字符串返回给模型；网络/HTTP 错误也编码为字符串返回，不中断 tool 调用。
 
@@ -222,4 +265,18 @@ tools.default:
       - openapi.default
 ```
 
-先命中的文件赢（按 `apis` 里的 name 去重）。解析结果**只加载一次并缓存在内存里**：`ListTools` 读缓存，不会每次都重读 `api.json` 或它引用的 `specFile`。编辑 `api.json`（或它指向的 spec 文件）之后，运行 `/openapi -u` 强制重新读取磁盘并重建缓存；也可用 `/openapi add <name> <json>` 将 API 写入本地 `api.json`（先校验并生成工具列表，失败则回滚文件）。`tool/openapi` 通过 `agentkit.CommandProvider` 贡献这些 command，与模型可见的 Tool 是两套机制，命令本身不会出现在模型的工具列表里。单个文件解析失败只跳过该文件并 `slog.Warn`。
+先命中的文件赢（按 `apis` 里的 name 去重）。解析结果**只加载一次并缓存在内存里**：`ListTools` 读缓存，不会每次都重读 `api.json` 或它引用的 OpenAPI 文档。编辑 `api.json`（或它指向的文档）之后，运行 **`/openapi -u`** 强制重新读取磁盘并刷新动态工具；也可用 **`/openapi add <name> <json>`** 写入索引（先校验，失败回滚）。`tool/openapi` 通过 `agentkit.CommandProvider` 贡献 slash command，与模型可见的 Tool 是两套机制。维护指南见 Skill **`openapi-manager`**。
+
+### Agent 维护（Skill + `/openapi`）
+
+**约定与字段说明**放在 Skill **`openapi-manager`**（`skills/openapi-manager/SKILL.md`，经 `skill(name="openapi-manager")` 加载）。
+
+**运行时操作**用 slash command（不在模型工具列表里，Agent 改完文件后需请用户执行）：
+
+| 命令 | 作用 |
+|---|---|
+| `/openapi` | 查看当前已加载 API 与帮助 |
+| `/openapi -u` | 重读 `api.json` 与 OpenAPI 文档，刷新动态 HTTP 工具 |
+| `/openapi add <name> <json>` | 追加索引条目（校验、写盘、失败回滚） |
+
+推荐流程：`skill(openapi-manager)` → `read`/`edit` 改文件 → 请用户 `/openapi -u`。

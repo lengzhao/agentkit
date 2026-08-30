@@ -24,6 +24,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 | [subagent-smoke.yaml](subagent-smoke.yaml) | 子 agent 冒烟 | scripted LLM；L0 已默认挂载 subagent |
 | [web.yaml](web.yaml) | 网络能力 | 搜索 + 抓取 + 向用户提问 |
 | [web-smoke.yaml](web-smoke.yaml) | 网络能力冒烟 | scripted web；**需链 web** |
+| [openapi-smoke.yaml](openapi-smoke.yaml) | OpenAPI 动态工具冒烟 | scripted LLM + fixture api.json；**真实 HTTP 见 testing/openapitest mock** |
 | [multi-tenant.yaml](multi-tenant.yaml) | 多租户 IM | 按群分目录；tool 在 `work/` 子目录；放开并发；**入站 platform 需自行接入** |
 | [p1-context.yaml](p1-context.yaml) | P1 能力片段 | 复制进自定义 overlay，非完整能力栈 |
 

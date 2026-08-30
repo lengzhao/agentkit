@@ -154,8 +154,8 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 | `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；L0 `tools.default` 已启用 |
-| `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；经 `deps.dynamicTools` 挂载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
-| `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json`（一份索引，条目指向外部 OpenAPI 文档或内联 `paths`）并把每个 operation 暴露为 HTTP 工具；经 `deps.dynamicTools` 挂载，定义缓存在内存中，`/openapi` 命令强制重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
 **`tool/fs-workspace` 模型参数**（插件 `config` 另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
 

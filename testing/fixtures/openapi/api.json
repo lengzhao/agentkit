@@ -1,0 +1,13 @@
+{
+  "apis": {
+    "petstore": {
+      "path": "api/petstore.json",
+      "baseUrl": "{{BASE_URL}}",
+      "auth": {"type": "bearer", "token": "env:OPENAPITEST_TOKEN"},
+      "bind": {
+        "uid": {"from": "ctx:user_id", "in": "header", "name": "X-User-Id"}
+      },
+      "denyOperations": ["deletePet"]
+    }
+  }
+}

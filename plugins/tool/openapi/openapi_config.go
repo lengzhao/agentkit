@@ -3,36 +3,15 @@ package openapi
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"path"
 	"strings"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type rawServer struct {
 	URL string `json:"url"`
-}
-
-type rawParameter struct {
-	Name        string          `json:"name"`
-	In          string          `json:"in"`
-	Required    bool            `json:"required"`
-	Description string          `json:"description"`
-	Schema      json.RawMessage `json:"schema"`
-}
-
-type rawMediaType struct {
-	Schema json.RawMessage `json:"schema"`
-}
-
-type rawRequestBody struct {
-	Required bool                    `json:"required"`
-	Content  map[string]rawMediaType `json:"content"`
-}
-
-type rawOperation struct {
-	OperationID string          `json:"operationId"`
-	Summary     string          `json:"summary"`
-	Description string          `json:"description"`
-	Parameters  []rawParameter  `json:"parameters"`
-	RequestBody *rawRequestBody `json:"requestBody"`
 }
 
 type rawAuth struct {
@@ -44,35 +23,33 @@ type rawAuth struct {
 	Password string `json:"password"`
 }
 
-type rawPaths map[string]map[string]rawOperation
-
-// rawSpecDocument is the shape of a file referenced by an index entry's
-// specFile: a plain OpenAPI document with no wiring fields, so a downloaded
-// spec works unmodified.
-type rawSpecDocument struct {
-	Servers []rawServer `json:"servers"`
-	Paths   rawPaths    `json:"paths"`
+type rawBind struct {
+	From string `json:"from"`
+	In   string `json:"in"`
+	Name string `json:"name,omitempty"`
 }
 
-// rawAPIEntry is one named entry inside api.json's "apis" index. It either
-// points at an external OpenAPI document via specFile, or inlines paths
-// directly for small hand-written APIs — not both.
+// rawAPIEntry is one named entry inside api.json's index. Wiring fields (baseUrl,
+// auth, bind, prefix, …) live here; OpenAPI paths live in the document file
+// referenced by path (or legacy specFile). Inline paths in the index entry is
+// deprecated but still supported for tiny hand-written APIs.
 type rawAPIEntry struct {
-	SpecFile        string            `json:"specFile"`
-	BaseURL         string            `json:"baseUrl"`
-	Servers         []rawServer       `json:"servers"`
-	Prefix          string            `json:"prefix"`
-	Headers         map[string]string `json:"headers"`
-	Auth            *rawAuth          `json:"auth"`
-	AllowOperations []string          `json:"allowOperations"`
-	DenyOperations  []string          `json:"denyOperations"`
-	TimeoutSeconds  int               `json:"timeoutSeconds"`
-	Paths           rawPaths          `json:"paths"`
+	Path            string             `json:"path"`
+	SpecFile        string             `json:"specFile"`
+	BaseURL         string             `json:"baseUrl"`
+	Servers         []rawServer        `json:"servers"`
+	Prefix          string             `json:"prefix"`
+	Headers         map[string]string  `json:"headers"`
+	Auth            *rawAuth           `json:"auth"`
+	AllowOperations []string           `json:"allowOperations"`
+	DenyOperations  []string           `json:"denyOperations"`
+	TimeoutSeconds  int                `json:"timeoutSeconds"`
+	Bind            map[string]rawBind `json:"bind,omitempty"`
+	Paths           json.RawMessage    `json:"paths"`
 }
 
 // rawIndexDocument is api.json's top-level shape: an index naming APIs and
-// wiring each one (baseUrl override, auth, prefix, allow/denyOperations) to
-// either an external OpenAPI spec file or inline paths.
+// wiring each one to a separate OpenAPI document plus runtime overrides.
 type rawIndexDocument struct {
 	Apis map[string]rawAPIEntry `json:"apis"`
 }
@@ -112,10 +89,12 @@ type authConfig struct {
 type apiConfig struct {
 	Name            string
 	Source          string
+	DocPath         string
 	BaseURL         string
 	Prefix          string
 	Headers         map[string]string
 	Auth            *authConfig
+	Binds           []bindConfig
 	AllowOperations []string
 	DenyOperations  []string
 	TimeoutSeconds  int
@@ -124,14 +103,30 @@ type apiConfig struct {
 
 var validParamLocations = map[string]bool{"path": true, "query": true, "header": true}
 
-// specLoader resolves and reads the file an index entry's specFile points at.
-// The provider implements it over workspace.Service; tests can supply a
-// simpler stub.
+// specLoader resolves and reads the OpenAPI document an index entry's path points at.
+// The provider implements it over workspace.Service; tests can supply a simpler stub.
 type specLoader func(relPath string) ([]byte, error)
 
-// parseIndexFile parses one api.json index document into its named
-// apiConfigs. Each entry under "apis" either points at an external OpenAPI
-// document via specFile (loaded through loadSpec) or inlines paths directly.
+// entryDocumentPath returns the workspace-relative OpenAPI document path for an index entry.
+// path is preferred; specFile is a legacy alias.
+func entryDocumentPath(entry rawAPIEntry) (string, error) {
+	docPath := strings.TrimSpace(entry.Path)
+	legacy := strings.TrimSpace(entry.SpecFile)
+	switch {
+	case docPath != "" && legacy != "" && docPath != legacy:
+		return "", fmt.Errorf("path %q and specFile %q disagree", docPath, legacy)
+	case docPath != "":
+		return docPath, nil
+	case legacy != "":
+		return legacy, nil
+	default:
+		return "", nil
+	}
+}
+
+// parseIndexFile parses one api.json index document into its named apiConfigs.
+// Each entry under "apis" references an OpenAPI document via path (preferred) or
+// legacy specFile, or inlines paths directly.
 func parseIndexFile(path string, raw []byte, loadSpec specLoader) ([]apiConfig, error) {
 	var doc rawIndexDocument
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -199,25 +194,26 @@ func parseAPIEntryJSON(name, source string, raw []byte, loadSpec specLoader) (ap
 }
 
 func buildAPIConfig(name, path string, entry rawAPIEntry, loadSpec specLoader) (apiConfig, error) {
-	specFile := strings.TrimSpace(entry.SpecFile)
-	if specFile != "" && len(entry.Paths) > 0 {
-		return apiConfig{}, fmt.Errorf("api %q in %s: specFile and inline paths are mutually exclusive", name, path)
+	docPath, err := entryDocumentPath(entry)
+	if err != nil {
+		return apiConfig{}, fmt.Errorf("api %q in %s: %w", name, path, err)
+	}
+	if docPath != "" && len(entry.Paths) > 0 {
+		return apiConfig{}, fmt.Errorf("api %q in %s: path and inline paths are mutually exclusive", name, path)
 	}
 
-	paths := entry.Paths
+	doc, err := loadOpenAPIDocument(name, docPath, entry, loadSpec)
+	if err != nil {
+		return apiConfig{}, fmt.Errorf("api %q in %s: %w", name, path, err)
+	}
+
 	servers := entry.Servers
-	if specFile != "" {
-		specRaw, err := loadSpec(specFile)
-		if err != nil {
-			return apiConfig{}, fmt.Errorf("api %q in %s: load specFile %q: %w", name, path, specFile, err)
-		}
-		var spec rawSpecDocument
-		if err := json.Unmarshal(specRaw, &spec); err != nil {
-			return apiConfig{}, fmt.Errorf("api %q in %s: parse specFile %q: %w", name, path, specFile, err)
-		}
-		paths = spec.Paths
-		if len(servers) == 0 {
-			servers = spec.Servers
+	if len(servers) == 0 && doc.Servers != nil {
+		for _, srv := range doc.Servers {
+			if srv == nil {
+				continue
+			}
+			servers = append(servers, rawServer{URL: srv.URL})
 		}
 	}
 
@@ -233,6 +229,7 @@ func buildAPIConfig(name, path string, entry rawAPIEntry, loadSpec specLoader) (
 	cfg := apiConfig{
 		Name:            name,
 		Source:          path,
+		DocPath:         docPath,
 		BaseURL:         baseURL,
 		Prefix:          strings.TrimSpace(entry.Prefix),
 		Headers:         cloneStringMap(entry.Headers),
@@ -250,37 +247,114 @@ func buildAPIConfig(name, path string, entry rawAPIEntry, loadSpec specLoader) (
 			Password: entry.Auth.Password,
 		}
 	}
+	binds, err := parseBinds(entry.Bind)
+	if err != nil {
+		return apiConfig{}, fmt.Errorf("api %q in %s: %w", name, path, err)
+	}
+	cfg.Binds = binds
 
-	seen := make(map[string]string)
-	for p, methods := range paths {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		for method, op := range methods {
-			method = strings.ToUpper(strings.TrimSpace(method))
-			if method == "" {
-				continue
-			}
-			opCfg, err := buildOperation(method, p, op)
-			if err != nil {
-				return apiConfig{}, fmt.Errorf("api %q in %s: %w", name, path, err)
-			}
-			if prior, ok := seen[opCfg.OperationID]; ok {
-				return apiConfig{}, fmt.Errorf("api %q in %s: duplicate operationId %q (%s and %s %s)",
-					name, path, opCfg.OperationID, prior, method, p)
-			}
-			seen[opCfg.OperationID] = method + " " + p
-			cfg.Operations = append(cfg.Operations, opCfg)
-		}
+	ops, err := operationsFromDocument(doc)
+	if err != nil {
+		return apiConfig{}, err
 	}
-	if len(cfg.Operations) == 0 {
-		return apiConfig{}, fmt.Errorf("api %q in %s declares no operations", name, path)
-	}
+	cfg.Operations = ops
 	return cfg, nil
 }
 
-func buildOperation(method, path string, op rawOperation) (operationConfig, error) {
+func loadOpenAPIDocument(name, docPath string, entry rawAPIEntry, loadSpec specLoader) (*openapi3.T, error) {
+	loader := &openapi3.Loader{IsExternalRefsAllowed: true}
+	if loadSpec != nil && docPath != "" {
+		loader.ReadFromURIFunc = readURIFunc(docPath, loadSpec)
+	}
+
+	if docPath != "" {
+		specRaw, err := loadSpec(docPath)
+		if err != nil {
+			return nil, fmt.Errorf("load path %q: %w", docPath, err)
+		}
+		location := &url.URL{Path: docPath}
+		return loader.LoadFromDataWithPath(specRaw, location)
+	}
+
+	if len(entry.Paths) == 0 {
+		return nil, fmt.Errorf("needs path to an OpenAPI document (or legacy inline paths)")
+	}
+	var pathsObj any
+	if err := json.Unmarshal(entry.Paths, &pathsObj); err != nil {
+		return nil, fmt.Errorf("parse inline paths: %w", err)
+	}
+	docObj := map[string]any{
+		"openapi": "3.0.3",
+		"info": map[string]any{
+			"title":   name,
+			"version": "1.0.0",
+		},
+		"paths": pathsObj,
+	}
+	if len(entry.Servers) > 0 {
+		docObj["servers"] = entry.Servers
+	}
+	data, err := json.Marshal(docObj)
+	if err != nil {
+		return nil, err
+	}
+	return loader.LoadFromData(data)
+}
+
+func readURIFunc(docPath string, loadSpec specLoader) openapi3.ReadFromURIFunc {
+	specDir := path.Dir(docPath)
+	return func(_ *openapi3.Loader, uri *url.URL) ([]byte, error) {
+		ref := uri.String()
+		switch uri.Scheme {
+		case "":
+			// Relative ref from the spec file directory.
+		case "file":
+			ref = uri.Path
+		default:
+			return nil, fmt.Errorf("unsupported ref scheme %q", uri.Scheme)
+		}
+		if !strings.HasPrefix(ref, "/") && !strings.Contains(ref, "://") {
+			ref = path.Join(specDir, ref)
+		}
+		return loadSpec(ref)
+	}
+}
+
+func operationsFromDocument(doc *openapi3.T) ([]operationConfig, error) {
+	if doc == nil || doc.Paths == nil || doc.Paths.Len() == 0 {
+		return nil, fmt.Errorf("declares no operations")
+	}
+
+	seen := make(map[string]string)
+	var out []operationConfig
+	for _, p := range doc.Paths.Keys() {
+		pathItem := doc.Paths.Value(p)
+		if pathItem == nil {
+			continue
+		}
+		for method, op := range pathItem.Operations() {
+			if op == nil {
+				continue
+			}
+			opCfg, err := buildOperation(strings.ToUpper(method), p, op)
+			if err != nil {
+				return nil, err
+			}
+			if prior, ok := seen[opCfg.OperationID]; ok {
+				return nil, fmt.Errorf("duplicate operationId %q (%s and %s %s)",
+					opCfg.OperationID, prior, opCfg.Method, opCfg.Path)
+			}
+			seen[opCfg.OperationID] = opCfg.Method + " " + opCfg.Path
+			out = append(out, opCfg)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("declares no operations")
+	}
+	return out, nil
+}
+
+func buildOperation(method, path string, op *openapi3.Operation) (operationConfig, error) {
 	opID := strings.TrimSpace(op.OperationID)
 	if opID == "" {
 		opID = defaultOperationID(method, path)
@@ -292,32 +366,47 @@ func buildOperation(method, path string, op rawOperation) (operationConfig, erro
 		Summary:     strings.TrimSpace(op.Summary),
 		Description: strings.TrimSpace(op.Description),
 	}
-	for _, p := range op.Parameters {
-		pname := strings.TrimSpace(p.Name)
+	for _, paramRef := range op.Parameters {
+		if paramRef == nil || paramRef.Value == nil {
+			continue
+		}
+		param := paramRef.Value
+		pname := strings.TrimSpace(param.Name)
 		if pname == "" {
 			continue
 		}
-		in := strings.ToLower(strings.TrimSpace(p.In))
+		in := strings.ToLower(strings.TrimSpace(param.In))
 		if !validParamLocations[in] {
-			return operationConfig{}, fmt.Errorf("operation %q: parameter %q has unsupported in %q", opID, pname, p.In)
+			return operationConfig{}, fmt.Errorf("operation %q: parameter %q has unsupported in %q", opID, pname, param.In)
 		}
 		cfg.Parameters = append(cfg.Parameters, paramConfig{
 			Name:        pname,
 			In:          in,
-			Required:    p.Required,
-			Description: strings.TrimSpace(p.Description),
-			Schema:      p.Schema,
+			Required:    param.Required,
+			Description: strings.TrimSpace(param.Description),
+			Schema:      marshalSchemaRef(param.Schema),
 		})
 	}
-	if op.RequestBody != nil {
-		if mt, ok := op.RequestBody.Content["application/json"]; ok && len(mt.Schema) > 0 {
+	if op.RequestBody != nil && op.RequestBody.Value != nil {
+		if mt := op.RequestBody.Value.Content["application/json"]; mt != nil && mt.Schema != nil {
 			cfg.RequestBody = &requestBodyConfig{
-				Required: op.RequestBody.Required,
-				Schema:   mt.Schema,
+				Required: op.RequestBody.Value.Required,
+				Schema:   marshalSchemaRef(mt.Schema),
 			}
 		}
 	}
 	return cfg, nil
+}
+
+func marshalSchemaRef(ref *openapi3.SchemaRef) json.RawMessage {
+	if ref == nil || ref.Value == nil {
+		return nil
+	}
+	raw, err := json.Marshal(ref.Value)
+	if err != nil {
+		return nil
+	}
+	return json.RawMessage(raw)
 }
 
 // defaultOperationID mirrors the common OpenAPI-generator fallback: lowercase
