@@ -35,7 +35,7 @@ func TestSubagentHelpCommand(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := cmd.CommandExec(context.Background(), tc.args...)
+			out, err := cmd.CommandExec(context.Background(), strings.Join(tc.args, " "))
 			if err != nil {
 				t.Fatal(err)
 			}

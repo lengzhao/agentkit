@@ -287,8 +287,8 @@ func (c *openapiSyncCommand) Description() string {
 	return "Show OpenAPI tools, add an API from JSON, or reload api.json with -u"
 }
 
-func (c *openapiSyncCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	update, rest := peelUpdateFlag(args)
+func (c *openapiSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
 	switch {
 	case update:
 		apis, err := c.provider.reload(ctx)

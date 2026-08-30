@@ -116,7 +116,7 @@ func TestMCPAddCommand(t *testing.T) {
 	}
 	cmd := cp.Commands()[0]
 
-	out, err := cmd.CommandExec(ctx, "add", "demo", `{"command":"this-binary-does-not-exist-xyz123"}`)
+	out, err := cmd.CommandExec(ctx, `add demo {"command":"this-binary-does-not-exist-xyz123"}`)
 	if err == nil {
 		t.Fatalf("add command should fail for unreachable server, got %q", out)
 	}
@@ -132,7 +132,7 @@ func TestMCPAddCommand(t *testing.T) {
 		t.Fatalf("tools = %d, want 0 after rejected add", len(tools))
 	}
 
-	status, err := cmd.CommandExec(ctx)
+	status, err := cmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatalf("status command: %v", err)
 	}

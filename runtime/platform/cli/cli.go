@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -42,6 +43,7 @@ type Platform struct {
 	welcomed      bool
 	input         *Input
 	commands      agentkit.Commands
+	sessionStore  agentkit.SessionStore
 	sessionID     agentkit.SessionID
 	pending       *permissionPrompt
 	turnDone      chan struct{}
@@ -63,6 +65,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		input:         NewInput(os.Stdin),
 		sessionID:     sessionID,
 		commands:      deps.Commands,
+		sessionStore:  deps.SessionStore,
 	}, nil
 }
 
@@ -119,7 +122,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	if text == "" {
 		return agentkit.MessageEvent{}, nil
 	}
-	if name, args, ok := parseSlashCommand(text); ok {
+	if name, args, ok := common.ParseSlashCommand(text); ok {
 		if handled, err := p.handleSlash(ctx, name, args); handled || err != nil {
 			return agentkit.MessageEvent{}, err
 		}
@@ -155,7 +158,7 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	}
 
 	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, p.sessionID)
-	out, err := p.commands.Dispatch(cmdCtx, name, splitArgs(args))
+	out, err := p.commands.Dispatch(cmdCtx, name, args)
 	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
 		return true, nil
@@ -167,11 +170,24 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	if out != "" {
 		fmt.Fprintln(os.Stderr, out)
 	}
-	if name == "new" && out != "" {
-		p.sessionID = agentkit.SessionID(out)
-		fmt.Fprintf(os.Stderr, "new session: %s\n", p.sessionID)
-	}
+	p.refreshSessionID(ctx)
 	return true, nil
+}
+
+func (p *Platform) refreshSessionID(ctx context.Context) {
+	if p.sessionStore == nil {
+		return
+	}
+	current, ok := p.sessionStore.(session.CLICurrentStore)
+	if !ok {
+		return
+	}
+	id, err := current.ResolveCLICurrent(ctx)
+	if err != nil || id == "" || id == p.sessionID {
+		return
+	}
+	p.sessionID = id
+	fmt.Fprintf(os.Stderr, "new session: %s\n", p.sessionID)
 }
 
 func (p *Platform) readInput(skipPrompt bool) (string, error) {
@@ -331,8 +347,16 @@ func (p *Platform) dispatchHelpTopic(args string) {
 		return
 	}
 	fields := splitArgs(args)
+	if len(fields) == 0 {
+		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
+		return
+	}
 	cmdCtx := context.WithValue(context.Background(), agentkit.KeySessionID, p.sessionID)
-	out, err := p.commands.Dispatch(cmdCtx, fields[0], fields[1:])
+	rest := ""
+	if len(fields) > 1 {
+		rest = strings.TrimSpace(args[len(fields[0]):])
+	}
+	out, err := p.commands.Dispatch(cmdCtx, fields[0], rest)
 	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
 		return
@@ -344,22 +368,6 @@ func (p *Platform) dispatchHelpTopic(args string) {
 	if out != "" {
 		fmt.Fprintln(os.Stderr, out)
 	}
-}
-
-func parseSlashCommand(line string) (name, args string, ok bool) {
-	if !strings.HasPrefix(line, "/") {
-		return "", "", false
-	}
-	body := strings.TrimSpace(strings.TrimPrefix(line, "/"))
-	if body == "" {
-		return "", "", true
-	}
-	fields := strings.Fields(body)
-	name = strings.ToLower(fields[0])
-	if len(fields) > 1 {
-		args = strings.TrimSpace(body[len(fields[0]):])
-	}
-	return name, args, true
 }
 
 func splitArgs(args string) []string {

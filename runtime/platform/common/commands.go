@@ -99,7 +99,7 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 	if slash.UserID != "" {
 		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, slash.UserID)
 	}
-	out, err := commands.Dispatch(cmdCtx, name, splitArgs(args))
+	out, err := commands.Dispatch(cmdCtx, name, args)
 	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		return SlashOutcome{
 			Kind:  SlashForward,
@@ -135,10 +135,3 @@ func FormatUnknownCommand(name string) string {
 	return fmt.Sprintf("`/%s` 不是已注册命令，转发给 Agent...", name)
 }
 
-func splitArgs(args string) []string {
-	args = strings.TrimSpace(args)
-	if args == "" {
-		return nil
-	}
-	return strings.Fields(args)
-}

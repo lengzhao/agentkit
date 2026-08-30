@@ -302,8 +302,8 @@ func (c *mcpSyncCommand) Description() string {
 	return "Show MCP tools, add a server from JSON, or reload mcp.json with -u"
 }
 
-func (c *mcpSyncCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	update, rest := peelUpdateFlag(args)
+func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
 	switch {
 	case update:
 		_, defs, err := c.provider.reload(ctx)

@@ -254,6 +254,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `credentials/env` | `/env`（查看缓存；`/env add KEY=VALUE` 写入 `.env` 并校验，失败回滚；`/env -u` 重读文件） |
 | `tool/mcp` | `/mcp`（查看工具；`/mcp add <name> <json>` 写入 `mcp.json` 并探活校验；`/mcp -u` 重读配置） |
 | `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
+| `tool/shell-bash` | `/shell`、`/sh`（本地执行 shell 命令，不经过模型） |
 
 示例：
 

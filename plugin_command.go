@@ -17,7 +17,7 @@ type Command interface {
 	Name() string
 	Alias() string
 	Description() string
-	CommandExec(ctx context.Context, args ...string) (string, error)
+	CommandExec(ctx context.Context, args string) (string, error)
 }
 
 // ErrCommandNotHandled means the name is not a registered slash command.
@@ -25,7 +25,7 @@ var ErrCommandNotHandled = errors.New("command not handled")
 
 // Commands is a post-build slash command catalog for platforms.
 type Commands interface {
-	Dispatch(ctx context.Context, name string, args []string) (string, error)
+	Dispatch(ctx context.Context, name string, rawArgs string) (string, error)
 	List() []Command
 }
 

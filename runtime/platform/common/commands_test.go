@@ -17,7 +17,7 @@ type stubCommand struct {
 func (c stubCommand) Name() string        { return c.name }
 func (c stubCommand) Alias() string       { return "" }
 func (c stubCommand) Description() string { return "stub" }
-func (c stubCommand) CommandExec(context.Context, ...string) (string, error) {
+func (c stubCommand) CommandExec(context.Context, string) (string, error) {
 	return c.out, nil
 }
 
@@ -25,12 +25,12 @@ type stubCommands struct {
 	byName map[string]agentkit.Command
 }
 
-func (s stubCommands) Dispatch(ctx context.Context, name string, _ []string) (string, error) {
+func (s stubCommands) Dispatch(ctx context.Context, name string, rawArgs string) (string, error) {
 	cmd, ok := s.byName[name]
 	if !ok {
 		return "", agentkit.ErrCommandNotHandled
 	}
-	return cmd.CommandExec(ctx)
+	return cmd.CommandExec(ctx, rawArgs)
 }
 
 func (s stubCommands) List() []agentkit.Command {
@@ -128,10 +128,11 @@ type captureSessionCommand struct {
 func (c captureSessionCommand) Name() string        { return "new" }
 func (c captureSessionCommand) Alias() string       { return "" }
 func (c captureSessionCommand) Description() string { return "capture" }
-func (c captureSessionCommand) CommandExec(ctx context.Context, _ ...string) (string, error) {
+func (c captureSessionCommand) CommandExec(ctx context.Context, _ string) (string, error) {
 	*c.t, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 	return "ok", nil
 }
+
 
 func TestProcessSlashUnknownForwards(t *testing.T) {
 	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, SlashContext{

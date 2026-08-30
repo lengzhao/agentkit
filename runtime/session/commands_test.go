@@ -32,7 +32,7 @@ func TestStoreCommands(t *testing.T) {
 	for _, cmd := range commands {
 		switch cmd.Name() {
 		case "new":
-			out, err := cmd.CommandExec(ctx)
+			out, err := cmd.CommandExec(ctx, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -40,7 +40,7 @@ func TestStoreCommands(t *testing.T) {
 				t.Fatalf("unexpected new session id: %q", out)
 			}
 		case "session":
-			if _, err := cmd.CommandExec(ctx); err != nil {
+			if _, err := cmd.CommandExec(ctx, ""); err != nil {
 				t.Fatal(err)
 			}
 		default:
@@ -72,7 +72,7 @@ func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
 	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
 	entry := session.ApplyScope(stable, session.ScopeChannel, "U111")
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, entry)
-	out, err := newCmd.CommandExec(ctx)
+	out, err := newCmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

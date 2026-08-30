@@ -60,7 +60,7 @@ func TestCompactCommand(t *testing.T) {
 	}
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
-	out, err := commands[0].CommandExec(ctx)
+	out, err := commands[0].CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

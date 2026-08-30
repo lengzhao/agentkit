@@ -36,7 +36,7 @@ func TestDispatchAgentUsePersistsBind(t *testing.T) {
 	}
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:test"))
-	out, err := reg.Dispatch(ctx, "agent", []string{"use", "reviewer"})
+	out, err := reg.Dispatch(ctx, "agent", "use reviewer")
 	if err != nil {
 		t.Fatal(err)
 	}

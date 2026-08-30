@@ -23,8 +23,8 @@ func (newCommand) Name() string        { return "new" }
 func (newCommand) Alias() string       { return "" }
 func (newCommand) Description() string { return "start a new CLI session" }
 
-func (c newCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	if len(args) > 0 {
+func (c newCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /new")
 	}
 	current, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
@@ -57,8 +57,8 @@ func (showSessionCommand) Description() string {
 	return "show current session id, path, and message count"
 }
 
-func (c showSessionCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	if len(args) > 0 {
+func (c showSessionCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /session")
 	}
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)

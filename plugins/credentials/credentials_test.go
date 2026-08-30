@@ -184,7 +184,7 @@ func TestEnvAddCommand(t *testing.T) {
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	out, err := cmd.CommandExec(ctx, "add", "AGENTKIT_TEST_SECRET=injected")
+	out, err := cmd.CommandExec(ctx, "add AGENTKIT_TEST_SECRET=injected")
 	if err != nil {
 		t.Fatalf("add command: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestEnvAddCommand(t *testing.T) {
 		t.Fatalf("value=%q, want injected", secret.Value)
 	}
 
-	status, err := cmd.CommandExec(ctx)
+	status, err := cmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatalf("status command: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestEnvAddRejectsOnVerifyFailure(t *testing.T) {
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	_, err = cmd.CommandExec(ctx, "add", "AGENTKIT_EMPTY_VERIFY_TEST=")
+	_, err = cmd.CommandExec(ctx, "add AGENTKIT_EMPTY_VERIFY_TEST=")
 	if err == nil {
 		t.Fatal("expected error for empty value")
 	}

@@ -22,14 +22,15 @@ func (pluginCommand) Name() string        { return "plugin" }
 func (pluginCommand) Alias() string       { return "" }
 func (pluginCommand) Description() string { return "list plugin kinds or show plugin godoc" }
 
-func (pluginCommand) CommandExec(_ context.Context, args ...string) (string, error) {
-	if len(args) == 0 {
+func (pluginCommand) CommandExec(_ context.Context, args string) (string, error) {
+	args = strings.TrimSpace(args)
+	if args == "" {
 		return "", fmt.Errorf("usage: /plugin -l\n       /plugin <kind>")
 	}
-	switch args[0] {
+	fields := strings.Fields(args)
+	switch fields[0] {
 	case "-l", "--list":
 		return helpdoc.FormatKindList("Registered plugin kinds", "", "plugin", "<kind>"), nil
 	}
-	kind := strings.TrimSpace(strings.Join(args, " "))
-	return helpdoc.KindDoc("", kind)
+	return helpdoc.KindDoc("", args)
 }

@@ -3,6 +3,7 @@ package hook
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
@@ -62,8 +63,8 @@ func (compactCommand) Name() string        { return "compact" }
 func (compactCommand) Alias() string       { return "" }
 func (compactCommand) Description() string { return "run session compaction now" }
 
-func (c compactCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	if len(args) > 0 {
+func (c compactCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /compact")
 	}
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)

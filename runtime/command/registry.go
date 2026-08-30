@@ -115,7 +115,7 @@ func (r *Registry) register(cmd agentkit.Command) error {
 	return nil
 }
 
-func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (string, error) {
+func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (string, error) {
 	key := normalizeName(name)
 	if key == "" {
 		return "", agentkit.ErrCommandNotHandled
@@ -124,7 +124,7 @@ func (r *Registry) Dispatch(ctx context.Context, name string, args []string) (st
 	if !ok {
 		return "", agentkit.ErrCommandNotHandled
 	}
-	return cmd.CommandExec(ctx, args...)
+	return cmd.CommandExec(ctx, rawArgs)
 }
 
 func (r *Registry) List() []agentkit.Command {

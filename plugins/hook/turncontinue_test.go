@@ -299,7 +299,7 @@ func TestStatusCommandReportsRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := status.CommandExec(driverCtx(sess))
+	out, err := status.CommandExec(driverCtx(sess), "")
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}

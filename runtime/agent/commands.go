@@ -28,15 +28,15 @@ func (agentCommand) Name() string        { return "agent" }
 func (agentCommand) Alias() string       { return "" }
 func (agentCommand) Description() string { return "list agents, show details, or switch session agent" }
 
-func (c agentCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	if len(args) >= 2 && args[0] == "use" {
-		return c.useAgent(ctx, strings.TrimSpace(strings.Join(args[1:], " ")))
+func (c agentCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(args))
+	if len(fields) >= 2 && fields[0] == "use" {
+		return c.useAgent(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
 	}
-	if len(args) == 0 || args[0] == "-l" || args[0] == "--list" {
+	if len(fields) == 0 || fields[0] == "-l" || fields[0] == "--list" {
 		return formatAgentList(c.agents), nil
 	}
-	name := strings.TrimSpace(strings.Join(args, " "))
-	return agentDoc(c.agents, name)
+	return agentDoc(c.agents, strings.TrimSpace(args))
 }
 
 func (c agentCommand) useAgent(ctx context.Context, name string) (string, error) {

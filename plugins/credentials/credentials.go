@@ -245,8 +245,8 @@ func (c *envSyncCommand) Description() string {
 	return "Show env cache, write KEY=VALUE pairs to .env, or reload with -u"
 }
 
-func (c *envSyncCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	update, rest := peelUpdateFlag(args)
+func (c *envSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
 	switch {
 	case update:
 		count, err := c.store.reload(ctx)

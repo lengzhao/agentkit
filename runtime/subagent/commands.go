@@ -29,10 +29,10 @@ func (subagentHelpCommand) Name() string        { return "subagent" }
 func (subagentHelpCommand) Alias() string       { return "" }
 func (subagentHelpCommand) Description() string { return "list subagent definitions or show details" }
 
-func (c subagentHelpCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	if len(args) == 0 || args[0] == "-l" || args[0] == "--list" {
+func (c subagentHelpCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(args))
+	if len(fields) == 0 || fields[0] == "-l" || fields[0] == "--list" {
 		return formatDefinitionList(ctx, c.workspace, c.dirs)
 	}
-	name := strings.TrimSpace(strings.Join(args, " "))
-	return definitionDoc(ctx, c.workspace, c.dirs, name)
+	return definitionDoc(ctx, c.workspace, c.dirs, strings.TrimSpace(args))
 }

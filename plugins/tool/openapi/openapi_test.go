@@ -470,7 +470,7 @@ func TestOpenAPIAddCommand(t *testing.T) {
 	cp := provider.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	out, err := cmd.CommandExec(ctx, "add", "demo", `{"baseUrl":"https://example.com","paths":{"/ping":{"get":{"operationId":"ping"}}}}`)
+	out, err := cmd.CommandExec(ctx, `add demo {"baseUrl":"https://example.com","paths":{"/ping":{"get":{"operationId":"ping"}}}}`)
 	if err != nil {
 		t.Fatalf("add command: %v", err)
 	}

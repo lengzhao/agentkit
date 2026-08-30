@@ -65,7 +65,7 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error
 	if err != nil {
 		return nil, err
 	}
-	return tool, nil
+	return &shellBashBundle{tool: tool, exec: exec}, nil
 }
 
 func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, error) {

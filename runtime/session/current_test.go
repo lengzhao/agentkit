@@ -95,7 +95,7 @@ func TestNewCommandUpdatesCLICurrent(t *testing.T) {
 	if newCmd == nil {
 		t.Fatal("missing /new command")
 	}
-	out, err := newCmd.CommandExec(context.Background())
+	out, err := newCmd.CommandExec(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -226,8 +226,8 @@ func (statusCommand) Name() string        { return "status" }
 func (statusCommand) Alias() string       { return "" }
 func (statusCommand) Description() string { return "show autonomous run state: tasks, usage, limits" }
 
-func (c statusCommand) CommandExec(ctx context.Context, args ...string) (string, error) {
-	if len(args) > 0 {
+func (c statusCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /status")
 	}
 	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)

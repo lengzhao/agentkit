@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -15,7 +16,7 @@ type stubCommand struct {
 func (s stubCommand) Name() string        { return s.name }
 func (s stubCommand) Alias() string       { return "" }
 func (s stubCommand) Description() string { return "stub" }
-func (s stubCommand) CommandExec(context.Context, ...string) (string, error) {
+func (s stubCommand) CommandExec(context.Context, string) (string, error) {
 	return "", nil
 }
 
@@ -27,7 +28,7 @@ type stubAliasCommand struct {
 func (s stubAliasCommand) Name() string        { return s.name }
 func (s stubAliasCommand) Alias() string       { return s.alias }
 func (s stubAliasCommand) Description() string { return "stub" }
-func (s stubAliasCommand) CommandExec(context.Context, ...string) (string, error) {
+func (s stubAliasCommand) CommandExec(context.Context, string) (string, error) {
 	return "", nil
 }
 
@@ -37,6 +38,70 @@ type stubProvider struct {
 
 func (p stubProvider) Commands() []agentkit.Command { return p.commands }
 
+type rawArgsCommand struct {
+	name string
+	got  *string
+}
+
+func (c rawArgsCommand) Name() string        { return c.name }
+func (c rawArgsCommand) Alias() string       { return "" }
+func (c rawArgsCommand) Description() string { return "raw" }
+func (c rawArgsCommand) CommandExec(_ context.Context, args string) (string, error) {
+	if c.got != nil {
+		*c.got = args
+	}
+	return "ok", nil
+}
+
+func TestRegistryDispatchRawArgs(t *testing.T) {
+	t.Parallel()
+	var got string
+	r, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{rawArgsCommand{name: "shell", got: &got}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Dispatch(context.Background(), "shell", `echo "hello world"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "ok" || got != `echo "hello world"` {
+		t.Fatalf("got arg %q out %q", got, out)
+	}
+}
+
+func TestRegistryDispatchFields(t *testing.T) {
+	t.Parallel()
+	var got string
+	r, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{stubCaptureCommand{got: &got}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Dispatch(context.Background(), "ping", "one two"); err != nil {
+		t.Fatal(err)
+	}
+	if got != "one,two" {
+		t.Fatalf("got args %q", got)
+	}
+}
+
+type stubCaptureCommand struct {
+	got *string
+}
+
+func (stubCaptureCommand) Name() string        { return "ping" }
+func (stubCaptureCommand) Alias() string       { return "" }
+func (stubCaptureCommand) Description() string { return "capture" }
+func (c stubCaptureCommand) CommandExec(_ context.Context, args string) (string, error) {
+	if c.got != nil {
+		*c.got = strings.Join(strings.Fields(strings.TrimSpace(args)), ",")
+	}
+	return "", nil
+}
+
 func TestRegistryDispatch(t *testing.T) {
 	t.Parallel()
 	r, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
@@ -45,14 +110,14 @@ func TestRegistryDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := r.Dispatch(context.Background(), "ping", nil)
+	result, err := r.Dispatch(context.Background(), "ping", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result != "" {
 		t.Fatalf("unexpected output: %q", result)
 	}
-	_, err = r.Dispatch(context.Background(), "missing", nil)
+	_, err = r.Dispatch(context.Background(), "missing", "")
 	if !errors.Is(err, agentkit.ErrCommandNotHandled) {
 		t.Fatalf("missing command err = %v", err)
 	}
