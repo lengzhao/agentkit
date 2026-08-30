@@ -376,6 +376,11 @@ func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *t
 		return nil
 	}
 	run.budget.recordTokens(total)
+	telemetry.RecordTurnUsage(ctx, telemetry.Usage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		TotalTokens:  total,
+	})
 	return session.AppendUsage(ctx, sess, a.id, session.UsageData{
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
@@ -410,10 +415,11 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 
 	inputSummary := telemetry.SummarizeMessages(messages, 8192, false)
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
-		Name:  "llm.generation",
-		Kind:  telemetry.KindGeneration,
-		Model: a.model,
-		Input: inputSummary,
+		Name:      "llm.generation",
+		Kind:      telemetry.KindGeneration,
+		Model:     a.model,
+		Input:     inputSummary,
+		ToolNames: telemetry.ToolNamesFromSpecs(specs),
 	}))
 	var observationEnd telemetry.ObservationEnd
 	defer func() {
@@ -485,7 +491,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 			TotalTokens:  total,
 		}
 	}
-	observationEnd.Output = telemetry.SummarizeMessage(assistant)
+	observationEnd.Output = telemetry.FormatMessage(assistant)
 	observationEnd.Usage = usageOut
 
 	return stepOutcome{message: assistant, usage: usage, ctx: ctx}, nil

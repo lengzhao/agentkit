@@ -137,17 +137,20 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		AgentID:           string(agentID),
 		PlatformID:        req.Event.PlatformID,
 		UserID:            req.Event.UserID,
-		Input:             telemetry.SummarizeMessage(input.Message),
+		Input:             telemetry.FormatMessage(input.Message),
 	}
 	ctx, endTurn := telemetry.BeginTurn(ctx, meta)
+	ctx = telemetry.WithTurnAccum(ctx)
 	var runErr error
 	defer func() {
-		endTurn(telemetry.TurnEnd{
-			Err: runErr,
-		})
+		end := telemetry.TurnEndFromAccum(ctx)
+		end.Err = runErr
+		endTurn(end)
 	}()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, turnID)
-	runErr = ag.RunTurn(ctx, input)
+	turnInput := input
+	turnInput.Emit = telemetry.WrapOutboundEmit(ctx, input.Emit)
+	runErr = ag.RunTurn(ctx, turnInput)
 	return runErr
 }
 

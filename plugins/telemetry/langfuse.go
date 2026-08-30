@@ -179,8 +179,8 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 			ID:     traceID,
 			Output: l.preparePayload(end.Output, l.redactOutputs),
 		}
-		if end.Err != nil {
-			update.Metadata = map[string]string{"error": end.Err.Error()}
+		if md := l.turnEndMetadata(end); len(md) > 0 {
+			update.Metadata = md
 		}
 		if _, err := l.client.Trace(update); err != nil {
 			slog.Warn("telemetry/langfuse trace update failed", "trace_id", traceID, "err", err)
@@ -213,6 +213,9 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			Input:     l.preparePayload(meta.Input, l.redactInputs),
 			StartTime: &now,
 			Metadata:  obsMetadata,
+		}
+		if params := l.generationModelParameters(meta); params != nil {
+			gen.ModelParameters = params
 		}
 		created, err := l.client.Generation(gen, l.scopeParentPtr(ctx))
 		if err != nil {
@@ -353,8 +356,31 @@ func (l *Langfuse) observationMetadata(meta captelemetry.ObservationMeta) map[st
 	if meta.SessionID != "" {
 		out["session_id"] = meta.SessionID
 	}
+	if len(meta.ToolNames) > 0 {
+		out["tools"] = strings.Join(meta.ToolNames, ",")
+	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+func (l *Langfuse) generationModelParameters(meta captelemetry.ObservationMeta) map[string]any {
+	if len(meta.ToolNames) == 0 {
+		return nil
+	}
+	return map[string]any{"tools": meta.ToolNames}
+}
+
+func (l *Langfuse) turnEndMetadata(end captelemetry.TurnEnd) map[string]string {
+	out := map[string]string{}
+	if end.Usage != nil {
+		out["usage_input_tokens"] = fmt.Sprint(end.Usage.InputTokens)
+		out["usage_output_tokens"] = fmt.Sprint(end.Usage.OutputTokens)
+		out["usage_total_tokens"] = fmt.Sprint(end.Usage.TotalTokens)
+	}
+	if end.Err != nil {
+		out["error"] = end.Err.Error()
 	}
 	return out
 }

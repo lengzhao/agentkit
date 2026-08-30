@@ -6,6 +6,43 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+// FormatMessage JSON-encodes a model message for trace input/output display.
+func FormatMessage(msg agentkit.ModelMessage) string {
+	if msg.Role == "" && len(msg.Content) == 0 && len(msg.ToolCalls) == 0 && len(msg.ToolResults) == 0 {
+		return ""
+	}
+	entry := map[string]any{}
+	if msg.Role != "" {
+		entry["role"] = msg.Role
+	}
+	if text := textFromParts(msg.Content); text != "" {
+		entry["content"] = text
+	}
+	if len(msg.ToolCalls) > 0 {
+		entry["toolCalls"] = msg.ToolCalls
+	}
+	if len(msg.ToolResults) > 0 {
+		entry["toolResults"] = msg.ToolResults
+	}
+	raw, err := json.Marshal(entry)
+	if err != nil {
+		return SummarizeMessage(msg)
+	}
+	return string(raw)
+}
+
+// ToolNamesFromSpecs returns tool names exposed to the model for one step.
+func ToolNamesFromSpecs(specs []agentkit.ToolSpec) []string {
+	if len(specs) == 0 {
+		return nil
+	}
+	names := make([]string, len(specs))
+	for i, spec := range specs {
+		names[i] = spec.Name
+	}
+	return names
+}
+
 // SummarizeMessage returns a compact text summary of a model message.
 func SummarizeMessage(msg agentkit.ModelMessage) string {
 	if msg.Role == "" && len(msg.Content) == 0 && len(msg.ToolCalls) == 0 {

@@ -1259,10 +1259,10 @@ go run ./cmd/agent --preset coding "inspect this repo"
 
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|
-| RunTurn | Trace `agent.turn` | `loop.Dispatch` |
-| LLM 调用 | Generation | `agent.runStep` |
+| RunTurn | Trace `agent.turn`（input 为结构化 JSON；output 为用户可见文本，`-------------` 分隔最终回复、`send`、`ask_user`） | `loop.Dispatch` |
+| LLM 调用 | Generation（metadata/modelParameters 含 tools 名；usage 供 Langfuse 算费用） | `agent.runStep` |
 | Tool 执行 | Tool observation | `tools.Execute` |
-| Token 用量 | `usage_details` | `agent.recordUsage` |
+| Turn token 汇总 | Trace metadata `usage_*_tokens` | `loop.Dispatch` + `agent.recordUsage` |
 
 ```sh
 export LANGFUSE_PUBLIC_KEY=pk-lf-...

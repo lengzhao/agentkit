@@ -106,12 +106,20 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 		Input:     "hello",
 	})
 	ctx, endGen := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
-		Name:  "llm.generation",
-		Kind:  captelemetry.KindGeneration,
-		Model: "gpt-5.4",
-		Input: "prompt",
+		Name:      "llm.generation",
+		Kind:      captelemetry.KindGeneration,
+		Model:     "gpt-5.4",
+		Input:     "prompt",
+		ToolNames: []string{"read", "grep"},
 	})
-	endGen(captelemetry.ObservationEnd{Output: "answer"})
+	endGen(captelemetry.ObservationEnd{
+		Output: `{"content":"answer","role":"assistant"}`,
+		Usage: &captelemetry.Usage{
+			InputTokens:  12,
+			OutputTokens: 4,
+			TotalTokens:  16,
+		},
+	})
 	ctx, endTool := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name:  "tool.bash",
 		Kind:  captelemetry.KindTool,
@@ -130,7 +138,7 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	for _, want := range []string{"trace-create", "generation-create", "generation-update", "span-create", "span-update"} {
+	for _, want := range []string{"trace-create", "generation-create", "generation-update", "span-create", "span-update", `"tools":"read,grep"`, `"tools":["read","grep"]`, `"input":12`, `"output":4`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("batch missing %q in %s", want, text)
 		}
@@ -214,6 +222,70 @@ func TestLangfuseExporterNestsSubagentGeneration(t *testing.T) {
 	}
 	text := string(raw)
 	for _, want := range []string{"subagent.researcher", `"agent_id":"sub:researcher"`, "parentObservationId"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("batch missing %q in %s", want, text)
+		}
+	}
+}
+
+func TestLangfuseExporterRecordsTurnUsageAndOutput(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, payload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, err := plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
+		BaseURL:              server.URL,
+		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
+		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
+		FlushIntervalSeconds: 1,
+	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, endTurn := exp.BeginTurn(context.Background(), captelemetry.TurnMeta{
+		TurnID:    "turn-1",
+		SessionID: "cli:default",
+		Input:     `{"content":"hello","role":"user"}`,
+	})
+	endTurn(captelemetry.TurnEnd{
+		Output: "progress\n-------------\n[ask_user] pick one\noptions: a, b\n-------------\nfinal answer",
+		Usage: &captelemetry.Usage{
+			InputTokens:  20,
+			OutputTokens: 8,
+			TotalTokens:  28,
+		},
+	})
+	if err := exp.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	raw, err := json.Marshal(bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, want := range []string{"hello", "final answer", "usage_input_tokens", "usage_output_tokens", "usage_total_tokens"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("batch missing %q in %s", want, text)
 		}

@@ -14,6 +14,9 @@ import (
 type AgentsMDConfig struct {
 	// Root is directory to start the upward search from.
 	Root string `json:"root"`
+	// Filenames overrides the default instruction files to search in each directory.
+	// Example for Automon runtimes: ["Automon.md", "AUTOMON.md"].
+	Filenames []string `json:"filenames"`
 }
 
 type AgentsMDDeps struct {
@@ -22,6 +25,7 @@ type AgentsMDDeps struct {
 
 type agentsMDProvider struct {
 	relRoot   string
+	filenames []string
 	workspace workspace.Service
 }
 
@@ -34,7 +38,15 @@ func NewAgentsMD(cfg AgentsMDConfig, deps AgentsMDDeps) (agentkit.SectionProvide
 	if root == "" {
 		root = "."
 	}
-	return &agentsMDProvider{relRoot: root, workspace: deps.Workspace}, nil
+	filenames := cfg.Filenames
+	if len(filenames) == 0 {
+		filenames = defaultAgentsMDFilenames()
+	}
+	return &agentsMDProvider{relRoot: root, workspace: deps.Workspace, filenames: filenames}, nil
+}
+
+func defaultAgentsMDFilenames() []string {
+	return []string{"AGENTS.md", "AGENTS.MD", "CLAUDE.md"}
 }
 
 func (p *agentsMDProvider) Sections() []agentkit.Section {
@@ -52,7 +64,7 @@ func (p *agentsMDProvider) build(ctx context.Context, _ agentkit.PromptRequest) 
 	var parts []string
 	dir := root
 	for {
-		for _, name := range []string{"AGENTS.md", "AGENTS.MD", "CLAUDE.md"} {
+		for _, name := range p.filenames {
 			path := filepath.Join(dir, name)
 			data, err := os.ReadFile(path)
 			if err == nil && len(strings.TrimSpace(string(data))) > 0 {

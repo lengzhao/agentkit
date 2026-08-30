@@ -29,6 +29,7 @@ type TurnMeta struct {
 type TurnEnd struct {
 	Output string
 	Err    error
+	Usage  *Usage
 }
 
 // ObservationKind selects how an observation is exported.
@@ -46,6 +47,8 @@ type ObservationMeta struct {
 	Kind  ObservationKind
 	Model string
 	Input string
+	// ToolNames lists model-visible tools for an LLM generation.
+	ToolNames []string
 	// AgentID labels which agent produced this observation.
 	AgentID string
 	// SessionID labels the session that produced this observation.
@@ -61,7 +64,7 @@ type ObservationEnd struct {
 	Usage  *Usage
 }
 
-// Usage carries token accounting for generations.
+// Usage carries token accounting for generations and turn totals.
 type Usage struct {
 	InputTokens  int
 	OutputTokens int
