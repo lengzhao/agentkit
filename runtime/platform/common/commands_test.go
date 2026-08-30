@@ -98,6 +98,28 @@ func TestProcessSlashDispatch(t *testing.T) {
 	}
 }
 
+func TestProcessSlashInjectsPlatformID(t *testing.T) {
+	var gotPlatform string
+	delivery := session.BuildDeliverySessionID("chat-api", "default_channel", "conv_1", "")
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"ping": captureSessionCommand{gotPlatform: &gotPlatform},
+	}}
+	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
+		DeliverySessionID: delivery,
+		PlatformID:        "chat-api",
+		SessionScope:      session.ScopeChannel,
+	}, "/ping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+	if gotPlatform != "chat-api" {
+		t.Fatalf("platform = %q, want chat-api", gotPlatform)
+	}
+}
+
 func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
 	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
 	var gotSession agentkit.SessionID
@@ -122,14 +144,20 @@ func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
 }
 
 type captureSessionCommand struct {
-	t *agentkit.SessionID
+	t           *agentkit.SessionID
+	gotPlatform *string
 }
 
 func (c captureSessionCommand) Name() string        { return "new" }
 func (c captureSessionCommand) Alias() string       { return "" }
 func (c captureSessionCommand) Description() string { return "capture" }
 func (c captureSessionCommand) CommandExec(ctx context.Context, _ string) (string, error) {
-	*c.t, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if c.t != nil {
+		*c.t, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	}
+	if c.gotPlatform != nil {
+		*c.gotPlatform, _ = ctx.Value(agentkit.KeyPlatformID).(string)
+	}
 	return "ok", nil
 }
 

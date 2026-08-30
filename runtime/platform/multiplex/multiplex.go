@@ -136,23 +136,14 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 }
 
 func (m *Platform) Send(ctx context.Context, out agentkit.OutboundEvent) error {
-	if out.PlatformID != "" {
-		p, ok := m.platforms[out.PlatformID]
-		if !ok {
-			return fmt.Errorf("unknown platform %q", out.PlatformID)
-		}
-		return p.Send(ctx, out)
+	if err := out.RequirePlatformID(); err != nil {
+		return err
 	}
-	var err error
-	for id, p := range m.platforms {
-		if !m.isActive(id) {
-			continue
-		}
-		copy := out
-		copy.PlatformID = id
-		err = errors.Join(err, p.Send(ctx, copy))
+	p, ok := m.platforms[out.PlatformID]
+	if !ok {
+		return fmt.Errorf("unknown platform %q", out.PlatformID)
 	}
-	return err
+	return p.Send(ctx, out)
 }
 
 func (m *Platform) markInactive(id string) {

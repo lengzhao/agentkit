@@ -96,6 +96,9 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 	if slash.DeliverySessionID != "" {
 		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyDeliverySessionID, slash.DeliverySessionID)
 	}
+	if slash.PlatformID != "" {
+		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyPlatformID, slash.PlatformID)
+	}
 	if slash.UserID != "" {
 		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, slash.UserID)
 	}

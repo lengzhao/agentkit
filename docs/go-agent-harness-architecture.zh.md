@@ -923,7 +923,7 @@ type Platform interface {
 
 Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`（**必填 `SessionID`**），以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。各 `platform/*` 插件拥有 SessionID 生成规则；Loop 与 Agent 不解析 ID 段。
 
-多个 Platform 可在同一 Agent 中共存：用 `platform/multiplex` 聚合各入口，Runner 仍只依赖一个 `Platform`。入站消息携带 `PlatformID`，出站事件按 `PlatformID` 路由回对应通道（Slack、飞书等后续实现为独立 `platform/*` 插件）。
+多个 Platform 可在同一 Agent 中共存：用 `platform/multiplex` 聚合各入口，Runner 仍只依赖一个 `Platform`。入站消息携带 `PlatformID`，出站事件必须携带 `PlatformID` 并路由回对应 leaf 通道；`multiplex` 不接受空 `PlatformID`，不会向所有子平台广播。
 
 Assistant 流式输出对齐 Pi RPC，经 `OutboundEmit` 在 turn 执行期间即时 `Send`：
 

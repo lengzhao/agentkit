@@ -77,6 +77,29 @@ func (s *capableStub) PermissionCapability() permission.Capability {
 	return s.cap
 }
 
+func TestMultiplexRejectsEmptyPlatformID(t *testing.T) {
+	t.Parallel()
+
+	cli := &stubPlatform{id: "cli"}
+	slack := &stubPlatform{id: "slack"}
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{
+		Platforms: []agentkit.Platform{cli, slack},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = m.Send(context.Background(), agentkit.OutboundEvent{
+		Type: agentkit.EventMessageEnd,
+	})
+	if !errors.Is(err, agentkit.ErrOutboundPlatformRequired) {
+		t.Fatalf("Send() err = %v, want ErrOutboundPlatformRequired", err)
+	}
+	if len(cli.sent) != 0 || len(slack.sent) != 0 {
+		t.Fatalf("unexpected broadcast: cli=%d slack=%d", len(cli.sent), len(slack.sent))
+	}
+}
+
 func TestMultiplexRoutesOutboundByPlatformID(t *testing.T) {
 	t.Parallel()
 

@@ -8,6 +8,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/compaction"
 	_ "github.com/lengzhao/agentkit/plugins/credentials"
 	_ "github.com/lengzhao/agentkit/plugins/hook"
+	_ "github.com/lengzhao/agentkit/plugins/learning"
 	_ "github.com/lengzhao/agentkit/plugins/policy"
 	_ "github.com/lengzhao/agentkit/plugins/prompt"
 	_ "github.com/lengzhao/agentkit/plugins/schedule"

@@ -1,0 +1,173 @@
+package learning
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	workspaceruntime "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
+)
+
+type stubSessionStore struct{}
+
+func (stubSessionStore) Get(context.Context, agentkit.SessionID) (agentkit.Session, error) {
+	return nil, nil
+}
+
+func TestMemoryStoreAddAndLoad(t *testing.T) {
+	t.Parallel()
+
+	path := t.TempDir() + "/memory.md"
+	store := NewMemoryStore(path, 200)
+	if err := store.Add("prefers concise answers", "test"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Content != "prefers concise answers" {
+		t.Fatalf("entries = %#v", entries)
+	}
+}
+
+func TestMemoryStoreRejectsSecret(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(t.TempDir()+"/memory.md", 200)
+	if err := store.Add("api_key=supersecret", "test"); err == nil {
+		t.Fatal("expected secret rejection")
+	}
+}
+
+func TestLearnCommandMemory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: root, Local: root, Scope: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := svc.Commands()[0]
+	out, err := cmd.CommandExec(context.Background(), "memory likes Go tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out == "" {
+		t.Fatal("expected confirmation")
+	}
+	show, err := cmd.CommandExec(context.Background(), "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(show, "likes Go tests") {
+		t.Fatalf("show = %q", show)
+	}
+}
+
+func TestLearnCommandHelp(t *testing.T) {
+	t.Parallel()
+
+	svc, err := New(Config{}, Deps{
+		Workspace:    workspace.Static(t.TempDir()),
+		SessionStore: stubSessionStore{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := svc.Commands()[0].CommandExec(context.Background(), "help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "/learn memory") {
+		t.Fatalf("help = %q", out)
+	}
+}
+
+func TestSummarizeSessionUserMessages(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
+		Workspace: workspace.Static(dir),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	sess, err := store.Get(ctx, agentkit.SessionID("cli:default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"/learn help", "prefers Go", "likes tests"} {
+		if err := session.AppendMessage(ctx, sess, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := SummarizeSessionUserMessages(ctx, store, sess.ID(), 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "/learn") {
+		t.Fatalf("slash commands should be skipped: %q", got)
+	}
+	if !strings.Contains(got, "prefers Go") || !strings.Contains(got, "likes tests") {
+		t.Fatalf("summary = %q", got)
+	}
+}
+
+func TestLearnCommandSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: dir, Local: dir, Scope: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	sess, err := store.Get(ctx, agentkit.SessionID("cli:default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendMessage(ctx, sess, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "remember I prefer YAML configs"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := svc.Commands()[0].CommandExec(ctx, "session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out == "" {
+		t.Fatal("expected confirmation")
+	}
+	show, err := svc.Commands()[0].CommandExec(ctx, "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(show, "remember I prefer YAML configs") {
+		t.Fatalf("show = %q", show)
+	}
+}

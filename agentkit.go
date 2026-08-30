@@ -2,6 +2,8 @@ package agentkit
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"time"
 )
 
@@ -125,14 +127,26 @@ type MessageEvent struct {
 
 // OutboundEvent is the outbound envelope from Agent/Loop to Platform. SessionID
 // must match the conversation that produced the turn so the platform can route
-// the reply to the correct IM target.
+// the reply to the correct IM target. PlatformID is required; multiplex rejects
+// empty values instead of broadcasting to every leaf platform.
 type OutboundEvent struct {
 	SessionID  SessionID // required
 	AgentID    AgentID
-	PlatformID string
+	PlatformID string // required
 	UserID     string
 	Type       EventType
 	Data       json.RawMessage
+}
+
+// ErrOutboundPlatformRequired is returned when OutboundEvent.PlatformID is empty.
+var ErrOutboundPlatformRequired = errors.New("outbound event requires platformID")
+
+// RequirePlatformID reports whether the event names a target platform.
+func (e OutboundEvent) RequirePlatformID() error {
+	if strings.TrimSpace(e.PlatformID) == "" {
+		return ErrOutboundPlatformRequired
+	}
+	return nil
 }
 
 type JSONSchema struct {

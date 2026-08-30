@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func attachScheduleRuntimes(ctx context.Context, r *Root, sched *scheduler) []capschedule.Runtime {
@@ -80,6 +81,14 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		if out.UserID == "" {
 			out.UserID = event.UserID
 		}
+		if out.PlatformID == "" {
+			if p := session.ParseDelivery(deliveryID, out.UserID).Platform; p != "" {
+				out.PlatformID = p
+			}
+		}
+		if err := out.RequirePlatformID(); err != nil {
+			return err
+		}
 		return r.platform.Send(ctx, out)
 	}
 	sched.submit(ctx, agentkit.LoopRequest{
@@ -118,8 +127,5 @@ func (r *Root) reportInboundError(ctx context.Context, deliveryID agentkit.Sessi
 }
 
 func (r *Root) reportScheduleError(ctx context.Context, err error) {
-	_ = r.platform.Send(ctx, agentkit.OutboundEvent{
-		Type: "error",
-		Data: fmt.Appendf(nil, `{"error":%q}`, err.Error()),
-	})
+	slog.Error("schedule runtime failed", "err", err)
 }

@@ -176,6 +176,7 @@ prompt.default:
     sections:
       - prompt.persona.default
       - prompt.agents-md.default
+      - prompt.memory.default
       - prompt.skills.default
       - prompt.subagents.default
 
@@ -228,6 +229,22 @@ prompt.agents-md.default:
     root: work
   deps:
     workspace: workspace.default
+
+learning.default:
+  use: learning/default
+  config:
+    memoryRoot: work
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+
+prompt.memory.default:
+  use: prompt/section/memory
+  config:
+    root: work
+  deps:
+    workspace: workspace.default
+    learning: learning.default
 
 prompt.skills.default:
   use: prompt/section/skills
