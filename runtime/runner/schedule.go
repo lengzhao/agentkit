@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -64,11 +65,28 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		return
 	}
 	if r.loop.IsSessionBusy(effectiveID) {
+		slog.Info("inbound steered to busy session",
+			"platform", event.PlatformID,
+			"user_id", event.UserID,
+			"delivery_session_id", deliveryID,
+			"effective_session_id", effectiveID,
+			"agent_id", scoped.AgentID,
+			"preview", telemetry.SummarizeMessage(event.Message),
+		)
 		if err := r.loop.Steer(ctx, event.Message); err != nil {
 			r.reportInboundError(ctx, deliveryID, scoped, err)
 		}
 		return
 	}
+	slog.Info("inbound turn queued",
+		"platform", event.PlatformID,
+		"user_id", event.UserID,
+		"delivery_session_id", deliveryID,
+		"effective_session_id", effectiveID,
+		"store_session_id", storeSessionID,
+		"agent_id", scoped.AgentID,
+		"preview", telemetry.SummarizeMessage(event.Message),
+	)
 	fmt.Fprintln(os.Stderr)
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
 		out.SessionID = deliveryID

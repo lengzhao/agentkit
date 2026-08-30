@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -141,6 +142,14 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		UserID:            req.Event.UserID,
 		Input:             telemetry.FormatMessage(input.Message),
 	}
+	slog.Info("turn start",
+		"turn_id", turnID,
+		"agent_id", agentID,
+		"session_id", req.Event.SessionID,
+		"delivery_session_id", deliverySessionID(req),
+		"platform_id", req.Event.PlatformID,
+		"user_id", req.Event.UserID,
+	)
 	ctx, endTurn := telemetry.BeginTurn(ctx, meta)
 	ctx = telemetry.WithTurnAccum(ctx)
 	var runErr error
@@ -148,6 +157,20 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		end := telemetry.TurnEndFromAccum(ctx)
 		end.Err = runErr
 		endTurn(end)
+		if runErr != nil {
+			slog.Error("turn end",
+				"turn_id", turnID,
+				"agent_id", agentID,
+				"session_id", req.Event.SessionID,
+				"err", runErr,
+			)
+			return
+		}
+		slog.Info("turn end",
+			"turn_id", turnID,
+			"agent_id", agentID,
+			"session_id", req.Event.SessionID,
+		)
 	}()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, turnID)
 	turnInput := input

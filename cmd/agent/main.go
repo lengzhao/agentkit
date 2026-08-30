@@ -27,7 +27,9 @@ func main() {
 	addr := flag.String("addr", ":8080", "manager HTTP listen address")
 	basePath := flag.String("base", config.DefaultBasePath, "L0 base config YAML path")
 	overlayPath := flag.String("config", config.DefaultOverlayPath, "L1 override YAML path(s), comma-separated; later files win")
+	logLevel := flag.String("log-level", envOr("AGENTKIT_LOG_LEVEL", "debug"), "log level: debug, info, warn, error")
 	flag.Parse()
+	initLogging(*logLevel)
 
 	if *managerMode {
 		runManager(*addr, *basePath, *overlayPath)
@@ -41,11 +43,15 @@ func main() {
 	if err != nil {
 		fatal("load config", err)
 	}
+	logConfigLoaded(*basePath, *overlayPath, doc)
 
 	runner, result, err := build.Build[agentkit.Runner](ctx, doc.ToGraph(), doc.RootID)
 	if err != nil {
 		fatal("build runner", err)
 	}
+	logRunnerBuilt(result)
+	slog.Info("runner starting")
+
 	if err := runner.Run(ctx, result); err != nil && ctx.Err() == nil {
 		fatal("run agent", err)
 	}

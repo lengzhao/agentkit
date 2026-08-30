@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -328,6 +329,19 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 	}
 	direct := isDirectMessageChannel(channel, channelType)
 	sessionID := agentkit.SessionID(p.buildSessionKey(channel, user, deliveryThreadTS(eventThreadTS)))
+	slog.Info("slack: inbound message",
+		"channel", channel,
+		"channel_type", channelType,
+		"user", user,
+		"session_id", sessionID,
+		"preview", telemetry.SummarizeMessage(agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
+		}),
+		"images", len(images),
+		"files", len(files),
+		"has_audio", audio != nil,
+	)
 	d := delivery{
 		channel:       channel,
 		threadTS:      replyThreadTS(direct, eventThreadTS, msgTS),

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strconv"
 	"sync"
 
@@ -98,6 +99,11 @@ func uniquePlatformKey(base string, index int, used map[string]struct{}) string 
 
 func (m *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	m.startOnce.Do(func() {
+		ids := make([]string, 0, len(m.platforms))
+		for id := range m.platforms {
+			ids = append(ids, id)
+		}
+		slog.Info("multiplex: platforms started", "platforms", ids)
 		for id, p := range m.platforms {
 			go m.readPlatform(ctx, id, p)
 		}

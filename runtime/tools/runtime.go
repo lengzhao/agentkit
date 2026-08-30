@@ -235,17 +235,39 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 	defer cancel()
 
 	slog.Info("tool execute", "tool", call.Name, "session_id", sessionID, "agent_id", agentID)
+	started := time.Now()
 	output, err := tool.Call(execCtx, call.Input)
+	elapsed := time.Since(started)
 	if err != nil {
+		slog.Error("tool failed",
+			"tool", call.Name,
+			"session_id", sessionID,
+			"agent_id", agentID,
+			"duration", elapsed,
+			"err", err,
+		)
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(execCtx.Err(), context.DeadlineExceeded) {
 			return timeoutResult(call), nil
 		}
 		return agentkit.ToolResult{}, err
 	}
 	if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+		slog.Warn("tool timed out",
+			"tool", call.Name,
+			"session_id", sessionID,
+			"agent_id", agentID,
+			"duration", elapsed,
+		)
 		return timeoutResult(call), nil
 	}
 	result := agentkit.ResultFromCall(call, output)
+	slog.Info("tool done",
+		"tool", call.Name,
+		"session_id", sessionID,
+		"agent_id", agentID,
+		"duration", elapsed,
+		"output_bytes", len(result.Content),
+	)
 
 	if r.hooks != nil {
 		if err := r.hooks.AfterTool(ctx, &result); err != nil {

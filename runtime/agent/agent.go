@@ -477,7 +477,27 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		observationEnd.Err = err
 		return stepOutcome{}, err
 	}
-	slog.Info("assistant step", "agent_id", a.id, "session_id", sess.ID(), "tool_calls", len(assistant.ToolCalls))
+	toolNames := make([]string, len(assistant.ToolCalls))
+	for i, call := range assistant.ToolCalls {
+		toolNames[i] = call.Name
+	}
+	attrs := []any{
+		"agent_id", a.id,
+		"session_id", sess.ID(),
+		"model", a.model,
+		"tool_calls", len(assistant.ToolCalls),
+	}
+	if len(toolNames) > 0 {
+		attrs = append(attrs, "tools", toolNames)
+	}
+	if usage != nil {
+		attrs = append(attrs,
+			"input_tokens", usage.InputTokens,
+			"output_tokens", usage.OutputTokens,
+			"total_tokens", usage.TotalTokens,
+		)
+	}
+	slog.Info("assistant step", attrs...)
 
 	var usageOut *telemetry.Usage
 	if usage != nil {

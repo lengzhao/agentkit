@@ -127,6 +127,12 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	defer sched.wait(r.shutdownTimeout)
 
 	runtimes := attachScheduleRuntimes(ctx, r, sched)
+	slog.Info("runner ready",
+		"session_scope", r.sessionScope,
+		"max_concurrent_turns", r.maxConcurrent,
+		"schedule_runtimes", len(runtimes),
+		"shutdown_timeout", r.shutdownTimeout.String(),
+	)
 
 	recvDone := make(chan error, 1)
 	go r.receiveLoop(ctx, sched, recvDone, len(runtimes) > 0)
