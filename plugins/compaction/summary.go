@@ -77,7 +77,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 	if err != nil {
 		return capcompaction.Result{}, err
 	}
-	indexed := session.IndexMessagesForCompaction(ctx, events, "")
+	indexed := session.IndexMessagesForCompaction(ctx, events)
 	if len(indexed) == 0 {
 		return capcompaction.Result{}, nil
 	}

@@ -65,6 +65,39 @@ func PermissionReplyFromAction(actionVal, userID string, extra map[string]string
 	return reply, true
 }
 
+// ConfirmedCardFromReply builds a non-interactive card after the user responds.
+func ConfirmedCardFromReply(reply permission.Reply, extra map[string]string) *Card {
+	if strings.TrimSpace(reply.Decision) != "" {
+		title := strings.TrimSpace(extra["perm_label"])
+		if title == "" {
+			title = confirmedDecisionTitle(reply.Decision)
+		}
+		return ConfirmedAllowDenyCard(title, extra["perm_body"], extra["perm_color"])
+	}
+	question := strings.TrimSpace(extra["askq_question"])
+	answer := strings.TrimSpace(reply.Text)
+	if answer == "" {
+		answer = strings.TrimSpace(reply.Decision)
+	}
+	return ConfirmedPermissionCard(question, answer)
+}
+
+func confirmedDecisionTitle(decision string) string {
+	switch decision {
+	case "allow":
+		return "✅ 允许"
+	case "deny":
+		return "❌ 拒绝"
+	case "allow_all":
+		return "✅ 全部允许"
+	default:
+		if decision == "" {
+			return "✅ 已确认"
+		}
+		return "✅ " + decision
+	}
+}
+
 // ConfirmedPermissionCard updates the card after the user picks an option.
 func ConfirmedPermissionCard(question, answer string) *Card {
 	b := NewCard().Title("✅ "+answer, "green")
@@ -72,5 +105,24 @@ func ConfirmedPermissionCard(question, answer string) *Card {
 		b.Markdown(question)
 	}
 	b.Markdown("**→ " + answer + "**")
-	return b.Build()
+	card := b.Build()
+	card.Static = true
+	return card
+}
+
+// ConfirmedAllowDenyCard updates an allow/deny card after the user decides.
+func ConfirmedAllowDenyCard(title, body, color string) *Card {
+	if strings.TrimSpace(title) == "" {
+		title = "✅ 已确认"
+	}
+	if color == "" {
+		color = "green"
+	}
+	b := NewCard().Title(title, color)
+	if strings.TrimSpace(body) != "" {
+		b.Markdown(body)
+	}
+	card := b.Build()
+	card.Static = true
+	return card
 }

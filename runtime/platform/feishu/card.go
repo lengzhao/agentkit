@@ -55,8 +55,13 @@ func (p *Platform) RefreshCard(ctx context.Context, sessionKey string, card *com
 }
 
 func renderCardMap(card *common.Card, sessionKey string) map[string]any {
+	config := map[string]any{"wide_screen_mode": true}
+	if card != nil && card.Static {
+		config["enable_forward_interaction"] = false
+		config["update_multi"] = false
+	}
 	result := map[string]any{
-		"config": map[string]any{"wide_screen_mode": true},
+		"config": config,
 	}
 	if card == nil {
 		return result
@@ -83,6 +88,9 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 		case common.CardDivider:
 			elements = append(elements, map[string]any{"tag": "hr"})
 		case common.CardActions:
+			if card.Static {
+				continue
+			}
 			var actions []map[string]any
 			for _, btn := range e.Buttons {
 				btnType := btn.Type
@@ -124,6 +132,13 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 				}
 			}
 		case common.CardListItem:
+			if card.Static {
+				if strings.TrimSpace(e.Text) == "" {
+					continue
+				}
+				elements = append(elements, map[string]any{"tag": "markdown", "content": e.Text})
+				continue
+			}
 			btnType := e.BtnType
 			if btnType == "" {
 				btnType = "default"
@@ -145,6 +160,9 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 				},
 			})
 		case common.CardSelect:
+			if card.Static {
+				continue
+			}
 			var options []map[string]any
 			for _, opt := range e.Options {
 				options = append(options, map[string]any{"text": plainText(opt.Text), "value": opt.Value})

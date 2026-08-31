@@ -4,6 +4,7 @@ package common
 type Card struct {
 	Header   *CardHeader
 	Elements []CardElement
+	Static   bool // true after user answered; renderers must not emit interactive controls
 }
 
 type CardHeader struct {

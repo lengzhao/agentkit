@@ -16,8 +16,6 @@ import (
 type StoreConfig struct {
 	// Dir is root directory holding one file per session, resolved through the workspace.
 	Dir string `json:"dir"`
-	// UserMessageTemplate overrides the default LegacyUserMessageTemplate on replay.
-	UserMessageTemplate string `json:"userMessageTemplate"`
 	// MaxCachedSessions limits in-memory hot sessions (LRU). Zero keeps every opened session cached.
 	MaxCachedSessions int `json:"maxCachedSessions"`
 	// CacheIdleTTL evicts sessions unused for this duration (for example "30m"). Empty disables idle eviction.
@@ -35,7 +33,6 @@ type StoreDeps struct {
 type Store struct {
 	relDir              string
 	workspace           workspace.Service
-	userMessageTemplate string
 	maxLoadedEvents     int
 	mu                  sync.Mutex
 	cache               sessionCache
@@ -62,10 +59,9 @@ func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 		return nil, err
 	}
 	s := &Store{
-		relDir:              cfg.Dir,
-		workspace:           deps.Workspace,
-		userMessageTemplate: cfg.UserMessageTemplate,
-		maxLoadedEvents:     cfg.MaxLoadedEvents,
+		relDir:          cfg.Dir,
+		workspace:       deps.Workspace,
+		maxLoadedEvents: cfg.MaxLoadedEvents,
 		cache:               newSessionCache(cfg.MaxCachedSessions, idleTTL, time.Now),
 	}
 	if idleTTL > 0 {
@@ -123,10 +119,9 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 		return nil, err
 	}
 	sess, err := newJSONL(JSONLConfig{
-		Path:                path,
-		ID:                  id,
-		UserMessageTemplate: s.userMessageTemplate,
-		MaxLoadedEvents:     s.maxLoadedEvents,
+		Path:            path,
+		ID:              id,
+		MaxLoadedEvents: s.maxLoadedEvents,
 	})
 	if err != nil {
 		return nil, err

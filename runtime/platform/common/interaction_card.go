@@ -62,14 +62,17 @@ func allowDenyCard(payload permission.RequestPayload) *Card {
 		title = "确认工具调用：" + payload.ToolCall.Name
 	}
 	b := NewCard().Title(title, "orange").Markdown(reason)
-	b.ListItemBtnExtra("允许", "允许", "primary", PermissionDecisionValue("allow"), map[string]string{
-		"request_id": payload.ID,
-		"decision":   "allow",
-	})
-	b.ListItemBtnExtra("拒绝", "拒绝", "danger", PermissionDecisionValue("deny"), map[string]string{
-		"request_id": payload.ID,
-		"decision":   "deny",
-	})
+	permExtra := func(label, color, decision string) map[string]string {
+		return map[string]string{
+			"request_id": payload.ID,
+			"decision":   decision,
+			"perm_label": label,
+			"perm_color": color,
+			"perm_body":  reason,
+		}
+	}
+	b.ListItemBtnExtra("允许", "允许", "primary", PermissionDecisionValue("allow"), permExtra("✅ 允许", "green", "allow"))
+	b.ListItemBtnExtra("拒绝", "拒绝", "danger", PermissionDecisionValue("deny"), permExtra("❌ 拒绝", "red", "deny"))
 	return b.Build()
 }
 

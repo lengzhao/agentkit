@@ -120,6 +120,164 @@ agent.meetingbot.default:
 	}
 }
 
+func TestMergeYAMLDepsRemoveSuffix(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    loop: loop.default
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.assistant.default
+      - agent.meetingbot.default
+      - agent.worker.default
+agent.assistant.default:
+  use: agent/coding
+agent.meetingbot.default:
+  use: agent/coding
+agent.worker.default:
+  use: agent/coding
+`)
+	overlay := []byte(`loop.default:
+  deps:
+    agents-:
+      - agent.meetingbot.default
+`)
+	resolved, err := config.ResolveYAML(".", base, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := doc.Shared["loop.default"].Deps["agents"].([]any)
+	if len(agents) != 2 {
+		t.Fatalf("agents=%v", agents)
+	}
+	if agents[0] != "agent.assistant.default" || agents[1] != "agent.worker.default" {
+		t.Fatalf("agents=%v", agents)
+	}
+}
+
+func TestMergeYAMLDepsRemoveSuffixMultiple(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    loop: loop.default
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.a.default
+      - agent.b.default
+      - agent.c.default
+agent.a.default:
+  use: agent/coding
+agent.b.default:
+  use: agent/coding
+agent.c.default:
+  use: agent/coding
+`)
+	overlay := []byte(`loop.default:
+  deps:
+    agents-:
+      - agent.a.default
+      - agent.c.default
+`)
+	resolved, err := config.ResolveYAML(".", base, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := doc.Shared["loop.default"].Deps["agents"].([]any)
+	if len(agents) != 1 || agents[0] != "agent.b.default" {
+		t.Fatalf("agents=%v", agents)
+	}
+}
+
+func TestMergeYAMLDepsRemoveSuffixNoMatch(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    loop: loop.default
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.assistant.default
+agent.assistant.default:
+  use: agent/coding
+`)
+	overlay := []byte(`loop.default:
+  deps:
+    agents-:
+      - agent.missing.default
+`)
+	resolved, err := config.ResolveYAML(".", base, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := doc.Shared["loop.default"].Deps["agents"].([]any)
+	if len(agents) != 1 || agents[0] != "agent.assistant.default" {
+		t.Fatalf("agents=%v", agents)
+	}
+}
+
+func TestMergeYAMLDepsAppendThenRemoveSuffix(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    loop: loop.default
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.assistant.default
+agent.assistant.default:
+  use: agent/coding
+agent.meetingbot.default:
+  use: agent/coding
+agent.worker.default:
+  use: agent/coding
+`)
+	overlay := []byte(`loop.default:
+  deps:
+    agents+:
+      - agent.meetingbot.default
+      - agent.worker.default
+    agents-:
+      - agent.worker.default
+`)
+	resolved, err := config.ResolveYAML(".", base, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := doc.Shared["loop.default"].Deps["agents"].([]any)
+	if len(agents) != 2 {
+		t.Fatalf("agents=%v", agents)
+	}
+	if agents[0] != "agent.assistant.default" || agents[1] != "agent.meetingbot.default" {
+		t.Fatalf("agents=%v", agents)
+	}
+}
+
 func TestMergeYAMLNullDeletesKey(t *testing.T) {
 	t.Parallel()
 	base := []byte(`runner.default:

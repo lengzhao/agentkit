@@ -110,7 +110,7 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 |---|---|---|---|
 | `platform/cli` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | stderr prompt | `Receive` → `Reply` |
 | `platform/feishu` | `Interactive`, `MultiSelect`, `DefaultTimeout≥10m` | 卡片 + 按钮 | callback 或 reply-to |
-| `platform/slack` | 同上 | Block Kit / 模态 | 交互 payload |
+| `platform/slack` | 同上 | Block Kit 卡片 + 按钮 | 交互 payload |
 | `platform/headless` | `Interactive=false` | 无 | 直接 `NoHuman` |
 | `platform/multiplex` | **转发 leaf Capability** | 按 `PlatformID` 路由 | 子平台 `Receive` 原样上送 |
 

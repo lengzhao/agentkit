@@ -73,7 +73,8 @@ flowchart LR
 | 标量 | 覆盖 | — |
 | 列表 | 整体覆盖 | 保持可预测；缩短列表仍然可行 |
 | `key+: [...]` | 追加到 base 列表尾部 | `deps.agents+` 加 bot 不必重列 |
-| `key: null` | 删除该键 | 需要显式清空时的逃生口 |
+| `key-: [...]` | 按值从 base 列表删减 | `deps.tools-` 从 L0 长列表摘掉少数项 |
+| `key: null` | 删除 map 键 | 删 dep、清空字段；列表删减用 `key-` |
 
 `use` 变更走替换这一条，使改动**严格向后兼容**：今天所有 preset 写的都是完整节点，完整节点深合并的结果与替换一致；换插件的 preset（如 `chat-api.yaml` 把 `platform/cli` 换成 `platform/chat-api`）继续走替换。
 
@@ -365,6 +366,6 @@ flowchart TB
 
 ## 12. 与架构文档的关系
 
-- 架构文档 [§5.6](../go-agent-harness-architecture.zh.md) 的配置规则需补充深合并语义（`use` 变更 → 替换；`key+` 追加；`key: null` 删除）与 `${env:}` / `${file:}` 插值。
+- 架构文档 [§5.6](../go-agent-harness-architecture.zh.md) 的配置规则需补充深合并语义（`use` 变更 → 替换；`key+` 追加；`key-` 列表删减；`key: null` 删 map 键）与 `${env:}` / `${file:}` 插值。
 - 架构文档 §5.7 的 `Feature` / `Preset` 文档种类**保留为目标状态**，启动判据见 §8.2；建议在 §5.7 开头标注「目标 API，当前未实现；节点级复用先用 `extends:` + preset 链」，避免被读成已落地契约。其中「`agentkit config resolve`（规划中）」一句应改为指向本文的三条改动。
 - 底层装配始终不变：`build.Build[Runner](ctx, graph, rootID)`。

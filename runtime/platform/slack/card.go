@@ -114,12 +114,31 @@ func renderCardBlocks(card *common.Card, sessionKey string) []slack.Block {
 			}
 			blocks = append(blocks, slack.NewSectionBlock(mrkdwnBlock(e.Content), nil, nil))
 		case common.CardListItem:
+			if card.Static {
+				if strings.TrimSpace(e.Text) == "" {
+					continue
+				}
+				blocks = append(blocks, slack.NewSectionBlock(mrkdwnBlock(e.Text), nil, nil))
+				continue
+			}
 			btnType := e.BtnType
 			if btnType == "" {
 				btnType = "default"
 			}
 			accessory := slack.NewAccessory(newButtonElement(e.BtnText, btnType, e.BtnValue, sessionKey, e.Extra))
 			blocks = append(blocks, slack.NewSectionBlock(mrkdwnBlock(e.Text), nil, accessory))
+		case common.CardActions:
+			if card.Static {
+				continue
+			}
+			for _, btn := range e.Buttons {
+				btnType := btn.Type
+				if btnType == "" {
+					btnType = "default"
+				}
+				accessory := slack.NewAccessory(newButtonElement(btn.Text, btnType, btn.Value, sessionKey, btn.Extra))
+				blocks = append(blocks, slack.NewSectionBlock(mrkdwnBlock(btn.Text), nil, accessory))
+			}
 		case common.CardNote:
 			if strings.TrimSpace(e.Text) == "" {
 				continue

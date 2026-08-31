@@ -31,13 +31,14 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | 层 | 来源 | 说明 |
 |---|---|---|
 | L0 | 随二进制发布的 `config.base.yaml` | 默认实例图；实例 id 以 `.default` 结尾 |
-| L1 | `config.yaml` 或 `-config` 路径 | 用户 override；**同 id 整颗替换** L0 实例 |
+| L1 | `config.yaml` 或 `-config` 路径 | 用户 override；同 id 与 L0 **深合并**（`use` 变更时整颗替换） |
 
 合并规则：
 
-1. 先 L0，再按 map key 用 L1 覆盖（整颗 `PluginNode` 替换，**不做字段级 merge**）。
-2. 覆盖实例时必须写完整块：`use`、`config`、`deps` 缺一不可。
-3. `-config` 接受逗号分隔的多个文件，按顺序合并，**后面的覆盖前面的**。
+1. 先 L0，再按顺序合并 L1 overlay；`-config` 逗号分隔多文件时，**后面的覆盖前面的**。
+2. **实例级**：L1 与 L0 同 id 且 `use` 不变时，`config` / `deps` 递归深合并；`use` 变更则整颗节点替换。
+3. **字段级**（深合并时）：标量覆盖；列表整体覆盖；`key+: [...]` 追加；`key-: [...]` 按值删减列表元素；`key: null` 删除 map 键。同一 overlay 内顺序：覆盖 → `+` → `-`。
+4. 节点可 `extends: other.instance.id` 继承另一实例（YAML 层展开，需无环）。
 
 ## 推荐工作流
 
@@ -60,7 +61,7 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | `prompt.default` | system prompt 拼装 | 调整 `deps.sections` |
 | `skills.default` | skill 目录 | `dirs` 叠加路径 |
 | `sessionStore.default` | 会话持久化 | `dir`、`maxLoadedEvents` |
-| `runner.default` | 并发与 session 语义 | `sessionScope`、`maxConcurrentTurns` |
+| `runner.default` | 并发与 session 语义 | `sessionScope`、`maxConcurrentTurns`、`inject`、`defaultTimezone` |
 | `platform.default` | 入口形态 | `platform/cli`、`platform/worker` 等 |
 | `credentials.default` | 密钥解析 | `.env` 文件列表 |
 | `mcp.default` | MCP 配置文件列表 | `files` 路径 |
@@ -89,6 +90,23 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 Skills 目录叠加：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 
 ## 最小 override 示例
+
+### IM 多用户 inject
+
+```yaml
+runner.default:
+  config:
+    inject:
+      - sender_id
+      - sender_name
+      - platform
+      - chat_id
+      - timestamp
+      - task_id
+    defaultTimezone: Asia/Shanghai
+```
+
+内置项：`sender_id`、`sender_name`、`sender_email`、`platform`、`chat_id`、`timestamp`、`task_id`、`trace_id`、`language`、`custom.*`，或任意 `MessageEvent.Metadata` 键名。
 
 ### 切换模型
 

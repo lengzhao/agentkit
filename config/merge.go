@@ -34,10 +34,10 @@ func mergeNodes(base, overlay any) any {
 
 func deepMergeMaps(base, overlay map[string]any) map[string]any {
 	out := cloneMap(base)
+
+	// Phase 1: scalars, map deep-merge, list replace, null key delete.
 	for key, value := range overlay {
-		if strings.HasSuffix(key, "+") {
-			baseKey := strings.TrimSuffix(key, "+")
-			out[baseKey] = appendListValues(out[baseKey], value)
+		if strings.HasSuffix(key, "+") || strings.HasSuffix(key, "-") {
 			continue
 		}
 		if value == nil {
@@ -52,7 +52,56 @@ func deepMergeMaps(base, overlay map[string]any) map[string]any {
 		}
 		out[key] = value
 	}
+
+	// Phase 2: list append (key+).
+	for key, value := range overlay {
+		if !strings.HasSuffix(key, "+") {
+			continue
+		}
+		baseKey := strings.TrimSuffix(key, "+")
+		out[baseKey] = appendListValues(out[baseKey], value)
+	}
+
+	// Phase 3: list remove by value (key-). Map key delete uses null in phase 1.
+	for key, value := range overlay {
+		if !strings.HasSuffix(key, "-") {
+			continue
+		}
+		baseKey := strings.TrimSuffix(key, "-")
+		out[baseKey] = removeListValues(out[baseKey], value)
+	}
+
 	return out
+}
+
+func removeListValues(base, toRemove any) any {
+	baseList := toAnySlice(base)
+	removeList := toAnySlice(toRemove)
+	if len(baseList) == 0 || len(removeList) == 0 {
+		return base
+	}
+	out := make([]any, 0, len(baseList))
+	for _, item := range baseList {
+		if listContainsValue(removeList, item) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func listContainsValue(list []any, target any) bool {
+	for _, item := range list {
+		if item == target {
+			return true
+		}
+		if s, ok := target.(string); ok {
+			if other, ok := item.(string); ok && other == s {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func appendListValues(base, extra any) any {

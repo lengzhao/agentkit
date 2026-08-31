@@ -55,11 +55,11 @@ const (
 	// KeyScheduleStateless marks a schedule-fired turn that must not inherit the
 	// delivery conversation's active session history (similar to KeyInSubagent).
 	KeyScheduleStateless contextKey = "agentkit.schedule_stateless"
-	// KeyUserMessageTemplate overrides sessionStore.config.userMessageTemplate for
-	// DeriveMessages in the current context. Empty means use store config, which
-	// defaults to LegacyUserMessageTemplate when unset.
-	KeyUserMessageTemplate contextKey = "agentkit.user_message_template"
 )
+
+// MetadataSkipPromptMeta, when true on MessageEvent.Metadata, tells runner not to
+// prepend the optional [agentkit ...] inbound prefix for that turn.
+const MetadataSkipPromptMeta = "skipPromptMeta"
 
 // SessionID identifies a conversation unit. Platforms emit a delivery SessionID
 // (finest grain: channel + optional :t:thread + optional :u:user). Runner applies

@@ -14,8 +14,6 @@ type MemoryConfig struct {
 	ID agentkit.SessionID `json:"id"`
 	// MaxToolResultBytes truncates tool results as they are appended.
 	MaxToolResultBytes int `json:"maxToolResultBytes"`
-	// UserMessageTemplate overrides the default LegacyUserMessageTemplate on replay.
-	UserMessageTemplate string `json:"userMessageTemplate"`
 }
 
 // Memory is an in-memory session backend for tests and ephemeral runs.
@@ -27,7 +25,6 @@ type Memory struct {
 	cutoffByAgent       map[agentkit.AgentID]agentkit.EventSeq
 	trimmed             bool
 	maxToolResultBytes  int
-	userMessageTemplate string
 }
 
 func newMemory(cfg MemoryConfig) (*Memory, error) {
@@ -35,7 +32,7 @@ func newMemory(cfg MemoryConfig) (*Memory, error) {
 	if id == "" {
 		id = agentkit.SessionID("mem-" + time.Now().UTC().Format("20060102-150405.000"))
 	}
-	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes, userMessageTemplate: cfg.UserMessageTemplate}, nil
+	return &Memory{id: id, maxToolResultBytes: cfg.MaxToolResultBytes}, nil
 }
 
 // NewMemory registers session/memory: Ephemeral in-memory session. Nothing survives the process.
@@ -83,7 +80,7 @@ func (s *Memory) LatestSeq() agentkit.EventSeq {
 func (s *Memory) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return deriveMessages(ctx, s.events, s.maxToolResultBytes, s.userMessageTemplate), nil
+	return deriveMessages(ctx, s.events, s.maxToolResultBytes), nil
 }
 
 func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {

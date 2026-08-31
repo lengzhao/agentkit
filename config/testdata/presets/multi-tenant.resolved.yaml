@@ -46,7 +46,7 @@ compaction.token-limit.default:
 credentials.default:
     config:
         files:
-            - local:.env
+            - global:.env
     deps:
         workspace: workspace.default
     use: credentials/env
@@ -189,6 +189,11 @@ prompt.subagents.default:
     use: prompt/section/subagents
 runner.default:
     config:
+        inject:
+            - sender_id
+            - sender_name
+            - platform
+            - chat_id
         maxConcurrentTurns: 64
         sessionScope: channel
         shutdownTimeoutSeconds: 10

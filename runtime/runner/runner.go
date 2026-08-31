@@ -33,6 +33,14 @@ type Config struct {
 	// MaxConcurrentTurns caps how many turns run at once across distinct effective
 	// sessions. Defaults to 64. Ordering within one session is always preserved.
 	MaxConcurrentTurns int `json:"maxConcurrentTurns"`
+	// Inject lists fields prepended to each inbound user message as
+	// [agentkit sender_id=... timestamp="..." task_id="..." ...].
+	// Built-in tokens: sender_id, sender_name, sender_email, platform, chat_id,
+	// timestamp, task_id, trace_id, language, custom.*, or any Metadata key.
+	Inject []string `json:"inject"`
+	// DefaultTimezone is the fallback IANA timezone for inject timestamp when the
+	// platform does not implement UserTimezoneProvider.
+	DefaultTimezone string `json:"defaultTimezone"`
 }
 
 type Deps struct {
@@ -52,6 +60,8 @@ type Root struct {
 	sessionScope    session.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
+	inject           []string
+	defaultTimezone  string
 }
 
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
@@ -91,6 +101,8 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 		sessionScope:    session.ParseScope(cfg.SessionScope),
 		maxConcurrent:   maxConcurrent,
 		shutdownTimeout: shutdownTimeout,
+		inject:          normalizeInjectAllowlist(cfg.Inject),
+		defaultTimezone: strings.TrimSpace(cfg.DefaultTimezone),
 	}, nil
 }
 

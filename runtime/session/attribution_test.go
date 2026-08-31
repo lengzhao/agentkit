@@ -39,13 +39,10 @@ func attributionTestStore(t *testing.T, dir string) agentkit.SessionStore {
 	return store
 }
 
-// Requirement: one Slack channel shares a single session, and the model can
-// still tell the speakers apart.
-func TestSharedSessionAttributesEachSpeaker(t *testing.T) {
+func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 	t.Parallel()
 
 	store := attributionTestStore(t, t.TempDir())
-	// Channel scope: both users land on the same session id.
 	id := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
 	if other := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U222"); other != id {
 		t.Fatalf("channel scope split the session: %q vs %q", id, other)
@@ -56,13 +53,13 @@ func TestSharedSessionAttributesEachSpeaker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "改一下 README")); err != nil {
+	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[agentkit sender_id=U111]\n改一下 README")); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.AppendMessage(context.Background(), sess, "coder", agentkit.EventAssistantMessage, textMessage("assistant", "好的")); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(userCtx("U222"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "顺便跑一下测试")); err != nil {
+	if err := session.AppendMessage(userCtx("U222"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[agentkit sender_id=U222]\n顺便跑一下测试")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -73,21 +70,18 @@ func TestSharedSessionAttributesEachSpeaker(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("derived %d messages, want 3", len(msgs))
 	}
-	if got := firstText(msgs[0]); !strings.Contains(got, `<user id="U111">`) || !strings.Contains(got, "改一下 README") {
+	if got := firstText(msgs[0]); !strings.Contains(got, "sender_id=U111") || !strings.Contains(got, "改一下 README") {
 		t.Fatalf("first user message = %q", got)
 	}
-	if got := firstText(msgs[2]); !strings.Contains(got, `<user id="U222">`) {
+	if got := firstText(msgs[2]); !strings.Contains(got, "sender_id=U222") {
 		t.Fatalf("second user message = %q", got)
 	}
-	// The assistant speaks for itself; attributing it to the prompter would make
-	// the reply read as that person's words on replay.
-	if got := firstText(msgs[1]); strings.Contains(got, "<user id=") {
+	if got := firstText(msgs[1]); strings.Contains(got, "[agentkit ") {
 		t.Fatalf("assistant message was attributed: %q", got)
 	}
 }
 
-// Single-user transports set no UserID, and their history must derive exactly as
-// it did before attribution existed.
+// Single-user transports set no UserID, and their history must derive exactly as stored.
 func TestNoUserIDLeavesHistoryUntouched(t *testing.T) {
 	t.Parallel()
 
@@ -114,9 +108,7 @@ func TestNoUserIDLeavesHistoryUntouched(t *testing.T) {
 	}
 }
 
-// Attribution must survive a restart: it lives on the persisted envelope, not
-// only in the context of the turn that produced it.
-func TestAttributionSurvivesReload(t *testing.T) {
+func TestStoredInjectPrefixSurvivesReload(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -127,7 +119,7 @@ func TestAttributionSurvivesReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "hi")); err != nil {
+	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[agentkit sender_id=U111]\nhi")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -143,13 +135,12 @@ func TestAttributionSurvivesReload(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("derived %d messages, want 1", len(msgs))
 	}
-	if got := firstText(msgs[0]); !strings.Contains(got, `<user id="U111">`) {
+	if got := firstText(msgs[0]); !strings.Contains(got, "sender_id=U111") {
 		t.Fatalf("reloaded message = %q", got)
 	}
 }
 
-// An image-only turn still needs a speaker.
-func TestAttributionWithoutTextPart(t *testing.T) {
+func TestImageOnlyMessageDerivesUnchanged(t *testing.T) {
 	t.Parallel()
 
 	store := attributionTestStore(t, t.TempDir())
@@ -171,13 +162,10 @@ func TestAttributionWithoutTextPart(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("derived %d messages, want 1", len(msgs))
 	}
-	if got := firstText(msgs[0]); !strings.Contains(got, `<user id="U111">`) {
-		t.Fatalf("image-only message = %q", got)
+	if n := len(msgs[0].Content); n != 1 {
+		t.Fatalf("content parts = %d, want 1", n)
 	}
-	if n := len(msgs[0].Content); n != 2 {
-		t.Fatalf("content parts = %d, want 2 (tag + image)", n)
-	}
-	if msgs[0].Content[1].Type != "image" {
-		t.Fatalf("image part lost: %+v", msgs[0].Content)
+	if msgs[0].Content[0].Type != "image" {
+		t.Fatalf("image part changed: %+v", msgs[0].Content)
 	}
 }

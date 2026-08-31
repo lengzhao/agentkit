@@ -61,14 +61,9 @@ func (p *Platform) handleBlockAction(callback slack.InteractionCallback, action 
 		p.trackCardMessage(sessionKey, channelID, messageTS, threadTS)
 	}
 
-	question := extra["askq_question"]
-	answer := reply.Text
-	if answer == "" {
-		answer = reply.Decision
-	}
 	p.pushPermissionReply(context.Background(), sessionKey, reply)
 
-	confirmed := common.ConfirmedPermissionCard(question, answer)
+	confirmed := common.ConfirmedCardFromReply(reply, extra)
 	ref := cardMessageRef{channel: channelID, ts: messageTS, threadTS: threadTS}
 	if err := p.updateCardMessage(context.Background(), ref, confirmed, sessionKey); err != nil {
 		slog.Warn("slack: interaction card update failed", "err", err)

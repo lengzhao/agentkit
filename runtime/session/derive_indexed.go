@@ -13,9 +13,8 @@ type IndexedMessage = compaction.IndexedMessage
 
 // IndexMessagesForCompaction rebuilds the model-visible list used for compaction,
 // including the latest compaction summary and retained tail when present.
-func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEvent, userMessageTemplate string) []IndexedMessage {
+func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEvent) []IndexedMessage {
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	tmpl := resolveUserMessageTemplate(ctx, userMessageTemplate)
 
 	prevCompactionIdx := -1
 	var prevData compaction.EventData
@@ -42,7 +41,7 @@ func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEv
 			out = append(out, IndexedMessage{Message: msg, Seq: prevData.FirstKeptSeq, IsTurnStart: msg.Role == "user"})
 		}
 		for _, ev := range events[prevCompactionIdx+1:] {
-			out = append(out, indexEventMessages(ctx, ev, tmpl)...)
+			out = append(out, indexEventMessages(ev)...)
 		}
 		return out
 	}
@@ -51,20 +50,17 @@ func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEv
 		if !eventForAgent(ev, agentID) {
 			continue
 		}
-		out = append(out, indexEventMessages(ctx, ev, tmpl)...)
+		out = append(out, indexEventMessages(ev)...)
 	}
 	return out
 }
 
-func indexEventMessages(ctx context.Context, ev agentkit.SessionEvent, tmpl string) []IndexedMessage {
+func indexEventMessages(ev agentkit.SessionEvent) []IndexedMessage {
 	switch ev.Type {
 	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
 		var msg agentkit.ModelMessage
 		if err := json.Unmarshal(ev.Data, &msg); err != nil {
 			return nil
-		}
-		if ev.Type == agentkit.EventUserMessage {
-			msg = applyUserMessageTemplate(msg, ev.UserID, ev.Metadata, tmpl)
 		}
 		return []IndexedMessage{{
 			Message:     msg,
@@ -108,25 +104,4 @@ func indexEventMessages(ctx context.Context, ev agentkit.SessionEvent, tmpl stri
 	default:
 		return nil
 	}
-}
-
-func latestCompactionForAgent(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, compaction.EventData, bool) {
-	var (
-		seq  agentkit.EventSeq
-		data compaction.EventData
-		ok   bool
-	)
-	for _, ev := range events {
-		if ev.Type != agentkit.EventCompaction || !eventForAgent(ev, agentID) {
-			continue
-		}
-		var parsed compaction.EventData
-		if err := json.Unmarshal(ev.Data, &parsed); err != nil {
-			continue
-		}
-		seq = ev.Seq
-		data = parsed
-		ok = true
-	}
-	return seq, data, ok
 }

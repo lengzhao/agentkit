@@ -8,9 +8,8 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 )
 
-func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int, userMessageTemplate string) []agentkit.ModelMessage {
+func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
 	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	tmpl := resolveUserMessageTemplate(ctx, userMessageTemplate)
 
 	compactAfterSeq, summary, retainedTail := latestCompactionView(events, agentID)
 
@@ -32,9 +31,6 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 			var msg agentkit.ModelMessage
 			if err := json.Unmarshal(ev.Data, &msg); err != nil {
 				continue
-			}
-			if ev.Type == agentkit.EventUserMessage {
-				msg = applyUserMessageTemplate(msg, ev.UserID, ev.Metadata, tmpl)
 			}
 			out = append(out, msg)
 		case agentkit.EventToolResult:
@@ -64,6 +60,27 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 		out = compaction.PruneToolResults(out, maxToolBytes)
 	}
 	return out
+}
+
+func latestCompactionForAgent(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, compaction.EventData, bool) {
+	var (
+		seq  agentkit.EventSeq
+		data compaction.EventData
+		ok   bool
+	)
+	for _, ev := range events {
+		if ev.Type != agentkit.EventCompaction || !eventForAgent(ev, agentID) {
+			continue
+		}
+		var parsed compaction.EventData
+		if err := json.Unmarshal(ev.Data, &parsed); err != nil {
+			continue
+		}
+		seq = ev.Seq
+		data = parsed
+		ok = true
+	}
+	return seq, data, ok
 }
 
 func latestCompactionView(events []agentkit.SessionEvent, agentID agentkit.AgentID) (compactAfterSeq agentkit.EventSeq, summary *agentkit.ModelMessage, retainedTail []agentkit.ModelMessage) {

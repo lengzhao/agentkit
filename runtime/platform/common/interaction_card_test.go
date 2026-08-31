@@ -85,6 +85,35 @@ func TestPermissionCallbackData(t *testing.T) {
 	}
 }
 
+func TestConfirmedPermissionCardIsStatic(t *testing.T) {
+	card := ConfirmedPermissionCard("Pick one", "A")
+	if card == nil || !card.Static {
+		t.Fatal("expected static confirmed card")
+	}
+	for _, elem := range card.Elements {
+		if _, ok := elem.(CardListItem); ok {
+			t.Fatal("confirmed card must not contain buttons")
+		}
+	}
+}
+
+func TestConfirmedCardFromAllowDenyReply(t *testing.T) {
+	card := ConfirmedCardFromReply(permission.Reply{
+		RequestID: "req1",
+		Decision:  "allow",
+	}, map[string]string{
+		"perm_label": "✅ 允许",
+		"perm_body":  "run shell",
+		"perm_color": "green",
+	})
+	if card == nil || !card.Static {
+		t.Fatal("expected static allow card")
+	}
+	if card.Header == nil || card.Header.Title != "✅ 允许" {
+		t.Fatalf("header = %+v", card.Header)
+	}
+}
+
 func TestLegacyInteractionCardFromPayloadRemoved(t *testing.T) {
 	card := PermissionCardFromPayload(permission.RequestPayload{
 		Request: permission.Request{
@@ -93,8 +122,8 @@ func TestLegacyInteractionCardFromPayloadRemoved(t *testing.T) {
 			Question: &permission.Question{
 				Prompt: "Pick one",
 				Options: []permission.Option{
-			{Label: "A"},
-			{Label: "B"},
+					{Label: "A"},
+					{Label: "B"},
 				},
 			},
 		},

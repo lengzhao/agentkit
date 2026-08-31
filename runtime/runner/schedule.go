@@ -65,19 +65,21 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		return
 	}
 	if r.loop.IsSessionBusy(effectiveID) {
+		steerMsg := r.formatInboundEvent(scoped, deliveryID).Message
 		slog.Info("inbound steered to busy session",
 			"platform", event.PlatformID,
 			"user_id", event.UserID,
 			"delivery_session_id", deliveryID,
 			"effective_session_id", effectiveID,
 			"agent_id", scoped.AgentID,
-			"preview", telemetry.SummarizeMessage(event.Message),
+			"preview", telemetry.SummarizeMessage(steerMsg),
 		)
-		if err := r.loop.Steer(ctx, event.Message); err != nil {
+		if err := r.loop.Steer(ctx, steerMsg); err != nil {
 			r.reportInboundError(ctx, deliveryID, scoped, err)
 		}
 		return
 	}
+	scoped = r.formatInboundEvent(scoped, deliveryID)
 	slog.Info("inbound turn queued",
 		"platform", event.PlatformID,
 		"user_id", event.UserID,
@@ -85,7 +87,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		"effective_session_id", effectiveID,
 		"store_session_id", storeSessionID,
 		"agent_id", scoped.AgentID,
-		"preview", telemetry.SummarizeMessage(event.Message),
+		"preview", telemetry.SummarizeMessage(scoped.Message),
 	)
 	fmt.Fprintln(os.Stderr)
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {

@@ -278,13 +278,8 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 		if !common.AllowList(p.allowFrom, userID) {
 			return nil, nil
 		}
-		question := extra["askq_question"]
 		p.pushPermissionReply(context.Background(), sessionKey, reply)
-		answer := reply.Text
-		if answer == "" {
-			answer = reply.Decision
-		}
-		confirmed := common.ConfirmedPermissionCard(question, answer)
+		confirmed := common.ConfirmedCardFromReply(reply, extra)
 		return &callback.CardActionTriggerResponse{
 			Card: &callback.Card{
 				Type: "raw",

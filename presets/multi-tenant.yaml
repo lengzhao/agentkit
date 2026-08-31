@@ -4,8 +4,8 @@
 #
 #   会话隔离   —— runner.config.sessionScope 折叠 platform delivery SessionID，
 #                得到 effective SessionID；Loop 按 effective 串行加锁，session/store 一 ID 一 JSONL。
-#   用户识别   —— MessageEvent.UserID 落在 user 消息的事件信封上，
-#                回放时按 userMessageTemplate 渲染（默认 LegacyUserMessageTemplate）。
+#   用户识别   —— runner.config.inject 在入站时 prepend [agentkit ...]；
+#                支持 sender_id / sender_name / timestamp / task_id 等，对齐 cc-connect。
 #   工作目录   —— cap/tenant 从 effective SessionID 推出租户键（平台段 + 第一个路由段），
 #                workspace/tenant 按租户键给出 local 根。
 #
@@ -88,6 +88,11 @@ runner.default:
   config:
     shutdownTimeoutSeconds: 10
     sessionScope: channel
+    inject:
+      - sender_id
+      - sender_name
+      - platform
+      - chat_id
   deps:
     platform: platform.default
     loop: loop.default

@@ -18,8 +18,6 @@ type JSONLConfig struct {
 	Path string `json:"path"`
 	// ID is fixed session id.
 	ID agentkit.SessionID `json:"id"`
-	// UserMessageTemplate is forwarded to the in-memory replay backend.
-	UserMessageTemplate string `json:"userMessageTemplate"`
 	// MaxLoadedEvents limits non-compaction events kept in memory on load. Zero loads the full file.
 	MaxLoadedEvents int `json:"maxLoadedEvents"`
 }
@@ -45,7 +43,7 @@ func newJSONL(cfg JSONLConfig) (*JSONL, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.Path), 0o755); err != nil {
 		return nil, err
 	}
-	mem, err := newMemory(MemoryConfig{ID: id, UserMessageTemplate: cfg.UserMessageTemplate})
+	mem, err := newMemory(MemoryConfig{ID: id})
 	if err != nil {
 		return nil, err
 	}

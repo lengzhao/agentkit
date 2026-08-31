@@ -46,7 +46,7 @@ compaction.token-limit.default:
 credentials.default:
     config:
         files:
-            - local:.env
+            - global:.env
     deps:
         workspace: workspace.default
     use: credentials/env

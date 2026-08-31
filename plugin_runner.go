@@ -37,3 +37,9 @@ type Platform interface {
 type PlatformIdentifier interface {
 	PlatformID() string
 }
+
+// UserTimezoneProvider is optional on leaf platforms. Runner uses it when
+// runner.config.inject includes timestamp.
+type UserTimezoneProvider interface {
+	UserTimezone(userID string) string
+}

@@ -5,7 +5,7 @@
 | 问题 | 由谁回答 | 落点 |
 |---|---|---|
 | 这条消息接到哪段历史后面？ | `runner.config.sessionScope` 折叠 delivery SessionID | `runtime/session.ApplyScope` |
-| 这句话是谁说的？ | `MessageEvent.UserID` → 事件信封 → 回放模板 | `SessionEvent.UserID`、`sessionStore.config.userMessageTemplate` |
+| 这句话是谁说的？ | `runner.config.inject` 入站 prepend `[agentkit ...]` | `runtime/runner/inbound_format`、`MessageEvent.UserID` / `Metadata` |
 | 这个 turn 在哪个目录干活？ | effective SessionID 推出的**租户键** | `cap/tenant.Key`、`workspace/tenant` |
 
 把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种 scope 推出的租户键都是同一个。
@@ -17,7 +17,7 @@ flowchart LR
   D -->|runner sessionScope| E["effective SessionID<br/>slack:C001"]
   Msg -->|UserID| UID["U111"]
   E -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 effective ID 一个 JSONL"]
-  UID -->|"落在 user 事件信封上"| Attr["回放按 userMessageTemplate 渲染"]
+  UID -->|inject| Attr["入站 prepend [agentkit ...]"]
   E -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
   Root --> Runtime["sessions / agents / mcp / skills"]
@@ -76,29 +76,55 @@ Runner **不**维护静态路由表。channel / user 级绑定由 Platform 读�
 
 ## 2. 识别不同用户
 
-`sessionScope: channel` 下整个频道共用一段历史，模型看到的是一串 user 消息。如果不标注发言人，它分不清"这是刚才那个人的追问"还是"另一个人的新需求"，也注意不到"我问的人和回答我的人不是同一个"。
+`sessionScope: channel` 下整个频道共用一段历史，模型看到的是一串 user 消息。如果不标注发言人，它分不清"这是刚才那个人的追问"还是"另一个人的新需求"。
 
-所以 `UserID` 落在**事件信封**上（`SessionEvent.UserID`），而不是只存在于 turn 的 ctx 里 —— 重启后回放依然认得。Platform 还可选填 `MessageEvent.Metadata`（如 display name），一并持久化到 `SessionEvent.Metadata`，供模板引用。
+**推荐做法**：配置 `runner.config.inject`（`presets/multi-tenant.yaml` 已默认注入发言人相关字段）。Runner 在交给 Loop 之前 prepend 一行 cc-connect 风格的元数据，Platform 只填原始 `Message` 与 `Metadata`：
 
-`sessionStore.config.userMessageTemplate` 用 Go `text/template` 渲染 user 消息。模板数据：
+```yaml
+runner.default:
+  config:
+    inject:
+      - sender_id
+      - sender_name
+      - sender_email      # 可选，Metadata 有 email 时注入
+      - platform
+      - chat_id
+      - timestamp         # 可选
+      - task_id           # 可选，来自 Metadata
+      - trace_id
+      - language
+      - custom.*          # 可选，Metadata 中 custom.* 前缀键
+    defaultTimezone: Asia/Shanghai
+```
 
-| 字段 | 含义 |
-|---|---|
-| `UserID` | 事件信封上的发言人 id |
-| `Text` | 该条 user 消息的文本 part |
-| `Metadata` | Platform 传入的 `map[string]any` |
+示例：
 
-**默认**使用 `LegacyUserMessageTemplate`（`<user id="{{.UserID}}">` 包裹）。可在 `sessionStore.config.userMessageTemplate` 覆盖；若只要原文，设为 `{{.Text}}`。
+```text
+[agentkit timestamp="2026-08-31T10:00:00+08:00" timezone="Asia/Shanghai" sender_id=U111 sender_name="Alice" platform=slack chat_id=C001 task_id="job-9"]
+改一下 README
+```
 
-自定义示例：`[user id={{.UserID}}]\n{{.Text}}`，或 `[{{index .Metadata "name"}}]: {{.Text}}`。
+| inject 项 | 来源 | 输出 attr |
+|---|---|---|
+| `sender_id` | `MessageEvent.UserID` | `sender_id=U111` |
+| `sender_name` | Metadata（displayName / userName / name 等） | `sender_name="Alice"` |
+| `sender_email` | Metadata（email / sender_email） | `sender_email="..."` |
+| `platform` | `MessageEvent.PlatformID` 或 delivery SessionID | `platform=slack` |
+| `chat_id` | delivery SessionID 的 channel 段 | `chat_id=C001` |
+| `timestamp` | 当前时间 + 时区 | `timestamp="RFC3339" timezone="IANA"` |
+| `task_id` / `trace_id` / `language` | Metadata（含常见 HTTP header 别名） | `task_id="..."` 等 |
+| `custom.*` | Metadata 键前缀匹配 | `custom.tenant="..."` 等 |
+| 任意其它键 | Metadata 精确匹配 | `org_id="..."` 等 |
+
+`UserID` 仍落在 **事件信封**（`SessionEvent.UserID`）供审计与 tool `metadata.*` 绑定；模型可见的上下文由入站时写入 session 的 `[agentkit ...]` 前缀承担。
+
+单条跳过前缀：`MessageEvent.Metadata.skipPromptMeta: true`（chat-api 可通过 HTTP header 映射）。
 
 三条固定规则：
 
-- **只标 user 消息。** 把 assistant 也标成提问者，回放时那句回答会读成那个人说的话。
-- **逐条独立判定，只看该条事件自己的 `UserID`。** 不做"出现第二个人才追溯标注全部历史"—— 那会在对话刚变热闹的那一刻让整段 prompt cache 失效。
-- **`UserID` 为空就不渲染。** CLI、timer、worker 这些单用户入口不设 `UserID`，回放结果与没有这套机制时逐字节相同。
-
-platform 侧在 `MessageEvent.UserID` 填发言人，按需填 `Metadata`；模板在 `sessionStore` 配置。
+- **只标 user 消息。** assistant 不应带发言人标注。
+- **逐条独立判定。** 不做"出现第二人才追溯标注全部历史"。
+- **`UserID` 为空时 sender 相关项跳过。** CLI、timer、worker 不受影响。
 
 ## 3. 不同群不同工作目录
 
@@ -180,7 +206,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 1. 用 `session.BuildDeliverySessionID` 生成 `MessageEvent.SessionID`（delivery，最细粒度）；
 2. 在 `MessageEvent.UserID` 填上发言人；
-3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `userMessageTemplate` 与 tool `metadata.*` 绑定使用。
+3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。
 
 `sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent` 回带 **delivery** SessionID，由 platform 解析投递目标。
 

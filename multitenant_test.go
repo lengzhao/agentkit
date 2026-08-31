@@ -86,6 +86,9 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 
 func runTurn(t *testing.T, ag agentkit.Agent, sessionID agentkit.SessionID, userID, text string) {
 	t.Helper()
+	if userID != "" {
+		text = "[agentkit sender_id=" + userID + "]\n" + text
+	}
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
 	if userID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyUserID, userID)
@@ -235,10 +238,10 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 		}
 	}
 	joined := strings.Join(userTexts, "\n")
-	if !strings.Contains(joined, `<user id="U111">`) {
+	if !strings.Contains(joined, "sender_id=U111") {
 		t.Fatalf("history does not name U111:\n%s", joined)
 	}
-	if !strings.Contains(joined, `<user id="U222">`) {
+	if !strings.Contains(joined, "sender_id=U222") {
 		t.Fatalf("history does not name U222:\n%s", joined)
 	}
 	if !strings.Contains(joined, "建个 a.txt") || !strings.Contains(joined, "再建个 b.txt") {
