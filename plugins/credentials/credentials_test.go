@@ -46,6 +46,86 @@ func TestResolveFallsBackToEnvironment(t *testing.T) {
 	}
 }
 
+func TestResolveFallsBackToConfigEnv(t *testing.T) {
+	store, err := New(Config{Env: map[string]string{
+		"AGENTKIT_TEST_SECRET": "from-config",
+	}}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-config" {
+		t.Fatalf("value=%q, want from-config", secret.Value)
+	}
+}
+
+func TestResolveConfigEnvUsesPrefix(t *testing.T) {
+	store, err := New(Config{
+		Prefix: "PREFIX_",
+		Env: map[string]string{
+			"AGENTKIT_TEST_SECRET": "from-config",
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-config" {
+		t.Fatalf("value=%q, want from-config", secret.Value)
+	}
+}
+
+func TestResolveEnvironmentOverridesConfigEnv(t *testing.T) {
+	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
+	store, err := New(Config{Env: map[string]string{
+		"AGENTKIT_TEST_SECRET": "from-config",
+	}}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-env" {
+		t.Fatalf("value=%q, want from-env", secret.Value)
+	}
+}
+
+func TestResolveConfigEnvOverridesEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(Config{
+		Files: []string{path},
+		Env: map[string]string{
+			"AGENTKIT_TEST_SECRET": "from-config",
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-config" {
+		t.Fatalf("value=%q, want from-config", secret.Value)
+	}
+}
+
 func TestResolveFallsBackToEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")

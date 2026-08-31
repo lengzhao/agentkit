@@ -22,7 +22,9 @@ const defaultEnvFile = "local:.env"
 type Config struct {
 	// Prefix is prepended to every lookup key.
 	Prefix string `json:"prefix"`
-	// Files are dotenv-style KEY=VALUE files used after context and process environment misses.
+	// Env holds in-memory KEY=VALUE pairs from config, used after process environment misses.
+	Env map[string]string `json:"env"`
+	// Files are dotenv-style KEY=VALUE files used after context, process environment, and config env misses.
 	Files []string `json:"files"`
 }
 
@@ -32,6 +34,7 @@ type EnvDeps struct {
 
 type Store struct {
 	prefix    string
+	configEnv map[string]string
 	filePaths []string
 	workspace workspace.Service
 	mu        sync.RWMutex
@@ -46,7 +49,8 @@ func init() {
 //
 // Best practices:
 //   - Reference a secret as env:NAME from the consumer's apiKeyRef rather than inlining it in YAML.
-//   - Use files for local development .env files; real environment variables still take precedence.
+//   - Use config.env for inline secrets in YAML; process environment still takes precedence.
+//   - Use files for local development .env files; config env takes precedence over files.
 //   - Dotenv files are loaded once into memory; run "env -u" to reload config.files after editing them.
 func New(cfg Config, deps EnvDeps) (credentials.Store, error) {
 	files := cfg.Files
@@ -55,6 +59,7 @@ func New(cfg Config, deps EnvDeps) (credentials.Store, error) {
 	}
 	s := &Store{
 		prefix:    cfg.Prefix,
+		configEnv: normalizeConfigEnv(cfg.Env, cfg.Prefix),
 		filePaths: append([]string(nil), files...),
 		workspace: deps.Workspace,
 		files:     make(map[string]string),
@@ -73,12 +78,15 @@ func (s *Store) Resolve(ctx context.Context, ref string) (credentials.Secret, er
 	}
 	value := os.Getenv(key)
 	if value == "" {
+		value = s.configEnv[key]
+	}
+	if value == "" {
 		s.mu.RLock()
 		value = s.files[key]
 		s.mu.RUnlock()
 	}
 	if value == "" {
-		return credentials.Secret{}, fmt.Errorf("credential %q not found in environment or env files", key)
+		return credentials.Secret{}, fmt.Errorf("credential %q not found in environment, config env, or env files", key)
 	}
 	return credentials.Secret{Ref: ref, Value: value}, nil
 }
@@ -191,12 +199,28 @@ func (s *Store) statusWithHelp() string {
 	return b.String()
 }
 
+func normalizeConfigEnv(env map[string]string, prefix string) map[string]string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(env))
+	for key, value := range env {
+		storageKey := key
+		if prefix != "" {
+			storageKey = prefix + key
+		}
+		out[storageKey] = value
+	}
+	return out
+}
+
 func (s *Store) formatStatus() string {
 	s.mu.RLock()
 	fileKeys := len(s.files)
 	filePaths := append([]string(nil), s.filePaths...)
 	s.mu.RUnlock()
 
+	configKeys := len(s.configEnv)
 	files := 0
 	var b strings.Builder
 	for _, path := range filePaths {
@@ -204,7 +228,7 @@ func (s *Store) formatStatus() string {
 			files++
 		}
 	}
-	fmt.Fprintf(&b, "env: %d file key(s), %d configured file(s)", fileKeys, files)
+	fmt.Fprintf(&b, "env: %d config key(s), %d file key(s), %d configured file(s)", configKeys, fileKeys, files)
 	if files > 0 {
 		b.WriteString("\nconfigured files:")
 		for _, path := range filePaths {
@@ -226,7 +250,8 @@ func envHelp() string {
   /env -u                   reload dotenv files from disk into memory
 
 Notes:
-  Lookup priority: context secret > process env > dotenv file
+  Lookup priority: context secret > process env > config env > dotenv file
+  config env comes from credentials config.env in YAML
   add writes to the local .env file (config.files local: entry)
   Reference secrets as env:NAME in apiKeyRef`
 }

@@ -262,7 +262,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `cap/tenant` 租户键一租户一个（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
-| `credentials/env` | `credentials.Store` | 环境变量；`config.files` 读取 dotenv 文件，进程环境变量优先；`/env add` 写入 `.env`，`/env -u` 重载 |
+| `credentials/env` | `credentials.Store` | 环境变量；`config.env` 内联内存键值、`config.files` 读取 dotenv 文件；优先级：进程 env > config env > files；`/env add` 写入 `.env`，`/env -u` 重载 files |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
