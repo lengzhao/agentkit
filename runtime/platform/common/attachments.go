@@ -149,16 +149,7 @@ func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, 
 // IsImageAttachment reports whether an inbound attachment should be sent to the
 // model as vision input instead of a read-tool file path.
 func IsImageAttachment(mimeType, filename string) bool {
-	mime := strings.ToLower(strings.TrimSpace(mimeType))
-	if strings.HasPrefix(mime, "image/") {
-		return true
-	}
-	switch strings.ToLower(filepath.Ext(filename)) {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif":
-		return true
-	default:
-		return false
-	}
+	return media.IsImage(mimeType, filename)
 }
 
 func appendFileRefs(prompt string, filePaths []string) string {

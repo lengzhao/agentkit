@@ -9,6 +9,14 @@ import (
 // ContentTypeAttachmentRef is persisted in session history for stripped attachments.
 const ContentTypeAttachmentRef = "attachment_ref"
 
+// IsImage reports whether a file looks like an image from MIME type and/or path.
+func IsImage(mimeType, path string) bool {
+	if IsImageMIME(mimeType) {
+		return true
+	}
+	return IsImagePath(path)
+}
+
 // IsImagePath reports whether a workspace-relative path looks like an image file.
 func IsImagePath(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {

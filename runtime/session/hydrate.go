@@ -2,9 +2,6 @@ package session
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -12,34 +9,37 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// DefaultMaxHydratedImageBytes caps workspace images reloaded for vision.
-const DefaultMaxHydratedImageBytes = 10 << 20
-
-// HydrateLocalAttachments reloads workspace image refs on the latest user turn.
+// HydrateLocalAttachments reloads workspace images for LLM vision:
+// attachment_ref on the latest user message, and read-tool image paths from the
+// current tool batch since that user turn.
 func HydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, ws workspace.Service, maxImageBytes int) ([]agentkit.ModelMessage, error) {
 	if ws == nil || len(msgs) == 0 {
 		return msgs, nil
 	}
 	if maxImageBytes <= 0 {
-		maxImageBytes = DefaultMaxHydratedImageBytes
+		maxImageBytes = media.DefaultMaxWorkspaceImageBytes
 	}
-	out := make([]agentkit.ModelMessage, len(msgs))
+
 	lastUser := -1
 	for i, msg := range msgs {
 		if msg.Role == "user" {
 			lastUser = i
 		}
-		out[i] = msg
 	}
 	if lastUser < 0 {
 		return msgs, nil
 	}
+
+	out := make([]agentkit.ModelMessage, len(msgs))
+	copy(out, msgs)
+
 	hydrated, err := hydrateMessageAttachments(ctx, msgs[lastUser], ws, maxImageBytes)
 	if err != nil {
 		return nil, err
 	}
 	out[lastUser] = hydrated
-	return out, nil
+
+	return injectReadToolVision(ctx, out, lastUser, ws, maxImageBytes)
 }
 
 func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, ws workspace.Service, maxImageBytes int) (agentkit.ModelMessage, error) {
@@ -66,7 +66,7 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws workspace.Service, maxImageBytes int) ([]agentkit.ContentPart, error) {
 	src := strings.TrimSpace(part.Source)
 	if src != "" && media.IsImagePath(src) {
-		data, mime, err := loadWorkspaceImage(ctx, ws, src, maxImageBytes)
+		data, mime, err := media.LoadWorkspaceImage(ctx, ws, src, maxImageBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -95,28 +95,69 @@ func attachmentHint(part agentkit.ContentPart) string {
 	return "[attachment omitted]"
 }
 
-func loadWorkspaceImage(ctx context.Context, ws workspace.Service, workRel string, maxBytes int) ([]byte, string, error) {
-	workRel = media.NormalizeWorkRel(workRel)
-	abs, err := ws.Resolve(ctx, filepath.Join("work", workRel))
-	if err != nil {
-		return nil, "", err
+func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, lastUser int, ws workspace.Service, maxImageBytes int) ([]agentkit.ModelMessage, error) {
+	injectIdx := -1
+	for i := len(msgs) - 1; i > lastUser; i-- {
+		if msgs[i].Role == "tool" {
+			injectIdx = i
+			break
+		}
 	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return nil, "", err
+	if injectIdx < 0 {
+		return msgs, nil
 	}
-	if info.IsDir() {
-		return nil, "", fmt.Errorf("not a file: %s", workRel)
+
+	startIdx := injectIdx
+	for startIdx > lastUser+1 && msgs[startIdx-1].Role == "tool" {
+		startIdx--
 	}
-	if info.Size() > int64(maxBytes) {
-		return nil, "", nil
+
+	seen := make(map[string]struct{})
+	var parts []agentkit.ContentPart
+	for i := startIdx; i <= injectIdx; i++ {
+		if msgs[i].Role != "tool" {
+			continue
+		}
+		for _, result := range msgs[i].ToolResults {
+			if result.Name != "read" {
+				continue
+			}
+			path := media.ParseReadImagePath(result.Content)
+			if path == "" || !media.IsImagePath(path) {
+				continue
+			}
+			if _, ok := seen[path]; ok {
+				continue
+			}
+			seen[path] = struct{}{}
+			data, mime, err := media.LoadWorkspaceImage(ctx, ws, path, maxImageBytes)
+			if err != nil {
+				return nil, err
+			}
+			if len(data) == 0 {
+				continue
+			}
+			if mime == "" {
+				mime = media.DetectMIME(path, data)
+			}
+			parts = append(parts, agentkit.ContentPart{
+				Type:   "image_url",
+				URL:    media.DataURL(mime, data),
+				MIME:   mime,
+				Source: path,
+			})
+		}
 	}
-	data, err := os.ReadFile(abs)
-	if err != nil {
-		return nil, "", err
+	if len(parts) == 0 {
+		return msgs, nil
 	}
-	if len(data) > maxBytes {
-		return nil, "", nil
+
+	out := make([]agentkit.ModelMessage, 0, len(msgs)+1)
+	for i, msg := range msgs {
+		out = append(out, msg)
+		if i == injectIdx {
+			out = append(out, agentkit.ModelMessage{Role: "user", Content: parts})
+		}
 	}
-	return data, media.DetectMIME(workRel, data), nil
+	return out, nil
 }

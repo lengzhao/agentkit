@@ -109,7 +109,6 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 
 	run := newRunState(runID, user, channelKey, inboundAgentID, agentkit.SessionID(engineSessionKey), conv.ID, msgID, p, sse)
 	run.apiBase = p.apiBaseFromRequest(r)
-	run.userQuery = query
 	if !p.pending.create(run) {
 		_ = sse.Error("too many concurrent requests")
 		return
@@ -143,9 +142,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		answer := run.answerText
 		run.mu.Unlock()
 		_ = run.flushDeltas()
-		// Slash commands are local control-plane replies; do not mirror them into
-		// the delivery session file or the agent will see them on the next turn.
-		p.pending.finish(runID, pendingResult{answer: answer, skipHistoryMirror: true})
+		p.pending.finish(runID, pendingResult{answer: answer})
 		p.clearActiveConv(conv.ID, runID)
 		return
 	case common.SlashForward:
@@ -197,13 +194,6 @@ func (p *Platform) emitTerminalSSE(run *runState, result pendingResult) {
 	if result.err != nil {
 		_ = run.sse.Error(result.err.Error())
 		return
-	}
-	answer := strings.TrimSpace(result.answer)
-	if answer == "" {
-		answer = strings.TrimSpace(run.finalAnswer())
-	}
-	if !result.skipHistoryMirror {
-		p.persistConversationHistory(context.Background(), run, answer)
 	}
 	_ = run.sse.Event("message_end", map[string]string{
 		"message_id":      run.messageID,

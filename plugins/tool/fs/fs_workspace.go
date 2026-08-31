@@ -105,7 +105,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 			startLine = input.Offset
 		}
 		return formatReadText(input.Path, startLine, sliced), nil
-	}).Description("Read a text file from the workspace. Image files return inline vision data. Large files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
+	}).Description("Read a text file from the workspace. Image files return metadata and are loaded for vision before the next model step. Large text files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
 	if err != nil {
 		return nil, err
 	}

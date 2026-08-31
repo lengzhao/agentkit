@@ -26,15 +26,13 @@ type interactionState struct {
 }
 
 type pendingResult struct {
-	err               error
-	answer            string
-	skipHistoryMirror bool
+	err    error
+	answer string
 }
 
 type runState struct {
 	id             string
 	user           string
-	userQuery      string
 	channelKey     string
 	agentID        agentkit.AgentID
 	sessionID      agentkit.SessionID

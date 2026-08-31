@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/media"
 )
 
 type FSMemoryConfig struct {
@@ -64,14 +65,6 @@ type memoryWorkspaceFS struct {
 	inner *memoryFS
 }
 
-func (s *memoryWorkspaceFS) rootDir(context.Context) (string, error) {
-	return ".", nil
-}
-
-func (s *memoryWorkspaceFS) resolve(_ context.Context, path string) (string, error) {
-	return normalizeMemPath(path), nil
-}
-
 func (s *memoryWorkspaceFS) readText(_ context.Context, path string, maxBytes int) (string, error) {
 	s.inner.mu.RLock()
 	defer s.inner.mu.RUnlock()
@@ -92,7 +85,11 @@ func (s *memoryWorkspaceFS) readImage(_ context.Context, path string) (string, e
 	if !ok {
 		return "", fmt.Errorf("file not found: %s", path)
 	}
-	return formatImageToolResult(path, []byte(content))
+	data := []byte(content)
+	if len(data) > media.DefaultMaxWorkspaceImageBytes {
+		return media.FormatReadImageTooLarge(path, int64(len(data)), media.DefaultMaxWorkspaceImageBytes), nil
+	}
+	return media.FormatReadImageResult(path, media.DetectMIME(path, data), int64(len(data))), nil
 }
 
 func (s *memoryWorkspaceFS) writeText(_ context.Context, path, content string) error {

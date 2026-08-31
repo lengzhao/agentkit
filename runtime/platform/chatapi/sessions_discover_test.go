@@ -136,7 +136,7 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	}
 }
 
-func TestPersistConversationHistoryMirrorsDeliverySession(t *testing.T) {
+func TestConversationMessagesFromAgentSession(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
@@ -145,14 +145,26 @@ func TestPersistConversationHistoryMirrorsDeliverySession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := tenantCtx(channel, convID)
+	if err := appendTestUserMessage(ctx, store, channel, convID, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Get(ctx, agentkit.SessionID(engineSessionKey(channel, convID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+		Role:    "assistant",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "world"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	p, err := New(Config{}, Deps{SessionStore: store, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
 	plat := p.(*Platform)
-	run := newRunState("run_test", "demo", channel, "assistant", agentkit.SessionID(engineSessionKey(channel, convID)), convID, "m1", plat, nil)
-	run.userQuery = "hello"
-	plat.persistConversationHistory(context.Background(), run, "world")
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/conversations/"+convID+"/messages?limit=10", nil)
 	req.Header.Set("X-Chat-API-Channel", channel)

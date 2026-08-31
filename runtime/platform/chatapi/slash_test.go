@@ -215,7 +215,7 @@ func TestSlashCommandDoesNotPersistSessionHistory(t *testing.T) {
 	}
 	for _, ev := range events {
 		if ev.Type == agentkit.EventUserMessage || ev.Type == agentkit.EventAssistantMessage {
-			t.Fatalf("slash command must not be mirrored into session history: %+v", ev)
+			t.Fatalf("slash command must not be written into session history: %+v", ev)
 		}
 	}
 }

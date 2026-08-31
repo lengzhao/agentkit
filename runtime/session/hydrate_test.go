@@ -47,6 +47,42 @@ func TestHydrateLocalAttachmentsReloadsWorkspaceImage(t *testing.T) {
 	}
 }
 
+func TestHydrateLocalAttachmentsInjectsReadToolVision(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work", "upload")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	if err := os.WriteFile(filepath.Join(workDir, "shot.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := workspace.Static(root)
+	ctx := context.Background()
+	readResult := media.FormatReadImageResult("upload/shot.png", "image/png", int64(len(png)))
+	msgs := []agentkit.ModelMessage{
+		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "look"}}},
+		{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "call-1", Name: "read"}}},
+		{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "call-1", Name: "read", Content: readResult}}},
+	}
+	out, err := session.HydrateLocalAttachments(ctx, msgs, ws, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("messages = %d, want 4", len(out))
+	}
+	if out[3].Role != "user" || len(out[3].Content) != 1 {
+		t.Fatalf("vision message = %#v", out[3])
+	}
+	if out[3].Content[0].Type != "image_url" || out[3].Content[0].Source != "upload/shot.png" {
+		t.Fatalf("image part = %#v", out[3].Content[0])
+	}
+}
+
 func TestSanitizeStoresWorkspaceImagePath(t *testing.T) {
 	t.Parallel()
 
