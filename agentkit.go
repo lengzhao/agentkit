@@ -102,6 +102,10 @@ type ContentPart struct {
 	URL    string `json:"url,omitempty"`
 	MIME   string `json:"mime,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	// Source is a workspace-relative attachment path (e.g. upload/foo.png) used
+	// for session persistence and vision replay; not sent to model providers.
+	// Persisted attachments use type attachment_ref (see cap/media).
+	Source string `json:"source,omitempty"`
 }
 
 type SessionEvent struct {

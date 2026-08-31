@@ -108,6 +108,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 		Tools:        toolRT,
 		Prompt:       assembler,
 		Hooks:        hooks,
+		Workspace:    workspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatalf("build agent: %v", err)

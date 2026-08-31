@@ -96,6 +96,12 @@ func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {
 }
 
 func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, typ agentkit.EventType, msg agentkit.ModelMessage) error {
+	logicalChars := 0
+	switch typ {
+	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
+		logicalChars = EstimateLogicalChars(msg)
+		msg = SanitizeModelMessageForStorage(msg, 0)
+	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -105,13 +111,21 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 		Type:    typ,
 		Data:    raw,
 	}
+	if logicalChars > 0 && logicalChars > EstimateLogicalChars(msg) {
+		event.Metadata = map[string]any{MetadataLogicalChars: logicalChars}
+	}
 	// Attribute user turns to whoever sent them. Only user messages carry this:
 	// stamping the assistant with the user who prompted it would make the reply
 	// look like that person's words on replay.
 	if typ == agentkit.EventUserMessage {
 		event.UserID, _ = ctx.Value(agentkit.KeyUserID).(string)
 		if md, ok := ctx.Value(agentkit.KeyMessageMetadata).(map[string]any); ok && len(md) > 0 {
-			event.Metadata = md
+			if event.Metadata == nil {
+				event.Metadata = make(map[string]any, len(md))
+			}
+			for k, v := range md {
+				event.Metadata[k] = v
+			}
 		}
 	}
 	_, err = s.Append(ctx, event)

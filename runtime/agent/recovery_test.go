@@ -88,6 +88,7 @@ func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLM
 		LLM:          provider,
 		Tools:        toolRT,
 		Prompt:       assembler,
+		Workspace:    workspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +175,7 @@ func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
 		LLM:          scripted,
 		Tools:        toolRT,
 		Prompt:       assembler,
+		Workspace:    workspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

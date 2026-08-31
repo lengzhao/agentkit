@@ -113,6 +113,119 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 	}
 }
 
+func TestUploadAndChatWithLocalImageFile(t *testing.T) {
+	root := t.TempDir()
+	ws := workspace.Static(root)
+	p, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	channel := "ch-images"
+	user := "u1"
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "asset.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}); err != nil {
+		t.Fatal(err)
+	}
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Chat-API-Channel", channel)
+	req.Header.Set("X-Chat-API-User", user)
+	rec := httptest.NewRecorder()
+	plat.handleUploadFile(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload status %d body %s", rec.Code, rec.Body.String())
+	}
+	var uploadResp struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &uploadResp); err != nil {
+		t.Fatal(err)
+	}
+
+	inputs := []chatInput{{
+		Type:           "file",
+		TransferMethod: "local_file",
+		UploadFileID:   uploadResp.Data.ID,
+	}}
+	images, files, audio, paths, err := plat.inputsToCore(context.Background(), channel, inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 1 || len(files) != 0 || audio != nil || len(paths) != 0 {
+		t.Fatalf("inputsToCore = images=%d files=%d audio=%v paths=%v", len(images), len(files), audio, paths)
+	}
+	if images[0].WorkPath == "" {
+		t.Fatal("expected work path on uploaded image")
+	}
+	if len(images[0].Data) == 0 {
+		t.Fatal("expected image bytes")
+	}
+
+	event := common.InboundFromContent(
+		"assistant",
+		agentkit.SessionID("chat-api:"+channel+":t:conv1"),
+		"chat-api",
+		user,
+		"extract assets",
+		"",
+		images, nil, nil, paths,
+		common.InboundOptsFor(ws),
+	)
+	if len(event.Message.Content) < 2 {
+		t.Fatalf("content parts = %d, want text + image", len(event.Message.Content))
+	}
+	if event.Message.Content[1].Type != "image_url" || event.Message.Content[1].URL == "" {
+		t.Fatalf("image part = %#v", event.Message.Content[1])
+	}
+	if event.Message.Content[1].Source == "" {
+		t.Fatal("expected workspace path in image source")
+	}
+	if strings.Contains(event.Message.Content[0].Text, "please read them") {
+		t.Fatalf("image should not be routed through read tool hint: %q", event.Message.Content[0].Text)
+	}
+}
+
+func TestInputsToCoreLocalPathImage(t *testing.T) {
+	root := t.TempDir()
+	ws := workspace.Static(root)
+	workDir := filepath.Join(root, "work", "upload")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "pic.png"), []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plat, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+	images, _, _, _, err := p.inputsToCore(context.Background(), "ch", []chatInput{{
+		Type:           "image",
+		TransferMethod: "local_path",
+		Path:           "upload/pic.png",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 1 || images[0].WorkPath != "upload/pic.png" || len(images[0].Data) == 0 {
+		t.Fatalf("images = %#v", images)
+	}
+}
+
 func TestDownloadUploadedFile(t *testing.T) {
 	root := t.TempDir()
 	ws := workspace.Static(root)

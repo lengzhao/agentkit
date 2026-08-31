@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -75,6 +76,7 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 // workspaceFSOps is the filesystem surface used by buildWorkspaceTools.
 type workspaceFSOps interface {
 	readText(ctx context.Context, path string, maxBytes int) (string, error)
+	readImage(ctx context.Context, path string) (string, error)
 	writeText(ctx context.Context, path, content string) error
 	listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error)
 	grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error)
@@ -83,6 +85,9 @@ type workspaceFSOps interface {
 
 func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, maxListEntries int, only []string) (agentkit.ToolPack, error) {
 	read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
+		if media.IsImagePath(input.Path) {
+			return fs.readImage(ctx, input.Path)
+		}
 		raw, err := fs.readText(ctx, input.Path, 0)
 		if err != nil {
 			return "", err
@@ -100,7 +105,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 			startLine = input.Offset
 		}
 		return formatReadText(input.Path, startLine, sliced), nil
-	}).Description("Read a text file from the workspace. Large files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
+	}).Description("Read a text file from the workspace. Image files return inline vision data. Large files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +290,14 @@ func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) 
 		return "", fmt.Errorf("path escapes workspace: %s", path)
 	}
 	return full, nil
+}
+
+func (s *workspaceFS) readImage(ctx context.Context, path string) (string, error) {
+	full, err := s.resolve(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	return readImageToolResult(full, path)
 }
 
 func (s *workspaceFS) readText(ctx context.Context, path string, maxBytes int) (string, error) {

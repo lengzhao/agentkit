@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -36,6 +37,7 @@ type Deps struct {
 	Policies     []agentkit.Policy        `json:"policies,omitempty"`
 	Hooks        agentkit.HookRuntime     `json:"hooks,omitempty"`
 	Compaction   []compaction.Service     `json:"compaction,omitempty"`
+	Workspace    workspace.Service        `json:"workspace,omitempty"`
 }
 
 type Runtime struct {
@@ -51,6 +53,7 @@ type Runtime struct {
 	prompt       agentkit.PromptAssembler
 	hooks        agentkit.HookRuntime
 	compaction   []compaction.Service
+	workspace    workspace.Service
 }
 
 // New registers agent/coding: Default coding agent: runs one turn against session, LLM, tools and prompt.
@@ -80,6 +83,9 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	if deps.Prompt == nil {
 		return nil, fmt.Errorf("agent requires prompt assembler")
 	}
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("agent requires workspace")
+	}
 	return &Runtime{
 		id:           id,
 		model:        cfg.Model,
@@ -93,6 +99,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		prompt:       deps.Prompt,
 		hooks:        deps.Hooks,
 		compaction:   deps.Compaction,
+		workspace:    deps.Workspace,
 	}, nil
 }
 
@@ -398,7 +405,7 @@ type stepOutcome struct {
 }
 
 func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit) (stepOutcome, error) {
-	history, err := a.prepareStepHistory(ctx, sess)
+	history, ctx, err := a.prepareStepHistory(ctx, sess)
 	if err != nil {
 		return stepOutcome{}, err
 	}
@@ -517,22 +524,26 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	return stepOutcome{message: assistant, usage: usage, ctx: ctx}, nil
 }
 
-func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session) ([]agentkit.ModelMessage, error) {
+func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session) ([]agentkit.ModelMessage, context.Context, error) {
 	history, err := sess.DeriveMessages(ctx)
 	if err != nil {
-		return nil, err
+		return nil, ctx, err
+	}
+	history, err = session.HydrateLocalAttachments(ctx, history, a.workspace, 0)
+	if err != nil {
+		return nil, ctx, err
 	}
 	if a.hooks == nil {
-		return history, nil
+		return history, ctx, nil
 	}
 	step := &agentkit.BeforeStep{Messages: history}
 	if err := a.hooks.BeforeStep(ctx, step); err != nil {
-		return nil, err
+		return nil, ctx, err
 	}
 	if step.Messages != nil {
-		return step.Messages, nil
+		return step.Messages, ctx, nil
 	}
-	return sess.DeriveMessages(ctx)
+	return history, ctx, nil
 }
 
 func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {

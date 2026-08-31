@@ -2,7 +2,6 @@ package common
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/tenant"
+	"github.com/lengzhao/agentkit/cap/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -20,6 +19,8 @@ type ImageAttachment struct {
 	MimeType string
 	Data     []byte
 	FileName string
+	// WorkPath is workspace-relative under work/ (e.g. upload/foo.png).
+	WorkPath string
 }
 
 // FileAttachment is an inbound file from an IM platform.
@@ -38,9 +39,6 @@ type AudioAttachment struct {
 }
 
 const (
-	// inboundAttachLocalBase is the tenant parent directory for inbound file
-	// saves. Matches workspace/tenant localBase default in presets.
-	inboundAttachLocalBase = ".agentkit"
 	// inboundAttachWorkRoot is the fs-workspace root relative to tenant local root.
 	inboundAttachWorkRoot = "work"
 	// inboundUploadDir is where user-uploaded files land under the work root.
@@ -98,6 +96,22 @@ func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, 
 	if len(filePaths) > 0 {
 		text = appendFileRefs(text, filePaths)
 	}
+	for i := range images {
+		if strings.TrimSpace(images[i].WorkPath) != "" || len(images[i].Data) == 0 {
+			continue
+		}
+		if opts == nil || opts.Workspace == nil {
+			continue
+		}
+		saved := saveInboundFiles(sessionID, []FileAttachment{{
+			MimeType: images[i].MimeType,
+			Data:     images[i].Data,
+			FileName: images[i].FileName,
+		}}, opts)
+		if len(saved) > 0 {
+			images[i].WorkPath = saved[0]
+		}
+	}
 	var parts []agentkit.ContentPart
 	if text != "" {
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: text})
@@ -110,8 +124,12 @@ func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, 
 		if mime == "" {
 			mime = "image/png"
 		}
-		url := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
-		parts = append(parts, agentkit.ContentPart{Type: "image_url", URL: url, MIME: mime})
+		url := media.DataURL(mime, img.Data)
+		part := agentkit.ContentPart{Type: "image_url", URL: url, MIME: mime}
+		if path := strings.TrimSpace(img.WorkPath); path != "" {
+			part.Source = path
+		}
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: ""})
@@ -128,6 +146,21 @@ func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, 
 	}
 }
 
+// IsImageAttachment reports whether an inbound attachment should be sent to the
+// model as vision input instead of a read-tool file path.
+func IsImageAttachment(mimeType, filename string) bool {
+	mime := strings.ToLower(strings.TrimSpace(mimeType))
+	if strings.HasPrefix(mime, "image/") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif":
+		return true
+	default:
+		return false
+	}
+}
+
 func appendFileRefs(prompt string, filePaths []string) string {
 	if len(filePaths) == 0 {
 		return prompt
@@ -139,27 +172,15 @@ func appendFileRefs(prompt string, filePaths []string) string {
 }
 
 func saveInboundFiles(sessionID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []string {
-	var attachDir string
-	if opts != nil && opts.Workspace != nil {
-		ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
-		dir, err := opts.Workspace.Resolve(ctx, UploadWorkRel())
-		if err != nil {
-			slog.Warn("common: resolve inbound upload dir failed", "error", err)
-			return nil
-		}
-		attachDir = dir
-	} else {
-		tenantKey := tenant.Key(string(sessionID))
-		dirName := tenant.DirName(tenantKey)
-		if dirName == "" {
-			dirName = "default"
-		}
-		localBase, err := workspace.Resolve(inboundAttachLocalBase)
-		if err != nil || localBase == "" {
-			slog.Warn("common: resolve inbound attach local base failed", "error", err)
-			return nil
-		}
-		attachDir = filepath.Join(localBase, dirName, inboundAttachWorkRoot, inboundUploadDir)
+	if opts == nil || opts.Workspace == nil {
+		slog.Warn("common: inbound attachments require workspace")
+		return nil
+	}
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	attachDir, err := opts.Workspace.Resolve(ctx, UploadWorkRel())
+	if err != nil {
+		slog.Warn("common: resolve inbound upload dir failed", "error", err)
+		return nil
 	}
 	if err := os.MkdirAll(attachDir, 0o755); err != nil {
 		slog.Warn("common: mkdir inbound upload dir failed", "dir", attachDir, "error", err)

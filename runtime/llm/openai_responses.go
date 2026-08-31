@@ -17,7 +17,11 @@ type responsesStream struct {
 
 func (b *responsesBackend) stream(ctx context.Context, model string, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
 	return streamWithProviderRetry(ctx, b.providerRetry, func() (agentkit.LLMStream, error) {
-		stream, err := b.client.CreateResponseStream(ctx, toResponsesRequest(model, req.Messages, req.Tools, b.reasoning))
+		request, err := toResponsesRequest(model, req.Messages, req.Tools, b.hostedTools, b.reasoning)
+		if err != nil {
+			return nil, err
+		}
+		stream, err := b.client.CreateResponseStream(ctx, request)
 		if err != nil {
 			return nil, err
 		}
@@ -77,6 +81,12 @@ func (s *responsesStream) Recv() (agentkit.LLMEvent, error) {
 				s.toolID[idx] = event.Item.CallID
 				s.acc.appendToolCallDelta(idx, event.Item.CallID, event.Item.Name, "")
 			}
+		case openai.ResponseStreamEventWebSearchInProgress:
+			s.acc.appendThinkingDelta("Searching the web...\n")
+		case openai.ResponseStreamEventWebSearchSearching:
+			// Provider-side search; no local tool execution needed.
+		case openai.ResponseStreamEventWebSearchCompleted:
+			s.acc.appendThinkingDelta("\n")
 		case openai.ResponseStreamEventCompleted, openai.ResponseStreamEventIncomplete:
 			s.acc.finalize()
 			return s.Recv()

@@ -3,10 +3,20 @@ package session
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 
 	"github.com/lengzhao/agentkit"
 )
+
+// jsonlScannerMaxLineBytes caps one JSONL record (sanitized messages stay well below this).
+const jsonlScannerMaxLineBytes = 1 << 20 // 1 MiB
+
+func newJSONLScanner(r io.Reader) *bufio.Scanner {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64*1024), jsonlScannerMaxLineBytes)
+	return sc
+}
 
 func scanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent, agentkit.EventSeq, bool, error) {
 	f, err := os.Open(path)
@@ -26,7 +36,7 @@ func scanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent,
 	)
 	ring.max = maxLoadedEvents
 
-	sc := bufio.NewScanner(f)
+	sc := newJSONLScanner(f)
 	for sc.Scan() {
 		var ev agentkit.SessionEvent
 		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
@@ -63,7 +73,7 @@ func readSessionFile(path string, from agentkit.EventSeq) ([]agentkit.SessionEve
 	defer f.Close()
 
 	out := make([]agentkit.SessionEvent, 0)
-	sc := bufio.NewScanner(f)
+	sc := newJSONLScanner(f)
 	for sc.Scan() {
 		var ev agentkit.SessionEvent
 		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {

@@ -115,6 +115,7 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 		LLM:          provider,
 		Tools:        parentTools,
 		Prompt:       assembler,
+		Workspace:    TestWorkspace(t, root),
 	})
 	if err != nil {
 		t.Fatal(err)

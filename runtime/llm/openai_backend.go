@@ -25,6 +25,7 @@ type chatBackend struct {
 type responsesBackend struct {
 	client        *openai.Client
 	reasoning     *OpenAIReasoningConfig
+	hostedTools   []HostedToolConfig
 	providerRetry ProviderRetrySettings
 }
 
@@ -33,7 +34,12 @@ func (p *OpenAI) backend() (openAIBackend, error) {
 	case openAIAPIChat:
 		return &chatBackend{client: p.client, providerRetry: p.providerRetry}, nil
 	case openAIAPIResponses:
-		return &responsesBackend{client: p.client, reasoning: p.reasoning, providerRetry: p.providerRetry}, nil
+		return &responsesBackend{
+			client:        p.client,
+			reasoning:     p.reasoning,
+			hostedTools:   p.hostedTools,
+			providerRetry: p.providerRetry,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported openai api %q: use %q or %q", p.api, openAIAPIChat, openAIAPIResponses)
 	}

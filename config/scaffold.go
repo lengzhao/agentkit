@@ -28,6 +28,7 @@ type ToolsScaffoldOptions struct {
 func DefaultToolBlacklist() []string {
 	return []string{
 		"tool/fs-memory",
+		"tool/web-search-auto",
 		"tool/web-search-scripted",
 		"tool/web-fetch-scripted",
 		"tool/web-search-tavily",
@@ -44,7 +45,6 @@ func DefaultSubagentToolWhitelist() []string {
 	return []string{
 		"tool/finish",
 		"tool/web-fetch-http",
-		"tool/web-search-auto",
 		"tool/fs-workspace",
 	}
 }

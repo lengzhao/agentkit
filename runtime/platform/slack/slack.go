@@ -88,6 +88,9 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if botToken == "" || appToken == "" {
 		return nil, fmt.Errorf("platform/slack requires botToken/botTokenRef and appToken/appTokenRef")
 	}
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("platform/slack requires workspace")
+	}
 	apiURL, err := common.NormalizeSlackAPIURL(cfg.Domain)
 	if err != nil {
 		return nil, fmt.Errorf("platform/slack: %w", err)

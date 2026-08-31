@@ -16,6 +16,7 @@ agent.assistant.default:
         prompt: prompt.default
         sessionStore: sessionStore.default
         tools: tools.default
+        workspace: workspace.default
     use: agent/coding
 commands.default:
     use: commands/registry

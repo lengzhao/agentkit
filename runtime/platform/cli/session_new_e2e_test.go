@@ -67,6 +67,7 @@ func TestE2ECLINewSwitchesSession(t *testing.T) {
 		LLM:          llmProvider,
 		Tools:        toolRT,
 		Prompt:       assembler,
+		Workspace:    ws,
 	})
 	if err != nil {
 		t.Fatal(err)

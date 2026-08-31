@@ -23,6 +23,10 @@ func TestNewResolvesTokenRefs(t *testing.T) {
 			},
 			"deps": map[string]any{
 				"credentials": "credentials",
+				"workspace": map[string]any{
+					"use":    "workspace/default",
+					"config": map[string]any{"root": t.TempDir()},
+				},
 			},
 		},
 	}

@@ -817,6 +817,7 @@ Session backend 必须守住两条不变量，否则依赖 seq 的一切（compa
 |---|---|
 | **seq 单调递增** | 重新打开已有 session 后，编号必须从既有最大值之上继续，不能从 1 重新开始 |
 | **派生历史始终可回放** | `DeriveMessages` 不得输出没有对应结果的 tool call —— provider 会直接拒收这种历史。中断留下的 orphan call 由 derive 补一条"被中断"的 stand-in 结果 |
+| **落盘消息瘦身** | `AppendMessage` 写入 `user/message` 与 `assistant/message` 前会调用 `SanitizeModelMessageForStorage`：附件存为 `attachment_ref`（`Source`/`URL`），文本按 8KB 截断并记录 `logical_chars` 元数据。LLM 调用前由 `HydrateLocalAttachments` 对**最近一条 user 消息**从 workspace 重载本地图片为 vision |
 
 崩溃（SIGKILL / panic / 断电）会留下 `turn/start` 无 `turn/end`、tool call 无结果的日志。Agent 在每个 turn 开始前扫描并修复它，写 `session/recovery` 事件留痕；详见 [guides/autonomous-run.zh.md §6](guides/autonomous-run.zh.md#6-崩溃恢复)。
 

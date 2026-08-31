@@ -90,6 +90,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 					},
 				},
 				"prompt": map[string]any{"use": "prompt/assembler/default"},
+				"workspace": workspaceCfg,
 				"tools": map[string]any{
 					"use": "tools/runtime",
 					"deps": map[string]any{

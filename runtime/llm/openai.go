@@ -21,10 +21,20 @@ type OpenAIConfig struct {
 	APIKeyRef string `json:"apiKeyRef"`
 	// API is chat or responses.
 	API string `json:"api"`
+	// HostedTools are OpenAI Responses API built-in tools (e.g. web_search) executed
+	// server-side. Requires api: responses.
+	HostedTools []HostedToolConfig `json:"hostedTools,omitempty"`
 	// Reasoning is reasoning effort and summary settings, for models that support them.
 	Reasoning *OpenAIReasoningConfig `json:"reasoning,omitempty"`
 	// Retry is provider-level retry, separate from the agent's per-step retry.
 	Retry *LLMRetryConfig `json:"retry,omitempty"`
+}
+
+type HostedToolConfig struct {
+	// Type is the Responses API tool type, e.g. web_search or file_search.
+	Type string `json:"type"`
+	// Parameters are tool-specific options, e.g. search_context_size for web_search.
+	Parameters map[string]any `json:"parameters,omitempty"`
 }
 
 type OpenAIReasoningConfig struct {
@@ -39,6 +49,7 @@ type OpenAIDeps struct {
 type OpenAI struct {
 	model         string
 	api           string
+	hostedTools   []HostedToolConfig
 	reasoning     *OpenAIReasoningConfig
 	providerRetry ProviderRetrySettings
 	apiKey        string
@@ -48,7 +59,8 @@ type OpenAI struct {
 // NewOpenAI registers llm/openai-compatible: OpenAI-compatible provider, chat or responses API.
 //
 // Best practices:
-//   - Token budgets and compaction/token-limit need reported usage; the chat API supplies it, the responses API may not.
+//   - hostedTools (e.g. web_search) require api: responses and run on the provider side.
+//   - When using hosted web_search, remove tool/web-search-* from the agent tool list to avoid duplicate search.
 func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) {
 	model := cfg.Model
 	if model == "" {
@@ -62,9 +74,14 @@ func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) 
 	if err != nil {
 		return nil, err
 	}
+	api := parseAPIMode(cfg.API)
+	if len(cfg.HostedTools) > 0 && api != openAIAPIResponses {
+		return nil, fmt.Errorf("llm/openai-compatible: hostedTools requires api: responses")
+	}
 	return &OpenAI{
 		model:         model,
-		api:           parseAPIMode(cfg.API),
+		api:           api,
+		hostedTools:   cfg.HostedTools,
 		reasoning:     cfg.Reasoning,
 		providerRetry: defaultProviderRetry(retryProviderConfig(cfg.Retry)),
 		apiKey:        apiKey,

@@ -103,6 +103,10 @@ platform.feishu:
 #     # domain: "https://open.larksuite.com"
 #     allowFrom: ""
 #     groupReplyAll: false
+#   deps:
+#     commands: commands.default
+#     sessionStore: sessionStore.default
+#     workspace: workspace.default
 
 platform.telegram:
   use: platform/telegram

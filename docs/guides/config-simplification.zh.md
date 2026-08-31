@@ -45,7 +45,7 @@ L1 覆盖曾经是**整节点替换**（`baseMap[id] = node`）。想改一个�
 |---|---|---|
 | `sessionStore.default` | 无（纯抄 L0） | `maxCachedSessions: 64`、`cacheIdleTTL: 30m`、`maxLoadedEvents: 256` |
 | `tool.fs-workspace.default` | 无（纯抄 L0） | `maxBytes: 1048576` |
-| `llm.default` | `model`、`baseUrl` | `api: chat`、`retry.provider` 整块 |
+| `llm.default` | `model`、`baseUrl` | `api: responses`、`hostedTools`、`retry.provider` 整块 |
 | `credentials.default` | `files` | `workspace` dep（`local:` 前缀失去解析根） |
 
 这是本次分析最强的动机：**深合并不是便利性优化，是修一类正确性问题。**

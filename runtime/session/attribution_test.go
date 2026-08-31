@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -140,7 +141,7 @@ func TestStoredInjectPrefixSurvivesReload(t *testing.T) {
 	}
 }
 
-func TestImageOnlyMessageDerivesUnchanged(t *testing.T) {
+func TestImageOnlyMessageDerivesPlaceholder(t *testing.T) {
 	t.Parallel()
 
 	store := attributionTestStore(t, t.TempDir())
@@ -162,10 +163,10 @@ func TestImageOnlyMessageDerivesUnchanged(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("derived %d messages, want 1", len(msgs))
 	}
-	if n := len(msgs[0].Content); n != 1 {
-		t.Fatalf("content parts = %d, want 1", n)
+	if len(msgs[0].Content) != 1 || msgs[0].Content[0].Type != media.ContentTypeAttachmentRef {
+		t.Fatalf("content = %#v", msgs[0].Content)
 	}
-	if msgs[0].Content[0].Type != "image" {
-		t.Fatalf("image part changed: %+v", msgs[0].Content)
+	if msgs[0].Content[0].URL != "https://example.com/a.png" {
+		t.Fatalf("url = %q", msgs[0].Content[0].URL)
 	}
 }

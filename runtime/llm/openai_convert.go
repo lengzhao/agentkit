@@ -2,9 +2,11 @@ package llm
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/media"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -72,6 +74,10 @@ func contentToChatParts(parts []agentkit.ContentPart) (string, []openai.ChatMess
 			if part.Text != "" {
 				textParts = append(textParts, part.Text)
 			}
+		case media.ContentTypeAttachmentRef:
+			if hint := attachmentRefHint(part); hint != "" {
+				textParts = append(textParts, hint)
+			}
 		case "image", "image_url":
 			url := imageURL(part)
 			if url == "" {
@@ -81,7 +87,7 @@ func contentToChatParts(parts []agentkit.ContentPart) (string, []openai.ChatMess
 				Type: openai.ChatMessagePartTypeImageURL,
 				ImageURL: &openai.ChatMessageImageURL{
 					URL:    url,
-					Detail: openai.ImageURLDetail(part.Detail),
+					Detail: visionDetail(part.Detail),
 				},
 			})
 		default:
@@ -129,13 +135,46 @@ func toResponseTools(specs []agentkit.ToolSpec) []openai.ResponseTool {
 	return out
 }
 
-func toResponsesRequest(model string, messages []agentkit.ModelMessage, tools []agentkit.ToolSpec, reasoning *OpenAIReasoningConfig) openai.CreateResponseRequest {
+func toHostedResponseTools(configs []HostedToolConfig) ([]openai.ResponseTool, error) {
+	out := make([]openai.ResponseTool, 0, len(configs))
+	for _, cfg := range configs {
+		t := strings.TrimSpace(cfg.Type)
+		if t == "" {
+			return nil, fmt.Errorf("hosted tool type is required")
+		}
+		out = append(out, openai.Tool{
+			Type:       openai.ToolType(t),
+			Parameters: cfg.Parameters,
+		})
+	}
+	return out, nil
+}
+
+func responsesIncludeForHostedTools(configs []HostedToolConfig) []openai.ResponseInclude {
+	var include []openai.ResponseInclude
+	for _, cfg := range configs {
+		switch strings.TrimSpace(cfg.Type) {
+		case "web_search", "web_search_preview":
+			include = append(include, openai.ResponseIncludeWebSearchCallActionSources)
+		}
+	}
+	return include
+}
+
+func toResponsesRequest(model string, messages []agentkit.ModelMessage, tools []agentkit.ToolSpec, hostedTools []HostedToolConfig, reasoning *OpenAIReasoningConfig) (openai.CreateResponseRequest, error) {
 	instructions, input := toResponsesInput(messages)
+	responseTools := toResponseTools(tools)
+	hosted, err := toHostedResponseTools(hostedTools)
+	if err != nil {
+		return openai.CreateResponseRequest{}, err
+	}
+	responseTools = append(responseTools, hosted...)
 	req := openai.CreateResponseRequest{
 		Model:        model,
 		Input:        input,
 		Instructions: instructions,
-		Tools:        toResponseTools(tools),
+		Tools:        responseTools,
+		Include:      responsesIncludeForHostedTools(hostedTools),
 	}
 	if reasoning != nil {
 		req.Reasoning = &openai.ResponseReasoning{
@@ -143,7 +182,7 @@ func toResponsesRequest(model string, messages []agentkit.ModelMessage, tools []
 			GenerateSummary: reasoning.GenerateSummary,
 		}
 	}
-	return req
+	return req, nil
 }
 
 func toResponsesInput(messages []agentkit.ModelMessage) (string, any) {
@@ -160,14 +199,14 @@ func toResponsesInput(messages []agentkit.ModelMessage) (string, any) {
 			items = append(items, openai.ResponseInputMessage{
 				Type:    "message",
 				Role:    openai.ChatMessageRoleUser,
-				Content: contentToResponseParts(msg.Content),
+				Content: contentToResponseParts("user", msg.Content),
 			})
 		case "assistant":
-			if text := textOf(msg.Content); text != "" {
+			if content := contentToResponseParts("assistant", msg.Content); content != "" {
 				items = append(items, openai.ResponseInputMessage{
 					Type:    "message",
 					Role:    openai.ChatMessageRoleAssistant,
-					Content: contentToResponseParts(msg.Content),
+					Content: content,
 				})
 			}
 			for _, call := range msg.ToolCalls {
@@ -194,6 +233,8 @@ func toResponsesInput(messages []agentkit.ModelMessage) (string, any) {
 	if len(items) == 1 {
 		if msg, ok := items[0].(openai.ResponseInputMessage); ok && msg.Role == openai.ChatMessageRoleUser {
 			switch content := msg.Content.(type) {
+			case string:
+				return instructions.String(), content
 			case openai.ResponseInputText:
 				return instructions.String(), content.Text
 			case []any:
@@ -215,19 +256,41 @@ type responseInputFunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
-func contentToResponseParts(parts []agentkit.ContentPart) any {
+func contentToResponseParts(role string, parts []agentkit.ContentPart) any {
 	converted := make([]any, 0, len(parts))
 	for _, part := range parts {
 		switch part.Type {
+		case "thinking":
+			continue
 		case "text", "":
 			if part.Text == "" {
 				continue
 			}
-			converted = append(converted, openai.ResponseInputText{
-				Type: "input_text",
-				Text: part.Text,
-			})
+			if role == "assistant" {
+				converted = append(converted, openai.ResponseOutputContent{
+					Type: "output_text",
+					Text: part.Text,
+				})
+			} else {
+				converted = append(converted, openai.ResponseInputText{
+					Type: "input_text",
+					Text: part.Text,
+				})
+			}
+		case media.ContentTypeAttachmentRef:
+			if role == "assistant" {
+				continue
+			}
+			if hint := attachmentRefHint(part); hint != "" {
+				converted = append(converted, openai.ResponseInputText{
+					Type: "input_text",
+					Text: hint,
+				})
+			}
 		case "image", "image_url":
+			if role == "assistant" {
+				continue
+			}
 			url := imageURL(part)
 			if url == "" {
 				continue
@@ -235,10 +298,18 @@ func contentToResponseParts(parts []agentkit.ContentPart) any {
 			converted = append(converted, openai.ResponseInputImage{
 				Type:     "input_image",
 				ImageURL: url,
-				Detail:   part.Detail,
+				Detail:   visionDetailString(part.Detail),
 			})
 		default:
-			if part.Text != "" {
+			if part.Text == "" {
+				continue
+			}
+			if role == "assistant" {
+				converted = append(converted, openai.ResponseOutputContent{
+					Type: "output_text",
+					Text: part.Text,
+				})
+			} else {
 				converted = append(converted, openai.ResponseInputText{
 					Type: "input_text",
 					Text: part.Text,
@@ -246,8 +317,18 @@ func contentToResponseParts(parts []agentkit.ContentPart) any {
 			}
 		}
 	}
-	if len(converted) == 1 {
-		return converted[0]
+	switch len(converted) {
+	case 0:
+		return ""
+	case 1:
+		// Responses API message content must be a string or an array of parts,
+		// never a single content object.
+		if text, ok := converted[0].(openai.ResponseInputText); ok {
+			return text.Text
+		}
+		if text, ok := converted[0].(openai.ResponseOutputContent); ok {
+			return text.Text
+		}
 	}
 	return converted
 }
@@ -257,6 +338,34 @@ func imageURL(part agentkit.ContentPart) string {
 		return part.URL
 	}
 	return part.Text
+}
+
+func attachmentRefHint(part agentkit.ContentPart) string {
+	if src := strings.TrimSpace(part.Source); src != "" {
+		return "[attachment: " + src + "]"
+	}
+	if url := strings.TrimSpace(part.URL); url != "" {
+		return "[attachment: " + url + "]"
+	}
+	return ""
+}
+
+func visionDetail(raw string) openai.ImageURLDetail {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "low", "high", "auto":
+		return openai.ImageURLDetail(raw)
+	default:
+		return ""
+	}
+}
+
+func visionDetailString(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "low", "high", "auto":
+		return raw
+	default:
+		return ""
+	}
 }
 
 func textOf(parts []agentkit.ContentPart) string {

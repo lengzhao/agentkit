@@ -52,6 +52,10 @@ func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, storeDir st
 								},
 							},
 							"prompt": map[string]any{"use": "prompt/assembler/default"},
+							"workspace": map[string]any{
+								"use":    "workspace/default",
+								"config": map[string]any{"root": storeDir},
+							},
 							"tools": map[string]any{
 								"use": "tools/runtime",
 								"deps": map[string]any{

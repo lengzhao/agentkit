@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
@@ -41,6 +42,15 @@ type ScriptedAgentConfig struct {
 	Store    agentkit.SessionStore
 }
 
+// TestWorkspace returns a temp-dir workspace for agent tests.
+func TestWorkspace(t *testing.T, root ...string) workspace.Service {
+	t.Helper()
+	if len(root) > 0 && root[0] != "" {
+		return workspace.Static(root[0])
+	}
+	return workspace.Static(t.TempDir())
+}
+
 // NewScriptedAgent builds an agent on a temp store unless Store is set.
 func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, agentkit.SessionStore) {
 	t.Helper()
@@ -51,8 +61,9 @@ func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, ag
 		cfg.MaxSteps = 5
 	}
 	store := cfg.Store
+	var wsRoot string
 	if store == nil {
-		store, _ = TempFileStore(t)
+		store, wsRoot = TempFileStore(t)
 	}
 	if cfg.Tools == nil {
 		cfg.Tools = EmptyToolsRuntime(t)
@@ -62,6 +73,7 @@ func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, ag
 		LLM:          MustScripted(t, cfg.Steps...),
 		Tools:        cfg.Tools,
 		Prompt:       DefaultAssembler(t),
+		Workspace:    TestWorkspace(t, wsRoot),
 	})
 	if err != nil {
 		t.Fatal(err)

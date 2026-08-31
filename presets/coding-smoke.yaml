@@ -17,6 +17,7 @@ runner.default:
               maxSteps: 5
             deps:
               sessionStore: sessionStore.default
+              workspace: workspace.default
               llm:
                 use: llm/scripted
                 config:

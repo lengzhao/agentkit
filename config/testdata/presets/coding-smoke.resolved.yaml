@@ -53,6 +53,7 @@ runner.default:
                                         workspace: workspace.default
                                       use: tool/shell-bash
                             use: tools/runtime
+                        workspace: workspace.default
                       use: agent/coding
             use: loop/default
         platform:

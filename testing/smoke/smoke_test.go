@@ -143,6 +143,7 @@ func TestSmokeSessionRecoveryAfterCrash(t *testing.T) {
 		LLM:          provider,
 		Tools:        agenttest.EmptyToolsRuntime(t),
 		Prompt:       agenttest.DefaultAssembler(t),
+		Workspace:    agenttest.TestWorkspace(t),
 	})
 	if err != nil {
 		t.Fatal(err)

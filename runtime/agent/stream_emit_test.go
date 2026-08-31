@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
@@ -39,6 +40,7 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 		LLM:          scripted,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
+		Workspace:    workspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

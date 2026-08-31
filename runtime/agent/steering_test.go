@@ -49,6 +49,10 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 					},
 				},
 				"prompt": map[string]any{"use": "prompt/assembler/default"},
+				"workspace": map[string]any{
+					"use":    "workspace/default",
+					"config": map[string]any{"root": dir},
+				},
 				"tools": map[string]any{
 					"use": "tools/runtime",
 					"deps": map[string]any{
@@ -137,6 +141,7 @@ func TestSteerResetsSegmentMaxSteps(t *testing.T) {
 		LLM:          block,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
+		Workspace:    workspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

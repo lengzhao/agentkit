@@ -85,6 +85,16 @@ func (s *memoryWorkspaceFS) readText(_ context.Context, path string, maxBytes in
 	return content, nil
 }
 
+func (s *memoryWorkspaceFS) readImage(_ context.Context, path string) (string, error) {
+	s.inner.mu.RLock()
+	defer s.inner.mu.RUnlock()
+	content, ok := s.inner.files[normalizeMemPath(path)]
+	if !ok {
+		return "", fmt.Errorf("file not found: %s", path)
+	}
+	return formatImageToolResult(path, []byte(content))
+}
+
 func (s *memoryWorkspaceFS) writeText(_ context.Context, path, content string) error {
 	s.inner.mu.Lock()
 	defer s.inner.mu.Unlock()

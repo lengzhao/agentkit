@@ -7,10 +7,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
 func TestInboundFromContentSavesFiles(t *testing.T) {
-	t.Chdir(t.TempDir())
+	t.Parallel()
+	root := t.TempDir()
+	ws := workspace.Static(root)
 
 	files := []FileAttachment{{
 		MimeType: "text/plain",
@@ -28,7 +31,7 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 		files,
 		nil,
 		nil,
-		nil,
+		InboundOptsFor(ws),
 	)
 
 	text := event.Message.Content[0].Text
@@ -39,13 +42,56 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 		t.Fatalf("missing file ref in text: %q", text)
 	}
 
-	saved := filepath.Join(".agentkit", "slack_D0AK8MAHW22", inboundAttachWorkRoot, inboundUploadDir, "note.txt")
+	saved := filepath.Join(root, "work", inboundUploadDir, "note.txt")
 	data, err := os.ReadFile(saved)
 	if err != nil {
 		t.Fatalf("read saved file: %v", err)
 	}
 	if string(data) != "hello attachment" {
 		t.Fatalf("saved data = %q", data)
+	}
+}
+
+func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	ws := workspace.Static(root)
+	images := []ImageAttachment{{
+		MimeType: "image/png",
+		Data:     []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a},
+		FileName: "shot.png",
+	}}
+	event := InboundFromContent(
+		"assistant",
+		agentkit.SessionID("slack:C001"),
+		"slack",
+		"U1",
+		"what is this",
+		"",
+		images,
+		nil,
+		nil,
+		nil,
+		InboundOptsFor(ws),
+	)
+	if len(event.Message.Content) < 2 {
+		t.Fatalf("content = %#v", event.Message.Content)
+	}
+	if event.Message.Content[1].Source == "" {
+		t.Fatal("expected workspace source path on image")
+	}
+}
+
+func TestIsImageAttachment(t *testing.T) {
+	t.Parallel()
+	if !IsImageAttachment("image/png", "scan.png") {
+		t.Fatal("expected png mime to be image")
+	}
+	if !IsImageAttachment("", "photo.JPG") {
+		t.Fatal("expected jpg extension to be image")
+	}
+	if IsImageAttachment("text/plain", "note.txt") {
+		t.Fatal("expected text file not to be image")
 	}
 }
 

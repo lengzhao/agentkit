@@ -223,7 +223,9 @@ Runner 仍按 `sessionScope` 折叠 delivery SessionID 做 Loop 加锁；chat-ap
 
 ### 文件上传
 
-chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对 `tool/fs-workspace` 根），agent 在 prompt 里看到的是 `upload/<filename>`，可被 `read` / `find` 命中。
+chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对 `tool/fs-workspace` 根），agent 在 prompt 里看到的是 `upload/<filename>`。图片附件会走 vision；非图片文件可被 `read` / `find` 命中。`read` 读取图片文件时会返回内联 `data:` URL，供模型识别像素内容。
+
+历史 session 落盘时图片存为 `attachment_ref`（`Source` 指向 `upload/...`），不含 base64；Agent 在调用 LLM 前会对**最近一条 user 消息**从 workspace 重载本地图片并注入 vision。
 
 | API | 方法 | 说明 |
 |---|---|---|
@@ -234,8 +236,9 @@ chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对 `tool/fs-works
 `POST /v1/chat-messages` 请求体可带 `inputs[]`：
 
 - `type`: `file` / `image` / `audio`
-- `transfer_method`: `local_file`（引用已上传 id）或 `base64`（内联 `data`）
+- `transfer_method`: `local_file`（引用已上传 id）、`local_path`（workspace 内已有路径，如 `upload/foo.png`）或 `base64`（内联 `data`）
 - `local_file` 时使用 `upload_file_id`
+- `local_path` 时使用 `path`（相对 `work/`）
 
 Agent 通过 `tool/send` 发出的文件会以 SSE `file_ready` 事件推送，并落在 `work/download/`。事件与上传响应均包含：
 

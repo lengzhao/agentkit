@@ -30,6 +30,7 @@ runner.default:
                 wallClockSeconds: 120
             deps:
               sessionStore: sessionStore.default
+              workspace: workspace.default
               hooks: hooks.default
               llm:
                 use: llm/scripted

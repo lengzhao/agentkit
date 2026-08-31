@@ -9,7 +9,7 @@
 | 插件 kind | 模型工具名 | 凭据 |
 |---|---|---|
 | `tool/web-fetch-http` | `web_fetch` | 不需要 |
-| `tool/web-search-auto` | `web_search` | L0 默认；有 `TAVILY_API_KEY` 走 Tavily，否则 DuckDuckGo |
+| `tool/web-search-auto` | `web_search` | 可选；L0 默认用 `llm.default.hostedTools.web_search`（Responses API 服务端执行） |
 | `tool/web-search-tavily` | `web_search` | `TAVILY_API_KEY` / `apiKeyRef` |
 | `tool/web-search-duckduckgo` | `web_search` | 不需要 |
 | `tool/web-search-exa` | `web_search` | `EXA_API_KEY` / `apiKeyRef` |

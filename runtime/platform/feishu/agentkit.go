@@ -110,6 +110,9 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	if cfg.AppID == "" || cfg.AppSecret == "" {
 		return nil, fmt.Errorf("platform/%s requires appId and appSecret", name)
 	}
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("platform/%s requires workspace", name)
+	}
 	domain, err := common.ResolveDomain(cfg.Domain, defaultDomain)
 	if err != nil {
 		return nil, fmt.Errorf("platform/%s: %w", name, err)

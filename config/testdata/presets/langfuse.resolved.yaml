@@ -16,6 +16,7 @@ agent.assistant.default:
         prompt: prompt.default
         sessionStore: sessionStore.default
         tools: tools.default
+        workspace: workspace.default
     use: agent/coding
 commands.default:
     use: commands/registry
@@ -328,17 +329,6 @@ tool.web-fetch-http.default:
         maxRedirects: 5
         timeoutSeconds: 30
     use: tool/web-fetch-http
-tool.web-search.default:
-    config:
-        duckduckgo: {}
-        maxResults: 5
-        snippetChars: 800
-        tavily:
-            apiKeyRef: env:TAVILY_API_KEY
-            searchDepth: basic
-    deps:
-        credentials: credentials.default
-    use: tool/web-search-auto
 tools.default:
     config:
         defaultTimeoutSeconds: 120
@@ -360,7 +350,6 @@ tools.default:
             - tool.skill.default
             - tool.subagent.default
             - tool.web-fetch-http.default
-            - tool.web-search.default
             - tool.ask-user.default
             - tool.send.default
             - tool.schedule.default
@@ -378,7 +367,6 @@ tools.subagent.default:
         tools:
             - tool.finish.default
             - tool.web-fetch-http.default
-            - tool.web-search.default
     use: tools/runtime
 workspace.default:
     config:

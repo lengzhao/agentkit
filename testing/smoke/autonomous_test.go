@@ -88,6 +88,7 @@ func buildAutonomousAgent(t *testing.T, opts autonomousOpts) (agentkit.Agent, ag
 		Tools:        toolRT,
 		Prompt:       assembler,
 		Hooks:        hooksRT,
+		Workspace:    agenttest.TestWorkspace(t),
 	})
 	if err != nil {
 		t.Fatal(err)

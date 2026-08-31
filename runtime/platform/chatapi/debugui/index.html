@@ -801,6 +801,12 @@
       }
     }
 
+    function inputTypeForUpload(file) {
+      const name = String(file.filename || file.name || "").toLowerCase();
+      if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/.test(name)) return "image";
+      return "file";
+    }
+
     async function uploadFile(file) {
       const form = new FormData();
       form.append("file", file, file.name);
@@ -861,7 +867,7 @@
       $("query").value = "";
 
       const pendingInputs = state.pendingFiles.map((f) => ({
-        type: "file",
+        type: inputTypeForUpload(f),
         transfer_method: "local_file",
         upload_file_id: f.id,
       }));

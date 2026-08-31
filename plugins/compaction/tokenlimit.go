@@ -103,6 +103,14 @@ func (s *tokenLimitService) Compact(ctx context.Context, req compaction.Request)
 // the max errs toward compacting slightly early, which is the cheap mistake.
 func (s *tokenLimitService) estimate(ctx context.Context, req compaction.Request) int {
 	heuristic := charEstimate(req.Messages, s.charsPerToken)
+	if req.Session != nil {
+		if events, err := session.ReadAllEvents(ctx, req.Session); err == nil {
+			logical := session.SumLogicalCharsFromEvents(events, req.AgentID) / s.charsPerToken
+			if logical > heuristic {
+				heuristic = logical
+			}
+		}
+	}
 	reported := s.reportedTokens(ctx, req)
 	if reported > heuristic {
 		return reported
@@ -142,7 +150,7 @@ func charEstimate(messages []agentkit.ModelMessage, charsPerToken int) int {
 func partsChars(parts []agentkit.ContentPart) int {
 	chars := 0
 	for _, part := range parts {
-		chars += len(part.Text)
+		chars += len(part.Text) + len(part.Source) + len(part.URL)
 	}
 	return chars
 }

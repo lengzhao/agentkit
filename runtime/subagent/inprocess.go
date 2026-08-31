@@ -207,6 +207,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		Prompt:       &definitionPrompt{inner: s.prompt, body: def.Prompt},
 		Hooks:        s.hooks,
 		Compaction:   s.compact,
+		Workspace:    s.workspace,
 	})
 	if err != nil {
 		return out, err

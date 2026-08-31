@@ -52,6 +52,10 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 								},
 							},
 							"prompt": map[string]any{"use": "prompt/assembler/default"},
+							"workspace": map[string]any{
+								"use":    "workspace/default",
+								"config": map[string]any{"root": dir},
+							},
 							"tools": map[string]any{
 								"use": "tools/runtime",
 								"deps": map[string]any{

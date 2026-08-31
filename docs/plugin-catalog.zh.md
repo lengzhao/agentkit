@@ -105,6 +105,8 @@ flowchart TB
 | `platform/worker` | `agentkit.Platform` | headless 一次性任务 runner（从不读 stdin，`output` 支持 text / json）。task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`）；日历 cron 用 `schedule/cron` | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
+**IM 附件**：`platform/slack`、`platform/feishu`、`platform/lark`、`platform/chat-api` 的 `deps.workspace` 为必填。入站图片会先落到租户 `work/upload/`，session 存 `attachment_ref`，Agent 调用 LLM 前再从 workspace hydrate 为 vision；未挂 workspace 时图片会在落盘时被丢弃。
+
 **HTTP 组合**：`chat-api` 默认自建监听（`listenAddr`，默认 `:8030`）。需要与其它 HTTP 路由共用同一端口时，设 `registerOnly: true`（或 `listenAddr: "-"`），由 `platform/http` 监听 `http.DefaultServeMux`；其它插件可在构建阶段 `http.Handle` 挂载自定义路由。
 
 ```yaml
@@ -145,12 +147,23 @@ platform.http:
 | `prompt/section/memory` | `agentkit.SectionProvider` | memory.md 层级加载（同 agents-md）；依赖 `learning/default` 接入 `/learn` | — |
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
-| `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API | Pi openai-responses |
+| `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
 | `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API | Pi anthropic-messages |
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
 
-**`agent/acp-remote`**：`command` 启动 ACP 子进程；`authMethod`（如 `cursor_login`）；`autoApprove` 自动批准工具权限。deps：`workspace`（必填）、`sessionStore`（可选）。preset：`presets/acp-remote.yaml`。
+**`llm/openai-compatible`**：`api` 为 `responses`（L0 默认）或 `chat`；`hostedTools` 仅在 `responses` 下生效，用于 OpenAI 内置工具（如 `web_search`），由 provider 服务端执行，不走 agentkit 工具循环。L0 已默认启用 `hostedTools.web_search`，`tools.default` 不再挂 `tool/web-search-*`。若改回 Tavily/DuckDuckGo 等本地搜索插件，需同时设 `api: chat` 并自行把 `tool/web-search-*` 加回 `tools`。示例：
+
+```yaml
+llm.default:
+  config:
+    api: responses
+    hostedTools:
+      - type: web_search
+        parameters:
+          search_context_size: medium
+```
+
 
 ### 3.3 Tool 插件（模型可见工具）
 
@@ -161,7 +174,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力 |
 | `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `workspace` | `bash` | Shell 命令执行 |
-| `tool/web-search-auto` | `credentials?` | `web_search` | L0 默认：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
+| `tool/web-search-auto` | `credentials?` | `web_search` | 可选：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
 | `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索 |
 | `tool/web-search-duckduckgo` | — | `web_search` | DuckDuckGo HTML 抓取，无需 key |
 | `tool/web-search-exa` | `credentials?` | `web_search` | Exa 搜索（可选替代） |

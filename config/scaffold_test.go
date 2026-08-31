@@ -32,7 +32,6 @@ func TestScaffoldToolsFragmentDefault(t *testing.T) {
 		"tool.skill.default",
 		"tool.subagent.default",
 		"tool.web-fetch-http.default",
-		"tool.web-search.default",
 		"tool.ask-user.default",
 		"tool.send.default",
 		"tool.schedule.default",
@@ -48,8 +47,8 @@ func TestScaffoldToolsFragmentDefault(t *testing.T) {
 	if !ok {
 		t.Fatalf("deps.tools=%T", deps["tools"])
 	}
-	if len(tools) != 8 {
-		t.Fatalf("deps.tools=%v want 8 refs", tools)
+	if len(tools) != 7 {
+		t.Fatalf("deps.tools=%v want 7 refs", tools)
 	}
 	for _, bad := range []string{"tool/fs-memory", "tool/finish", "tool/todo"} {
 		if _, ok := fragment[defaultToolID(bad)]; ok {
@@ -78,8 +77,8 @@ func TestScaffoldToolsFragmentSubagent(t *testing.T) {
 	if !ok {
 		t.Fatalf("deps.tools=%T", deps["tools"])
 	}
-	if len(tools) != 3 {
-		t.Fatalf("deps.tools=%v want 3 refs", tools)
+	if len(tools) != 2 {
+		t.Fatalf("deps.tools=%v want 2 refs", tools)
 	}
 	fs, ok := fragment["tool.fs-workspace.readonly.default"].(map[string]any)
 	if !ok {

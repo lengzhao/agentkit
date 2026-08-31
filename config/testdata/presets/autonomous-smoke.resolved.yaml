@@ -90,6 +90,7 @@ runner.default:
                                         sessionStore: sessionStore.default
                                       use: tool/finish
                             use: tools/runtime
+                        workspace: workspace.default
                       use: agent/coding
             use: loop/default
         platform: platform.default

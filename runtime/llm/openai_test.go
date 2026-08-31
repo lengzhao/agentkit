@@ -77,3 +77,22 @@ func TestOpenAIBuildUsesEnvFallbackWithoutAPIKeyRef(t *testing.T) {
 		t.Fatal("expected provider")
 	}
 }
+
+func TestOpenAIBuildRejectsHostedToolsWithoutResponsesAPI(t *testing.T) {
+	graph := map[string]any{
+		"llm": map[string]any{
+			"use": "llm/openai-compatible",
+			"config": map[string]any{
+				"api": "chat",
+				"hostedTools": []map[string]any{
+					{"type": "web_search"},
+				},
+			},
+		},
+	}
+
+	_, _, err := build.Build[agentkit.LLMProvider](context.Background(), graph, "llm")
+	if err == nil {
+		t.Fatal("expected build error for hostedTools with chat api")
+	}
+}

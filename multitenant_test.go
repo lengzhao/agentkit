@@ -63,6 +63,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 					"config": map[string]any{"steps": steps},
 				},
 				"prompt": map[string]any{"use": "prompt/assembler/default"},
+				"workspace": workspaceNode,
 				"tools": map[string]any{
 					"use": "tools/runtime",
 					"deps": map[string]any{

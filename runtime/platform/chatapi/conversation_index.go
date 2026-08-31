@@ -120,6 +120,9 @@ func (p *Platform) createConversation(ctx context.Context, channelKey, createdBy
 }
 
 func (p *Platform) persistConversationIndex(ctx context.Context, channelKey string) {
+	if err := p.loadConversationIndex(ctx, channelKey); err != nil {
+		slog.Warn("chat-api: load conversation index", "channel", channelKey, "err", err)
+	}
 	if err := p.saveConversationIndex(ctx, channelKey); err != nil {
 		slog.Warn("chat-api: save conversation index", "channel", channelKey, "err", err)
 	}

@@ -37,6 +37,7 @@ platform.default:
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
+    workspace: workspace.default
 
 workspace.default:
   use: workspace/default

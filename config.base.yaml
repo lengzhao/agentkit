@@ -70,6 +70,7 @@ agent.assistant.default:
     hooks: hooks.default
     prompt: prompt.default
     tools: tools.default
+    workspace: workspace.default
     compaction:
       - compaction.prune.default
       - compaction.token-limit.default
@@ -142,6 +143,10 @@ llm.default:
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
     api: chat
+    # hostedTools:
+    #   - type: web_search
+    #     parameters:
+    #       search_context_size: low
     retry:
       provider:
         maxRetries: 0
@@ -305,7 +310,6 @@ tools.default:
       - tool.skill.default
       - tool.subagent.default
       - tool.web-fetch-http.default
-      - tool.web-search.default
       - tool.ask-user.default
       - tool.send.default
       - tool.schedule.default
@@ -317,7 +321,7 @@ tools.default:
     policies:
       - policy.dangerous-shell.default
 
-# 子 agent 的工具集：只读 + web 搜索/抓取 + finish，不含 delegate。
+# 子 agent 的工具集：只读 + web 抓取 + finish，不含 delegate。搜索由 llm.default.hostedTools 提供。
 tools.subagent.default:
   use: tools/runtime
   config:
@@ -328,7 +332,6 @@ tools.subagent.default:
     tools:
       - tool.finish.default
       - tool.web-fetch-http.default
-      - tool.web-search.default
     toolPacks:
       - tool.fs-workspace.readonly.default
     policies:
