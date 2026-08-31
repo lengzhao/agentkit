@@ -138,6 +138,7 @@ events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:
 3. **Subagent 回归**：复用 `NewSubagentDelegateEnv` 与 `AssertSubagentParentSession`，不要复制装配代码。
 4. **新 preset**：在 `config/presets_test.go` 保证可 build；若有 scripted 步骤，考虑在 `integration/` 加 once-run 断言。
 5. **并行**：Smoke 与无共享状态的单元测试使用 `t.Parallel()`；integration preset 默认串行（共享进程 cwd）。
+6. **测试数据清理**：临时文件、session、workspace 根目录一律用 `t.TempDir()` / `agenttest.TempFileStore` / `openapitest.Materialize`（内部也是 `t.TempDir()`）；**不要**在 `config/`、`testing/fixtures/` 等源码树下落盘。测试结束由 `t.Cleanup` 自动删除；若本地误生成目录（如 `config/testing/`），应及时 `rm -rf` 并勿提交。
 
 ## CI
 

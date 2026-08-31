@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -146,6 +146,6 @@ func (r *Root) reportInboundError(ctx context.Context, deliveryID agentkit.Sessi
 	})
 }
 
-func (r *Root) reportScheduleError(ctx context.Context, err error) {
+func (r *Root) reportScheduleError(_ context.Context, err error) {
 	slog.Error("schedule runtime failed", "err", err)
 }
