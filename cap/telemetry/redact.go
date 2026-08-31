@@ -10,6 +10,19 @@ var sensitiveKeySubstrings = []string{
 	"apikey", "api_key", "token", "password", "secret", "authorization", "credential",
 }
 
+// Usage and billing counters are not secrets; do not redact them when keys contain "token".
+var nonSensitiveKeys = map[string]struct{}{
+	"usage":                {},
+	"inputtokens":          {},
+	"outputtokens":         {},
+	"totaltokens":          {},
+	"prompttokens":         {},
+	"completiontokens":     {},
+	"usage_input_tokens":   {},
+	"usage_output_tokens":  {},
+	"usage_total_tokens":   {},
+}
+
 // TruncatePayload limits payload size for external export.
 func TruncatePayload(raw string, maxBytes int) string {
 	if maxBytes <= 0 || raw == "" {
@@ -65,6 +78,9 @@ func redactValue(v any) {
 
 func isSensitiveKey(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
+	if _, ok := nonSensitiveKeys[lower]; ok {
+		return false
+	}
 	for _, sub := range sensitiveKeySubstrings {
 		if strings.Contains(lower, sub) {
 			return true

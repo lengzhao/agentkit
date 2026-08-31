@@ -23,6 +23,59 @@ func TestFormatMessageEncodesRoleAndContent(t *testing.T) {
 	}
 }
 
+func TestFormatMessageEncodesAttachments(t *testing.T) {
+	t.Parallel()
+
+	raw := telemetry.FormatMessage(agentkit.ModelMessage{
+		Role: "user",
+		Content: []agentkit.ContentPart{
+			{Type: "text", Text: "describe this"},
+			{Type: "image_url", MIME: "image/png", Source: "upload/shot.png", URL: "data:image/png;base64,QUJD"},
+			{Type: "attachment_ref", MIME: "application/pdf", Source: "upload/doc.pdf"},
+		},
+	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["content"] != "describe this" {
+		t.Fatalf("content = %#v", got["content"])
+	}
+	attachments, ok := got["attachments"].([]any)
+	if !ok || len(attachments) != 2 {
+		t.Fatalf("attachments = %#v", got["attachments"])
+	}
+	first, ok := attachments[0].(map[string]any)
+	if !ok || first["type"] != "image_url" || first["source"] != "upload/shot.png" {
+		t.Fatalf("image attachment = %#v", first)
+	}
+	if url, _ := first["url"].(string); !strings.Contains(url, "bytes") {
+		t.Fatalf("url summary = %q", url)
+	}
+	second, ok := attachments[1].(map[string]any)
+	if !ok || second["type"] != "attachment_ref" || second["source"] != "upload/doc.pdf" {
+		t.Fatalf("file attachment = %#v", second)
+	}
+}
+
+func TestSummarizeMessagesIncludesAttachments(t *testing.T) {
+	t.Parallel()
+
+	raw := telemetry.SummarizeMessages([]agentkit.ModelMessage{{
+		Role: "user",
+		Content: []agentkit.ContentPart{
+			{Type: "text", Text: "hello"},
+			{Type: "image_url", MIME: "image/jpeg", Source: "upload/a.jpg", URL: "data:image/jpeg;base64,abc"},
+		},
+	}}, 8192, false)
+	if !strings.Contains(raw, `"attachments"`) || !strings.Contains(raw, "upload/a.jpg") {
+		t.Fatalf("SummarizeMessages = %q", raw)
+	}
+	if strings.Contains(raw, "data:image/jpeg;base64,abc") {
+		t.Fatalf("SummarizeMessages should not include raw data URL: %q", raw)
+	}
+}
+
 func TestToolNamesFromSpecs(t *testing.T) {
 	t.Parallel()
 

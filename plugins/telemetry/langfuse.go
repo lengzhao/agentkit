@@ -232,12 +232,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 				EndTime: &endTime,
 			}
 			if end.Usage != nil {
-				update.Usage = model.Usage{
-					Input:  end.Usage.InputTokens,
-					Output: end.Usage.OutputTokens,
-					Total:  end.Usage.TotalTokens,
-					Unit:   model.ModelUsageUnitTokens,
-				}
+				update.Usage = langfuseUsage(end.Usage)
 			}
 			if end.Err != nil {
 				update.Level = model.ObservationLevelError
@@ -399,4 +394,16 @@ func (l *Langfuse) scopeParentPtr(ctx context.Context) *string {
 		return nil
 	}
 	return &parentID
+}
+
+func langfuseUsage(usage *captelemetry.Usage) model.Usage {
+	return model.Usage{
+		Input:            usage.InputTokens,
+		Output:           usage.OutputTokens,
+		Total:            usage.TotalTokens,
+		Unit:             model.ModelUsageUnitTokens,
+		PromptTokens:     usage.InputTokens,
+		CompletionTokens: usage.OutputTokens,
+		TotalTokens:      usage.TotalTokens,
+	}
 }

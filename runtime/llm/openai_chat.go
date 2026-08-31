@@ -76,10 +76,9 @@ func (s *chatStream) Recv() (agentkit.LLMEvent, error) {
 		if ev, ok := s.acc.recvPending(); ok {
 			return ev, nil
 		}
-		if choice.FinishReason != "" {
-			s.acc.finalize()
-			return s.Recv()
-		}
+		// Keep reading after finish_reason: OpenAI sends usage in a trailing
+		// choices=[] chunk. Finalize only on stream EOF so token counts reach
+		// telemetry and Langfuse.
 	}
 }
 
