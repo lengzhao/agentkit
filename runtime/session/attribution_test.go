@@ -53,13 +53,13 @@ func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[agentkit sender_id=U111]\n改一下 README")); err != nil {
+	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U111]\n改一下 README")); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.AppendMessage(context.Background(), sess, "coder", agentkit.EventAssistantMessage, textMessage("assistant", "好的")); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(userCtx("U222"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[agentkit sender_id=U222]\n顺便跑一下测试")); err != nil {
+	if err := session.AppendMessage(userCtx("U222"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U222]\n顺便跑一下测试")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 	if got := firstText(msgs[2]); !strings.Contains(got, "sender_id=U222") {
 		t.Fatalf("second user message = %q", got)
 	}
-	if got := firstText(msgs[1]); strings.Contains(got, "[agentkit ") {
+	if got := firstText(msgs[1]); strings.Contains(got, "[meta ") {
 		t.Fatalf("assistant message was attributed: %q", got)
 	}
 }
@@ -119,7 +119,7 @@ func TestStoredInjectPrefixSurvivesReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[agentkit sender_id=U111]\nhi")); err != nil {
+	if err := session.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U111]\nhi")); err != nil {
 		t.Fatal(err)
 	}
 

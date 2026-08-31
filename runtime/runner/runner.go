@@ -34,9 +34,10 @@ type Config struct {
 	// sessions. Defaults to 64. Ordering within one session is always preserved.
 	MaxConcurrentTurns int `json:"maxConcurrentTurns"`
 	// Inject lists fields prepended to each inbound user message as
-	// [agentkit sender_id=... timestamp="..." task_id="..." ...].
+	// [meta sender_id=... timestamp="..." task_id="..." ...].
 	// Built-in tokens: sender_id, sender_name, sender_email, platform, chat_id,
 	// timestamp, task_id, trace_id, language, custom.*, or any Metadata key.
+	// L0 config.base.yaml defaults to sender_id, sender_name, timestamp; inject: [] disables.
 	Inject []string `json:"inject"`
 	// DefaultTimezone is the fallback IANA timezone for inject timestamp when the
 	// platform does not implement UserTimezoneProvider.

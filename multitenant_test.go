@@ -87,7 +87,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 func runTurn(t *testing.T, ag agentkit.Agent, sessionID agentkit.SessionID, userID, text string) {
 	t.Helper()
 	if userID != "" {
-		text = "[agentkit sender_id=" + userID + "]\n" + text
+		text = "[meta sender_id=" + userID + "]\n" + text
 	}
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
 	if userID != "" {

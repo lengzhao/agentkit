@@ -5,7 +5,7 @@
 | 问题 | 由谁回答 | 落点 |
 |---|---|---|
 | 这条消息接到哪段历史后面？ | `runner.config.sessionScope` 折叠 delivery SessionID | `runtime/session.ApplyScope` |
-| 这句话是谁说的？ | `runner.config.inject` 入站 prepend `[agentkit ...]` | `runtime/runner/inbound_format`、`MessageEvent.UserID` / `Metadata` |
+| 这句话是谁说的？ | `runner.config.inject` 入站 prepend `[meta ...]` | `runtime/runner/inbound_format`、`MessageEvent.UserID` / `Metadata` |
 | 这个 turn 在哪个目录干活？ | effective SessionID 推出的**租户键** | `cap/tenant.Key`、`workspace/tenant` |
 
 把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种 scope 推出的租户键都是同一个。
@@ -17,7 +17,7 @@ flowchart LR
   D -->|runner sessionScope| E["effective SessionID<br/>slack:C001"]
   Msg -->|UserID| UID["U111"]
   E -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 effective ID 一个 JSONL"]
-  UID -->|inject| Attr["入站 prepend [agentkit ...]"]
+  UID -->|inject| Attr["入站 prepend [meta ...]"]
   E -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
   Root --> Runtime["sessions / agents / mcp / skills"]
@@ -100,7 +100,7 @@ runner.default:
 示例：
 
 ```text
-[agentkit timestamp="2026-08-31T10:00:00+08:00" timezone="Asia/Shanghai" sender_id=U111 sender_name="Alice" platform=slack chat_id=C001 task_id="job-9"]
+[meta timestamp="2026-08-31T10:00:00+08:00" timezone="Asia/Shanghai" sender_id=U111 sender_name="Alice" platform=slack chat_id=C001 task_id="job-9"]
 改一下 README
 ```
 
@@ -116,7 +116,7 @@ runner.default:
 | `custom.*` | Metadata 键前缀匹配 | `custom.tenant="..."` 等 |
 | 任意其它键 | Metadata 精确匹配 | `org_id="..."` 等 |
 
-`UserID` 仍落在 **事件信封**（`SessionEvent.UserID`）供审计与 tool `metadata.*` 绑定；模型可见的上下文由入站时写入 session 的 `[agentkit ...]` 前缀承担。
+`UserID` 仍落在 **事件信封**（`SessionEvent.UserID`）供审计与 tool `metadata.*` 绑定；模型可见的上下文由入站时写入 session 的 `[meta ...]` 前缀承担。
 
 单条跳过前缀：`MessageEvent.Metadata.skipPromptMeta: true`（chat-api 可通过 HTTP header 映射）。
 

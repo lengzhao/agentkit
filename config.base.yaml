@@ -20,6 +20,11 @@ runner.default:
     # 跨 effective session 的并行 turn 上限。默认 64；同一 session 内始终保序。
     # 单租户 coding CLI 若担心 workspace 写冲突，可在 L1 显式调低。
     maxConcurrentTurns: 64
+    # 入站 user 消息 prepend [meta sender_id=... sender_name="..." timestamp="..."]。
+    inject:
+      - sender_id
+      - sender_name
+      - timestamp
   deps:
     platform: platform.default
     loop: loop.default

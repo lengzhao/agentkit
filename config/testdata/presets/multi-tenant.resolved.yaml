@@ -192,8 +192,7 @@ runner.default:
         inject:
             - sender_id
             - sender_name
-            - platform
-            - chat_id
+            - timestamp
         maxConcurrentTurns: 64
         sessionScope: channel
         shutdownTimeoutSeconds: 10

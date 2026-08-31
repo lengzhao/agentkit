@@ -921,7 +921,7 @@ Runner 是 `pluginkit` root plugin 的返回值，负责连接 Platform 和 Loop
 
 由此 `Platform.Send` 必须支持并发调用（每个 turn 从自己的 goroutine 发出），`Receive` 仍只由单个 goroutine 调用。
 
-**入站前缀**（对齐 cc-connect）：Runner 在 `handleInbound` 前按 `runner.config.inject` prepend `[agentkit sender_id=... timestamp="..." task_id="..." ...]`，写入 session 后 derive 原样回放。详见 [multi-tenant.zh.md](guides/multi-tenant.zh.md#2-识别不同用户)。
+**入站前缀**（对齐 cc-connect）：Runner 在 `handleInbound` 前按 `runner.config.inject` prepend `[meta sender_id=... timestamp="..." task_id="..." ...]`，写入 session 后 derive 原样回放。详见 [multi-tenant.zh.md](guides/multi-tenant.zh.md#2-识别不同用户)。
 
 ### 6.3 Platform
 

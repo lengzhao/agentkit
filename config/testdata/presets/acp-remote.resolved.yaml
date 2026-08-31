@@ -12,6 +12,10 @@ agent.acp.default:
     use: agent/acp-remote
 runner.default:
     config:
+        inject:
+            - sender_id
+            - sender_name
+            - timestamp
         maxConcurrentTurns: 64
         sessionScope: channel
         shutdownTimeoutSeconds: 10

@@ -223,6 +223,10 @@ prompt.subagents.default:
     use: prompt/section/subagents
 runner.default:
     config:
+        inject:
+            - sender_id
+            - sender_name
+            - timestamp
         maxConcurrentTurns: 8
         sessionScope: channel
         shutdownTimeoutSeconds: 10

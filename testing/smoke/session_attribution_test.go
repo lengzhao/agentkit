@@ -37,7 +37,7 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prefixU111 := "[agentkit sender_id=U111 platform=slack chat_id=C001]\n改一下 README"
+	prefixU111 := "[meta sender_id=U111 platform=slack chat_id=C001]\n改一下 README"
 	if err := session.AppendMessage(userContext("U111"), sess, "smoke", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: prefixU111}},
@@ -50,7 +50,7 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	prefixU222 := "[agentkit sender_id=U222 platform=slack chat_id=C001]\n顺便跑一下测试"
+	prefixU222 := "[meta sender_id=U222 platform=slack chat_id=C001]\n顺便跑一下测试"
 	if err := session.AppendMessage(userContext("U222"), sess, "smoke", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: prefixU222}},
@@ -74,7 +74,7 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 		t.Fatalf("second user message = %q", third)
 	}
 	assistant := agenttest.ContentText(msgs[1])
-	if strings.Contains(assistant, "[agentkit ") {
+	if strings.Contains(assistant, "[meta ") {
 		t.Fatalf("assistant message was attributed: %q", assistant)
 	}
 }

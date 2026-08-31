@@ -40,7 +40,7 @@ func TestBuildInboundPromptPrefixInjectList(t *testing.T) {
 	}
 	delivery := agentkit.SessionID("feishu:channel42:user123")
 	got := r.BuildInboundPromptPrefixForTest(event, delivery)
-	want := `[agentkit sender_id=user123 sender_name="Alice" platform=feishu chat_id=channel42]`
+	want := `[meta sender_id=user123 sender_name="Alice" platform=feishu chat_id=channel42]`
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -48,7 +48,7 @@ func TestBuildInboundPromptPrefixInjectList(t *testing.T) {
 
 func TestBuildInboundPromptPrefixDisabled(t *testing.T) {
 	t.Parallel()
-	root, err := runner.New(runner.Config{}, runner.Deps{
+	root, err := runner.New(runner.Config{Inject: []string{}}, runner.Deps{
 		Platform: &scriptedPlatform{},
 		Loop:     &recordingLoop{},
 	})
@@ -65,6 +65,53 @@ func TestBuildInboundPromptPrefixDisabled(t *testing.T) {
 	}
 }
 
+func TestBuildInboundPromptPrefixDefaultInject(t *testing.T) {
+	t.Parallel()
+	root, err := runner.New(runner.Config{
+		Inject:          []string{"sender_id", "sender_name", "timestamp"},
+		DefaultTimezone: "UTC",
+	}, runner.Deps{
+		Platform: &scriptedPlatform{},
+		Loop:     &recordingLoop{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*runner.Root)
+	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{
+		UserID:   "U1",
+		Metadata: map[string]any{"displayName": "Alice"},
+	}, agentkit.SessionID("slack:C1:u:U1"))
+	for _, want := range []string{
+		`sender_id=U1`,
+		`sender_name="Alice"`,
+		`timestamp="`,
+		`timezone="UTC"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestBuildInboundPromptPrefixDefaultSkippedWithoutUserID(t *testing.T) {
+	t.Parallel()
+	root, err := runner.New(runner.Config{}, runner.Deps{
+		Platform: &scriptedPlatform{},
+		Loop:     &recordingLoop{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*runner.Root)
+	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{
+		PlatformID: "cli",
+	}, agentkit.SessionID("cli:default"))
+	if got != "" {
+		t.Fatalf("expected empty prefix without UserID, got %q", got)
+	}
+}
+
 func TestBuildInboundPromptPrefixInjectTimestamp(t *testing.T) {
 	t.Parallel()
 	root, err := runner.New(runner.Config{
@@ -78,8 +125,8 @@ func TestBuildInboundPromptPrefixInjectTimestamp(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := root.(*runner.Root)
-	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{}, agentkit.SessionID("cli:default"))
-	if !strings.HasPrefix(got, `[agentkit timestamp="`) || !strings.Contains(got, `timezone="UTC"`) {
+	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{UserID: "u1"}, agentkit.SessionID("cli:default"))
+	if !strings.HasPrefix(got, `[meta timestamp="`) || !strings.Contains(got, `timezone="UTC"`) {
 		t.Fatalf("unexpected prefix: %q", got)
 	}
 }
@@ -191,7 +238,7 @@ func TestFormatInboundEventPrependsPrefix(t *testing.T) {
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 		},
 	}, agentkit.SessionID("slack:C012:u:U999"))
-	want := `[agentkit sender_id=U999 platform=slack chat_id=C012]` + "\nhi"
+	want := `[meta sender_id=U999 platform=slack chat_id=C012]` + "\nhi"
 	if event.Message.Content[0].Text != want {
 		t.Fatalf("got %q, want %q", event.Message.Content[0].Text, want)
 	}

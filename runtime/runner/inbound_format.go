@@ -77,7 +77,7 @@ func buildInboundPromptPrefix(cfg inboundFormatConfig, event agentkit.MessageEve
 	if len(attrs) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("[agentkit %s]", strings.Join(attrs, " "))
+	return fmt.Sprintf("[%s %s]", agentkit.InboundMetaTag, strings.Join(attrs, " "))
 }
 
 func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, deliveryID agentkit.SessionID, platform agentkit.Platform, now time.Time) []string {
@@ -118,6 +118,9 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 				attrs = append(attrs, fmt.Sprintf("chat_id=%s", parts.Channel))
 			}
 		case injectTimestamp:
+			if strings.TrimSpace(event.UserID) == "" {
+				continue
+			}
 			tz := resolveUserTimezone(cfg.defaultTimezone, event.UserID, platform)
 			attrs = append(attrs, formatInjectTimestamp(now, tz))
 		case injectTaskID:

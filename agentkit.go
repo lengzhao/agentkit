@@ -57,8 +57,12 @@ const (
 	KeyScheduleStateless contextKey = "agentkit.schedule_stateless"
 )
 
+// InboundMetaTag is the bracket tag for runner inject prefixes on user messages.
+// Example: [meta sender_id=U111 sender_name="Alice" timestamp="..." timezone="UTC"]
+const InboundMetaTag = "meta"
+
 // MetadataSkipPromptMeta, when true on MessageEvent.Metadata, tells runner not to
-// prepend the optional [agentkit ...] inbound prefix for that turn.
+// prepend the optional [meta ...] inbound prefix for that turn.
 const MetadataSkipPromptMeta = "skipPromptMeta"
 
 // SessionID identifies a conversation unit. Platforms emit a delivery SessionID
