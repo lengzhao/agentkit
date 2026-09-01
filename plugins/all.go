@@ -32,6 +32,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/hooks"
 	_ "github.com/lengzhao/agentkit/runtime/llm"
 	_ "github.com/lengzhao/agentkit/runtime/loop"
+	_ "github.com/lengzhao/agentkit/runtime/platform/acp"
 	_ "github.com/lengzhao/agentkit/runtime/platform/chatapi"
 	_ "github.com/lengzhao/agentkit/runtime/platform/cli"
 	_ "github.com/lengzhao/agentkit/runtime/platform/feishu"

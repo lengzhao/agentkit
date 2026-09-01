@@ -1,0 +1,45 @@
+# L1 preset：以 ACP Agent 对外暴露 AgentKit（stdio JSON-RPC）。
+#
+# 用法（供 ACP 客户端子进程拉起）：
+#   go run ./cmd/agent -config presets/acp.yaml
+#
+# Zed 等编辑器配置 agent 命令为上述进程即可；权限审批由客户端 UI 承接。
+
+runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+    loop: loop.default
+    sessionStore: sessionStore.default
+
+platform.default:
+  use: platform/acp
+  config:
+    agentName: agentkit
+    agentVersion: "0.1.0"
+  deps:
+    workspace: workspace.default
+
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.assistant.default
+
+session.default:
+  use: session/memory
+  config:
+    id: acp:default
+
+sessionStore.default:
+  use: session/static
+  deps:
+    session: session.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
+
+commands.default:
+  use: commands/registry

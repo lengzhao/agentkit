@@ -41,6 +41,42 @@ platform.default:
     commands: commands.default
     sessionStore: sessionStore.default
 
+# HTTP + SSE（BFF / 调试台）。L0 默认入口仍是 platform/cli；改用 chat-api 时在 L1 替换
+# runner.default.deps.platform，或与 platform/http 组合（listenAddr: "-" 由 http 监听）。
+platform.chat-api:
+  use: platform/chat-api
+  config:
+    listenAddr: ":8030"
+    path: /v1/
+    # apiToken: ""                 # Bearer 鉴权；空=不校验（仅内网调试）
+    # userHeader: X-Chat-API-User
+    # userNameHeader: X-Chat-API-User-Name  # 自动写入 Metadata（sender_name inject）
+    # channelHeader: X-Chat-API-Channel
+    metadataHeaders:
+      - x-task-id                   # 框架默认已内置；可追加自定义头
+    busyPolicy: queue
+    interactionTimeout: 10m
+    # interactive: true            # false = 无人值守 BFF，ask_user 降级 NoHuman
+    debugUi: false
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+    workspace: workspace.default
+
+platform.http:
+  use: platform/http
+  config:
+    listenAddr: ":8080"
+
+# ACP Agent（stdio JSON-RPC）。供 Zed、ACP 客户端以子进程方式接入；stdout 仅协议流量，日志走 stderr。
+platform.acp:
+  use: platform/acp
+  config:
+    agentName: agentkit
+    agentVersion: "0.1.0"
+  deps:
+    workspace: workspace.default
+
 commands.default:
   use: commands/registry
 

@@ -112,7 +112,10 @@ platform.chat-api:
         apiToken: ""
         busyPolicy: queue
         debugUi: true
+        interactionTimeout: 10m
         listenAddr: :8030
+        metadataHeaders:
+            - x-task-id
         path: /v1/
     deps:
         commands: commands.default

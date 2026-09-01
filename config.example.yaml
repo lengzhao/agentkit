@@ -126,3 +126,53 @@ prompt.custom.default:
 #
 # 无人值守 headless 守护进程（platform/worker + 启动 task）见 presets/cron.yaml：
 #   go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
+
+# 示例：chat-api HTTP + SSE（与 platform/http 共用端口时设 listenAddr: "-"）
+# runner.default:
+#   deps:
+#     platform: platform.default
+#
+# platform.default:
+#   use: platform/multiplex
+#   deps:
+#     platforms: [platform.chat-api, platform.http]
+#
+# platform.chat-api:
+#   use: platform/chat-api
+#   config:
+#     listenAddr: "-"              # registerOnly：路由挂 http.DefaultServeMux
+#     path: /v1/
+#     agentId: assistant
+#     # apiToken: your-token       # Bearer；留空=不校验
+#     # userHeader: X-Chat-API-User
+#     # userNameHeader: X-Chat-API-User-Name
+#     # channelHeader: X-Chat-API-Channel
+#     metadataHeaders: [x-task-id]
+#     busyPolicy: queue
+#     debugUi: true
+#     interactive: true            # false：无人值守 BFF，ask_user 不挂 SSE 提问
+#     interactionTimeout: 10m
+#   deps:
+#     commands: commands.default
+#     sessionStore: sessionStore.default
+#     workspace: workspace.default
+#
+# platform.http:
+#   use: platform/http
+#   config:
+#     listenAddr: ":8090"
+#
+# 示例：以 ACP Agent 对外暴露（stdio，供 Zed 等编辑器子进程接入）
+# runner.default:
+#   deps:
+#     platform: platform.default
+#
+# platform.default:
+#   use: platform/acp
+#   config:
+#     agentName: agentkit
+#     agentVersion: "0.1.0"
+#   deps:
+#     workspace: workspace.default
+#
+# 调试页：/debug/ ；API 见 docs/guides/multi-tenant.zh.md §chat-api
