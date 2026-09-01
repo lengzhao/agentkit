@@ -63,6 +63,40 @@ func TestParseConfigFile(t *testing.T) {
 	}
 }
 
+func TestParseConfigFileTransportHeaders(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{
+  "mcpServers": {
+    "agenthub": {
+      "transport": "streamable-http",
+      "url": "env:AGENTHUB_MCP_URL",
+      "headers": {
+        "X-agenthub-apikey": "env:AGENTHUB_API_KEY"
+      }
+    }
+  }
+}`)
+
+	servers, err := parseConfigFile("/tmp/mcp.json", raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("servers = %d, want 1", len(servers))
+	}
+	server := servers[0]
+	if server.Type != "streamable-http" {
+		t.Fatalf("type = %q", server.Type)
+	}
+	if server.URL != "env:AGENTHUB_MCP_URL" {
+		t.Fatalf("url = %q", server.URL)
+	}
+	if server.Headers["X-agenthub-apikey"] != "env:AGENTHUB_API_KEY" {
+		t.Fatalf("headers = %v", server.Headers)
+	}
+}
+
 func TestLoadServersPrecedence(t *testing.T) {
 	t.Parallel()
 

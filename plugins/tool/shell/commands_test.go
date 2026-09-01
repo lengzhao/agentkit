@@ -40,6 +40,29 @@ func TestShellSlashCommand(t *testing.T) {
 	}
 }
 
+func TestShellCreatesMissingWorkDir(t *testing.T) {
+	root := t.TempDir()
+	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: root, Local: root, Scope: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := NewShellBash(ShellBashConfig{WorkDir: "work"}, ShellBashDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, ok := tool.(*shellBashBundle)
+	if !ok {
+		t.Fatalf("expected *shellBashBundle, got %T", tool)
+	}
+	out, err := bundle.Commands()[0].CommandExec(context.Background(), `echo hello`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "hello" {
+		t.Fatalf("output = %q", out)
+	}
+}
+
 func TestShellSlashCommandUsage(t *testing.T) {
 	cmd := shellSlashCommand{exec: &bashExecutor{workspace: stubWorkspace{root: t.TempDir()}}}
 	if _, err := cmd.CommandExec(context.Background(), ""); err == nil {

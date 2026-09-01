@@ -76,6 +76,9 @@ func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, er
 	if err != nil {
 		return ShellOutput{}, err
 	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return ShellOutput{}, fmt.Errorf("mkdir work dir: %w", err)
+	}
 
 	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
 	cmd.Dir = workDir

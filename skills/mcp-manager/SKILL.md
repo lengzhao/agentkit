@@ -45,6 +45,13 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取；运行中不支持热
     "remote": {
       "url": "http://127.0.0.1:8080/mcp",
       "type": "sse"
+    },
+    "agenthub": {
+      "transport": "streamable-http",
+      "url": "env:AGENTHUB_MCP_URL",
+      "headers": {
+        "X-agenthub-apikey": "env:AGENTHUB_API_KEY"
+      }
     }
   }
 }
@@ -56,8 +63,10 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取；运行中不支持热
 |---|---|
 | `command` / `args` | stdio 子进程 MCP server |
 | `env` | 环境变量；值可为 `env:NAME`，经 credentials 解析 |
-| `url` | HTTP/SSE 远程端点 |
-| `type` | `sse`、`http` / `streamable`；留空时先 streamable 再 SSE |
+| `url` | HTTP/SSE 远程端点；值可为 `env:NAME` |
+| `type` | `sse`、`http` / `streamable` / `streamable-http`；留空时先 streamable 再 SSE |
+| `transport` | `type` 的别名 |
+| `headers` | 每次请求都带上的静态 header；值可为 `env:NAME` |
 | `prefix` | 工具名前缀，默认 `<serverName>__` |
 | `allowTools` / `denyTools` | 原始 MCP 工具名白/黑名单 |
 | `bind` | 从 `context` 透传到 MCP server（`header` / `meta` / `env`）；见 `docs/guides/tools.zh.md` |

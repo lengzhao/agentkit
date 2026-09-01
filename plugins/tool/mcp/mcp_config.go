@@ -16,6 +16,8 @@ type rawServerConfig struct {
 	Env            map[string]string `json:"env"`
 	URL            string            `json:"url"`
 	Type           string            `json:"type"`
+	Transport      string            `json:"transport"`
+	Headers        map[string]string `json:"headers"`
 	Prefix         string            `json:"prefix"`
 	AllowTools     []string          `json:"allowTools"`
 	DenyTools      []string          `json:"denyTools"`
@@ -31,6 +33,7 @@ type serverConfig struct {
 	Env            map[string]string
 	URL            string
 	Type           string
+	Headers        map[string]string
 	Prefix         string
 	AllowTools     []string
 	DenyTools      []string
@@ -71,7 +74,8 @@ func parseConfigFile(path string, raw []byte) ([]serverConfig, error) {
 			Args:           append([]string(nil), raw.Args...),
 			Env:            cloneStringMap(raw.Env),
 			URL:            strings.TrimSpace(raw.URL),
-			Type:           strings.TrimSpace(raw.Type),
+			Type:           serverType(raw),
+			Headers:        cloneStringMap(raw.Headers),
 			Prefix:         strings.TrimSpace(raw.Prefix),
 			AllowTools:     trimAll(raw.AllowTools),
 			DenyTools:      trimAll(raw.DenyTools),
@@ -106,7 +110,8 @@ func parseServerJSON(name, source string, raw []byte) (serverConfig, error) {
 		Args:           append([]string(nil), rawCfg.Args...),
 		Env:            cloneStringMap(rawCfg.Env),
 		URL:            strings.TrimSpace(rawCfg.URL),
-		Type:           strings.TrimSpace(rawCfg.Type),
+		Type:           serverType(rawCfg),
+		Headers:        cloneStringMap(rawCfg.Headers),
 		Prefix:         strings.TrimSpace(rawCfg.Prefix),
 		AllowTools:     trimAll(rawCfg.AllowTools),
 		DenyTools:      trimAll(rawCfg.DenyTools),
@@ -197,4 +202,11 @@ func trimAll(in []string) []string {
 		}
 	}
 	return out
+}
+
+func serverType(raw rawServerConfig) string {
+	if typ := strings.TrimSpace(raw.Type); typ != "" {
+		return typ
+	}
+	return strings.TrimSpace(raw.Transport)
 }

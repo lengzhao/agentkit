@@ -143,7 +143,15 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	var client *mcpclient.Client
 	switch {
 	case server.URL != "":
-		client, err = connectURL(server)
+		url, err := resolveEnvValue(ctx, server.URL, creds)
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %q url: %w", server.Name, err)
+		}
+		headers, err := resolveStringMap(ctx, server.Headers, creds)
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %q headers: %w", server.Name, err)
+		}
+		client, err = connectURL(url, server.Type, headers, server.Binds)
 	case server.Command != "":
 		client, err = mcpclient.NewStdioMCPClient(server.Command, env, server.Args...)
 	default:
@@ -159,20 +167,20 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	return client, nil
 }
 
-func connectURL(server serverConfig) (*mcpclient.Client, error) {
-	headerFn := headerBindFunc(server.Binds)
-	switch strings.ToLower(server.Type) {
+func connectURL(url, typ string, staticHeaders map[string]string, binds []bindConfig) (*mcpclient.Client, error) {
+	headerFn := mergeHeaderFunc(staticHeaders, binds)
+	switch strings.ToLower(typ) {
 	case "sse":
-		return mcpclient.NewSSEMCPClient(server.URL, mcpclient.WithHeaderFunc(headerFn))
+		return mcpclient.NewSSEMCPClient(url, mcpclient.WithHeaderFunc(headerFn))
 	case "http", "streamable", "streamable-http", "streamable_http":
-		return mcpclient.NewStreamableHttpClient(server.URL, transport.WithHTTPHeaderFunc(headerFn))
+		return mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn))
 	case "":
-		if client, err := mcpclient.NewStreamableHttpClient(server.URL, transport.WithHTTPHeaderFunc(headerFn)); err == nil {
+		if client, err := mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn)); err == nil {
 			return client, nil
 		}
-		return mcpclient.NewSSEMCPClient(server.URL, mcpclient.WithHeaderFunc(headerFn))
+		return mcpclient.NewSSEMCPClient(url, mcpclient.WithHeaderFunc(headerFn))
 	default:
-		return nil, fmt.Errorf("unsupported mcp transport type %q", server.Type)
+		return nil, fmt.Errorf("unsupported mcp transport type %q", typ)
 	}
 }
 
@@ -227,6 +235,50 @@ func resolveEnvValue(ctx context.Context, value string, creds credentials.Store)
 		return "", fmt.Errorf("credential %q not found", value)
 	}
 	return value, nil
+}
+
+func resolveStringMap(ctx context.Context, values map[string]string, creds credentials.Store) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		resolved, err := resolveEnvValue(ctx, value, creds)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		out[key] = resolved
+	}
+	return out, nil
+}
+
+func mergeHeaderFunc(static map[string]string, binds []bindConfig) func(context.Context) map[string]string {
+	bindFn := headerBindFunc(binds)
+	return func(ctx context.Context) map[string]string {
+		var out map[string]string
+		if len(static) > 0 {
+			out = make(map[string]string, len(static))
+			for k, v := range static {
+				out[k] = v
+			}
+		}
+		if bound := bindFn(ctx); bound != nil {
+			if out == nil {
+				out = make(map[string]string, len(bound))
+			}
+			for k, v := range bound {
+				out[k] = v
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	}
 }
 
 func decodeToolArguments(input json.RawMessage) (map[string]any, error) {
