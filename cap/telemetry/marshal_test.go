@@ -157,15 +157,15 @@ func TestWrapOutboundEmitRecordsFinalSendAndAskUser(t *testing.T) {
 	}
 
 	end := telemetry.TurnEndFromAccum(ctx)
-	if strings.Contains(end.Output, "internal") {
-		t.Fatalf("tool step should not appear in user output: %q", end.Output)
+	if !strings.Contains(end.Output, "internal") {
+		t.Fatalf("tool step text should appear in turn output: %q", end.Output)
 	}
-	for _, want := range []string{"final answer", "[send] progress", "[ask_user] pick one", "options: a, b"} {
+	for _, want := range []string{"internal", "final answer", "[send] progress", "[ask_user] pick one", "options: a, b"} {
 		if !strings.Contains(end.Output, want) {
 			t.Fatalf("output missing %q: %q", want, end.Output)
 		}
 	}
-	if strings.Count(end.Output, "-------------") != 2 {
-		t.Fatalf("expected 2 separators, got %q", end.Output)
+	if strings.Count(end.Output, "-------------") != 3 {
+		t.Fatalf("expected 3 separators, got %q", end.Output)
 	}
 }

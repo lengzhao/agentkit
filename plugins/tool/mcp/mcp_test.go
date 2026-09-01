@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 // countingWorkspace wraps testWorkspace to count Resolve calls, so tests can
@@ -138,5 +139,33 @@ func TestMCPAddCommand(t *testing.T) {
 	}
 	if !strings.Contains(status, "Usage:") {
 		t.Fatalf("status=%q, want usage help", status)
+	}
+}
+
+func TestMCPReloadRecordsInitObservation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &telemetry.RecordingExporter{}
+	ctx := telemetry.WithExporter(context.Background(), rec)
+	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
+
+	provider := &mcpProvider{
+		files:     []string{configPath},
+		workspace: &testWorkspace{root: dir},
+		pool:      newClientPool(),
+	}
+	if _, err := provider.ListTools(ctx); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 0 {
+		t.Fatalf("observations = %d, want 0 when no servers configured", len(observations))
 	}
 }

@@ -7,6 +7,23 @@ import (
 	"github.com/lengzhao/agentkit/cap/telemetry"
 )
 
+func TestLLMTextStarted(t *testing.T) {
+	t.Parallel()
+
+	if telemetry.LLMTextStarted(agentkit.LLMEvent{Type: agentkit.AssistantEventTextDelta}) {
+		t.Fatal("empty text delta should not count")
+	}
+	if !telemetry.LLMTextStarted(agentkit.LLMEvent{Type: agentkit.AssistantEventTextDelta, Delta: "hi"}) {
+		t.Fatal("text delta should count")
+	}
+	if !telemetry.LLMTextStarted(agentkit.LLMEvent{Type: agentkit.AssistantEventThinkingDelta, Delta: "hmm"}) {
+		t.Fatal("thinking delta should count")
+	}
+	if telemetry.LLMTextStarted(agentkit.LLMEvent{Type: agentkit.AssistantEventToolCallStart}) {
+		t.Fatal("tool call start should not count as text")
+	}
+}
+
 func TestLLMCompletionStarted(t *testing.T) {
 	t.Parallel()
 

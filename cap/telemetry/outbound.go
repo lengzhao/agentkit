@@ -29,9 +29,11 @@ func recordTurnOutbound(ctx context.Context, event agentkit.OutboundEvent) {
 		if err := json.Unmarshal(event.Data, &payload); err != nil {
 			return
 		}
-		// Only the final assistant reply reaches the user; steps with tool calls
-		// are internal and already visible in the SSE/tool trace.
+		// Tool-call steps may still stream user-visible text before executing tools.
 		if len(payload.Message.ToolCalls) > 0 {
+			if text := userVisibleText(payload.Message); text != "" {
+				appendTurnUserVisible(ctx, text)
+			}
 			return
 		}
 		if text := userVisibleText(payload.Message); text != "" {

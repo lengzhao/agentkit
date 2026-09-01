@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
@@ -150,6 +151,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		"platform_id", req.Event.PlatformID,
 		"user_id", req.Event.UserID,
 	)
+	turnStarted := time.Now()
 	ctx, endTurn := telemetry.BeginTurn(ctx, meta)
 	ctx = telemetry.WithTurnAccum(ctx)
 	var runErr error
@@ -157,20 +159,30 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		end := telemetry.TurnEndFromAccum(ctx)
 		end.Err = runErr
 		endTurn(end)
-		if runErr != nil {
-			slog.Error("turn end",
-				"turn_id", turnID,
-				"agent_id", agentID,
-				"session_id", req.Event.SessionID,
-				"err", runErr,
-			)
-			return
-		}
-		slog.Info("turn end",
+		attrs := []any{
 			"turn_id", turnID,
 			"agent_id", agentID,
 			"session_id", req.Event.SessionID,
-		)
+			"duration", time.Since(turnStarted),
+		}
+		if end.Steps > 0 {
+			attrs = append(attrs, "steps", end.Steps)
+		}
+		if end.StopReason != "" {
+			attrs = append(attrs, "stop_reason", end.StopReason)
+		}
+		if end.Usage != nil {
+			attrs = append(attrs,
+				"input_tokens", end.Usage.InputTokens,
+				"output_tokens", end.Usage.OutputTokens,
+				"total_tokens", end.Usage.TotalTokens,
+			)
+		}
+		if runErr != nil {
+			slog.Error("turn end", append(attrs, "err", runErr)...)
+			return
+		}
+		slog.Info("turn end", attrs...)
 	}()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, turnID)
 	turnInput := input

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/configfile"
 )
@@ -101,10 +102,34 @@ func (p *mcpProvider) cached(ctx context.Context) ([]serverConfig, []toolDefinit
 func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinition, error) {
 	servers, err := p.loadServers(ctx)
 	if err != nil {
+		_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+			Name: "mcp.init",
+			Kind: telemetry.KindSpan,
+		})
+		endObservation(telemetry.ObservationEnd{Err: err})
 		return nil, nil, err
 	}
+	if len(servers) == 0 {
+		p.mu.Lock()
+		p.servers = nil
+		p.defs = nil
+		p.loaded = true
+		p.mu.Unlock()
+		return nil, nil, nil
+	}
+
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+		Name: "mcp.init",
+		Kind: telemetry.KindSpan,
+	})
+	var observationEnd telemetry.ObservationEnd
+	defer func() {
+		endObservation(observationEnd)
+	}()
+
 	defs, err := p.discoverTools(ctx, servers)
 	if err != nil {
+		observationEnd.Err = err
 		return nil, nil, err
 	}
 	p.mu.Lock()
@@ -112,6 +137,7 @@ func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinit
 	p.defs = defs
 	p.loaded = true
 	p.mu.Unlock()
+	observationEnd.Output = fmt.Sprintf("%d server(s), %d tool(s)", len(servers), len(defs))
 	return servers, defs, nil
 }
 

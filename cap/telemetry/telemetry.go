@@ -30,9 +30,11 @@ type TurnMeta struct {
 
 // TurnEnd closes a turn trace.
 type TurnEnd struct {
-	Output string
-	Err    error
-	Usage  *Usage
+	Output     string
+	Err        error
+	Usage      *Usage
+	Steps      int
+	StopReason string
 }
 
 // ObservationKind selects how an observation is exported.
@@ -68,6 +70,9 @@ type ObservationEnd struct {
 	// CompletionStartTime is when the model first produced output (TTFT boundary).
 	// Zero means unavailable, e.g. the stream ended before any content arrived.
 	CompletionStartTime time.Time
+	// FirstTextTime is when the first user-visible text or thinking delta arrived.
+	// Langfuse TTFT prefers this over CompletionStartTime when set.
+	FirstTextTime time.Time
 }
 
 // Usage carries token accounting for generations and turn totals.

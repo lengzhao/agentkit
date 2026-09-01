@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -484,6 +485,32 @@ func TestOpenAPIAddCommand(t *testing.T) {
 	}
 	if len(tools) != 1 || tools[0].Name() != "demo__ping" {
 		t.Fatalf("tools = %v, want [demo__ping]", keysOf(toolMap(tools)))
+	}
+}
+
+func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(`{"apis":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &telemetry.RecordingExporter{}
+	ctx := telemetry.WithExporter(context.Background(), rec)
+	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
+
+	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if _, err := provider.ListTools(ctx); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 0 {
+		t.Fatalf("observations = %d, want 0 when no APIs configured", len(observations))
 	}
 }
 

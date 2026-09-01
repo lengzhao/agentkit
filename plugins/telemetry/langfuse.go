@@ -233,6 +233,9 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			}
 			if !end.CompletionStartTime.IsZero() {
 				completionStart := end.CompletionStartTime.UTC()
+				if !end.FirstTextTime.IsZero() {
+					completionStart = end.FirstTextTime.UTC()
+				}
 				update.CompletionStartTime = &completionStart
 			}
 			if end.Usage != nil {
@@ -373,6 +376,12 @@ func (l *Langfuse) generationModelParameters(meta captelemetry.ObservationMeta) 
 
 func (l *Langfuse) turnEndMetadata(end captelemetry.TurnEnd) map[string]string {
 	out := map[string]string{}
+	if end.Steps > 0 {
+		out["steps"] = fmt.Sprint(end.Steps)
+	}
+	if end.StopReason != "" {
+		out["stop_reason"] = end.StopReason
+	}
 	if end.Usage != nil {
 		out["usage_input_tokens"] = fmt.Sprint(end.Usage.InputTokens)
 		out["usage_output_tokens"] = fmt.Sprint(end.Usage.OutputTokens)

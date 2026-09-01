@@ -878,10 +878,8 @@
       state.pendingFiles = [];
       renderAttachments();
 
-      let thinking = "";
-      let answer = "";
-      let lastBubble = null;
-      const toolBubbles = new Map();
+      let lastStreamKey = null;
+      let activeStream = null;
 
       function toolTag(agentId) {
         const id = String(agentId || "");
@@ -890,13 +888,28 @@
         return "tool";
       }
 
-      function streamBubble(role, key, tag) {
-        if (lastBubble && lastBubble.role === role && lastBubble.key === key) return lastBubble;
-        if (role === "thinking") thinking = "";
-        if (role === "assistant") answer = "";
+      function sseStreamKey(event, data) {
+        if (event === "tool_call") {
+          const id = data.tool_call_id;
+          if (id != null && String(id).trim() !== "") {
+            return `tool_call:${id}`;
+          }
+          return `tool_call:${String(data.name || "tool")}`;
+        }
+        return event;
+      }
+
+      function beginStream(key, role, tag) {
+        if (lastStreamKey === key && activeStream) return activeStream;
+        lastStreamKey = key;
         const b = addBubble(role, "", tag);
-        lastBubble = { role, key, body: b.body };
-        return lastBubble;
+        activeStream = { key, body: b.body, text: "" };
+        return activeStream;
+      }
+
+      function resetStream() {
+        lastStreamKey = null;
+        activeStream = null;
       }
 
       const body = { query };
@@ -950,32 +963,29 @@
               if (data.run_id) state.runId = data.run_id;
               setConvLabel();
             } else if (event === "thinking_delta") {
-              const b = streamBubble("thinking", "t", "thinking");
-              if (data.replace) thinking = data.text || "";
-              else thinking += data.text || "";
-              b.body.textContent = thinking;
+              const s = beginStream("thinking_delta", "thinking", "thinking");
+              if (data.replace) s.text = data.text || "";
+              else s.text += data.text || "";
+              s.body.textContent = s.text;
             } else if (event === "text_delta") {
-              const b = streamBubble("assistant", "a", "assistant");
-              if (data.replace) answer = data.text || "";
-              else answer += data.text || "";
-              b.body.textContent = answer;
+              const s = beginStream("text_delta", "assistant", "assistant");
+              if (data.replace) s.text = data.text || "";
+              else s.text += data.text || "";
+              s.body.textContent = s.text;
             } else if (event === "tool_call") {
-              const id = String(data.tool_call_id || "?");
-              let b = toolBubbles.get(id);
-              if (!b) {
-                b = addBubble("tool", "", toolTag(data.agent_id));
-                toolBubbles.set(id, b);
-              }
+              const s = beginStream(sseStreamKey(event, data), "tool", toolTag(data.agent_id));
               const prefix = data.agent_id ? `[${data.agent_id}] ` : "";
               const input = data.input ? "\n" + data.input : "";
-              b.body.textContent = prefix + (data.name || "?") + input;
+              s.body.textContent = prefix + (data.name || "?") + input;
             } else if (event === "file_ready") {
+              resetStream();
               addFileBubble(data);
             } else if (event === "question_request" || event === "permission_request") {
               showIxModal(data);
             } else if (event === "error") {
               addBubble("sys", "error: " + (data.error || JSON.stringify(data)));
             } else if (event === "message_end") {
+              resetStream();
               closeIxModal();
               state.runId = null;
               setConvLabel();

@@ -143,6 +143,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
+		telemetry.RecordTurnSteps(ctx, run.completed)
 		_ = session.AppendTurnEnd(endCtx, sess, a.id, run.completed)
 		if err := a.emitLifecycle(endCtx, input.Emit, sessionID, agentkit.EventTurnEnd, session.TurnEndData{Steps: run.completed}); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
@@ -163,8 +164,11 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 			return err
 		}
 		if !extended {
+			stopReason := string(reason)
+			telemetry.RecordTurnStopReason(ctx, stopReason)
 			telemetry.RecordEvent(ctx, "turn.completed", map[string]string{
-				"steps": fmt.Sprint(run.completed),
+				"steps":       fmt.Sprint(run.completed),
+				"stop_reason": stopReason,
 			})
 			return nil
 		}
@@ -405,20 +409,43 @@ type stepOutcome struct {
 }
 
 func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit) (stepOutcome, error) {
+	stepStarted := time.Now()
+	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+		Name: "agent.step.prep",
+		Kind: telemetry.KindSpan,
+	}))
+	var prepEnd telemetry.ObservationEnd
+	prepDone := false
+	finishPrep := func() {
+		if prepDone {
+			return
+		}
+		prepDone = true
+		endPrep(prepEnd)
+	}
+
 	history, ctx, err := a.prepareStepHistory(ctx, sess)
 	if err != nil {
+		prepEnd.Err = err
+		finishPrep()
 		return stepOutcome{}, err
 	}
 	specs, err := a.tools.Visible(ctx)
 	if err != nil {
+		prepEnd.Err = err
+		finishPrep()
 		return stepOutcome{}, err
 	}
 	messages, err := a.prompt.Assemble(ctx, agentkit.PromptRequest{
 		Messages: history,
 	})
 	if err != nil {
+		prepEnd.Err = err
+		finishPrep()
 		return stepOutcome{}, err
 	}
+	prepEnd.Output = fmt.Sprintf("%d messages, %d tools", len(messages), len(specs))
+	finishPrep()
 
 	inputSummary := telemetry.SummarizeMessages(messages, 8192, false)
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
@@ -449,6 +476,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	var assistant agentkit.ModelMessage
 	var usage *agentkit.Usage
 	gotFirstCompletion := false
+	gotFirstText := false
 	for {
 		if err := ctx.Err(); err != nil {
 			observationEnd.Err = err
@@ -458,6 +486,10 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		if !gotFirstCompletion && telemetry.LLMCompletionStarted(ev) {
 			observationEnd.CompletionStartTime = time.Now().UTC()
 			gotFirstCompletion = true
+		}
+		if !gotFirstText && telemetry.LLMTextStarted(ev) {
+			observationEnd.FirstTextTime = time.Now().UTC()
+			gotFirstText = true
 		}
 		if ev.Message != nil {
 			assistant = *ev.Message
@@ -498,6 +530,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		"session_id", sess.ID(),
 		"model", a.model,
 		"tool_calls", len(assistant.ToolCalls),
+		"duration", time.Since(stepStarted),
 	}
 	if len(toolNames) > 0 {
 		attrs = append(attrs, "tools", toolNames)

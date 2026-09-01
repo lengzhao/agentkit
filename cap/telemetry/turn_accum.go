@@ -10,9 +10,11 @@ import (
 type turnAccumKey struct{}
 
 type turnAccum struct {
-	parts    []string
-	usage    Usage
-	hasUsage bool
+	parts      []string
+	usage      Usage
+	hasUsage   bool
+	steps      int
+	stopReason string
 }
 
 // WithTurnAccum stores per-turn output and usage accumulators on ctx.
@@ -66,6 +68,31 @@ func RecordTurnUsage(ctx context.Context, usage Usage) {
 	acc.hasUsage = true
 }
 
+// RecordTurnSteps records how many model steps completed in the active turn.
+func RecordTurnSteps(ctx context.Context, steps int) {
+	if steps <= 0 {
+		return
+	}
+	acc := turnAccumFrom(ctx)
+	if acc == nil {
+		return
+	}
+	acc.steps = steps
+}
+
+// RecordTurnStopReason records why the turn stopped.
+func RecordTurnStopReason(ctx context.Context, reason string) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return
+	}
+	acc := turnAccumFrom(ctx)
+	if acc == nil {
+		return
+	}
+	acc.stopReason = reason
+}
+
 // TurnEndFromAccum reads accumulated turn output and usage for trace closure.
 func TurnEndFromAccum(ctx context.Context) TurnEnd {
 	acc := turnAccumFrom(ctx)
@@ -80,5 +107,9 @@ func TurnEndFromAccum(ctx context.Context) TurnEnd {
 		usage := acc.usage
 		end.Usage = &usage
 	}
+	if acc.steps > 0 {
+		end.Steps = acc.steps
+	}
+	end.StopReason = acc.stopReason
 	return end
 }

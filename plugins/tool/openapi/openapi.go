@@ -13,6 +13,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/configfile"
 )
@@ -110,8 +111,33 @@ func (p *openapiProvider) cachedAPIs(ctx context.Context) ([]apiConfig, error) {
 func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 	apis, err := p.loadAPIs(ctx)
 	if err != nil {
+		_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+			Name: "openapi.init",
+			Kind: telemetry.KindSpan,
+		})
+		endObservation(telemetry.ObservationEnd{Err: err})
 		return nil, err
 	}
+	if len(apis) == 0 {
+		p.mu.Lock()
+		p.apis = nil
+		p.loaded = true
+		p.mu.Unlock()
+		return nil, nil
+	}
+
+	_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+		Name: "openapi.init",
+		Kind: telemetry.KindSpan,
+	})
+	totalOps := 0
+	for _, api := range apis {
+		totalOps += len(api.Operations)
+	}
+	endObservation(telemetry.ObservationEnd{
+		Output: fmt.Sprintf("%d API(s), %d operation(s)", len(apis), totalOps),
+	})
+
 	p.mu.Lock()
 	p.apis = apis
 	p.loaded = true
