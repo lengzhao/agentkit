@@ -19,12 +19,14 @@ import (
 )
 
 const defaultGlobalAPIFile = "global:api.json"
-
-var defaultAPIFiles = []string{"api.json", defaultGlobalAPIFile}
+const defaultLocalAPIFile = "local:api.json"
 
 type OpenAPIConfig struct {
 	// Files are api.json paths in precedence order; first file wins for duplicate API names.
+	// When omitted, defaults to global:api.json only; set EnableLocal to also load local:api.json.
 	Files []string `json:"files,omitempty"`
+	// EnableLocal allows per-tenant/project local:api.json and /openapi add writes. Off by default.
+	EnableLocal bool `json:"enableLocal,omitempty"`
 }
 
 type OpenAPIDeps struct {
@@ -34,6 +36,7 @@ type OpenAPIDeps struct {
 
 type openapiProvider struct {
 	files       []string
+	enableLocal bool
 	workspace   workspace.Service
 	credentials credentials.Store
 	client      *http.Client
@@ -62,16 +65,43 @@ func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, err
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("tool/openapi requires workspace")
 	}
-	files := cfg.Files
-	if len(files) == 0 {
-		files = defaultAPIFiles
-	}
+	files := resolveAPIFiles(cfg)
 	return &openapiProvider{
 		files:       files,
+		enableLocal: cfg.EnableLocal,
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
 		client:      &http.Client{},
 	}, nil
+}
+
+func resolveAPIFiles(cfg OpenAPIConfig) []string {
+	files := cfg.Files
+	if len(files) == 0 {
+		if cfg.EnableLocal {
+			return []string{defaultLocalAPIFile, defaultGlobalAPIFile}
+		}
+		return []string{defaultGlobalAPIFile}
+	}
+	if !cfg.EnableLocal {
+		return filterGlobalAPIFiles(files)
+	}
+	return files
+}
+
+func filterGlobalAPIFiles(files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, rel := range files {
+		rel = strings.TrimSpace(rel)
+		if rel == "" {
+			continue
+		}
+		scope, _, scoped := workspace.ParseScoped(rel)
+		if scoped && scope == workspace.ScopeGlobal {
+			out = append(out, rel)
+		}
+	}
+	return out
 }
 
 func (p *openapiProvider) ListTools(ctx context.Context) ([]agentkit.Tool, error) {
@@ -145,15 +175,18 @@ func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 	return apis, nil
 }
 
-func (p *openapiProvider) writeTarget(ctx context.Context) (string, error) {
-	rel, err := configfile.WriteTarget(p.files)
+func (p *openapiProvider) writeTarget(ctx context.Context, global bool) (string, error) {
+	rel, err := configfile.WriteTargetForAdd(p.files, global)
 	if err != nil {
 		return "", err
 	}
 	return p.workspace.Resolve(ctx, rel)
 }
 
-func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte) (string, error) {
+func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, global bool) (string, error) {
+	if !global && !p.enableLocal {
+		return "", fmt.Errorf("local openapi is disabled; use /openapi add -g or set enableLocal")
+	}
 	loadSpec := p.specLoader(ctx)
 	cfg, err := parseAPIEntryJSON(name, "command:add", raw, loadSpec)
 	if err != nil {
@@ -164,7 +197,7 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte) (
 		return "", err
 	}
 
-	target, err := p.writeTarget(ctx)
+	target, err := p.writeTarget(ctx, global)
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +275,7 @@ func formatOpenAPIStatus(apis []apiConfig) string {
 func openapiHelp() string {
 	return `Usage:
   /openapi                         show status and help
-  /openapi add <name> <json>       write API to api.json, validate, reload, and verify
+  /openapi add [-g] <name> <json>  write API to api.json, validate, reload, and verify
   /openapi -u                      reload api.json and referenced spec files
 
 JSON format matches one apis entry in api.json, e.g.:
@@ -250,7 +283,8 @@ JSON format matches one apis entry in api.json, e.g.:
   {"path":"api/petstore.json","baseUrl":"https://api.example.com","auth":{"type":"bearer","token":"env:TOKEN"}}
 
 Notes:
-  add writes to the local api.json file (config.files local: entry)
+  add writes to local api.json by default; -g writes to global:api.json
+  when enableLocal is off, only -g is allowed
   See docs/guides/tools.zh.md for full api.json format`
 }
 
@@ -323,18 +357,19 @@ func (c *openapiSyncCommand) CommandExec(ctx context.Context, args string) (stri
 		}
 		return summarizeAPIs(apis), nil
 	case len(rest) >= 1 && rest[0] == "add":
-		if len(rest) < 3 {
-			return "", fmt.Errorf("usage: /openapi add <name> <json>")
+		global, addRest := configfile.PeelGlobalFlag(rest[1:])
+		if len(addRest) < 2 {
+			return "", fmt.Errorf("usage: /openapi add [-g] <name> <json>")
 		}
-		name := strings.TrimSpace(rest[1])
+		name := strings.TrimSpace(addRest[0])
 		if name == "" {
 			return "", fmt.Errorf("api name is required")
 		}
-		return c.provider.addAPI(ctx, name, []byte(strings.Join(rest[2:], " ")))
+		return c.provider.addAPI(ctx, name, []byte(strings.Join(addRest[1:], " ")), global)
 	case len(rest) == 0:
 		return c.provider.statusWithHelp(ctx)
 	default:
-		return "", fmt.Errorf("usage: /openapi | /openapi add <name> <json> | /openapi -u")
+		return "", fmt.Errorf("usage: /openapi | /openapi add [-g] <name> <json> | /openapi -u")
 	}
 }
 

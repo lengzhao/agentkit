@@ -23,6 +23,14 @@ type Command interface {
 // ErrCommandNotHandled means the name is not a registered slash command.
 var ErrCommandNotHandled = errors.New("command not handled")
 
+// ErrCommandForbidden means the caller is not allowed to run the command.
+var ErrCommandForbidden = errors.New("command forbidden")
+
+// SlashAdminContext enriches slash command ctx (for example KeyIsAdmin).
+type SlashAdminContext interface {
+	EnrichSlashContext(ctx context.Context) context.Context
+}
+
 // Commands is a post-build slash command catalog for platforms.
 type Commands interface {
 	Dispatch(ctx context.Context, name string, rawArgs string) (string, error)

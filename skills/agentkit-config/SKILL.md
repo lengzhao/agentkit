@@ -16,7 +16,7 @@ description: 维护已部署 AgentKit 进程的运行时配置（config.yaml、p
 | 类型 | 典型路径 |
 |---|---|
 | L1 override | `config.yaml`（工作目录或启动时指定） |
-| MCP | `local:mcp.json` → `.agentkit/mcp.json`；`global:mcp.json` → `~/.agentkit/mcp.json` |
+| MCP | 默认仅 `global:mcp.json` → `~/.agentkit/mcp.json`；`enableLocal: true` 后另加载 `local:mcp.json` → `.agentkit/mcp.json` |
 | OpenAPI | `local:api.json`、`api/*.json` |
 | 子 agent | `local:agents/*.md`、`global:agents/*.md` |
 | Skills | `local:skills/`、`global:skills/`、`local:../skills/` |
@@ -64,7 +64,7 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | `runner.default` | 并发与 session 语义 | `sessionScope`、`maxConcurrentTurns`、`inject`、`defaultTimezone` |
 | `platform.default` | 入口形态 | `platform/cli`、`platform/worker` 等 |
 | `credentials.default` | 密钥解析 | `.env` 文件列表 |
-| `mcp.default` | MCP 配置文件列表 | `files` 路径 |
+| `mcp.default` | MCP 配置文件列表 | `files` 路径；`enableLocal` 开启 local |
 | `openapi.default` | OpenAPI 索引文件列表 | `files` 路径 |
 
 ## Workspace 路径
@@ -172,10 +172,7 @@ prompt.custom.default:
 
 YAML 实例 `mcp.default` 在启动时读取磁盘上的 `mcp.json` 并注册动态工具。
 
-**文件布局**：顶层 `mcpServers`，格式与 Cursor 一致。默认查找顺序：
-
-- `local:mcp.json` → `.agentkit/mcp.json`
-- `global:mcp.json` → `~/.agentkit/mcp.json`
+**文件布局**：顶层 `mcpServers`，格式与 Cursor 一致。默认只加载 `global:mcp.json`（`~/.agentkit/mcp.json`）。设 `enableLocal: true` 后另加载 `local:mcp.json`（`.agentkit/mcp.json`）。
 
 先命中者赢（按 server 名去重）。部分部署可能配置了额外路径，以 `mcp.default.config.files` 为准。
 

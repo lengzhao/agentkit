@@ -102,7 +102,13 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 	if slash.UserID != "" {
 		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, slash.UserID)
 	}
+	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
+		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
+	}
 	out, err := commands.Dispatch(cmdCtx, name, args)
+	if errors.Is(err, agentkit.ErrCommandForbidden) {
+		return SlashOutcome{Kind: SlashHandled, Reply: UnauthorizedMessage}, nil
+	}
 	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		return SlashOutcome{
 			Kind:  SlashForward,

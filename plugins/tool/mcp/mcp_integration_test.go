@@ -90,7 +90,7 @@ func newTestMCPProvider(t *testing.T) (*mcpProvider, string) {
 	return &mcpProvider{
 		files:     []string{configPath},
 		workspace: &testWorkspace{root: dir},
-		pool:      newClientPool(),
+		pool:      newClientPool(0),
 	}, mcpRoot
 }
 
@@ -193,9 +193,10 @@ func TestMCPServerAddCommand(t *testing.T) {
 	}
 
 	provider := &mcpProvider{
-		files:     []string{filepath.Join(dir, "mcp.json")},
-		workspace: &testWorkspace{root: dir},
-		pool:      newClientPool(),
+		files:       []string{filepath.Join(dir, "mcp.json")},
+		enableLocal: true,
+		workspace:   &testWorkspace{root: dir},
+		pool:        newClientPool(0),
 	}
 	ctx := context.Background()
 	cp, ok := agentkit.ToolProvider(provider).(agentkit.CommandProvider)

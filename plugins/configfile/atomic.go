@@ -9,18 +9,44 @@ import (
 
 // WriteTarget picks the local-scoped config path used for /add writes.
 func WriteTarget(files []string) (string, error) {
+	return WriteTargetForAdd(files, false)
+}
+
+// WriteTargetForAdd picks the config file path for /add writes.
+// When global is true, the first global: entry wins; otherwise local: then any bare path.
+func WriteTargetForAdd(files []string, global bool) (string, error) {
+	want := "local:"
+	if global {
+		want = "global:"
+	}
 	for _, f := range files {
 		f = strings.TrimSpace(f)
-		if strings.HasPrefix(f, "local:") {
+		if strings.HasPrefix(f, want) {
 			return f, nil
 		}
+	}
+	if global {
+		return "", fmt.Errorf("no global config file configured")
 	}
 	for _, f := range files {
-		if f = strings.TrimSpace(f); f != "" {
+		if f = strings.TrimSpace(f); f != "" && !strings.Contains(f, ":") {
 			return f, nil
 		}
 	}
-	return "", fmt.Errorf("no config file configured")
+	return "", fmt.Errorf("no local config file configured")
+}
+
+// PeelGlobalFlag removes -g/--global from args.
+func PeelGlobalFlag(args []string) (global bool, rest []string) {
+	for _, arg := range args {
+		switch arg {
+		case "-g", "--global":
+			global = true
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return global, rest
 }
 
 // WriteAtomic writes data to path via a temp file in the same directory.

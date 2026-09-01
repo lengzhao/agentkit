@@ -79,6 +79,9 @@ platform.acp:
 
 commands.default:
   use: commands/registry
+  # config:
+  #   admins: [U02ABC]
+  #   adminOnly: [shell, sh, cron, env, mcp, openapi, send]
 
 loop.default:
   use: loop/default
@@ -480,8 +483,8 @@ mcp.default:
   use: tool/mcp
   config:
     files:
-      - local:mcp.json
       - global:mcp.json
+    idleTimeoutSeconds: 300
   deps:
     workspace: workspace.default
     credentials: credentials.default
@@ -490,7 +493,6 @@ openapi.default:
   use: tool/openapi
   config:
     files:
-      - local:api.json
       - global:api.json
   deps:
     workspace: workspace.default

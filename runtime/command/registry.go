@@ -18,6 +18,12 @@ type Config struct {
 	Allow []string `json:"allow,omitempty"`
 	// Deny hides these command names; applied after Allow.
 	Deny []string `json:"deny,omitempty"`
+	// Admins lists user IDs that may run admin-only slash commands. Matching is
+	// case-insensitive. When empty, admin restrictions are not enforced.
+	Admins []string `json:"admins,omitempty"`
+	// AdminOnly lists command names and aliases that require an admin user when
+	// Admins is non-empty.
+	AdminOnly []string `json:"adminOnly,omitempty"`
 }
 
 type Deps struct{}
@@ -116,6 +122,7 @@ func (r *Registry) register(cmd agentkit.Command) error {
 }
 
 func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (string, error) {
+	ctx = r.EnrichSlashContext(ctx)
 	key := normalizeName(name)
 	if key == "" {
 		return "", agentkit.ErrCommandNotHandled
@@ -124,7 +131,55 @@ func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (s
 	if !ok {
 		return "", agentkit.ErrCommandNotHandled
 	}
+	if r.requiresAdmin(key, cmd) && !agentkit.IsAdmin(ctx) {
+		return "", agentkit.ErrCommandForbidden
+	}
 	return cmd.CommandExec(ctx, rawArgs)
+}
+
+// EnrichSlashContext sets KeyIsAdmin when the current user matches Config.Admins.
+func (r *Registry) EnrichSlashContext(ctx context.Context) context.Context {
+	if len(r.cfg.Admins) == 0 {
+		return ctx
+	}
+	userID, _ := ctx.Value(agentkit.KeyUserID).(string)
+	if !isAdminUser(r.cfg.Admins, userID) {
+		return ctx
+	}
+	return context.WithValue(ctx, agentkit.KeyIsAdmin, true)
+}
+
+func (r *Registry) requiresAdmin(dispatchName string, cmd agentkit.Command) bool {
+	if len(r.cfg.Admins) == 0 || len(r.cfg.AdminOnly) == 0 {
+		return false
+	}
+	candidates := []string{
+		normalizeName(dispatchName),
+		normalizeName(cmd.Name()),
+		normalizeName(cmd.Alias()),
+	}
+	for _, item := range r.cfg.AdminOnly {
+		key := normalizeName(item)
+		for _, name := range candidates {
+			if name != "" && key == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isAdminUser(admins []string, userID string) bool {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false
+	}
+	for _, id := range admins {
+		if strings.EqualFold(strings.TrimSpace(id), userID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Registry) List() []agentkit.Command {
@@ -137,9 +192,10 @@ func (r *Registry) List() []agentkit.Command {
 }
 
 var (
-	_ agentkit.Commands         = (*Registry)(nil)
-	_ agentkit.CommandCollector = (*Registry)(nil)
-	_ agentkit.CommandProvider  = (*Registry)(nil)
+	_ agentkit.Commands           = (*Registry)(nil)
+	_ agentkit.CommandCollector   = (*Registry)(nil)
+	_ agentkit.CommandProvider    = (*Registry)(nil)
+	_ agentkit.SlashAdminContext  = (*Registry)(nil)
 )
 
 func normalizeName(name string) string {

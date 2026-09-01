@@ -18,17 +18,17 @@ import (
 )
 
 type clientPool struct {
-	mu sync.Mutex
-	// sessions is keyed by tenant and server name, not server name alone. Two
-	// tenants routinely declare the same server ("filesystem") pointed at their
-	// own workspace; sharing a slot made every alternating call evict the other
-	// tenant's client and respawn its subprocess.
+	mu       sync.Mutex
 	sessions map[string]*serverSession
+	idleTTL  time.Duration
+	now      func() time.Time
+	stopCh   chan struct{}
 }
 
 type serverSession struct {
 	fingerprint string
 	client      *mcpclient.Client
+	lastUsed    time.Time
 }
 
 type mcpCallOutcome struct {
@@ -36,8 +36,34 @@ type mcpCallOutcome struct {
 	IsError bool
 }
 
-func newClientPool() *clientPool {
-	return &clientPool{sessions: make(map[string]*serverSession)}
+func newClientPool(idleTTL time.Duration) *clientPool {
+	p := &clientPool{
+		sessions: make(map[string]*serverSession),
+		idleTTL:  idleTTL,
+		now:      time.Now,
+		stopCh:   make(chan struct{}),
+	}
+	if idleTTL > 0 {
+		go p.reapLoop(idleTTL)
+	}
+	return p
+}
+
+func (p *clientPool) reapLoop(idleTTL time.Duration) {
+	interval := idleTTL / 2
+	if interval < 30*time.Second {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		case <-ticker.C:
+			p.evictIdle(p.now())
+		}
+	}
 }
 
 func (p *clientPool) tools(ctx context.Context, server serverConfig, creds credentials.Store) ([]toolDefinition, error) {
@@ -95,10 +121,15 @@ func (p *clientPool) call(ctx context.Context, server serverConfig, toolName str
 	return convertCallResult(result), nil
 }
 
-// poolKey scopes a pooled client to the tenant that opened it. Within one tenant
-// the fingerprint still decides replacement, so editing mcp.json reconnects
-// rather than accumulating a second client.
+// poolKey scopes a pooled client. Global servers (from global:mcp.json) share one
+// slot process-wide; local servers are keyed per tenant so two tenants can run
+// same-named servers pointed at different workspaces without evicting each other.
+// Within a slot the fingerprint still decides replacement, so editing mcp.json
+// reconnects rather than accumulating a second client.
 func poolKey(ctx context.Context, server serverConfig) string {
+	if server.Global {
+		return "global\x00" + server.Name
+	}
 	return tenant.FromContext(ctx) + "\x00" + server.Name
 }
 
@@ -107,7 +138,9 @@ func (p *clientPool) ensure(ctx context.Context, server serverConfig, creds cred
 	key := poolKey(ctx, server)
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.evictIdleLocked(p.now())
 	if sess, ok := p.sessions[key]; ok && sess.fingerprint == fp && sess.client != nil {
+		sess.lastUsed = p.now()
 		return sess.client, nil
 	}
 	if sess, ok := p.sessions[key]; ok && sess.client != nil {
@@ -117,7 +150,8 @@ func (p *clientPool) ensure(ctx context.Context, server serverConfig, creds cred
 	if err != nil {
 		return nil, err
 	}
-	p.sessions[key] = &serverSession{fingerprint: fp, client: client}
+	now := p.now()
+	p.sessions[key] = &serverSession{fingerprint: fp, client: client, lastUsed: now}
 	return client, nil
 }
 
@@ -128,6 +162,28 @@ func (p *clientPool) evict(key string) {
 		sess.client.Close()
 	}
 	delete(p.sessions, key)
+}
+
+func (p *clientPool) evictIdle(now time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.evictIdleLocked(now)
+}
+
+func (p *clientPool) evictIdleLocked(now time.Time) {
+	if p.idleTTL <= 0 {
+		return
+	}
+	for key, sess := range p.sessions {
+		if now.Sub(sess.lastUsed) < p.idleTTL {
+			continue
+		}
+		if sess.client != nil {
+			sess.client.Close()
+		}
+		delete(p.sessions, key)
+		slog.Debug("mcp connection closed idle", "pool_key", key, "idle", now.Sub(sess.lastUsed))
+	}
 }
 
 func connectServer(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {

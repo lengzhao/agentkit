@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
@@ -16,12 +17,19 @@ import (
 )
 
 const defaultGlobalMCPFile = "global:mcp.json"
+const defaultLocalMCPFile = "local:mcp.json"
 
-var defaultMCPFiles = []string{".cursor/mcp.json", defaultGlobalMCPFile}
+const defaultMCPIdleTimeout = 5 * time.Minute
 
 type MCPConfig struct {
 	// Files are MCP config paths in precedence order; first file wins for duplicate server names.
+	// When omitted, defaults to global:mcp.json only; set EnableLocal to also load local:mcp.json.
 	Files []string `json:"files,omitempty"`
+	// EnableLocal allows per-tenant/project local:mcp.json and /mcp add writes. Off by default.
+	EnableLocal bool `json:"enableLocal,omitempty"`
+	// IdleTimeoutSeconds closes pooled MCP connections after this many seconds without
+	// use. Omitted defaults to 300; set to 0 to disable idle eviction.
+	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
 }
 
 type MCPDeps struct {
@@ -31,6 +39,7 @@ type MCPDeps struct {
 
 type mcpProvider struct {
 	files       []string
+	enableLocal bool
 	workspace   workspace.Service
 	credentials credentials.Store
 	pool        *clientPool
@@ -49,23 +58,61 @@ type mcpTool struct {
 // NewMCP registers tool/mcp: Load mcpServers JSON and expose MCP tools as dynamic model-visible tools.
 //
 // Best practices:
-//   - Put project servers in .cursor/mcp.json; use global:mcp.json for cross-project defaults.
+//   - Shared servers belong in global:mcp.json; per-project servers need enableLocal and local:mcp.json.
 //   - Mount via tools/runtime deps.dynamicTools, not deps.tools, because definitions are discovered at runtime.
 //   - Server configs and their tool lists are loaded once and cached; run the "mcp" command to reload mcp.json and rediscover tools after editing it or restarting a server.
+//   - Pooled connections are closed after idleTimeoutSeconds (default 300) without use; the next call reconnects.
 func NewMCP(cfg MCPConfig, deps MCPDeps) (agentkit.ToolProvider, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("tool/mcp requires workspace")
 	}
-	files := cfg.Files
-	if len(files) == 0 {
-		files = defaultMCPFiles
-	}
+	files := resolveMCPFiles(cfg)
 	return &mcpProvider{
 		files:       files,
+		enableLocal: cfg.EnableLocal,
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
-		pool:        newClientPool(),
+		pool:        newClientPool(idleTimeoutFromConfig(cfg.IdleTimeoutSeconds)),
 	}, nil
+}
+
+func resolveMCPFiles(cfg MCPConfig) []string {
+	files := cfg.Files
+	if len(files) == 0 {
+		if cfg.EnableLocal {
+			return []string{defaultLocalMCPFile, defaultGlobalMCPFile}
+		}
+		return []string{defaultGlobalMCPFile}
+	}
+	if !cfg.EnableLocal {
+		return filterGlobalMCPFiles(files)
+	}
+	return files
+}
+
+func filterGlobalMCPFiles(files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, rel := range files {
+		rel = strings.TrimSpace(rel)
+		if rel == "" {
+			continue
+		}
+		scope, _, scoped := workspace.ParseScoped(rel)
+		if scoped && scope == workspace.ScopeGlobal {
+			out = append(out, rel)
+		}
+	}
+	return out
+}
+
+func idleTimeoutFromConfig(seconds *int) time.Duration {
+	if seconds == nil {
+		return defaultMCPIdleTimeout
+	}
+	if *seconds <= 0 {
+		return 0
+	}
+	return time.Duration(*seconds) * time.Second
 }
 
 func (p *mcpProvider) ListTools(ctx context.Context) ([]agentkit.Tool, error) {
@@ -154,15 +201,18 @@ func (p *mcpProvider) discoverTools(ctx context.Context, servers []serverConfig)
 	return defs, nil
 }
 
-func (p *mcpProvider) writeTarget(ctx context.Context) (string, error) {
-	rel, err := configfile.WriteTarget(p.files)
+func (p *mcpProvider) writeTarget(ctx context.Context, global bool) (string, error) {
+	rel, err := configfile.WriteTargetForAdd(p.files, global)
 	if err != nil {
 		return "", err
 	}
 	return p.workspace.Resolve(ctx, rel)
 }
 
-func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte) (string, error) {
+func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, global bool) (string, error) {
+	if !global && !p.enableLocal {
+		return "", fmt.Errorf("local mcp is disabled; use /mcp add -g or set enableLocal")
+	}
 	cfg, err := parseServerJSON(name, "command:add", raw)
 	if err != nil {
 		return "", err
@@ -172,7 +222,7 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte) (s
 		return "", fmt.Errorf("mcp server %q probe failed: %w", name, err)
 	}
 
-	target, err := p.writeTarget(ctx)
+	target, err := p.writeTarget(ctx, global)
 	if err != nil {
 		return "", err
 	}
@@ -243,7 +293,7 @@ func formatMCPStatus(defs []toolDefinition) string {
 func mcpHelp() string {
 	return `Usage:
   /mcp                         show status and help
-  /mcp add <name> <json>       write server to mcp.json, probe, reload, and verify
+  /mcp add [-g] <name> <json>  write server to mcp.json, probe, reload, and verify
   /mcp -u                      reload mcp.json and rediscover tools
 
 JSON format matches one mcpServers entry, e.g.:
@@ -252,7 +302,8 @@ JSON format matches one mcpServers entry, e.g.:
   {"url":"http://127.0.0.1:8080/mcp","bind":{"X-User-Id":{"from":"ctx:user_id","in":"header"}}}
 
 Notes:
-  add writes to the local mcp.json file (config.files local: entry)
+  add writes to local mcp.json by default; -g writes to global:mcp.json
+  when enableLocal is off, only -g is allowed
   See docs/guides/tools.zh.md for full mcp.json format`
 }
 
@@ -286,6 +337,8 @@ func (p *mcpProvider) loadServers(ctx context.Context) ([]serverConfig, error) {
 	seen := make(map[string]struct{})
 	var out []serverConfig
 	for _, rel := range p.files {
+		scope, _, scoped := workspace.ParseScoped(rel)
+		fromGlobal := scoped && scope == workspace.ScopeGlobal
 		path, err := p.workspace.Resolve(ctx, rel)
 		if err != nil {
 			continue
@@ -308,6 +361,7 @@ func (p *mcpProvider) loadServers(ctx context.Context) ([]serverConfig, error) {
 				continue
 			}
 			seen[server.Name] = struct{}{}
+			server.Global = fromGlobal
 			out = append(out, server)
 		}
 	}
@@ -339,18 +393,19 @@ func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, 
 		}
 		return summarizeMCPTools(defs), nil
 	case len(rest) >= 1 && rest[0] == "add":
-		if len(rest) < 3 {
-			return "", fmt.Errorf("usage: /mcp add <name> <json>")
+		global, addRest := configfile.PeelGlobalFlag(rest[1:])
+		if len(addRest) < 2 {
+			return "", fmt.Errorf("usage: /mcp add [-g] <name> <json>")
 		}
-		name := strings.TrimSpace(rest[1])
+		name := strings.TrimSpace(addRest[0])
 		if name == "" {
 			return "", fmt.Errorf("server name is required")
 		}
-		return c.provider.addServer(ctx, name, []byte(strings.Join(rest[2:], " ")))
+		return c.provider.addServer(ctx, name, []byte(strings.Join(addRest[1:], " ")), global)
 	case len(rest) == 0:
 		return c.provider.statusWithHelp(ctx)
 	default:
-		return "", fmt.Errorf("usage: /mcp | /mcp add <name> <json> | /mcp -u")
+		return "", fmt.Errorf("usage: /mcp | /mcp add [-g] <name> <json> | /mcp -u")
 	}
 }
 

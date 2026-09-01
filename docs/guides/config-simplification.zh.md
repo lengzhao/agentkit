@@ -325,6 +325,23 @@ Slash 命令**不必**在 `commands.default.deps` 里逐个挂：只要贡献方
 
 关掉某个 tool 或从图里移除对应实例，其 slash 命令一并消失。
 
+### Slash 管理员
+
+在 `commands/registry.config` 同时配置 `admins`（管理员用户 ID）与 `adminOnly`（受限命令名/别名）。两者都非空时才启用限制：
+
+- 非管理员调用 `adminOnly` 中的命令会被拒绝
+- registry 在 `ctx` 写入 `agentkit.KeyIsAdmin`，命令实现可调用 `agentkit.IsAdmin(ctx)`
+
+```yaml
+commands.default:
+  use: commands/registry
+  config:
+    admins: [U02ABC, U03DEF]
+    adminOnly: [shell, sh, cron, env, mcp, openapi, send]
+```
+
+未配置 `admins` 或 `adminOnly` 时不做限制，与旧行为兼容。
+
 ## 11. 路线
 
 ```mermaid

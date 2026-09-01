@@ -16,6 +16,13 @@ import (
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
+func localOpenAPIConfig() OpenAPIConfig {
+	return OpenAPIConfig{
+		EnableLocal: true,
+		Files:       []string{"api.json", "global:api.json"},
+	}
+}
+
 func TestOpenAPIToolEndToEnd(t *testing.T) {
 	t.Setenv("TESTAPI_TOKEN", "s3cr3t")
 
@@ -86,7 +93,7 @@ func TestOpenAPIToolEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -160,7 +167,7 @@ func TestOpenAPIToolMissingRequiredPathParam(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -204,7 +211,7 @@ func TestOpenAPIToolSpecFileEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -266,7 +273,7 @@ func TestOpenAPIToolBindFromContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -338,7 +345,7 @@ func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -380,7 +387,7 @@ func TestOpenAPIToolBindMissingContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -415,7 +422,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 	}
 	writeAPI("a")
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -463,7 +470,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 func TestOpenAPIAddCommand(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -488,6 +495,31 @@ func TestOpenAPIAddCommand(t *testing.T) {
 	}
 }
 
+func TestOpenAPIAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
+	t.Parallel()
+
+	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	cmd := provider.(agentkit.CommandProvider).Commands()[0]
+	json := `{"baseUrl":"https://example.com","paths":{"/ping":{"get":{"operationId":"ping"}}}}`
+
+	_, err = cmd.CommandExec(ctx, "add demo "+json)
+	if err == nil || !strings.Contains(err.Error(), "local openapi is disabled") {
+		t.Fatalf("add without -g = %v, want local disabled error", err)
+	}
+
+	out, err := cmd.CommandExec(ctx, "add -g demo "+json)
+	if err != nil {
+		t.Fatalf("add with -g: %v", err)
+	}
+	if !strings.Contains(out, "verified") {
+		t.Fatalf("output=%q, want verified", out)
+	}
+}
+
 func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
 	t.Parallel()
 
@@ -500,7 +532,7 @@ func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
 	ctx := telemetry.WithExporter(context.Background(), rec)
 	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
 
-	provider, err := NewOpenAPI(OpenAPIConfig{}, OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

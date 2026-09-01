@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -55,6 +56,66 @@ func TestMergeHeaderFuncStaticAndBind(t *testing.T) {
 	}
 	if headers["X-User-Id"] != "u-9" {
 		t.Fatalf("bind header = %q", headers["X-User-Id"])
+	}
+}
+
+func TestPoolKeyGlobalVsTenant(t *testing.T) {
+	t.Parallel()
+
+	globalServer := serverConfig{Name: "remote", Global: true}
+	localServer := serverConfig{Name: "filesystem"}
+
+	ctxA := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
+	ctxB := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C002"))
+
+	globalA := poolKey(ctxA, globalServer)
+	globalB := poolKey(ctxB, globalServer)
+	if globalA != globalB {
+		t.Fatalf("global pool keys differ: %q vs %q", globalA, globalB)
+	}
+
+	localA := poolKey(ctxA, localServer)
+	localB := poolKey(ctxB, localServer)
+	if localA == localB {
+		t.Fatalf("local pool keys should differ by tenant: %q", localA)
+	}
+}
+
+func TestClientPoolEvictIdle(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	now := base
+	pool := &clientPool{
+		sessions: map[string]*serverSession{
+			"stale": {lastUsed: base.Add(-10 * time.Minute)},
+			"fresh": {lastUsed: base},
+		},
+		idleTTL: 5 * time.Minute,
+		now:     func() time.Time { return now },
+	}
+	pool.evictIdle(now)
+	if _, ok := pool.sessions["stale"]; ok {
+		t.Fatal("stale session should be evicted")
+	}
+	if _, ok := pool.sessions["fresh"]; !ok {
+		t.Fatal("fresh session should remain")
+	}
+}
+
+func TestIdleTimeoutFromConfig(t *testing.T) {
+	t.Parallel()
+
+	if got := idleTimeoutFromConfig(nil); got != defaultMCPIdleTimeout {
+		t.Fatalf("nil = %v, want default %v", got, defaultMCPIdleTimeout)
+	}
+	zero := 0
+	if got := idleTimeoutFromConfig(&zero); got != 0 {
+		t.Fatalf("zero = %v, want disabled", got)
+	}
+	custom := 120
+	if got := idleTimeoutFromConfig(&custom); got != 2*time.Minute {
+		t.Fatalf("custom = %v, want 2m", got)
 	}
 }
 

@@ -175,3 +175,47 @@ func TestProcessSlashUnknownForwards(t *testing.T) {
 		t.Fatalf("unexpected outcome: %+v", out)
 	}
 }
+
+type adminRegistry struct {
+	stubCommands
+	admins []string
+}
+
+func (r adminRegistry) EnrichSlashContext(ctx context.Context) context.Context {
+	userID, _ := ctx.Value(agentkit.KeyUserID).(string)
+	for _, id := range r.admins {
+		if strings.EqualFold(id, userID) {
+			return context.WithValue(ctx, agentkit.KeyIsAdmin, true)
+		}
+	}
+	return ctx
+}
+
+func (r adminRegistry) Dispatch(ctx context.Context, name string, rawArgs string) (string, error) {
+	ctx = r.EnrichSlashContext(ctx)
+	if name == "shell" && !agentkit.IsAdmin(ctx) {
+		return "", agentkit.ErrCommandForbidden
+	}
+	return r.stubCommands.Dispatch(ctx, name, rawArgs)
+}
+
+func TestProcessSlashForbidden(t *testing.T) {
+	cmds := adminRegistry{
+		stubCommands: stubCommands{byName: map[string]agentkit.Command{
+			"shell": stubCommand{name: "shell", out: "ran"},
+		}},
+		admins: []string{"U1"},
+	}
+	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
+		DeliverySessionID: "slack:C",
+		PlatformID:        "slack",
+		SessionScope:      session.ScopeChannel,
+		UserID:            "U2",
+	}, "/shell echo hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled || out.Reply != UnauthorizedMessage {
+		t.Fatalf("unexpected outcome: %+v", out)
+	}
+}

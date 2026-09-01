@@ -13,6 +13,20 @@ sessionStore.default:
     workspace: workspace.default
 
 # local 根为 .agentkit；文件工具与 shell 通过 .. 落到项目根目录。
+mcp.default:
+  config:
+    enableLocal: true
+    files:
+      - local:mcp.json
+      - global:mcp.json
+
+openapi.default:
+  config:
+    enableLocal: true
+    files:
+      - local:api.json
+      - global:api.json
+
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:

@@ -176,8 +176,9 @@ go run ./cmd/agent -config presets/web.yaml "查一下官方说法并附来源"
 mcp.default:
   use: tool/mcp
   config:
+    enableLocal: true
     files:
-      - .cursor/mcp.json
+      - local:mcp.json
       - global:mcp.json
   deps:
     workspace: workspace.default
@@ -192,11 +193,13 @@ tools.default:
       - mcp.default
 ```
 
-先命中的文件赢。server 配置和每个 server 的工具列表**只加载一次并缓存在内存里**；`ListTools`/调用工具都读缓存，不会每次都重读 `mcp.json` 或重新对每个 server 发一次 `ListTools` RPC。编辑 `mcp.json`、或重启了某个 server 之后，运行 `/mcp -u` 强制重新读取配置并重新发现工具；也可用 `/mcp add <name> <json>` 将 server 写入本地 `mcp.json`（先探活校验，失败则回滚文件）。`tool/mcp` 通过 `agentkit.CommandProvider` 贡献这些 command，与模型可见的 Tool 是两套机制，命令本身不会出现在模型的工具列表里。单个 server 连不上只跳过该 server 并 `slog.Warn`。
+先命中的文件赢。默认只加载 `global:mcp.json`；需要租户/项目级 `local:mcp.json` 时设置 `enableLocal: true`。`/mcp add` 默认写 local，加 `-g` 写全局；`enableLocal` 关闭时只能用 `/mcp add -g`。server 配置和每个 server 的工具列表**只加载一次并缓存在内存里**；`ListTools`/调用工具都读缓存，不会每次都重读 `mcp.json` 或重新对每个 server 发一次 `ListTools` RPC。编辑 `mcp.json`、或重启了某个 server 之后，运行 `/mcp -u` 强制重新读取配置并重新发现工具；也可用 `/mcp add [-g] <name> <json>` 写入配置（先探活校验，失败则回滚文件）。`tool/mcp` 通过 `agentkit.CommandProvider` 贡献这些 command，与模型可见的 Tool 是两套机制，命令本身不会出现在模型的工具列表里。单个 server 连不上只跳过该 server 并 `slog.Warn`。
+
+已建立的 MCP 连接在**空闲**超过 `idleTimeoutSeconds`（默认 300 秒）后会被主动关闭；下次调用时自动重连。设为 `0` 可关闭空闲回收。
 
 **配置约定与维护流程**见 Skill **`mcp-manager`**（`skills/mcp-manager/SKILL.md`，经 `skill(name="mcp-manager")` 加载）。Agent 用 read/edit 改配置后，需请用户执行 `/mcp -u` 刷新动态工具。
 
-多租户场景 MCP 客户端池按 `(租户键, server 名)` 分槽，见 [multi-tenant.zh.md](multi-tenant.zh.md)。
+多租户场景：`global:mcp.json` 中的 server 进程内共享一条连接；`local:mcp.json` 按 `(租户键, server 名)` 分槽，见 [multi-tenant.zh.md](multi-tenant.zh.md)。
 
 ## OpenAPI 动态工具
 
@@ -308,6 +311,7 @@ tools.default:
 openapi.default:
   use: tool/openapi
   config:
+    enableLocal: true
     files:
       - local:api.json
       - global:api.json
@@ -324,7 +328,7 @@ tools.default:
       - openapi.default
 ```
 
-先命中的文件赢（按 `apis` 里的 name 去重）。解析结果**只加载一次并缓存在内存里**：`ListTools` 读缓存，不会每次都重读 `api.json` 或它引用的 OpenAPI 文档。编辑 `api.json`（或它指向的文档）之后，运行 **`/openapi -u`** 强制重新读取磁盘并刷新动态工具；也可用 **`/openapi add <name> <json>`** 写入索引（先校验，失败回滚）。`tool/openapi` 通过 `agentkit.CommandProvider` 贡献 slash command，与模型可见的 Tool 是两套机制。维护指南见 Skill **`openapi-manager`**。
+先命中的文件赢（按 `apis` 里的 name 去重）。默认只加载 `global:api.json`；需要 local 时设 `enableLocal: true`。`/openapi add` 默认写 local，`-g` 写全局；`enableLocal` 关闭时只能用 `/openapi add -g`。解析结果**只加载一次并缓存在内存里**：`ListTools` 读缓存，不会每次都重读 `api.json` 或它引用的 OpenAPI 文档。编辑 `api.json`（或它指向的文档）之后，运行 **`/openapi -u`** 强制重新读取磁盘并刷新动态工具；也可用 **`/openapi add [-g] <name> <json>`** 写入索引（先校验，失败回滚）。`tool/openapi` 通过 `agentkit.CommandProvider` 贡献 slash command，与模型可见的 Tool 是两套机制。维护指南见 Skill **`openapi-manager`**。
 
 ### Agent 维护（Skill + `/openapi`）
 
@@ -336,6 +340,6 @@ tools.default:
 |---|---|
 | `/openapi` | 查看当前已加载 API 与帮助 |
 | `/openapi -u` | 重读 `api.json` 与 OpenAPI 文档，刷新动态 HTTP 工具 |
-| `/openapi add <name> <json>` | 追加索引条目（校验、写盘、失败回滚） |
+| `/openapi add [-g] <name> <json>` | 追加索引条目（`-g` 写全局；校验、写盘、失败回滚） |
 
 推荐流程：`skill(openapi-manager)` → `read`/`edit` 改文件 → 请用户 `/openapi -u`。

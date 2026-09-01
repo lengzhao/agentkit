@@ -229,7 +229,7 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 		"tool/mcp": {
 			ID: "mcp.default",
 			Config: map[string]any{
-				"files": []any{"local:mcp.json", "global:mcp.json"},
+				"files": []any{"global:mcp.json"},
 			},
 			Deps: map[string]any{
 				"workspace":   "workspace.default",
@@ -239,7 +239,7 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 		"tool/openapi": {
 			ID: "openapi.default",
 			Config: map[string]any{
-				"files": []any{"local:api.json", "global:api.json"},
+				"files": []any{"global:api.json"},
 			},
 			Deps: map[string]any{
 				"workspace":   "workspace.default",

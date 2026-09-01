@@ -92,8 +92,8 @@ loop.default:
 mcp.default:
     config:
         files:
-            - local:mcp.json
             - global:mcp.json
+        idleTimeoutSeconds: 300
     deps:
         credentials: credentials.default
         workspace: workspace.default

@@ -158,7 +158,17 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	}
 
 	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, p.sessionID)
+	if userID := cliUserID(); userID != "" {
+		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, userID)
+	}
+	if enricher, ok := p.commands.(agentkit.SlashAdminContext); ok {
+		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
+	}
 	out, err := p.commands.Dispatch(cmdCtx, name, args)
+	if errors.Is(err, agentkit.ErrCommandForbidden) {
+		fmt.Fprintln(os.Stderr, common.UnauthorizedMessage)
+		return true, nil
+	}
 	if errors.Is(err, agentkit.ErrCommandNotHandled) {
 		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
 		return true, nil
@@ -390,6 +400,13 @@ func textOf(msg agentkit.ModelMessage) string {
 
 func stringsHasSuffix(s, suffix string) bool {
 	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
+func cliUserID() string {
+	if user := strings.TrimSpace(os.Getenv("USER")); user != "" {
+		return user
+	}
+	return "cli"
 }
 
 func resolveCLISessionID(store agentkit.SessionStore) agentkit.SessionID {

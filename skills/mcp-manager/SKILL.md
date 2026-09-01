@@ -11,10 +11,9 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取；运行中不支持热
 
 ## 文件布局
 
-顶层 `mcpServers`，格式与 Cursor 一致。默认查找顺序：
+顶层 `mcpServers`，格式与 Cursor 一致。默认只加载 `global:mcp.json`（`~/.agentkit/mcp.json`）。
 
-- `local:mcp.json` → `.agentkit/mcp.json`
-- `global:mcp.json` → `~/.agentkit/mcp.json`
+开启 `mcp.default.config.enableLocal: true` 后另加载 `local:mcp.json`。`/mcp add` 默认写 local，`-g` 写 `global:mcp.json`；`enableLocal` 关闭时只能用 `/mcp add -g`。
 
 先命中者赢（按 server 名去重）。部分 preset 可能叠加其他路径，以 `mcp.default.config.files` 为准。路径经 workspace 解析，可用 `local:` / `global:` 前缀。
 

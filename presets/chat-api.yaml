@@ -33,6 +33,20 @@ workspace.default:
     # 目录名不带 platform 前缀：slack:C123 -> .agentkit/C123
     omitPlatformPrefix: true
 
+mcp.default:
+  config:
+    enableLocal: true
+    files:
+      - local:mcp.json
+      - global:mcp.json
+
+openapi.default:
+  config:
+    enableLocal: true
+    files:
+      - local:api.json
+      - global:api.json
+
 sessionStore.default:
   use: session/store
   config:

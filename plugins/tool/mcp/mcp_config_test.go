@@ -97,6 +97,35 @@ func TestParseConfigFileTransportHeaders(t *testing.T) {
 	}
 }
 
+func TestResolveMCPFiles(t *testing.T) {
+	t.Parallel()
+
+	got := resolveMCPFiles(MCPConfig{})
+	if len(got) != 1 || got[0] != defaultGlobalMCPFile {
+		t.Fatalf("default = %v, want only global", got)
+	}
+
+	got = resolveMCPFiles(MCPConfig{EnableLocal: true})
+	if len(got) != 2 || got[0] != defaultLocalMCPFile || got[1] != defaultGlobalMCPFile {
+		t.Fatalf("enableLocal default = %v", got)
+	}
+
+	got = resolveMCPFiles(MCPConfig{
+		Files: []string{"local:mcp.json", "global:mcp.json", ".cursor/mcp.json"},
+	})
+	if len(got) != 1 || got[0] != "global:mcp.json" {
+		t.Fatalf("filter local when disabled = %v", got)
+	}
+
+	got = resolveMCPFiles(MCPConfig{
+		EnableLocal: true,
+		Files:     []string{"local:mcp.json", "global:mcp.json"},
+	})
+	if len(got) != 2 {
+		t.Fatalf("explicit with enableLocal = %v", got)
+	}
+}
+
 func TestLoadServersPrecedence(t *testing.T) {
 	t.Parallel()
 
@@ -114,9 +143,9 @@ func TestLoadServersPrecedence(t *testing.T) {
 	}
 
 	provider := &mcpProvider{
-		files: []string{project, global},
+		files: []string{".cursor/mcp.json", "global:mcp.json"},
 		workspace: &testWorkspace{root: dir},
-		pool: newClientPool(),
+		pool: newClientPool(0),
 	}
 	servers, err := provider.loadServers(context.Background())
 	if err != nil {
@@ -125,15 +154,21 @@ func TestLoadServersPrecedence(t *testing.T) {
 	if len(servers) != 2 {
 		t.Fatalf("servers = %d, want 2", len(servers))
 	}
-	byName := map[string]string{}
+	byName := map[string]serverConfig{}
 	for _, s := range servers {
-		byName[s.Name] = s.Command
+		byName[s.Name] = s
 	}
-	if byName["shared"] != "a" {
-		t.Fatalf("shared command = %q, want project override", byName["shared"])
+	if byName["shared"].Command != "a" {
+		t.Fatalf("shared command = %q, want project override", byName["shared"].Command)
 	}
-	if byName["extra"] != "c" {
-		t.Fatalf("extra command = %q", byName["extra"])
+	if byName["shared"].Global {
+		t.Fatal("shared from local file should not be global")
+	}
+	if byName["extra"].Command != "c" {
+		t.Fatalf("extra command = %q", byName["extra"].Command)
+	}
+	if !byName["extra"].Global {
+		t.Fatal("extra from global:mcp.json should be global")
 	}
 }
 
@@ -144,6 +179,9 @@ type testWorkspace struct {
 func (w *testWorkspace) Resolve(_ context.Context, rel string) (string, error) {
 	if rel == "global:mcp.json" {
 		return filepath.Join(w.root, "global-mcp.json"), nil
+	}
+	if rel == ".cursor/mcp.json" {
+		return filepath.Join(w.root, ".cursor", "mcp.json"), nil
 	}
 	return rel, nil
 }

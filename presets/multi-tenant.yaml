@@ -91,3 +91,17 @@ runner.default:
   deps:
     platform: platform.default
     loop: loop.default
+
+mcp.default:
+  config:
+    enableLocal: true
+    files:
+      - local:mcp.json
+      - global:mcp.json
+
+openapi.default:
+  config:
+    enableLocal: true
+    files:
+      - local:api.json
+      - global:api.json

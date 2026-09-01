@@ -182,3 +182,64 @@ func TestRegistryAllowList(t *testing.T) {
 		t.Fatalf("unexpected list after allow: %+v", r.List())
 	}
 }
+
+type adminOnlyCommand struct {
+	name string
+}
+
+func (c adminOnlyCommand) Name() string        { return c.name }
+func (adminOnlyCommand) Alias() string         { return "" }
+func (adminOnlyCommand) Description() string   { return "admin" }
+func (adminOnlyCommand) CommandExec(context.Context, string) (string, error) {
+	return "secret", nil
+}
+
+func TestRegistryAdminOnlyRequiresAdmin(t *testing.T) {
+	t.Parallel()
+	r, err := NewFromProviders(Config{
+		Admins:    []string{"U1"},
+		AdminOnly: []string{"shell"},
+	}, []agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{adminOnlyCommand{name: "shell"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "U2")
+	_, err = r.Dispatch(ctx, "shell", "")
+	if !errors.Is(err, agentkit.ErrCommandForbidden) {
+		t.Fatalf("non-admin err = %v", err)
+	}
+	ctx = context.WithValue(context.Background(), agentkit.KeyUserID, "U1")
+	out, err := r.Dispatch(ctx, "shell", "")
+	if err != nil || out != "secret" {
+		t.Fatalf("admin dispatch = %q err %v", out, err)
+	}
+}
+
+func TestRegistryAdminOnlySkippedWhenAdminsUnset(t *testing.T) {
+	t.Parallel()
+	r, err := NewFromProviders(Config{AdminOnly: []string{"shell"}}, []agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{adminOnlyCommand{name: "shell"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Dispatch(context.Background(), "shell", "")
+	if err != nil || out != "secret" {
+		t.Fatalf("dispatch = %q err %v", out, err)
+	}
+}
+
+func TestRegistryEnrichSlashContext(t *testing.T) {
+	t.Parallel()
+	r, err := NewFromProviders(Config{Admins: []string{"U1"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "U1")
+	ctx = r.EnrichSlashContext(ctx)
+	if !agentkit.IsAdmin(ctx) {
+		t.Fatal("expected admin ctx")
+	}
+}

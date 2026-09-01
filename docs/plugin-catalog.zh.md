@@ -298,7 +298,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `commands/registry` | `agentkit.Commands` | 汇总 CommandProvider，支持 allow/deny 过滤 |
+| `commands/registry` | `agentkit.Commands` | 汇总 CommandProvider，支持 allow/deny 过滤；`config.admins` + `config.adminOnly` 限制仅管理员可执行的 slash（`ctx` 写入 `KeyIsAdmin`） |
 
 | 贡献方 | 命令 |
 |---|---|
@@ -327,6 +327,8 @@ commands:
   use: commands/registry
   config:
     deny: [compact]
+    admins: [U02ABC, U03DEF]
+    adminOnly: [shell, sh, cron, env, mcp, openapi, send]
 ```
 
 ## 4. 能力包与工具结构

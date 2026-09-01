@@ -18,8 +18,6 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
-commands.default:
-    use: commands/registry
 compaction.prune.default:
     config:
         maxToolResultBytes: 8192
@@ -72,20 +70,17 @@ learning.default:
     use: learning/default
 llm.default:
     config:
-        steps:
-            - text: 这个问题交给 researcher 更合适，它只读、且不会把探索过程堆到这里。
-              toolCalls:
-                - id: call-delegate
-                  input: '{"agent":"researcher","task":"查清 runtime/loop 如何保证同一 session 的 turn 串行，给出文件行号"}'
-                  name: delegate
-            - text: ""
-              toolCalls:
-                - id: call-finish
-                  input: '{"status":"completed","summary":"loop/default 按 SessionID 取锁，同一 session 的 turn 串行执行（runtime/loop/loop.go）"}'
-                  name: finish
-            - text: 已把结论写进 finish。
-            - text: researcher 的结论：loop/default 按 SessionID 取锁，同一 session 的 turn 串行执行（runtime/loop/loop.go）。
-    use: llm/scripted
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 loop.default:
     deps:
         agents:
@@ -111,11 +106,11 @@ openapi.default:
     use: tool/openapi
 platform.default:
     config:
-        once: true
+        agentName: agentkit
+        agentVersion: 0.1.0
     deps:
-        commands: commands.default
-        sessionStore: sessionStore.default
-    use: platform/cli
+        workspace: workspace.default
+    use: platform/acp
 policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:
@@ -223,15 +218,14 @@ schedule.default:
     deps:
         workspace: workspace.default
     use: schedule/multi
-sessionStore.default:
+session.default:
     config:
-        cacheIdleTTL: 30m
-        dir: sessions
-        maxCachedSessions: 64
-        maxLoadedEvents: 256
+        id: acp:default
+    use: session/memory
+sessionStore.default:
     deps:
-        workspace: workspace.default
-    use: session/store
+        session: session.default
+    use: session/static
 skills.default:
     config:
         dirs:

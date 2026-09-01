@@ -91,15 +91,18 @@ loop.default:
     use: loop/default
 mcp.default:
     config:
+        enableLocal: true
         files:
             - local:mcp.json
             - global:mcp.json
+        idleTimeoutSeconds: 300
     deps:
         credentials: credentials.default
         workspace: workspace.default
     use: tool/mcp
 openapi.default:
     config:
+        enableLocal: true
         files:
             - local:api.json
             - global:api.json

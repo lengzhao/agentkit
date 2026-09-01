@@ -187,11 +187,18 @@ tool.fs-workspace.default:
 
 同一租户内若把 `sessionScope` 设为 `thread` 或 `user`，这些 effective session 仍共享一个工作目录 —— 它们之间的并发写冲突需要靠 scope 选择或调低并发上限控制。
 
-## 5. MCP 客户端池按租户分槽
+## 5. MCP 客户端池：global 共享，local 按租户分槽
 
-`tool/mcp` 的客户端池原先按 `server.Name` 建 key。多租户下两个群常各自声明一个同名 server（比如都叫 `filesystem`、各指向自己的工作区），共用一个槽位会让**每次交替调用都把对方的客户端踢掉并重启子进程**。
+`tool/mcp` 的客户端池按 server 来源决定槽位：
 
-现在池按 `(租户键, server 名)` 建 key：两个租户各持自己的连接；租户内部仍按 config 指纹判定替换，改了 `mcp.json` 照常重连。
+- **`global:mcp.json` 里的 server**：进程内全局共享一条连接（key = `global` + server 名），所有租户复用，避免连接数随租户线性增长。
+- **`local:mcp.json`**：需在 `mcp.default.config.enableLocal: true` 时才会加载；加载后按 `(租户键, server 名)` 分槽。
+
+租户内部仍按 config 指纹判定替换，改了 `mcp.json` 照常重连。
+
+空闲超过 `idleTimeoutSeconds`（默认 300 秒）未使用的连接会被后台定时器回收；下次工具调用时自动重连。
+
+注意：`global` server 若使用 stdio 且配置了 `bind` 的 `in: env`，环境变量只在**首次建连**时从当时的 ctx 注入；per-tenant 差异请用 `header` / `meta` bind，或把 server 放在 `local:mcp.json`。
 
 ## 6. 上手
 

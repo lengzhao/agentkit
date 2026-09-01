@@ -40,7 +40,7 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 	provider := &mcpProvider{
 		files:     []string{configPath},
 		workspace: ws,
-		pool:      newClientPool(),
+		pool:      newClientPool(0),
 	}
 	ctx := context.Background()
 
@@ -106,9 +106,10 @@ func TestMCPAddCommand(t *testing.T) {
 
 	dir := t.TempDir()
 	provider := &mcpProvider{
-		files:     []string{filepath.Join(dir, "mcp.json")},
-		workspace: &testWorkspace{root: dir},
-		pool:      newClientPool(),
+		files:       []string{filepath.Join(dir, "mcp.json")},
+		enableLocal: true,
+		workspace:   &testWorkspace{root: dir},
+		pool:        newClientPool(0),
 	}
 	ctx := context.Background()
 	cp, ok := agentkit.ToolProvider(provider).(agentkit.CommandProvider)
@@ -142,6 +143,29 @@ func TestMCPAddCommand(t *testing.T) {
 	}
 }
 
+func TestMCPAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	provider := &mcpProvider{
+		files:     []string{"global:mcp.json"},
+		workspace: &testWorkspace{root: dir},
+		pool:      newClientPool(0),
+	}
+	ctx := context.Background()
+	cmd := agentkit.ToolProvider(provider).(agentkit.CommandProvider).Commands()[0]
+
+	_, err := cmd.CommandExec(ctx, `add demo {"command":"missing-binary"}`)
+	if err == nil || !strings.Contains(err.Error(), "local mcp is disabled") {
+		t.Fatalf("add without -g = %v, want local disabled error", err)
+	}
+
+	_, err = cmd.CommandExec(ctx, `add -g demo {"command":"missing-binary"}`)
+	if err == nil || !strings.Contains(err.Error(), "probe failed") {
+		t.Fatalf("add with -g = %v, want probe failure after global target selected", err)
+	}
+}
+
 func TestMCPReloadRecordsInitObservation(t *testing.T) {
 	t.Parallel()
 
@@ -158,7 +182,7 @@ func TestMCPReloadRecordsInitObservation(t *testing.T) {
 	provider := &mcpProvider{
 		files:     []string{configPath},
 		workspace: &testWorkspace{root: dir},
-		pool:      newClientPool(),
+		pool:      newClientPool(0),
 	}
 	if _, err := provider.ListTools(ctx); err != nil {
 		t.Fatalf("list: %v", err)

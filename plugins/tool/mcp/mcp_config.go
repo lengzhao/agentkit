@@ -28,6 +28,9 @@ type rawServerConfig struct {
 type serverConfig struct {
 	Name           string
 	Source         string
+	// Global is true when the server was loaded from a global:-scoped config file
+	// (e.g. global:mcp.json). Global servers share one pooled client across tenants.
+	Global         bool
 	Command        string
 	Args           []string
 	Env            map[string]string
