@@ -231,6 +231,10 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 				Output:  l.preparePayload(end.Output, l.redactOutputs),
 				EndTime: &endTime,
 			}
+			if !end.CompletionStartTime.IsZero() {
+				completionStart := end.CompletionStartTime.UTC()
+				update.CompletionStartTime = &completionStart
+			}
 			if end.Usage != nil {
 				update.Usage = langfuseUsage(end.Usage)
 			}

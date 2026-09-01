@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
@@ -62,6 +63,71 @@ func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
 	wantAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("pk-test:sk-test"))
 	if gotAuth != wantAuth {
 		t.Fatalf("auth = %q, want %q", gotAuth, wantAuth)
+	}
+}
+
+func TestLangfuseExporterSendsCompletionStartTime(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, payload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, err := plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
+		BaseURL:              server.URL,
+		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
+		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
+		FlushIntervalSeconds: 1,
+	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completionStart := time.Date(2026, 9, 1, 8, 30, 0, 0, time.UTC)
+	ctx, endTurn := exp.BeginTurn(context.Background(), captelemetry.TurnMeta{
+		TurnID:    "turn-1",
+		SessionID: "cli:default",
+		Input:     "hello",
+	})
+	ctx, endGen := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name:  "llm.generation",
+		Kind:  captelemetry.KindGeneration,
+		Model: "gpt-5.4",
+		Input: "prompt",
+	})
+	endGen(captelemetry.ObservationEnd{
+		Output:              "answer",
+		CompletionStartTime: completionStart,
+	})
+	endTurn(captelemetry.TurnEnd{Output: "done"})
+	if err := exp.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "completionStartTime") {
+		t.Fatalf("expected completionStartTime in %s", raw)
 	}
 }
 

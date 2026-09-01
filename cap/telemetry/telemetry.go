@@ -3,7 +3,10 @@
 // activity to external systems such as Langfuse.
 package telemetry
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Exporter mirrors agent activity to an external observability backend.
 type Exporter interface {
@@ -62,6 +65,9 @@ type ObservationEnd struct {
 	Output string
 	Err    error
 	Usage  *Usage
+	// CompletionStartTime is when the model first produced output (TTFT boundary).
+	// Zero means unavailable, e.g. the stream ended before any content arrived.
+	CompletionStartTime time.Time
 }
 
 // Usage carries token accounting for generations and turn totals.

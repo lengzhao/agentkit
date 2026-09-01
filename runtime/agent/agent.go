@@ -448,12 +448,17 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 
 	var assistant agentkit.ModelMessage
 	var usage *agentkit.Usage
+	gotFirstCompletion := false
 	for {
 		if err := ctx.Err(); err != nil {
 			observationEnd.Err = err
 			return stepOutcome{}, err
 		}
 		ev, err := stream.Recv()
+		if !gotFirstCompletion && telemetry.LLMCompletionStarted(ev) {
+			observationEnd.CompletionStartTime = time.Now().UTC()
+			gotFirstCompletion = true
+		}
 		if ev.Message != nil {
 			assistant = *ev.Message
 		}

@@ -1272,7 +1272,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|
 | RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；output 为用户可见文本；metadata 含 `usage_*_tokens`） | `loop.Dispatch` |
-| LLM 调用 | Generation（原生 `usage` 字段供 Langfuse 计费；metadata/modelParameters 含 tools 名） | `agent.runStep` |
+| LLM 调用 | Generation（原生 `usage` 字段供 Langfuse 计费；`completionStartTime` 记录首 token 时间；metadata/modelParameters 含 tools 名） | `agent.runStep` |
 | Tool 执行 | Tool observation | `tools.Execute` |
 | Turn token 汇总 | Trace metadata `usage_*_tokens` | `loop.Dispatch` + `agent.recordUsage` |
 
