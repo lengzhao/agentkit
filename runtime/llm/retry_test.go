@@ -37,3 +37,13 @@ func TestIsContextOverflowError(t *testing.T) {
 		t.Fatal("rate limit is not overflow")
 	}
 }
+
+func TestIsQuotaError(t *testing.T) {
+	t.Parallel()
+	if !IsQuotaError(errors.New("insufficient_quota")) {
+		t.Fatal("expected quota error")
+	}
+	if IsQuotaError(errors.New("rate limit exceeded")) {
+		t.Fatal("rate limit is not quota")
+	}
+}

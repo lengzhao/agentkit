@@ -132,6 +132,14 @@ func IsContextOverflowError(err error) bool {
 	return contextOverflowPattern.MatchString(err.Error())
 }
 
+// IsQuotaError reports quota or billing failures that are not worth retrying on the same provider.
+func IsQuotaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return nonRetryableQuotaPattern.MatchString(err.Error())
+}
+
 func HTTPStatusFromError(err error) int {
 	var apiErr *openai.APIError
 	if errors.As(err, &apiErr) && apiErr.HTTPStatusCode > 0 {

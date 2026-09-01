@@ -23,17 +23,61 @@ workspace.default:
 #   LANGFUSE_PUBLIC_KEY=pk-lf-...
 #   LANGFUSE_SECRET_KEY=sk-lf-...
 
-# 示例：覆盖模型（需写完整实例块）
-# 此实例同时供 agent 与 compaction/summary 使用；覆盖 apiKey 一处即可。
-llm.default:
+# 示例：LLM 配置
+#
+# 方式一（推荐）：llm/fallback — 主模型失败时自动切换备用 model。
+# 同 provider 只需一份 llm.openai；主 model 仍由 agent.config.model 决定。
+llm.openai:
   use: llm/openai-compatible
   config:
-    model: gpt-5.4
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
     # 或直接写 apiKey: sk-...
   deps:
     credentials: credentials.default
+
+llm.default:
+  use: llm/fallback
+  config:
+    fallbackModels:
+      - gpt-4o
+      - gpt-4o-mini
+    # fallbackOn: retryable   # 默认；也可 quota / any
+  deps:
+    provider: llm.openai
+
+# 方式二：直接连单个 provider（无 fallback）
+# llm.default:
+#   use: llm/openai-compatible
+#   config:
+#     model: gpt-5.4
+#     baseUrl: https://api.openai.com/v1
+#     apiKeyRef: env:OPENAI_API_KEY
+#   deps:
+#     credentials: credentials.default
+#
+# 方式三：跨 provider fallback（不同 endpoint / 凭据）
+# llm.anthropic:
+#   use: llm/openai-compatible
+#   config:
+#     model: claude-sonnet-4
+#     baseUrl: https://api.anthropic.com/v1
+#     apiKeyRef: env:ANTHROPIC_API_KEY
+#   deps:
+#     credentials: credentials.default
+#
+# llm.default:
+#   use: llm/fallback
+#   config:
+#     models:
+#       - gpt-5.4
+#       - claude-sonnet-4
+#   deps:
+#     fallbacks:
+#       - llm.openai
+#       - llm.anthropic
+#
+# llm.default 同时供 agent 与 compaction/summary 使用。
 
 # 示例：自定义 Agent system prompt
 # sections 按 deps 列表顺序拼进 system message。

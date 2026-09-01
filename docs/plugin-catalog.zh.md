@@ -148,6 +148,7 @@ platform.http:
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
+| `llm/fallback` | `agentkit.LLMProvider` | 主模型/主 provider 失败时按序切换备用 model 或 provider；同 endpoint 只需一份底层 provider | — |
 | `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API | Pi anthropic-messages |
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
@@ -162,6 +163,26 @@ llm.default:
       - type: web_search
         parameters:
           search_context_size: medium
+```
+
+
+**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。同 provider 换 model 时只配一份 `llm/openai-compatible`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`），也可设 `quota` 或 `any`。
+
+```yaml
+llm.openai:
+  use: llm/openai-compatible
+  config:
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+
+llm.default:
+  use: llm/fallback
+  config:
+    fallbackModels:
+      - gpt-4o
+      - gpt-4o-mini
+  deps:
+    provider: llm.openai
 ```
 
 
