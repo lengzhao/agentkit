@@ -284,4 +284,16 @@ func permissionCapability(platform agentkit.Platform, platformID string) permiss
 	return permission.Capability{Interactive: false}
 }
 
+// inboundPermissionCapability resolves platform permission behavior for one inbound
+// event. Schedule-fired turns stay non-interactive even when delivery routes back
+// to an interactive platform (e.g. chat-api for send), so cron jobs never block on
+// ask_user.
+func inboundPermissionCapability(platform agentkit.Platform, event agentkit.MessageEvent) permission.Capability {
+	cap := permissionCapability(platform, event.PlatformID)
+	if capschedule.IsFireTurn(event.Metadata) {
+		cap.Interactive = false
+	}
+	return cap
+}
+
 var _ agentkit.Runner = (*Root)(nil)

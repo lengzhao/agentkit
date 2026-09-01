@@ -232,6 +232,7 @@ event.Metadata = {"schedule": {"fired": true, "jobId": "agent-1", "kind": "delay
 - `DeliverySessionID` 决定 outbound / send 往哪发。
 - `SessionID` 决定 loop 锁与历史：`stateless` 为独立侧会话，`reuse` 为原对话。
 - 若 turn 内已调用 `send`，框架抑制 turn-end 重复文本。
+- **Permission**：`metadata.schedule.fired=true` 时 runner 强制该 turn 为**非交互**（`ask_user` 降级为 `NoHuman`），避免 cron 在 chat-api 等交互平台上挂起等人；`send` 仍走 `DeliverySessionID` 回原 inbox。
 
 因此创建 job 时 prompt 只需要写提醒内容，例如：
 

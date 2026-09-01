@@ -124,6 +124,7 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | `approval/auto-deny` | runtime 短路 deny |
 | `policy` deny | 不进入 Permission 平面 |
 | headless / `Interactive=false` | allow_deny → deny；question → guidance |
+| schedule fire turn | 出站仍走 delivery platform（如 chat-api `send`）；permission 强制 `Interactive=false`，`ask_user` 降级为 `NoHuman` |
 | 超时 | `OutcomeTimeout`，按 kind 降级并**继续** turn |
 
 `auto-allow` / `auto-deny` 只作用于 allow_deny；`KindQuestion` 始终走 Broker。

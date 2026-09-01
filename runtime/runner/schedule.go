@@ -116,7 +116,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		DeliverySessionID: deliveryID,
 		StoreSessionID:    storeSessionID,
 		Emit:              emit,
-		Capability:        permissionCapability(r.platform, event.PlatformID),
+		Capability:        inboundPermissionCapability(r.platform, scoped),
 	})
 }
 
