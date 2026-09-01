@@ -165,7 +165,8 @@ func NewProvider(t *testing.T, root string) agentkit.ToolProvider {
 	t.Helper()
 	t.Setenv("OPENAPITEST_TOKEN", DefaultToken)
 	provider, err := openapi.NewOpenAPI(openapi.OpenAPIConfig{
-		Files: []string{"api.json", "local:api.json"},
+		EnableLocal: true,
+		Files:       []string{"api.json", "local:api.json"},
 	}, openapi.OpenAPIDeps{
 		Workspace: Workspace(root),
 	})

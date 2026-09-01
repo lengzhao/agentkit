@@ -305,6 +305,16 @@ learning.default:
   use: learning/default
   config:
     memoryRoot: work
+    dreaming:
+      enabled: true
+    workshop:
+      mode: propose
+
+# 可选：后台 dreaming sweep（与 schedule/cron 并列由 runner 启动）
+# learning.dreamSweep:
+#   use: learning/dream-sweep
+#   deps:
+#     learning: learning.default
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default

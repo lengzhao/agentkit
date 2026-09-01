@@ -65,7 +65,11 @@ hooks.default:
     use: hooks/runtime
 learning.default:
     config:
+        dreaming:
+            enabled: true
         memoryRoot: work
+        workshop:
+            mode: propose
     deps:
         sessionStore: sessionStore.default
         workspace: workspace.default

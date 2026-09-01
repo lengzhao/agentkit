@@ -41,6 +41,7 @@ subagent 并行 fan-out、`loop/harness`、Prompt Context 分离、permission pr
 | 主题 | 文档 |
 |---|---|
 | 自主运行 | [guides/autonomous-run.zh.md](guides/autonomous-run.zh.md) |
+| 自我学习 | [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) |
 | 子 Agent | [guides/subagent.zh.md](guides/subagent.zh.md) |
 | 多租户 | [guides/multi-tenant.zh.md](guides/multi-tenant.zh.md) |
 | 网络 / MCP | [guides/tools.zh.md](guides/tools.zh.md) |

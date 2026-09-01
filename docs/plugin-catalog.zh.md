@@ -259,7 +259,8 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md |
 | `skill/badge` | `skill.Registry` | Badge 元数据 |
-| `learning/default` | `CommandProvider` | 租户个人 memory.md；`/learn` 管理记忆与从 session 沉淀 |
+| `learning/default` | `CommandProvider` | 租户个人 memory.md、Grounded Dreaming、Skill Workshop；`/learn` 管理记忆/巩固/技能提案 |
+| `learning/dream-sweep` | `schedule.Runtime` | 后台三阶段 dreaming sweep（默认每天 03:00） |
 | `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent |
 
@@ -313,7 +314,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
 | `tool/shell-bash` | `/shell`、`/sh`（本地执行 shell 命令，不经过模型） |
 | `tool/send` | `/send`（向指定 session、Slack channel 或 @user 主动发消息，不经过模型） |
-| `learning/default` | `/learn`（查看/追加/删除个人 memory；`/learn session` 从当前会话沉淀） |
+| `learning/default` | `/learn`（memory / dreaming / skill workshop；见 [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md)） |
 
 示例：
 

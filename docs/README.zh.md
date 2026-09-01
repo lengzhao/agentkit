@@ -17,6 +17,7 @@ docs/
     ├── tools.zh.md                   # 网络工具 + MCP
     ├── platform-interaction.zh.md    # Permission / HIL
     ├── schedule-timer.zh.md          # 一次性提醒 Timer 设计（草案）
+    ├── learning-dreaming.zh.md       # Dreaming / Dream Diary / Skill Workshop
     ├── config-simplification.zh.md   # 用户配置简化方案与路线
     └── e2e-scenarios.zh.md           # E2E 场景梳理与用例目录
 ```

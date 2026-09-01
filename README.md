@@ -4,10 +4,11 @@
 
 ## 特性
 
-- **插件化装配** — 63+ 已注册 Plugin Kind，L0 默认配置 + L1 overlay 按需覆盖
+- **插件化装配** — 64+ 已注册 Plugin Kind，L0 默认配置 + L1 overlay 按需覆盖
 - **Coding Agent 闭环** — 文件读写、Shell、策略审批、Session 持久化（jsonl）
 - **自主运行** — turn 续跑、预算分层、todo/finish 收尾、token 阈值压缩、崩溃恢复
 - **子 Agent 委派** — `agents/*.md` 定义子 agent，主 agent 只读回结论
+- **自我学习** — `/learn` 管理 `memory.md`，Grounded Dreaming 巩固短期信号，Skill Workshop 生成可审阅技能提案
 - **网络能力** — HTTP 抓取、Exa 搜索、向用户提问（HIL）
 - **Headless 模式** — worker（一次性）、timer（固定间隔）、cron（日历 + 自主排期）
 - **Web 管理台** — 装配树编辑、结构诊断、试装配与 build 校验
@@ -99,6 +100,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 | 交互式 coding | `go run ./cmd/agent -config presets/coding.yaml` |
 | 自主长跑 | `go run ./cmd/agent -config presets/autonomous.yaml "多轮任务"` |
 | 子 Agent 委派 | `go run ./cmd/agent "让 researcher 调研 …"`（L0 默认；冒烟见 `presets/subagent-smoke.yaml`） |
+| 自我学习 | REPL 内执行 `/learn`、`/learn dream run`、`/learn skill 部署检查清单` |
 | 网络搜索 + 抓取 | `export TAVILY_API_KEY=...` 后 `-config presets/web.yaml` |
 | Headless 批处理 | `-config presets/autonomous.yaml,presets/worker.yaml` |
 | 定时守护 | `-config presets/autonomous.yaml,presets/cron.yaml` |
@@ -137,6 +139,7 @@ flowchart LR
 | [go-agent-harness-architecture.zh.md](docs/go-agent-harness-architecture.zh.md) | 完整架构：Runner、Spine、装配模型、生命周期 |
 | [plugin-catalog.zh.md](docs/plugin-catalog.zh.md) | Plugin Kind 目录与分阶段落地 |
 | [roadmap.zh.md](docs/roadmap.zh.md) | 现状基线与路线图 |
+| [guides/learning-dreaming.zh.md](docs/guides/learning-dreaming.zh.md) | 自我学习：Dreaming、Dream Diary、Skill Workshop |
 | [guides/](docs/guides/) | 场景专题：自主运行、多租户、工具、人机交互等 |
 
 ## 开发

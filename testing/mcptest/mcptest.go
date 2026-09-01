@@ -89,7 +89,10 @@ func NewProvider(t *testing.T) (agentkit.ToolProvider, string) {
 		t.Fatal(err)
 	}
 
-	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{Files: []string{configPath}}, mcpplugin.MCPDeps{
+	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{
+		EnableLocal: true,
+		Files:       []string{configPath},
+	}, mcpplugin.MCPDeps{
 		Workspace: workspace.Static(dir),
 	})
 	if err != nil {

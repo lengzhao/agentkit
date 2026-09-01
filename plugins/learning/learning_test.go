@@ -2,13 +2,15 @@ package learning
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	workspaceruntime "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
+	workspaceruntime "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type stubSessionStore struct{}
@@ -72,6 +74,41 @@ func TestLearnCommandMemory(t *testing.T) {
 	}
 }
 
+func TestLearnCommandMemorySucceedsWhenDreamingSignalCannotBeWritten(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: root, Local: root, Scope: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Blocks work/memory/dreaming/state.json while leaving work/memory.md writable.
+	if err := os.MkdirAll(filepath.Join(root, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "work", "memory"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := svc.Commands()[0].CommandExec(context.Background(), "memory likes Go tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "personal memory updated") || !strings.Contains(out, "warning: dreaming signal not recorded") {
+		t.Fatalf("out = %q", out)
+	}
+	show, err := svc.Commands()[0].CommandExec(context.Background(), "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(show, "likes Go tests") {
+		t.Fatalf("show = %q", show)
+	}
+}
+
 func TestLearnCommandHelp(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +123,7 @@ func TestLearnCommandHelp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "/learn memory") {
+	if !strings.Contains(out, "/learn dream") {
 		t.Fatalf("help = %q", out)
 	}
 }
