@@ -43,6 +43,8 @@ type Config struct {
 	CORSOrigins        []string `json:"corsOrigins"`
 	RequestTimeout     string   `json:"requestTimeout"`
 	InteractionTimeout string   `json:"interactionTimeout"`
+	// Interactive enables permission/ask_user prompts via SSE (default true when unset).
+	Interactive        *bool    `json:"interactive,omitempty"`
 	BusyPolicy         string   `json:"busyPolicy"`
 	MaxRuns            int      `json:"maxRuns"`
 	MaxUploadSize      int64    `json:"maxUploadSize"`
@@ -74,6 +76,7 @@ type Platform struct {
 	corsOrigins         []string
 	requestTimeout      time.Duration
 	interactionTimeout  time.Duration
+	permissionInteractive bool
 	busyPolicy          string
 	maxRuns             int
 	maxUploadSize       int64
@@ -150,6 +153,10 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if sessionsDir == "" {
 		sessionsDir = defaultSessionsDir
 	}
+	permissionInteractive := true
+	if cfg.Interactive != nil {
+		permissionInteractive = *cfg.Interactive
+	}
 
 	p := &Platform{
 		listenAddr:         listen,
@@ -165,6 +172,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		corsOrigins:        cfg.CORSOrigins,
 		requestTimeout:     timeout,
 		interactionTimeout: interactionTimeout,
+		permissionInteractive: permissionInteractive,
 		busyPolicy:         busy,
 		maxRuns:            maxRuns,
 		maxUploadSize:      maxUpload,
@@ -190,7 +198,7 @@ func (p *Platform) PlatformID() string { return "chat-api" }
 
 func (p *Platform) PermissionCapability() permission.Capability {
 	return permission.Capability{
-		Interactive:    true,
+		Interactive:    p.permissionInteractive,
 		DefaultTimeout: p.interactionTimeout,
 		AnswerScope:    permission.ScopeAsker,
 	}

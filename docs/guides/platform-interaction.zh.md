@@ -111,6 +111,7 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | `platform/cli` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | stderr prompt | `Receive` → `Reply` |
 | `platform/feishu` | `Interactive`, `MultiSelect`, `DefaultTimeout≥10m` | 卡片 + 按钮 | callback 或 reply-to |
 | `platform/slack` | 同上 | Block Kit 卡片 + 按钮 | 交互 payload |
+| `platform/chat-api` | 默认 `Interactive=true`；`config.interactive: false` 降级为 headless | SSE `question_request` / debug 弹窗 | `POST /runs/.../respond` |
 | `platform/headless` | `Interactive=false` | 无 | 直接 `NoHuman` |
 | `platform/multiplex` | **转发 leaf Capability** | 按 `PlatformID` 路由 | 子平台 `Receive` 原样上送 |
 
@@ -140,6 +141,11 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 ```yaml
 tool.ask-user.default:
   use: tool/ask-user
+
+platform.chat-api:
+  use: platform/chat-api
+  config:
+  # interactive: false   # 无人值守 BFF：ask_user 降级为 NoHuman，不挂 SSE 提问
 
 loop.default:
   config:
