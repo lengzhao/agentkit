@@ -71,6 +71,46 @@ func TestMetadataFromRequestSkipsEmpty(t *testing.T) {
 	}
 }
 
+func TestRequestMetadataIncludesUserNameByDefault(t *testing.T) {
+	p, err := New(Config{}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	req := httptest.NewRequest("POST", "/v1/chat-messages", nil)
+	req.Header.Set("X-Chat-API-User-Name", "Alice")
+	md := plat.requestMetadata(req)
+	if md == nil {
+		t.Fatal("metadata is nil")
+	}
+	if md["X-Chat-API-User-Name"] != "Alice" {
+		t.Fatalf("name = %v", md["X-Chat-API-User-Name"])
+	}
+}
+
+func TestRequestMetadataIncludesTaskIDAndUserName(t *testing.T) {
+	p, err := New(Config{MetadataHeaders: []string{"x-task-id"}}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	req := httptest.NewRequest("POST", "/v1/chat-messages", nil)
+	req.Header.Set("x-task-id", "task-42")
+	req.Header.Set("X-Chat-API-User-Name", "Bob")
+	md := plat.requestMetadata(req)
+	if md == nil {
+		t.Fatal("metadata is nil")
+	}
+	if md["x-task-id"] != "task-42" {
+		t.Fatalf("task-id = %v", md["x-task-id"])
+	}
+	if md["X-Chat-API-User-Name"] != "Bob" {
+		t.Fatalf("name = %v", md["X-Chat-API-User-Name"])
+	}
+}
+
 func TestCORSAllowedHeadersIncludesMetadataHeaders(t *testing.T) {
 	p, err := New(Config{
 		MetadataHeaders: []string{"X-Org-Id", "X-Org-Id"},

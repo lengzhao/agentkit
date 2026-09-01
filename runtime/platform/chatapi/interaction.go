@@ -161,7 +161,7 @@ func (p *Platform) handleRespondInteraction(w http.ResponseWriter, r *http.Reque
 		UserID:    user,
 		Text:      answer,
 	})
-	if md := p.metadataFromRequest(r); len(md) > 0 {
+	if md := p.requestMetadata(r); len(md) > 0 {
 		event.Metadata = md
 	}
 	if err := p.inbox.Push(r.Context(), event); err != nil {

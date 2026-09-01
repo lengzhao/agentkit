@@ -272,6 +272,8 @@
         </div>
         <label>Channel</label>
         <input id="channel" value="default_channel" />
+        <label>Task ID</label>
+        <input id="taskId" placeholder="x-task-id，可选" />
         <label>Agent</label>
         <select id="agentId" hidden></select>
         <input id="agentIdCustom" placeholder="agent id（留空用默认）" />
@@ -279,7 +281,7 @@
           可在调试页切换 Loop Agent。留空时使用平台 <code>agentId</code> 或 <code>loop.defaultAgent</code>。
         </p>
         <p class="hint">
-          对应 Header <code>X-Chat-API-User</code> / <code>X-Chat-API-Channel</code>。
+          对应 Header <code>X-Chat-API-User</code> / <code>X-Chat-API-User-Name</code> / <code>X-Chat-API-Channel</code> / <code>x-task-id</code>。
           SessionID 形如 <code>chat-api:default_channel:conv_…</code>（按 channel 租户隔离）
         </p>
         <div class="btn-row">
@@ -420,7 +422,7 @@
     function loadConfig() {
       try {
         const cfg = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
-        for (const k of ["baseUrl", "token", "userId", "userName", "channel"]) {
+        for (const k of ["baseUrl", "token", "userId", "userName", "channel", "taskId"]) {
           if (cfg[k] != null) $(k).value = cfg[k];
         }
         if (cfg.agentId != null) {
@@ -436,7 +438,7 @@
 
     function saveConfig() {
       const cfg = {};
-      for (const k of ["baseUrl", "token", "userId", "userName", "channel"]) {
+      for (const k of ["baseUrl", "token", "userId", "userName", "channel", "taskId"]) {
         cfg[k] = $(k).value.trim();
       }
       state.preferredAgentId = selectedAgentId();
@@ -462,6 +464,8 @@
       if (name) h["X-Chat-API-User-Name"] = name;
       const channel = $("channel").value.trim();
       if (channel) h["X-Chat-API-Channel"] = channel;
+      const taskId = $("taskId").value.trim();
+      if (taskId) h["x-task-id"] = taskId;
       return h;
     }
 
@@ -850,7 +854,7 @@
 
       if (hasPendingInteraction()) {
         $("query").value = "";
-        addBubble("user", query, $("userId").value.trim());
+        addBubble("user", query, $("userName").value.trim() || $("userId").value.trim());
         await respondInteraction(query);
         return;
       }
@@ -861,7 +865,7 @@
       $("btnSend").disabled = true;
       saveConfig();
 
-      const userLabel = $("userId").value.trim();
+      const userLabel = $("userName").value.trim() || $("userId").value.trim();
       const display = query || `[${state.pendingFiles.length} 个附件]`;
       addBubble("user", display, userLabel);
       $("query").value = "";

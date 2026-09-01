@@ -54,6 +54,26 @@ func (p *Platform) metadataFromRequest(r *http.Request) map[string]any {
 	return md
 }
 
+// requestMetadata collects whitelisted HTTP headers plus the configured user-name header.
+func (p *Platform) requestMetadata(r *http.Request) map[string]any {
+	if r == nil {
+		return nil
+	}
+	md := p.metadataFromRequest(r)
+	if name := strings.TrimSpace(r.Header.Get(p.userNameHeader)); name != "" {
+		if md == nil {
+			md = make(map[string]any)
+		}
+		if _, ok := md[p.userNameHeader]; !ok {
+			md[p.userNameHeader] = name
+		}
+	}
+	if len(md) == 0 {
+		return nil
+	}
+	return md
+}
+
 func (p *Platform) corsAllowedHeaders() []string {
 	headers := []string{
 		"Authorization", "Content-Type", "Accept",
