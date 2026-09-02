@@ -18,9 +18,15 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "scaffold" {
-		runScaffold(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "scaffold":
+			runScaffold(os.Args[2:])
+			return
+		case "config":
+			runConfig(os.Args[2:])
+			return
+		}
 	}
 
 	managerMode := flag.Bool("manager", false, "start plugin manager web UI")
