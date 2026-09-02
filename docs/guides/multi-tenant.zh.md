@@ -144,7 +144,7 @@ tenants/slack_C001/
 ├── agents/            # 子 agent 定义
 ├── mcp.json
 ├── skills/            # 租户私有 skill
-└── work/              # fs / shell 临时产物（preset 默认 root）
+└── work/              # fs / shell 临时产物（preset 默认 root；session/store 首次打开租户 session 时自动创建）
 ```
 
 `presets/multi-tenant.yaml` 把 `tool/fs-workspace`、`tool/shell-bash` 的 `root` / `workDir` 指到 `work`；`prompt/section/agents-md`、`prompt/section/memory` 与 `learning.default` 默认从租户 local 根读写 `AGENTS.md`、`memory.md` 等。`tool/fs-workspace` 的 `tenantFiles` 允许在 `root: work` 时仍通过工具读写这些租户根文件。

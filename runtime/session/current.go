@@ -51,11 +51,8 @@ func (s *Store) SetCLICurrent(ctx context.Context, id agentkit.SessionID) error 
 	if id == "" {
 		return fmt.Errorf("session id is required")
 	}
-	dir, err := s.workspace.Resolve(ctx, s.relDir)
+	dir, err := s.storeDir(ctx)
 	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	targetName, err := safeSessionFileName(id)

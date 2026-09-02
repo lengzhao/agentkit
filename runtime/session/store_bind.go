@@ -143,12 +143,5 @@ func (s *Store) SetActiveSession(ctx context.Context, id, active agentkit.Sessio
 }
 
 func (s *Store) storeDir(ctx context.Context) (string, error) {
-	dir, err := s.workspace.Resolve(ctx, s.relDir)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	return dir, nil
+	return ensureTenantLayout(ctx, s.workspace, s.relDir)
 }

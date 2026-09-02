@@ -223,3 +223,31 @@ func TestStoreHeldSessionSurvivesCacheEviction(t *testing.T) {
 		t.Fatalf("held session messages: %+v", msgs)
 	}
 }
+
+func TestStoreEnsuresToolWorkDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workDir := filepath.Join(dir, session.TenantToolWorkDir)
+	if _, err := os.Stat(workDir); !os.IsNotExist(err) {
+		t.Fatalf("work dir should not exist before first session: %v", err)
+	}
+
+	ctx := context.Background()
+	if _, err := store.Get(ctx, agentkit.SessionID("chat-api:conv-1")); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(workDir)
+	if err != nil {
+		t.Fatalf("work dir should be created with sessions: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("work path should be a directory")
+	}
+}

@@ -102,11 +102,8 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 	if id == "" {
 		return nil, fmt.Errorf("session id is required")
 	}
-	dir, err := s.workspace.Resolve(ctx, s.relDir)
+	dir, err := s.storeDir(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
