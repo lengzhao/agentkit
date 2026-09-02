@@ -45,11 +45,12 @@ type Config struct {
 }
 
 type Deps struct {
-	Platform     agentkit.Platform      `json:"platform"`
-	Loop         agentkit.Loop          `json:"loop"`
-	SessionStore agentkit.SessionStore  `json:"sessionStore,omitempty"`
-	Schedules    []capschedule.Runtime  `json:"schedules,omitempty"`
-	Telemetry    telemetry.Exporter     `json:"telemetry,omitempty"`
+	Platform     agentkit.Platform         `json:"platform"`
+	Loop         agentkit.Loop             `json:"loop"`
+	SessionStore agentkit.SessionStore     `json:"sessionStore,omitempty"`
+	Schedules    []capschedule.Runtime     `json:"schedules,omitempty"`
+	Init         []agentkit.AppInitializer `json:"init,omitempty"`
+	Telemetry    telemetry.Exporter        `json:"telemetry,omitempty"`
 }
 
 type Root struct {
@@ -61,8 +62,8 @@ type Root struct {
 	sessionScope    session.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
-	inject           []string
-	defaultTimezone  string
+	inject          []string
+	defaultTimezone string
 }
 
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
@@ -133,6 +134,9 @@ func agentSessionStore(ag agentkit.Agent) agentkit.SessionStore {
 
 func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	if err := attachCommands(result); err != nil {
+		return err
+	}
+	if err := runAppInit(ctx, result); err != nil {
 		return err
 	}
 	sched := newScheduler(r.maxConcurrent, r.dispatch, r.reportTurnError)

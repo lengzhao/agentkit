@@ -370,12 +370,17 @@ type StartStop interface {
     Start(context.Context) error
     Stop(context.Context) error
 }
+
+type AppInitializer interface {
+    InitApp(context.Context) error
+}
 ```
 
 生命周期规则：
 
 - 构造函数只创建对象和校验配置，不启动长期任务。
-- `build.Build` 成功后，Runner root 收集实现 `StartStop` 的组件并按依赖顺序启动。
+- `build.Build` 成功后，Runner 在 `Run` 中按实例图顺序调用 `AppInitializer.InitApp`（一次性准备，如复制 agents/skills、初始化 git）。
+- 实现 `StartStop` 的组件按依赖顺序启动（规划中）。
 - 任一组件启动失败时，已启动组件按反向顺序停止。
 - `Stop` 必须有超时和错误收集，不能让一个插件阻塞全局关闭。
 - 长任务必须受 `context.Context` 管理，并在 `Stop` 中停止。

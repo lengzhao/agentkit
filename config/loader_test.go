@@ -544,3 +544,178 @@ platform.default:
 		t.Fatalf("rootId=%q", doc.RootID)
 	}
 }
+
+func TestEnvInterpolationMissingPrunesOptionalPlatform(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+    loop: loop.default
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.assistant.default
+agent.assistant.default:
+  use: agent/coding
+platform.default:
+  use: platform/cli
+platform.slack:
+  use: platform/slack
+  config:
+    botToken: ${env:SLACK_BOT_TOKEN}
+`)
+	resolved, err := config.ResolveYAML(".", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Shared["platform.slack"]; ok {
+		t.Fatal("platform.slack should be pruned when env is missing")
+	}
+	if doc.Shared["platform.default"].Use != "platform/cli" {
+		t.Fatalf("platform.default should remain")
+	}
+}
+
+func TestEnvInterpolationMissingPrunesCascadeWhenDepsEmpty(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.multiplex
+    loop: loop.default
+loop.default:
+  use: loop/default
+platform.multiplex:
+  use: platform/multiplex
+  deps:
+    platforms:
+      - platform.slack
+platform.slack:
+  use: platform/slack
+  config:
+    botToken: ${env:SLACK_BOT_TOKEN}
+`)
+	resolved, err := config.ResolveYAML(".", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Shared["platform.multiplex"]; ok {
+		t.Fatal("platform.multiplex should be pruned when all child platforms are gone")
+	}
+	if doc.RootID != "runner.default" {
+		t.Fatalf("runner.default should remain as root, rootId=%q", doc.RootID)
+	}
+}
+
+func TestEnvInterpolationMissingFailsWhenRootUnavailable(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.slack
+platform.slack:
+  use: platform/slack
+  config:
+    botToken: ${env:SLACK_BOT_TOKEN}
+`)
+	_, err := config.ResolveYAML(".", base)
+	if err == nil {
+		t.Fatal("expected error when root platform is unavailable")
+	}
+	if !strings.Contains(err.Error(), "root unavailable") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestEnvInterpolationMissingFiltersListDeps(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    loop: loop.default
+loop.default:
+  use: loop/default
+  deps:
+    agents:
+      - agent.assistant.default
+      - agent.slack.default
+agent.assistant.default:
+  use: agent/coding
+agent.slack.default:
+  use: agent/coding
+  config:
+    token: ${env:SLACK_ONLY_AGENT_TOKEN}
+`)
+	resolved, err := config.ResolveYAML(".", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := doc.Shared["loop.default"].Deps["agents"].([]any)
+	if len(agents) != 1 || agents[0] != "agent.assistant.default" {
+		t.Fatalf("agents=%v", agents)
+	}
+}
+
+func TestEnvInterpolationOptionalEmptyKeepsInstance(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+platform.default:
+  use: platform/cli
+  config:
+    apiToken: ${env:CHAT_API_TOKEN:-}
+`)
+	resolved, err := config.ResolveYAML(".", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Shared["platform.default"].Config["apiToken"] != "" {
+		t.Fatalf("apiToken=%v", doc.Shared["platform.default"].Config["apiToken"])
+	}
+}
+
+func TestFileInterpolationOptionalEmptyKeepsInstance(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    prompt: prompt.default
+prompt.default:
+  use: prompt/section/static
+  config:
+    name: persona
+    content: ${file:missing-persona.md:-}
+`)
+	resolved, err := config.ResolveYAML(dir, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Shared["prompt.default"].Config["content"] != "" {
+		t.Fatalf("content=%q", doc.Shared["prompt.default"].Config["content"])
+	}
+}

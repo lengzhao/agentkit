@@ -84,6 +84,10 @@ func ResolveYAML(interpDir string, base []byte, overlays ...[]byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
+	raw, err = pruneUnavailableInstances(raw, interpDir)
+	if err != nil {
+		return nil, err
+	}
 	if err := interpolateInstances(raw, interpDir); err != nil {
 		return nil, err
 	}

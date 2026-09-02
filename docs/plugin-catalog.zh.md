@@ -170,20 +170,20 @@ llm.default:
 **`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。同 provider 换 model 时只配一份 `llm/openai-compatible`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`），也可设 `quota` 或 `any`。
 
 ```yaml
-llm.openai:
+llm.default:
   use: llm/openai-compatible
   config:
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
 
-llm.default:
+llm.fallback:
   use: llm/fallback
   config:
     fallbackModels:
       - gpt-4o
       - gpt-4o-mini
   deps:
-    provider: llm.openai
+    provider: llm.default
 ```
 
 
@@ -285,6 +285,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `cap/tenant` 租户键一租户一个（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
+| `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
 | `credentials/env` | `credentials.Store` | 环境变量；`config.env` 内联内存键值、`config.files` 读取 dotenv 文件；优先级：进程 env > config env > files；`/env add` 写入 `.env`，`/env -u` 重载 files |
 | `credentials/file` | `credentials.Store` | 文件存储 |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
@@ -445,6 +446,7 @@ graph:
 - [ ] Config struct 字段有 `json` tag；未知字段 decode 失败
 - [ ] Deps 字段类型为接口，非具体 Provider
 - [ ] 需生命周期时实现 `agentkit.StartStop`
+- [ ] 需启动前一次性准备时实现 `agentkit.AppInitializer`，并由 `runner.deps.init` 挂载
 - [ ] 构造函数与 Config 字段写好 godoc（`// NewXxx registers <kind>:` + 字段注释）；CLI `/plugin <kind>` 通过 `go doc` 展示
 - [ ] 工具/注入内容写入 Session，满足 Model-visible ⟺ Logged
 - [ ] Policy 裁决走 `agentkit.Policy`；Hook 不充当 deny 通道

@@ -1,3 +1,11 @@
+bootstrap.shell.default:
+    config:
+        commands:
+            - echo "init"
+        workDir: local:.
+    deps:
+        workspace: workspace.default
+    use: bootstrap/shell
 runner.default:
     config:
         inject:
@@ -8,6 +16,8 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
+        init:
+            - bootstrap.shell.default
         loop:
             deps:
                 agents:

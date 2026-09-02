@@ -10,6 +10,16 @@ workspace.default:
     local: .agentkit
     scope: local
 
+# 进程启动前在 workspace 目录按序执行 shell 命令（幂等）；挂到 runner.deps.init
+bootstrap.shell.default:
+  use: bootstrap/shell
+  config:
+    workDir: local:.
+    commands:
+      - echo "init"
+  deps:
+    workspace: workspace.default
+
 runner.default:
   use: runner
   config:
@@ -32,6 +42,9 @@ runner.default:
     telemetry: telemetry.default
     schedules:
       - schedule.cron
+    # 启动前一次性初始化（AppInitializer）；示例见 bootstrap.shell.default
+    init:
+      - bootstrap.shell.default
 
 platform.default:
   use: platform/cli
@@ -46,9 +59,9 @@ platform.default:
 platform.chat-api:
   use: platform/chat-api
   config:
-    listenAddr: ":8030"
+    listenAddr: ""
     path: /v1/
-    # apiToken: ""                 # Bearer 鉴权；空=不校验（仅内网调试）
+    apiToken: ${env:CHAT_API_TOKEN}                 # Bearer 鉴权；空=不校验（仅内网调试）
     # userHeader: X-Chat-API-User
     # userNameHeader: X-Chat-API-User-Name  # 自动写入 Metadata（sender_name inject）
     # channelHeader: X-Chat-API-Channel
@@ -105,7 +118,7 @@ agent.assistant.default:
       baseDelayMs: 2000
   deps:
     sessionStore: sessionStore.default
-    llm: llm.default
+    llm: llm.fallback
     hooks: hooks.default
     prompt: prompt.default
     tools: tools.default
@@ -159,7 +172,7 @@ subagent.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
-    llm: llm.default
+    llm: llm.fallback
     tools: tools.subagent.default
     prompt: prompt.subagent.default
     hooks: hooks.default
@@ -193,6 +206,15 @@ llm.default:
   deps:
     credentials: credentials.default
 
+llm.fallback:
+  use: llm/fallback
+  config:
+    fallbackModels:
+      - gpt-4o
+      - gpt-4o-mini
+  deps:
+    provider: llm.default
+
 hooks.default:
   use: hooks/runtime
   deps:
@@ -215,6 +237,7 @@ compaction.prune.default:
 compaction.summary.default:
   use: compaction/summary
   config:
+    summaryModel: gpt-5.4
     keepRecentTokens: 20000
     reserveTokens: 16384
     retry:
@@ -222,7 +245,7 @@ compaction.summary.default:
       maxRetries: 3
       baseDelayMs: 2000
   deps:
-    llm: llm.default
+    llm: llm.fallback
 
 compaction.token-limit.default:
   use: compaction/token-limit

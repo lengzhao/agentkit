@@ -5,6 +5,7 @@ package all
 import (
 	_ "github.com/lengzhao/agentkit/plugins/agent/acpremote"
 	_ "github.com/lengzhao/agentkit/plugins/approval"
+	_ "github.com/lengzhao/agentkit/plugins/bootstrap"
 	_ "github.com/lengzhao/agentkit/plugins/compaction"
 	_ "github.com/lengzhao/agentkit/plugins/credentials"
 	_ "github.com/lengzhao/agentkit/plugins/hook"

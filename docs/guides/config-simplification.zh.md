@@ -101,11 +101,39 @@ flowchart LR
 
 | 语法 | 展开 |
 |---|---|
-| `${env:SLACK_BOT_TOKEN}` | 环境变量；缺失则报错并指出实例 id 与字段路径 |
+| `${env:SLACK_BOT_TOKEN}` | 环境变量；缺失则禁用该实例并从依赖图清理 |
+| `${env:X:-}` | 可选字段；缺失展开为 `""`，不禁用实例 |
 | `${env:X:-default}` | 带默认值 |
-| `${file:.agentkit/agents/meetingbot.md}` | 文件内容，注入为 YAML 字符串节点 |
+| `${file:.agentkit/agents/meetingbot.md}` | 文件内容，注入为 YAML 字符串节点；缺失则禁用实例 |
+| `${file:.agentkit/agents/custom.md:-}` | 可选文件；缺失展开为 `""`，不禁用实例 |
+
+**可选字段 vs 可选能力**：
+
+- **可选字段**（插件仍运行）：字段值写 `${env:VAR:-}` 或 `${file:path:-}`。
+- **可选能力**（整实例可清理）：实例上的开关字段用必填 `${env:VAR}`（如 Slack 的 `botToken`），不配则自动清理该插件。
 
 一处改动同时解决明文密钥和人设内联，且**零插件改动**——不需要给 slack 加 `botTokenRef`，不需要给 static section 加 `contentFile`。现有 `*Ref` 字段保持可用（`credentials/env` 仍负责 `.env` 加载与脱敏），新插件不必再重复这套样板。
+
+### 4.1 缺值自动清理
+
+L0（`config.base.yaml`）可以保留完整插件图。用户侧只需为要启用的能力提供必要值；未提供时，loader 在 `expandExtends` 之后、`interpolateInstances` 之前自动清理不可用实例：
+
+1. **探测缺值**：`${env:VAR}` 或 `${file:path}` 缺失（且无 `:-` 默认值）时，标记该实例 unavailable。`${env:VAR:-}` / `${file:path:-}` 视为可选字段，缺失展开为 `""`，不禁用实例。
+2. **级联删 dep**：从仍存活的实例中删除指向 unavailable 实例的依赖边（单值 dep 删键；列表 dep 过滤）。
+3. **空 deps 屏蔽**：若实例原本有 deps，清理后 deps 全空，则该实例也 unavailable，继续向上游传播，直到图稳定。
+4. **移除并运行**：删除所有 unavailable 实例，对剩余实例做插值，再 `pruneToReachable` 构建。
+5. **根链路失败**：若 `runner.default` 或必需运行链最终不可用，报错并汇总被清理原因。
+
+日志（`slog.Warn`）完整记录：
+
+| 消息 | 字段 |
+|---|---|
+| `config plugin disabled` | `instance_id`、`use`、`reason`、`field`、`missing_ref` |
+| `config dep pruned` | `instance_id`、`dep_key`、`dep_value`、`disabled_instance_id` |
+| `config plugin disabled by empty deps` | `instance_id`、`use`、`dep_keys` |
+| `config prune summary` | `disabled_count`、`pruned_dep_count`、`remaining_count`、`root_id` |
+
+效果：用户不必为了"没配 Slack/Feishu/Langfuse"手动删节点；`config.yaml` 只写自己要启用的能力和密钥即可。
 
 ### 风险
 

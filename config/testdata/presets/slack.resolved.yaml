@@ -12,12 +12,20 @@ agent.assistant.default:
             - compaction.prune.default
             - compaction.token-limit.default
         hooks: hooks.default
-        llm: llm.default
+        llm: llm.fallback
         prompt: prompt.default
         sessionStore: sessionStore.default
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+bootstrap.shell.default:
+    config:
+        commands:
+            - echo "init"
+        workDir: local:.
+    deps:
+        workspace: workspace.default
+    use: bootstrap/shell
 commands.default:
     use: commands/registry
 compaction.prune.default:
@@ -32,8 +40,9 @@ compaction.summary.default:
             baseDelayMs: 2000
             enabled: true
             maxRetries: 3
+        summaryModel: gpt-5.4
     deps:
-        llm: llm.default
+        llm: llm.fallback
     use: compaction/summary
 compaction.token-limit.default:
     config:
@@ -87,6 +96,14 @@ llm.default:
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
+llm.fallback:
+    config:
+        fallbackModels:
+            - gpt-4o
+            - gpt-4o-mini
+    deps:
+        provider: llm.default
+    use: llm/fallback
 loop.default:
     deps:
         agents:
@@ -205,6 +222,8 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
+        init:
+            - bootstrap.shell.default
         loop: loop.default
         platform: platform.default
         schedules:
@@ -258,7 +277,7 @@ subagent.default:
             - compaction.prune.default
             - compaction.token-limit.default
         hooks: hooks.default
-        llm: llm.default
+        llm: llm.fallback
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default

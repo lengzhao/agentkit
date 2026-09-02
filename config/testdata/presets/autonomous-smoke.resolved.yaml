@@ -1,3 +1,11 @@
+bootstrap.shell.default:
+    config:
+        commands:
+            - echo "init"
+        workDir: local:.
+    deps:
+        workspace: workspace.default
+    use: bootstrap/shell
 commands.default:
     use: commands/registry
 hook.turn-continue.default:
@@ -29,6 +37,8 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
+        init:
+            - bootstrap.shell.default
         loop:
             deps:
                 agents:
