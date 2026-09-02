@@ -159,7 +159,11 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 		"tool/fs-workspace": {
 			ID: "tool.fs-workspace.default",
 			Config: map[string]any{
-				"root":     "work",
+				"root": "work",
+				"tenantFiles": []any{
+					"AGENTS.md", "AGENTS.MD", "CLAUDE.md",
+					"memory.md", "MEMORY.md", "DREAMS.md",
+				},
 				"maxBytes": 1048576,
 			},
 			Deps: map[string]any{"workspace": "workspace.default"},
@@ -254,7 +258,11 @@ func subagentToolInstanceSpecs() map[string]toolInstanceSpec {
 	specs["tool/fs-workspace"] = toolInstanceSpec{
 		ID: "tool.fs-workspace.readonly.default",
 		Config: map[string]any{
-			"root":     "work",
+			"root": "work",
+			"tenantFiles": []any{
+				"AGENTS.md", "AGENTS.MD", "CLAUDE.md",
+				"memory.md", "MEMORY.md", "DREAMS.md",
+			},
 			"maxBytes": 1048576,
 			"readOnly": true,
 			"tools":    []any{"read", "grep", "find", "ls"},

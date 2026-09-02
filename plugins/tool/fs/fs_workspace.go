@@ -18,6 +18,9 @@ import (
 type FSWorkspaceConfig struct {
 	// Root is directory relative to the workspace root; may use the global: or local: scope prefix.
 	Root string `json:"root"`
+	// TenantFiles lists filenames at tenant local root that read/write/edit may touch when root is a sandbox (e.g. work).
+	// Paths must be a single path segment (no slashes). Configure defaults in tool.fs-workspace.default.config.tenantFiles.
+	TenantFiles []string `json:"tenantFiles,omitempty"`
 	// MaxBytes is read truncation limit; defaults to 1 MiB.
 	MaxBytes int `json:"maxBytes,omitempty"`
 	// MaxMatches is grep cap per call; defaults to 100.
@@ -37,9 +40,10 @@ type FSWorkspaceDeps struct {
 }
 
 type workspaceFS struct {
-	relRoot   string
-	workspace workspace.Service
-	readOnly  bool
+	relRoot     string
+	workspace   workspace.Service
+	readOnly    bool
+	tenantFiles []string
 }
 
 var _ workspaceFSOps = (*workspaceFS)(nil)
@@ -53,6 +57,7 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 	if root == "" {
 		root = "."
 	}
+	tenantFiles := cfg.TenantFiles
 	maxBytes := cfg.MaxBytes
 	if maxBytes <= 0 {
 		maxBytes = 1 << 20
@@ -69,7 +74,7 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 	if maxListEntries <= 0 {
 		maxListEntries = defaultListLimit
 	}
-	fs := &workspaceFS{relRoot: root, workspace: deps.Workspace, readOnly: cfg.ReadOnly}
+	fs := &workspaceFS{relRoot: root, workspace: deps.Workspace, readOnly: cfg.ReadOnly, tenantFiles: tenantFiles}
 	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
 }
 
@@ -275,14 +280,29 @@ func (s *workspaceFS) rootDir(ctx context.Context) (string, error) {
 	return s.workspace.Resolve(ctx, s.relRoot)
 }
 
-func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) {
-	root, err := s.rootDir(ctx)
-	if err != nil {
-		return "", err
+func isTenantFilePath(clean string, tenantFiles []string) bool {
+	if clean == "" || clean == "." || strings.Contains(clean, "/") {
+		return false
 	}
+	for _, name := range tenantFiles {
+		if strings.EqualFold(clean, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) {
 	clean := filepath.Clean(path)
 	if filepath.IsAbs(clean) {
 		clean = strings.TrimPrefix(clean, string(filepath.Separator))
+	}
+	if isTenantFilePath(clean, s.tenantFiles) {
+		return s.workspace.Resolve(ctx, clean)
+	}
+	root, err := s.rootDir(ctx)
+	if err != nil {
+		return "", err
 	}
 	full := filepath.Join(root, clean)
 	rel, err := filepath.Rel(root, full)

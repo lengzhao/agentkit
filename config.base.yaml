@@ -319,15 +319,12 @@ prompt.subagent.default:
 
 prompt.agents-md.default:
   use: prompt/section/agents-md
-  config:
-    root: work
   deps:
     workspace: workspace.default
 
 learning.default:
   use: learning/default
   config:
-    memoryRoot: work
     dreaming:
       enabled: true
     workshop:
@@ -344,8 +341,6 @@ learning.default:
 
 prompt.memory.default:
   use: prompt/section/memory
-  config:
-    root: work
   deps:
     workspace: workspace.default
     learning: learning.default
@@ -409,11 +404,18 @@ tools.subagent.default:
     policies:
       - policy.dangerous-shell.default
 
-# scope 默认根放 runtime（sessions、mcp.json、api.json 等）；fs/shell 只在 work/ 子目录读写。
+# scope 默认根放 runtime（sessions、AGENTS.md、memory.md 等）；fs/shell 只在 work/ 读写临时产物。
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
     root: work
+    tenantFiles:
+      - AGENTS.md
+      - AGENTS.MD
+      - CLAUDE.md
+      - memory.md
+      - MEMORY.md
+      - DREAMS.md
     maxBytes: 1048576
   deps:
     workspace: workspace.default
@@ -422,6 +424,13 @@ tool.fs-workspace.readonly.default:
   use: tool/fs-workspace
   config:
     root: work
+    tenantFiles:
+      - AGENTS.md
+      - AGENTS.MD
+      - CLAUDE.md
+      - memory.md
+      - MEMORY.md
+      - DREAMS.md
     maxBytes: 1048576
     readOnly: true
     tools:

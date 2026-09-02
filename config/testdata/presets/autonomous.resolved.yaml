@@ -90,7 +90,6 @@ learning.default:
     config:
         dreaming:
             enabled: true
-        memoryRoot: work
         workshop:
             mode: propose
     deps:
@@ -188,8 +187,6 @@ policy.shell-allowlist.default:
         strict: true
     use: policy/shell-allowlist
 prompt.agents-md.default:
-    config:
-        root: work
     deps:
         workspace: workspace.default
     use: prompt/section/agents-md
@@ -203,8 +200,6 @@ prompt.default:
             - prompt.subagents.default
     use: prompt/assembler/default
 prompt.memory.default:
-    config:
-        root: work
     deps:
         learning: learning.default
         workspace: workspace.default
@@ -340,6 +335,13 @@ tool.fs-workspace.default:
     config:
         maxBytes: 1048576
         root: work
+        tenantFiles:
+            - AGENTS.md
+            - AGENTS.MD
+            - CLAUDE.md
+            - memory.md
+            - MEMORY.md
+            - DREAMS.md
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
@@ -348,6 +350,13 @@ tool.fs-workspace.readonly.default:
         maxBytes: 1048576
         readOnly: true
         root: work
+        tenantFiles:
+            - AGENTS.md
+            - AGENTS.MD
+            - CLAUDE.md
+            - memory.md
+            - MEMORY.md
+            - DREAMS.md
         tools:
             - read
             - grep

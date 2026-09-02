@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	// DefaultMemoryRoot is the workspace-relative directory for memory.md.
-	DefaultMemoryRoot     = "work"
+	// DefaultMemoryRoot is the workspace-relative directory for memory.md (tenant local root).
+	DefaultMemoryRoot     = "."
 	DefaultMemoryFile     = "memory.md"
 	DefaultCharLimit      = 2200
 	DefaultDreamsFile     = "DREAMS.md"

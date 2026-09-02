@@ -85,7 +85,7 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | `..` | 项目根 |
 | `work` | scope 根下的 `work/` 子目录 |
 
-文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（常见 coding 场景为 `..` 即项目根；多租户为 `work`）。
+文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（常见 coding 场景为 `..` 即项目根；多租户为 `work` 临时产物目录）。`AGENTS.md`、`memory.md` 等租户级文件落在 local 根；`root: work` 时通过 `tenantFiles` 仍可由工具读写。
 
 Skills 目录叠加：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 
@@ -263,7 +263,7 @@ YAML 实例 `openapi.default` 在启动时读取 `api.json` 并注册 HTTP 动�
 多租户部署使用 `workspace/tenant`：
 
 - 每租户独立 local 根（默认 `~/.agentkit/tenants/<租户键>`）
-- 文件工具与 shell 限定在租户根下 `work/` 子目录
+- `AGENTS.md`、`memory.md` 等租户级文件在 local 根；文件工具与 shell 限定在 `work/` 临时产物（`tenantFiles` 例外）
 - 共享资源（skills、mcp.json）放 `global:` 路径
 
 ## 密钥与敏感信息

@@ -1,10 +1,14 @@
 package fs
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
 func TestSliceReadContentOffsetLimit(t *testing.T) {
@@ -106,5 +110,50 @@ func TestGrepCollectorContext(t *testing.T) {
 	}
 	if !strings.Contains(result.Text, "a.go:2: match") {
 		t.Fatalf("text = %q", result.Text)
+	}
+}
+
+func TestWorkspaceFSWritesTenantFileAtLocalRoot(t *testing.T) {
+	t.Parallel()
+
+	tenantRoot := t.TempDir()
+	workDir := filepath.Join(tenantRoot, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ws := workspace.Static(tenantRoot)
+	fs := &workspaceFS{
+		relRoot: "work",
+		workspace: ws,
+		tenantFiles: []string{
+			"AGENTS.md", "AGENTS.MD", "CLAUDE.md",
+			"memory.md", "MEMORY.md", "DREAMS.md",
+		},
+	}
+	ctx := context.Background()
+
+	if err := fs.writeText(ctx, "AGENTS.md", "tenant instructions"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(tenantRoot, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "tenant instructions" {
+		t.Fatalf("AGENTS.md = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("work/AGENTS.md should not exist: %v", err)
+	}
+
+	if err := fs.writeText(ctx, "notes.txt", "temp"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(filepath.Join(workDir, "notes.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "temp" {
+		t.Fatalf("notes.txt = %q", got)
 	}
 }

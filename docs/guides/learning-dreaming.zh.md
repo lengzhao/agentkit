@@ -9,14 +9,15 @@
 | OpenClaw 能力 | 作用 | AgentKit 落点 |
 |---|---|---|
 | **Grounded Dreaming** | 三阶段后台巩固：Light → REM → Deep，仅 grounded 片段可晋升 `MEMORY.md` | `plugins/learning/dreaming` |
-| **Dream Diary** | `DREAMS.md` 叙事日志，供人审阅，**不参与晋升** | `work/DREAMS.md` |
+| **Dream Diary** | `DREAMS.md` 叙事日志，供人审阅，**不参与晋升** | 租户根 `DREAMS.md` |
 | **Skill Workshop** | 提案先行（`PROPOSAL.md`），扫描通过后 apply 才写 `SKILL.md` | `plugins/learning/workshop` |
 | **Self-learning** | `auto` / `propose` / `off` 三档自主捕获 | `learning.workshop.mode` |
 
 ## 2. 文件布局
 
+租户 local 根（如 `.agentkit/chat-api_default_channel/` 或 `tenants/slack_C001/`）：
+
 ```
-work/
 ├── memory.md              # 长期记忆（prompt/section/memory 注入）
 ├── DREAMS.md              # Dream Diary（只读审阅，不注入模型）
 └── memory/
@@ -24,6 +25,9 @@ work/
         ├── state.json     # 短期信号、召回计数、检查点
         └── deep/
             └── YYYY-MM-DD.md   # Deep 阶段报告（可选）
+
+work/                      # fs / shell 临时产物
+└── ...
 
 work/skills/               # 或 local:skills 解析目录
 └── .workshop/
@@ -142,7 +146,6 @@ create/update → pending → apply → applied
 learning.default:
   use: learning/default
   config:
-    memoryRoot: work
     dreaming:
       enabled: true
     workshop:

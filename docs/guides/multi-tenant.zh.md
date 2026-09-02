@@ -137,13 +137,17 @@ local 根放**运行时与配置**，tool 只在 **`work/` 子目录**读写，�
 ```
 tenants/slack_C001/
 ├── sessions/          # session/store：*.jsonl + <stable>/current.json + <logical>/agent.json
+├── AGENTS.md        # 租户级 agent 指令（prompt/section/agents-md）
+├── memory.md        # /learn 长期记忆（prompt/section/memory）
+├── DREAMS.md        # Dream Diary（人工审阅，不注入模型）
+├── memory/dreaming/ # dreaming 状态与 Deep 报告
 ├── agents/            # 子 agent 定义
 ├── mcp.json
 ├── skills/            # 租户私有 skill
-└── work/              # fs / shell 的操作区（preset 默认 root）
+└── work/              # fs / shell 临时产物（preset 默认 root）
 ```
 
-`presets/multi-tenant.yaml` 把 `tool/fs-workspace`、`tool/shell-bash`、`prompt/section/agents-md` 的 `root` / `workDir` 都指到 `work`，与 coding preset 里「`.agentkit` 放运行时、`..` 落到项目根」是同一思路，但多租户**不允许 `..`**，所以用子目录而不是向上一级。
+`presets/multi-tenant.yaml` 把 `tool/fs-workspace`、`tool/shell-bash` 的 `root` / `workDir` 指到 `work`；`prompt/section/agents-md`、`prompt/section/memory` 与 `learning.default` 默认从租户 local 根读写 `AGENTS.md`、`memory.md` 等。`tool/fs-workspace` 的 `tenantFiles` 允许在 `root: work` 时仍通过工具读写这些租户根文件。
 
 ```yaml
 workspace.default:

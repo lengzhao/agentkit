@@ -82,11 +82,11 @@ func TestLearnCommandMemorySucceedsWhenDreamingSignalCannotBeWritten(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Blocks work/memory/dreaming/state.json while leaving work/memory.md writable.
-	if err := os.MkdirAll(filepath.Join(root, "work"), 0o755); err != nil {
+	// Blocks memory/dreaming/state.json while leaving memory.md writable.
+	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "work", "memory"), []byte("not a directory"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "memory", "dreaming"), []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}})
