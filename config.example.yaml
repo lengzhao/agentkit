@@ -176,3 +176,56 @@ prompt.custom.default:
 #     workspace: workspace.default
 #
 # 调试页：/debug/ ；API 见 docs/guides/multi-tenant.zh.md §chat-api
+
+# 示例：飞书（国内）/ Lark（国际版）IM
+#
+# 两者共用同一套实现，差异在于：
+#   1. use：platform/feishu（默认 open.feishu.cn）或 platform/lark（默认 open.larksuite.com）
+#   2. appId / appSecret：必须在对应开放平台创建应用后填写，不能混用
+#   3. encryptKey：非空时走 HTTP webhook；留空时走 WebSocket 长连接（飞书国内常用）
+#   4. agentId：可选，绑定该平台入站消息默认使用的 Agent；留空则用 loop.defaultAgent
+#
+# --- 国内飞书（WebSocket，默认）---
+# runner.default:
+#   deps:
+#     platform: platform.default
+#
+# platform.default:
+#   use: platform/feishu
+#   config:
+#     appId: "cli_REPLACE_ME"              # 来自 https://open.feishu.cn 应用凭证
+#     appSecret: "REPLACE_ME"
+#     # agentId: assistant                 # 可选：该平台默认 Agent；留空使用 loop.defaultAgent
+#     # domain: "https://open.feishu.cn"    # 可省略，platform/feishu 默认值
+#     enableFeishuCard: true
+#     progressStyle: card
+#     showThinking: false
+#     showToolProgress: true
+#   deps:
+#     commands: commands.default
+#     sessionStore: sessionStore.default
+#     workspace: workspace.default
+#
+# --- 国际版 Lark（常需 webhook + encryptKey）---
+# platform.default:
+#   use: platform/lark
+#   config:
+#     appId: "cli_REPLACE_ME"              # 来自 https://open.larksuite.com 应用凭证
+#     appSecret: "REPLACE_ME"
+#     # agentId: assistant                 # 可选：该平台默认 Agent；留空使用 loop.defaultAgent
+#     # domain: "https://open.larksuite.com"  # 可省略，platform/lark 默认值
+#     encryptKey: "REPLACE_ME"             # 开放平台「事件订阅」Encrypt Key；配置后启用 webhook
+#     port: "8080"
+#     callbackPath: /feishu/webhook        # 需在 Lark 控制台填回调 URL
+#     enableFeishuCard: true
+#     progressStyle: card
+#     showThinking: false
+#     showToolProgress: true
+#   deps:
+#     commands: commands.default
+#     sessionStore: sessionStore.default
+#     workspace: workspace.default
+#
+# 也可直接复用 preset：
+#   go run ./cmd/agent -config presets/feishu.yaml          # 国内飞书
+#   # Lark：将 presets/feishu.yaml 中 use 改为 platform/lark 并补 encryptKey

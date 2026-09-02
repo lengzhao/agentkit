@@ -118,6 +118,28 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 `multiplex` 必须转发 leaf 的 `PermissionCapability()`，不能自己在 root 实现。
 
+## 飞书流式进度卡片
+
+`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 Interactive Card 的 `Patch` 原地更新展示 agent 输出。整轮 turn 复用**一张卡片**，thinking / tool 进度与最终正文都在同一条消息里更新，不再为中间状态单独发消息。
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `progressStyle` | `legacy` | `card`：Card 2.0 可折叠进度面板 + 正文；`compact`：结构化进度列表；`legacy`：仅流式正文 |
+| `showThinking` | `false` | `card`/`compact` 下是否在进度区展示 thinking |
+| `showToolProgress` | `card`/`compact` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
+| `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
+
+```yaml
+platform.default:
+  use: platform/feishu
+  config:
+    progressStyle: card
+    showThinking: false
+    showToolProgress: true
+```
+
+与 hermes-agent `display.*` 的对应关系：`tool_progress` → `showToolProgress` + `progressStyle: card`；`thinking_progress` → `showThinking`；进度气泡原地编辑 → 单卡 `Patch` 更新。
+
 ## 无人值守与 Policy 分工
 
 | 场景 | 行为 |

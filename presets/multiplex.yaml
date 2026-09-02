@@ -73,7 +73,9 @@ platform.feishu:
     # reactionEmoji: OnIt
     # doneEmoji: ""
     # enableFeishuCard: true
-    # progressStyle: legacy
+    # progressStyle: card # legacy | compact | card
+    # showThinking: false
+    # showToolProgress: true
     # encryptKey: ""
     # port: "8080"
     # callbackPath: /feishu/webhook
@@ -100,6 +102,7 @@ platform.feishu:
 #   config:
 #     appId: ""
 #     appSecret: ""
+#     # agentId: "" # 可选：路由到指定 Agent；留空使用 loop.defaultAgent
 #     # domain: "https://open.larksuite.com"
 #     allowFrom: ""
 #     groupReplyAll: false

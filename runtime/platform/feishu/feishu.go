@@ -110,6 +110,8 @@ type Platform struct {
 	appID                      string
 	appSecret                  string
 	progressStyle              string
+	showThinking               bool
+	showToolProgress           bool
 	useInteractiveCard         bool
 	reactionEmoji              string
 	doneEmoji                  string

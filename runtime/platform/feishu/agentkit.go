@@ -43,6 +43,8 @@ type Config struct {
 	ResolveMentions            bool              `json:"resolveMentions"`
 	PeerBots                   map[string]string `json:"peerBots"`
 	ProgressStyle              string            `json:"progressStyle"`
+	ShowThinking               *bool             `json:"showThinking"`
+	ShowToolProgress           *bool             `json:"showToolProgress"`
 	EnableFeishuCard           *bool             `json:"enableFeishuCard"`
 	EncryptKey                 string            `json:"encryptKey"`
 	Port                       string            `json:"port"`
@@ -70,7 +72,13 @@ type inboundMessage struct {
 type streamState struct {
 	mu          sync.Mutex
 	handle      any
-	accumulated string
+	accumulated string // legacy mode text buffer
+	text        string // rich mode answer markdown
+	thinking    string
+	steps       []toolStep
+	toolStepIdx map[int]int // contentIndex -> index in steps
+	status      cardStatus
+	startedAt   time.Time
 	lastUpdate  time.Time
 }
 
@@ -148,6 +156,15 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		useInteractiveCard = *cfg.EnableFeishuCard
 	}
 
+	showThinking := false
+	if cfg.ShowThinking != nil {
+		showThinking = *cfg.ShowThinking
+	}
+	showToolProgress := progressStyle == "card" || progressStyle == "compact"
+	if cfg.ShowToolProgress != nil {
+		showToolProgress = *cfg.ShowToolProgress
+	}
+
 	noReplyToTrigger := false
 	if cfg.ReplyToTrigger != nil && !*cfg.ReplyToTrigger {
 		noReplyToTrigger = true
@@ -181,6 +198,8 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		appID:                      cfg.AppID,
 		appSecret:                  cfg.AppSecret,
 		progressStyle:              progressStyle,
+		showThinking:               showThinking,
+		showToolProgress:           showToolProgress,
 		useInteractiveCard:         useInteractiveCard,
 		reactionEmoji:              reactionEmoji,
 		doneEmoji:                  doneEmoji,
@@ -244,18 +263,29 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		return p.sendPermissionCard(ctx, event)
 	case agentkit.EventTurnEnd:
 		p.addDoneReactionForSession(event.SessionID)
+		if p.useInteractiveCard && p.useRichStream() {
+			return p.handleRichTurnEnd(ctx, event.SessionID)
+		}
 		return nil
 	}
 	if !p.useInteractiveCard {
 		return p.outbound.Handle(ctx, event)
 	}
 	switch event.Type {
-	case agentkit.EventMessageStart:
+	case agentkit.EventTurnStart:
 		p.clearStream(event.SessionID)
+		return nil
+	case agentkit.EventMessageStart:
+		if !p.useRichStream() {
+			p.clearStream(event.SessionID)
+		}
 		return nil
 	case agentkit.EventMessageUpdate:
 		return p.handleStreamUpdate(ctx, event)
 	case agentkit.EventMessageEnd:
+		if p.useRichStream() {
+			return p.handleRichStreamMessageEnd(ctx, event)
+		}
 		return p.handleStreamEnd(ctx, event)
 	case agentkit.EventAssistantMessage:
 		// Proactive tool/send messages (text + files) bypass streaming cards.
@@ -439,10 +469,17 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
+	if p.useRichStream() {
+		return p.handleRichStreamUpdate(ctx, event.SessionID, payload.AssistantMessageEvent)
+	}
 	delta := ""
 	switch payload.AssistantMessageEvent.Type {
-	case agentkit.AssistantEventTextDelta, agentkit.AssistantEventThinkingDelta:
+	case agentkit.AssistantEventTextDelta:
 		delta = payload.AssistantMessageEvent.Delta
+	case agentkit.AssistantEventThinkingDelta:
+		if p.showThinking {
+			delta = payload.AssistantMessageEvent.Delta
+		}
 	}
 	if delta == "" {
 		return nil
@@ -468,7 +505,14 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 	handle := st.handle
 	st.mu.Unlock()
 
-	if event.Type == agentkit.EventAssistantMessage {
+	if event.Type == agentkit.EventMessageEnd {
+		var payload agentkit.MessageEndPayload
+		if err := json.Unmarshal(event.Data, &payload); err == nil {
+			if t := assistantText(payload.Message); t != "" {
+				text = t
+			}
+		}
+	} else if event.Type == agentkit.EventAssistantMessage {
 		var msg agentkit.ModelMessage
 		if err := json.Unmarshal(event.Data, &msg); err == nil {
 			if t := assistantText(msg); t != "" {

@@ -29,7 +29,9 @@ platform.default:
     # replyToTrigger: true # false：出站不引用原消息（Im.Message.Create）
     # resolveMentions: false # 出站 @用户名 解析为飞书 at
     # enableFeishuCard: true # 流式 Interactive Card（message/update Patch）
-    # progressStyle: legacy # legacy | compact | card
+    # progressStyle: card # legacy | compact | card；card/compact 时整轮复用一张卡片原地更新
+    # showThinking: false # card/compact 下是否在进度区展示 thinking
+    # showToolProgress: true # card/compact 下是否展示 tool 调用进度
     # peerBots: {} # app_id -> 别名，引用链中识别其他 bot
     # encryptKey: "" # 非空时走 webhook（Lark 国际版常用），见 port / callbackPath
     # port: "8080"
