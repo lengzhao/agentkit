@@ -11,6 +11,8 @@ commands.default:
 hook.turn-continue.default:
     config:
         maxContinuations: 3
+        requireFinish: true
+        requireTodosDone: true
         stallLimit: 3
     deps:
         sessionStore: sessionStore.default

@@ -69,6 +69,7 @@ platform.chat-api:
       - x-task-id                   # 框架默认已内置；可追加自定义头
     busyPolicy: queue
     interactionTimeout: 10m
+    # agents: ["assistant", "worker"]  # 可选：调试页 Agent 下拉白名单
     # interactive: true            # false = 无人值守 BFF，ask_user 降级 NoHuman
     debugUi: false
   deps:
@@ -101,6 +102,7 @@ loop.default:
   deps:
     agents:
       - agent.assistant.default
+      - agent.worker.default
     telemetry: telemetry.default
 
 telemetry.default:
@@ -126,6 +128,34 @@ agent.assistant.default:
     compaction:
       - compaction.prune.default
       - compaction.token-limit.default
+
+# 工作模式 agent：自主续跑直到 todo 完成并 finish。通过 /agent use worker 或 chat-api agent_id=worker 触发。
+agent.worker.default:
+  use: agent/coding
+  config:
+    id: worker
+    model: gpt-5.4
+    maxSteps: 20
+    budget:
+      maxContinuations: 30
+      maxTotalSteps: 300
+      wallClockSeconds: 7200
+      maxTotalTokens: 2000000
+      softRatio: 0.8
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    sessionStore: sessionStore.default
+    llm: llm.fallback
+    hooks: hooks.worker
+    prompt: prompt.worker.default
+    tools: tools.worker.default
+    workspace: workspace.default
+    compaction:
+      - compaction.prune.default
+      - compaction.token-limit.worker
 
 sessionStore.default:
   use: session/store
@@ -220,6 +250,15 @@ hooks.default:
   deps:
     providers:
       - hook.before-step.default
+      - hook.turn-continue.default
+
+# worker 长跑：按 token 阈值更早触发压缩（triggerRatio 0.7）。
+hooks.worker:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.before-step.worker
+      - hook.turn-continue.default
 
 hook.before-step.default:
   use: hook/before-step
@@ -228,6 +267,24 @@ hook.before-step.default:
     services:
       - compaction.prune.default
       - compaction.token-limit.default
+
+hook.before-step.worker:
+  use: hook/before-step
+  deps:
+    sessionStore: sessionStore.default
+    services:
+      - compaction.prune.default
+      - compaction.token-limit.worker
+
+hook.turn-continue.default:
+  use: hook/turn-continue
+  config:
+    maxContinuations: 30
+    stallLimit: 3
+    requireFinish: true
+    requireTodosDone: true
+  deps:
+    sessionStore: sessionStore.default
 
 compaction.prune.default:
   use: compaction/prune-tool-results
@@ -252,6 +309,16 @@ compaction.token-limit.default:
   config:
     contextWindow: 200000
     triggerRatio: 0.92
+    charsPerToken: 3
+  deps:
+    services:
+      - compaction.summary.default
+
+compaction.token-limit.worker:
+  use: compaction/token-limit
+  config:
+    contextWindow: 200000
+    triggerRatio: 0.7
     charsPerToken: 3
   deps:
     services:
@@ -303,6 +370,38 @@ prompt.persona.default:
       - 不假装拥有用户未提供的实时信息；需要时用搜索或工具获取
       - 不提供违法、有害或明显不当内容的协助
       - 工具失败时说明原因并给出替代方案，而不是静默放弃
+
+prompt.worker.default:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.persona.worker
+      - prompt.agents-md.default
+      - prompt.memory.default
+      - prompt.skills.default
+      - prompt.subagents.default
+
+prompt.persona.worker:
+  use: prompt/section/static
+  config:
+    name: persona
+    content: |
+      你是「工作助手」（worker），负责把用户交代的任务从头到尾做完，而不是只做一轮问答。
+
+      ## 工作方式
+      - 收到任务后先用 todo 拆成可执行步骤，并标记当前进行项
+      - 持续推进：读文件、搜索、执行命令、验证结果，直到全部完成或明确受阻
+      - 全部完成或无法继续时，必须调用 finish（status=completed 或 blocked，summary 写清成果与遗留项）
+      - 不要停在「我建议你…」就结束；能自己做的就自己做
+
+      ## 风格
+      - 默认中文；进展与结论结构化、可核对
+      - 涉及事实与代码时优先用工具验证，不编造
+      - 破坏性操作前用 ask_user 确认（若平台支持交互）
+
+      ## 边界
+      - 工具失败时说明原因并换方案，不静默放弃
+      - 不提供违法、有害内容的协助
 
 prompt.subagents.default:
   use: prompt/section/subagents
@@ -380,6 +479,34 @@ tools.default:
       - tool.ask-user.default
       - tool.send.default
       - tool.schedule.default
+    toolPacks:
+      - tool.fs-workspace.default
+    dynamicTools:
+      - mcp.default
+      - openapi.default
+    policies:
+      - policy.dangerous-shell.default
+
+tools.worker.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+    toolTimeouts:
+      delegate: 900
+      ask_user: 900
+  deps:
+    hooks: hooks.worker
+    tools:
+      - tool.shell-bash.default
+      - tool.skill.default
+      - tool.subagent.default
+      - tool.web-fetch-http.default
+      - tool.ask-user.default
+      - tool.send.default
+      - tool.schedule.default
+      - tool.todo.default
+      - tool.finish.default
     toolPacks:
       - tool.fs-workspace.default
     dynamicTools:
@@ -467,6 +594,11 @@ tool.subagent.default:
   use: tool/subagent
   deps:
     subagent: subagent.default
+
+tool.todo.default:
+  use: tool/todo
+  deps:
+    sessionStore: sessionStore.default
 
 tool.finish.default:
   use: tool/finish

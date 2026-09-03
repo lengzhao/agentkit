@@ -65,10 +65,20 @@ hook.before-step.default:
             - compaction.token-limit.default
         sessionStore: sessionStore.default
     use: hook/before-step
+hook.turn-continue.default:
+    config:
+        maxContinuations: 30
+        requireFinish: true
+        requireTodosDone: true
+        stallLimit: 3
+    deps:
+        sessionStore: sessionStore.default
+    use: hook/turn-continue
 hooks.default:
     deps:
         providers:
             - hook.before-step.default
+            - hook.turn-continue.default
     use: hooks/runtime
 learning.default:
     config:
