@@ -71,6 +71,8 @@ platform.slack:
   config:
     botTokenRef: ${env:SLACK_BOT_TOKEN}
     appTokenRef: ${env:SLACK_APP_TOKEN}
+    allowFrom: "" # 用户 ID 白名单，逗号分隔（如 UAAA,UBBB）；空或 * = 全部
+    # allowChannels: "" # 频道白名单（ID 或 #name，逗号分隔）；空或 * = 全部；私信不受限
     groupReplyAll: false
   deps:
     commands: commands.default
@@ -84,6 +86,8 @@ platform.feishu:
   config:
     appId: ${var:FEISHU_APP_ID}
     appSecret: ${var:FEISHU_APP_SECRET}
+    allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
+    allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
   deps:
     commands: commands.default
@@ -96,6 +100,8 @@ platform.lark:
   config:
     appId: ${var:LARK_APP_ID}
     appSecret: ${var:LARK_APP_SECRET}
+    allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
+    allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
   deps:
     commands: commands.default
