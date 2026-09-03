@@ -157,3 +157,76 @@ func TestWorkspaceFSWritesTenantFileAtLocalRoot(t *testing.T) {
 		t.Fatalf("notes.txt = %q", got)
 	}
 }
+
+func TestWorkspaceFSRejectsPathEscapeByDefault(t *testing.T) {
+	t.Parallel()
+
+	tenantRoot := t.TempDir()
+	workDir := filepath.Join(tenantRoot, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parentFile := filepath.Join(tenantRoot, "secret.txt")
+	if err := os.WriteFile(parentFile, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := workspace.Static(tenantRoot)
+	fs := &workspaceFS{relRoot: "work", workspace: ws}
+	ctx := context.Background()
+
+	if _, err := fs.readText(ctx, "../secret.txt", 0); err == nil {
+		t.Fatal("expected path escape error")
+	}
+	if err := fs.writeText(ctx, "../escape.txt", "bad"); err == nil {
+		t.Fatal("expected path escape error on write")
+	}
+}
+
+func TestWorkspaceFSUnrestrictedPaths(t *testing.T) {
+	t.Parallel()
+
+	tenantRoot := t.TempDir()
+	workDir := filepath.Join(tenantRoot, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parentFile := filepath.Join(tenantRoot, "secret.txt")
+	if err := os.WriteFile(parentFile, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := workspace.Static(tenantRoot)
+	fs := &workspaceFS{relRoot: "work", workspace: ws, unrestricted: true}
+	ctx := context.Background()
+
+	got, err := fs.readText(ctx, "../secret.txt", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "secret" {
+		t.Fatalf("secret.txt = %q", got)
+	}
+	if err := fs.writeText(ctx, "../escape.txt", "ok"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(tenantRoot, "escape.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "ok" {
+		t.Fatalf("escape.txt = %q", string(raw))
+	}
+
+	absFile := filepath.Join(tenantRoot, "abs.txt")
+	if err := os.WriteFile(absFile, []byte("abs"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = fs.readText(ctx, absFile, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "abs" {
+		t.Fatalf("abs file = %q", got)
+	}
+}

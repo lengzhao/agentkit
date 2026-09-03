@@ -1173,7 +1173,7 @@ Policy Plane 判定已可见调用以及能力操作：
 |---|---|---|
 | L0 默认 | `work` | `~/.agentkit/work/`，避免误伤 `sessions/` |
 | `presets/coding.yaml` | `..` | 项目根目录读写 |
-| `presets/multi-tenant.yaml` | `work` | 租户根下操作区，禁止 `..` 越权 |
+| `presets/multi-tenant.yaml` | `work` | 租户根下操作区，默认限制在 `root` 内；可设 `unrestricted: true` 关闭路径权限控制 |
 
 ```yaml
 # coding preset 典型绑定
@@ -1186,6 +1186,15 @@ tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
     root: ..
+  deps:
+    workspace: workspace.default
+
+# 关闭路径权限控制（不限于 root，可用 ../、绝对路径等）
+tool.fs-workspace.unrestricted:
+  use: tool/fs-workspace
+  config:
+    root: work
+    unrestricted: true
   deps:
     workspace: workspace.default
 ```

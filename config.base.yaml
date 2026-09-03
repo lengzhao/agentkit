@@ -409,6 +409,7 @@ tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
     root: work
+    # unrestricted: true  # 关闭路径权限控制，不限于 root（含 ../、绝对路径等）
     tenantFiles:
       - AGENTS.md
       - AGENTS.MD

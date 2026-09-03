@@ -193,7 +193,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 依赖 | 模型工具名 | 职责 |
 |---|---|---|---|
-| `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力 |
+| `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` / `config.unrestricted` 可限制能力 |
 | `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `workspace` | `bash` | Shell 命令执行 |
 | `tool/web-search-auto` | `credentials?` | `web_search` | 可选：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
@@ -213,7 +213,17 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 | `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
-**`tool/fs-workspace` 模型参数**（插件 `config` 另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
+**`tool/fs-workspace` 插件 config**（另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `root` | `.` | 相对 workspace 根的读写根 |
+| `unrestricted` | `false` | 为 `true` 时关闭路径权限控制，不将路径限制在 `root` 内（含 `../`、绝对路径等） |
+| `readOnly` | `false` | 拒绝 `write` / `edit` |
+| `tools` | 全部 | 限制注册的模型工具子集 |
+| `tenantFiles` | — | `root` 为子目录（如 `work`）时，仍可在租户 local 根读写列出的单段文件名 |
+
+**`tool/fs-workspace` 模型参数**：
 
 | 工具 | 关键参数 | 行为要点 |
 |---|---|---|

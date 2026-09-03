@@ -85,7 +85,7 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | `..` | 项目根 |
 | `work` | scope 根下的 `work/` 子目录 |
 
-文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（常见 coding 场景为 `..` 即项目根；多租户为 `work` 临时产物目录）。`AGENTS.md`、`memory.md` 等租户级文件落在 local 根；`root: work` 时通过 `tenantFiles` 仍可由工具读写。
+文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（常见 coding 场景为 `..` 即项目根；多租户为 `work` 临时产物目录）。`AGENTS.md`、`memory.md` 等租户级文件落在 local 根；`root: work` 时通过 `tenantFiles` 仍可由工具读写。默认将路径限制在 `root` 内；设 `unrestricted: true` 可关闭路径权限控制。
 
 Skills 目录叠加：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 

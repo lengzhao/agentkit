@@ -31,6 +31,8 @@ type FSWorkspaceConfig struct {
 	MaxListEntries int `json:"maxListEntries,omitempty"`
 	// ReadOnly rejects write and edit operations.
 	ReadOnly bool `json:"readOnly,omitempty"`
+	// Unrestricted disables path permission checks; paths are not confined to root.
+	Unrestricted bool `json:"unrestricted,omitempty"`
 	// Tools limits which model tools are registered; empty means all six (read, write, edit, grep, find, ls).
 	Tools []string `json:"tools,omitempty"`
 }
@@ -40,10 +42,11 @@ type FSWorkspaceDeps struct {
 }
 
 type workspaceFS struct {
-	relRoot     string
-	workspace   workspace.Service
-	readOnly    bool
-	tenantFiles []string
+	relRoot      string
+	workspace    workspace.Service
+	readOnly     bool
+	unrestricted bool
+	tenantFiles  []string
 }
 
 var _ workspaceFSOps = (*workspaceFS)(nil)
@@ -74,7 +77,13 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 	if maxListEntries <= 0 {
 		maxListEntries = defaultListLimit
 	}
-	fs := &workspaceFS{relRoot: root, workspace: deps.Workspace, readOnly: cfg.ReadOnly, tenantFiles: tenantFiles}
+	fs := &workspaceFS{
+		relRoot:      root,
+		workspace:    deps.Workspace,
+		readOnly:     cfg.ReadOnly,
+		unrestricted: cfg.Unrestricted,
+		tenantFiles:  tenantFiles,
+	}
 	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
 }
 
@@ -293,6 +302,9 @@ func isTenantFilePath(clean string, tenantFiles []string) bool {
 }
 
 func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) {
+	if s.unrestricted && filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
 	clean := filepath.Clean(path)
 	if filepath.IsAbs(clean) {
 		clean = strings.TrimPrefix(clean, string(filepath.Separator))
@@ -305,9 +317,11 @@ func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) 
 		return "", err
 	}
 	full := filepath.Join(root, clean)
-	rel, err := filepath.Rel(root, full)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("path escapes workspace: %s", path)
+	if !s.unrestricted {
+		rel, err := filepath.Rel(root, full)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return "", fmt.Errorf("path escapes workspace: %s", path)
+		}
 	}
 	return full, nil
 }
