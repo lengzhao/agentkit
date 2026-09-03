@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
 // Dispatch sends a proactive message through the platform.
@@ -89,76 +89,23 @@ func isSlashTarget(token string) bool {
 	if strings.Contains(token, ":") {
 		return true
 	}
-	return isSlackChannelID(token)
-}
-
-// isSlackChannelID reports bare Slack conversation ids (C/G/D + alnum).
-// User ids (U…) should use @user syntax instead.
-func isSlackChannelID(token string) bool {
-	token = strings.TrimSpace(token)
-	if len(token) < 9 {
-		return false
-	}
-	switch token[0] {
-	case 'C', 'G', 'D':
-	default:
-		return false
-	}
-	for _, r := range token[1:] {
-		if r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func normalizeSlashSessionID(ctx context.Context, raw string) agentkit.SessionID {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	if strings.Contains(raw, ":") {
-		return agentkit.SessionID(raw)
-	}
-	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
-	if platformID == "slack" && isSlackChannelID(raw) {
-		return agentkit.SessionID("slack:" + raw)
-	}
-	return agentkit.SessionID(raw)
+	return common.IsSlackChannelID(token)
 }
 
 func resolveRoute(ctx context.Context, input SendInput) (route, error) {
-	inbox, _ := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID)
-	if inbox == "" {
-		inbox, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	dr, err := common.ResolveDeliveryRoute(ctx, common.DeliveryRouteInput{
+		SessionID: input.SessionID,
+		UserID:    input.UserID,
+	})
+	if err != nil {
+		return route{}, err
 	}
-
-	var r route
-	switch {
-	case strings.TrimSpace(input.SessionID) != "":
-		r.sessionID = normalizeSlashSessionID(ctx, input.SessionID)
-	case strings.TrimSpace(input.UserID) != "":
-		r.sessionID = session.DeliveryWithUser(inbox, input.UserID)
-	default:
-		r.sessionID = inbox
-	}
-	if r.sessionID == "" {
-		return route{}, fmt.Errorf("send requires inbox session in context, or sessionId/userId")
-	}
-	r.agentID, _ = ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	r.platformID, _ = ctx.Value(agentkit.KeyPlatformID).(string)
-	if id := strings.TrimSpace(input.UserID); id != "" {
-		r.userID = id
-	} else {
-		r.userID, _ = ctx.Value(agentkit.KeyUserID).(string)
-	}
-	if p := session.ParseDelivery(r.sessionID, r.userID).Platform; p != "" {
-		if r.platformID == "" || strings.TrimSpace(input.SessionID) != "" {
-			r.platformID = p
-		}
-	}
-	return r, nil
+	return route{
+		sessionID:  dr.SessionID,
+		agentID:    dr.AgentID,
+		platformID: dr.PlatformID,
+		userID:     dr.UserID,
+	}, nil
 }
 
 func buildParts(ctx context.Context, input SendInput, ws workspace.Service, root string) ([]agentkit.ContentPart, error) {

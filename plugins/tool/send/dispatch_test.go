@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
 func TestNormalizeSlashSessionIDSlackChannel(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.WithValue(context.Background(), agentkit.KeyPlatformID, "slack")
-	got := normalizeSlashSessionID(ctx, "D0AK8MAHW22")
+	got := common.NormalizeDeliverySessionID(ctx, "D0AK8MAHW22")
 	want := agentkit.SessionID("slack:D0AK8MAHW22")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)

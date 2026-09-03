@@ -533,6 +533,7 @@ tools.default:
       - tool.web-fetch-http.default
       - tool.ask-user.default
       - tool.send.default
+      - tool.chat-history.default
       - tool.schedule.default
     toolPacks:
       - tool.fs-workspace.default
@@ -559,6 +560,7 @@ tools.worker.default:
       - tool.web-fetch-http.default
       - tool.ask-user.default
       - tool.send.default
+      - tool.chat-history.default
       - tool.schedule.default
       - tool.todo.default
       - tool.finish.default
@@ -708,6 +710,11 @@ tool.send.default:
   deps:
     platform: platform.default
     workspace: workspace.default
+
+tool.chat-history.default:
+  use: tool/chat-history
+  deps:
+    platform: platform.default
 
 mcp.default:
   use: tool/mcp

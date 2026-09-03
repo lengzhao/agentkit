@@ -17,6 +17,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/skill"
 	_ "github.com/lengzhao/agentkit/plugins/telemetry"
 	_ "github.com/lengzhao/agentkit/plugins/tool/askuser"
+	_ "github.com/lengzhao/agentkit/plugins/tool/chathistory"
 	_ "github.com/lengzhao/agentkit/plugins/tool/finish"
 	_ "github.com/lengzhao/agentkit/plugins/tool/fs"
 	_ "github.com/lengzhao/agentkit/plugins/tool/mcp"
