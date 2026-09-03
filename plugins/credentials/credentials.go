@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/config"
 	"github.com/lengzhao/agentkit/plugins/configfile"
 	"github.com/lengzhao/pluginkit"
 )
@@ -43,6 +44,7 @@ type Store struct {
 
 func init() {
 	pluginkit.Register("credentials/env", New)
+	config.RegisterGraphEnvSource(EnvGraphSource)
 }
 
 // New registers credentials/env: Resolve secrets from environment variables.

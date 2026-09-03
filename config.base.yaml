@@ -61,7 +61,7 @@ platform.chat-api:
   config:
     listenAddr: ""
     path: /v1/
-    apiToken: ${env:CHAT_API_TOKEN}                 # Bearer 鉴权；空=不校验（仅内网调试）
+    apiToken: ${var:CHAT_API_TOKEN:-}              # Bearer 鉴权；空=不校验（仅内网调试）
     # userHeader: X-Chat-API-User
     # userNameHeader: X-Chat-API-User-Name  # 自动写入 Metadata（sender_name inject）
     # channelHeader: X-Chat-API-Channel

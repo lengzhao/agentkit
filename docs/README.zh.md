@@ -10,6 +10,7 @@ docs/
 ├── go-agent-harness-architecture.zh.md  # 架构与装配模型
 ├── plugin-catalog.zh.md              # Plugin Kind 目录
 ├── roadmap.zh.md                     # 现状与规划
+├── agentkit-sharing.zh.md            # 技术分享稿（插件 / Go / 扩展）
 └── guides/                           # 场景专题
     ├── autonomous-run.zh.md          # 自主运行
     ├── subagent.zh.md                # 子 Agent 委派

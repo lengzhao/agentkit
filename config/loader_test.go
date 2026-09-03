@@ -372,6 +372,30 @@ b.default:
 	}
 }
 
+func TestVarInterpolation(t *testing.T) {
+	t.Setenv("TEST_AGENTKIT_URL", "https://example.com")
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+platform.default:
+  use: platform/cli
+  config:
+    baseUrl: ${var:TEST_AGENTKIT_URL}
+`)
+	resolved, err := config.ResolveYAML(".", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Shared["platform.default"].Config["baseUrl"] != "https://example.com" {
+		t.Fatalf("baseUrl=%v", doc.Shared["platform.default"].Config["baseUrl"])
+	}
+}
+
 func TestEnvInterpolation(t *testing.T) {
 	t.Setenv("TEST_AGENTKIT_TOKEN", "secret-value")
 	base := []byte(`runner.default:
@@ -391,7 +415,7 @@ platform.default:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.Shared["platform.default"].Config["token"] != "secret-value" {
+	if doc.Shared["platform.default"].Config["token"] != "env:TEST_AGENTKIT_TOKEN" {
 		t.Fatalf("token=%v", doc.Shared["platform.default"].Config["token"])
 	}
 }

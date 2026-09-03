@@ -15,7 +15,7 @@ L1 覆盖曾经是**整节点替换**（`baseMap[id] = node`）。想改一个�
 | 改动 | 解决 | 代码量 |
 |---|---|---|
 | **A. 节点内深合并** | 机械抄写 + 静默丢配置 | ~40 行 |
-| **B. `${env:}` / `${file:}` 插值** | 明文密钥 + 人设内联 | ~40 行 |
+| **B. `${env:}` / `${var:}` / `${file:}` 插值** | 明文密钥 + 人设内联 | ~40 行 |
 | **C. 节点 `extends:`** | 多 agent 复制粘贴 | ~40 行 |
 
 效果（本仓库当前 `config.yaml`，实测行数）：**195 行 → 约 70 行**，另有 36 行人设文本移出到 `.agentkit/agents/meetingbot.md`。用户不需要学任何新概念——写的还是同一张实例图。
@@ -88,7 +88,7 @@ flowchart LR
 - 链式 overlay 的调试难度上升——一个字段可能来自 L0、preset、本地三层。需要配套 `agent config explain`（见 §7）。
 - 列表默认覆盖而非合并，与部分用户直觉相反。文档里必须写死，并用 `+` 后缀显式表达追加。
 
-## 4. 改动 B：`${env:}` 与 `${file:}` 插值
+## 4. 改动 B：`${env:}`、`${var:}` 与 `${file:}` 插值
 
 ### 现状
 
@@ -102,16 +102,32 @@ flowchart LR
 
 | 语法 | 展开 |
 |---|---|
-| `${env:SLACK_BOT_TOKEN}` | 环境变量；缺失则禁用该实例并从依赖图清理 |
+| `${env:SLACK_BOT_TOKEN}` | 加载期 gate：变量存在则保留实例并展开为 `env:SLACK_BOT_TOKEN`；缺失则禁用该实例并从依赖图清理 |
 | `${env:X:-}` | 可选字段；缺失展开为 `""`，不禁用实例 |
-| `${env:X:-default}` | 带默认值 |
+| `${env:X:-default}` | 带默认值（字面量，非 `env:` 引用） |
+| `${var:CHAT_API_TOKEN}` | 加载期 gate：变量存在则展开为**明文值**；缺失则禁用实例 |
+| `${var:X:-}` | 可选字段；缺失展开为 `""`，不禁用实例 |
+| `${var:X:-default}` | 带默认值 |
 | `${file:.agentkit/agents/meetingbot.md}` | 文件内容，注入为 YAML 字符串节点；缺失则禁用实例 |
 | `${file:.agentkit/agents/custom.md:-}` | 可选文件；缺失展开为 `""`，不禁用实例 |
+| `env:VAR`（如 `apiKeyRef`） | **加载期不处理**；运行期由 `credentials.Store` 解析 |
+
+**`${env:}`、`${var:}` 与 `env:` 的边界**：
+
+| 写法 | 阶段 | 作用 |
+|---|---|---|
+| `${env:VAR}` | 加载期 | gate + 展开为运行时引用 `env:VAR`（适合 `*Ref` 字段） |
+| `${var:VAR}` | 加载期 | gate + 展开为明文值（适合 URL、token 等普通字符串字段） |
+| `env:VAR`（如 `apiKeyRef`） | 运行期 | 由 `credentials.Store` 解析；加载期原样保留 |
+
+loader **不读取** `credentials/env` 的 `config.files`（`.env`），**不实例化** `credentials.Store`。`credentials/env` 通过 `plugins/credentials` 的 `EnvGraphSource` 适配器，把 YAML 内联的 `config.env` 注册为可选 gate 来源；应用导入 `plugins` 包后自动生效。
+
+自定义 credentials 若需参与 `${env:}` gate，应提供自己的 `GraphEnvSource` 或 `WithEnvLookup`，而不是在 loader 里实例化 Store。
 
 **可选字段 vs 可选能力**：
 
-- **可选字段**（插件仍运行）：字段值写 `${env:VAR:-}` 或 `${file:path:-}`。
-- **可选能力**（整实例可清理）：实例上的开关字段用必填 `${env:VAR}`（如 Slack 的 `botToken`），不配则自动清理该插件。
+- **可选字段**（插件仍运行）：字段值写 `${env:VAR:-}`、`${var:VAR:-}` 或 `${file:path:-}`。
+- **可选能力**（整实例可清理）：实例上的开关字段用必填 `${env:VAR}`（如 Slack 的 `botTokenRef`）或 `${var:VAR}`（如必填 URL），不配则自动清理该插件。
 
 一处改动同时解决明文密钥和人设内联，且**零插件改动**——不需要给 slack 加 `botTokenRef`，不需要给 static section 加 `contentFile`。现有 `*Ref` 字段保持可用（`credentials/env` 仍负责 `.env` 加载与脱敏），新插件不必再重复这套样板。
 
@@ -119,7 +135,7 @@ flowchart LR
 
 L0（`config.base.yaml`）可以保留完整插件图。用户侧只需为要启用的能力提供必要值；未提供时，loader 在 `expandExtends` 之后、`interpolateInstances` 之前自动清理不可用实例：
 
-1. **探测禁用与缺值**：overlay 中的顶层 `instance.id: null` 标记该已有实例 unavailable；`${env:VAR}` 或 `${file:path}` 缺失（且无 `:-` 默认值）时，也标记该实例 unavailable。`${env:VAR:-}` / `${file:path:-}` 视为可选字段，缺失展开为 `""`，不禁用实例。L0/base 中的顶层 `instance.id: null` 不是禁用语义，直接视为无效配置。
+1. **探测禁用与缺值**：overlay 中的顶层 `instance.id: null` 标记该已有实例 unavailable；必填 `${env:VAR}`、`${var:VAR}` 或 `${file:path}` 缺失（且无 `:-` 默认值）时，也标记该实例 unavailable。`${env:VAR:-}` / `${var:VAR:-}` / `${file:path:-}` 视为可选字段，缺失展开为 `""`，不禁用实例。L0/base 中的顶层 `instance.id: null` 不是禁用语义，直接视为无效配置。
 2. **级联删 dep**：从仍存活的实例中删除指向 unavailable 实例的依赖边（单值 dep 删键；列表 dep 过滤）。
 3. **空 deps 屏蔽**：若实例原本有 deps，清理后 deps 全空，则该实例也 unavailable，继续向上游传播，直到图稳定。
 4. **移除并运行**：删除所有 unavailable 实例，对剩余实例做插值，再 `pruneToReachable` 构建。
@@ -138,7 +154,7 @@ L0（`config.base.yaml`）可以保留完整插件图。用户侧只需为要启
 
 ### 风险
 
-- `${env:}` 在加载期展开，意味着解析后的图里带明文。任何 dump 路径（`config explain`、pluginkit manager Web UI、错误信息）必须脱敏，或保留未展开的原文。这条要在实现时一起做，否则等于把密钥从 YAML 挪到日志。
+- `${env:}` 展开为 `env:VAR` 引用，resolved 图不含明文密钥；`${var:}` 展开为明文，dump / 日志须对敏感键脱敏。
 - `${file:}` 的相对路径基准要写死（建议：相对 overlay 文件所在目录，而非进程 cwd），否则换工作目录就断。
 
 ## 5. 改动 C：节点 `extends:`
@@ -210,8 +226,8 @@ platform.chat-api:
 platform.slack:
   use: platform/slack
   config:
-    botTokenRef: env:SLACK_BOT_TOKEN
-    appTokenRef: env:SLACK_APP_TOKEN
+    botTokenRef: ${env:SLACK_BOT_TOKEN}
+    appTokenRef: ${env:SLACK_APP_TOKEN}
     domain: https://im-gateway-sit.amberainsider.com/api/
     groupReplyAll: false
   deps:
@@ -412,6 +428,6 @@ flowchart TB
 
 ## 12. 与架构文档的关系
 
-- 架构文档 [§5.6](../go-agent-harness-architecture.zh.md) 的配置规则需补充深合并语义（`use` 变更 → 替换；`key+` 追加；`key-` 列表删减；`key: null` 删 map 键；overlay 顶层 `instance.id: null` 禁用已有实例）与 `${env:}` / `${file:}` 插值。
+- 架构文档 [§5.6](../go-agent-harness-architecture.zh.md) 的配置规则需补充深合并语义（`use` 变更 → 替换；`key+` 追加；`key-` 列表删减；`key: null` 删 map 键；overlay 顶层 `instance.id: null` 禁用已有实例）与 `${env:}` / `${var:}` / `${file:}` 插值。
 - 架构文档 §5.7 的 `Feature` / `Preset` 文档种类**保留为目标状态**，启动判据见 §8.2；建议在 §5.7 开头标注「目标 API，当前未实现；节点级复用先用 `extends:` + preset 链」，避免被读成已落地契约。其中「`agentkit config resolve`（规划中）」一句应改为指向本文的三条改动。
 - 底层装配始终不变：`build.Build[Runner](ctx, graph, rootID)`。

@@ -69,7 +69,7 @@ platform.default:
 	if !strings.Contains(out, "env:OPENAI_API_KEY") {
 		t.Fatalf("dump should keep credential ref: %s", out)
 	}
-	if !strings.Contains(out, "[REDACTED]") {
-		t.Fatalf("dump should redact token: %s", out)
+	if !strings.Contains(out, "env:TEST_AGENTKIT_DUMP_TOKEN") {
+		t.Fatalf("dump should keep env gate expansion as credential ref: %s", out)
 	}
 }

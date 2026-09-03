@@ -19,7 +19,7 @@ type disableReason struct {
 // pruneUnavailableInstances removes instances that cannot run because required
 // interpolation values are missing or because all deps were pruned. The process
 // repeats until the graph stabilizes.
-func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDisabled map[string]disableReason) (map[string]any, error) {
+func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDisabled map[string]disableReason, envCtx EnvContext) (map[string]any, error) {
 	disabled := cloneDisableReasons(explicitDisabled)
 	prunedDepCount := 0
 
@@ -36,7 +36,7 @@ func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDis
 		if !ok {
 			continue
 		}
-		if missing, ok := probeInterpolationMissing(id, nodeMap, interpDir); ok {
+		if missing, ok := probeInterpolationMissing(id, nodeMap, interpDir, envCtx); ok {
 			disabled[id] = disableReason{
 				instanceID: id,
 				use:        instanceUse(nodeMap),

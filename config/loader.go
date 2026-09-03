@@ -66,8 +66,19 @@ func ResolveFiles(basePath string, overlayPaths ...string) ([]byte, error) {
 }
 
 // ResolveYAML merges base with each overlay in order, expands extends, interpolates
-// string values, then prunes unreachable instances.
+// string values, then prunes unreachable instances. ${env:NAME} expands to
+// env:NAME when present; ${var:NAME} expands to the value. Both gate on the
+// process environment plus RegisterGraphEnvSource / ResolveOption sources.
 func ResolveYAML(interpDir string, base []byte, overlays ...[]byte) ([]byte, error) {
+	return resolveYAML(interpDir, base, overlays, nil)
+}
+
+// ResolveYAMLWithOptions is ResolveYAML with per-call env gate sources.
+func ResolveYAMLWithOptions(interpDir string, base []byte, overlays [][]byte, opts ...ResolveOption) ([]byte, error) {
+	return resolveYAML(interpDir, base, overlays, opts)
+}
+
+func resolveYAML(interpDir string, base []byte, overlays [][]byte, opts []ResolveOption) ([]byte, error) {
 	raw, err := parseInstanceMap(base)
 	if err != nil {
 		return nil, err
@@ -112,11 +123,15 @@ func ResolveYAML(interpDir string, base []byte, overlays ...[]byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	raw, err = pruneUnavailableInstances(raw, interpDir, explicitDisabled)
+	envCtx, err := buildEnvContext(raw, opts)
 	if err != nil {
 		return nil, err
 	}
-	if err := interpolateInstances(raw, interpDir); err != nil {
+	raw, err = pruneUnavailableInstances(raw, interpDir, explicitDisabled, envCtx)
+	if err != nil {
+		return nil, err
+	}
+	if err := interpolateInstances(raw, interpDir, envCtx); err != nil {
 		return nil, err
 	}
 	rootID, err := resolveRootID(raw)
