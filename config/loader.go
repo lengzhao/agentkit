@@ -68,23 +68,51 @@ func ResolveFiles(basePath string, overlayPaths ...string) ([]byte, error) {
 // ResolveYAML merges base with each overlay in order, expands extends, interpolates
 // string values, then prunes unreachable instances.
 func ResolveYAML(interpDir string, base []byte, overlays ...[]byte) ([]byte, error) {
-	merged := base
+	raw, err := parseInstanceMap(base)
+	if err != nil {
+		return nil, err
+	}
+	explicitDisabled := map[string]disableReason{}
 	for _, overlay := range overlays {
-		next, err := MergeYAML(merged, overlay)
+		if len(overlay) == 0 {
+			continue
+		}
+		overlayMap, err := parseInstanceMap(overlay)
 		if err != nil {
 			return nil, err
 		}
-		merged = next
+		for id, node := range overlayMap {
+			if node == nil {
+				if existing, ok := raw[id]; !ok {
+					return nil, fmt.Errorf("overlay disables unknown instance %q", id)
+				} else {
+					explicitDisabled[id] = disableReason{
+						instanceID: id,
+						use:        instanceUseFromAny(existing),
+						reason:     "explicit_null",
+					}
+				}
+				continue
+			}
+			delete(explicitDisabled, id)
+		}
+		raw = mergeInstanceMaps(raw, overlayMap)
 	}
-	raw, err := parseInstanceMap(merged)
-	if err != nil {
-		return nil, err
+	for id, node := range raw {
+		if node != nil {
+			continue
+		}
+		if _, ok := explicitDisabled[id]; ok {
+			delete(raw, id)
+			continue
+		}
+		return nil, fmt.Errorf("instance %q: null can only be used in overlays to disable an existing instance", id)
 	}
 	raw, err = expandExtends(raw)
 	if err != nil {
 		return nil, err
 	}
-	raw, err = pruneUnavailableInstances(raw, interpDir)
+	raw, err = pruneUnavailableInstances(raw, interpDir, explicitDisabled)
 	if err != nil {
 		return nil, err
 	}

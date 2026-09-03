@@ -490,10 +490,11 @@ MVP 配置使用两层 YAML 合并后得到 `pluginkit` root graph：
 
 1. **实例级**：L1 与 L0 同 id 时，若 L1 的 `use` 与 L0 不同（或 L0 无 `use` 而 L1 指定了 `use`），**整颗节点替换**；否则对 `config` / `deps` 等字段**递归深合并**。
 2. **字段级**（深合并时）：标量覆盖；列表整体覆盖；`key+: [...]` 追加到 base 列表尾部；`key-: [...]` 按值从 base 列表删减（精确匹配元素）；`key: null` 删除 map 键。同一 overlay 内按「覆盖 → `+` 追加 → `-` 删减」顺序应用。
-3. **`extends:`**（仅 YAML 层）：节点可 `extends: other.instance.id` 继承另一实例，在 `ResolveYAML` 展开后剥掉该键；需环检测。与深合并共用同一套 merge 函数。
-4. **插值**（解析后的树上）：任意字符串字段支持 `${env:VAR}`、`${env:VAR:-default}`、`${file:相对路径}`（路径相对当前 overlay 文件所在目录）。加载期展开；dump / 日志须脱敏。
-5. 以 `runner.default` 为 root，裁剪从 root 可达的顶层实例（含 inline deps 中对共享实例的引用）。
-6. 输出 merged graph 后调用 `build.Build`。
+3. **实例禁用**：overlay 顶层 `instance.id: null` 表示禁用一个已有实例，loader 会自动从其他 `deps` 中清理指向它的引用，并沿用空 deps 级联裁剪。L0/base 中的顶层空实例仍是无效配置。
+4. **`extends:`**（仅 YAML 层）：节点可 `extends: other.instance.id` 继承另一实例，在 `ResolveYAML` 展开后剥掉该键；需环检测。与深合并共用同一套 merge 函数。
+5. **插值**（解析后的树上）：任意字符串字段支持 `${env:VAR}`、`${env:VAR:-default}`、`${file:相对路径}`（路径相对当前 overlay 文件所在目录）。加载期展开；dump / 日志须脱敏。
+6. 以 `runner.default` 为 root，裁剪从 root 可达的顶层实例（含 inline deps 中对共享实例的引用）。
+7. 输出 merged graph 后调用 `build.Build`。
 
 详见 [config-simplification.zh.md](guides/config-simplification.zh.md)。
 

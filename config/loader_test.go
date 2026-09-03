@@ -582,6 +582,75 @@ platform.slack:
 	}
 }
 
+func TestOverlayNullDisablesInstanceAndPrunesDeps(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.multiplex
+platform.multiplex:
+  use: platform/multiplex
+  deps:
+    platforms:
+      - platform.chat-api
+      - platform.http
+platform.chat-api:
+  use: platform/chat-api
+platform.http:
+  use: platform/http
+`)
+	overlay := []byte(`platform.chat-api: null
+`)
+	resolved, err := config.ResolveYAML(".", base, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := manager.FromYAML(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Shared["platform.chat-api"]; ok {
+		t.Fatal("platform.chat-api should be pruned after explicit disable")
+	}
+	platforms := doc.Shared["platform.multiplex"].Deps["platforms"].([]any)
+	if len(platforms) != 1 || platforms[0] != "platform.http" {
+		t.Fatalf("platforms=%v", platforms)
+	}
+}
+
+func TestBaseNullInstanceIsInvalid(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+  deps:
+    platform: platform.chat-api
+platform.chat-api: null
+`)
+	_, err := config.ResolveYAML(".", base)
+	if err == nil {
+		t.Fatal("expected error for null instance in base config")
+	}
+	if !strings.Contains(err.Error(), "null can only be used in overlays") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestOverlayNullUnknownInstanceIsInvalid(t *testing.T) {
+	t.Parallel()
+	base := []byte(`runner.default:
+  use: runner
+`)
+	overlay := []byte(`platform.typo: null
+`)
+	_, err := config.ResolveYAML(".", base, overlay)
+	if err == nil {
+		t.Fatal("expected error when overlay disables unknown instance")
+	}
+	if !strings.Contains(err.Error(), `overlay disables unknown instance "platform.typo"`) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestEnvInterpolationMissingPrunesCascadeWhenDepsEmpty(t *testing.T) {
 	t.Parallel()
 	base := []byte(`runner.default:

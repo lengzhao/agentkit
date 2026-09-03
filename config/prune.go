@@ -19,9 +19,17 @@ type disableReason struct {
 // pruneUnavailableInstances removes instances that cannot run because required
 // interpolation values are missing or because all deps were pruned. The process
 // repeats until the graph stabilizes.
-func pruneUnavailableInstances(raw map[string]any, interpDir string) (map[string]any, error) {
-	disabled := map[string]disableReason{}
+func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDisabled map[string]disableReason) (map[string]any, error) {
+	disabled := cloneDisableReasons(explicitDisabled)
 	prunedDepCount := 0
+
+	for id, reason := range explicitDisabled {
+		slog.Warn("config plugin disabled",
+			"instance_id", id,
+			"use", reason.use,
+			"reason", reason.reason,
+		)
+	}
 
 	for id, node := range raw {
 		nodeMap, ok := asStringMap(node)
@@ -123,6 +131,25 @@ func instanceUse(node map[string]any) string {
 		return use
 	}
 	return ""
+}
+
+func instanceUseFromAny(node any) string {
+	nodeMap, ok := asStringMap(node)
+	if !ok {
+		return ""
+	}
+	return instanceUse(nodeMap)
+}
+
+func cloneDisableReasons(in map[string]disableReason) map[string]disableReason {
+	if len(in) == 0 {
+		return map[string]disableReason{}
+	}
+	out := make(map[string]disableReason, len(in))
+	for id, reason := range in {
+		out[id] = reason
+	}
+	return out
 }
 
 func depKeys(deps map[string]any) []string {
