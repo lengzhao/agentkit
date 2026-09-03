@@ -19,16 +19,19 @@ func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) agentk
 		return nil
 	}
 	return func(emitCtx context.Context, event agentkit.OutboundEvent) error {
-		if event.Type != agentkit.EventMessageUpdate {
+		switch event.Type {
+		case agentkit.EventToolResult:
+			event.SessionID = parentSession
+			return parent(ctx, event)
+		case agentkit.EventMessageUpdate:
+		default:
 			return nil
 		}
 		var payload agentkit.MessageUpdatePayload
 		if err := json.Unmarshal(event.Data, &payload); err != nil {
 			return nil
 		}
-		switch payload.AssistantMessageEvent.Type {
-		case agentkit.AssistantEventToolCallStart, agentkit.AssistantEventToolCallEnd:
-		default:
+		if payload.AssistantMessageEvent.Type != agentkit.AssistantEventToolCallEnd {
 			return nil
 		}
 		event.SessionID = parentSession

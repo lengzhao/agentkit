@@ -22,18 +22,37 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 	})
 	emit := forwardParentEmit(ctx, parent)
 
-	toolStart, _ := json.Marshal(agentkit.MessageUpdatePayload{
+	toolEnd, _ := json.Marshal(agentkit.MessageUpdatePayload{
 		AssistantMessageEvent: agentkit.AssistantMessageEvent{
-			Type:     agentkit.AssistantEventToolCallStart,
+			Type:     agentkit.AssistantEventToolCallEnd,
 			ID:       "call_1",
 			ToolName: "grep",
+			ToolCall: &agentkit.ToolCall{
+				ID:    "call_1",
+				Name:  "grep",
+				Input: []byte(`{"pattern":"foo"}`),
+			},
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
 		SessionID: "sub:parent:researcher:1",
 		AgentID:   "sub:researcher",
 		Type:      agentkit.EventMessageUpdate,
-		Data:      toolStart,
+		Data:      toolEnd,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resultData, _ := json.Marshal(agentkit.ToolResult{
+		ID:      "call_1",
+		Name:    "grep",
+		Content: "matched 3 lines",
+	})
+	if err := emit(ctx, agentkit.OutboundEvent{
+		SessionID: "sub:parent:researcher:1",
+		AgentID:   "sub:researcher",
+		Type:      agentkit.EventToolResult,
+		Data:      resultData,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -52,11 +71,14 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(got) != 1 {
-		t.Fatalf("forwarded %d events, want 1 tool call", len(got))
+	if len(got) != 2 {
+		t.Fatalf("forwarded %d events, want 2 (tool call end + tool result)", len(got))
 	}
 	if got[0].SessionID != parentSession {
 		t.Fatalf("session = %q, want parent delivery %q", got[0].SessionID, parentSession)
+	}
+	if got[0].Type != agentkit.EventMessageUpdate {
+		t.Fatalf("first event type = %q, want message/update", got[0].Type)
 	}
 	var payload agentkit.MessageUpdatePayload
 	if err := json.Unmarshal(got[0].Data, &payload); err != nil {
@@ -64,6 +86,12 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 	}
 	if payload.AssistantMessageEvent.ToolName != "grep" {
 		t.Fatalf("tool = %q", payload.AssistantMessageEvent.ToolName)
+	}
+	if got[1].Type != agentkit.EventToolResult {
+		t.Fatalf("second event type = %q, want tool/result", got[1].Type)
+	}
+	if got[1].SessionID != parentSession {
+		t.Fatalf("result session = %q, want parent delivery %q", got[1].SessionID, parentSession)
 	}
 }
 

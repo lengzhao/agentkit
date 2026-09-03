@@ -140,7 +140,7 @@ go run ./cmd/agent -config presets/subagent-smoke.yaml "调研一下"
 
 scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步走完，跑完可以对着 session 文件核对：父 session 里是 `subagent/start` + `subagent/end` + 一条 delegate 的 `tool/result`，子 session 是独立文件、装着它自己那两步。
 
-启用 `platform/chat-api` 的 `debugUi` 时，子 Agent 内部的 tool call 会通过 SSE `tool_call` 事件转发到 `/debug/` 页面（标签为 `subagent · <name>`），主 Agent 的文本流仍不会与子 Agent 交错。
+启用 `platform/chat-api` 的 `debugUi` 时，子 Agent 内部的 tool call 会通过 SSE `tool_call`（参数完整后）与 `tool_result`（结果限长 1k）事件转发到 `/debug/` 页面（标签为 `subagent · <name>`），主 Agent 的文本流仍不会与子 Agent 交错。
 
 两个容易踩的配置点：
 

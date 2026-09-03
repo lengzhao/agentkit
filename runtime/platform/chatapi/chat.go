@@ -16,7 +16,10 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
-const maxRequestBody = 10 << 20
+const (
+	maxRequestBody          = 10 << 20
+	maxToolResultSSERunes   = 1024
+)
 
 type chatRequest struct {
 	ConversationID string      `json:"conversation_id"`
@@ -262,10 +265,12 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 		case agentkit.AssistantEventThinkingDelta:
 			run.appendThinking(payload.AssistantMessageEvent.Delta)
 			return run.flushDeltas()
-		case agentkit.AssistantEventToolCallStart, agentkit.AssistantEventToolCallEnd:
+		case agentkit.AssistantEventToolCallEnd:
 			return run.emitToolCallSSE(event, payload)
 		}
 		return nil
+	case agentkit.EventToolResult:
+		return run.emitToolResultSSE(event)
 	case agentkit.EventMessageEnd:
 		var payload agentkit.MessageEndPayload
 		if err := json.Unmarshal(event.Data, &payload); err == nil {
@@ -366,6 +371,42 @@ func (r *runState) emitToolCallSSE(event agentkit.OutboundEvent, payload agentki
 		data["agent_id"] = string(event.AgentID)
 	}
 	return r.sse.Event("tool_call", data)
+}
+
+func (r *runState) emitToolResultSSE(event agentkit.OutboundEvent) error {
+	var result agentkit.ToolResult
+	if err := json.Unmarshal(event.Data, &result); err != nil {
+		return err
+	}
+	toolID := string(result.ID)
+	if toolID == "" {
+		return nil
+	}
+	content, truncated := truncateRunes(result.Content, maxToolResultSSERunes)
+	data := map[string]any{
+		"message_id":   r.messageID,
+		"tool_call_id": toolID,
+		"name":         result.Name,
+		"result":       content,
+	}
+	if truncated {
+		data["truncated"] = true
+	}
+	if event.AgentID != "" {
+		data["agent_id"] = string(event.AgentID)
+	}
+	return r.sse.Event("tool_result", data)
+}
+
+func truncateRunes(s string, max int) (string, bool) {
+	if max <= 0 {
+		return s, false
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s, false
+	}
+	return string(runes[:max]) + "...", true
 }
 
 func permissionPromptView(payload permission.RequestPayload) (prompt string, actions []map[string]string, options []string) {

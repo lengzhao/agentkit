@@ -977,6 +977,12 @@
               const prefix = data.agent_id ? `[${data.agent_id}] ` : "";
               const input = data.input ? "\n" + data.input : "";
               s.body.textContent = prefix + (data.name || "?") + input;
+            } else if (event === "tool_result") {
+              const key = data.tool_call_id ? `tool_result:${data.tool_call_id}` : "tool_result";
+              const s = beginStream(key, "tool", toolTag(data.agent_id) + " · result");
+              const prefix = data.agent_id ? `[${data.agent_id}] ` : "";
+              const suffix = data.truncated ? "\n…(truncated)" : "";
+              s.body.textContent = prefix + (data.name || "?") + "\n" + (data.result || "") + suffix;
             } else if (event === "file_ready") {
               resetStream();
               addFileBubble(data);

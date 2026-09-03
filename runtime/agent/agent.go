@@ -262,6 +262,11 @@ func (a *Runtime) runSegment(
 				endStepOnce()
 				return "", err
 			}
+			if err := a.emitLifecycle(ctx, emit, sess.ID(), agentkit.EventToolResult, result); err != nil {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				endStepOnce()
+				return "", err
+			}
 		}
 
 		if err := session.AppendStepEnd(ctx, sess, a.id, stepIndex); err != nil {

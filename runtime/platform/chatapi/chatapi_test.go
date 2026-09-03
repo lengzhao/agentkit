@@ -80,6 +80,120 @@ func TestChatOutboundSSE(t *testing.T) {
 	t.Fatalf("expected text_delta in %s", rec.Body.String())
 }
 
+func TestToolCallSSEOnlyOnEnd(t *testing.T) {
+	p, err := New(Config{ListenAddr: ":0"}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	runID := newRunID()
+	conv, err := plat.conversations.create("default_channel", "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
+	rec := httptest.NewRecorder()
+	sse, err := newSSEWriter(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := newRunState(runID, "u1", "default_channel", "", sessionID, conv.ID, "m1", plat, sse)
+	if !plat.pending.create(run) {
+		t.Fatal("pending create failed")
+	}
+	plat.setActiveConv(conv.ID, runID)
+
+	ctx := context.Background()
+	toolStart, _ := json.Marshal(agentkit.MessageUpdatePayload{
+		AssistantMessageEvent: agentkit.AssistantMessageEvent{
+			Type:     agentkit.AssistantEventToolCallStart,
+			ID:       "call_1",
+			ToolName: "read",
+		},
+	})
+	toolEnd, _ := json.Marshal(agentkit.MessageUpdatePayload{
+		AssistantMessageEvent: agentkit.AssistantMessageEvent{
+			Type:     agentkit.AssistantEventToolCallEnd,
+			ID:       "call_1",
+			ToolName: "read",
+			ToolCall: &agentkit.ToolCall{
+				ID:    "call_1",
+				Name:  "read",
+				Input: []byte(`{"path":"README.md"}`),
+			},
+		},
+	})
+	_ = plat.Send(ctx, agentkit.OutboundEvent{
+		SessionID: sessionID,
+		Type:      agentkit.EventMessageUpdate,
+		Data:      toolStart,
+	})
+	_ = plat.Send(ctx, agentkit.OutboundEvent{
+		SessionID: sessionID,
+		Type:      agentkit.EventMessageUpdate,
+		Data:      toolEnd,
+	})
+
+	body := rec.Body.String()
+	if strings.Count(body, "event: tool_call") != 1 {
+		t.Fatalf("expected exactly one tool_call SSE, got body:\n%s", body)
+	}
+	if !strings.Contains(body, `"input":"{\"path\":\"README.md\"}"`) && !strings.Contains(body, `{"path":"README.md"}`) {
+		t.Fatalf("expected tool_call with input in body:\n%s", body)
+	}
+}
+
+func TestToolResultSSETruncates(t *testing.T) {
+	p, err := New(Config{ListenAddr: ":0"}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	runID := newRunID()
+	conv, err := plat.conversations.create("default_channel", "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
+	rec := httptest.NewRecorder()
+	sse, err := newSSEWriter(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := newRunState(runID, "u1", "default_channel", "", sessionID, conv.ID, "m1", plat, sse)
+	if !plat.pending.create(run) {
+		t.Fatal("pending create failed")
+	}
+	plat.setActiveConv(conv.ID, runID)
+
+	long := strings.Repeat("x", maxToolResultSSERunes+50)
+	resultData, _ := json.Marshal(agentkit.ToolResult{
+		ID:      "call_1",
+		Name:    "read",
+		Content: long,
+	})
+	if err := plat.Send(context.Background(), agentkit.OutboundEvent{
+		SessionID: sessionID,
+		Type:      agentkit.EventToolResult,
+		Data:      resultData,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: tool_result") {
+		t.Fatalf("expected tool_result SSE, got:\n%s", body)
+	}
+	if !strings.Contains(body, `"truncated":true`) {
+		t.Fatalf("expected truncated flag, got:\n%s", body)
+	}
+	if strings.Contains(body, strings.Repeat("x", maxToolResultSSERunes+10)) {
+		t.Fatalf("expected truncated result body, got:\n%s", body)
+	}
+}
+
 func TestConversationsList(t *testing.T) {
 	p, err := New(Config{}, Deps{})
 	if err != nil {
