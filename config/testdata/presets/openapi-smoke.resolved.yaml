@@ -52,8 +52,6 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
-commands.default:
-    use: commands/registry
 compaction.prune.default:
     config:
         maxToolResultBytes: 8192
@@ -96,6 +94,8 @@ credentials.default:
         workspace: workspace.default
     use: credentials/env
 hook.before-step.default:
+    config:
+        contributeCommands: true
     deps:
         services:
             - compaction.prune.default
@@ -190,9 +190,6 @@ openapi.default:
 platform.default:
     config:
         once: true
-    deps:
-        commands: commands.default
-        sessionStore: sessionStore.default
     use: platform/cli
 policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell

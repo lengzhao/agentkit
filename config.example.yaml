@@ -6,6 +6,13 @@
 # 你只需为要启用的能力配置密钥和入口。
 #
 # L0 已默认启用 schedule/cron + tool/schedule，agent 可自主排期并在到期后触发 turn。
+# L0 platform.default 为 platform/multiplex，聚合 CLI + 可选 Slack / 飞书 / Lark（见环境变量表）。
+
+# 启用 IM 平台（设好对应环境变量后自动生效，无需改 platform 配置）：
+#   SLACK_BOT_TOKEN + SLACK_APP_TOKEN
+#   FEISHU_APP_ID + FEISHU_APP_SECRET
+#   LARK_APP_ID + LARK_APP_SECRET
+# 仅需 CLI 时无需任何操作；要 chat-api 时在 L1 把 platform.chat-api 加入 platform.default.deps.platforms。
 
 # 示例：切换工作区 scope（global=~/.agentkit，local=.agentkit）
 workspace.default:

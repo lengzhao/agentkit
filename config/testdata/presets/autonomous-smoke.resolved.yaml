@@ -6,8 +6,6 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
-commands.default:
-    use: commands/registry
 hook.turn-continue.default:
     config:
         maxContinuations: 3
@@ -25,9 +23,6 @@ hooks.default:
 platform.default:
     config:
         once: true
-    deps:
-        commands: commands.default
-        sessionStore: sessionStore.default
     use: platform/cli
 runner.default:
     config:

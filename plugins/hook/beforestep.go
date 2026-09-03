@@ -10,7 +10,11 @@ import (
 	"github.com/lengzhao/pluginkit"
 )
 
-type Config struct{}
+type Config struct {
+	// ContributeCommands registers /compact on the shared commands registry.
+	// Only one hook/before-step instance should enable this (typically the default agent).
+	ContributeCommands bool `json:"contributeCommands"`
+}
 
 type Deps struct {
 	Services     []compaction.Service  `json:"services"`
@@ -18,8 +22,9 @@ type Deps struct {
 }
 
 type Provider struct {
-	services     []compaction.Service
-	sessionStore agentkit.SessionStore
+	contributeCommands bool
+	services           []compaction.Service
+	sessionStore       agentkit.SessionStore
 }
 
 func init() {
@@ -31,11 +36,15 @@ func init() {
 //
 // Best practices:
 //   - Attach the same services here and to the agent's compaction dep: this hook covers the periodic check, the agent covers overflow recovery.
-func New(_ Config, deps Deps) (agentkit.HookProvider, error) {
+func New(cfg Config, deps Deps) (agentkit.HookProvider, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/before-step requires sessionStore dependency")
 	}
-	return &Provider{services: deps.Services, sessionStore: deps.SessionStore}, nil
+	return &Provider{
+		contributeCommands: cfg.ContributeCommands,
+		services:           deps.Services,
+		sessionStore:       deps.SessionStore,
+	}, nil
 }
 
 func (p *Provider) Hooks() []agentkit.Hook {
@@ -45,7 +54,7 @@ func (p *Provider) Hooks() []agentkit.Hook {
 }
 
 func (p *Provider) Commands() []agentkit.Command {
-	if len(p.services) == 0 {
+	if !p.contributeCommands || len(p.services) == 0 {
 		return nil
 	}
 	return []agentkit.Command{compactCommand{

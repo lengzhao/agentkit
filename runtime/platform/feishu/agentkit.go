@@ -70,16 +70,18 @@ type inboundMessage struct {
 }
 
 type streamState struct {
-	mu          sync.Mutex
-	handle      any
-	accumulated string // legacy mode text buffer
-	text        string // rich mode answer markdown
-	thinking    string
-	steps       []toolStep
-	toolStepIdx map[int]int // contentIndex -> index in steps
-	status      cardStatus
-	startedAt   time.Time
-	lastUpdate  time.Time
+	mu            sync.Mutex
+	handle        any
+	accumulated   string // legacy mode text buffer
+	text          string // rich mode answer markdown
+	thinking      string
+	steps         []toolStep
+	toolStepIdx   map[int]int // contentIndex -> index in steps
+	toolCallIDIdx map[string]int
+	status        cardStatus
+	startedAt     time.Time
+	lastUpdate    time.Time
+	heartbeatStop context.CancelFunc
 }
 
 type cardStatus string
@@ -94,8 +96,9 @@ const (
 type toolStepKind string
 
 const (
-	toolStepKindTool     toolStepKind = "tool"
-	toolStepKindThinking toolStepKind = "thinking"
+	toolStepKindTool       toolStepKind = "tool"
+	toolStepKindToolResult toolStepKind = "tool_result"
+	toolStepKindThinking   toolStepKind = "thinking"
 )
 
 type toolStep struct {
@@ -104,6 +107,7 @@ type toolStep struct {
 	Summary  string
 	Result   string
 	Status   string
+	CallID   string
 	ExitCode *int
 	Success  *bool
 	Done     bool
@@ -187,9 +191,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	}
 
 	var clientOpts []lark.ClientOptionFunc
-	if domain != defaultDomain {
-		clientOpts = append(clientOpts, lark.WithOpenBaseUrl(domain))
-	}
+	clientOpts = append(clientOpts, lark.WithOpenBaseUrl(domain))
 
 	p := &Platform{
 		platformTag:                name,
@@ -274,6 +276,9 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	switch event.Type {
 	case agentkit.EventTurnStart:
 		p.clearStream(event.SessionID)
+		if p.useRichStream() {
+			p.startProgressHeartbeat(event.SessionID)
+		}
 		return nil
 	case agentkit.EventMessageStart:
 		if !p.useRichStream() {
@@ -287,6 +292,11 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 			return p.handleRichStreamMessageEnd(ctx, event)
 		}
 		return p.handleStreamEnd(ctx, event)
+	case agentkit.EventToolResult:
+		if p.useRichStream() {
+			return p.handleRichToolResult(ctx, event)
+		}
+		return nil
 	case agentkit.EventAssistantMessage:
 		// Proactive tool/send messages (text + files) bypass streaming cards.
 		return p.outbound.Handle(ctx, event)
@@ -461,7 +471,15 @@ func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 }
 
 func (p *Platform) clearStream(sessionID agentkit.SessionID) {
-	p.streams.Delete(sessionID)
+	if raw, ok := p.streams.LoadAndDelete(sessionID); ok {
+		st := raw.(*streamState)
+		st.mu.Lock()
+		if st.heartbeatStop != nil {
+			st.heartbeatStop()
+			st.heartbeatStop = nil
+		}
+		st.mu.Unlock()
+	}
 }
 
 func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.OutboundEvent) error {
@@ -531,12 +549,7 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 	}
 
 	if handle != nil {
-		msgType, body := buildReplyContent(text)
-		cardJSON := buildPreviewCardJSON(body)
-		if msgType != larkim.MsgTypeInteractive {
-			cardJSON = buildCardJSON(sanitizeMarkdownURLs(body))
-		}
-		return p.UpdateMessage(ctx, handle, cardJSON)
+		return p.UpdateMessage(ctx, handle, buildFinalPreviewCardJSON(text))
 	}
 	return p.sendIMContent(ctx, rc, text)
 }
@@ -581,9 +594,7 @@ func (p *Platform) startWebSocketMode() error {
 		larkws.WithEventHandler(p.eventHandler),
 		larkws.WithLogLevel(larkcore.LogLevelInfo),
 		larkws.WithLogger(&sanitizingLogger{inner: larkcore.NewEventLogger()}),
-	}
-	if p.domain != p.defaultDomain {
-		wsOpts = append(wsOpts, larkws.WithDomain(p.domain))
+		larkws.WithDomain(p.domain),
 	}
 	p.wsClient = larkws.NewClient(p.appID, p.appSecret, wsOpts...)
 	go func() {

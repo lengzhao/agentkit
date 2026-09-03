@@ -96,6 +96,8 @@ credentials.default:
         workspace: workspace.default
     use: credentials/env
 hook.before-step.default:
+    config:
+        contributeCommands: true
     deps:
         services:
             - compaction.prune.default
@@ -189,13 +191,34 @@ openapi.default:
         credentials: credentials.default
         workspace: workspace.default
     use: tool/openapi
-platform.default:
+platform.chat-api:
+    config:
+        apiToken: ""
+        busyPolicy: queue
+        debugUi: false
+        interactionTimeout: 10m
+        listenAddr: ""
+        metadataHeaders:
+            - x-task-id
+        path: /v1/
+    deps:
+        commands: commands.default
+        sessionStore: sessionStore.default
+        workspace: workspace.default
+    use: platform/chat-api
+platform.cli:
     config:
         once: false
     deps:
         commands: commands.default
         sessionStore: sessionStore.default
     use: platform/cli
+platform.default:
+    deps:
+        platforms:
+            - platform.cli
+            - platform.chat-api
+    use: platform/multiplex
 policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:

@@ -2846,6 +2846,19 @@ func buildPreviewCardJSON(content string) string {
 	return buildCardJSON(sanitizeMarkdownURLs(content))
 }
 
+// buildFinalPreviewCardJSON builds card JSON for the final update of a streaming preview.
+// Unlike buildReplyContent, it must not wrap plain text in IM API {"text":...} JSON.
+func buildFinalPreviewCardJSON(text string) string {
+	if payload, ok := common.ParseProgressCardPayload(text); ok {
+		return buildProgressCardJSONFromPayload(payload)
+	}
+	processed := text
+	if containsMarkdown(text) {
+		processed = preprocessFeishuMarkdown(text)
+	}
+	return buildCardJSON(sanitizeMarkdownURLs(processed))
+}
+
 // SendPreviewStart sends a new card message and returns a handle for subsequent edits.
 // Using card (interactive) type for both preview and final message so updates
 // are in-place without needing to delete and resend.
@@ -3256,6 +3269,13 @@ func richStepDisplayName(step toolStep) string {
 	if step.Kind == toolStepKindThinking {
 		return "Thinking"
 	}
+	if step.Kind == toolStepKindToolResult {
+		name := strings.TrimSpace(step.Name)
+		if name == "" {
+			return "Result"
+		}
+		return name
+	}
 	name := strings.TrimSpace(step.Name)
 	if name == "" {
 		return "Tool"
@@ -3265,36 +3285,54 @@ func richStepDisplayName(step toolStep) string {
 
 func richStepBody(step toolStep) string {
 	name := richStepDisplayName(step)
-	summary := strings.TrimSpace(step.Summary)
-	if summary == "" {
-		summary = name
-	}
-	if step.Kind == toolStepKindThinking {
+	switch step.Kind {
+	case toolStepKindThinking:
+		summary := strings.TrimSpace(step.Summary)
+		if summary == "" {
+			return name
+		}
+		return summary
+	case toolStepKindTool:
+		summary := strings.TrimSpace(step.Summary)
+		if summary == "" {
+			summary = name
+		}
+		lines := []string{"🔧 工具调用 · " + name}
+		if body := formatProgressToolInput(name, summary); body != "" {
+			lines = append(lines, body)
+		} else {
+			lines = append(lines, summary)
+		}
+		if !step.Done {
+			lines = append(lines, "status: running")
+		}
+		return strings.Join(lines, "\n")
+	case toolStepKindToolResult:
+		lines := []string{"🧾 工具结果 · " + name}
+		if step.Success != nil {
+			if *step.Success {
+				lines = append(lines, "🟢")
+			} else {
+				lines = append(lines, "🔴")
+			}
+		}
+		result := strings.TrimSpace(step.Result)
+		if result == "" {
+			result = strings.TrimSpace(step.Summary)
+		}
+		if body := formatProgressToolResult(result); body != "" {
+			lines = append(lines, body)
+		} else {
+			lines = append(lines, progressNoOutputText("zh"))
+		}
+		return strings.Join(lines, "\n")
+	default:
+		summary := strings.TrimSpace(step.Summary)
+		if summary == "" {
+			summary = name
+		}
 		return summary
 	}
-
-	lines := []string{summary}
-	var statusParts []string
-	status := strings.TrimSpace(step.Status)
-	if status != "" {
-		statusParts = append(statusParts, "status: "+status)
-	} else if step.Success != nil {
-		if *step.Success {
-			statusParts = append(statusParts, "status: ok")
-		} else {
-			statusParts = append(statusParts, "status: failed")
-		}
-	}
-	if step.ExitCode != nil {
-		statusParts = append(statusParts, fmt.Sprintf("exit: %d", *step.ExitCode))
-	}
-	if len(statusParts) > 0 {
-		lines = append(lines, strings.Join(statusParts, " | "))
-	}
-	if result := strings.TrimSpace(step.Result); result != "" {
-		lines = append(lines, result)
-	}
-	return strings.Join(lines, "\n")
 }
 
 // isCardJSON returns true if content looks like a complete Feishu card JSON
@@ -3370,17 +3408,20 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 		if streaming {
 			toolCount := 0
 			for _, step := range steps {
-				if step.Kind != toolStepKindThinking {
+				if step.Kind == toolStepKindTool {
 					toolCount++
 				}
 			}
 			if toolCount > 0 {
-				panelTitle = fmt.Sprintf("Working on it (%d steps)", len(steps))
+				panelTitle = fmt.Sprintf("Working on it (%d tools)", toolCount)
 			}
 		} else {
 			toolCounts := make(map[string]int)
 			var toolOrder []string
 			for _, s := range steps {
+				if s.Kind != toolStepKindTool {
+					continue
+				}
 				name := richStepDisplayName(s)
 				if toolCounts[name] == 0 {
 					toolOrder = append(toolOrder, name)

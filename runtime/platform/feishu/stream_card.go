@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -11,6 +12,57 @@ import (
 )
 
 const maxToolSummaryRunes = 180
+const progressHeartbeatInterval = 5 * time.Second
+
+func (p *Platform) startProgressHeartbeat(sessionID agentkit.SessionID) {
+	st := p.streamState(sessionID)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	st.mu.Lock()
+	if st.heartbeatStop != nil {
+		st.heartbeatStop()
+	}
+	st.heartbeatStop = cancel
+	st.mu.Unlock()
+
+	go p.runProgressHeartbeat(ctx, sessionID)
+}
+
+func (p *Platform) runProgressHeartbeat(ctx context.Context, sessionID agentkit.SessionID) {
+	ticker := time.NewTicker(progressHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.tickProgressHeartbeat(sessionID)
+		}
+	}
+}
+
+func shouldHeartbeatFlush(st *streamState) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return !st.startedAt.IsZero() &&
+		st.handle != nil &&
+		st.status != cardStatusDone &&
+		st.status != cardStatusError
+}
+
+func (p *Platform) tickProgressHeartbeat(sessionID agentkit.SessionID) {
+	raw, ok := p.streams.Load(sessionID)
+	if !ok {
+		return
+	}
+	st := raw.(*streamState)
+	if !shouldHeartbeatFlush(st) {
+		return
+	}
+	if err := p.flushRichStream(context.Background(), sessionID, true); err != nil {
+		slog.Debug(p.tag()+": progress heartbeat flush failed", "session_id", sessionID, "error", err)
+	}
+}
 
 func (p *Platform) useRichStream() bool {
 	switch p.progressStyle {
@@ -29,6 +81,7 @@ func (p *Platform) richStreamState(sessionID agentkit.SessionID) *streamState {
 		st.startedAt = time.Now()
 		st.status = cardStatusThinking
 		st.toolStepIdx = make(map[int]int)
+		st.toolCallIDIdx = make(map[string]int)
 	}
 	return st
 }
@@ -66,8 +119,14 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 			return false
 		}
 		name := strings.TrimSpace(ame.ToolName)
-		if name == "" && ame.ToolCall != nil {
-			name = strings.TrimSpace(ame.ToolCall.Name)
+		callID := strings.TrimSpace(ame.ID)
+		if ame.ToolCall != nil {
+			if name == "" {
+				name = strings.TrimSpace(ame.ToolCall.Name)
+			}
+			if callID == "" {
+				callID = string(ame.ToolCall.ID)
+			}
 		}
 		if name == "" {
 			name = "Tool"
@@ -77,8 +136,13 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 			Name:    name,
 			Summary: name,
 			Status:  "running",
+			CallID:  callID,
 		})
-		st.toolStepIdx[ame.ContentIndex] = len(st.steps) - 1
+		idx := len(st.steps) - 1
+		st.toolStepIdx[ame.ContentIndex] = idx
+		if callID != "" {
+			st.toolCallIDIdx[callID] = idx
+		}
 		st.status = cardStatusWorking
 		return true
 	case agentkit.AssistantEventToolCallDelta:
@@ -110,6 +174,9 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 			return false
 		}
 		step := st.steps[idx]
+		if step.Kind != toolStepKindTool {
+			return false
+		}
 		if ame.ToolCall != nil {
 			input := strings.TrimSpace(string(ame.ToolCall.Input))
 			if input != "" {
@@ -118,16 +185,66 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 			if name := strings.TrimSpace(ame.ToolCall.Name); name != "" {
 				step.Name = name
 			}
+			if callID := string(ame.ToolCall.ID); callID != "" {
+				step.CallID = callID
+				st.toolCallIDIdx[callID] = idx
+			}
 		}
-		step.Status = "completed"
+		step.Status = "called"
 		step.Done = true
-		okVal := true
-		step.Success = &okVal
 		st.steps[idx] = step
 		return true
 	default:
 		return false
 	}
+}
+
+func (p *Platform) applyToolResult(st *streamState, result agentkit.ToolResult) bool {
+	if !p.showToolProgress {
+		return false
+	}
+	name := strings.TrimSpace(result.Name)
+	if name == "" {
+		name = "Tool"
+	}
+	content := truncateRunes(strings.TrimSpace(result.Content), maxToolSummaryRunes)
+	success := true
+	status := "completed"
+	if result.Audit != nil {
+		if decision := strings.TrimSpace(result.Audit["decision"]); decision == "deny" {
+			success = false
+			status = "failed"
+		}
+	}
+	okVal := success
+	st.steps = append(st.steps, toolStep{
+		Kind:    toolStepKindToolResult,
+		Name:    name,
+		Summary: content,
+		Result:  content,
+		Status:  status,
+		CallID:  string(result.ID),
+		Success: &okVal,
+		Done:    true,
+	})
+	st.status = cardStatusWorking
+	return true
+}
+
+func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.OutboundEvent) error {
+	var result agentkit.ToolResult
+	if err := json.Unmarshal(event.Data, &result); err != nil {
+		return err
+	}
+	st := p.richStreamState(event.SessionID)
+	st.mu.Lock()
+	changed := p.applyToolResult(st, result)
+	shouldFlush := changed && (st.handle == nil || time.Since(st.lastUpdate) >= streamUpdateInterval)
+	st.mu.Unlock()
+	if !shouldFlush {
+		return nil
+	}
+	return p.flushRichStream(ctx, event.SessionID, true)
 }
 
 func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentkit.OutboundEvent) error {
@@ -243,19 +360,22 @@ func (p *Platform) renderCompactProgressCard(st *streamState, streaming bool) st
 			Tool: step.Name,
 			Text: step.Summary,
 		})
-		if step.Done {
-			success := true
-			if step.Success != nil {
-				success = *step.Success
-			}
-			items = append(items, common.ProgressCardEntry{
-				Kind:    common.ProgressEntryToolResult,
-				Tool:    step.Name,
-				Text:    step.Result,
-				Status:  step.Status,
-				Success: &success,
-			})
+	}
+	for _, step := range st.steps {
+		if step.Kind != toolStepKindToolResult {
+			continue
 		}
+		success := true
+		if step.Success != nil {
+			success = *step.Success
+		}
+		items = append(items, common.ProgressCardEntry{
+			Kind:    common.ProgressEntryToolResult,
+			Tool:    step.Name,
+			Text:    step.Result,
+			Status:  step.Status,
+			Success: &success,
+		})
 	}
 	if text := strings.TrimSpace(st.text); text != "" {
 		items = append(items, common.ProgressCardEntry{

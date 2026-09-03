@@ -129,6 +129,10 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | `showToolProgress` | `card`/`compact` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
 | `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
 
+`card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。
+
+`card` / `compact` 模式下，turn 未完成且已发出进度卡片后，平台每 **5 秒** 原地 `Patch` 一次卡片，刷新页脚「⏱ 运行中 …」耗时；tool 长时间无新事件时用户仍能看到状态在更新。
+
 ```yaml
 platform.default:
   use: platform/feishu

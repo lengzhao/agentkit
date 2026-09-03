@@ -96,6 +96,8 @@ credentials.default:
         workspace: workspace.default
     use: credentials/env
 hook.before-step.default:
+    config:
+        contributeCommands: true
     deps:
         services:
             - compaction.prune.default
@@ -204,7 +206,6 @@ platform.default:
     deps:
         platforms:
             - platform.chat-api
-            - platform.slack
             - platform.feishu
     use: platform/multiplex
 platform.feishu:
@@ -218,17 +219,6 @@ platform.feishu:
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: platform/feishu
-platform.slack:
-    config:
-        allowFrom: ""
-        appToken: xapp-REPLACE_ME
-        botToken: xoxb-REPLACE_ME
-        groupReplyAll: false
-    deps:
-        commands: commands.default
-        sessionStore: sessionStore.default
-        workspace: workspace.default
-    use: platform/slack
 policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:

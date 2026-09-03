@@ -43,7 +43,7 @@ func TestCompactCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := hook.New(hook.Config{}, hook.Deps{
+	provider, err := hook.New(hook.Config{ContributeCommands: true}, hook.Deps{
 		SessionStore: store,
 		Services:     []capcompaction.Service{prune},
 	})

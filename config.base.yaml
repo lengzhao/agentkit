@@ -46,7 +46,18 @@ runner.default:
     init:
       - bootstrap.shell.default
 
+# 默认聚合 CLI + 可选 IM（Slack / 飞书 / Lark）。未配置对应环境变量时，loader 自动清理该平台实例。
 platform.default:
+  use: platform/multiplex
+  deps:
+    platforms:
+      - platform.cli
+      - platform.slack
+      - platform.feishu
+      - platform.lark
+      - platform.chat-api
+
+platform.cli:
   use: platform/cli
   config:
     once: false
@@ -54,8 +65,44 @@ platform.default:
     commands: commands.default
     sessionStore: sessionStore.default
 
-# HTTP + SSE（BFF / 调试台）。L0 默认入口仍是 platform/cli；改用 chat-api 时在 L1 替换
-# runner.default.deps.platform，或与 platform/http 组合（listenAddr: "-" 由 http 监听）。
+# Slack Socket Mode。凭证：SLACK_BOT_TOKEN + SLACK_APP_TOKEN
+platform.slack:
+  use: platform/slack
+  config:
+    botTokenRef: ${env:SLACK_BOT_TOKEN}
+    appTokenRef: ${env:SLACK_APP_TOKEN}
+    groupReplyAll: false
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+    credentials: credentials.default
+    workspace: workspace.default
+
+# 飞书 WebSocket（国内）。凭证：FEISHU_APP_ID + FEISHU_APP_SECRET
+platform.feishu:
+  use: platform/feishu
+  config:
+    appId: ${var:FEISHU_APP_ID}
+    appSecret: ${var:FEISHU_APP_SECRET}
+    groupReplyAll: false
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+    workspace: workspace.default
+
+# 国际版 Lark。凭证：LARK_APP_ID + LARK_APP_SECRET
+platform.lark:
+  use: platform/lark
+  config:
+    appId: ${var:LARK_APP_ID}
+    appSecret: ${var:LARK_APP_SECRET}
+    groupReplyAll: false
+  deps:
+    commands: commands.default
+    sessionStore: sessionStore.default
+    workspace: workspace.default
+
+# HTTP + SSE（BFF / 调试台）。加入 platform.default.deps.platforms 或与 platform/http 组合（listenAddr: "-" 由 http 监听）。
 platform.chat-api:
   use: platform/chat-api
   config:
@@ -262,6 +309,8 @@ hooks.worker:
 
 hook.before-step.default:
   use: hook/before-step
+  config:
+    contributeCommands: true
   deps:
     sessionStore: sessionStore.default
     services:

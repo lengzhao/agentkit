@@ -96,6 +96,8 @@ credentials.default:
         workspace: workspace.default
     use: credentials/env
 hook.before-step.default:
+    config:
+        contributeCommands: true
     deps:
         services:
             - compaction.prune.default
