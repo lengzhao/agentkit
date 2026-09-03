@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
@@ -40,19 +41,48 @@ func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEv
 		for _, msg := range prevData.RetainedTail {
 			out = append(out, IndexedMessage{Message: msg, Seq: prevData.FirstKeptSeq, IsTurnStart: msg.Role == "user"})
 		}
-		for _, ev := range events[prevCompactionIdx+1:] {
-			out = append(out, indexEventMessages(ev)...)
-		}
+		out = appendIndexedEventMessages(out, events[prevCompactionIdx+1:], agentID)
 		return out
 	}
 
+	return appendIndexedEventMessages(out, events, agentID)
+}
+
+func appendIndexedEventMessages(out []IndexedMessage, events []agentkit.SessionEvent, agentID agentkit.AgentID) []IndexedMessage {
+	var pendingSkillLoads []IndexedMessage
+	flushSkillLoads := func() {
+		if len(pendingSkillLoads) == 0 {
+			return
+		}
+		out = append(out, pendingSkillLoads...)
+		pendingSkillLoads = nil
+	}
 	for _, ev := range events {
 		if !eventForAgent(ev, agentID) {
 			continue
 		}
-		out = append(out, indexEventMessages(ev)...)
+		indexed := indexEventMessages(ev)
+		for _, item := range indexed {
+			if isSkillLoadMessage(item.Message) {
+				pendingSkillLoads = append(pendingSkillLoads, item)
+				continue
+			}
+			out = append(out, item)
+			if item.Message.Role == "tool" {
+				flushSkillLoads()
+			}
+		}
 	}
+	flushSkillLoads()
 	return out
+}
+
+func isSkillLoadMessage(msg agentkit.ModelMessage) bool {
+	if msg.Role != "user" || len(msg.Content) != 1 {
+		return false
+	}
+	part := msg.Content[0]
+	return (part.Type == "text" || part.Type == "") && strings.HasPrefix(part.Text, "<skill name=\"")
 }
 
 func indexEventMessages(ev agentkit.SessionEvent) []IndexedMessage {

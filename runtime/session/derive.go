@@ -19,6 +19,15 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 		out = append(out, retainedTail...)
 	}
 
+	var pendingSkillLoads []agentkit.ModelMessage
+	flushSkillLoads := func() {
+		if len(pendingSkillLoads) == 0 {
+			return
+		}
+		out = append(out, pendingSkillLoads...)
+		pendingSkillLoads = nil
+	}
+
 	for _, ev := range events {
 		if ev.Seq <= compactAfterSeq {
 			continue
@@ -39,12 +48,16 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 				continue
 			}
 			out = append(out, toolResultMessage(result))
+			flushSkillLoads()
 		case agentkit.EventSkillLoad:
 			var load skillLoadEvent
 			if err := json.Unmarshal(ev.Data, &load); err != nil {
 				continue
 			}
-			out = append(out, skillLoadMessage(load))
+			// Skill loads are recorded during tool execution, before the tool
+			// result event. Defer them so assistant tool_calls are immediately
+			// followed by tool messages, as providers require.
+			pendingSkillLoads = append(pendingSkillLoads, skillLoadMessage(load))
 		case agentkit.EventTurnContinue:
 			var data TurnContinueData
 			if err := json.Unmarshal(ev.Data, &data); err != nil {
@@ -53,6 +66,7 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 			out = append(out, data.Messages...)
 		}
 	}
+	flushSkillLoads()
 
 	out = answerOrphanToolCalls(out)
 
