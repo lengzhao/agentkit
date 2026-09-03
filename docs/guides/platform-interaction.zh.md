@@ -128,6 +128,8 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | `showThinking` | `false` | `card`/`compact` 下是否在进度区展示 thinking |
 | `showToolProgress` | `card`/`compact` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
 | `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
+| `replyInThread` | `true` | 仅群聊出站时 `Im.Message.Reply` 带 `reply_in_thread`；私聊（p2p）始终平铺回复 |
+| `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
 `card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。
 

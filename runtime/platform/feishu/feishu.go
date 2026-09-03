@@ -100,6 +100,7 @@ func (l *sanitizingLogger) Error(ctx context.Context, args ...interface{}) {
 type replyContext struct {
 	messageID  string
 	chatID     string
+	chatType   string
 	sessionKey string
 }
 
@@ -122,6 +123,7 @@ type Platform struct {
 	respondToAtEveryoneAndHere bool
 	shareSessionInChannel      bool
 	threadIsolation            bool
+	replyInThread              bool
 	noReplyToTrigger           bool
 	resolveMentions            bool
 		cfg                        Config
@@ -654,7 +656,7 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	parentID := stringValue(msg.ParentId)
 
 	sessionKey := p.makeSessionKey(msg, chatID, userID)
-	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
+	rctx := replyContext{messageID: messageID, chatID: chatID, chatType: chatType, sessionKey: sessionKey}
 	slog.Debug(p.tag()+": routed inbound message",
 		"message_id", messageID,
 		"session_key", sessionKey,
@@ -2190,10 +2192,11 @@ func (p *Platform) sessionKeyFromCardAction(chatID, userID string, value map[str
 }
 
 func (p *Platform) shouldReplyInThread(rc replyContext) bool {
-	if rc.messageID == "" {
+	if rc.messageID == "" || !p.replyInThread {
 		return false
 	}
-	return p.threadIsolation && isThreadSessionKey(rc.sessionKey)
+	// Only group chats support Feishu topic threads; p2p stays flat.
+	return rc.chatType == "group"
 }
 
 // shouldUseThreadOrReplyAPI is true when we should call Im.Message.Reply (optionally with ReplyInThread).
@@ -3210,7 +3213,7 @@ func (p *Platform) onBotMenu(event *larkapplication.P2BotMenuV6) error {
 		sessionID: agentkit.SessionID(sessionKey),
 		content:   content,
 		userID:    userID,
-		rctx:      replyContext{chatID: userID, sessionKey: sessionKey},
+		rctx:      replyContext{chatID: userID, chatType: "p2p", sessionKey: sessionKey},
 	})
 	return nil
 }

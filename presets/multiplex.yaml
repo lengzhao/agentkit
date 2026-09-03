@@ -70,6 +70,7 @@ platform.feishu:
     # allowChat: ""
     groupReplyAll: false
     # threadIsolation: false
+    # replyInThread: true # false：群聊出站不创建/进入话题
     # reactionEmoji: OnIt
     # doneEmoji: ""
     # enableFeishuCard: true

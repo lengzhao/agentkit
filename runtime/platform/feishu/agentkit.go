@@ -35,6 +35,7 @@ type Config struct {
 	GroupReplyAll              bool              `json:"groupReplyAll"`
 	ShareSessionInChannel      bool              `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
 	ThreadIsolation            bool              `json:"threadIsolation"`
+	ReplyInThread              *bool             `json:"replyInThread"`
 	ReactionEmoji              string            `json:"reactionEmoji"`
 	DoneEmoji                  string            `json:"doneEmoji"`
 	GroupOnly                  bool              `json:"groupOnly"`
@@ -174,6 +175,11 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		noReplyToTrigger = true
 	}
 
+	replyInThread := true
+	if cfg.ReplyInThread != nil {
+		replyInThread = *cfg.ReplyInThread
+	}
+
 	port := strings.TrimSpace(cfg.Port)
 	if port == "" {
 		port = "8080"
@@ -212,6 +218,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		respondToAtEveryoneAndHere: cfg.RespondToAtEveryoneAndHere,
 		shareSessionInChannel:      cfg.ShareSessionInChannel,
 		threadIsolation:            cfg.ThreadIsolation,
+		replyInThread:              replyInThread,
 		resolveMentions:            cfg.ResolveMentions,
 		noReplyToTrigger:           noReplyToTrigger,
 		client:                     lark.NewClient(cfg.AppID, cfg.AppSecret, clientOpts...),
@@ -400,6 +407,11 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 }
 
 func (p *Platform) storeDelivery(sessionID agentkit.SessionID, rc replyContext) {
+	if rc.chatType == "" {
+		if existing, ok := p.deliveryFor(sessionID); ok && existing.chatType != "" {
+			rc.chatType = existing.chatType
+		}
+	}
 	p.deliveries.Store(sessionID, rc)
 }
 
