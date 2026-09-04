@@ -66,6 +66,14 @@ func textOfMessage(msg agentkit.ModelMessage) string {
 	return b.String()
 }
 
+func startAsync(ctx context.Context, rt capschedule.Runtime, fn func(context.Context, agentkit.MessageEvent) error) {
+	go func() {
+		_ = rt.Start(ctx, func(ctx context.Context, event agentkit.MessageEvent) error {
+			return fn(ctx, event)
+		})
+	}()
+}
+
 func TestCronJobFiresOnItsSchedule(t *testing.T) {
 	t.Parallel()
 
@@ -81,15 +89,13 @@ func TestCronJobFiresOnItsSchedule(t *testing.T) {
 	start := clock.Now()
 	wantFirst := start.Truncate(time.Hour).Add(time.Hour)
 	got := make(chan string, 1)
-	go func() {
-		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
-			got <- textOfMessage(event.Message)
-			cancel()
-			return nil
-		})
-	}()
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- textOfMessage(event.Message)
+		cancel()
+		return nil
+	})
 
-		select {
+	select {
 	case prompt := <-got:
 		if !strings.Contains(prompt, "poll now") {
 			t.Fatalf("prompt = %q", prompt)
@@ -110,13 +116,11 @@ func TestAgentAddedJobIsPickedUpWithoutRestart(t *testing.T) {
 	defer cancel()
 
 	got := make(chan string, 1)
-	go func() {
-		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
-			got <- textOfMessage(event.Message)
-			cancel()
-			return nil
-		})
-	}()
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- textOfMessage(event.Message)
+		cancel()
+		return nil
+	})
 
 	if _, err := registry.Add(ctx, capschedule.Job{
 		Kind:    capschedule.KindCron,
@@ -145,13 +149,11 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 	defer cancel()
 
 	got := make(chan agentkit.MessageEvent, 1)
-	go func() {
-		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
-			got <- event
-			cancel()
-			return nil
-		})
-	}()
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- event
+		cancel()
+		return nil
+	})
 
 	if _, err := registry.Add(ctx, capschedule.Job{
 		Kind:              capschedule.KindCron,
@@ -199,13 +201,11 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 	defer cancel()
 
 	got := make(chan agentkit.MessageEvent, 1)
-	go func() {
-		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
-			got <- event
-			cancel()
-			return nil
-		})
-	}()
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- event
+		cancel()
+		return nil
+	})
 
 	if _, err := registry.Add(ctx, capschedule.Job{
 		Kind:              capschedule.KindCron,
@@ -246,13 +246,11 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 	defer cancel()
 
 	got := make(chan agentkit.MessageEvent, 1)
-	go func() {
-		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
-			got <- event
-			cancel()
-			return nil
-		})
-	}()
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- event
+		cancel()
+		return nil
+	})
 
 	if _, err := registry.Add(ctx, capschedule.Job{
 		ID:                "agent-9",
@@ -299,15 +297,13 @@ func TestCronMarksDelayJobFiredAfterFire(t *testing.T) {
 	}
 
 	got := make(chan struct{}, 1)
-	go func() {
-		_ = rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
-			if strings.Contains(textOfMessage(event.Message), "remind once") {
-				got <- struct{}{}
-				cancel()
-			}
-			return nil
-		})
-	}()
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		if strings.Contains(textOfMessage(event.Message), "remind once") {
+			got <- struct{}{}
+			cancel()
+		}
+		return nil
+	})
 
 	select {
 	case <-got:
@@ -345,7 +341,9 @@ func TestCronStopsOnCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- rt.Start(ctx, func(context.Context, agentkit.MessageEvent) error { return nil }) }()
+	go func() {
+		done <- rt.Start(ctx, func(context.Context, agentkit.MessageEvent) error { return nil })
+	}()
 	cancel()
 
 	select {

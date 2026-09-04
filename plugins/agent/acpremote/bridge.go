@@ -78,7 +78,13 @@ func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 		b.killProcLocked()
 	}
 
+	cwd, err := b.resolveCwd(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
+	cmd.Dir = cwd
 	cmd.Env = commandEnv(b.cfg.Env)
 	cmd.Stderr = os.Stderr
 

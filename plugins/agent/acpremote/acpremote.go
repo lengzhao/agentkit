@@ -21,7 +21,8 @@ type Config struct {
 	Command []string `json:"command"`
 	// Env adds environment variables for the subprocess.
 	Env map[string]string `json:"env,omitempty"`
-	// Cwd is the working directory for ACP session/new. Empty uses workspace root.
+	// Cwd is the working directory for the ACP subprocess (cmd.Dir) and session/new.
+	// Empty uses workspace default root.
 	Cwd string `json:"cwd,omitempty"`
 	// AutoApprove automatically grants tool permission requests without prompting.
 	AutoApprove bool `json:"autoApprove"`

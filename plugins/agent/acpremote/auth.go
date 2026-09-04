@@ -41,8 +41,9 @@ func isCursorAuthError(err error) bool {
 
 // runCursorCLILogin blocks until Cursor CLI finishes browser OAuth.
 // onOutput receives stdout/stderr lines as-is for passthrough to the chat UI.
-func runCursorCLILogin(ctx context.Context, agentBin string, env map[string]string, onOutput func(string)) error {
+func runCursorCLILogin(ctx context.Context, agentBin, cwd string, env map[string]string, onOutput func(string)) error {
 	cmd := exec.CommandContext(ctx, agentBin, "login")
+	cmd.Dir = cwd
 	cmd.Env = commandEnv(env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
@@ -96,8 +97,13 @@ func (a *Runtime) runCursorLogin(ctx context.Context, emit agentkit.OutboundEmit
 		}
 	}
 
+	cwd, err := a.bridge.resolveCwd(ctx)
+	if err != nil {
+		return err
+	}
+
 	slog.Info("acp-remote: waiting for cursor cli login")
-	err := runCursorCLILogin(ctx, agentBin, a.cfg.Env, stream)
+	err = runCursorCLILogin(ctx, agentBin, cwd, a.cfg.Env, stream)
 	if ferr := emitter.finalize(); ferr != nil && err == nil {
 		err = ferr
 	}

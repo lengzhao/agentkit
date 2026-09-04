@@ -210,6 +210,7 @@ sequenceDiagram
 
 要点：
 
+- **工作目录**：`config.cwd`（未设则用 workspace 默认根）同时作为 ACP 子进程的 `cmd.Dir` 与 `session/new` 的 `Cwd`；需项目根时可设 `cwd: local:..`。
 - **先连 ACP**：不调用 `agent status` 预检；直接启动 `agent acp`，认证失败再登录。
 - **登录**：`agent login`（配置注入 `NO_OPEN_BROWSER=1`），由 Cursor CLI 阻塞等待浏览器授权；stdout/stderr 原样透传到对话。
 - **不要混用**：`authenticate` 返回的链接与 `agent login` 的 challenge 不是同一次 OAuth；登录只走 `agent login`。
