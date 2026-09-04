@@ -99,8 +99,8 @@ func (a *Runtime) AgentCatalogEntry() string {
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
-	sessionID, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	if !ok || sessionID == "" {
+	sessionID := agentkit.HistorySessionID(ctx)
+	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
 	}
 	emit := input.Emit

@@ -96,4 +96,8 @@ func TestWithTurnContextSetsStoreSessionID(t *testing.T) {
 	if !ok || store != "slack:C001:new:20260829" {
 		t.Fatalf("store session id = %q, ok = %v", store, ok)
 	}
+	history, ok := ctx.Value(agentkit.KeyHistorySessionID).(agentkit.SessionID)
+	if !ok || history != store {
+		t.Fatalf("history session id = %q, ok = %v", history, ok)
+	}
 }

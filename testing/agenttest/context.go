@@ -23,6 +23,9 @@ func LoopTurnContext(effective, storeSession agentkit.SessionID, agentID agentki
 	if storeSession != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyStoreSessionID, storeSession)
 	}
+	if historyID := agentkit.ResolveHistorySessionID(ctx); historyID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyHistorySessionID, historyID)
+	}
 	return ctx
 }
 

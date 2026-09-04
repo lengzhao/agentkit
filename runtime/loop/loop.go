@@ -274,6 +274,9 @@ func withTurnContext(ctx context.Context, sessionID, deliverySessionID, storeSes
 	if control != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)
 	}
+	if historyID := agentkit.ResolveHistorySessionID(ctx); historyID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeyHistorySessionID, historyID)
+	}
 	return ctx
 }
 

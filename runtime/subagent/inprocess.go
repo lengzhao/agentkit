@@ -215,6 +215,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionID, childID)
+	childCtx = context.WithValue(childCtx, agentkit.KeyHistorySessionID, childID)
 	childCtx = context.WithValue(childCtx, agentkit.KeyAgentID, child.ID())
 	// Drop the parent's turn control: steering and cancel reasons belong to the
 	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.

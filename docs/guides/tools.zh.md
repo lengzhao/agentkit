@@ -155,6 +155,7 @@ go run ./cmd/agent -config presets/web.yaml "查一下官方说法并附来源"
 | `ctx:user_id` | `KeyUserID` |
 | `ctx:session_id` | `KeySessionID` |
 | `ctx:store_session_id` | `KeyStoreSessionID` |
+| `ctx:history_session_id` | `KeyHistorySessionID`（Loop 预解析，Agent 读写历史首选） |
 | `ctx:delivery_session_id` | `KeyDeliverySessionID` |
 | `ctx:agent_id` | `KeyAgentID` |
 | `ctx:platform_id` | `KeyPlatformID` |
@@ -289,6 +290,7 @@ tools.default:
 | `ctx:user_id` | `KeyUserID` |
 | `ctx:session_id` | `KeySessionID` |
 | `ctx:store_session_id` | `KeyStoreSessionID` |
+| `ctx:history_session_id` | `KeyHistorySessionID`（Loop 预解析，Agent 读写历史首选） |
 | `ctx:delivery_session_id` | `KeyDeliverySessionID` |
 | `ctx:agent_id` | `KeyAgentID` |
 | `ctx:platform_id` | `KeyPlatformID` |

@@ -7,6 +7,8 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
 func TestModelMessageToPrompt(t *testing.T) {
@@ -118,6 +120,56 @@ func TestIsCursorAuthError(t *testing.T) {
 			t.Fatalf("isCursorAuthError(%v) = %v, want %v", tc.err, got, tc.want)
 		}
 	}
+}
+
+func TestRunTurnUsesStoreSessionID(t *testing.T) {
+	t.Parallel()
+
+	storeID := agentkit.SessionID("chat-api:default_channel:t:conv_abc1234567890123456789")
+	effective := agentkit.SessionID("chat-api:default_channel")
+	mem, err := session.NewMemory(session.MemoryConfig{ID: storeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &recordingStore{sess: mem}
+	rt, err := New(Config{
+		ID:      "cursor",
+		Command: []string{"/nonexistent/agent-acp-test-binary"},
+	}, Deps{
+		Workspace:    &stubWorkspace{},
+		SessionStore: rec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	ctx = agenttest.LoopTurnContext(effective, storeID, "cursor")
+	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
+	_ = rt.RunTurn(ctx, agentkit.TurnInput{
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
+		},
+		Emit: emit,
+	})
+
+	if len(rec.requested) == 0 {
+		t.Fatal("expected sessionStore.Get with store session id")
+	}
+	if rec.requested[0] != storeID {
+		t.Fatalf("sessionStore.Get id = %q, want %q", rec.requested[0], storeID)
+	}
+}
+
+type recordingStore struct {
+	requested []agentkit.SessionID
+	sess      agentkit.Session
+}
+
+func (r *recordingStore) Get(_ context.Context, id agentkit.SessionID) (agentkit.Session, error) {
+	r.requested = append(r.requested, id)
+	return r.sess, nil
 }
 
 func TestNewRequiresCommand(t *testing.T) {
