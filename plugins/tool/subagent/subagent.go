@@ -17,6 +17,7 @@ type SubagentDeps struct {
 type SubagentInput struct {
 	Agent string `json:"agent" jsonschema:"Name of the subagent to delegate to, from the subagent list in the system prompt"`
 	Task  string `json:"task" jsonschema:"Self-contained instructions. The subagent starts from an empty session and cannot see this conversation"`
+	Async *bool  `json:"async,omitempty" jsonschema:"When true, return immediately and deliver the conclusion in a follow-up turn. Omit to use the subagent default."`
 }
 
 type SubagentOutput struct {
@@ -25,6 +26,7 @@ type SubagentOutput struct {
 	Summary string `json:"summary"`
 	Session string `json:"session"`
 	Steps   int    `json:"steps"`
+	JobID   string `json:"jobId,omitempty"`
 }
 
 // NewSubagent registers tool/subagent: Delegate a subtask to a child agent (tool name: delegate) and wait for its conclusion.
@@ -39,7 +41,7 @@ func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
 	}
 	spawner := deps.Subagent
 	tool, err := agentkit.NewTool[SubagentInput, SubagentOutput]("delegate", func(ctx context.Context, input SubagentInput) (SubagentOutput, error) {
-		result, err := spawner.Run(ctx, subagent.Request{Agent: input.Agent, Task: input.Task})
+		result, err := spawner.Run(ctx, subagent.Request{Agent: input.Agent, Task: input.Task, Async: input.Async})
 		if err != nil {
 			return SubagentOutput{}, err
 		}
@@ -49,11 +51,13 @@ func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
 			Summary: result.Summary,
 			Session: result.Session,
 			Steps:   result.Steps,
+			JobID:   result.JobID,
 		}, nil
 	}).
-		Description("Delegate a self-contained subtask to one of the subagents listed in the system prompt, and wait for its conclusion. " +
+		Description("Delegate a self-contained subtask to one of the subagents listed in the system prompt. " +
+			"Use async=true for long-running loop agents (e.g. cursor) so you regain control immediately and receive the conclusion in a follow-up turn. " +
 			"Use this to keep bulky exploration out of this conversation: the subagent's own steps stay in its session and only its summary comes back. " +
-			"The subagent cannot see this conversation, so put every fact it needs into task. It runs to completion before you regain control.").
+			"The subagent cannot see this conversation, so put every fact it needs into task.").
 		Build()
 	if err != nil {
 		return nil, err

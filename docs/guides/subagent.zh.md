@@ -47,23 +47,59 @@ maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxStep
 | `model` | 否 | 覆盖模型，用于"便宜模型跑调研" |
 | `maxSteps` | 否 | 该子 Agent 单次委派的步数上限 |
 
+`agents/*.md` 只用于进程内（`inprocess`）子 Agent。委派到 Loop 里已注册的 agent（如 `cursor`）在 `subagent/loop-agent` 实例的 `config.agents` 里声明，见 [§3](#3-目录查找)。
+
 一个文件解析失败不会影响其它子 Agent：坏文件被跳过，其余照常可用。
 
 ## 3. 目录查找
 
-`subagent/inprocess` 的 `config.dirs` 按顺序扫描，**先命中的目录赢**——所以工作目录是全局定义的覆盖，而不是它的平级：
+L0 默认通过 `subagent/composite` 合并 `subagent/inprocess` 与 `subagent/loop-agent`。`inprocess` 的 `config.dirs` 按顺序扫描，**先命中的目录赢**：
 
 ```yaml
 subagent.default:
+  use: subagent/composite
+  deps:
+    inprocess: subagent.inprocess.default
+    loop: subagent.loop.default
+
+subagent.inprocess.default:
   use: subagent/inprocess
   config:
     dirs:
-      - local:agents      # 项目自带
+      - local:agents
       - local:../examples/agents
-      - global:agents     # ~/.agentkit/agents，跨项目复用
+      - global:agents
     maxSteps: 20
     timeoutSeconds: 600
 ```
+
+`loop-agent` 在配置里声明可委派的 Loop agent，不扫描 `agents/*.md`：
+
+```yaml
+subagent.loop.default:
+  use: subagent/loop-agent
+  config:
+    timeoutSeconds: 1800
+    agents:
+      - name: cursor
+        description: 复杂编码：多文件重构、深度调试。简单问答不要委派。
+        agent: cursor
+        async: true
+        timeoutSeconds: 1800
+  deps:
+    agents:
+      - agent.cursor.default
+```
+
+每个 `agents` 条目字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `name` | 是 | 主 Agent 委派时使用的名字 |
+| `description` | 是 | 进入主 Agent system prompt，用于选人 |
+| `agent` | 否 | Loop 里注册的 agent id，默认与 `name` 相同 |
+| `async` | 否 | 默认是否异步委派 |
+| `timeoutSeconds` | 否 | 覆盖实例级 `timeoutSeconds` |
 
 `local:` / `global:` 前缀由 workspace 解析（见 [架构文档 §8.1](../go-agent-harness-architecture.zh.md#81-workspace-路径)）。L0 默认扫描 `local:agents`（`<cwd>/.agentkit/agents`）、`local:../examples/agents`（`<cwd>/examples/agents`，不存在则跳过）与 `global:agents`（`~/.agentkit/agents`）。
 
@@ -105,19 +141,36 @@ tools.subagent.default:      # 只读 + web 抓取 + finish，没有 delegate；
 {"agent": "researcher", "task": "查清 runtime/loop 怎么保证同一 session 串行，给出文件行号"}
 ```
 
+异步委派 Loop agent（如 cursor）：
+
+```json
+{"agent": "cursor", "task": "重构 auth 模块并补测试", "async": true}
+```
+
+`async` 可省略：若子 agent 定义或配置里写了 `async: true`，默认即异步。
+
 `task` 必须自带完整背景——**子 Agent 从空 session 起跑，看不到主对话**。返回：
 
 ```json
 {"agent":"researcher","status":"completed","summary":"…结论…","session":"sub:cli:default:researcher:42","steps":11}
 ```
 
-`status` 的三种取值：
+异步立即返回：
+
+```json
+{"agent":"cursor","status":"running","jobId":"sub:cli:default:cursor:7","session":"sub:cli:default:cursor:7","summary":"subagent started in the background; results will arrive in a follow-up turn"}
+```
+
+完成后 runner 向父 session 投递一条带 `[subagent-complete ...]` 前缀的 user 消息，主 agent 自动开新 turn 汇总。
+
+`status` 取值：
 
 | status | 含义 |
 |---|---|
 | `completed` | 子 Agent 调了 `tool/finish` 且报告完成 |
 | `blocked` | 子 Agent 调了 `tool/finish` 但报告无法继续 |
 | `stopped` | 没调 finish（步数用完 / 只回了文本），`summary` 退回最后一条 assistant 文本 |
+| `running` | 异步委派已启动，结论尚未返回 |
 
 `Agent.RunTurn` 只返回 `error`，答案必须从子 session 里读回来，所以**给子 Agent 挂上 `tool/finish` 很值**：调了就有结构化的 status + summary，没调就只能拿"它最后说的那段话"。即使子 Agent 中途出错，已经跑出来的部分结论也会带回。
 
@@ -157,7 +210,7 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 
 ## 7. 本期不做
 
-- **并行 fan-out**。一次 `delegate` 跑一个子 Agent 并阻塞等它结束。要并行需要在 `Run` 旁边**加** `Start` / `Handle` 异步接口，并先解决共享 workspace 的写冲突——和 `runner.maxConcurrentTurns` 默认 1 是同一个问题。
+- **并行 fan-out**。一次 `delegate` 仍只启动一个子 Agent；异步可让主 turn 先结束，但同一父 session 默认只允许 1 个 running 的 async job。要并行需要在 `Run` 旁边**加**更多并发控制，并先解决共享 workspace 的写冲突——和 `runner.maxConcurrentTurns` 默认 1 是同一个问题。
 - **`subagent/rpc`**（跨进程子 Agent）。
 - **子 Agent 独立的 workspace 隔离**：现在与父共用一个根，靠工具白名单限制写入能力。
 - **子 Agent 内再委派**、结果的二次校验（verifier 模式）。

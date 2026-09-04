@@ -18,6 +18,21 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.cursor.default:
+    config:
+        authMethod: cursor_login
+        autoApprove: false
+        command:
+            - agent
+            - acp
+        env:
+            CURSOR_ENABLE: "1"
+            NO_OPEN_BROWSER: "1"
+        id: cursor
+    deps:
+        sessionStore: sessionStore.default
+        workspace: workspace.default
+    use: agent/acp-remote
 bootstrap.shell.default:
     config:
         commands:
@@ -266,9 +281,15 @@ skills.default:
         workspace: workspace.default
     use: skill/filesystem
 subagent.default:
+    deps:
+        inprocess: subagent.inprocess.default
+        loop: subagent.loop.default
+    use: subagent/composite
+subagent.inprocess.default:
     config:
         dirs:
             - local:agents
+            - local:../examples/agents
             - global:agents
         maxSteps: 20
         timeoutSeconds: 600
@@ -283,10 +304,28 @@ subagent.default:
         tools: tools.subagent.default
         workspace: workspace.default
     use: subagent/inprocess
+subagent.loop.default:
+    config:
+        agents:
+            - agent: cursor
+              async: true
+              description: 复杂编码：多文件重构、深度调试、跑测试。简单问答不要委派。
+              name: cursor
+              timeoutSeconds: 1800
+        timeoutSeconds: 1800
+    deps:
+        agents:
+            - agent.cursor.default
+        sessionStore: sessionStore.default
+    use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none
 tool.ask-user.default:
     use: tool/ask-user
+tool.chat-history.default:
+    deps:
+        platform: platform.default
+    use: tool/chat-history
 tool.finish.default:
     deps:
         sessionStore: sessionStore.default
@@ -382,6 +421,7 @@ tools.default:
             - tool.web-fetch-http.default
             - tool.ask-user.default
             - tool.send.default
+            - tool.chat-history.default
             - tool.schedule.default
     use: tools/runtime
 tools.subagent.default:

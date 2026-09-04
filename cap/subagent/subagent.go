@@ -16,12 +16,23 @@ import "context"
 // Definition is one delegatable agent. Providers load these from disk — see
 // runtime/subagent for the agents/<name>.md format — so adding a child agent is
 // adding a file, not editing the instance graph.
+const (
+	BackendInprocess = "inprocess"
+	BackendLoop      = "loop"
+)
+
 type Definition struct {
 	Name string `json:"name"`
 	// Description is how the parent picks who to delegate to, so it is required.
 	Description string `json:"description"`
 	// Prompt is the child's persona, layered on top of the shared prompt sections.
 	Prompt string `json:"prompt"`
+	// Backend selects the runtime: inprocess (default) or loop (a configured Loop agent).
+	Backend string `json:"backend,omitempty"`
+	// LoopAgent is the Loop agent id when Backend is loop. Defaults to Name.
+	LoopAgent string `json:"loopAgent,omitempty"`
+	// Async is the default delegation mode for this definition.
+	Async bool `json:"async,omitempty"`
 	// Tools narrows the child's tool set by name. Empty means every tool the
 	// provider was given.
 	Tools    []string `json:"tools,omitempty"`
@@ -36,6 +47,8 @@ type Definition struct {
 type Request struct {
 	Agent string `json:"agent"`
 	Task  string `json:"task"`
+	// Async overrides the definition default. Nil means use the definition.
+	Async *bool `json:"async,omitempty"`
 }
 
 // Result statuses. Completed and Blocked mirror the child's explicit finish;
@@ -44,6 +57,7 @@ const (
 	StatusCompleted = "completed"
 	StatusBlocked   = "blocked"
 	StatusStopped   = "stopped"
+	StatusRunning   = "running"
 )
 
 // Result is everything that crosses back into the parent's context. Summary is
@@ -54,13 +68,16 @@ type Result struct {
 	Status  string `json:"status"`
 	Summary string `json:"summary"`
 	Steps   int    `json:"steps"`
+	// JobID is set for async delegations that return before the child finishes.
+	JobID string `json:"jobId,omitempty"`
 }
 
 // Spawner runs child agents.
 //
-// Run is synchronous: delegation is serial today, matching an agent loop that
-// executes tool calls one at a time. Parallel fan-out means adding an async
-// Start alongside Run, not reshaping it.
+// Run is usually synchronous: inprocess children block until they finish. Loop-backed
+// children may return status=running when async is requested; the conclusion is
+// delivered later via a follow-up turn. Parallel fan-out per parent session is
+// still limited to one running async job today.
 type Spawner interface {
 	// Definitions lists who can be delegated to, re-read per call so editing a
 	// definition file takes effect without a restart.

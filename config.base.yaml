@@ -222,7 +222,7 @@ agent.cursor.default:
     authMethod: cursor_login
     env:
       NO_OPEN_BROWSER: "1"
-      CURSOR_ENABLE: ${var:CURSOR_ENABLE}
+      CURSOR_ENABLE: ${var:CURSOR_ENABLE:-1}
     autoApprove: false
   deps:
     workspace: workspace.default
@@ -263,10 +263,17 @@ schedule.cron:
 # 子 agent 委派：定义在 local:agents / global:agents 下的 agents/*.md。
 # 子 agent 必须用不含 tool/subagent 的兄弟 tools/prompt 实例，既断依赖环，也让"只有主 agent 能委派"成为结构性事实。
 subagent.default:
+  use: subagent/composite
+  deps:
+    inprocess: subagent.inprocess.default
+    loop: subagent.loop.default
+
+subagent.inprocess.default:
   use: subagent/inprocess
   config:
     dirs:
       - local:agents
+      - local:../examples/agents
       - global:agents
     maxSteps: 20
     timeoutSeconds: 600
@@ -280,6 +287,22 @@ subagent.default:
     compaction:
       - compaction.prune.default
       - compaction.token-limit.default
+
+# Loop agent 委派：将 loop 里注册的重型 agent（如 cursor）暴露给主 agent 的 delegate 工具。
+subagent.loop.default:
+  use: subagent/loop-agent
+  config:
+    timeoutSeconds: 1800
+    agents:
+      - name: cursor
+        description: 复杂编码：多文件重构、深度调试、跑测试。简单问答不要委派。
+        agent: cursor
+        async: true
+        timeoutSeconds: 1800
+  deps:
+    sessionStore: sessionStore.default
+    agents:
+      - agent.cursor.default
 
 credentials.default:
   use: credentials/env

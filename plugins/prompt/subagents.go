@@ -54,6 +54,12 @@ func (p *subagentsSectionProvider) build(ctx context.Context, _ agentkit.PromptR
 			b.WriteString(": ")
 			b.WriteString(item.Description)
 		}
+		if item.Async {
+			b.WriteString(" (default: async)")
+		}
+		if item.Backend == subagent.BackendLoop {
+			b.WriteString(" [loop]")
+		}
 		b.WriteString("\n")
 	}
 	return agentkit.PromptSection{

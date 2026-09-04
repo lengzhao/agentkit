@@ -140,6 +140,8 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 		return err
 	}
 	sched := newScheduler(r.maxConcurrent, r.dispatch, r.reportTurnError)
+	submit := r.inboundSubmit(sched)
+	bindSubagentSubmit(result, submit)
 	// Let in-flight turns record turn/end before the process goes away.
 	defer sched.wait(r.shutdownTimeout)
 

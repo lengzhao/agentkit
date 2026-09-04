@@ -778,7 +778,7 @@ agents:
 
 ### 5.10 子 Agent 委派（subagent）
 
-AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"。已落地的是后者的串行版（`subagent/inprocess` + `tool/subagent` + `prompt/section/subagents`），子 Agent 不是配置里的实例，而是工作目录 `agents/*.md` 里的定义文件——加一个子 Agent = 加一个文件，不改实例图。使用手册见 [guides/subagent.zh.md](guides/subagent.zh.md)。
+AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"。已落地 `subagent/composite`（合并 `subagent/inprocess` 与 `subagent/loop-agent`）+ `tool/subagent` + `prompt/section/subagents`。进程内子 Agent 来自工作目录 `agents/*.md`；Loop agent（如 `cursor`）在 `subagent/loop-agent` 的 `config.agents` 里声明——加一个子 Agent = 加一个文件或配置项，不改实例图。使用手册见 [guides/subagent.zh.md](guides/subagent.zh.md)。
 
 **为什么值得做**：委派的收益是**上下文隔离**，不是并发。子 Agent 烧掉的十几轮 grep 输出留在它自己的 Session 里，回到父 Session 的只有一段结论——父 Agent 的 turn 因此不必靠 compaction 去救那些一次性的探索输出。
 
@@ -792,11 +792,11 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 
 定义里的 `tools` 白名单是在那份兄弟 runtime 之上再做一层收窄的包装器：`Visible` 过滤、`Execute` 对名单外的调用返回模型可读的 deny 结果。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径（[5.5](#55-工具执行路径)），不另建一条。
 
-**结论的读回**：`Agent.RunTurn` 只返回 `error`，答案必须从子 Session 里取——子 Agent 调了 `tool/finish` 就用其结构化 `status` + `summary`，没调则退回最后一条 assistant 文本并标 `status=stopped`。父 Session 上只落 `subagent/start` / `subagent/end` 两条审计事件；模型看到的结论走 `delegate` 的 tool result 那一条路，"Model-visible ⟺ Logged" 不破。
+**结论的读回**：`Agent.RunTurn` 只返回 `error`，答案必须从子 Session 里取——子 Agent 调了 `tool/finish` 就用其结构化 `status` + `summary`，没调则退回最后一条 assistant 文本并标 `status=stopped`。父 Session 上只落 `subagent/start` / `subagent/end` 两条审计事件；模型看到的结论走 `delegate` 的 tool result 那一条路，"Model-visible ⟺ Logged" 不破。`subagent/loop-agent` 委派到 Loop 里已注册的 agent（如 `agent/acp-remote` 的 `cursor`）；`async: true` 时 `delegate` 立即返回 `status=running`，完成后 runner 经 `SubmitBinder` 向父 session 投递带 `[subagent-complete ...]` 前缀的 follow-up turn。
 
 **出站可观测性**：Spawner 用 `forwardParentEmit` 包一层父 turn 的 `OutboundEmit`（来自 `ctx` 的 `KeyOutboundEmit`）：只转发 `toolcall_end`（`message/update`）与 `tool/result`，文本与 thinking delta 一律丢弃，并把 `SessionID` 改回父 delivery session，避免主 Agent 的 answer 流与子 Agent 交错。`platform/chat-api` 启用 `debugUi` 时把这两类事件映射为 SSE `tool_call`（仅在 `toolcall_end`、参数完整后发送）与 `tool_result`（正文限长 1024 rune，超出标 `truncated`）；`OutboundEvent.AgentID` 用于在 `/debug/` 标注 `subagent · <name>`。详见 [guides/subagent.zh.md §6](guides/subagent.zh.md#6-跑起来)。
 
-**本期串行**：一次 `delegate` 跑一个子 Agent 并阻塞等它结束。并行 fan-out 需要在 `Run` 旁边**加** `Start` / `Handle` 异步接口，并先解决共享 workspace 的写冲突——那是与 `runner.maxConcurrentTurns` 默认 1 同源的问题。
+**并发边界**：一次 `delegate` 仍只启动一个子 Agent。`subagent/inprocess` 同步阻塞至子 Agent 结束；`subagent/loop-agent` 支持 `async: true`，让主 turn 先结束，但同一父 session 默认只允许 1 个 running 的 async job。并行 fan-out 需要更多并发控制，并先解决共享 workspace 的写冲突——那是与 `runner.maxConcurrentTurns` 默认 1 同源的问题。
 
 ### 5.11 MCP 动态工具
 

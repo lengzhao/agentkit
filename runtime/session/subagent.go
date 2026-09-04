@@ -13,6 +13,8 @@ type SubagentStartData struct {
 	Agent   string `json:"agent"`
 	Session string `json:"session"`
 	Task    string `json:"task"`
+	Async   bool   `json:"async,omitempty"`
+	JobID   string `json:"jobId,omitempty"`
 }
 
 // SubagentEndData records the outcome of a delegation. Summary duplicates what
@@ -25,6 +27,7 @@ type SubagentEndData struct {
 	Summary string `json:"summary,omitempty"`
 	Steps   int    `json:"steps"`
 	Error   string `json:"error,omitempty"`
+	JobID   string `json:"jobId,omitempty"`
 }
 
 func AppendSubagentStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data SubagentStartData) error {

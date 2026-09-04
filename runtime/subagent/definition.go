@@ -16,7 +16,7 @@ import (
 
 // defaultDirs looks in the working directory first so a repo can ship its own
 // child agents, then falls back to the user-global set.
-var defaultDirs = []string{"local:agents", "global:agents"}
+var defaultDirs = []string{"local:agents", "local:../examples/agents", "global:agents"}
 
 // DefaultDefinitionDirs returns the dirs scanned when config.dirs is empty.
 func DefaultDefinitionDirs() []string {
@@ -36,6 +36,7 @@ func FindDefinition(defs []subagent.Definition, name string) (subagent.Definitio
 var (
 	errNoDescription = errors.New("definition needs a description")
 	errNoPrompt      = errors.New("definition needs a body to use as the system prompt")
+	errLoopBackend   = errors.New("loop backend must be declared in subagent/loop-agent config, not agents/*.md")
 )
 
 // frontmatter is the YAML head of a definition file. Fields absent from the file
@@ -43,6 +44,9 @@ var (
 type frontmatter struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
+	Backend     string   `yaml:"backend"`
+	Agent       string   `yaml:"agent"`
+	Async       bool     `yaml:"async"`
 	Tools       []string `yaml:"tools"`
 	Model       string   `yaml:"model"`
 	MaxSteps    int      `yaml:"maxSteps"`
@@ -75,6 +79,9 @@ func loadDefinitions(ctx context.Context, ws workspace.Service, dirs []string) (
 			}
 			def, err := parseDefinition(entry.Name(), string(data))
 			if err != nil {
+				if errors.Is(err, errLoopBackend) {
+					continue
+				}
 				// One malformed file must not take down delegation to every
 				// other child agent, so it is skipped rather than fatal.
 				slog.Warn("subagent definition ignored", "path", path, "error", err)
@@ -112,6 +119,13 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 		// listing it would only add noise to the system prompt.
 		return subagent.Definition{}, errNoDescription
 	}
+	backend := strings.TrimSpace(fm.Backend)
+	if backend == "" {
+		backend = subagent.BackendInprocess
+	}
+	if backend == subagent.BackendLoop {
+		return subagent.Definition{}, errLoopBackend
+	}
 	prompt := strings.TrimSpace(body)
 	if prompt == "" {
 		return subagent.Definition{}, errNoPrompt
@@ -120,6 +134,7 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 		Name:        name,
 		Description: description,
 		Prompt:      prompt,
+		Backend:     backend,
 		Tools:       trimAll(fm.Tools),
 		Model:       strings.TrimSpace(fm.Model),
 		MaxSteps:    fm.MaxSteps,
