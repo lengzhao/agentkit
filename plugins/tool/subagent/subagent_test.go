@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/tool/subagent"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 )
@@ -104,6 +105,45 @@ func TestSubagentToolSchemaMarksBothFieldsRequired(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("schema required = %v, missing %v\nschema: %s", decoded.Required, want, schema)
+	}
+}
+
+func TestSubagentToolRejectsAtDepthLimit(t *testing.T) {
+	t.Parallel()
+
+	spawner := &fakeSpawner{result: capsubagent.Result{Agent: "researcher", Status: capsubagent.StatusCompleted, Summary: "ok"}}
+	delegate, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{Subagent: spawner})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("sub:sub:cli:default:researcher:1:reviewer:2"))
+	out := testutil.CallTool(t, ctx, delegate, `{"agent":"researcher","task":"go deeper"}`)
+	if !strings.Contains(out, "depth limit") {
+		t.Fatalf("output = %q, want depth limit error", out)
+	}
+	if spawner.got.Agent != "" {
+		t.Fatalf("spawner should not run at depth limit, got %+v", spawner.got)
+	}
+}
+
+func TestSubagentToolAllowsDelegationBelowDepthLimit(t *testing.T) {
+	t.Parallel()
+
+	spawner := &fakeSpawner{result: capsubagent.Result{Agent: "researcher", Status: capsubagent.StatusCompleted, Summary: "ok"}}
+	delegate, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{Subagent: spawner})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("sub:cli:default:researcher:1"))
+	out := testutil.CallTool(t, ctx, delegate, `{"agent":"researcher","task":"one more level"}`)
+	var got subagent.SubagentOutput
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decode output: %v (%s)", err, out)
+	}
+	if got.Summary != "ok" {
+		t.Fatalf("output = %+v, want successful delegation", got)
 	}
 }
 

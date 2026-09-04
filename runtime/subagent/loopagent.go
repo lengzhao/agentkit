@@ -90,9 +90,6 @@ func (s *LoopAgentSpawner) Definitions(context.Context) ([]subagent.Definition, 
 }
 
 func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subagent.Result, error) {
-	if ctx.Value(agentkit.KeyInSubagent) != nil {
-		return subagent.Result{}, fmt.Errorf("a subagent cannot delegate further")
-	}
 	name := strings.TrimSpace(req.Agent)
 	task := strings.TrimSpace(req.Task)
 	if name == "" {

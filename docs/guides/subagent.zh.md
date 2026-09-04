@@ -130,7 +130,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
       - tool.skill.default
 ```
 
-这个约束和产品要求同向：兄弟实例里没挂 `tool/subagent`，**"只有主 Agent 能委派"就成了结构性事实**——子 Agent 的工具列表里根本没有 `delegate`，不靠深度计数兜底。（Spawner 内部另有一个 ctx 标记做第二道锁，只在有人把配置接错时才会触发。）
+这个约束和产品要求同向：兄弟实例里没挂 `tool/subagent`，**"只有主 Agent 能委派"就成了结构性事实**——子 Agent 的工具列表里根本没有 `delegate`，不依赖深度计数去兜底。若配置误把 `delegate` 挂到子 Agent 上，`delegate` 工具会根据当前 session id 的嵌套层数限制链长：**最多 2 次 delegate（3 层）**，超出则返回模型可读的错误。
 
 第二层是白名单包装器：`Visible` 只返回名单内的工具，名单外的调用返回一条模型可读的 deny 结果（不是 error，所以子 Agent 的 turn 不会因此崩掉）。`skills` 白名单同理：收窄 prompt 里的 skill 目录，并在 `skill` 工具执行时拒绝名单外的加载。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径，不另建一条。定义里写了不存在的工具名会被丢弃并告警；**全部写错**则委派直接报错，而不是放一个空手的子 Agent 上场。
 
@@ -214,6 +214,7 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 ## 7. 本期不做
 
 - **并行 fan-out**。一次 `delegate` 仍只启动一个子 Agent；异步可让主 turn 先结束，但同一父 session 默认只允许 1 个 running 的 async job。要并行需要在 `Run` 旁边**加**更多并发控制，并先解决共享 workspace 的写冲突——和 `runner.maxConcurrentTurns` 默认 1 是同一个问题。
+- **超过 2 层的嵌套委派**（`delegate` 工具根据 session id 嵌套层数拒绝）。
 - **`subagent/rpc`**（跨进程子 Agent）。
 - **子 Agent 独立的 workspace 隔离**：现在与父共用一个根，靠工具白名单限制写入能力。
-- **子 Agent 内再委派**、结果的二次校验（verifier 模式）。
+- **子 Agent 内再委派**（最多 2 次 `delegate`）、结果的二次校验（verifier 模式）。

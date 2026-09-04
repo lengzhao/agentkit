@@ -282,14 +282,17 @@ func TestRunRejectsUnknownAgentWithAvailableNames(t *testing.T) {
 	}
 }
 
-func TestRunRejectsNestedDelegation(t *testing.T) {
+func TestRunAcceptsDelegationBelowDepthLimit(t *testing.T) {
 	t.Parallel()
 
-	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{{Text: "unused"}})
+	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{{Text: "done"}})
 
 	ctx := context.WithValue(f.ctx, agentkit.KeyInSubagent, true)
-	if _, err := f.spawner.Run(ctx, subagent.Request{Agent: "researcher", Task: "delegate again"}); err == nil {
-		t.Fatal("a subagent must not be able to delegate further")
+	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("sub:cli:default:parent:1"))
+	if _, err := f.spawner.Run(ctx, subagent.Request{Agent: "researcher", Task: "nested once"}); err != nil {
+		if strings.Contains(err.Error(), "cannot delegate further") {
+			t.Fatalf("spawner should allow delegation below depth limit, got %v", err)
+		}
 	}
 }
 

@@ -788,7 +788,7 @@ AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"�
 tools.default → tool.subagent.default → subagent.default → tools.default
 ```
 
-`prompt` 侧同理（`prompt.default → prompt.subagents.default → subagent.default → prompt.default`）。pluginkit 在 `build` 阶段直接判 dependency cycle，所以配置里必须给子 Agent 一份兄弟实例 `tools.subagent.default` / `prompt.subagent.default`。这个约束正好和产品要求同向：兄弟实例里没挂 `tool/subagent`，"只有主 Agent 能委派"就从一条约定变成**结构性事实**——子 Agent 的可见工具列表里根本没有 `delegate`，不依赖深度计数去兜底（Spawner 内部另有一个 ctx 标记，只用于配置接错时的第二道锁）。
+`prompt` 侧同理（`prompt.default → prompt.subagents.default → subagent.default → prompt.default`）。pluginkit 在 `build` 阶段直接判 dependency cycle，所以配置里必须给子 Agent 一份兄弟实例 `tools.subagent.default` / `prompt.subagent.default`。这个约束正好和产品要求同向：兄弟实例里没挂 `tool/subagent`，"只有主 Agent 能委派"就从一条约定变成**结构性事实**——子 Agent 的可见工具列表里根本没有 `delegate`，不依赖深度计数去兜底。若配置误挂 `delegate`，`delegate` 工具按 session id 嵌套层数限制链长（最多 2 次 delegate，3 层）。
 
 定义里的 `tools` 白名单是在那份兄弟 runtime 之上再做一层收窄的包装器：`Visible` 过滤、`Execute` 对名单外的调用返回模型可读的 deny 结果。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径（[5.5](#55-工具执行路径)），不另建一条。
 

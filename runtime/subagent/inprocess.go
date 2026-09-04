@@ -118,11 +118,6 @@ func (s *Spawner) Definitions(ctx context.Context) ([]subagent.Definition, error
 }
 
 func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Result, error) {
-	if ctx.Value(agentkit.KeyInSubagent) != nil {
-		// Unreachable with the recommended wiring, since a child's tool runtime
-		// has no delegate tool. This is the second lock, for a mis-wired graph.
-		return subagent.Result{}, fmt.Errorf("a subagent cannot delegate further")
-	}
 	name := strings.TrimSpace(req.Agent)
 	task := strings.TrimSpace(req.Task)
 	if name == "" {
