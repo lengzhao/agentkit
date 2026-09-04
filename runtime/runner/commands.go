@@ -13,7 +13,10 @@ func (r *Root) Commands() []agentkit.Command {
 	sort.Slice(agents, func(i, j int) bool {
 		return agents[i].ID() < agents[j].ID()
 	})
-	return []agentkit.Command{agent.Command(agents, r.sessionStore)}
+	return []agentkit.Command{
+		agent.Command(agents, r.sessionStore),
+		agent.ACPCommand(agents, r.sessionStore),
+	}
 }
 
 func (r *Root) loopAgents() []agentkit.Agent {

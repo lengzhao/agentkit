@@ -66,6 +66,11 @@ func formatDefinition(def capsubagent.Definition) string {
 	} else {
 		b.WriteString("tools: (all tools available to the subagent runtime)\n")
 	}
+	if len(def.Skills) > 0 {
+		fmt.Fprintf(&b, "skills: %s\n", strings.Join(def.Skills, ", "))
+	} else {
+		b.WriteString("skills: (all skills available to the subagent runtime)\n")
+	}
 	if def.Model != "" {
 		fmt.Fprintf(&b, "model: %s\n", def.Model)
 	}

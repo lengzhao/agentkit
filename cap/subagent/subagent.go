@@ -35,7 +35,10 @@ type Definition struct {
 	Async bool `json:"async,omitempty"`
 	// Tools narrows the child's tool set by name. Empty means every tool the
 	// provider was given.
-	Tools    []string `json:"tools,omitempty"`
+	Tools []string `json:"tools,omitempty"`
+	// Skills narrows the skill catalog and skill tool by name. Empty means every
+	// skill the provider was given.
+	Skills   []string `json:"skills,omitempty"`
 	Model    string   `json:"model,omitempty"`
 	MaxSteps int      `json:"maxSteps,omitempty"`
 	// Path is the file this definition came from, for error messages.

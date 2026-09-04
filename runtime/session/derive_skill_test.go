@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -32,7 +33,12 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendSkillLoad(ctx, sess, "assistant", "feedback-ticket-intake", "Triage feedback", "Follow these steps."); err != nil {
+	if err := session.AppendSkillLoad(ctx, sess, "assistant", skill.Content{
+		Name:        "feedback-ticket-intake",
+		Description: "Triage feedback",
+		Body:        "Follow these steps.",
+		Path:        "/skills/feedback-ticket-intake",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.AppendToolResult(ctx, sess, "assistant", agentkit.ToolResult{
@@ -56,7 +62,7 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	if msgs[2].Role != "tool" {
 		t.Fatalf("message 2 role = %q, want tool before skill load", msgs[2].Role)
 	}
-	if msgs[3].Role != "user" || !strings.Contains(msgs[3].Content[0].Text, `<skill name="feedback-ticket-intake">`) {
+	if msgs[3].Role != "user" || !strings.Contains(msgs[3].Content[0].Text, `<skill_content name="feedback-ticket-intake">`) {
 		t.Fatalf("message 3 = %+v, want skill load user message", msgs[3])
 	}
 }

@@ -27,7 +27,8 @@ flowchart LR
 ---
 name: researcher          # 可省，默认取文件名（researcher.md → researcher）
 description: 只读调研：读代码、搜索、定位实现，返回结论与文件行号，不改任何文件
-tools: [read, grep, find, ls, web_search, web_fetch, finish]
+tools: [read, grep, find, ls, web_search, web_fetch, skill, finish]
+skills: [context7-mcp]  # 可省，空 = 子 agent runtime 的全部 skill
 model: ""                 # 可省，默认用 Spawner 的 llm dep 的默认模型
 maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxSteps
 ---
@@ -44,6 +45,7 @@ maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxStep
 | 正文 | 是 | 子 Agent 的 system prompt（人格）。空正文同样被跳过 |
 | `name` | 否 | 默认文件名去掉 `.md`；委派时大小写不敏感 |
 | `tools` | 否 | 工具名白名单，空 = 该 runtime 的全部工具。写的是**模型可见的工具名**而不是 kind 名（`tool/read-file` → `read`，`tool/list-dir` → `ls`）；名字写错会被丢弃并告警。见 [§4](#4-子-agent-的能力边界) |
+| `skills` | 否 | Skill 名白名单，空 = 该 runtime 的全部 skill。同时收窄 prompt 里的 skill 目录与 `skill` 工具的加载范围；名字写错会告警。需在 `tools` 里包含 `skill` 才能加载 |
 | `model` | 否 | 覆盖模型，用于"便宜模型跑调研" |
 | `maxSteps` | 否 | 该子 Agent 单次委派的步数上限 |
 
@@ -118,18 +120,19 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 pluginkit 在 build 阶段直接判 dependency cycle，所以必须给子 Agent 一份兄弟实例：
 
 ```yaml
-tools.subagent.default:      # 只读 + web 抓取 + finish，没有 delegate；搜索由 llm.default.hostedTools 提供
+tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 delegate；搜索由 llm.default.hostedTools 提供
   use: tools/runtime
   deps:
     tools:
       - tool.fs-workspace.readonly.default
       - tool.finish.default
       - tool.web-fetch-http.default
+      - tool.skill.default
 ```
 
 这个约束和产品要求同向：兄弟实例里没挂 `tool/subagent`，**"只有主 Agent 能委派"就成了结构性事实**——子 Agent 的工具列表里根本没有 `delegate`，不靠深度计数兜底。（Spawner 内部另有一个 ctx 标记做第二道锁，只在有人把配置接错时才会触发。）
 
-第二层是白名单包装器：`Visible` 只返回名单内的工具，名单外的调用返回一条模型可读的 deny 结果（不是 error，所以子 Agent 的 turn 不会因此崩掉）。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径，不另建一条。定义里写了不存在的工具名会被丢弃并告警；**全部写错**则委派直接报错，而不是放一个空手的子 Agent 上场。
+第二层是白名单包装器：`Visible` 只返回名单内的工具，名单外的调用返回一条模型可读的 deny 结果（不是 error，所以子 Agent 的 turn 不会因此崩掉）。`skills` 白名单同理：收窄 prompt 里的 skill 目录，并在 `skill` 工具执行时拒绝名单外的加载。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径，不另建一条。定义里写了不存在的工具名会被丢弃并告警；**全部写错**则委派直接报错，而不是放一个空手的子 Agent 上场。
 
 `prompt` 侧同理需要一份兄弟实例：`prompt.default` 挂了 `prompt/section/subagents`，而该 section 依赖 Spawner，接同一个又是环。语义上也正确——子 Agent 不能委派，给它看可委派名单毫无意义。
 

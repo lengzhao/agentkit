@@ -82,7 +82,7 @@ func isSkillLoadMessage(msg agentkit.ModelMessage) bool {
 		return false
 	}
 	part := msg.Content[0]
-	return (part.Type == "text" || part.Type == "") && strings.HasPrefix(part.Text, "<skill name=\"")
+	return (part.Type == "text" || part.Type == "") && (strings.HasPrefix(part.Text, "<skill name=\"") || strings.HasPrefix(part.Text, "<skill_content name=\""))
 }
 
 func indexEventMessages(ev agentkit.SessionEvent) []IndexedMessage {

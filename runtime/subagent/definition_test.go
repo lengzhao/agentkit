@@ -29,6 +29,7 @@ func TestParseDefinition(t *testing.T) {
 name: researcher
 description: read-only research
 tools: [read, " grep ", ""]
+skills: [foo, " bar "]
 model: gpt-test
 maxSteps: 7
 ---
@@ -48,6 +49,9 @@ You are the research subagent.
 		}
 		if len(def.Tools) != 2 || def.Tools[0] != "read" || def.Tools[1] != "grep" {
 			t.Errorf("tools = %#v, want trimmed [read grep]", def.Tools)
+		}
+		if len(def.Skills) != 2 || def.Skills[0] != "foo" || def.Skills[1] != "bar" {
+			t.Errorf("skills = %#v, want trimmed [foo bar]", def.Skills)
 		}
 		if def.Model != "gpt-test" {
 			t.Errorf("model = %q", def.Model)

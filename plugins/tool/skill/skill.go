@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/skill"
@@ -18,18 +19,14 @@ type SkillDeps struct {
 
 type SkillInput struct {
 	Name string `json:"name" jsonschema:"Skill name to load"`
-}
-
-type SkillOutput struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Body        string `json:"body"`
+	File string `json:"file,omitempty" jsonschema:"Optional supporting file relative to the skill directory (for example reference.md)"`
 }
 
 // NewSkill registers tool/skill: Discover and load an agent skill by name.
 //
 // Best practices:
 //   - Load a skill once per task, then follow its instructions.
+//   - Use file to read supporting resources named in SKILL.md without opening the whole skills tree to fs tools.
 func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("tool/skill requires skills dependency")
@@ -38,31 +35,38 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		return nil, fmt.Errorf("tool/skill requires sessionStore dependency")
 	}
 	store := deps.SessionStore
-	tool, err := agentkit.NewTool[SkillInput, SkillOutput]("skill", func(ctx context.Context, input SkillInput) (SkillOutput, error) {
-		if input.Name == "" {
-			return SkillOutput{}, fmt.Errorf("skill name is required")
+	tool, err := agentkit.NewTool[SkillInput, string]("skill", func(ctx context.Context, input SkillInput) (string, error) {
+		name := strings.TrimSpace(input.Name)
+		if name == "" {
+			return "", fmt.Errorf("skill name is required")
 		}
-		content, err := deps.Skills.Load(ctx, input.Name)
+		file := strings.TrimSpace(input.File)
+		var content skill.Content
+		var err error
+		if file == "" {
+			content, err = deps.Skills.Load(ctx, name)
+		} else {
+			content, err = skill.ReadFile(ctx, deps.Skills, name, file)
+		}
 		if err != nil {
-			return SkillOutput{}, err
+			return "", err
 		}
-		sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-		agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-		if sessionID != "" {
-			sess, err := store.Get(ctx, sessionID)
-			if err != nil {
-				return SkillOutput{}, err
+		if file == "" {
+			sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+			agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+			if sessionID != "" {
+				sess, err := store.Get(ctx, sessionID)
+				if err != nil {
+					return "", err
+				}
+				if err := session.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
+					return "", err
+				}
 			}
-			if err := session.AppendSkillLoad(ctx, sess, agentID, content.Name, content.Description, content.Body); err != nil {
-				return SkillOutput{}, err
-			}
+			return skill.RenderLoaded(content), nil
 		}
-		return SkillOutput{
-			Name:        content.Name,
-			Description: content.Description,
-			Body:        content.Body,
-		}, nil
-	}).Description("Load a skill by name and inject its instructions into the session.").Build()
+		return skill.RenderResourceFile(content.Name, content.Path, file, content.Body), nil
+	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Use file to read a supporting resource from the skill directory.").Build()
 	if err != nil {
 		return nil, err
 	}

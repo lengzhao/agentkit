@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/cap/skill"
 )
 
 func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
@@ -181,16 +182,21 @@ func consumeResultAfter(positions map[agentkit.ToolCallID][]int, id agentkit.Too
 }
 
 type skillLoadEvent struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Body        string `json:"body"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Body         string `json:"body"`
+	ResourceBase string `json:"resourceBase,omitempty"`
 }
 
 func skillLoadMessage(load skillLoadEvent) agentkit.ModelMessage {
-	text := "<skill name=\"" + load.Name + "\">\n" + load.Body + "\n</skill>"
 	return agentkit.ModelMessage{
-		Role:    "user",
-		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
+		Role: "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: skill.RenderLoaded(skill.Content{
+			Name:        load.Name,
+			Description: load.Description,
+			Body:        load.Body,
+			Path:        load.ResourceBase,
+		})}},
 	}
 }
 
@@ -211,11 +217,12 @@ func AppendCompaction(ctx context.Context, s agentkit.Session, agentID agentkit.
 	return nil
 }
 
-func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, name, description, body string) error {
+func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) error {
 	raw, err := json.Marshal(skillLoadEvent{
-		Name:        name,
-		Description: description,
-		Body:        body,
+		Name:         content.Name,
+		Description:  content.Description,
+		Body:         content.Body,
+		ResourceBase: content.Path,
 	})
 	if err != nil {
 		return err

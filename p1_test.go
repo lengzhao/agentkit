@@ -147,7 +147,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 	found := false
 	for _, msg := range replay {
 		for _, part := range msg.Content {
-			if strings.Contains(part.Text, "<skill name=\"demo-skill\">") {
+			if strings.Contains(part.Text, `<skill_content name="demo-skill">`) {
 				found = true
 			}
 		}

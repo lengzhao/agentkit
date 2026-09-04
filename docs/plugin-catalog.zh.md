@@ -254,6 +254,17 @@ agent.claude.default:
 - **自定义网关 / 代理**：`ANTHROPIC_BASE_URL` 指向兼容 Anthropic Messages API 的 base URL
 - 通过 `/agent use claude` 或 chat-api `agent_id=claude` 切换；主 agent 也可 `delegate` 到 `claude`
 
+**ACP 会话配置（`/acp`）**：AgentKit slash 与 ACP 子进程原生命令是两套东西。`/model` 等原生命令在 ACP 规范里只能通过 `session/prompt` 发送，与直接对话等价；**真正独立的控制面**是 `session/set_config_option`（model / mode / boolean 等）。`/acp` 只走后者：
+
+```text
+/acp                              # 列出 acp-remote agent
+/acp claude                       # 查看 config options 与原生命令目录
+/acp claude config                # 列出可改的 config 及可选值
+/acp claude config model claude-sonnet-5   # session/set_config_option
+```
+
+原生命令（如 `/fast`）在与该 agent 对话时直接输入即可；目录由 ACP `available_commands_update` 缓存展示，不经过 `/acp` 执行。
+
 ### 3.3 Tool 插件（模型可见工具）
 
 Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.Tool`，多工具插件返回 `agentkit.ToolPack`，动态工具插件返回 `agentkit.ToolProvider`。它们分别经 `tools/runtime` 的 `deps.tools`、`deps.toolPacks`、`deps.dynamicTools` 聚合后暴露给模型。
@@ -270,7 +281,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/web-fetch-http` | — | `web_fetch` | HTTP 抓取；私网地址在 dial 时拦截 |
 | `tool/web-search-scripted` | — | `web_search` | 预置命中，测试与冒烟 |
 | `tool/web-fetch-scripted` | — | `web_fetch` | 预置页面，测试与冒烟 |
-| `tool/skill` | `skills`, `sessionStore` | `skill` | Skill 发现与加载 |
+| `tool/skill` | `skills`, `sessionStore` | `skill` | 加载 `SKILL.md` 并注入会话；可选 `file` 读取 skill 目录内附属文件，结果带 `resourceBase` 指引 |
 | `tool/subagent` | `subagent` | `delegate` | 子 Agent 委派 |
 | `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
@@ -385,7 +396,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | 贡献方 | 命令 |
 |---|---|
 | `commands/registry` | `/plugin` |
-| `loop/default` | `/agent` |
+| `loop/default` | `/agent`、`/acp` |
 | `subagent/inprocess` | `/subagent` |
 | `session/store` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |

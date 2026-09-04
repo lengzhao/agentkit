@@ -637,7 +637,7 @@ tools.worker.default:
     policies:
       - policy.dangerous-shell.default
 
-# 子 agent 的工具集：只读 + web 抓取 + finish，不含 delegate。搜索由 llm.default.hostedTools 提供。
+# 子 agent 的工具集：只读 + web 抓取 + skill + finish，不含 delegate。搜索由 llm.default.hostedTools 提供。
 tools.subagent.default:
   use: tools/runtime
   config:
@@ -648,6 +648,7 @@ tools.subagent.default:
     tools:
       - tool.finish.default
       - tool.web-fetch-http.default
+      - tool.skill.default
     toolPacks:
       - tool.fs-workspace.readonly.default
     policies:

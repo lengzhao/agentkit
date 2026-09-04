@@ -48,6 +48,7 @@ type frontmatter struct {
 	Agent       string   `yaml:"agent"`
 	Async       bool     `yaml:"async"`
 	Tools       []string `yaml:"tools"`
+	Skills      []string `yaml:"skills"`
 	Model       string   `yaml:"model"`
 	MaxSteps    int      `yaml:"maxSteps"`
 }
@@ -136,6 +137,7 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 		Prompt:      prompt,
 		Backend:     backend,
 		Tools:       trimAll(fm.Tools),
+		Skills:      trimAll(fm.Skills),
 		Model:       strings.TrimSpace(fm.Model),
 		MaxSteps:    fm.MaxSteps,
 	}, nil

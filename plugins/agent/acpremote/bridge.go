@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -14,9 +15,14 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
+type sessionUpdateConsumer interface {
+	consume(acp.SessionNotification) error
+	finalize() error
+}
+
 type turnState struct {
 	ctx       context.Context
-	emitter   *updateEmitter
+	emitter   sessionUpdateConsumer
 	sessionID agentkit.SessionID
 	agentID   agentkit.AgentID
 }
@@ -41,6 +47,8 @@ type subprocess struct {
 	client        *bridgeClient
 	authenticated bool
 	sessions      sync.Map // agentkit.SessionID -> acp.SessionId
+	acpSessions   sync.Map // acp.SessionId -> agentkit.SessionID
+	states        sync.Map // agentkit.SessionID -> *sessionState
 }
 
 func newBridge(cfg Config, ws workspace.Service) *bridge {
@@ -181,8 +189,70 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if err != nil {
 		return "", fmt.Errorf("acp session/new: %w", err)
 	}
+	state := &sessionState{}
+	state.applyNewSession(resp)
 	proc.sessions.Store(sessionID, resp.SessionId)
+	proc.acpSessions.Store(resp.SessionId, sessionID)
+	proc.states.Store(sessionID, state)
 	return resp.SessionId, nil
+}
+
+func (b *bridge) sessionState(sessionID agentkit.SessionID) (*sessionState, bool) {
+	b.mu.Lock()
+	proc := b.proc
+	b.mu.Unlock()
+	if proc == nil {
+		return nil, false
+	}
+	v, ok := proc.states.Load(sessionID)
+	if !ok {
+		return nil, false
+	}
+	return v.(*sessionState), true
+}
+
+func (b *bridge) setConfigOption(ctx context.Context, acpSessionID acp.SessionId, opt configOptionRef, value string) (acp.SetSessionConfigOptionResponse, error) {
+	proc, err := b.ensureConn(ctx)
+	if err != nil {
+		return acp.SetSessionConfigOptionResponse{}, err
+	}
+	if opt.boolean {
+		parsed, err := parseBoolValue(value)
+		if err != nil {
+			return acp.SetSessionConfigOptionResponse{}, err
+		}
+		return proc.conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+			Boolean: &acp.SetSessionConfigOptionBoolean{
+				SessionId: acpSessionID,
+				ConfigId:  opt.id,
+				Type:      "boolean",
+				Value:     parsed,
+			},
+		})
+	}
+	if len(opt.options) > 0 {
+		if _, ok := opt.options[value]; !ok {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("invalid value %q for config %q", value, opt.id)
+		}
+	}
+	return proc.conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
+		ValueId: &acp.SetSessionConfigOptionValueId{
+			SessionId: acpSessionID,
+			ConfigId:  opt.id,
+			Value:     acp.SessionConfigValueId(value),
+		},
+	})
+}
+
+func parseBoolValue(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "on", "yes":
+		return true, nil
+	case "false", "0", "off", "no":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean value %q (use true or false)", value)
+	}
 }
 
 func (b *bridge) prompt(ctx context.Context, acpSessionID acp.SessionId, prompt []acp.ContentBlock) (acpPromptResponse, error) {
@@ -226,6 +296,16 @@ type bridgeClient struct {
 var _ acp.Client = (*bridgeClient)(nil)
 
 func (c *bridgeClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
+	c.bridge.mu.Lock()
+	proc := c.bridge.proc
+	c.bridge.mu.Unlock()
+	if proc != nil {
+		if v, ok := proc.acpSessions.Load(params.SessionId); ok {
+			if st, ok := proc.states.Load(v.(agentkit.SessionID)); ok {
+				st.(*sessionState).applyUpdate(params.Update)
+			}
+		}
+	}
 	turn := c.bridge.currentTurn()
 	if turn == nil || turn.emitter == nil {
 		return nil

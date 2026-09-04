@@ -136,6 +136,10 @@ func (a *Runtime) ensureACPSessionWithAuth(ctx context.Context, emit agentkit.Ou
 	slog.Info("acp-remote: acp auth failed, starting cursor login", "err", err)
 	_ = a.bridge.Close()
 
+	if emit == nil {
+		return "", fmt.Errorf("acp agent requires login; send a message to the agent first")
+	}
+
 	if loginErr := a.runCursorLogin(ctx, emit, sessionID); loginErr != nil {
 		return "", loginErr
 	}

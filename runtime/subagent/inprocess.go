@@ -188,7 +188,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID) (out subagent.Result, runErr error) {
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
-	tools, err := newFilteredTools(ctx, s.tools, def.Tools)
+	tools, err := newFilteredTools(ctx, s.tools, def.Tools, def.Skills)
 	if err != nil {
 		return out, fmt.Errorf("subagent %q: %w", def.Name, err)
 	}
@@ -204,7 +204,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		SessionStore: s.store,
 		LLM:          s.llm,
 		Tools:        tools,
-		Prompt:       &definitionPrompt{inner: s.prompt, body: def.Prompt},
+		Prompt:       &definitionPrompt{inner: s.prompt, body: def.Prompt, skills: def.Skills},
 		Hooks:        s.hooks,
 		Compaction:   s.compact,
 		Workspace:    s.workspace,
