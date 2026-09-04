@@ -41,13 +41,17 @@ func (r *Root) inboundSubmit(sched *scheduler) capschedule.SubmitFunc {
 
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
 	deliveryID, effectiveID, scoped := r.scopedEvent(event)
+	// Seed effective id before active-session lookup so session/store can resolve
+	// the tenant workspace (workspace/tenant keys off KeySessionID).
 	ctx = withInboundRoutingContext(ctx, effectiveID, deliveryID)
-	storeSessionID, err := r.resolveStoreSessionID(ctx, event, effectiveID)
+	sessionID, err := r.resolveSessionID(ctx, event, effectiveID)
 	if err != nil {
 		r.reportInboundError(ctx, deliveryID, event, err)
 		return
 	}
-	agentID, err := r.resolveAgentID(ctx, event, storeSessionID)
+	scoped.SessionID = sessionID
+	ctx = withInboundRoutingContext(ctx, sessionID, deliveryID)
+	agentID, err := r.resolveAgentID(ctx, scoped, sessionID)
 	if err != nil {
 		r.reportInboundError(ctx, deliveryID, event, err)
 		return
@@ -64,13 +68,13 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	if event.Message.Role == "" {
 		return
 	}
-	if r.loop.IsSessionBusy(effectiveID) {
+	if r.loop.IsSessionBusy(sessionID) {
 		steerMsg := r.formatInboundEvent(scoped, deliveryID).Message
 		slog.Info("inbound steered to busy session",
 			"platform", event.PlatformID,
 			"user_id", event.UserID,
 			"delivery_session_id", deliveryID,
-			"effective_session_id", effectiveID,
+			"session_id", sessionID,
 			"agent_id", scoped.AgentID,
 			"preview", telemetry.SummarizeMessage(steerMsg),
 		)
@@ -84,8 +88,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		"platform", event.PlatformID,
 		"user_id", event.UserID,
 		"delivery_session_id", deliveryID,
-		"effective_session_id", effectiveID,
-		"store_session_id", storeSessionID,
+		"session_id", sessionID,
 		"agent_id", scoped.AgentID,
 		"preview", telemetry.SummarizeMessage(scoped.Message),
 	)
@@ -114,15 +117,14 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	sched.submit(ctx, agentkit.LoopRequest{
 		Event:             scoped,
 		DeliverySessionID: deliveryID,
-		StoreSessionID:    storeSessionID,
 		Emit:              emit,
 		Capability:        inboundPermissionCapability(r.platform, scoped),
 	})
 }
 
-func withInboundRoutingContext(ctx context.Context, effectiveID, deliveryID agentkit.SessionID) context.Context {
-	if effectiveID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeySessionID, effectiveID)
+func withInboundRoutingContext(ctx context.Context, sessionID, deliveryID agentkit.SessionID) context.Context {
+	if sessionID != "" {
+		ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
 	}
 	if deliveryID != "" {
 		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliveryID)

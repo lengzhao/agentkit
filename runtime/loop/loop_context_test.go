@@ -14,7 +14,6 @@ func TestWithTurnContextSetsUserID(t *testing.T) {
 		context.Background(),
 		agentkit.SessionID("slack:C001"),
 		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
-		"",
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -36,7 +35,6 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 		context.Background(),
 		agentkit.SessionID("cli:default"),
 		agentkit.SessionID("cli:default"),
-		"",
 		agentkit.AgentID("coder"),
 		"cli",
 		"",
@@ -57,7 +55,6 @@ func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
 		context.Background(),
 		agentkit.SessionID("slack:C001"),
 		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
-		"",
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -76,14 +73,13 @@ func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
 	}
 }
 
-func TestWithTurnContextSetsStoreSessionID(t *testing.T) {
+func TestWithTurnContextSetsResolvedSessionID(t *testing.T) {
 	t.Parallel()
 
 	ctx := withTurnContext(
 		context.Background(),
-		agentkit.SessionID("slack:C001"),
-		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
 		agentkit.SessionID("slack:C001:new:20260829"),
+		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -92,12 +88,12 @@ func TestWithTurnContextSetsStoreSessionID(t *testing.T) {
 		nil,
 	)
 
-	store, ok := ctx.Value(agentkit.KeyStoreSessionID).(agentkit.SessionID)
-	if !ok || store != "slack:C001:new:20260829" {
-		t.Fatalf("store session id = %q, ok = %v", store, ok)
+	sessionID, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	if !ok || sessionID != "slack:C001:new:20260829" {
+		t.Fatalf("session id = %q, ok = %v", sessionID, ok)
 	}
-	history, ok := ctx.Value(agentkit.KeyHistorySessionID).(agentkit.SessionID)
-	if !ok || history != store {
-		t.Fatalf("history session id = %q, ok = %v", history, ok)
+	delivery, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID)
+	if !ok || delivery != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("delivery session id = %q, ok = %v", delivery, ok)
 	}
 }

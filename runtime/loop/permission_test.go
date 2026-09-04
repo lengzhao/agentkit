@@ -23,7 +23,7 @@ func turnContext(parent context.Context, sessionID, deliverySessionID agentkit.S
 	if ctrl != nil {
 		ctrl.setTurnCapability(cap)
 	}
-	return withTurnContext(parent, sessionID, deliverySessionID, "", agentID, platformID, userID, nil, ctrl, emit)
+	return withTurnContext(parent, sessionID, deliverySessionID, agentID, platformID, userID, nil, ctrl, emit)
 }
 
 type stubAgent struct{}

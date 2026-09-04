@@ -149,11 +149,6 @@ func resolveCtxValue(ctx context.Context, from string) (string, error) {
 			return string(v), nil
 		}
 		return "", nil
-	case key == "store_session_id":
-		if v, ok := ctx.Value(agentkit.KeyStoreSessionID).(agentkit.SessionID); ok && v != "" {
-			return string(v), nil
-		}
-		return "", nil
 	case key == "delivery_session_id":
 		if v, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID); ok && v != "" {
 			return string(v), nil

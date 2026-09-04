@@ -9,18 +9,11 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, storeSessionID agentkit.SessionID) (agentkit.AgentID, error) {
+func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, sessionID agentkit.SessionID) (agentkit.AgentID, error) {
 	if id := strings.TrimSpace(string(event.AgentID)); id != "" {
 		return agentkit.AgentID(id), nil
 	}
-	if event.SessionID != "" && event.SessionID != storeSessionID {
-		if bound, err := r.boundAgent(ctx, event.SessionID); err != nil {
-			return "", err
-		} else if bound != "" {
-			return bound, nil
-		}
-	}
-	if bound, err := r.boundAgent(ctx, storeSessionID); err != nil {
+	if bound, err := r.boundAgent(ctx, sessionID); err != nil {
 		return "", err
 	} else if bound != "" {
 		return bound, nil
@@ -28,7 +21,7 @@ func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, 
 	return "", nil
 }
 
-func (r *Root) resolveStoreSessionID(ctx context.Context, event agentkit.MessageEvent, effectiveSessionID agentkit.SessionID) (agentkit.SessionID, error) {
+func (r *Root) resolveSessionID(ctx context.Context, event agentkit.MessageEvent, effectiveSessionID agentkit.SessionID) (agentkit.SessionID, error) {
 	if capschedule.IsFireStateless(event.Metadata) {
 		return effectiveSessionID, nil
 	}

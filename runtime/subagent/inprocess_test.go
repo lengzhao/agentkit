@@ -154,7 +154,7 @@ func TestRunTakesSummaryFromFinish(t *testing.T) {
 	}
 }
 
-func TestRunDoesNotRecoverParentTurnWithStoreSessionID(t *testing.T) {
+func TestRunDoesNotRecoverParentTurnWhileDelegating(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{
@@ -162,7 +162,7 @@ func TestRunDoesNotRecoverParentTurnWithStoreSessionID(t *testing.T) {
 		{Text: "done"},
 	})
 
-	ctx := context.WithValue(f.ctx, agentkit.KeyStoreSessionID, f.parentID)
+	ctx := f.ctx
 
 	// Seed the parent session with an open turn and a pending delegate call, as
 	// if the parent agent is blocked inside tool/subagent.

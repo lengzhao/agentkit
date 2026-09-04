@@ -39,11 +39,10 @@ func TestSmokeSubagentDelegateEndToEnd(t *testing.T) {
 func TestSmokeSubagentDelegateWithLogicalStoreSession(t *testing.T) {
 	t.Parallel()
 
-	effective := agentkit.SessionID("chat-api:nex-channel:t:conv_smoke")
 	logical := agentkit.SessionID("chat-api:nex-channel")
 	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{LogicalID: logical})
 
-	ctx := agenttest.LoopTurnContext(effective, logical, agentkit.AgentID("nex"))
+	ctx := agenttest.LoopTurnContext(logical, agentkit.AgentID("nex"))
 	agenttest.RunTurn(t, ctx, env.Agent, "调研一下 loop 串行机制")
 
 	events := agenttest.SessionEvents(t, ctx, env.Store, logical)
@@ -60,7 +59,6 @@ func TestSmokeSubagentDelegateWithLogicalStoreSession(t *testing.T) {
 func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 	t.Parallel()
 
-	effective := agentkit.SessionID("chat-api:nex-channel:t:conv_loop")
 	logical := agentkit.SessionID("chat-api:nex-channel")
 	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{LogicalID: logical})
 
@@ -71,9 +69,8 @@ func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 
 	ctx := context.Background()
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		StoreSessionID: logical,
 		Event: agentkit.MessageEvent{
-			SessionID: effective,
+			SessionID: logical,
 			AgentID:   "nex",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
@@ -84,7 +81,7 @@ func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 		t.Fatalf("loop dispatch: %v", err)
 	}
 
-	ctx = agenttest.LoopTurnContext(effective, logical, agentkit.AgentID("nex"))
+	ctx = agenttest.LoopTurnContext(logical, agentkit.AgentID("nex"))
 	events := agenttest.SessionEvents(t, ctx, env.Store, logical)
 	agenttest.AssertSubagentParentSession(t, events)
 	agenttest.AssertNoToolResultWithContent(t, events, "call-delegate", "interrupted")

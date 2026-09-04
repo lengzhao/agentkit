@@ -23,7 +23,7 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 	}
 	// A subagent turn must only touch its own KeySessionID history. If a caller
 	// ever resolves the wrong session object, skip rather than repair a parent
-	// delegate turn — no KeyStoreSessionID mapping required.
+	// delegate turn.
 	if ctx.Value(agentkit.KeyInSubagent) != nil {
 		turnSessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
 		if turnSessionID != "" && sess.ID() != turnSessionID {

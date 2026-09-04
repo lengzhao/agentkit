@@ -51,9 +51,8 @@ func TestSmokeSessionScopeChannelFoldsDeliveries(t *testing.T) {
 	} {
 		_ = i
 		if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-			StoreSessionID: effective,
 			Event: agentkit.MessageEvent{
-				SessionID: ev.SessionID,
+				SessionID: effective,
 				UserID:    ev.UserID,
 				AgentID:   "smoke",
 				Message:   ev.Message,
@@ -93,9 +92,8 @@ func TestSmokeSessionScopeThreadSplitsDeliveries(t *testing.T) {
 
 	ctx := context.Background()
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		StoreSessionID: effective1,
 		Event: agentkit.MessageEvent{
-			SessionID: delivery1,
+			SessionID: effective1,
 			UserID:    "U111",
 			AgentID:   "smoke",
 			Message: agentkit.ModelMessage{
@@ -107,9 +105,8 @@ func TestSmokeSessionScopeThreadSplitsDeliveries(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		StoreSessionID: effective2,
 		Event: agentkit.MessageEvent{
-			SessionID: delivery2,
+			SessionID: effective2,
 			UserID:    "U222",
 			AgentID:   "smoke",
 			Message: agentkit.ModelMessage{

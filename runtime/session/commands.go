@@ -61,7 +61,11 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /session")
 	}
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	entryKey, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID, err := ResolveActiveSessionID(ctx, c.store, entryKey)
+	if err != nil {
+		return "", err
+	}
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}

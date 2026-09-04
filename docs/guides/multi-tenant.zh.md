@@ -6,7 +6,7 @@
 |---|---|---|
 | 这条消息接到哪段历史后面？ | `runner.config.sessionScope` 折叠 delivery SessionID | `runtime/session.ApplyScope` |
 | 这句话是谁说的？ | `runner.config.inject` 入站 prepend `[meta ...]` | `runtime/runner/inbound_format`、`MessageEvent.UserID` / `Metadata` |
-| 这个 turn 在哪个目录干活？ | effective SessionID 推出的**租户键** | `cap/tenant.Key`、`workspace/tenant` |
+| 这个 turn 在哪个目录干活？ | SessionID 推出的**租户键**（`/new` 后仍按 channel 段折叠） | `cap/tenant.Key`、`workspace/tenant` |
 
 把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种 scope 推出的租户键都是同一个。
 
@@ -14,11 +14,12 @@
 flowchart LR
   Msg["Slack 消息<br/>channel=C001 user=U111 thread=17.9"]
   Msg -->|BuildDeliverySessionID| D["delivery SessionID<br/>slack:C001:t:17.9:u:U111"]
-  D -->|runner sessionScope| E["effective SessionID<br/>slack:C001"]
+  D -->|runner sessionScope| E["effective key<br/>slack:C001"]
+  E -->|active mapping| S["resolved SessionID<br/>slack:C001 或 :new:…"]
   Msg -->|UserID| UID["U111"]
-  E -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 effective ID 一个 JSONL"]
+  S -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 resolved ID 一个 JSONL"]
   UID -->|inject| Attr["入站 prepend [meta ...]"]
-  E -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
+  S -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
   Root --> Runtime["sessions / agents / mcp / skills"]
   Root --> Work["work/ — fs 与 shell 操作区"]
@@ -27,7 +28,7 @@ flowchart LR
 
 ## 1. 会话隔离
 
-Platform 只生成 **delivery SessionID**（最细粒度，含 channel / thread / user 路由信息）。Runner 按 `sessionScope` 折叠为 **effective SessionID**，Loop 按 effective 串行加锁。`/new` 不改变 IM 的 delivery key，而是在 `session/store` 里把稳定 key 映射到新的 **logical SessionID**；没有映射时 logical id 默认等于 effective id。Outbound 仍回写 delivery ID，platform 据此投递。
+Platform 只生成 **delivery SessionID**（最细粒度，含 channel / thread / user 路由信息）。Runner 按 `sessionScope` 折叠为 **effective key**，再查 `session/store` 的 active-session 映射得到 **resolved SessionID**；Loop 按 resolved SessionID 串行加锁，Agent 读写历史也用同一 ID。`/new` 不改变 IM 的 delivery key，只更新 stable key → SessionID 的映射；没有映射时 SessionID 默认等于 effective key。Outbound 仍回写 delivery ID，platform 据此投递。
 
 Platform 侧：
 
@@ -52,27 +53,27 @@ runner.default:
 
 未知 scope 配置值回落到 `channel`。
 
-### `/new` 与 logical SessionID
+### `/new` 与 SessionID
 
 Slack / 飞书这类 IM 的 sessionKey 是固定投递地址，不能因为 `/new` 改掉。`/new` 只更新 active-session 映射：
 
 | key | value | 文件 |
 |---|---|---|
-| stable delivery/effective SessionID | 当前 logical SessionID | `sessions/<stable>/current.json` |
+| stable delivery/effective SessionID | 当前 SessionID | `sessions/<stable>/current.json` |
 
-Runner 每次入站先拿 delivery / effective key 查 active mapping，查到就把 logical id 写入 `KeyStoreSessionID`；Agent 读写历史时使用这个 logical id。这样同一个 IM 或 chat-api 入口可以切到新历史，回复仍投回原来的 channel/thread/user/conversation。
+Runner 每次入站先拿 delivery / effective key 查 active mapping，解析出当前 SessionID 后写入 `MessageEvent.SessionID` 再交给 Loop；Agent 读写历史、Loop 串行锁都使用这个 SessionID。Outbound 仍回写 delivery ID，回复仍投回原来的 channel/thread/user/conversation。
 
 ### Agent 路由
 
-与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：折叠 effective SessionID 并解析 logical SessionID 后，从持久化存储读出绑定，写入 `MessageEvent.AgentID` 再交给 Loop。
+与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：解析 SessionID 后，从持久化存储读出绑定，写入 `MessageEvent.AgentID` 再交给 Loop。
 
 | 优先级 | 来源 | 存储 |
 |---|---|---|
 | 1 | 单条消息 | Platform 入站时填入 `MessageEvent.AgentID`（如 chat-api 请求体、platform 自己的索引） |
-| 2 | Session 绑定 | `sessions/<logical-id>/agent.json`（`/agent use <id>` 写入） |
+| 2 | Session 绑定 | `sessions/<session-id>/agent.json`（`/agent use <id>` 写入） |
 | 3 | 默认 | `loop.defaultAgent` |
 
-Runner **不**维护静态路由表。channel / user 级绑定由 Platform 读自己的配置或索引，在 `Receive` 时写入 `MessageEvent.AgentID`；session 级切换写入 logical session 工作目录下的 `agent.json`。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
+Runner **不**维护静态路由表。channel / user 级绑定由 Platform 读自己的配置或索引，在 `Receive` 时写入 `MessageEvent.AgentID`；session 级切换写入 resolved session 工作目录下的 `agent.json`。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
 
 ## 2. 识别不同用户
 
@@ -228,7 +229,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 | 会话索引 | `chat-api/conversations/<channel>.json` | 重启后恢复会话列表 |
 | 展示历史 | `sessions/chat-api_<channel>_t_<conv>.jsonl` | 调试页 / messages API 按 conversation 隔离 |
 
-Runner 仍按 `sessionScope` 折叠 delivery SessionID 做 Loop 加锁；chat-api 的 stable key 是 `conversation_id` 组成的 delivery id，`/new` 不再创建并切换新的 `conversation_id`，而是更新 `sessions/<stable>/current.json` 指向新的 logical SessionID。因此同一个 HTTP conversation 可以清空模型历史，展示与投递仍留在原 conversation。`DeriveMessages` 还会按当前 `agent_id` 过滤回放，避免同一会话文件里切换 agent 时串上下文。
+Runner 先按 `sessionScope` 折叠 delivery SessionID，再解析 active-session 映射得到 resolved SessionID 供 Loop 加锁；chat-api 的 stable key 是 `conversation_id` 组成的 delivery id，`/new` 不再创建并切换新的 `conversation_id`，而是更新 `sessions/<stable>/current.json` 指向新的 SessionID。因此同一个 HTTP conversation 可以清空模型历史，展示与投递仍留在原 conversation。`DeriveMessages` 还会按当前 `agent_id` 过滤回放，避免同一会话文件里切换 agent 时串上下文。
 
 messages API / 调试页直接读取 agent 写入的 per-conversation session JSONL（`user/message`、`assistant/message` 等），chat-api 不再额外镜像一份摘要。
 

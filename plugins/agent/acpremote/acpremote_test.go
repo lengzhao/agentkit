@@ -122,11 +122,10 @@ func TestIsCursorAuthError(t *testing.T) {
 	}
 }
 
-func TestRunTurnUsesStoreSessionID(t *testing.T) {
+func TestRunTurnUsesResolvedSessionID(t *testing.T) {
 	t.Parallel()
 
 	storeID := agentkit.SessionID("chat-api:default_channel:t:conv_abc1234567890123456789")
-	effective := agentkit.SessionID("chat-api:default_channel")
 	mem, err := session.NewMemory(session.MemoryConfig{ID: storeID})
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +143,7 @@ func TestRunTurnUsesStoreSessionID(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	ctx = agenttest.LoopTurnContext(effective, storeID, "cursor")
+	ctx = agenttest.LoopTurnContext(storeID, "cursor")
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
 	_ = rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{

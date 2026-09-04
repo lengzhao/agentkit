@@ -12,7 +12,9 @@ type AgentID string
 type contextKey string
 
 const (
-	// KeySessionID is the context key for the current opaque SessionID.
+	// KeySessionID is the resolved session id for Loop locking, Agent history,
+	// and session-scoped tools. Runner resolves active-session mappings before
+	// Dispatch; subagents use their own child SessionID.
 	KeySessionID contextKey = "agentkit.session_id"
 	// KeyAgentID is the context key for the current AgentID.
 	KeyAgentID contextKey = "agentkit.agent_id"
@@ -36,13 +38,7 @@ const (
 	// (finest grain). Outbound routing should prefer this over KeySessionID when
 	// both are present.
 	KeyDeliverySessionID contextKey = "agentkit.delivery_session_id"
-	// KeyStoreSessionID is the logical SessionID used for model-visible history.
-	// It may differ from KeySessionID when a stable IM delivery/effective key has
-	// been switched to a fresh history with /new.
-	KeyStoreSessionID contextKey = "agentkit.store_session_id"
-	// KeyInSubagent marks a context running inside a delegated child agent. While
-	// set, session append/recovery must target KeySessionID only and must not
-	// inherit a parent's KeyStoreSessionID mapping.
+	// KeyInSubagent marks a context running inside a delegated child agent.
 	KeyInSubagent contextKey = "agentkit.subagent.active"
 	// KeyMessageMetadata is optional platform metadata for the current inbound turn.
 	KeyMessageMetadata contextKey = "agentkit.message_metadata"
@@ -65,10 +61,11 @@ const InboundMetaTag = "meta"
 // prepend the optional [meta ...] inbound prefix for that turn.
 const MetadataSkipPromptMeta = "skipPromptMeta"
 
-// SessionID identifies a conversation unit. Platforms emit a delivery SessionID
-// (finest grain: channel + optional :t:thread + optional :u:user). Runner applies
-// sessionScope to derive the effective SessionID used for Loop locking and
-// session history; outbound replies still use the delivery id.
+// SessionID identifies a conversation unit for Loop locking and durable history.
+// Platforms emit a delivery SessionID (finest grain: channel + optional :t:thread
+// + optional :u:user). Runner resolves active-session mappings (/new) and writes
+// the resulting SessionID into MessageEvent before Loop.Dispatch. Outbound replies
+// still use the delivery id.
 //
 // Delivery examples:
 //
@@ -77,9 +74,7 @@ const MetadataSkipPromptMeta = "skipPromptMeta"
 //	feishu:oc_xxx:om_yyy
 //	cli:default
 //
-// Loop treats the effective SessionID as opaque. Agents read and append history
-// using the logical store SessionID resolved for the turn. Only platform plugins
-// decode delivery SessionIDs into IM routing targets.
+// Only platform plugins decode delivery SessionIDs into IM routing targets.
 type SessionID string
 
 type ToolCallID string

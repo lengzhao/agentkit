@@ -17,16 +17,9 @@ func TurnContext(sessionID agentkit.SessionID, agentID agentkit.AgentID) context
 	return ctx
 }
 
-// LoopTurnContext mimics loop/default seeding for store-session mapping tests.
-func LoopTurnContext(effective, storeSession agentkit.SessionID, agentID agentkit.AgentID) context.Context {
-	ctx := TurnContext(effective, agentID)
-	if storeSession != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyStoreSessionID, storeSession)
-	}
-	if historyID := agentkit.ResolveHistorySessionID(ctx); historyID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyHistorySessionID, historyID)
-	}
-	return ctx
+// LoopTurnContext mimics loop/default seeding with a resolved SessionID.
+func LoopTurnContext(sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {
+	return TurnContext(sessionID, agentID)
 }
 
 // RunTurn is a thin helper around agent.RunTurn with a user text message.

@@ -11,15 +11,13 @@ import (
 )
 
 type agentRecordingLoop struct {
-	lastAgent        agentkit.AgentID
-	lastSession      agentkit.SessionID
-	lastStoreSession agentkit.SessionID
+	lastAgent   agentkit.AgentID
+	lastSession agentkit.SessionID
 }
 
 func (l *agentRecordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) error {
 	l.lastAgent = req.Event.AgentID
 	l.lastSession = req.Event.SessionID
-	l.lastStoreSession = req.StoreSessionID
 	return nil
 }
 
@@ -109,8 +107,8 @@ func TestRunnerResolvesLogicalStoreSessionRequiresInboundContext(t *testing.T) {
 	if err := root.Run(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if loop.lastStoreSession != logical {
-		t.Fatalf("store session = %q, want %q", loop.lastStoreSession, logical)
+	if loop.lastSession != logical {
+		t.Fatalf("session = %q, want %q", loop.lastSession, logical)
 	}
 }
 
@@ -141,11 +139,8 @@ func TestRunnerResolvesLogicalStoreSessionFromFixedDelivery(t *testing.T) {
 	if err := root.Run(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if loop.lastSession != "slack:C001" {
-		t.Fatalf("effective session = %q, want slack:C001", loop.lastSession)
-	}
-	if loop.lastStoreSession != logical {
-		t.Fatalf("store session = %q, want %q", loop.lastStoreSession, logical)
+	if loop.lastSession != logical {
+		t.Fatalf("session = %q, want %q", loop.lastSession, logical)
 	}
 }
 
@@ -178,8 +173,8 @@ func TestRunnerResolvesLogicalStoreSessionFromStableSlackDM(t *testing.T) {
 	if err := root.Run(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if loop.lastStoreSession != logical {
-		t.Fatalf("store session = %q, want %q", loop.lastStoreSession, logical)
+	if loop.lastSession != logical {
+		t.Fatalf("session = %q, want %q", loop.lastSession, logical)
 	}
 }
 
@@ -344,7 +339,7 @@ func TestRunnerScheduleStatelessIgnoresActiveSessionMapping(t *testing.T) {
 	if err := root.Run(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if loop.lastStoreSession != side {
-		t.Fatalf("store session = %q, want side session %q", loop.lastStoreSession, side)
+	if loop.lastSession != side {
+		t.Fatalf("session = %q, want side session %q", loop.lastSession, side)
 	}
 }

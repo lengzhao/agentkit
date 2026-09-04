@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -76,7 +77,11 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /compact")
 	}
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	entryKey, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID, err := session.ResolveActiveSessionID(ctx, c.sessionStore, entryKey)
+	if err != nil {
+		return "", err
+	}
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
