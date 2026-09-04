@@ -32,7 +32,7 @@ func TestIntegrationMultiTenantWorkDirIsolation(t *testing.T) {
 	}
 
 	pack, err := fs.NewFSWorkspace(fs.FSWorkspaceConfig{
-		Root:  "work",
+		Root:  ".",
 		Tools: []string{"write"},
 	}, fs.FSWorkspaceDeps{Workspace: svc})
 	if err != nil {
@@ -46,8 +46,9 @@ func TestIntegrationMultiTenantWorkDirIsolation(t *testing.T) {
 	ctxA := tenantCtx("slack:C001")
 	ctxB := tenantCtx("slack:C002")
 
-	agenttest.CallTool(t, ctxA, writeTool, `{"path":"marker.txt","content":"tenant-a"}`)
-	agenttest.CallTool(t, ctxB, writeTool, `{"path":"marker.txt","content":"tenant-b"}`)
+	agenttest.CallTool(t, ctxA, writeTool, `{"path":"work/marker.txt","content":"tenant-a"}`)
+	agenttest.CallTool(t, ctxB, writeTool, `{"path":"work/marker.txt","content":"tenant-b"}`)
+	agenttest.CallTool(t, ctxA, writeTool, `{"path":"skills/note.md","content":"skill-a"}`)
 
 	pathA, err := svc.Resolve(ctxA, "work/marker.txt")
 	if err != nil {
@@ -83,6 +84,14 @@ func TestIntegrationMultiTenantWorkDirIsolation(t *testing.T) {
 	}
 	if pathB != wantB {
 		t.Fatalf("tenant B path = %q, want %q", pathB, wantB)
+	}
+
+	skillA, err := svc.Resolve(ctxA, "skills/note.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(skillA); err != nil || string(got) != "skill-a" {
+		t.Fatalf("tenant A skill = %q err=%v", string(got), err)
 	}
 }
 

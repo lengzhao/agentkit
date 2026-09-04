@@ -22,7 +22,7 @@ flowchart LR
   S -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
   TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
   Root --> Runtime["sessions / agents / mcp / skills"]
-  Root --> Work["work/ — fs 与 shell 操作区"]
+  Root --> Work["work/ — shell cwd 与临时产物"]
   D -->|"OutboundEvent 仍用 delivery"| Reply["Platform.Send 投递"]
 ```
 
@@ -133,7 +133,7 @@ runner.default:
 
 ### local 根 vs tool 工作区
 
-local 根放**运行时与配置**，tool 只在 **`work/` 子目录**读写，避免 `rm`、`mv` 之类操作误伤 `sessions/` 或 `mcp.json`：
+local 根既是运行时/配置目录，也是 **`tool/fs-workspace` 的默认 root**。agent 可以用普通 `read` / `ls` / `grep` 按需读 `skills/`、`memory.md`。`tool/shell-bash` 的默认 cwd 仍是 **`work/`**（不是 jail）。更强隔离后续交给 sandbox，fs 不再维护 `tenantFiles` 一类例外名单。
 
 ```
 tenants/slack_C001/
@@ -144,11 +144,11 @@ tenants/slack_C001/
 ├── memory/dreaming/ # dreaming 状态与 Deep 报告
 ├── agents/            # 子 agent 定义
 ├── mcp.json
-├── skills/            # 租户私有 skill
-└── work/              # fs / shell 临时产物（preset 默认 root；session/store 首次打开租户 session 时自动创建）
+├── skills/            # 租户私有 skill（fs 可直接读）
+└── work/              # shell 默认 cwd 与临时产物（含 upload/download；session/store 首次打开租户 session 时自动创建）
 ```
 
-`presets/multi-tenant.yaml` 把 `tool/fs-workspace`、`tool/shell-bash` 的 `root` / `workDir` 指到 `work`；`prompt/section/agents-md`、`prompt/section/memory` 与 `learning.default` 默认从租户 local 根读写 `AGENTS.md`、`memory.md` 等。`tool/fs-workspace` 的 `tenantFiles` 允许在 `root: work` 时仍通过工具读写这些租户根文件。
+`presets/multi-tenant.yaml` 把 `tool/fs-workspace` 的 `root` 指到 `.`，`tool/shell-bash` 的 `workDir` 仍指到 `work`；`prompt/section/agents-md`、`prompt/section/memory` 与 `learning.default` 默认从租户 local 根读写 `AGENTS.md`、`memory.md` 等。
 
 ```yaml
 workspace.default:
@@ -163,7 +163,7 @@ workspace.default:
 
 tool.fs-workspace.default:
   config:
-    root: work                       # 只在此子目录读写
+    root: .                          # 租户 local 根
 ```
 
 - **默认就是隔离的。** 没在 `tenants` 里列出的群走 `localBase/<租户键>`，新群接进来零配置。
@@ -172,7 +172,7 @@ tool.fs-workspace.default:
 - **`global:` 是唯一共享的根。** 装一次的技能库对所有群可见。
 - **没有 session 时落在 `localBase/_default`。** timer、cron、库直调不会掉进某个真实租户的目录里。
 - **`schedule.json` 用 `global:` 前缀。** agent 排期与 `schedule/cron` 轮询共用全局 job 表；各 job 自带 `deliverySessionId`，触发时仍能回到原会话。
-- **钉项目目录时指 `.agentkit/` 而不是项目根。** 运行时落在 `<项目>/.agentkit/`，工具在 `<项目>/.agentkit/work/` 操作；项目源码树不会被 `sessions/` 污染。
+- **钉项目目录时指 `.agentkit/` 而不是项目根。** 运行时落在 `<项目>/.agentkit/`，fs 读写该 local 根，shell 默认在 `work/`；项目源码树不会被 `sessions/` 污染。
 
 ### 与 `workspace/default` 唯一的行为差异：`..` 不解析
 
@@ -180,9 +180,9 @@ tool.fs-workspace.default:
 
 但租户根是**并列**的（`tenants/slack_C001` 与 `tenants/slack_C002` 互为兄弟），同一个豁免就成了越权通道：A 群一个 `../slack_C002` 就读写到 B 群。所以 `workspace/tenant` 全部走 `cap/workspace.ResolveRelStrict`，`..` 一律不解析，`global:` 也一样。
 
-多租户 preset 进一步把 tool 根限制在 `work/` 子目录：`tool/fs-workspace` 默认将路径限制在 `root` 内（如 `../` 逃出 `work/` 会被拒绝）。若需关闭路径权限控制，在实例 config 设 `unrestricted: true`。
+`tool/fs-workspace` 默认将路径限制在 `root` 内（多租户为租户 local 根；如 `../` 逃出根会被拒绝）。若需关闭路径权限控制，在实例 config 设 `unrestricted: true`。更强隔离后续走 sandbox。
 
-要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`，工具在 `work/` 下操作。若必须直接改项目源码树，用 [coding.yaml](../../presets/coding.yaml)（单租户 CLI）或自行把 `work/` 换成项目内其他子目录名。
+要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`。若必须直接改项目源码树，把租户 `root` 指到项目目录本身，或单独设 `tool.fs-workspace` 的 `root` / `unrestricted`（默认不再使用 `..`）。
 
 ## 4. 并发
 
@@ -235,9 +235,9 @@ messages API / 调试页直接读取 agent 写入的 per-conversation session JS
 
 ### 文件上传
 
-chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对 `tool/fs-workspace` 根），agent 在 prompt 里看到的是 `upload/<filename>`。图片附件会走 vision；非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。
+chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根），agent 在 prompt 里看到的是 `work/upload/<filename>`。图片附件会走 vision；非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。
 
-历史 session 落盘时图片存为 `attachment_ref`（`Source` 指向 `upload/...`），不含 base64；Agent 在调用 LLM 前会对**最近一条 user 消息**的 `attachment_ref`，以及**当前轮次 read 工具读到的图片路径**，从 workspace 重载并注入 vision。
+历史 session 落盘时图片存为 `attachment_ref`（`Source` 指向 `work/upload/...`），不含 base64；Agent 在调用 LLM 前会对**最近一条 user 消息**的 `attachment_ref`，以及**当前轮次 read 工具读到的图片路径**，从 workspace 重载并注入 vision。
 
 | API | 方法 | 说明 |
 |---|---|---|
@@ -248,9 +248,9 @@ chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对 `tool/fs-works
 `POST /v1/chat-messages` 请求体可带 `inputs[]`：
 
 - `type`: `file` / `image` / `audio`
-- `transfer_method`: `local_file`（引用已上传 id）、`local_path`（workspace 内已有路径，如 `upload/foo.png`）或 `base64`（内联 `data`）
+- `transfer_method`: `local_file`（引用已上传 id）、`local_path`（workspace 内已有路径，如 `work/upload/foo.png`）或 `base64`（内联 `data`）
 - `local_file` 时使用 `upload_file_id`
-- `local_path` 时使用 `path`（相对 `work/`）
+- `local_path` 时使用 `path`（相对租户 local 根；`upload/`、`download/` 会自动补 `work/` 前缀）
 
 Agent 通过 `tool/send` 发出的文件会以 SSE `file_ready` 事件推送，并落在 `work/download/`。事件与上传响应均包含：
 

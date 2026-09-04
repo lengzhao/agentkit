@@ -28,7 +28,7 @@ workspace.default:
     scope: local
     # 只有需要把某个群钉到已有项目目录时才列出来。
     # 键是租户键（平台段 + 频道），不是 SessionID：该频道下所有 thread、所有人共用这一条。
-    # local 根指向项目下的 .agentkit/，运行时数据与项目源码分开；工具在 work/ 子目录操作。
+    # local 根指向项目下的 .agentkit/，运行时数据与项目源码分开；fs 读写该根，shell 默认 cwd 为 work/。
     # YAML 里键含冒号，必须加引号。
     tenants: {}
     # tenants:
@@ -38,12 +38,11 @@ workspace.default:
     #     root: ~/work/project-b/.agentkit
 
 # 租户根（local）放运行时与租户级配置：sessions、AGENTS.md、memory.md、agents、mcp.json、skills 等。
-# 文件工具与 shell 只在 work/ 读写临时产物；tenantFiles 允许工具读写租户根下的指令/记忆文件。
-# workspace/tenant 禁止 ".." 越出 local/global 根；tool/fs 还会再拦一层 "../" 逃出 work/。
+# 文件工具默认读写整个租户根；shell 默认 cwd 仍是 work/。workspace/tenant 禁止 ".." 越出 local/global 根。
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
-    root: work
+    root: .
     maxBytes: 1048576
   deps:
     workspace: workspace.default

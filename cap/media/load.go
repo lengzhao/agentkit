@@ -13,7 +13,7 @@ import (
 const DefaultMaxWorkspaceImageBytes = 10 << 20
 
 // LoadWorkspaceImage reads an image from the tenant work tree.
-// workRel is relative to work/ (e.g. upload/foo.png).
+// workRel is relative to work/ (e.g. upload/foo.png or work/upload/foo.png).
 func LoadWorkspaceImage(ctx context.Context, ws workspace.Service, workRel string, maxBytes int) ([]byte, string, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxWorkspaceImageBytes

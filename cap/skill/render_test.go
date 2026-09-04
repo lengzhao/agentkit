@@ -19,19 +19,10 @@ func TestRenderLoadedIncludesResourceBase(t *testing.T) {
 	if !strings.Contains(text, "Base directory for this skill: /tmp/skills/demo") {
 		t.Fatalf("text = %q", text)
 	}
+	if !strings.Contains(text, "Read supporting files with read") {
+		t.Fatalf("text = %q", text)
+	}
 	if !strings.Contains(text, "Do the thing.") {
-		t.Fatalf("text = %q", text)
-	}
-}
-
-func TestRenderResourceFile(t *testing.T) {
-	t.Parallel()
-
-	text := RenderResourceFile("demo", "/tmp/skills/demo", "reference.md", "# Ref")
-	if !strings.Contains(text, `file="reference.md"`) {
-		t.Fatalf("text = %q", text)
-	}
-	if !strings.Contains(text, "# Ref") {
 		t.Fatalf("text = %q", text)
 	}
 }

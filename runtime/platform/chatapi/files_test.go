@@ -78,9 +78,9 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 	if len(images) != 0 || len(files) != 0 || audio != nil || len(paths) != 1 {
 		t.Fatalf("inputsToCore = images=%d files=%d audio=%v paths=%v", len(images), len(files), audio, paths)
 	}
-	if paths[0] != "upload/"+uploadResp.Data.ID+".note.txt" {
+	if paths[0] != "work/upload/"+uploadResp.Data.ID+".note.txt" {
 		// filename is embedded in managed name
-		if !strings.HasPrefix(paths[0], "upload/") || !strings.HasSuffix(paths[0], ".note.txt") {
+		if !strings.HasPrefix(paths[0], "work/upload/") || !strings.HasSuffix(paths[0], ".note.txt") {
 			t.Fatalf("path = %q", paths[0])
 		}
 	}
@@ -92,11 +92,11 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 		user,
 		"read the file",
 		"",
-		nil, 		nil, nil, paths,
+		nil, nil, nil, paths,
 		nil,
 	)
 	text := event.Message.Content[0].Text
-	if !strings.Contains(text, "upload/") {
+	if !strings.Contains(text, "work/upload/") {
 		t.Fatalf("prompt missing upload ref: %q", text)
 	}
 
@@ -221,7 +221,7 @@ func TestInputsToCoreLocalPathImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(images) != 1 || images[0].WorkPath != "upload/pic.png" || len(images[0].Data) == 0 {
+	if len(images) != 1 || images[0].WorkPath != "work/upload/pic.png" || len(images[0].Data) == 0 {
 		t.Fatalf("images = %#v", images)
 	}
 }

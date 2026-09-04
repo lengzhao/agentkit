@@ -12,7 +12,7 @@ sessionStore.default:
   deps:
     workspace: workspace.default
 
-# local 根为 .agentkit；文件工具与 shell 通过 .. 落到项目根目录。
+# local 根为 .agentkit；fs/shell 默认读写该根（root: .）与 work/ 子目录。
 mcp.default:
   config:
     enableLocal: true
@@ -26,22 +26,6 @@ openapi.default:
     files:
       - local:api.json
       - global:api.json
-
-tool.fs-workspace.default:
-  use: tool/fs-workspace
-  config:
-    root: ..
-    maxBytes: 1048576
-  deps:
-    workspace: workspace.default
-
-tool.shell-bash.default:
-  use: tool/shell-bash
-  config:
-    workDir: ..
-    timeoutSeconds: 60
-  deps:
-    workspace: workspace.default
 
 skills.default:
   use: skill/filesystem

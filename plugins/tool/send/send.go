@@ -17,7 +17,7 @@ const (
 
 type SendConfig struct {
 	// Root is the workspace subdirectory files are resolved from, matching
-	// tool/fs-workspace root (typically "work").
+	// tool/fs-workspace root (typically ".").
 	Root string `json:"root"`
 }
 

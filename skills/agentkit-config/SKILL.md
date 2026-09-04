@@ -82,10 +82,9 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | `global:skills` | `~/.agentkit/skills` |
 | `local:skills` | `<cwd>/.agentkit/skills` |
 | `local:../skills` | `<cwd>/skills`（随仓库提交） |
-| `..` | 项目根 |
 | `work` | scope 根下的 `work/` 子目录 |
 
-文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（常见 coding 场景为 `..` 即项目根；多租户为 `work` 临时产物目录）。`AGENTS.md`、`memory.md` 等租户级文件落在 local 根；`root: work` 时通过 `tenantFiles` 仍可由工具读写。默认将路径限制在 `root` 内；设 `unrestricted: true` 可关闭路径权限控制。
+文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（L0 默认 fs 为租户 local 根 `.`，shell cwd 为 `work/`）。`AGENTS.md`、`memory.md`、`skills/` 等落在 local 根，可用文件工具直接读写。默认将路径限制在 `root` 内；设 `unrestricted: true` 可关闭路径权限控制。更强隔离后续走 sandbox。
 
 Skills 目录叠加：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 
@@ -129,21 +128,7 @@ workspace.default:
   config:
     scope: local
 
-tool.fs-workspace.default:
-  use: tool/fs-workspace
-  config:
-    root: ..
-    maxBytes: 1048576
-  deps:
-    workspace: workspace.default
-
-tool.shell-bash.default:
-  use: tool/shell-bash
-  config:
-    workDir: ..
-    timeoutSeconds: 60
-  deps:
-    workspace: workspace.default
+# fs / shell 默认 root: .、workDir: work，通常无需覆盖。
 ```
 
 ### 自定义 system prompt
@@ -263,7 +248,7 @@ YAML 实例 `openapi.default` 在启动时读取 `api.json` 并注册 HTTP 动�
 多租户部署使用 `workspace/tenant`：
 
 - 每租户独立 local 根（默认 `~/.agentkit/tenants/<租户键>`）
-- `AGENTS.md`、`memory.md` 等租户级文件在 local 根；文件工具与 shell 限定在 `work/` 临时产物（`tenantFiles` 例外）
+- `AGENTS.md`、`memory.md`、`skills/` 在 local 根，fs 默认可直接读写；shell 默认 cwd 为 `work/`
 - 共享资源（skills、mcp.json）放 `global:` 路径
 
 ## 密钥与敏感信息

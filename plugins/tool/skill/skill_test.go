@@ -42,7 +42,7 @@ func (r dirRegistry) Load(_ context.Context, name string) (capskill.Content, err
 	}, nil
 }
 
-func TestSkillToolLoadsSupportingFile(t *testing.T) {
+func TestSkillToolLoadsAndRecords(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -50,10 +50,7 @@ func TestSkillToolLoadsSupportingFile(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Demo\nUse reference.md"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "reference.md"), []byte("# Reference\nMore detail"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Demo\nDo the thing."), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,53 +63,28 @@ func TestSkillToolLoadsSupportingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("skill-file"))
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("skill-load"))
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("assistant"))
-	out, err := tool.Call(ctx, []byte(`{"name":"demo","file":"reference.md"}`))
+	out, err := tool.Call(ctx, []byte(`{"name":"demo"}`))
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	if !strings.Contains(out, `<skill_resource name="demo" file="reference.md">`) {
+	if !strings.Contains(out, `<skill_content name="demo">`) {
 		t.Fatalf("out = %q", out)
 	}
-	if !strings.Contains(out, "More detail") {
+	if !strings.Contains(out, "Do the thing.") {
 		t.Fatalf("out = %q", out)
-	}
-}
-
-func TestSkillToolRunsScript(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	skillDir := filepath.Join(root, "demo", "scripts")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "demo", "SKILL.md"), []byte("# Demo\nRun scripts/run.sh"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "run.sh"), []byte("#!/usr/bin/env bash\nprintf 'skill-script-ok %s' \"$1\"\n"), 0o755); err != nil {
-		t.Fatal(err)
 	}
 
-	tool, err := skilltool.NewSkill(skilltool.SkillConfig{}, skilltool.SkillDeps{
-		Skills: dirRegistry{root: root},
-	})
-	if err != nil {
-		t.Fatal(err)
+	events := agenttest.SessionEvents(t, ctx, store, agentkit.SessionID("skill-load"))
+	found := false
+	for _, ev := range events {
+		if ev.Type == agentkit.EventSkillLoad {
+			found = true
+			break
+		}
 	}
-
-	out, err := tool.Call(context.Background(), []byte(`{"name":"demo","script":"scripts/run.sh","args":["arg1"]}`))
-	if err != nil {
-		t.Fatalf("call: %v, out=%q", err, out)
-	}
-	if !strings.Contains(out, `<skill_script name="demo" script="scripts/run.sh">`) {
-		t.Fatalf("out = %q", out)
-	}
-	if !strings.Contains(out, "skill-script-ok arg1") {
-		t.Fatalf("out = %q", out)
-	}
-	if !strings.Contains(out, "exitCode: 0") {
-		t.Fatalf("out = %q", out)
+	if !found {
+		t.Fatal("expected skill/load event")
 	}
 }

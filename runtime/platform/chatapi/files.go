@@ -23,17 +23,17 @@ import (
 )
 
 const (
-	fileIDPrefix        = "file_"
-	uploadMetaSuffix    = ".meta.json"
-	fileKindUpload      = "upload"
-	fileKindDownload    = "download"
+	fileIDPrefix         = "file_"
+	uploadMetaSuffix     = ".meta.json"
+	fileKindUpload       = "upload"
+	fileKindDownload     = "download"
 	defaultMaxUploadSize = 10 << 20
 )
 
 var (
-	fileIDPattern         = regexp.MustCompile(`^file_[A-Za-z0-9_-]{22}$`)
-	errUploadNotFound     = errors.New("upload not found")
-	errWorkspaceRequired  = errors.New("workspace not configured")
+	fileIDPattern        = regexp.MustCompile(`^file_[A-Za-z0-9_-]{22}$`)
+	errUploadNotFound    = errors.New("upload not found")
+	errWorkspaceRequired = errors.New("workspace not configured")
 )
 
 type uploadedFileMeta struct {
@@ -92,16 +92,16 @@ func (p *Platform) downloadDir(ctx context.Context, channelKey string) (string, 
 }
 
 func (p *Platform) workRelPath(ctx context.Context, channelKey, absPath string) (string, error) {
-	workRoot, err := p.workspace.Resolve(p.channelCtx(ctx, channelKey), "work")
+	root, err := p.workspace.Resolve(p.channelCtx(ctx, channelKey), ".")
 	if err != nil {
 		return "", err
 	}
-	rel, err := filepath.Rel(workRoot, absPath)
+	rel, err := filepath.Rel(root, absPath)
 	if err != nil {
 		return "", err
 	}
 	if strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("path outside work root")
+		return "", fmt.Errorf("path outside workspace")
 	}
 	return filepath.ToSlash(rel), nil
 }

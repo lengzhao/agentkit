@@ -18,6 +18,47 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.cursor.default:
+    config:
+        authMethod: cursor_login
+        autoApprove: false
+        command:
+            - agent
+            - acp
+        env:
+            CURSOR_ENABLE: "1"
+            NO_OPEN_BROWSER: "1"
+        id: cursor
+    deps:
+        sessionStore: sessionStore.default
+        workspace: workspace.default
+    use: agent/acp-remote
+agent.worker.default:
+    config:
+        budget:
+            maxContinuations: 30
+            maxTotalSteps: 300
+            maxTotalTokens: 2000000
+            softRatio: 0.8
+            wallClockSeconds: 7200
+        id: worker
+        maxSteps: 20
+        model: gpt-5.4
+        retry:
+            baseDelayMs: 2000
+            enabled: true
+            maxRetries: 3
+    deps:
+        compaction:
+            - compaction.prune.default
+            - compaction.token-limit.worker
+        hooks: hooks.worker
+        llm: llm.fallback
+        prompt: prompt.worker.default
+        sessionStore: sessionStore.default
+        tools: tools.worker.default
+        workspace: workspace.default
+    use: agent/coding
 bootstrap.shell.default:
     config:
         commands:
@@ -51,6 +92,15 @@ compaction.token-limit.default:
         services:
             - compaction.summary.default
     use: compaction/token-limit
+compaction.token-limit.worker:
+    config:
+        charsPerToken: 3
+        contextWindow: 200000
+        triggerRatio: 0.7
+    deps:
+        services:
+            - compaction.summary.default
+    use: compaction/token-limit
 credentials.default:
     config:
         files:
@@ -59,22 +109,46 @@ credentials.default:
         workspace: workspace.default
     use: credentials/env
 hook.before-step.default:
+    config:
+        contributeCommands: true
     deps:
         services:
             - compaction.prune.default
             - compaction.token-limit.default
         sessionStore: sessionStore.default
     use: hook/before-step
+hook.before-step.worker:
+    deps:
+        services:
+            - compaction.prune.default
+            - compaction.token-limit.worker
+        sessionStore: sessionStore.default
+    use: hook/before-step
+hook.turn-continue.default:
+    config:
+        maxContinuations: 30
+        requireFinish: true
+        requireTodosDone: true
+        stallLimit: 3
+    deps:
+        sessionStore: sessionStore.default
+    use: hook/turn-continue
 hooks.default:
     deps:
         providers:
             - hook.before-step.default
+            - hook.turn-continue.default
+    use: hooks/runtime
+hooks.worker:
+    deps:
+        providers:
+            - hook.before-step.worker
+            - hook.turn-continue.default
     use: hooks/runtime
 learning.default:
     config:
         dreaming:
             enabled: true
-        memoryRoot: work
         workshop:
             mode: propose
     deps:
@@ -106,6 +180,8 @@ loop.default:
     deps:
         agents:
             - agent.assistant.default
+            - agent.worker.default
+            - agent.cursor.default
         telemetry: telemetry.default
     use: loop/default
 mcp.default:
@@ -141,8 +217,6 @@ platform.default:
 policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:
-    config:
-        root: work
     deps:
         workspace: workspace.default
     use: prompt/section/agents-md
@@ -156,8 +230,6 @@ prompt.default:
             - prompt.subagents.default
     use: prompt/assembler/default
 prompt.memory.default:
-    config:
-        root: work
     deps:
         learning: learning.default
         workspace: workspace.default
@@ -198,6 +270,27 @@ prompt.persona.default:
             - 工具失败时说明原因并给出替代方案，而不是静默放弃
         name: persona
     use: prompt/section/static
+prompt.persona.worker:
+    config:
+        content: |
+            你是「工作助手」（worker），负责把用户交代的任务从头到尾做完，而不是只做一轮问答。
+
+            ## 工作方式
+            - 收到任务后先用 todo 拆成可执行步骤，并标记当前进行项
+            - 持续推进：读文件、搜索、执行命令、验证结果，直到全部完成或明确受阻
+            - 全部完成或无法继续时，必须调用 finish（status=completed 或 blocked，summary 写清成果与遗留项）
+            - 不要停在「我建议你…」就结束；能自己做的就自己做
+
+            ## 风格
+            - 默认中文；进展与结论结构化、可核对
+            - 涉及事实与代码时优先用工具验证，不编造
+            - 破坏性操作前用 ask_user 确认（若平台支持交互）
+
+            ## 边界
+            - 工具失败时说明原因并换方案，不静默放弃
+            - 不提供违法、有害内容的协助
+        name: persona
+    use: prompt/section/static
 prompt.skills.default:
     deps:
         skills: skills.default
@@ -212,6 +305,15 @@ prompt.subagents.default:
     deps:
         subagent: subagent.default
     use: prompt/section/subagents
+prompt.worker.default:
+    deps:
+        sections:
+            - prompt.persona.worker
+            - prompt.agents-md.default
+            - prompt.memory.default
+            - prompt.skills.default
+            - prompt.subagents.default
+    use: prompt/assembler/default
 runner.default:
     config:
         inject:
@@ -266,9 +368,15 @@ skills.default:
         workspace: workspace.default
     use: skill/filesystem
 subagent.default:
+    deps:
+        inprocess: subagent.inprocess.default
+        loop: subagent.loop.default
+    use: subagent/composite
+subagent.inprocess.default:
     config:
         dirs:
             - local:agents
+            - local:../examples/agents
             - global:agents
         maxSteps: 20
         timeoutSeconds: 600
@@ -283,10 +391,33 @@ subagent.default:
         tools: tools.subagent.default
         workspace: workspace.default
     use: subagent/inprocess
+subagent.loop.default:
+    config:
+        agents:
+            - agent: cursor
+              async: true
+              description: 复杂编码：多文件重构、深度调试、跑测试。简单问答不要委派。
+              name: cursor
+              timeoutSeconds: 1800
+            - agent: claude
+              async: true
+              description: 复杂编码与深度分析，通过 Claude Agent SDK（ACP）执行。简单问答不要委派。
+              name: claude
+              timeoutSeconds: 1800
+        timeoutSeconds: 1800
+    deps:
+        agents:
+            - agent.cursor.default
+        sessionStore: sessionStore.default
+    use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none
 tool.ask-user.default:
     use: tool/ask-user
+tool.chat-history.default:
+    deps:
+        platform: platform.default
+    use: tool/chat-history
 tool.finish.default:
     deps:
         sessionStore: sessionStore.default
@@ -294,7 +425,7 @@ tool.finish.default:
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: work
+        root: .
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
@@ -302,7 +433,7 @@ tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: work
+        root: .
         tools:
             - read
             - grep
@@ -338,6 +469,10 @@ tool.subagent.default:
     deps:
         subagent: subagent.default
     use: tool/subagent
+tool.todo.default:
+    deps:
+        sessionStore: sessionStore.default
+    use: tool/todo
 tool.web-fetch-http.default:
     config:
         allowPrivateHosts: false
@@ -368,6 +503,7 @@ tools.default:
             - tool.web-fetch-http.default
             - tool.ask-user.default
             - tool.send.default
+            - tool.chat-history.default
             - tool.schedule.default
     use: tools/runtime
 tools.subagent.default:
@@ -383,6 +519,35 @@ tools.subagent.default:
         tools:
             - tool.finish.default
             - tool.web-fetch-http.default
+            - tool.skill.default
+    use: tools/runtime
+tools.worker.default:
+    config:
+        defaultTimeoutSeconds: 120
+        maxResultBytes: 8192
+        toolTimeouts:
+            ask_user: 900
+            delegate: 900
+    deps:
+        dynamicTools:
+            - mcp.default
+            - openapi.default
+        hooks: hooks.worker
+        policies:
+            - policy.dangerous-shell.default
+        toolPacks:
+            - tool.fs-workspace.default
+        tools:
+            - tool.shell-bash.default
+            - tool.skill.default
+            - tool.subagent.default
+            - tool.web-fetch-http.default
+            - tool.ask-user.default
+            - tool.send.default
+            - tool.chat-history.default
+            - tool.schedule.default
+            - tool.todo.default
+            - tool.finish.default
     use: tools/runtime
 workspace.default:
     config:

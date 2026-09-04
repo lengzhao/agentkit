@@ -26,7 +26,7 @@
         └── deep/
             └── YYYY-MM-DD.md   # Deep 阶段报告（可选）
 
-work/                      # fs / shell 临时产物
+work/                      # shell 默认 cwd 与临时产物
 └── ...
 
 work/skills/               # 或 local:skills 解析目录

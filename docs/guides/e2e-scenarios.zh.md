@@ -214,7 +214,7 @@ agenttest.AssertSubagentParentSession(t, events)
 | ID | 场景 | 断言 | 状态 | 层级 |
 |---|---|---|---|---|
 | E2E-510 | skill 加载事件 | `skill/load` in session | ✅ | `testing/smoke/skill_test.go` |
-| E2E-511 | 多租户目录隔离 | 两 tenant key 各写文件 | work/ 不交叉 | ✅ | `integration/multi_tenant_test.go` |
+| E2E-511 | 多租户目录隔离 | 两 tenant key 各写文件 | 租户根不交叉 | ✅ | `integration/multi_tenant_test.go` |
 | E2E-512 | sessionScope thread vs channel | 不同 delivery 折叠 | effective ID 正确 | ✅ | `testing/smoke/session_scope_test.go` |
 | E2E-513 | inject 前缀写入 session 后原样回放 | 多用户 channel | derive 含 `[meta ...]` | ✅ | `testing/smoke/session_attribution_test.go` |
 | BLD-005 | autonomous+multi-tenant build | — | ✅ | presets_test |

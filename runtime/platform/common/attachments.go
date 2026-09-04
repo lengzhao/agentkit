@@ -19,7 +19,7 @@ type ImageAttachment struct {
 	MimeType string
 	Data     []byte
 	FileName string
-	// WorkPath is workspace-relative under work/ (e.g. upload/foo.png).
+	// WorkPath is tenant-root-relative (e.g. work/upload/foo.png).
 	WorkPath string
 }
 
@@ -39,15 +39,20 @@ type AudioAttachment struct {
 }
 
 const (
-	// inboundAttachWorkRoot is the fs-workspace root relative to tenant local root.
+	// inboundAttachWorkRoot is the shell/temp directory relative to tenant local root.
 	inboundAttachWorkRoot = "work"
-	// inboundUploadDir is where user-uploaded files land under the work root.
+	// inboundUploadDir is where user-uploaded files land under work/.
 	inboundUploadDir = "upload"
 )
 
-// UploadWorkRel is the workspace-relative upload directory (under tool/fs-workspace root).
+// UploadWorkRel is the tenant-root-relative upload directory.
 func UploadWorkRel() string {
 	return filepath.Join(inboundAttachWorkRoot, inboundUploadDir)
+}
+
+// AttachFSRel is the path the model should pass to fs tools for an inbound file.
+func AttachFSRel(name string) string {
+	return filepath.ToSlash(filepath.Join(inboundAttachWorkRoot, inboundUploadDir, name))
 }
 
 // InboundOpts configures optional inbound media handling.
@@ -192,8 +197,8 @@ func saveInboundFiles(sessionID agentkit.SessionID, files []FileAttachment, opts
 			slog.Error("common: write inbound attachment failed", "path", fpath, "error", err)
 			continue
 		}
-		// Paths are relative to the fs-workspace root (work/) so read tool can open them.
-		paths = append(paths, filepath.Join(inboundUploadDir, fname))
+		// Paths are relative to the tenant local root so read can open them with root: .
+		paths = append(paths, AttachFSRel(fname))
 		slog.Debug("common: inbound upload saved", "path", fpath, "name", f.FileName, "size", len(f.Data))
 	}
 	return paths

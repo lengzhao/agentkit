@@ -446,14 +446,7 @@ tool.finish.default:
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: work
-        tenantFiles:
-            - AGENTS.md
-            - AGENTS.MD
-            - CLAUDE.md
-            - memory.md
-            - MEMORY.md
-            - DREAMS.md
+        root: .
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
@@ -461,14 +454,7 @@ tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: work
-        tenantFiles:
-            - AGENTS.md
-            - AGENTS.MD
-            - CLAUDE.md
-            - memory.md
-            - MEMORY.md
-            - DREAMS.md
+        root: .
         tools:
             - read
             - grep
@@ -554,6 +540,7 @@ tools.subagent.default:
         tools:
             - tool.finish.default
             - tool.web-fetch-http.default
+            - tool.skill.default
     use: tools/runtime
 tools.worker.default:
     config:

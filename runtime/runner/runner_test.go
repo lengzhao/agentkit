@@ -49,18 +49,17 @@ func (p *scriptedPlatform) sentEvents() []agentkit.OutboundEvent {
 	return append([]agentkit.OutboundEvent(nil), p.sent...)
 }
 
-// panickyLoop panics on the first dispatch and succeeds afterwards.
+// panickyLoop panics for one session and succeeds for all others.
 type panickyLoop struct {
 	mu    sync.Mutex
 	calls int
 }
 
-func (l *panickyLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) error {
+func (l *panickyLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) error {
 	l.mu.Lock()
 	l.calls++
-	first := l.calls == 1
 	l.mu.Unlock()
-	if first {
+	if req.Event.SessionID == "s:1" {
 		panic("boom")
 	}
 	return nil

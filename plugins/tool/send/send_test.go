@@ -131,7 +131,7 @@ func TestSendFilePath(t *testing.T) {
 	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C1"))
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
 
-	if _, err := tool.Call(ctx, []byte(`{"path":"report.pdf"}`)); err != nil {
+	if _, err := tool.Call(ctx, []byte(`{"path":"work/report.pdf"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if len(platform.sent) != 1 {
@@ -166,7 +166,7 @@ func TestSendTextAndPath(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
 	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("cli:default"))
-	if _, err := tool.Call(ctx, []byte(`{"text":"see attached","path":"report.pdf"}`)); err != nil {
+	if _, err := tool.Call(ctx, []byte(`{"text":"see attached","path":"work/report.pdf"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if len(platform.sent) != 1 {
@@ -203,7 +203,7 @@ func TestSendInboundAttachmentPath(t *testing.T) {
 	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C1"))
 	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
 
-	if _, err := tool.Call(ctx, []byte(`{"path":"upload/hello.go"}`)); err != nil {
+	if _, err := tool.Call(ctx, []byte(`{"path":"work/upload/hello.go"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if len(platform.sent) != 1 {

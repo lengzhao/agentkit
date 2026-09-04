@@ -1113,7 +1113,7 @@ plugins/tool/
 | `tool/web-search-tavily` | `web_search` | Tavily 搜索（L0 默认），缺 key 不阻断构造 |
 | `tool/web-search-exa` | `web_search` | Exa 搜索（可选替代） |
 | `tool/web-fetch-scripted` / `tool/web-search-scripted` | 同上 | 无网络替身 |
-| `tool/skill` | `skill` | 加载 `SKILL.md` 注入会话；可选 `file` 读附属文件、`script` 执行 skill 目录内脚本。依赖 `skills` + `sessionStore` |
+| `tool/skill` | `skill` | 按名加载 `SKILL.md` 注入会话。附属文件用 `read`，脚本用 `bash`。依赖 `skills` + `sessionStore` |
 | `tool/subagent` | `delegate` | 子 agent 委派 |
 | `tool/ask-user` | `ask_user` | HIL 提问 |
 
@@ -1175,14 +1175,14 @@ Policy Plane 判定已可见调用以及能力操作：
 | `..` | 项目根（`workspace/default`）；`workspace/tenant` 禁止 `..` |
 | `~/foo` | 绝对路径 |
 
-| 场景 | fs/shell 根 | 说明 |
+| 场景 | fs 根 / shell cwd | 说明 |
 |---|---|---|
-| L0 默认 | `work` | `~/.agentkit/work/`，避免误伤 `sessions/` |
-| `presets/coding.yaml` | `..` | 项目根目录读写 |
-| `presets/multi-tenant.yaml` | `work` | 租户根下操作区，默认限制在 `root` 内；可设 `unrestricted: true` 关闭路径权限控制 |
+| L0 默认 | `.` / `work` | fs 读写租户 local 根；shell 默认 cwd 为 `work/` |
+| `presets/coding.yaml` | `.` / `work` | 与 L0 相同；local 根为 `<cwd>/.agentkit/` |
+| `presets/multi-tenant.yaml` | `.` / `work` | fs 读写租户根；可设 `unrestricted: true` 关闭路径限制 |
 
 ```yaml
-# coding preset 典型绑定
+# 典型绑定（L0 默认，多数 preset 无需覆盖）
 workspace.default:
   use: workspace/default
   config:
@@ -1191,7 +1191,7 @@ workspace.default:
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
-    root: ..
+    root: .
   deps:
     workspace: workspace.default
 
@@ -1199,7 +1199,7 @@ tool.fs-workspace.default:
 tool.fs-workspace.unrestricted:
   use: tool/fs-workspace
   config:
-    root: work
+    root: .
     unrestricted: true
   deps:
     workspace: workspace.default

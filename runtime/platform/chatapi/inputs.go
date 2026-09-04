@@ -122,9 +122,12 @@ func normalizeWorkspaceInputPath(in chatInput) (workRel, mimeType, filename stri
 	}
 	workRel = filepath.ToSlash(workRel)
 	workRel = strings.TrimPrefix(workRel, "/")
-	workRel = strings.TrimPrefix(workRel, "work/")
 	if strings.Contains(workRel, "..") {
 		return "", "", "", fmt.Errorf("invalid path")
+	}
+	if workRel == "upload" || strings.HasPrefix(workRel, "upload/") ||
+		workRel == "download" || strings.HasPrefix(workRel, "download/") {
+		workRel = "work/" + workRel
 	}
 	filename = filepath.Base(workRel)
 	if strings.TrimSpace(in.Filename) != "" {
@@ -165,8 +168,21 @@ func (p *Platform) resolveUploadedInput(ctx context.Context, channelKey string, 
 }
 
 func (p *Platform) readWorkFile(ctx context.Context, channelKey, workRel string) ([]byte, error) {
-	abs, err := p.workspace.Resolve(p.channelCtx(ctx, channelKey), "work/"+workRel)
+	rel := filepath.ToSlash(strings.TrimSpace(workRel))
+	rel = strings.TrimPrefix(rel, "/")
+	abs, err := p.workspace.Resolve(p.channelCtx(ctx, channelKey), rel)
 	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(abs)
+	if err == nil {
+		return data, nil
+	}
+	if strings.HasPrefix(rel, "work/") {
+		return nil, err
+	}
+	abs, err2 := p.workspace.Resolve(p.channelCtx(ctx, channelKey), "work/"+rel)
+	if err2 != nil {
 		return nil, err
 	}
 	return os.ReadFile(abs)

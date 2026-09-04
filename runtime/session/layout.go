@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// TenantToolWorkDir is the workspace-relative directory fs and shell use as their root.
+// TenantToolWorkDir is the workspace-relative directory for shell cwd and temp artifacts.
 const TenantToolWorkDir = "work"
 
 func ensureTenantLayout(ctx context.Context, ws workspace.Service, relSessionsDir string) (string, error) {

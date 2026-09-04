@@ -38,7 +38,7 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	if !strings.Contains(text, "附件里面的内容是什么") {
 		t.Fatalf("text = %q", text)
 	}
-	if !strings.Contains(text, inboundUploadDir+"/note.txt") {
+	if !strings.Contains(text, "work/"+inboundUploadDir+"/note.txt") {
 		t.Fatalf("missing file ref in text: %q", text)
 	}
 

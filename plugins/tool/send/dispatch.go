@@ -16,7 +16,7 @@ import (
 func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInput) error {
 	root := strings.TrimSpace(cfg.Root)
 	if root == "" {
-		root = "work"
+		root = "."
 	}
 	if deps.Platform == nil {
 		return fmt.Errorf("tool/send requires platform dependency")

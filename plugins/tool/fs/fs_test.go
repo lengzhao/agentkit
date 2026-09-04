@@ -113,23 +113,20 @@ func TestGrepCollectorContext(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFSWritesTenantFileAtLocalRoot(t *testing.T) {
+func TestWorkspaceFSRootIsTenantLocal(t *testing.T) {
 	t.Parallel()
 
 	tenantRoot := t.TempDir()
 	workDir := filepath.Join(tenantRoot, "work")
+	skillDir := filepath.Join(tenantRoot, "skills", "demo")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.Static(tenantRoot)
-	fs := &workspaceFS{
-		relRoot: "work",
-		workspace: ws,
-		tenantFiles: []string{
-			"AGENTS.md", "AGENTS.MD", "CLAUDE.md",
-			"memory.md", "MEMORY.md", "DREAMS.md",
-		},
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	ws := workspace.Static(tenantRoot)
+	fs := &workspaceFS{relRoot: ".", workspace: ws}
 	ctx := context.Background()
 
 	if err := fs.writeText(ctx, "AGENTS.md", "tenant instructions"); err != nil {
@@ -142,11 +139,19 @@ func TestWorkspaceFSWritesTenantFileAtLocalRoot(t *testing.T) {
 	if string(got) != "tenant instructions" {
 		t.Fatalf("AGENTS.md = %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(workDir, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Fatalf("work/AGENTS.md should not exist: %v", err)
+
+	if err := fs.writeText(ctx, "skills/demo/reference.md", "# ref"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(filepath.Join(skillDir, "reference.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "# ref" {
+		t.Fatalf("skills file = %q", got)
 	}
 
-	if err := fs.writeText(ctx, "notes.txt", "temp"); err != nil {
+	if err := fs.writeText(ctx, "work/notes.txt", "temp"); err != nil {
 		t.Fatal(err)
 	}
 	got, err = os.ReadFile(filepath.Join(workDir, "notes.txt"))

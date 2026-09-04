@@ -106,7 +106,7 @@ flowchart TB
 | `platform/worker` | `agentkit.Platform` | headless 一次性任务 runner（从不读 stdin，`output` 支持 text / json）。task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`）；日历 cron 用 `schedule/cron` | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
-**IM 附件**：`platform/slack`、`platform/feishu`、`platform/lark`、`platform/chat-api` 的 `deps.workspace` 为必填。入站图片会先落到租户 `work/upload/`，session 存 `attachment_ref`，Agent 调用 LLM 前再从 workspace hydrate 为 vision；未挂 workspace 时图片会在落盘时被丢弃。
+**IM 附件**：`platform/slack`、`platform/feishu`、`platform/lark`、`platform/chat-api` 的 `deps.workspace` 为必填。入站图片会先落到租户 `work/upload/`，session 存 `attachment_ref`（路径相对租户根，如 `work/upload/foo.png`），Agent 调用 LLM 前再从 workspace hydrate 为 vision；未挂 workspace 时图片会在落盘时被丢弃。
 
 **HTTP 组合**：`chat-api` 默认自建监听（`listenAddr`，默认 `:8030`）。需要与其它 HTTP 路由共用同一端口时，设 `registerOnly: true`（或 `listenAddr: "-"`），由 `platform/http` 监听 `http.DefaultServeMux`；其它插件可在构建阶段 `http.Handle` 挂载自定义路由。
 
@@ -281,7 +281,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/web-fetch-http` | — | `web_fetch` | HTTP 抓取；私网地址在 dial 时拦截 |
 | `tool/web-search-scripted` | — | `web_search` | 预置命中，测试与冒烟 |
 | `tool/web-fetch-scripted` | — | `web_fetch` | 预置页面，测试与冒烟 |
-| `tool/skill` | `skills`, `sessionStore` | `skill` | 加载 `SKILL.md` 并注入会话；可选 `file` 读取附属文件，或 `script` 执行 skill 目录内脚本 |
+| `tool/skill` | `skills`, `sessionStore` | `skill` | 按名加载 `SKILL.md` 并注入会话；附属文件用 `read`，脚本用 `bash` |
 | `tool/subagent` | `subagent` | `delegate` | 子 Agent 委派 |
 | `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
@@ -300,7 +300,6 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `unrestricted` | `false` | 为 `true` 时关闭路径权限控制，不将路径限制在 `root` 内（含 `../`、绝对路径等） |
 | `readOnly` | `false` | 拒绝 `write` / `edit` |
 | `tools` | 全部 | 限制注册的模型工具子集 |
-| `tenantFiles` | — | `root` 为子目录（如 `work`）时，仍可在租户 local 根读写列出的单段文件名 |
 
 **`tool/fs-workspace` 模型参数**：
 

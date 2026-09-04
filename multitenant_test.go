@@ -71,7 +71,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 							map[string]any{
 								"use": "tool/fs-workspace",
 								"config": map[string]any{
-									"root":     "work",
+									"root":     ".",
 									"maxBytes": 1048576,
 								},
 								"deps": map[string]any{"workspace": workspaceNode},
@@ -112,7 +112,7 @@ func TestMultiTenantChannelsGetSeparateWorkdirs(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
-	steps := append(writeStep("notes.txt", "from C001"), writeStep("notes.txt", "from C002")...)
+	steps := append(writeStep("work/notes.txt", "from C001"), writeStep("work/notes.txt", "from C002")...)
 	ag, _, err := build.Build[agentkit.Agent](context.Background(), multiTenantGraph(base, nil, steps), "agent")
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
@@ -157,7 +157,7 @@ func TestMultiTenantPinnedProjectDir(t *testing.T) {
 	pinned := map[string]any{
 		"slack:C001": map[string]any{"root": agentkitDir},
 	}
-	ag, _, err := build.Build[agentkit.Agent](context.Background(), multiTenantGraph(base, pinned, writeStep("out.txt", "pinned")), "agent")
+	ag, _, err := build.Build[agentkit.Agent](context.Background(), multiTenantGraph(base, pinned, writeStep("work/out.txt", "pinned")), "agent")
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
-	steps := append(writeStep("a.txt", "first"), writeStep("b.txt", "second")...)
+	steps := append(writeStep("work/a.txt", "first"), writeStep("work/b.txt", "second")...)
 	graph := multiTenantGraph(base, nil, steps)
 	ag, result, err := build.Build[agentkit.Agent](context.Background(), graph, "agent")
 	if err != nil {
