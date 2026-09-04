@@ -133,7 +133,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		_ = a.emitLifecycle(endCtx, emit, sessionID, agentkit.EventTurnEnd, session.TurnEndData{Steps: 1})
 	}()
 
-	acpSessionID, err := a.bridge.ensureACPSession(ctx, sessionID)
+	acpSessionID, err := a.ensureACPSessionWithAuth(ctx, emit, sessionID)
 	if err != nil {
 		return err
 	}

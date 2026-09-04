@@ -186,6 +186,51 @@ llm.fallback:
     provider: llm.default
 ```
 
+**`agent/acp-remote`**：通过 stdio ACP 调用外部 Agent 子进程（如 Cursor CLI `agent acp`）。`authMethod: cursor_login` 时，登录与 ACP 是两条独立链路：
+
+```mermaid
+sequenceDiagram
+  participant U as 用户
+  participant AK as AgentKit
+  participant CLI as agent login
+  participant ACP as agent acp
+
+  U->>AK: 发消息
+  AK->>ACP: initialize + authenticate + session/new
+  alt ACP 认证失败
+    AK->>CLI: 阻塞运行 login
+    CLI-->>U: 打印/返回授权链接
+    Note over CLI: Cursor 自行轮询 OAuth
+    CLI-->>AK: 登录成功
+    AK->>ACP: 重试 initialize + authenticate + session/new
+  end
+  AK->>ACP: prompt
+  ACP-->>U: 回复
+```
+
+要点：
+
+- **先连 ACP**：不调用 `agent status` 预检；直接启动 `agent acp`，认证失败再登录。
+- **登录**：`agent login`（配置注入 `NO_OPEN_BROWSER=1`），由 Cursor CLI 阻塞等待浏览器授权；stdout/stderr 原样透传到对话。
+- **不要混用**：`authenticate` 返回的链接与 `agent login` 的 challenge 不是同一次 OAuth；登录只走 `agent login`。
+- **API Key 路径**（可选）：`agent -p` 用 `CURSOR_API_KEY`；ACP 用 `CURSOR_AUTH_TOKEN`（`--auth-token`），与 `cursor_login` 互斥。
+
+```yaml
+agent.cursor.default:
+  use: agent/acp-remote
+  config:
+    id: cursor
+    command: [agent, acp]
+    authMethod: cursor_login
+    env:
+      NO_OPEN_BROWSER: "1"
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+```
+
+通过 `/agent use cursor` 或 chat-api `agent_id=cursor` 切换到此 Agent。
 
 ### 3.3 Tool 插件（模型可见工具）
 

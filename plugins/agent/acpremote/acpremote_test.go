@@ -2,6 +2,7 @@ package acpremote
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -98,6 +99,24 @@ func TestAutoApprovePermission(t *testing.T) {
 	})
 	if resp.Outcome.Selected == nil || resp.Outcome.Selected.OptionId != "allow-once" {
 		t.Fatalf("unexpected outcome: %+v", resp.Outcome)
+	}
+}
+
+func TestIsCursorAuthError(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{fmt.Errorf("network timeout"), false},
+		{fmt.Errorf("acp initialize: peer disconnected"), true},
+		{fmt.Errorf("acp authenticate: [unauthenticated]"), true},
+		{fmt.Errorf("not logged in"), true},
+	}
+	for _, tc := range cases {
+		if got := isCursorAuthError(tc.err); got != tc.want {
+			t.Fatalf("isCursorAuthError(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }
 

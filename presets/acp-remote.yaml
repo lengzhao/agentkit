@@ -1,8 +1,10 @@
 # L1 preset：通过 ACP 调用 Cursor CLI（agent acp）。
 #
-# 前置：安装 Cursor CLI 并登录
+# 前置：安装 Cursor CLI 并完成登录（无头环境）：
 #   curl https://cursor.com/install -fsS | bash
-#   agent login          # 或 export CURSOR_API_KEY=...
+#   export NO_OPEN_BROWSER=1
+#   agent login          # 终端打印授权链接，手动在浏览器打开
+#   agent status         # 确认已登录
 #
 # 用法：
 #   go run . -preset presets/acp-remote.yaml
@@ -32,6 +34,8 @@ agent.acp.default:
       - agent
       - acp
     authMethod: cursor_login
+    env:
+      NO_OPEN_BROWSER: "1"
     autoApprove: false
   deps:
     workspace: workspace.default

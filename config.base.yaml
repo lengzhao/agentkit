@@ -156,6 +156,7 @@ loop.default:
     agents:
       - agent.assistant.default
       - agent.worker.default
+      - agent.cursor.default
     telemetry: telemetry.default
 
 telemetry.default:
@@ -209,6 +210,22 @@ agent.worker.default:
     compaction:
       - compaction.prune.default
       - compaction.token-limit.worker
+
+# 通过 ACP 调用 Cursor CLI（agent acp）。需先在本机完成 agent login；子进程注入 NO_OPEN_BROWSER=1（见 docs/plugin-catalog.zh.md §3.2）。
+agent.cursor.default:
+  use: agent/acp-remote
+  config:
+    id: cursor
+    command:
+      - agent
+      - acp
+    authMethod: cursor_login
+    env:
+      NO_OPEN_BROWSER: "1"
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
 
 sessionStore.default:
   use: session/store

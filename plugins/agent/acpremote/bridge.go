@@ -36,10 +36,11 @@ type bridge struct {
 }
 
 type subprocess struct {
-	cmd      *exec.Cmd
-	conn     *acp.ClientSideConnection
-	client   *bridgeClient
-	sessions sync.Map // agentkit.SessionID -> acp.SessionId
+	cmd           *exec.Cmd
+	conn          *acp.ClientSideConnection
+	client        *bridgeClient
+	authenticated bool
+	sessions      sync.Map // agentkit.SessionID -> acp.SessionId
 }
 
 func newBridge(cfg Config, ws workspace.Service) *bridge {
@@ -69,15 +70,16 @@ func (b *bridge) currentTurn() *turnState {
 func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	if b.proc != nil {
-		return b.proc, nil
+		if b.proc.authenticated || b.cfg.AuthMethod == "" {
+			return b.proc, nil
+		}
+		b.killProcLocked()
 	}
 
 	cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
-	cmd.Env = os.Environ()
-	for k, v := range b.cfg.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	cmd.Env = commandEnv(b.cfg.Env)
 	cmd.Stderr = os.Stderr
 
 	stdin, err := cmd.StdinPipe()
@@ -115,17 +117,36 @@ func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 	}
 	slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
 
-	if b.cfg.AuthMethod != "" {
-		if _, err := conn.Authenticate(ctx, acp.AuthenticateRequest{
-			MethodId: b.cfg.AuthMethod,
-		}); err != nil {
-			_ = cmd.Process.Kill()
-			return nil, fmt.Errorf("acp authenticate: %w", err)
-		}
-	}
-
 	b.proc = &subprocess{cmd: cmd, conn: conn, client: client}
+	if err := b.authenticateLocked(ctx, b.proc); err != nil {
+		return nil, err
+	}
 	return b.proc, nil
+}
+
+func (b *bridge) authenticateLocked(ctx context.Context, proc *subprocess) error {
+	if b.cfg.AuthMethod == "" {
+		proc.authenticated = true
+		return nil
+	}
+	if _, err := proc.conn.Authenticate(ctx, acp.AuthenticateRequest{
+		MethodId: b.cfg.AuthMethod,
+	}); err != nil {
+		b.killProcLocked()
+		return fmt.Errorf("acp authenticate: %w (ensure cursor cli is logged in via agent login)", err)
+	}
+	proc.authenticated = true
+	return nil
+}
+
+func (b *bridge) killProcLocked() {
+	if b.proc == nil {
+		return
+	}
+	if b.proc.cmd.Process != nil {
+		_ = b.proc.cmd.Process.Kill()
+	}
+	b.proc = nil
 }
 
 func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
@@ -187,13 +208,7 @@ func (b *bridge) cancel(ctx context.Context, acpSessionID acp.SessionId) error {
 func (b *bridge) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.proc == nil {
-		return nil
-	}
-	if b.proc.cmd.Process != nil {
-		_ = b.proc.cmd.Process.Kill()
-	}
-	b.proc = nil
+	b.killProcLocked()
 	return nil
 }
 
