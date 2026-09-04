@@ -157,6 +157,7 @@ loop.default:
       - agent.assistant.default
       - agent.worker.default
       - agent.cursor.default
+      - agent.claude.default
     telemetry: telemetry.default
 
 telemetry.default:
@@ -223,6 +224,23 @@ agent.cursor.default:
     env:
       NO_OPEN_BROWSER: "1"
       CURSOR_ENABLE: ${var:CURSOR_ENABLE:-1}
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+
+# 通过 ACP 调用 claude-agent-acp（Claude Agent SDK）。需 Node.js ≥ 22；凭证经子进程 env 注入（见 docs/plugin-catalog.zh.md §3.2）。
+agent.claude.default:
+  use: agent/acp-remote
+  config:
+    id: claude
+    command:
+      - npx
+      - -y
+      - "@agentclientprotocol/claude-agent-acp"
+    env:
+      ANTHROPIC_API_KEY: ${var:ANTHROPIC_API_KEY}
+      ANTHROPIC_BASE_URL: ${var:ANTHROPIC_BASE_URL:-}
     autoApprove: false
   deps:
     workspace: workspace.default
@@ -299,10 +317,16 @@ subagent.loop.default:
         agent: cursor
         async: true
         timeoutSeconds: 1800
+      - name: claude
+        description: 复杂编码与深度分析，通过 Claude Agent SDK（ACP）执行。简单问答不要委派。
+        agent: claude
+        async: true
+        timeoutSeconds: 1800
   deps:
     sessionStore: sessionStore.default
     agents:
       - agent.cursor.default
+      - agent.claude.default
 
 credentials.default:
   use: credentials/env

@@ -232,6 +232,27 @@ agent.cursor.default:
 
 通过 `/agent use cursor` 或 chat-api `agent_id=cursor` 切换到此 Agent。
 
+**Claude Agent SDK（`claude-agent-acp`）**：通过 `npx @agentclientprotocol/claude-agent-acp` 启动 ACP 子进程；不设 `authMethod`，凭证由 env 注入子进程（需 Node.js ≥ 22）：
+
+```yaml
+agent.claude.default:
+  use: agent/acp-remote
+  config:
+    id: claude
+    command: [npx, -y, "@agentclientprotocol/claude-agent-acp"]
+    env:
+      ANTHROPIC_API_KEY: ${var:ANTHROPIC_API_KEY}
+      ANTHROPIC_BASE_URL: ${var:ANTHROPIC_BASE_URL:-https://api.anthropic.com}
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+```
+
+- **API Key**：`ANTHROPIC_API_KEY`（可写入 `global:.env` 或 export）
+- **自定义网关 / 代理**：`ANTHROPIC_BASE_URL` 指向兼容 Anthropic Messages API 的 base URL
+- 通过 `/agent use claude` 或 chat-api `agent_id=claude` 切换；主 agent 也可 `delegate` 到 `claude`
+
 ### 3.3 Tool 插件（模型可见工具）
 
 Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.Tool`，多工具插件返回 `agentkit.ToolPack`，动态工具插件返回 `agentkit.ToolProvider`。它们分别经 `tools/runtime` 的 `deps.tools`、`deps.toolPacks`、`deps.dynamicTools` 聚合后暴露给模型。

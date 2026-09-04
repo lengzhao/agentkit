@@ -443,6 +443,11 @@ subagent.loop.default:
               description: 复杂编码：多文件重构、深度调试、跑测试。简单问答不要委派。
               name: cursor
               timeoutSeconds: 1800
+            - agent: claude
+              async: true
+              description: 复杂编码与深度分析，通过 Claude Agent SDK（ACP）执行。简单问答不要委派。
+              name: claude
+              timeoutSeconds: 1800
         timeoutSeconds: 1800
     deps:
         agents:
