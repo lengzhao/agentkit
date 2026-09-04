@@ -222,6 +222,7 @@ agent.cursor.default:
     authMethod: cursor_login
     env:
       NO_OPEN_BROWSER: "1"
+      CURSOR_ENABLE: ${var:CURSOR_ENABLE}
     autoApprove: false
   deps:
     workspace: workspace.default
