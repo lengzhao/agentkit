@@ -79,3 +79,40 @@ func TestSkillToolLoadsSupportingFile(t *testing.T) {
 		t.Fatalf("out = %q", out)
 	}
 }
+
+func TestSkillToolRunsScript(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "demo", "scripts")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "demo", "SKILL.md"), []byte("# Demo\nRun scripts/run.sh"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "run.sh"), []byte("#!/usr/bin/env bash\nprintf 'skill-script-ok %s' \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	tool, err := skilltool.NewSkill(skilltool.SkillConfig{}, skilltool.SkillDeps{
+		Skills: dirRegistry{root: root},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := tool.Call(context.Background(), []byte(`{"name":"demo","script":"scripts/run.sh","args":["arg1"]}`))
+	if err != nil {
+		t.Fatalf("call: %v, out=%q", err, out)
+	}
+	if !strings.Contains(out, `<skill_script name="demo" script="scripts/run.sh">`) {
+		t.Fatalf("out = %q", out)
+	}
+	if !strings.Contains(out, "skill-script-ok arg1") {
+		t.Fatalf("out = %q", out)
+	}
+	if !strings.Contains(out, "exitCode: 0") {
+		t.Fatalf("out = %q", out)
+	}
+}

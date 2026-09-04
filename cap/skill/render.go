@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -40,7 +41,34 @@ func writeResourceHint(b *strings.Builder, resourceBase string) {
 	}
 	b.WriteString("Base directory for this skill: ")
 	b.WriteString(base)
-	b.WriteString("\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources with skill(name, file=\"...\").\n")
+	b.WriteString("\nResolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources with skill(name, file=\"...\"); run scripts with skill(name, script=\"scripts/...\", args=[...]).\n")
+}
+
+// RenderScriptResult formats a script execution result for the model.
+func RenderScriptResult(result RunResult) string {
+	var b strings.Builder
+	b.WriteString("<skill_script name=\"")
+	b.WriteString(escapeAttr(result.Name))
+	b.WriteString("\" script=\"")
+	b.WriteString(escapeAttr(result.Script))
+	b.WriteString("\">\n<skill_resources>\n")
+	writeResourceHint(&b, result.Path)
+	b.WriteString("</skill_resources>\n\n")
+	b.WriteString("exitCode: ")
+	b.WriteString(fmt.Sprintf("%d", result.ExitCode))
+	b.WriteString("\n")
+	if out := strings.TrimSpace(result.Stdout); out != "" {
+		b.WriteString("\n<stdout>\n")
+		b.WriteString(out)
+		b.WriteString("\n</stdout>\n")
+	}
+	if errOut := strings.TrimSpace(result.Stderr); errOut != "" {
+		b.WriteString("\n<stderr>\n")
+		b.WriteString(errOut)
+		b.WriteString("\n</stderr>\n")
+	}
+	b.WriteString("\n</skill_script>")
+	return b.String()
 }
 
 func escapeAttr(value string) string {

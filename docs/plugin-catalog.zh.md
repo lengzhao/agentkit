@@ -281,7 +281,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/web-fetch-http` | — | `web_fetch` | HTTP 抓取；私网地址在 dial 时拦截 |
 | `tool/web-search-scripted` | — | `web_search` | 预置命中，测试与冒烟 |
 | `tool/web-fetch-scripted` | — | `web_fetch` | 预置页面，测试与冒烟 |
-| `tool/skill` | `skills`, `sessionStore` | `skill` | 加载 `SKILL.md` 并注入会话；可选 `file` 读取 skill 目录内附属文件，结果带 `resourceBase` 指引 |
+| `tool/skill` | `skills`, `sessionStore` | `skill` | 加载 `SKILL.md` 并注入会话；可选 `file` 读取附属文件，或 `script` 执行 skill 目录内脚本 |
 | `tool/subagent` | `subagent` | `delegate` | 子 Agent 委派 |
 | `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |

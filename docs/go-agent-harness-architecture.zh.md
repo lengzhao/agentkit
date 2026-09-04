@@ -1113,7 +1113,7 @@ plugins/tool/
 | `tool/web-search-tavily` | `web_search` | Tavily 搜索（L0 默认），缺 key 不阻断构造 |
 | `tool/web-search-exa` | `web_search` | Exa 搜索（可选替代） |
 | `tool/web-fetch-scripted` / `tool/web-search-scripted` | 同上 | 无网络替身 |
-| `tool/skill` | `skill` | 加载 `SKILL.md` 注入会话；可选 `file` 读取 skill 目录内附属文件。依赖 `skills` + `sessionStore` |
+| `tool/skill` | `skill` | 加载 `SKILL.md` 注入会话；可选 `file` 读附属文件、`script` 执行 skill 目录内脚本。依赖 `skills` + `sessionStore` |
 | `tool/subagent` | `delegate` | 子 agent 委派 |
 | `tool/ask-user` | `ask_user` | HIL 提问 |
 
