@@ -13,10 +13,11 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	"github.com/lengzhao/agentkit/plugins/configfile"
+	"github.com/lengzhao/agentkit/runtime/configfile"
 )
 
 const defaultGlobalAPIFile = "global:api.json"
@@ -142,11 +143,11 @@ func (p *openapiProvider) cachedAPIs(ctx context.Context) ([]apiConfig, error) {
 func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 	apis, err := p.loadAPIs(ctx)
 	if err != nil {
-		_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+		_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 			Name: "openapi.init",
-			Kind: telemetry.KindSpan,
+			Kind: captelemetry.KindSpan,
 		})
-		endObservation(telemetry.ObservationEnd{Err: err})
+		endObservation(captelemetry.ObservationEnd{Err: err})
 		return nil, err
 	}
 	if len(apis) == 0 {
@@ -157,15 +158,15 @@ func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 		return nil, nil
 	}
 
-	_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+	_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name: "openapi.init",
-		Kind: telemetry.KindSpan,
+		Kind: captelemetry.KindSpan,
 	})
 	totalOps := 0
 	for _, api := range apis {
 		totalOps += len(api.Operations)
 	}
-	endObservation(telemetry.ObservationEnd{
+	endObservation(captelemetry.ObservationEnd{
 		Output: fmt.Sprintf("%d API(s), %d operation(s)", len(apis), totalOps),
 	})
 

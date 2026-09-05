@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 // ObservationMetaFromContext fills agent and session ids from ctx when unset.
-func ObservationMetaFromContext(ctx context.Context, meta ObservationMeta) ObservationMeta {
+func ObservationMetaFromContext(ctx context.Context, meta captelemetry.ObservationMeta) captelemetry.ObservationMeta {
 	if meta.AgentID == "" {
 		if id := agentIDFromEnvelope(ctx); id != "" {
 			meta.AgentID = id

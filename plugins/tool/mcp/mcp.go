@@ -11,10 +11,11 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	"github.com/lengzhao/agentkit/plugins/configfile"
+	"github.com/lengzhao/agentkit/runtime/configfile"
 )
 
 const defaultGlobalMCPFile = "global:mcp.json"
@@ -150,11 +151,11 @@ func (p *mcpProvider) cached(ctx context.Context) ([]serverConfig, []toolDefinit
 func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinition, error) {
 	servers, err := p.loadServers(ctx)
 	if err != nil {
-		_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+		_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 			Name: "mcp.init",
-			Kind: telemetry.KindSpan,
+			Kind: captelemetry.KindSpan,
 		})
-		endObservation(telemetry.ObservationEnd{Err: err})
+		endObservation(captelemetry.ObservationEnd{Err: err})
 		return nil, nil, err
 	}
 	if len(servers) == 0 {
@@ -166,11 +167,11 @@ func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinit
 		return nil, nil, nil
 	}
 
-	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+	ctx, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name: "mcp.init",
-		Kind: telemetry.KindSpan,
+		Kind: captelemetry.KindSpan,
 	})
-	var observationEnd telemetry.ObservationEnd
+	var observationEnd captelemetry.ObservationEnd
 	defer func() {
 		endObservation(observationEnd)
 	}()

@@ -6,24 +6,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	capsess "github.com/lengzhao/agentkit/cap/session"
-)
-
-type (
-	Todo             = capsess.Todo
-	TodoUpdateData   = capsess.TodoUpdateData
-	RunFinishData    = capsess.RunFinishData
-	TurnContinueData = capsess.TurnContinueData
-	UsageData        = capsess.UsageData
-	RunState         = capsess.RunState
-)
-
-const (
-	TodoPending     = capsess.TodoPending
-	TodoInProgress  = capsess.TodoInProgress
-	TodoDone        = capsess.TodoDone
-	FinishCompleted = capsess.FinishCompleted
-	FinishBlocked   = capsess.FinishBlocked
 )
 
 // LoadRunState reads autonomous-run signals for the given session.

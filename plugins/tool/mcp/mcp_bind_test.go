@@ -7,7 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/bind"
 	"github.com/lengzhao/agentkit/runtime/session"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 func TestParseBinds(t *testing.T) {

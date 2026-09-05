@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/learning"
 )
@@ -40,7 +41,7 @@ func TestMemoryMDBuildStripsMetadata(t *testing.T) {
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := learning.RenderMemory([]learning.MemoryEntry{{
+	body := rtlearning.RenderMemory([]rtlearning.MemoryEntry{{
 		Content: "remember this",
 		Meta:    "source=test",
 	}})

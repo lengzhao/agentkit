@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
@@ -413,7 +414,7 @@ func (s *workspaceFS) grep(ctx context.Context, req filesystem.GrepRequest) (fil
 	if err != nil {
 		return filesystem.GrepResult{}, err
 	}
-	ignore, err := filesystem.LoadIgnoreMatcher(workspaceRoot)
+	ignore, err := rtfilesystem.LoadIgnoreMatcher(workspaceRoot)
 	if err != nil {
 		return filesystem.GrepResult{}, err
 	}
@@ -510,7 +511,7 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 	if err != nil {
 		return filesystem.FindResult{}, err
 	}
-	ignore, err := filesystem.LoadIgnoreMatcher(workspaceRoot)
+	ignore, err := rtfilesystem.LoadIgnoreMatcher(workspaceRoot)
 	if err != nil {
 		return filesystem.FindResult{}, err
 	}

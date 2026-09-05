@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Plugin import isolation
+        run: go run ./scripts/check-plugin-imports
       - name: Unit and smoke tests
         run: go test ./...
 

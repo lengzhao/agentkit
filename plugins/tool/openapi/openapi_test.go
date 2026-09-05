@@ -13,7 +13,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -531,7 +532,7 @@ func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
 
 	rec := &telemetry.RecordingExporter{}
 	ctx := telemetry.WithExporter(context.Background(), rec)
-	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
+	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
 	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
 	if err != nil {

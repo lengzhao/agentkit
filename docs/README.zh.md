@@ -11,6 +11,7 @@ docs/
 ├── plugin-catalog.zh.md              # Plugin Kind 目录
 ├── roadmap.zh.md                     # 现状与规划
 ├── agentkit-sharing.zh.md            # 技术分享稿（插件 / Go / 扩展）
+├── migration-turn-envelope.zh.md     # TurnEnvelope 迁移与 L0 配置对照
 └── guides/                           # 场景专题
     ├── autonomous-run.zh.md          # 自主运行
     ├── subagent.zh.md                # 子 Agent 委派
@@ -20,6 +21,7 @@ docs/
     ├── schedule-timer.zh.md          # 一次性提醒 Timer 设计（草案）
     ├── learning-dreaming.zh.md       # Dreaming / Dream Diary / Skill Workshop
     ├── config-simplification.zh.md   # 用户配置简化方案与路线
+    ├── testing.zh.md                 # 测试分层与 CI
     └── e2e-scenarios.zh.md           # E2E 场景梳理与用例目录
 ```
 

@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	capsess "github.com/lengzhao/agentkit/cap/session"
 )
 
 // DefaultSessionScope is the runner default when sessionScope is unset.
@@ -23,9 +22,6 @@ func ParseScope(raw string) SessionScope {
 		return DefaultSessionScope
 	}
 }
-
-// DeliveryParts holds parsed segments of a platform delivery SessionID.
-type DeliveryParts = capsess.DeliveryParts
 
 // ParseDelivery splits a delivery SessionID into routing segments.
 // fallbackUser fills a missing :u: segment when present on the event envelope.

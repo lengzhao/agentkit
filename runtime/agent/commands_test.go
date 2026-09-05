@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type stubAgent struct {
@@ -65,5 +66,47 @@ func TestAgentHelpCommand(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAgentListShowsSessionAgent(t *testing.T) {
+	t.Parallel()
+
+	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := session.NewStaticStore(mem)
+	agents := []agentkit.Agent{
+		stubAgent{id: "assistant"},
+		stubAgent{id: "reviewer"},
+	}
+	cmd := agent.Command(agents, store, "assistant")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
+
+	out, err := cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Session agent: assistant (default)", "assistant *", "reviewer"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+
+	if err := store.SetAgentBind(ctx, "cli:test", "reviewer"); err != nil {
+		t.Fatal(err)
+	}
+	out, err = cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Session agent: reviewer", "Default agent: assistant"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "reviewer  *") && !strings.Contains(out, "reviewer *") {
+		t.Errorf("expected current agent marker on reviewer in output:\n%s", out)
 	}
 }

@@ -5,10 +5,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	capsess "github.com/lengzhao/agentkit/cap/session"
 )
-
-const MetadataLogicalChars = capsess.MetadataLogicalChars
 
 const visionPlaceholderChars = 256
 

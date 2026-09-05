@@ -7,13 +7,17 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	capsess "github.com/lengzhao/agentkit/cap/bind"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+// Resolver resolves ctx:-prefixed bind sources from the current turn context.
+type Resolver interface {
+	ResolveCtxValue(ctx context.Context, from string) (string, error)
+}
+
 // Default is the process-wide ctx bind resolver.
-var Default capsess.Resolver = &defaultResolver{}
+var Default Resolver = &defaultResolver{}
 
 // ResolveCtxValue resolves a ctx: source string using Default.
 func ResolveCtxValue(ctx context.Context, from string) (string, error) {

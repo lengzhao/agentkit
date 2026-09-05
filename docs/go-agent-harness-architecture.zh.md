@@ -17,6 +17,7 @@
 - **复用 pluginkit**：底层插件类型注册使用 `pluginkit.Register`，配置识别使用 `pluginkit/config`，实例图构建使用 `pluginkit/build`。
 - **Agent 语义上移**：`agentkit` 不再自建通用 registry、service container 或 Mount 协议，只定义 Tool、LLM、Policy、Hook、Session、Agent 等语义接口。
 - **构造期注入**：插件依赖通过 `Deps` struct 注入，字段用 `json` tag 对齐配置中的 `deps`，请求路径不查服务容器。
+- **插件包隔离**：`plugins/*` 子包之间不得直接 import；跨插件协作通过配置图 `deps` 注入 `cap/*` 或根包 `agentkit` 接口。共享实现放 `runtime/*`，类型契约放 `cap/*`。
 - **Runner 驱动运行时**：Runner 建模为 root plugin，启动时通过 `build.Build[agentkit.Runner](ctx, graph, "runner")` 构造完整实例图；Platform 负责消息入口，Loop 负责循环调度，Agent 位于 Loop 下方并依赖 LLM / Tools。
 - **类型优先**：插件构造函数返回具体类型或接口实现，`pluginkit/build` 做静态和运行时类型检查；工具输入输出继续由 Go 类型表达。
 - **模型可见即记录**：任何进入模型请求的内容都必须能从 Session 日志重建。
@@ -62,7 +63,7 @@ func New(cfg Config, deps Deps) (T, error)
 
 ### 3.1 工具插件
 
-文件类工具内聚实现读写逻辑，只依赖 `workspace.Service` 解析路径；`cap/filesystem` 仅提供 grep/find 等共享 DTO，不是可替换 Provider。
+文件类工具内聚实现读写逻辑，只依赖 `workspace.Service` 解析路径；`cap/filesystem` 仅提供 grep/find 等共享 DTO，`.gitignore` 匹配在 `runtime/filesystem`，均不是可替换 Provider。
 
 ```go
 package fs
@@ -395,7 +396,7 @@ type AppInitializer interface {
 - Config 字段注释写语义与约束（对应 json 字段名）；字段清单本身由类型定义提供，不另维护一份。
 - `pluginkit.Describe(kind)` 提供配置字段的结构化元信息，供配置工作台等程序消费。
 - CLI 内置 `/plugin -l` 与 `/plugin <kind>`（`commands/registry` 贡献）；后者通过本地 `go doc` 展示对应构造函数文档（例如 `/plugin llm/openai-compatible`）。`/help plugin …` 等价于 `/plugin …`。模块发布到 pkg.go.dev 后也可直接浏览在线文档。
-- `loop/default` 贡献 `/agent`、`/agent <id>` 与 `/agent use <id>`：列出已装配 agent、查看详情、为当前 session 绑定 agent；插件 kind 文档仍通过 `/plugin agent/coding` 查看。
+- `loop/default` 贡献 `/agent`、`/agent <id>` 与 `/agent use <id>`：列出已装配 agent、展示当前 session 生效 agent 与 loop 默认 agent、查看详情、为当前 session 绑定 agent；插件 kind 文档仍通过 `/plugin agent/coding` 查看。
 - `subagent/inprocess` 贡献 `/subagent` 与 `/subagent <name>`：前者列出当前 workspace 默认目录（`local:agents`、`global:agents`）下的子 Agent 定义；后者展示定义详情，若名称匹配不到定义则回退到 `subagent/*` kind 的 `go doc`。
 
 ### 5.4 Typed Hooks
@@ -1131,7 +1132,7 @@ plugins/tool/
 
 `tools/runtime` 按工具来源分开挂载：`deps.tools` 接收单个 `agentkit.Tool`，`deps.toolPacks` 接收 `agentkit.ToolPack`（一个插件实例暴露多个模型工具），`deps.dynamicTools` 接收运行时动态发现的 `agentkit.ToolProvider`。
 
-`cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`compaction.Service`）；`cap/filesystem` 仅是 grep/find 共享类型与 gitignore 工具，**不是 Provider 边界**。Tool 内聚实现为主，只有 workspace、credentials、session 等运行时共享能力继续作为 deps 注入。
+`cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`compaction.Service`、`telemetry.Exporter`）；`cap/filesystem` 仅是 grep/find 共享 DTO，**不是 Provider 边界**（`.gitignore` 在 `runtime/filesystem`）。Tool 内聚实现为主，只有 workspace、credentials、session 等运行时共享能力继续作为 deps 注入。
 
 设计规则：
 
@@ -1228,18 +1229,17 @@ Go 无法运行时扫描 `.go` 文件并执行新包的 `init()`，本设计也�
 ```text
 agentkit/
 ├── cmd/agent/main.go
-├── agentkit/
-├── runtime/
-├── spine/
-├── cap/
-├── plugins/
-│   ├── fs/                 # fs/local, fs/memory, fs/readonly
-│   ├── tool/               # tool/read-file, tool/write-file, ...
-│   └── compaction/         # compaction/summary, compaction/prune-tool-results
-├── presets/
-│   └── coding.yaml
+├── config.base.yaml        # L0 默认实例图
+├── runtime/                # Runner、Loop、Platform、session/delivery/telemetry 等实现
+├── cap/                    # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
+├── plugins/                # 工具、Hook、Policy、Prompt、learning 等插件
+│   ├── tool/fs/            # tool/fs-workspace、tool/fs-memory
+│   ├── tool/               # shell、web、mcp、send…
+│   └── compaction/         # summary、prune-tool-results、pipeline
+├── presets/                # L1 overlay
 └── scripts/
-    └── gen-imports/
+    ├── gen-imports/
+    └── check-plugin-imports/   # 禁止 plugins/* 互相 import
 ```
 
 生成文件：
@@ -1300,7 +1300,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 
 ### 10.1 Langfuse 导出
 
-`telemetry/langfuse` 经 `cap/telemetry` 旁路导出 turn 链路到 Langfuse UI。Session JSONL 仍是权威事实源；导出失败写 `slog.Warn`，不阻断 turn。
+`telemetry/langfuse` 经 `cap/telemetry` 接口与 `runtime/telemetry` 旁路导出 turn 链路到 Langfuse UI。Session JSONL 仍是权威事实源；导出失败写 `slog.Warn`，不阻断 turn。
 
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|

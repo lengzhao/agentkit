@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/henomis/langfuse-go"
 	"github.com/henomis/langfuse-go/model"
@@ -157,7 +158,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 	if traceID == "" {
 		traceID = uuid.NewString()
 	}
-	ctx = captelemetry.WithTurnID(ctx, traceID)
+	ctx = rttelemetry.WithTurnID(ctx, traceID)
 	ctx = context.WithValue(ctx, langfuseKeyTraceID, traceID)
 
 	trace := &model.Trace{
@@ -173,7 +174,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 		slog.Warn("telemetry/langfuse trace create failed", "trace_id", traceID, "err", err)
 	}
 
-	ctx = captelemetry.WithExporter(ctx, l)
+	ctx = rttelemetry.WithExporter(ctx, l)
 	return ctx, func(end captelemetry.TurnEnd) {
 		update := &model.Trace{
 			ID:     traceID,
@@ -222,7 +223,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			slog.Warn("telemetry/langfuse generation create failed", "trace_id", traceID, "name", name, "err", err)
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
-		ctx = captelemetry.WithToolParent(ctx, created.ID)
+		ctx = rttelemetry.WithToolParent(ctx, created.ID)
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
 			update := &model.Generation{
@@ -262,9 +263,9 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			slog.Warn("telemetry/langfuse span create failed", "trace_id", traceID, "name", name, "err", err)
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
-		ctx = captelemetry.WithToolParent(ctx, created.ID)
+		ctx = rttelemetry.WithToolParent(ctx, created.ID)
 		if meta.Scope {
-			ctx = captelemetry.WithScopeParent(ctx, created.ID)
+			ctx = rttelemetry.WithScopeParent(ctx, created.ID)
 		}
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
@@ -298,7 +299,7 @@ func (l *Langfuse) RecordEvent(ctx context.Context, name string, attrs map[strin
 		TraceID:   traceID,
 		Name:      name,
 		StartTime: &now,
-		Metadata:  captelemetry.EnrichEventAttrs(ctx, attrs),
+		Metadata:  rttelemetry.EnrichEventAttrs(ctx, attrs),
 	}
 	if _, err := l.client.Event(event, l.scopeParentPtr(ctx)); err != nil {
 		slog.Warn("telemetry/langfuse event failed", "trace_id", traceID, "name", name, "err", err)
@@ -328,7 +329,7 @@ func (l *Langfuse) preparePayload(value string, redact bool) any {
 	if value == "" {
 		return nil
 	}
-	return captelemetry.PreparePayload(value, l.maxPayloadBytes, redact)
+	return rttelemetry.PreparePayload(value, l.maxPayloadBytes, redact)
 }
 
 func (l *Langfuse) traceMetadata(meta captelemetry.TurnMeta) map[string]string {
@@ -394,7 +395,7 @@ func (l *Langfuse) turnEndMetadata(end captelemetry.TurnEnd) map[string]string {
 }
 
 func (l *Langfuse) toolParentPtr(ctx context.Context) *string {
-	parentID := captelemetry.ToolParentFrom(ctx)
+	parentID := rttelemetry.ToolParentFrom(ctx)
 	if parentID == "" {
 		return nil
 	}
@@ -402,7 +403,7 @@ func (l *Langfuse) toolParentPtr(ctx context.Context) *string {
 }
 
 func (l *Langfuse) scopeParentPtr(ctx context.Context) *string {
-	parentID := captelemetry.ScopeParentFrom(ctx)
+	parentID := rttelemetry.ScopeParentFrom(ctx)
 	if parentID == "" {
 		return nil
 	}

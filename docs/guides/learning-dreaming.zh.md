@@ -142,14 +142,14 @@ create/update → pending → apply → applied
 
 当前后台 sweep 使用启动时的 workspace context，适合单工作区配置；`workspace/tenant` 的全租户枚举需要后续补 tenant registry。多租户入口可先用 `/learn dream run` 在具体会话内手动触发。
 
+L0 [config.base.yaml](../../config.base.yaml) 已装配 `learning.default`（`dreaming.enabled: true`、`workshop.mode: propose`），**默认不启用**后台 sweep 实例——`learning.dreamSweep` 以注释形式保留在 `learning.default` 与 `runner.default` 旁，避免未配置多租户时误跑全局 sweep。需要定时巩固时取消注释并挂到 `runner.deps.schedules`：
+
 ```yaml
-learning.default:
-  use: learning/default
-  config:
-    dreaming:
-      enabled: true
-    workshop:
-      mode: propose
+# L0 中 learning.default 已存在；仅补充可选 sweep 实例与 runner 挂载
+learning.dreamSweep:
+  use: learning/dream-sweep
+  deps:
+    learning: learning.default
 
 runner.default:
   deps:

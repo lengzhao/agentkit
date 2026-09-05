@@ -5,13 +5,14 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 type turnAccumKey struct{}
 
 type turnAccum struct {
 	parts      []string
-	usage      Usage
+	usage      captelemetry.Usage
 	hasUsage   bool
 	steps      int
 	stopReason string
@@ -50,7 +51,7 @@ func appendTurnUserVisible(ctx context.Context, text string) {
 }
 
 // RecordTurnUsage adds one step's token usage to the active turn total.
-func RecordTurnUsage(ctx context.Context, usage Usage) {
+func RecordTurnUsage(ctx context.Context, usage captelemetry.Usage) {
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.TotalTokens == 0 {
 		return
 	}
@@ -94,12 +95,12 @@ func RecordTurnStopReason(ctx context.Context, reason string) {
 }
 
 // TurnEndFromAccum reads accumulated turn output and usage for trace closure.
-func TurnEndFromAccum(ctx context.Context) TurnEnd {
+func TurnEndFromAccum(ctx context.Context) captelemetry.TurnEnd {
 	acc := turnAccumFrom(ctx)
 	if acc == nil {
-		return TurnEnd{}
+		return captelemetry.TurnEnd{}
 	}
-	end := TurnEnd{}
+	end := captelemetry.TurnEnd{}
 	if len(acc.parts) > 0 {
 		end.Output = strings.Join(acc.parts, turnUserVisibleSep)
 	}

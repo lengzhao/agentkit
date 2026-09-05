@@ -3,7 +3,7 @@ package telemetry_test
 import (
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 func TestRedactJSONScrubsSensitiveKeys(t *testing.T) {

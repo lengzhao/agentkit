@@ -434,10 +434,13 @@ cap/<domain>/
   *.go               # 可替换能力接口与 DTO（workspace、compaction、permission…）
   doc.go             # 接口文档（可选）
 
-runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、schedule、skill、media…）
+runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、schedule、skill、media、telemetry…）
+runtime/configfile/  # WriteAtomic、Restore；供 tool/mcp、tool/openapi、credentials 写 JSON 配置
+runtime/learning/    # memory.md 解析/渲染（ParseMemory、RenderMemory）；plugins/learning 调用
 
-cap/filesystem/      # 例外：grep/find DTO + gitignore，非 Provider 边界
-cap/media/           # 例外：仅 ContentTypeAttachmentRef 常量；实现见 runtime/media
+cap/telemetry/       # Exporter 接口与 DTO；实现见 runtime/telemetry
+
+cap/filesystem/      # grep/find DTO；gitignore 实现见 runtime/filesystem
 
 plugins/
   tool/fs/           # tool/fs-workspace、tool/fs-memory（内聚实现，共用 cap/filesystem 类型）
@@ -452,8 +455,10 @@ plugins/
   credentials/       # env
   schedule/          # file、cron
   settings/          # file
-  workspace/         # default、tenant（runtime/workspace）
+  learning/          # learning/default、learning/dream-sweep
 ```
+
+`workspace/default`、`workspace/tenant` 在 **`runtime/workspace`**，不在 `plugins/`。
 
 **规则**：
 

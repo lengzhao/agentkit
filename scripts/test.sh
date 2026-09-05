@@ -8,6 +8,8 @@ TIER="${1:-unit}"
 
 case "$TIER" in
   unit)
+    echo "== plugin import isolation =="
+    go run ./scripts/check-plugin-imports
     echo "== unit + smoke (default go test) =="
     go test ./...
     ;;

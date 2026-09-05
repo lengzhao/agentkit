@@ -24,7 +24,8 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/subagent"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -228,14 +229,14 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		defer cancel()
 	}
 
-	childCtx, endSubagentObs := telemetry.BeginObservation(childCtx, telemetry.ObservationMetaFromContext(childCtx, telemetry.ObservationMeta{
+	childCtx, endSubagentObs := telemetry.BeginObservation(childCtx, telemetry.ObservationMetaFromContext(childCtx, captelemetry.ObservationMeta{
 		Name:  "subagent." + def.Name,
-		Kind:  telemetry.KindSpan,
+		Kind:  captelemetry.KindSpan,
 		Input: task,
 		Scope: true,
 	}))
 	defer func() {
-		end := telemetry.ObservationEnd{Output: out.Summary}
+		end := captelemetry.ObservationEnd{Output: out.Summary}
 		if runErr != nil {
 			end.Err = runErr
 		}

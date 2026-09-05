@@ -177,7 +177,7 @@ mindmap
 | E2E-401 | Langfuse exporter flush | mock ingestion API 收到 batch | ✅ | `langfuse_test.go` 单测 |
 | E2E-402 | Langfuse preset 端到端 | langfuse-smoke once-run | exporter 在 turn 后 flush | ✅ | `integration/langfuse_test.go` |
 | E2E-403 | telemetry 层级 trace | parent/subagent turn | 子 span 挂父 trace | 🔶 | hierarchy 单测 |
-| E2E-404 | 日志 redact 敏感字段 | api key 不出现在 slog | ✅ | `cap/telemetry/redact_test` |
+| E2E-404 | 日志 redact 敏感字段 | api key 不出现在 slog | ✅ | `runtime/telemetry/redact_test` |
 | E2E-405 | `/status` 与 session 事件一致 | budget 数字匹配 usage 累加 | ✅ | `integration/status_test.go` |
 
 ### 可观测性最小断言模板（INT/SMK 通用）

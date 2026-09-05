@@ -3,16 +3,19 @@ package telemetry_test
 import (
 	"context"
 	"testing"
-	"github.com/lengzhao/agentkit/runtime/session"
+
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry")
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
+)
 
 func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 	t.Parallel()
 
 	rec := &telemetry.RecordingExporter{}
 	ctx := telemetry.WithExporter(context.Background(), rec)
-	ctx, endTurn := rec.BeginTurn(ctx, telemetry.TurnMeta{
+	ctx, endTurn := rec.BeginTurn(ctx, captelemetry.TurnMeta{
 		TurnID:    "turn-1",
 		SessionID: "cli:default",
 		AgentID:   "coder",
@@ -23,16 +26,16 @@ func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 		AgentID:      agentkit.AgentID("coder"),
 	})
 
-	ctx, endParentGen := rec.BeginObservation(ctx, telemetry.ObservationMeta{
+	ctx, endParentGen := rec.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name:    "llm.generation",
-		Kind:    telemetry.KindGeneration,
+		Kind:    captelemetry.KindGeneration,
 		AgentID: "coder",
 	})
-	endParentGen(telemetry.ObservationEnd{Output: "call delegate"})
+	endParentGen(captelemetry.ObservationEnd{Output: "call delegate"})
 
-	ctx, endDelegate := rec.BeginObservation(ctx, telemetry.ObservationMeta{
+	ctx, endDelegate := rec.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name:  "tool.delegate",
-		Kind:  telemetry.KindTool,
+		Kind:  captelemetry.KindTool,
 		Input: `{"agent":"researcher"}`,
 	})
 
@@ -41,22 +44,22 @@ func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 		Workspace:    "sub:cli:researcher:1",
 		AgentID:      agentkit.AgentID("sub:researcher"),
 	})
-	ctx, endSubagent := rec.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+	ctx, endSubagent := rec.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name:  "subagent.researcher",
-		Kind:  telemetry.KindSpan,
+		Kind:  captelemetry.KindSpan,
 		Input: "research task",
 		Scope: true,
 	}))
 
-	ctx, endChildGen := rec.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+	ctx, endChildGen := rec.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name: "llm.generation",
-		Kind: telemetry.KindGeneration,
+		Kind: captelemetry.KindGeneration,
 	}))
-	endChildGen(telemetry.ObservationEnd{Output: "child answer"})
+	endChildGen(captelemetry.ObservationEnd{Output: "child answer"})
 
-	endSubagent(telemetry.ObservationEnd{Output: "child answer"})
-	endDelegate(telemetry.ObservationEnd{Output: "child answer"})
-	endTurn(telemetry.TurnEnd{})
+	endSubagent(captelemetry.ObservationEnd{Output: "child answer"})
+	endDelegate(captelemetry.ObservationEnd{Output: "child answer"})
+	endTurn(captelemetry.TurnEnd{})
 
 	_, observations, _ := rec.Snapshot()
 	if len(observations) != 4 {

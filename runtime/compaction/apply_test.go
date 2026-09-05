@@ -6,7 +6,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 )
 
@@ -27,7 +28,7 @@ func TestApplyAllRecordsCompactionSpan(t *testing.T) {
 
 	rec := &telemetry.RecordingExporter{}
 	ctx := telemetry.WithExporter(context.Background(), rec)
-	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
+	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
 	svc := &countingCompaction{}
 	_, applied, err := rtcompaction.ApplyAll(ctx, []capscompaction.Service{svc}, capscompaction.Request{
@@ -62,7 +63,7 @@ func TestApplyAllSkipsCompactionSpanWhenNoop(t *testing.T) {
 
 	rec := &telemetry.RecordingExporter{}
 	ctx := telemetry.WithExporter(context.Background(), rec)
-	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
+	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
 	svc := &countingCompaction{}
 	_, applied, err := rtcompaction.ApplyAll(ctx, []capscompaction.Service{svc}, capscompaction.Request{

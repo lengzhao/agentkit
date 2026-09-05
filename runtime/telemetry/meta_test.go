@@ -3,9 +3,12 @@ package telemetry_test
 import (
 	"context"
 	"testing"
-	"github.com/lengzhao/agentkit/runtime/session"
+
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry")
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
+)
 
 func TestObservationMetaFromContextFillsAgentAndSession(t *testing.T) {
 	t.Parallel()
@@ -17,9 +20,9 @@ func TestObservationMetaFromContextFillsAgentAndSession(t *testing.T) {
 		AgentID:      agentkit.AgentID("sub:researcher"),
 	})
 
-	meta := telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+	meta := telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name: "llm.generation",
-		Kind: telemetry.KindGeneration,
+		Kind: captelemetry.KindGeneration,
 	})
 	if meta.AgentID != "sub:researcher" {
 		t.Fatalf("agent_id = %q", meta.AgentID)

@@ -8,7 +8,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 // countingWorkspace wraps testWorkspace to count Resolve calls, so tests can
@@ -177,7 +178,7 @@ func TestMCPReloadRecordsInitObservation(t *testing.T) {
 
 	rec := &telemetry.RecordingExporter{}
 	ctx := telemetry.WithExporter(context.Background(), rec)
-	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
+	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
 	provider := &mcpProvider{
 		files:     []string{configPath},

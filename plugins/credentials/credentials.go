@@ -15,7 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/config"
-	"github.com/lengzhao/agentkit/plugins/configfile"
+	"github.com/lengzhao/agentkit/runtime/configfile"
 	"github.com/lengzhao/pluginkit"
 )
 

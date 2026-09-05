@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/runner"
 )
 

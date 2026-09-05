@@ -4,28 +4,30 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 // RecordingExporter captures telemetry calls for tests.
 type RecordingExporter struct {
-	mu           sync.Mutex
-	nextObsID    int
-	Turns        []RecordedTurn
-	Observations []RecordedObservation
-	Events       []RecordedEvent
-	FlushCalls   int
+	mu            sync.Mutex
+	nextObsID     int
+	Turns         []RecordedTurn
+	Observations  []RecordedObservation
+	Events        []RecordedEvent
+	FlushCalls    int
 	ShutdownCalls int
 }
 
 type RecordedTurn struct {
-	Meta TurnMeta
-	End  TurnEnd
+	Meta captelemetry.TurnMeta
+	End  captelemetry.TurnEnd
 }
 
 type RecordedObservation struct {
 	ID       string
-	Meta     ObservationMeta
-	End      ObservationEnd
+	Meta     captelemetry.ObservationMeta
+	End      captelemetry.ObservationEnd
 	ParentID string
 }
 
@@ -34,19 +36,19 @@ type RecordedEvent struct {
 	Attrs map[string]string
 }
 
-func (r *RecordingExporter) BeginTurn(ctx context.Context, meta TurnMeta) (context.Context, func(TurnEnd)) {
+func (r *RecordingExporter) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (context.Context, func(captelemetry.TurnEnd)) {
 	ctx = WithExporter(ctx, r)
 	ctx = WithTurnID(ctx, meta.TurnID)
-	return ctx, func(end TurnEnd) {
+	return ctx, func(end captelemetry.TurnEnd) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.Turns = append(r.Turns, RecordedTurn{Meta: meta, End: end})
 	}
 }
 
-func (r *RecordingExporter) BeginObservation(ctx context.Context, meta ObservationMeta) (context.Context, func(ObservationEnd)) {
+func (r *RecordingExporter) BeginObservation(ctx context.Context, meta captelemetry.ObservationMeta) (context.Context, func(captelemetry.ObservationEnd)) {
 	parentID := ToolParentFrom(ctx)
-	if meta.Kind == KindGeneration {
+	if meta.Kind == captelemetry.KindGeneration {
 		parentID = ScopeParentFrom(ctx)
 	}
 	r.mu.Lock()
@@ -57,7 +59,7 @@ func (r *RecordingExporter) BeginObservation(ctx context.Context, meta Observati
 	if meta.Scope {
 		ctx = WithScopeParent(ctx, obsID)
 	}
-	return ctx, func(end ObservationEnd) {
+	return ctx, func(end captelemetry.ObservationEnd) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.Observations = append(r.Observations, RecordedObservation{

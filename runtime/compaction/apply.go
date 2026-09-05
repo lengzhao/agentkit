@@ -6,7 +6,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 // ApplyAll runs compaction services in order, returning the latest message view
@@ -20,12 +21,12 @@ func ApplyAll(ctx context.Context, services []capscompaction.Service, req capsco
 	if req.Force {
 		mode = "force"
 	}
-	_, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMeta{
+	_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name:  "compaction.apply",
-		Kind:  telemetry.KindSpan,
+		Kind:  captelemetry.KindSpan,
 		Input: mode,
 	})
-	var observationEnd telemetry.ObservationEnd
+	var observationEnd captelemetry.ObservationEnd
 	if err != nil {
 		observationEnd.Err = err
 	} else {

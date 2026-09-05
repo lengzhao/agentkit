@@ -13,7 +13,8 @@ import (
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -170,12 +171,12 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	agentID := session.AgentIDFromContext(ctx)
 
 	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
-	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name:  "tool." + call.Name,
-		Kind:  telemetry.KindTool,
+		Kind:  captelemetry.KindTool,
 		Input: string(call.Input),
 	}))
-	var observationEnd telemetry.ObservationEnd
+	var observationEnd captelemetry.ObservationEnd
 	defer func() {
 		endObservation(observationEnd)
 	}()

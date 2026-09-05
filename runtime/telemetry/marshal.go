@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
 )
 
 // FormatMessage JSON-encodes a model message for trace input/output display.
@@ -133,7 +132,7 @@ func exportContentPart(part agentkit.ContentPart) map[string]any {
 	}
 	if typ == "" {
 		if part.Source != "" || part.URL != "" {
-			typ = media.ContentTypeAttachmentRef
+			typ = "attachment_ref"
 		} else {
 			return nil
 		}

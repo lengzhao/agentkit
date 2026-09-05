@@ -32,7 +32,8 @@
 | permission | `Broker`、`Request`、`Reply`、DTO | `MatchReply`、`MarshalReply`、`EffectiveTimeout`、`CapabilityFrom`… |
 | schedule | `Registry`、`Runtime`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`、`JobKind`… |
 | skill | `Registry`、`Descriptor`、`Content` | `RenderLoaded`、`SanitizeRelativePath`、`ReadFile`、`RunScript` |
-| media | `ContentTypeAttachmentRef`（常量） | `IsImage`、`DataURL`、`LoadWorkspaceImage`、`FormatReadImageResult`… |
+| learning | `agentkit.CommandProvider`（deps）、`runtime/learning.MemoryEntry` | `ParseMemory`、`RenderMemory` |
+| media | `ContentTypeAttachmentRef`（`runtime/media` 常量） | `IsImage`、`DataURL`、`LoadWorkspaceImage`、`FormatReadImageResult`… |
 
 插件典型用法：
 
@@ -46,7 +47,8 @@ import (
 route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: input.SessionID})
 ```
 
-- **插件应优先依赖**：`agentkit`、`cap/*`（类型）、`runtime/*`（读/写上下文与路由的函数）、`pluginkit`
+- **插件应优先依赖**：`agentkit`（根包语义接口）、`cap/*`（类型）、`runtime/*`（读/写上下文与路由的函数）、`pluginkit`
+- **插件包之间禁止直接 import**：跨插件协作只通过配置图 `deps` 注入 `cap/*` 或根包接口；共享纯函数实现放 `runtime/*`，不要放在 `plugins/*` 子包互相引用
 - **`runtime/*` 内核**：loop、runner、platform 等；少数写 session 事件的插件（如 `compaction/summary`、`agent/acp-remote`）同样使用 `runtime/session`
 
 ## Platform 入站
@@ -101,3 +103,50 @@ agentkit.LoopRequest{
 ## `/new` active mapping
 
 `/new` 从 `Envelope.Route` 推导 stable mapping key（`session.ActiveEntryKeyFromContext`），写入 `sessions/<stable>/current.json` 指向新 `Conversation`。`Route` 与 `Workspace` 不变；Runner 下次入站时把 resolved `Conversation` 更新为新会话 id。
+
+## L0 配置（`config.base.yaml`）
+
+**`cap/*` → `runtime/*` 的包搬迁不需要改 L0**：YAML 只引用 plugin kind（`use:`）与 `deps` 实例 id，不引用 Go 包路径。`TestPresetsBuild` / `TestPresetsChainedBuild` 会校验 L0 与 preset 叠加后可 `build.Build[Runner]`。
+
+与本次迁移相关的 L0 片段（仓库根目录 [config.base.yaml](../config.base.yaml) 已对齐）：
+
+```yaml
+# tool/send、tool/chat-history：deps 键名已迁移，仍注入 platform.multiplex 实例
+tool.send.default:
+  use: tool/send
+  deps:
+    sender: platform.default
+    workspace: workspace.default
+
+tool.chat-history.default:
+  use: tool/chat-history
+  deps:
+    history: platform.default
+
+# compaction：hook 与 agent 共用 pipeline 实例，避免重复链
+hook.before-step.default:
+  use: hook/before-step
+  deps:
+    services:
+      - compaction.pipeline.default
+
+agent.assistant.default:
+  use: agent/coding
+  deps:
+    compaction:
+      - compaction.pipeline.default
+
+# telemetry：接口在 cap/telemetry，实现插件 telemetry/none；接 Langfuse 用 presets/langfuse.yaml 覆盖
+runner.default:
+  deps:
+    telemetry: telemetry.default
+
+loop.default:
+  deps:
+    telemetry: telemetry.default
+
+telemetry.default:
+  use: telemetry/none
+```
+
+可选能力仍保留在 L0 注释中（如 `learning.dreamSweep`），启用时取消注释并挂到 `runner.deps.schedules`；见 [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §7。

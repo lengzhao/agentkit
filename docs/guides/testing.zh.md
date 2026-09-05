@@ -117,7 +117,7 @@ events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:
 ## 本地命令
 
 ```bash
-# 默认：全量单元 + smoke（与 CI unit job 一致）
+# 默认：插件 import 隔离检查 + 全量单元 + smoke（与 CI unit job 一致）
 ./scripts/test.sh unit
 
 # 仅 smoke
@@ -144,7 +144,7 @@ events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:
 
 `.github/workflows/test.yml`：
 
-- **unit**：`go test ./...`（含 smoke 与 preset build）
+- **unit**：`go run ./scripts/check-plugin-imports`（`plugins/*` 不得互相 import，共享实现放 `runtime/*`）+ `go test ./...`（含 smoke 与 preset build）
 - **integration**：`go test -tags=integration ./integration/...`
 
 ## 与架构文档的关系

@@ -11,18 +11,19 @@ import (
 )
 
 // Command exposes the agent catalog and session agent switching.
-func Command(agents []agentkit.Agent, store agentkit.SessionStore) agentkit.Command {
-	return agentCommand{agents: agents, store: store}
+func Command(agents []agentkit.Agent, store agentkit.SessionStore, defaultAgent agentkit.AgentID) agentkit.Command {
+	return agentCommand{agents: agents, store: store, defaultAgent: defaultAgent}
 }
 
 // HelpCommand exposes the agent catalog help slash command for built agent instances.
 func HelpCommand(agents []agentkit.Agent) agentkit.Command {
-	return Command(agents, nil)
+	return Command(agents, nil, "")
 }
 
 type agentCommand struct {
-	agents []agentkit.Agent
-	store  agentkit.SessionStore
+	agents       []agentkit.Agent
+	store        agentkit.SessionStore
+	defaultAgent agentkit.AgentID
 }
 
 func (agentCommand) Name() string        { return "agent" }
@@ -35,7 +36,7 @@ func (c agentCommand) CommandExec(ctx context.Context, args string) (string, err
 		return c.useAgent(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
 	}
 	if len(fields) == 0 || fields[0] == "-l" || fields[0] == "--list" {
-		return formatAgentList(c.agents), nil
+		return c.formatAgentList(ctx), nil
 	}
 	return agentDoc(c.agents, strings.TrimSpace(args))
 }
@@ -72,23 +73,100 @@ func (c agentCommand) useAgent(ctx context.Context, name string) (string, error)
 	return fmt.Sprintf("session agent: %s", name), nil
 }
 
-func formatAgentList(agents []agentkit.Agent) string {
-	ids := collectAgentIDs(agents)
+func (c agentCommand) formatAgentList(ctx context.Context) string {
+	ids := collectAgentIDs(c.agents)
+	effective, bound, err := c.resolveEffectiveAgent(ctx)
+	if err != nil {
+		return fmt.Sprintf("agent list failed: %v", err)
+	}
+
+	var b strings.Builder
+	writeAgentRoutingHeader(&b, effective, bound, c.defaultAgent)
+
 	if len(ids) == 0 {
-		return "Registered agents:\n  (none)\n\nUse /agent <id> for details."
+		b.WriteString("Registered agents:\n  (none)\n\nUse /agent <id> for details.")
+		return b.String()
 	}
 	width := 0
 	for _, id := range ids {
 		width = max(width, len(id))
 	}
-	var b strings.Builder
 	b.WriteString("Registered agents:\n")
+	current := strings.TrimSpace(string(effective))
 	for _, id := range ids {
-		fmt.Fprintf(&b, "  %-*s\n", width, id)
+		marker := ""
+		if current != "" && id == current {
+			marker = " *"
+		}
+		fmt.Fprintf(&b, "  %-*s%s\n", width, id, marker)
 	}
 	b.WriteString("\nUse /agent <id> for details.")
 	b.WriteString("\nUse /agent use <id> to switch this session.")
 	return b.String()
+}
+
+func writeAgentRoutingHeader(b *strings.Builder, effective, bound, defaultAgent agentkit.AgentID) {
+	effective = agentkit.AgentID(strings.TrimSpace(string(effective)))
+	bound = agentkit.AgentID(strings.TrimSpace(string(bound)))
+	defaultAgent = agentkit.AgentID(strings.TrimSpace(string(defaultAgent)))
+
+	switch {
+	case effective != "" && bound != "":
+		fmt.Fprintf(b, "Session agent: %s\n", effective)
+		if defaultAgent != "" && defaultAgent != effective {
+			fmt.Fprintf(b, "Default agent: %s\n", defaultAgent)
+		}
+	case effective != "":
+		if bound == "" && defaultAgent != "" && effective == defaultAgent {
+			fmt.Fprintf(b, "Session agent: %s (default)\n", effective)
+		} else {
+			fmt.Fprintf(b, "Session agent: %s\n", effective)
+		}
+	case defaultAgent != "":
+		fmt.Fprintf(b, "Default agent: %s\n", defaultAgent)
+	}
+	if b.Len() > 0 {
+		b.WriteByte('\n')
+	}
+}
+
+func (c agentCommand) resolveSessionID(ctx context.Context) (agentkit.SessionID, error) {
+	sessionID := session.SessionIDFromContext(ctx)
+	if sessionID == "" {
+		return "", nil
+	}
+	if c.store == nil {
+		return sessionID, nil
+	}
+	if activeStore, ok := c.store.(agentkit.ActiveSessionStore); ok {
+		active, err := activeStore.ActiveSession(ctx, sessionID)
+		if err != nil {
+			return "", err
+		}
+		if active != "" {
+			sessionID = active
+		}
+	}
+	return sessionID, nil
+}
+
+func (c agentCommand) resolveEffectiveAgent(ctx context.Context) (effective, bound agentkit.AgentID, err error) {
+	sessionID, err := c.resolveSessionID(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if sessionID != "" && c.store != nil {
+		if bindStore, ok := c.store.(agentkit.AgentBindStore); ok {
+			bound, err = bindStore.AgentBind(ctx, sessionID)
+			if err != nil {
+				return "", "", err
+			}
+		}
+	}
+	if bound != "" {
+		return bound, bound, nil
+	}
+	return c.defaultAgent, "", nil
 }
 
 func collectAgentIDs(agents []agentkit.Agent) []string {

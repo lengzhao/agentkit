@@ -18,7 +18,7 @@ func (r *Root) Commands() []agentkit.Command {
 		return agents[i].ID() < agents[j].ID()
 	})
 	return []agentkit.Command{
-		agent.Command(agents, r.sessionStore),
+		agent.Command(agents, r.sessionStore, r.loopDefaultAgent()),
 		agent.ACPCommand(agents, r.sessionStore),
 		stopCommand{loop: r.loop, store: r.sessionStore},
 	}
@@ -62,4 +62,11 @@ func (r *Root) loopAgents() []agentkit.Agent {
 		return ld.Agents()
 	}
 	return nil
+}
+
+func (r *Root) loopDefaultAgent() agentkit.AgentID {
+	if ld, ok := r.loop.(*loop.Default); ok {
+		return ld.DefaultAgentID()
+	}
+	return ""
 }

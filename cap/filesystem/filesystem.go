@@ -1,6 +1,7 @@
-// Package filesystem holds shared request/result types and gitignore helpers
-// used by file tools. It is not a swappable capability: tools implement their
-// own ops surface and only import these DTOs for grep/find/list formatting.
+// Package filesystem holds shared request/result types used by file tools.
+// It is not a swappable capability: tools implement their own ops surface and
+// only import these DTOs for grep/find/list formatting. Gitignore helpers live
+// in runtime/filesystem.
 package filesystem
 
 type DirEntry struct {

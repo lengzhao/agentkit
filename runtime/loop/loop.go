@@ -11,8 +11,9 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/permission"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type Config struct {
@@ -24,14 +25,14 @@ type Config struct {
 
 type Deps struct {
 	Agents    []agentkit.Agent      `json:"agents"`
-	Telemetry telemetry.Exporter    `json:"telemetry,omitempty"`
+	Telemetry captelemetry.Exporter    `json:"telemetry,omitempty"`
 }
 
 type Default struct {
 	agents          map[agentkit.AgentID]agentkit.Agent
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
-	telemetry       telemetry.Exporter
+	telemetry       captelemetry.Exporter
 	sessionLocks    sync.Map // SessionID -> *sync.Mutex
 	sessionControls sync.Map // SessionID -> *Control
 	sessionBusy     sync.Map // SessionID -> struct{}
@@ -59,7 +60,7 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 	}
 	exp := deps.Telemetry
 	if exp == nil {
-		exp = telemetry.Noop
+		exp = rttelemetry.Noop
 	}
 	return &Default{
 		agents:       agents,
@@ -67,6 +68,11 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 		followUpMode: mode,
 		telemetry:    exp,
 	}, nil
+}
+
+// DefaultAgentID returns the loop fallback agent when no session bind is set.
+func (l *Default) DefaultAgentID() agentkit.AgentID {
+	return l.defaultAgent
 }
 
 // Agents returns configured agent instances in arbitrary order.
@@ -98,7 +104,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
 	ctx = withTurnContext(ctx, req.Event.Envelope, conversation, agentID, req.Event.PlatformID, req.Event.UserID, req.Event.Metadata, control, req.Emit)
-	ctx = telemetry.WithExporter(ctx, l.telemetry)
+	ctx = rttelemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
@@ -134,14 +140,14 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 
 func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
 	turnID := uuid.NewString()
-	meta := telemetry.TurnMeta{
+	meta := captelemetry.TurnMeta{
 		TurnID:            turnID,
 		SessionID:         string(session.ConversationFromLoopRequest(req)),
 		DeliverySessionID: string(session.DeliveryFromEnvelope(req.Event.Envelope)),
 		AgentID:           string(agentID),
 		PlatformID:        req.Event.PlatformID,
 		UserID:            req.Event.UserID,
-		Input:             telemetry.FormatMessage(input.Message),
+		Input:             rttelemetry.FormatMessage(input.Message),
 	}
 	slog.Info("turn start",
 		"turn_id", turnID,
@@ -152,11 +158,11 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		"user_id", req.Event.UserID,
 	)
 	turnStarted := time.Now()
-	ctx, endTurn := telemetry.BeginTurn(ctx, meta)
-	ctx = telemetry.WithTurnAccum(ctx)
+	ctx, endTurn := rttelemetry.BeginTurn(ctx, meta)
+	ctx = rttelemetry.WithTurnAccum(ctx)
 	var runErr error
 	defer func() {
-		end := telemetry.TurnEndFromAccum(ctx)
+		end := rttelemetry.TurnEndFromAccum(ctx)
 		end.Err = runErr
 		endTurn(end)
 		attrs := []any{
@@ -186,7 +192,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	}()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, turnID)
 	turnInput := input
-	turnInput.Emit = telemetry.WrapOutboundEmit(ctx, input.Emit)
+	turnInput.Emit = rttelemetry.WrapOutboundEmit(ctx, input.Emit)
 	runErr = ag.RunTurn(ctx, turnInput)
 	return runErr
 }

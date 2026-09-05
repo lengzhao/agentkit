@@ -6,7 +6,8 @@ import (
 	"testing"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/tools")
 
 type echoTool struct{}
@@ -51,7 +52,7 @@ func TestExecuteRecordsToolObservation(t *testing.T) {
 	if len(observations) != 1 {
 		t.Fatalf("observations = %d, want 1", len(observations))
 	}
-	if observations[0].Meta.Kind != telemetry.KindTool {
+	if observations[0].Meta.Kind != captelemetry.KindTool {
 		t.Fatalf("kind = %q", observations[0].Meta.Kind)
 	}
 }

@@ -115,9 +115,9 @@ agentkit/
 ├── cmd/agent/          # 主入口（REPL / headless / -manager）
 ├── config.base.yaml    # L0 默认装配
 ├── presets/            # 场景 L1 overlay
-├── runtime/            # Runner、Loop、Agent、Session、Platform、LLM
-├── plugins/            # 工具、Hook、Policy、Prompt 等插件实现
-├── cap/                # 能力接口（filesystem、workspace、compaction …）
+├── runtime/            # Runner、Loop、Platform 及 cap 对应实现（session、telemetry、filesystem…）
+├── plugins/            # 工具、Hook、Policy、Prompt、learning 等插件实现
+├── cap/                # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
 ├── examples/
 │   ├── agents/       # 子 Agent 定义示例
 │   └── skills/       # Agent Skill 示例（插件开发与配置更新）

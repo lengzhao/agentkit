@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 func TestTurnEndFromAccumIncludesStepsAndStopReason(t *testing.T) {
@@ -13,7 +14,7 @@ func TestTurnEndFromAccumIncludesStepsAndStopReason(t *testing.T) {
 	ctx := telemetry.WithTurnAccum(context.Background())
 	telemetry.RecordTurnSteps(ctx, 3)
 	telemetry.RecordTurnStopReason(ctx, "complete")
-	telemetry.RecordTurnUsage(ctx, telemetry.Usage{
+	telemetry.RecordTurnUsage(ctx, captelemetry.Usage{
 		InputTokens:  10,
 		OutputTokens: 5,
 		TotalTokens:  15,

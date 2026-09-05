@@ -11,7 +11,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -391,7 +392,7 @@ func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *t
 		return nil
 	}
 	run.budget.recordTokens(total)
-	telemetry.RecordTurnUsage(ctx, telemetry.Usage{
+	telemetry.RecordTurnUsage(ctx, captelemetry.Usage{
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
 		TotalTokens:  total,
@@ -414,11 +415,11 @@ type stepOutcome struct {
 
 func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit) (stepOutcome, error) {
 	stepStarted := time.Now()
-	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name: "agent.step.prep",
-		Kind: telemetry.KindSpan,
+		Kind: captelemetry.KindSpan,
 	}))
-	var prepEnd telemetry.ObservationEnd
+	var prepEnd captelemetry.ObservationEnd
 	prepDone := false
 	finishPrep := func() {
 		if prepDone {
@@ -452,14 +453,14 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	finishPrep()
 
 	inputSummary := telemetry.SummarizeMessages(messages, 8192, false)
-	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name:      "llm.generation",
-		Kind:      telemetry.KindGeneration,
+		Kind:      captelemetry.KindGeneration,
 		Model:     a.model,
 		Input:     inputSummary,
 		ToolNames: telemetry.ToolNamesFromSpecs(specs),
 	}))
-	var observationEnd telemetry.ObservationEnd
+	var observationEnd captelemetry.ObservationEnd
 	defer func() {
 		endObservation(observationEnd)
 	}()
@@ -548,13 +549,13 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	}
 	slog.Info("assistant step", attrs...)
 
-	var usageOut *telemetry.Usage
+	var usageOut *captelemetry.Usage
 	if usage != nil {
 		total := usage.TotalTokens
 		if total == 0 {
 			total = usage.InputTokens + usage.OutputTokens
 		}
-		usageOut = &telemetry.Usage{
+		usageOut = &captelemetry.Usage{
 			InputTokens:  usage.InputTokens,
 			OutputTokens: usage.OutputTokens,
 			TotalTokens:  total,

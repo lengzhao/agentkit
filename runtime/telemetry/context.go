@@ -1,6 +1,10 @@
 package telemetry
 
-import "context"
+import (
+	"context"
+
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+)
 
 type ctxKey int
 
@@ -12,7 +16,7 @@ const (
 )
 
 // WithExporter stores an exporter on the context for downstream runtime code.
-func WithExporter(ctx context.Context, exp Exporter) context.Context {
+func WithExporter(ctx context.Context, exp captelemetry.Exporter) context.Context {
 	if exp == nil {
 		return ctx
 	}
@@ -20,8 +24,8 @@ func WithExporter(ctx context.Context, exp Exporter) context.Context {
 }
 
 // ExporterFrom returns the exporter on ctx, or Noop when unset.
-func ExporterFrom(ctx context.Context) Exporter {
-	if exp, ok := ctx.Value(keyExporter).(Exporter); ok && exp != nil {
+func ExporterFrom(ctx context.Context) captelemetry.Exporter {
+	if exp, ok := ctx.Value(keyExporter).(captelemetry.Exporter); ok && exp != nil {
 		return exp
 	}
 	return Noop
@@ -80,12 +84,12 @@ func ScopeParentFrom(ctx context.Context) string {
 }
 
 // BeginTurn starts a turn on the exporter stored in ctx.
-func BeginTurn(ctx context.Context, meta TurnMeta) (context.Context, func(TurnEnd)) {
+func BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (context.Context, func(captelemetry.TurnEnd)) {
 	return ExporterFrom(ctx).BeginTurn(ctx, meta)
 }
 
 // BeginObservation starts a nested observation on the exporter stored in ctx.
-func BeginObservation(ctx context.Context, meta ObservationMeta) (context.Context, func(ObservationEnd)) {
+func BeginObservation(ctx context.Context, meta captelemetry.ObservationMeta) (context.Context, func(captelemetry.ObservationEnd)) {
 	return ExporterFrom(ctx).BeginObservation(ctx, meta)
 }
 

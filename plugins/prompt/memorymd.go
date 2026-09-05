@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/plugins/learning"
+	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 )
 
 type MemoryMDConfig struct {
@@ -22,7 +22,7 @@ type MemoryMDConfig struct {
 type MemoryMDDeps struct {
 	Workspace workspace.Service `json:"workspace"`
 	// Learning wires /learn into the build graph and shares memory.md with this section.
-	Learning *learning.Service `json:"learning"`
+	Learning agentkit.CommandProvider `json:"learning"`
 }
 
 type memoryMDProvider struct {
@@ -105,7 +105,7 @@ func formatMemoryFileContent(data []byte) string {
 	if raw == "" {
 		return ""
 	}
-	entries := learning.ParseMemory(raw)
+	entries := rtlearning.ParseMemory(raw)
 	if len(entries) == 0 {
 		return raw
 	}

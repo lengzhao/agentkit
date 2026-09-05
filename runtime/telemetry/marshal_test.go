@@ -8,7 +8,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 func TestFormatMessageEncodesRoleAndContent(t *testing.T) {
@@ -96,8 +97,8 @@ func TestTurnAccumRecordsOutputAndUsage(t *testing.T) {
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
 	})
-	telemetry.RecordTurnUsage(ctx, telemetry.Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15})
-	telemetry.RecordTurnUsage(ctx, telemetry.Usage{InputTokens: 3, OutputTokens: 2, TotalTokens: 5})
+	telemetry.RecordTurnUsage(ctx, captelemetry.Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15})
+	telemetry.RecordTurnUsage(ctx, captelemetry.Usage{InputTokens: 3, OutputTokens: 2, TotalTokens: 5})
 
 	end := telemetry.TurnEndFromAccum(ctx)
 	if end.Output != "done" {

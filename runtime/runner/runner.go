@@ -15,9 +15,10 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
-	"github.com/lengzhao/agentkit/cap/telemetry"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -51,7 +52,7 @@ type Deps struct {
 	SessionStore agentkit.SessionStore     `json:"sessionStore,omitempty"`
 	Schedules    []capschedule.Runtime     `json:"schedules,omitempty"`
 	Init         []agentkit.AppInitializer `json:"init,omitempty"`
-	Telemetry    telemetry.Exporter        `json:"telemetry,omitempty"`
+	Telemetry    captelemetry.Exporter        `json:"telemetry,omitempty"`
 }
 
 type Root struct {
@@ -59,7 +60,7 @@ type Root struct {
 	loop            agentkit.Loop
 	sessionStore    agentkit.SessionStore
 	schedules       []capschedule.Runtime
-	telemetry       telemetry.Exporter
+	telemetry       captelemetry.Exporter
 	sessionScope    session.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
@@ -85,7 +86,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	}
 	exp := deps.Telemetry
 	if exp == nil {
-		exp = telemetry.Noop
+		exp = rttelemetry.Noop
 	}
 	maxConcurrent := cfg.MaxConcurrentTurns
 	if maxConcurrent == 0 {

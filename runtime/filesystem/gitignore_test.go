@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/runtime/filesystem"
 )
 
 func TestIgnoreMatcherRootGitignore(t *testing.T) {

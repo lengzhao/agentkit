@@ -4,12 +4,10 @@ import (
 	"encoding/base64"
 	"path/filepath"
 	"strings"
-
-	capmedia "github.com/lengzhao/agentkit/cap/media"
 )
 
 // ContentTypeAttachmentRef is persisted in session history for stripped attachments.
-const ContentTypeAttachmentRef = capmedia.ContentTypeAttachmentRef
+const ContentTypeAttachmentRef = "attachment_ref"
 
 // IsImage reports whether a file looks like an image from MIME type and/or path.
 func IsImage(mimeType, path string) bool {
