@@ -254,8 +254,13 @@ chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local �
 | API | 方法 | 说明 |
 |---|---|---|
 | `/v1/files` | `POST` multipart `file` | 上传用户文件，返回 `file_*` id |
+| `/v1/files` | `POST` multipart `file` + `path` | 上传到 workspace 指定路径（须在 `work/` 下），已存在则覆盖；`upload/foo` 会自动补 `work/` 前缀 |
 | `/v1/files` | `GET` | 列出当前 channel 的上传/下载文件 |
+| `/v1/files` | `GET` + `?path=` | 按 workspace 路径下载（须在 `work/` 下；需 Bearer 鉴权） |
+| `/v1/files` | `POST`/`GET` + `path`（管理员） | `config.admins` 中的用户可用绝对路径（`/abs`、`~/`）、`global:`/`local:` 作用域，以及 `work/` 外的 workspace 相对路径 |
 | `/v1/files/{id}` | `GET` | 下载文件（上传或 agent 出站） |
+
+管理员路径能力需在 `platform/chat-api` 配置 `admins`（与 `commands/registry.admins` 同一用户 ID 语义，大小写不敏感）。未配置 `admins` 时，绝对路径与其它非 `work/` 路径一律拒绝（403）。
 
 `POST /v1/chat-messages` 请求体可带 `inputs[]`：
 

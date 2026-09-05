@@ -18,6 +18,7 @@ platform.default:
     apiToken: ""
     busyPolicy: queue
     debugUi: true
+    # admins: ["admin-user-id"] # 允许管理路径（绝对路径、global:/local:、work/ 外）
     # agents: ["assistant"] # 可选：调试页 Agent 下拉
   deps:
     commands: commands.default

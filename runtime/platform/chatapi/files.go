@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 const (
@@ -33,6 +34,9 @@ var (
 	fileIDPattern        = regexp.MustCompile(`^file_[A-Za-z0-9_-]{22}$`)
 	errUploadNotFound    = errors.New("upload not found")
 	errWorkspaceRequired = errors.New("workspace not configured")
+	errInvalidPath       = errors.New("invalid path")
+	errPathOutsideWork   = errors.New("path outside work")
+	errForbidden         = errors.New("forbidden")
 )
 
 type uploadedFileMeta struct {
@@ -140,6 +144,10 @@ func (p *Platform) handleFileRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Platform) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	if path := strings.TrimSpace(r.URL.Query().Get("path")); path != "" {
+		p.handleDownloadByPath(w, r, path)
+		return
+	}
 	channelKey, ok := p.resolveChannel(w, r)
 	if !ok {
 		return
@@ -224,6 +232,46 @@ func (p *Platform) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		mimeType = formMime
 	}
 
+	if formPath := strings.TrimSpace(r.FormValue("path")); formPath != "" {
+		abs, displayPath, err := p.resolveFileAPIPath(r.Context(), channelKey, user, formPath)
+		if err != nil {
+			if errors.Is(err, errForbidden) {
+				writeErr(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			if errors.Is(err, errInvalidPath) || errors.Is(err, errPathOutsideWork) {
+				writeErr(w, http.StatusBadRequest, "invalid request")
+				return
+			}
+			if errors.Is(err, errWorkspaceRequired) {
+				writeErr(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			slog.Error("chat-api: resolve upload path", "path", formPath, "error", err)
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if formName := sanitizeUploadFilename(r.FormValue("filename")); formName != "" {
+			filename = formName
+		} else if filename == "" {
+			filename = filepath.Base(displayPath)
+		}
+		info, err := p.saveFileAtAbsPath(abs, displayPath, filename, mimeType, data)
+		if err != nil {
+			slog.Error("chat-api: save upload at path", "path", displayPath, "error", err)
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeOK(w, http.StatusOK, map[string]any{
+			"path":       info.Path,
+			"filename":   info.Filename,
+			"mime_type":  info.MimeType,
+			"size":       info.Size,
+			"created_at": info.CreatedAt,
+		})
+		return
+	}
+
 	meta, err := p.saveUploadedFile(r.Context(), channelKey, user, filename, mimeType, data)
 	if err != nil {
 		if errors.Is(err, errWorkspaceRequired) {
@@ -242,6 +290,48 @@ func (p *Platform) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		"size":       meta.Size,
 		"created_at": meta.CreatedAt,
 	}, p.fileLinkFields(p.apiBaseFromRequest(r), channelKey, meta.ID)))
+}
+
+func (p *Platform) handleDownloadByPath(w http.ResponseWriter, r *http.Request, rawPath string) {
+	channelKey, ok := p.resolveChannel(w, r)
+	if !ok {
+		return
+	}
+	user := optionalUser(r, p.userHeader)
+	abs, displayPath, err := p.resolveFileAPIPath(r.Context(), channelKey, user, rawPath)
+	if err != nil {
+		if errors.Is(err, errForbidden) {
+			writeErr(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if errors.Is(err, errInvalidPath) || errors.Is(err, errPathOutsideWork) {
+			writeErr(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+		if errors.Is(err, errWorkspaceRequired) {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		slog.Error("chat-api: resolve download path", "path", rawPath, "error", err)
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	info, data, err := p.loadFileAtAbsPath(abs, displayPath)
+	if err != nil {
+		if errors.Is(err, errUploadNotFound) {
+			writeErr(w, http.StatusNotFound, "not found")
+			return
+		}
+		slog.Error("chat-api: download by path", "path", displayPath, "error", err)
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if mt := strings.TrimSpace(info.MimeType); mt != "" {
+		w.Header().Set("Content-Type", mt)
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", info.Filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (p *Platform) handleDownloadFile(w http.ResponseWriter, r *http.Request, channelKey, fileID string) {
@@ -504,6 +594,128 @@ func sanitizeUploadFilename(name string) string {
 		return ""
 	}
 	return name
+}
+
+type workspaceFileInfo struct {
+	Path      string
+	Filename  string
+	MimeType  string
+	Size      int64
+	CreatedAt int64
+}
+
+func normalizeWorkspaceFilePath(raw string) (string, error) {
+	workRel := strings.TrimSpace(raw)
+	if workRel == "" {
+		return "", errInvalidPath
+	}
+	workRel = filepath.ToSlash(workRel)
+	workRel = strings.TrimPrefix(workRel, "/")
+	if strings.Contains(workRel, "..") {
+		return "", errInvalidPath
+	}
+	if workRel == "upload" || strings.HasPrefix(workRel, "upload/") ||
+		workRel == "download" || strings.HasPrefix(workRel, "download/") {
+		workRel = "work/" + workRel
+	}
+	return workRel, nil
+}
+
+func validateWorkspaceFileAPIPath(workRel string) error {
+	workRel = filepath.ToSlash(workRel)
+	if !strings.HasPrefix(workRel, "work/") {
+		return errPathOutsideWork
+	}
+	return nil
+}
+
+func (p *Platform) resolveFileAPIPath(ctx context.Context, channelKey, userID, rawPath string) (abs, displayPath string, err error) {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return "", "", errInvalidPath
+	}
+	var resolvePath string
+	_, _, scoped := rtworkspace.ParseScoped(rawPath)
+	switch {
+	case rawPath == "~" || strings.HasPrefix(rawPath, "~/") || filepath.IsAbs(rawPath):
+		if !p.isAdminUser(userID) {
+			return "", "", errForbidden
+		}
+		resolvePath = rawPath
+	case scoped:
+		if !p.isAdminUser(userID) {
+			return "", "", errForbidden
+		}
+		resolvePath = rawPath
+	default:
+		resolvePath, err = normalizeWorkspaceFilePath(rawPath)
+		if err != nil {
+			return "", "", err
+		}
+		if err := validateWorkspaceFileAPIPath(resolvePath); err != nil && !p.isAdminUser(userID) {
+			return "", "", errForbidden
+		}
+	}
+	if p.workspace == nil {
+		return "", "", errWorkspaceRequired
+	}
+	abs, err = p.workspace.Resolve(p.channelCtx(ctx, channelKey), resolvePath)
+	if err != nil {
+		return "", "", err
+	}
+	return abs, filepath.ToSlash(resolvePath), nil
+}
+
+func (p *Platform) saveFileAtAbsPath(abs, displayPath, filename, mimeType string, data []byte) (*workspaceFileInfo, error) {
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(abs, data, 0o644); err != nil {
+		return nil, err
+	}
+	if filename == "" {
+		filename = filepath.Base(displayPath)
+	}
+	if strings.TrimSpace(mimeType) == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	return &workspaceFileInfo{
+		Path:      filepath.ToSlash(displayPath),
+		Filename:  filename,
+		MimeType:  mimeType,
+		Size:      int64(len(data)),
+		CreatedAt: time.Now().Unix(),
+	}, nil
+}
+
+func (p *Platform) loadFileAtAbsPath(abs, displayPath string) (*workspaceFileInfo, []byte, error) {
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, errUploadNotFound
+		}
+		return nil, nil, err
+	}
+	filename := filepath.Base(displayPath)
+	if filename == "" || filename == "." {
+		filename = filepath.Base(abs)
+	}
+	mimeType := http.DetectContentType(data)
+	return &workspaceFileInfo{
+		Path:      filepath.ToSlash(displayPath),
+		Filename:  filename,
+		MimeType:  mimeType,
+		Size:      int64(len(data)),
+		CreatedAt: fileModTime(abs),
+	}, data, nil
+}
+
+func fileModTime(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Now().Unix()
+	}
+	return info.ModTime().Unix()
 }
 
 func (p *Platform) uploadedWorkPath(ctx context.Context, channelKey, fileID string) (string, error) {

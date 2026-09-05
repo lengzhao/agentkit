@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,6 +206,34 @@ func TestUploadAndChatWithLocalImageFile(t *testing.T) {
 	}
 }
 
+func TestInputsToCoreLocalPathUsesDataField(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	workDir := filepath.Join(root, "work", "upload")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "pic.png"), []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plat, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+	images, _, _, _, err := p.inputsToCore(context.Background(), "ch", []chatInput{{
+		Type:           "image",
+		TransferMethod: "local_path",
+		Data:           "upload/pic.png",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 1 || images[0].WorkPath != "work/upload/pic.png" || len(images[0].Data) == 0 {
+		t.Fatalf("images = %#v", images)
+	}
+}
+
 func TestInputsToCoreLocalPathImage(t *testing.T) {
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
@@ -378,5 +407,245 @@ func TestUploadRejectsOversize(t *testing.T) {
 	p.handleUploadFile(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUploadToSpecifiedPath(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+	channel := "ch-path"
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "ignored.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.WriteField("path", "upload/custom.txt")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Chat-API-Channel", channel)
+	req.Header.Set("X-Chat-API-User", "u1")
+	rec := httptest.NewRecorder()
+	p.handleUploadFile(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status %d body %s", rec.Code, rec.Body.String())
+	}
+	wantPath := filepath.Join(root, "work", "upload", "custom.txt")
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "first" {
+		t.Fatalf("content = %q", data)
+	}
+
+	body2 := &bytes.Buffer{}
+	writer2 := multipart.NewWriter(body2)
+	part2, _ := writer2.CreateFormFile("file", "ignored.txt")
+	_, _ = part2.Write([]byte("second"))
+	_ = writer2.WriteField("path", "work/upload/custom.txt")
+	writer2.Close()
+
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/files", body2)
+	req2.Header.Set("Content-Type", writer2.FormDataContentType())
+	req2.Header.Set("X-Chat-API-Channel", channel)
+	req2.Header.Set("X-Chat-API-User", "u1")
+	rec2 := httptest.NewRecorder()
+	p.handleUploadFile(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("overwrite status %d body %s", rec2.Code, rec2.Body.String())
+	}
+	data, err = os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "second" {
+		t.Fatalf("overwritten content = %q", data)
+	}
+}
+
+func TestDownloadByPath(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+	channel := "ch-dl-path"
+
+	workDir := filepath.Join(root, "work", "upload")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "note.txt"), []byte("by path"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files?path=upload/note.txt&channel="+channel, nil)
+	req.Header.Set("X-Chat-API-Channel", channel)
+	rec := httptest.NewRecorder()
+	p.handleListFiles(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "by path" {
+		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestUploadRejectsTraversalPath(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "x.txt")
+	_, _ = part.Write([]byte("nope"))
+	_ = writer.WriteField("path", "work/../secret.txt")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Chat-API-Channel", "ch")
+	req.Header.Set("X-Chat-API-User", "u1")
+	rec := httptest.NewRecorder()
+	p.handleUploadFile(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUploadRejectsPathOutsideWork(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "x.txt")
+	_, _ = part.Write([]byte("nope"))
+	_ = writer.WriteField("path", "skills/secret.md")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Chat-API-Channel", "ch")
+	req.Header.Set("X-Chat-API-User", "u1")
+	rec := httptest.NewRecorder()
+	p.handleUploadFile(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminUploadAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	absTarget := filepath.Join(root, "managed", "config.txt")
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{Admins: []string{"admin1"}}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "ignored.txt")
+	_, _ = part.Write([]byte("admin content"))
+	_ = writer.WriteField("path", absTarget)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Chat-API-Channel", "ch")
+	req.Header.Set("X-Chat-API-User", "admin1")
+	rec := httptest.NewRecorder()
+	p.handleUploadFile(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload status %d body %s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(absTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "admin content" {
+		t.Fatalf("content = %q", data)
+	}
+}
+
+func TestNonAdminRejectedForAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{Admins: []string{"admin1"}}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "x.txt")
+	_, _ = part.Write([]byte("nope"))
+	_ = writer.WriteField("path", filepath.Join(root, "managed", "x.txt"))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Chat-API-Channel", "ch")
+	req.Header.Set("X-Chat-API-User", "u1")
+	rec := httptest.NewRecorder()
+	p.handleUploadFile(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminDownloadAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	absTarget := filepath.Join(root, "managed", "note.txt")
+	if err := os.MkdirAll(filepath.Dir(absTarget), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(absTarget, []byte("admin read"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := rtworkspace.Static(root)
+	plat, err := New(Config{Admins: []string{"admin1"}}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plat.(*Platform)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files?path="+url.PathEscape(absTarget)+"&channel=ch", nil)
+	req.Header.Set("X-Chat-API-Channel", "ch")
+	req.Header.Set("X-Chat-API-User", "admin1")
+	rec := httptest.NewRecorder()
+	p.handleListFiles(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "admin read" {
+		t.Fatalf("body = %q", got)
 	}
 }

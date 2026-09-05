@@ -53,6 +53,9 @@ type Config struct {
 	SessionsDir        string   `json:"sessionsDir"`
 	// Agents lists selectable agent ids for debug UI and request validation.
 	Agents []string `json:"agents"`
+	// Admins lists user IDs allowed to upload/download files outside work/
+	// (absolute paths, global:/local: scopes, and other workspace paths).
+	Admins []string `json:"admins,omitempty"`
 }
 
 type Deps struct {
@@ -87,6 +90,7 @@ type Platform struct {
 	commands            agentkit.Commands
 	sessionScope        session.SessionScope
 	sessionsDirRel        string
+	admins              []string
 
 	inbox        *common.Inbox
 	conversations *conversationStore
@@ -187,6 +191,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		commands:           deps.Commands,
 		sessionScope:       session.ParseScope(cfg.SessionScope),
 		sessionsDirRel:       sessionsDir,
+		admins:             cfg.Admins,
 	}
 	if registerOnly {
 		p.registerDefaultHTTP()

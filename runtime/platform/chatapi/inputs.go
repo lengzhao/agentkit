@@ -54,9 +54,24 @@ func (p *Platform) inputsToCore(ctx context.Context, channelKey string, inputs [
 				return nil, nil, nil, nil, err
 			}
 		case "local_path":
-			workRel, mimeType, filename, err = normalizeWorkspaceInputPath(in)
+			rawPath := strings.TrimSpace(in.Path)
+			if rawPath == "" {
+				rawPath = strings.TrimSpace(in.Data)
+			}
+			if rawPath == "" {
+				return nil, nil, nil, nil, fmt.Errorf("path required for local_path")
+			}
+			workRel, err = normalizeWorkspaceFilePath(rawPath)
 			if err != nil {
-				return nil, nil, nil, nil, err
+				return nil, nil, nil, nil, fmt.Errorf("invalid path")
+			}
+			filename = filepath.Base(workRel)
+			if strings.TrimSpace(in.Filename) != "" {
+				filename = sanitizeUploadFilename(in.Filename)
+			}
+			mimeType = in.MimeType
+			if strings.TrimSpace(mimeType) == "" {
+				mimeType = mime.TypeByExtension(filepath.Ext(filename))
 			}
 		default:
 			return nil, nil, nil, nil, fmt.Errorf("unsupported transfer_method")
@@ -110,34 +125,6 @@ func (p *Platform) inputsToCore(ctx context.Context, channelKey string, inputs [
 		}
 	}
 	return images, files, audio, filePaths, nil
-}
-
-func normalizeWorkspaceInputPath(in chatInput) (workRel, mimeType, filename string, err error) {
-	workRel = strings.TrimSpace(in.Path)
-	if workRel == "" {
-		workRel = strings.TrimSpace(in.Data)
-	}
-	if workRel == "" {
-		return "", "", "", fmt.Errorf("path required for local_path")
-	}
-	workRel = filepath.ToSlash(workRel)
-	workRel = strings.TrimPrefix(workRel, "/")
-	if strings.Contains(workRel, "..") {
-		return "", "", "", fmt.Errorf("invalid path")
-	}
-	if workRel == "upload" || strings.HasPrefix(workRel, "upload/") ||
-		workRel == "download" || strings.HasPrefix(workRel, "download/") {
-		workRel = "work/" + workRel
-	}
-	filename = filepath.Base(workRel)
-	if strings.TrimSpace(in.Filename) != "" {
-		filename = sanitizeUploadFilename(in.Filename)
-	}
-	mimeType = in.MimeType
-	if strings.TrimSpace(mimeType) == "" {
-		mimeType = mime.TypeByExtension(filepath.Ext(filename))
-	}
-	return workRel, mimeType, filename, nil
 }
 
 func (p *Platform) resolveUploadedInput(ctx context.Context, channelKey string, in chatInput) (workRel, mimeType, filename string, err error) {
