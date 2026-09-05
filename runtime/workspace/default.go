@@ -13,7 +13,7 @@ type Config struct {
 	Root string `json:"root"` // deprecated: alias for global
 	// Global is global root, conventionally ~/.agentkit.
 	Global string `json:"global"`
-	// Local is local root; when empty, same as Global.
+	// Local is local root, default .agentkit under cwd.
 	Local string `json:"local"`
 	// Scope is which root an unprefixed path resolves against: global or local.
 	Scope string `json:"scope"` // global | local
@@ -29,7 +29,7 @@ func init() {
 	pluginkit.Register("workspace/default", New)
 }
 
-// New registers workspace/default: Dual-root workspace: a global home and an optional local root (defaults to global).
+// New registers workspace/default: Dual-root workspace: a global home and a local .agentkit directory under the project.
 //
 // Best practices:
 //   - Prefix a path with global: or local: to pin it regardless of scope.
@@ -43,7 +43,7 @@ func New(cfg Config) (cw.Service, error) {
 	}
 	local := cfg.Local
 	if local == "" {
-		local = global
+		local = ".agentkit"
 	}
 	scope := cfg.Scope
 	if scope == "" {

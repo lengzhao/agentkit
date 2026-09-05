@@ -3,7 +3,6 @@
 workspace.default:
   use: workspace/default
   config:
-    local: .agentkit
     scope: local
 
 sessionStore.default:
@@ -38,10 +37,3 @@ skills.default:
       - global:skills
   deps:
     workspace: workspace.default
-
-subagent.inprocess.default:
-  config:
-    dirs:
-      - local:agents
-      - local:../examples/agents
-      - global:agents

@@ -103,7 +103,7 @@ subagent.loop.default:
 | `async` | 否 | 默认是否异步委派 |
 | `timeoutSeconds` | 否 | 覆盖实例级 `timeoutSeconds` |
 
-`local:` / `global:` 前缀由 workspace 解析（见 [架构文档 §8.1](../go-agent-harness-architecture.zh.md#81-workspace-路径)）。L0 默认只扫描 `global:agents`（`~/.agentkit/agents`）；`presets/coding.yaml` 等会显式设 `local: .agentkit` 并叠加 `local:agents`、`local:../examples/agents`。
+`local:` / `global:` 前缀由 workspace 解析（见 [架构文档 §8.1](../go-agent-harness-architecture.zh.md#81-workspace-路径)）。L0 默认扫描 `local:agents`（`<cwd>/.agentkit/agents`）、`local:../examples/agents`（`<cwd>/examples/agents`，不存在则跳过）与 `global:agents`（`~/.agentkit/agents`）。
 
 定义是**每次委派前重读**的，改完 md 文件不用重启进程。
 
@@ -181,7 +181,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 
 ## 6. 跑起来
 
-L0 默认已挂载 `tool/subagent`（`delegate`）与 `prompt/section/subagents`，并扫描 `global:agents`。项目 coding 用 `presets/coding.yaml`（`local: .agentkit`）时会额外扫描 `local:agents` 与 `local:../examples/agents`。在 `~/.agentkit/agents/` 或 `.agentkit/agents/` 放好 `*.md` 定义后即可委派：
+L0 默认已挂载 `tool/subagent`（`delegate`）与 `prompt/section/subagents`，并扫描 `local:agents`、`local:../examples/agents` 与 `global:agents`。在 `.agentkit/agents/` 放好 `*.md` 定义后即可委派；仓库自带的 `examples/agents/` 也会被自动纳入：
 
 ```sh
 go run ./cmd/agent

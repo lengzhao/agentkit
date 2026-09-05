@@ -383,6 +383,8 @@ sessionStore.default:
 skills.default:
     config:
         dirs:
+            - local:../skills
+            - local:skills
             - global:skills
     deps:
         workspace: workspace.default
@@ -395,6 +397,8 @@ subagent.default:
 subagent.inprocess.default:
     config:
         dirs:
+            - local:agents
+            - local:../examples/agents
             - global:agents
         maxSteps: 20
         timeoutSeconds: 600

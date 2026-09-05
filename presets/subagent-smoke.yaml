@@ -12,18 +12,6 @@
 # 期望：父 session 出现 subagent/start + subagent/end 各一条、delegate 的 tool/result 里是子 agent 的
 # summary；子 session 单独一个文件（sessions/sub_cli_default_researcher_*.jsonl）装着它自己那两步。
 
-workspace.default:
-  config:
-    local: .agentkit
-    scope: local
-
-subagent.inprocess.default:
-  config:
-    dirs:
-      - local:agents
-      - local:../examples/agents
-      - global:agents
-
 platform.default:
   use: platform/cli
   config:
