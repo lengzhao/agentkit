@@ -120,16 +120,16 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 ## 飞书流式进度卡片
 
-`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 Interactive Card 的 `Patch` 原地更新展示 agent 输出。`card` / `compact` 模式采用**双车道**展示，与 chat-api 的 `text_delta` 语义对齐：
+`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 **CardKit 卡片实体 + 流式文本 API** 展示 agent 输出（正文打字机效果）；过程卡仍用卡片实体全量更新。`card` / `compact` 模式采用**双车道**展示，与 chat-api 的 `text_delta` 语义对齐：
 
 | 车道 | 内容 | 行为 |
 |---|---|---|
-| **过程卡** | thinking / tool / subagent | 可 `Patch` 的进度卡；与正文卡并存，不随正文开始而删除 |
-| **正文卡** | `text_delta` | 新建正文卡并流式 `Patch`，与当前过程卡同时保留 |
-| **定稿** | `message/end` | 正文卡与当前过程卡分别 finalize，均保留在会话中 |
+| **过程卡** | thinking / tool / subagent | 卡片实体全量更新；**`collapsible_panel` 默认折叠**（点击标题展开） |
+| **正文卡** | `text_delta` | CardKit `elements/.../content` 流式上屏；**正文 markdown 默认展开** |
+| **定稿** | `message/end` | 关闭 `streaming_mode`，正文与过程卡分别 finalize |
 | **淘汰** | 超过 3 张卡 | 从最老开始，仅删除**过程卡**直到 ≤3 张；正文卡永不淘汰。新建过程卡时还会删掉更早的过程卡 |
 
-`legacy` 模式仍为单卡流式正文，不含进度面板。
+`legacy` 模式正文同样走 CardKit 流式（若 `enableFeishuCard: true`），不含进度面板。
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
@@ -142,7 +142,7 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 `card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。subagent 委托经 runtime outbound 发出 `subagent/start`、`subagent/end`，在过程卡中以「子 Agent · {agentID}」展示（与 tool 同级）。进度区仅保留最近 **2** 条 thinking / tool / subagent 记录（`compact` 超出时显示「仅显示最近更新」提示），避免长任务把卡片撑得过长。
 
-`card` / `compact` 模式下，turn 未完成且过程卡已发出后，平台每 **5 秒** 原地 `Patch` 一次过程卡，刷新页脚「⏱ 运行中 …」耗时；正文卡流式期间按常规节流 `Patch`。会话滑动窗口最多保留 **3** 张卡，超出时从最老开始仅淘汰过程卡；同一 turn 内只保留**最新一张**过程卡，更早的过程段在新建过程卡时删除。
+`card` / `compact` 模式下，turn 未完成且过程卡已发出后，平台每 **5 秒** 原地更新一次过程卡，刷新页脚「⏱ 运行中 …」耗时；正文卡流式期间通过 CardKit 文本流式 API 更新（约 **100ms** 节流，无 Patch 5 QPS 限制）。会话滑动窗口最多保留 **3** 张卡，超出时从最老开始仅淘汰过程卡；同一 turn 内只保留**最新一张**过程卡，更早的过程段在新建过程卡时删除。
 
 ```yaml
 platform.default:

@@ -95,6 +95,23 @@ func (p *Platform) richStreamState(sessionID agentkit.SessionID) *streamState {
 	return st
 }
 
+func (p *Platform) bodyStreamInterval() time.Duration {
+	if p.useCardKitStream() {
+		return streamCardKitInterval
+	}
+	return streamUpdateInterval
+}
+
+func (p *Platform) finalizeBodyCard(ctx context.Context, handle any, bodyText string) error {
+	if strings.TrimSpace(bodyText) == "" {
+		return nil
+	}
+	if h, ok := handle.(*feishuPreviewHandle); ok && h.cardID != "" && h.elementID != "" {
+		return p.finalizeStreamingBodyCard(ctx, h, bodyText)
+	}
+	return p.UpdateMessage(ctx, handle, buildFinalPreviewCardJSON(bodyText))
+}
+
 func (p *Platform) handleRichStreamMessageStart(_ context.Context, sessionID agentkit.SessionID) error {
 	p.cancelBodyFlushTimer(sessionID)
 	st := p.richStreamState(sessionID)
@@ -166,7 +183,7 @@ func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
 		st.mu.Unlock()
 		return
 	}
-	delay := streamFlushDelay(st.lastBodyUpdate, streamUpdateInterval)
+	delay := streamFlushDelay(st.lastBodyUpdate, p.bodyStreamInterval())
 	sid := sessionID
 	st.bodyFlushTimer = time.AfterFunc(delay, func() {
 		st.mu.Lock()
@@ -186,7 +203,7 @@ func (p *Platform) scheduleLegacyFlush(sessionID agentkit.SessionID) {
 		st.mu.Unlock()
 		return
 	}
-	delay := streamFlushDelay(st.lastUpdate, streamUpdateInterval)
+	delay := streamFlushDelay(st.lastUpdate, p.bodyStreamInterval())
 	sid := sessionID
 	st.legacyFlushTimer = time.AfterFunc(delay, func() {
 		st.mu.Lock()
@@ -215,7 +232,7 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 	st.mu.Lock()
 	st.bodyText += delta
 	st.status = cardStatusWorking
-	shouldFlushNow := st.bodyHandle == nil || time.Since(st.lastBodyUpdate) >= streamUpdateInterval
+	shouldFlushNow := st.bodyHandle == nil || time.Since(st.lastBodyUpdate) >= p.bodyStreamInterval()
 	st.mu.Unlock()
 	if shouldFlushNow {
 		p.cancelBodyFlushTimer(sessionID)
@@ -504,7 +521,7 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 	st.mu.Unlock()
 
 	if bodyHandle != nil && strings.TrimSpace(bodyText) != "" {
-		if err := p.UpdateMessage(ctx, bodyHandle, buildFinalPreviewCardJSON(bodyText)); err != nil {
+		if err := p.finalizeBodyCard(ctx, bodyHandle, bodyText); err != nil {
 			return err
 		}
 	}
@@ -548,7 +565,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	st.mu.Unlock()
 
 	if bodyHandle != nil && strings.TrimSpace(bodyText) != "" {
-		if err := p.UpdateMessage(ctx, bodyHandle, buildFinalPreviewCardJSON(bodyText)); err != nil {
+		if err := p.finalizeBodyCard(ctx, bodyHandle, bodyText); err != nil {
 			slog.Debug(p.tag()+": finalize body card on turn end failed", "session_id", sessionID, "error", err)
 		}
 	}

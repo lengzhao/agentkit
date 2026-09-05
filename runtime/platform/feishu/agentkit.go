@@ -574,7 +574,7 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	st.mu.Lock()
 	st.accumulated += delta
 	accumulated := st.accumulated
-	shouldFlushNow := st.handle == nil || time.Since(st.lastUpdate) >= streamUpdateInterval
+	shouldFlushNow := st.handle == nil || time.Since(st.lastUpdate) >= p.bodyStreamInterval()
 	st.mu.Unlock()
 
 	if shouldFlushNow {
@@ -619,7 +619,7 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 	}
 
 	if handle != nil {
-		return p.UpdateMessage(ctx, handle, buildFinalPreviewCardJSON(text))
+		return p.finalizeBodyCard(ctx, handle, text)
 	}
 	return p.sendIMContent(ctx, rc, text)
 }

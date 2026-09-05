@@ -2443,6 +2443,10 @@ type feishuPreviewHandle struct {
 	mu          sync.Mutex
 	messageID   string
 	chatID      string
+	cardID      string
+	elementID   string
+	sequence    int
+	streaming   bool
 	status      cardStatus
 	lastContent string
 }
@@ -2881,12 +2885,33 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 		return nil, fmt.Errorf("%s: chatID is empty", p.tag())
 	}
 
-	// Card 2.0 path: engine passes a pre-built rich card JSON; pass it through.
 	var cardJSON string
+	streamElementID := ""
 	if isCardJSON(content) {
 		cardJSON = content
+	} else if p.useCardKitStream() {
+		cardJSON = buildStreamingBodyCardEntityJSON()
+		streamElementID = bodyStreamElementID
 	} else {
 		cardJSON = buildPreviewCardJSON(content)
+	}
+
+	if p.useCardKitStream() {
+		handle, err := p.createAndSendCardEntity(ctx, rc, cardJSON, streamElementID)
+		if err != nil {
+			slog.Debug(p.tag()+": cardkit preview start failed, falling back to patch", "error", err)
+		} else {
+			if streamElementID != "" && strings.TrimSpace(content) != "" {
+				processed := content
+				if containsMarkdown(content) {
+					processed = preprocessFeishuMarkdown(content)
+				}
+				if streamErr := p.streamCardElementContent(ctx, handle, sanitizeMarkdownURLs(processed)); streamErr != nil {
+					slog.Debug(p.tag()+": initial cardkit body stream failed", "error", streamErr)
+				}
+			}
+			return handle, nil
+		}
 	}
 
 	var msgID string
@@ -2961,6 +2986,21 @@ func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content
 	h, ok := previewHandle.(*feishuPreviewHandle)
 	if !ok {
 		return fmt.Errorf("%s: invalid preview handle type %T", p.tag(), previewHandle)
+	}
+
+	if h.cardID != "" {
+		if h.elementID != "" && !isCardJSON(content) {
+			processed := content
+			if containsMarkdown(content) {
+				processed = preprocessFeishuMarkdown(content)
+			}
+			return p.streamCardElementContent(ctx, h, sanitizeMarkdownURLs(processed))
+		}
+		cardJSON := content
+		if !isCardJSON(content) {
+			cardJSON = buildFinalPreviewCardJSON(content)
+		}
+		return p.updateCardEntity(ctx, h, cardJSON)
 	}
 
 	cardJSON := ""
@@ -3530,7 +3570,7 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 
 	panelMap := map[string]any{
 		"tag":              "collapsible_panel",
-		"expanded":         streaming,
+		"expanded":         false,
 		"background_color": "grey",
 		"header": map[string]any{
 			"title": map[string]any{"tag": "plain_text", "content": panelTitle},
