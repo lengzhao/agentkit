@@ -37,7 +37,7 @@ func (c stopCommand) CommandExec(ctx context.Context, args string) (string, erro
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /stop")
 	}
-	entryKey, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	entryKey := session.SessionIDFromContext(ctx)
 	sessionID, err := session.ResolveActiveSessionID(ctx, c.store, entryKey)
 	if err != nil {
 		return "", err
@@ -48,7 +48,9 @@ func (c stopCommand) CommandExec(ctx context.Context, args string) (string, erro
 	if !c.loop.IsSessionBusy(sessionID) {
 		return "no turn in progress", nil
 	}
-	cancelCtx := context.WithValue(ctx, agentkit.KeySessionID, sessionID)
+	env := session.EnvelopeFromContext(ctx)
+	env.Conversation = string(sessionID)
+	cancelCtx := session.ApplyEnvelopeToContext(ctx, env)
 	if err := c.loop.Cancel(cancelCtx, "/stop"); err != nil {
 		return "", err
 	}

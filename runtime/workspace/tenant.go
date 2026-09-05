@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/lengzhao/agentkit/cap/tenant"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -26,7 +26,7 @@ type TenantConfig struct {
 	Scope string `json:"scope"`
 	// Tenants pins an explicit root for specific tenant keys, e.g.
 	// "slack:C123ABC": {root: ~/work/project-a}. Keys are tenant keys as derived
-	// by cap/tenant.Key, not session ids: every thread and every user in a Slack
+	// by session.WorkspaceKey, not session ids: every thread and every user in a Slack
 	// channel shares the channel's entry.
 	Tenants map[string]TenantEntry `json:"tenants,omitempty"`
 	// OmitPlatformPrefix drops the platform segment from local directory names.
@@ -46,8 +46,8 @@ type TenantEntry struct {
 // here rather than in some other tenant's directory.
 const DefaultTenantDir = "_default"
 
-// TenantService resolves paths against a shared global root and a per-tenant
-// local root.
+// TenantService resolves paths against a shared global root and a per-session
+// local root (keyed by session.WorkspaceKey).
 type TenantService struct {
 	globalRoot         string
 	localBase          string
@@ -153,11 +153,11 @@ func (s *TenantService) rootFor(ctx context.Context, scope string) (string, erro
 
 // TenantRoot reports the local root the current context resolves against.
 func (s *TenantService) TenantRoot(ctx context.Context) string {
-	key := tenant.FromContext(ctx)
+	key := session.WorkspaceFromContext(ctx)
 	if root, ok := s.roots[key]; ok {
 		return root
 	}
-	dir := tenant.LocalDirName(key, s.omitPlatformPrefix)
+	dir := session.WorkspaceLocalDirName(key, s.omitPlatformPrefix)
 	if dir == "" {
 		dir = DefaultTenantDir
 	}

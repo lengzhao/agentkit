@@ -49,7 +49,7 @@ func (r *multiRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := session.ChannelKeyFromContext(ctx)
+	key := session.WorkspaceFromContext(ctx)
 	if key == "" {
 		return jobs, nil
 	}
@@ -65,7 +65,7 @@ func (r *multiRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 func (r *multiRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job, error) {
 	key := strings.TrimSpace(job.ChannelKey)
 	if key == "" {
-		key = session.ChannelKeyFromContext(ctx)
+		key = session.WorkspaceFromContext(ctx)
 	}
 	if key == "" {
 		return schedule.Job{}, fmt.Errorf("schedule add requires channel context")
@@ -75,7 +75,7 @@ func (r *multiRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job
 }
 
 func (r *multiRegistry) Remove(ctx context.Context, id string) (bool, error) {
-	key := session.ChannelKeyFromContext(ctx)
+	key := session.WorkspaceFromContext(ctx)
 	if key != "" {
 		jobs, err := r.inner.List(ctx)
 		if err != nil {

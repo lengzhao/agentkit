@@ -12,16 +12,6 @@ type AgentID string
 type contextKey string
 
 const (
-	// KeySessionID is the resolved session id for Loop locking, Agent history,
-	// and session-scoped tools. Runner resolves active-session mappings before
-	// Dispatch; subagents use their own child SessionID.
-	KeySessionID contextKey = "agentkit.session_id"
-	// KeyAgentID is the context key for the current AgentID.
-	KeyAgentID contextKey = "agentkit.agent_id"
-	// KeyPlatformID is the context key for the current inbound/outbound platform.
-	KeyPlatformID contextKey = "agentkit.platform_id"
-	// KeyUserID is the context key for the current end-user identity, when known.
-	KeyUserID contextKey = "agentkit.user_id"
 	// KeyTurnID is the context key for the current turn, when one is active.
 	KeyTurnID contextKey = "agentkit.turn_id"
 	// KeyToolCallID is the context key for the current tool call, when one is active.
@@ -34,14 +24,8 @@ const (
 	// Agent.RunTurn so tools and permission waits can emit outbound events
 	// through the same channel as assistant streaming.
 	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
-	// KeyDeliverySessionID is the inbound delivery SessionID for the current turn
-	// (finest grain). Outbound routing should prefer this over KeySessionID when
-	// both are present.
-	KeyDeliverySessionID contextKey = "agentkit.delivery_session_id"
 	// KeyInSubagent marks a context running inside a delegated child agent.
 	KeyInSubagent contextKey = "agentkit.subagent.active"
-	// KeyMessageMetadata is optional platform metadata for the current inbound turn.
-	KeyMessageMetadata contextKey = "agentkit.message_metadata"
 	// KeyProactiveSendUsed is set when tool/send delivers through the turn emit
 	// channel during the current turn.
 	KeyProactiveSendUsed contextKey = "agentkit.proactive_send_used"
@@ -51,6 +35,9 @@ const (
 	// KeyScheduleStateless marks a schedule-fired turn that must not inherit the
 	// delivery conversation's active session history (similar to KeyInSubagent).
 	KeyScheduleStateless contextKey = "agentkit.schedule_stateless"
+	// KeyTurnEnvelope carries the normalized Route / Conversation / Workspace
+	// context for the current turn. Runner sets it before Loop.Dispatch.
+	KeyTurnEnvelope contextKey = "agentkit.turn_envelope"
 )
 
 // InboundMetaTag is the bracket tag for runner inject prefixes on user messages.
@@ -62,10 +49,10 @@ const InboundMetaTag = "meta"
 const MetadataSkipPromptMeta = "skipPromptMeta"
 
 // SessionID identifies a conversation unit for Loop locking and durable history.
-// Platforms emit a delivery SessionID (finest grain: channel + optional :t:thread
+// Platforms emit a delivery route (finest grain: channel + optional :t:thread
 // + optional :u:user). Runner resolves active-session mappings (/new) and writes
-// the resulting SessionID into MessageEvent before Loop.Dispatch. Outbound replies
-// still use the delivery id.
+// the resulting conversation into TurnEnvelope before Loop.Dispatch. Outbound
+// replies still use the delivery route.
 //
 // Delivery examples:
 //
@@ -122,12 +109,14 @@ type SessionEvent struct {
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
-// MessageEvent is the inbound envelope from Platform to Loop. SessionID is the
-// conversation key for loop locking and history. When DeliverySessionID is set,
-// outbound routing uses it instead of SessionID (schedule side sessions).
+// MessageEvent is the inbound envelope from Platform to Loop.
+//
+// Platforms should set Envelope.Route on ingress (e.g. common.WithInboundRoute).
+// Runner normalizes into TurnEnvelope before Dispatch: Conversation for
+// history/lock, Workspace for tenant resources, Route for outbound return path.
 type MessageEvent struct {
-	SessionID         SessionID // required: loop/history id
-	DeliverySessionID SessionID // optional: platform delivery override
+	// Envelope is optional on ingress; runner fills it when empty.
+	Envelope TurnEnvelope `json:"envelope,omitempty"`
 	AgentID           AgentID
 	PlatformID        string
 	UserID            string
@@ -138,12 +127,11 @@ type MessageEvent struct {
 	Reply json.RawMessage `json:"reply,omitempty"`
 }
 
-// OutboundEvent is the outbound envelope from Agent/Loop to Platform. SessionID
-// must match the conversation that produced the turn so the platform can route
-// the reply to the correct IM target. PlatformID is required; multiplex rejects
-// empty values instead of broadcasting to every leaf platform.
+// OutboundEvent is the outbound envelope from Agent/Loop to Platform. Route is
+// the return address captured at inbound. PlatformID is required; multiplex
+// rejects empty values.
 type OutboundEvent struct {
-	SessionID  SessionID // required
+	Route      RouteRef
 	AgentID    AgentID
 	PlatformID string // required
 	UserID     string

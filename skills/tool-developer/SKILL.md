@@ -113,8 +113,10 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 
 | 键 | 类型 | 用途 |
 |---|---|---|
-| `agentkit.KeySessionID` | `SessionID` | 当前会话 |
-| `agentkit.KeyAgentID` | `AgentID` | 当前 agent |
+| `session.SessionIDFromContext(ctx)` | `SessionID` | 当前 conversation（历史/锁 key） |
+| `session.AgentIDFromContext(ctx)` | `AgentID` | 当前 agent |
+| `session.PlatformFromContext(ctx)` | `string` | 当前 platform |
+| `session.UserIDFromContext(ctx)` | `string` | 当前用户 |
 
 需要 session 历史或写事件时，通过 `deps.sessionStore` 注入 `agentkit.SessionStore`。
 

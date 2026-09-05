@@ -90,10 +90,11 @@ func runTurn(t *testing.T, ag agentkit.Agent, sessionID agentkit.SessionID, user
 	if userID != "" {
 		text = "[meta sender_id=" + userID + "]\n" + text
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	env := agentkit.TurnEnvelope{Conversation: string(sessionID)}
 	if userID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyUserID, userID)
+		env.Actor.UserID = userID
 	}
+	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
 	err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -222,7 +223,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	sess, err := store.Get(ctx, sessionID)
 	if err != nil {
 		t.Fatal(err)

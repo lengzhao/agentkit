@@ -312,7 +312,7 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 	if err := json.Unmarshal(event.Data, &result); err != nil {
 		return err
 	}
-	st := p.richStreamState(event.SessionID)
+	st := p.richStreamState(session.OutboundRouteID(event))
 	st.mu.Lock()
 	changed := p.applyToolResult(st, result)
 	shouldFlush := changed && (st.progressHandle == nil || time.Since(st.lastProgressUpdate) >= streamUpdateInterval)
@@ -320,11 +320,11 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 	if !shouldFlush {
 		return nil
 	}
-	return p.flushProgressCard(ctx, event.SessionID, true)
+	return p.flushProgressCard(ctx, session.OutboundRouteID(event), true)
 }
 
 func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.OutboundEvent) error {
-	st := p.richStreamState(event.SessionID)
+	st := p.richStreamState(session.OutboundRouteID(event))
 	st.mu.Lock()
 	changed := false
 	switch event.Type {
@@ -350,7 +350,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 	if !shouldFlush {
 		return nil
 	}
-	return p.flushProgressCard(ctx, event.SessionID, true)
+	return p.flushProgressCard(ctx, session.OutboundRouteID(event), true)
 }
 
 func subagentDisplayName(agent string) string {
@@ -407,7 +407,7 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 		fallbackText = strings.TrimSpace(assistantText(payload.Message))
 	}
 
-	st := p.streamState(event.SessionID)
+	st := p.streamState(session.OutboundRouteID(event))
 	st.mu.Lock()
 	bodyText := st.bodyText
 	if bodyText == "" {
@@ -426,13 +426,13 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 		}
 	}
 	if progressHandle != nil {
-		if err := p.finalizeProgressCard(ctx, event.SessionID, progressHandle); err != nil {
+		if err := p.finalizeProgressCard(ctx, session.OutboundRouteID(event), progressHandle); err != nil {
 			return err
 		}
 	}
 
 	if bodyHandle == nil && strings.TrimSpace(bodyText) != "" {
-		rc, ok := p.deliveryFor(event.SessionID)
+		rc, ok := p.deliveryFor(session.OutboundRouteID(event))
 		if !ok {
 			return nil
 		}

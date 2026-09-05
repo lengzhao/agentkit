@@ -5,9 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/lengzhao/agentkit"
-)
+	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit")
 
 type stubCommand struct {
 	name string
@@ -205,12 +204,12 @@ func TestRegistryAdminOnlyRequiresAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "U2")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U2"}})
 	_, err = r.Dispatch(ctx, "shell", "")
 	if !errors.Is(err, agentkit.ErrCommandForbidden) {
 		t.Fatalf("non-admin err = %v", err)
 	}
-	ctx = context.WithValue(context.Background(), agentkit.KeyUserID, "U1")
+	ctx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U1"}})
 	out, err := r.Dispatch(ctx, "shell", "")
 	if err != nil || out != "secret" {
 		t.Fatalf("admin dispatch = %q err %v", out, err)
@@ -237,7 +236,7 @@ func TestRegistryEnrichSlashContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "U1")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U1"}})
 	ctx = r.EnrichSlashContext(ctx)
 	if !agentkit.IsAdmin(ctx) {
 		t.Fatal("expected admin ctx")

@@ -5,21 +5,25 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // TurnContext returns a context seeded for agent.RunTurn.
 func TurnContext(sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
-	if agentID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
-	}
+	conv := string(sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: conv,
+		AgentID:      agentID,
+	})
 	return ctx
 }
 
-// LoopTurnContext mimics loop/default seeding with a resolved SessionID.
-func LoopTurnContext(sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {
-	return TurnContext(sessionID, agentID)
+// LoopRequest builds a LoopRequest with conversation on the event envelope.
+func LoopRequest(conversation agentkit.SessionID, event agentkit.MessageEvent) agentkit.LoopRequest {
+	event.Envelope.Conversation = string(conversation)
+	return agentkit.LoopRequest{
+		Event: event,
+	}
 }
 
 // RunTurn is a thin helper around agent.RunTurn with a user text message.

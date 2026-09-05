@@ -5,17 +5,15 @@ import (
 )
 
 // Loop is the turn scheduler. It routes inbound MessageEvents to agents,
-// serializes work per SessionID, and owns per-session steer/follow-up control.
-// Loop seeds ctx with KeySessionID/KeyDeliverySessionID/KeyAgentID/
-// KeyPlatformID/KeyUserID/KeyMessageMetadata/KeySessionControl/KeyOutboundEmit
-// before calling the agent. It does not resolve Session objects; that is the
-// agent's responsibility.
+// serializes work per Conversation, and owns per-session steer/follow-up control.
+// Loop seeds ctx with KeyTurnEnvelope (conversation, agent, route, workspace) and
+// KeyOutboundEmit before calling the agent. It does not resolve Session objects; that is the agent's responsibility.
 type Loop interface {
 	Dispatch(context.Context, LoopRequest) error
 	Steer(context.Context, ModelMessage) error
 	FollowUp(context.Context, ModelMessage) error
 	// Cancel requests the in-flight turn for the session in ctx to stop. The
-	// session ID is read from KeySessionID, same as Steer/FollowUp.
+	// conversation key is read from TurnEnvelope, same as Steer/FollowUp.
 	Cancel(context.Context, string) error
 	// IsSessionBusy reports whether a turn is currently executing for the session.
 	IsSessionBusy(SessionID) bool
@@ -27,12 +25,10 @@ type Loop interface {
 	SupersedePendingForInbound(MessageEvent)
 }
 
-// LoopRequest wraps one inbound message. Runner resolves Event.SessionID to the
-// active history session before Dispatch; DeliverySessionID keeps the platform
-// routing target for outbound Send.
+// LoopRequest wraps one inbound message. Runner resolves TurnEnvelope on
+// Event.Envelope before Dispatch: Conversation for history/lock, Route for outbound Send.
 type LoopRequest struct {
-	Event             MessageEvent
-	DeliverySessionID SessionID // platform delivery target; empty means Event.SessionID
-	Emit              OutboundEmit
-	Capability        any // permission.Capability, resolved by runner from the inbound platform
+	Event      MessageEvent
+	Emit       OutboundEmit
+	Capability any // permission.Capability, resolved by runner from the inbound platform
 }

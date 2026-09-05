@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
 	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func newMultiRegistry(t *testing.T) (capschedule.Registry, string) {
@@ -35,10 +36,10 @@ func TestMultiIsolatesJobsPerChannel(t *testing.T) {
 	t.Parallel()
 
 	reg, globalRoot := newMultiRegistry(t)
-	ch1 := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
-	ch1 = context.WithValue(ch1, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C001:u:U1"))
-	ch2 := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C002"))
-	ch2 = context.WithValue(ch2, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C002:u:U2"))
+	ch1 := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ch1 = session.ContextWithDeliveryRoute(ch1, "slack", agentkit.SessionID("slack:C001:u:U1"))
+	ch2 := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
+	ch2 = session.ContextWithDeliveryRoute(ch2, "slack", agentkit.SessionID("slack:C002:u:U2"))
 
 	if _, err := reg.Add(ch1, capschedule.Job{
 		Kind:   capschedule.KindDelay,
@@ -90,8 +91,8 @@ func TestMultiRemoveRespectsChannelScope(t *testing.T) {
 	t.Parallel()
 
 	reg, _ := newMultiRegistry(t)
-	ch1 := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
-	ch2 := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C002"))
+	ch1 := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ch2 := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
 
 	added, err := reg.Add(ch1, capschedule.Job{
 		Kind:   capschedule.KindDelay,
@@ -129,7 +130,7 @@ func TestMultiDueScansAllChannels(t *testing.T) {
 	t.Parallel()
 
 	reg, _ := newMultiRegistry(t)
-	ch1 := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
+	ch1 := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
 	now := time.Now()
 	if _, err := reg.Add(ch1, capschedule.Job{
 		Kind:   capschedule.KindDelay,

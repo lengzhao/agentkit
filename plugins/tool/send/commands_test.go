@@ -2,10 +2,10 @@ package send
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type recordingPlatform struct {
@@ -21,10 +21,12 @@ func (p *recordingPlatform) Send(_ context.Context, event agentkit.OutboundEvent
 	return nil
 }
 
-func withSendCtx(ctx context.Context, sessionID, deliveryID agentkit.SessionID) context.Context {
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliveryID)
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("assistant"))
+func withSendCtx(ctx context.Context, platform string, sessionID, deliveryID agentkit.SessionID) context.Context {
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	if platform != "" {
+		ctx = session.ContextWithDeliveryRoute(ctx, platform, deliveryID)
+	}
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	return ctx
 }
 
@@ -74,7 +76,7 @@ func TestSendSlashCommandRequiresTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := tool.(*sendBundle)
-	ctx := withSendCtx(t.Context(), "slack:C001", "slack:C001")
+	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
 	_, err = bundle.Commands()[0].CommandExec(ctx, "hello inbox")
 	if err == nil {
 		t.Fatal("expected error for bare message")
@@ -93,8 +95,8 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := tool.(*sendBundle)
-	ctx := withSendCtx(t.Context(), "slack:C001", "slack:C001")
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "slack")
+	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("slack", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
 	out, err := bundle.Commands()[0].CommandExec(ctx, "slack:C002 remote ping")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +104,7 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 	if out != "" {
 		t.Fatalf("reply = %q", out)
 	}
-	if len(platform.sent) != 1 || platform.sent[0].SessionID != "slack:C002" {
+	if len(platform.sent) != 1 || session.OutboundRouteID(platform.sent[0]) != "slack:C002" {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
 	if platform.sent[0].PlatformID != "slack" {
@@ -120,8 +122,8 @@ func TestSendSlashCommandRoutesToTargetSessionPlatform(t *testing.T) {
 	}
 	bundle := tool.(*sendBundle)
 	target := "chat-api:nex-channel:t:conv_test"
-	ctx := withSendCtx(t.Context(), "slack:C001", "slack:C001")
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "slack")
+	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("slack", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
 	_, err = bundle.Commands()[0].CommandExec(ctx, target+" hello")
 	if err != nil {
 		t.Fatal(err)
@@ -129,8 +131,8 @@ func TestSendSlashCommandRoutesToTargetSessionPlatform(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
-	if platform.sent[0].SessionID != agentkit.SessionID(target) {
-		t.Fatalf("session = %q", platform.sent[0].SessionID)
+	if session.OutboundRouteID(platform.sent[0]) != agentkit.SessionID(target) {
+		t.Fatalf("route = %q", session.OutboundRouteID(platform.sent[0]))
 	}
 	if platform.sent[0].PlatformID != "chat-api" {
 		t.Fatalf("platformID = %q, want chat-api", platform.sent[0].PlatformID)
@@ -146,7 +148,7 @@ func TestSendSlashCommandTargetUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := tool.(*sendBundle)
-	ctx := withSendCtx(t.Context(), "slack:C001", "slack:C001:t:1:u:U1")
+	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001:t:1:u:U1")
 	_, err = bundle.Commands()[0].CommandExec(ctx, "@U222 hello")
 	if err != nil {
 		t.Fatal(err)
@@ -165,10 +167,11 @@ func TestSendSlashCommandRequiresPlatformID(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := tool.(*sendBundle)
-	ctx := withSendCtx(t.Context(), "notvalid", "notvalid")
+	ctx := session.ApplyEnvelopeToContext(t.Context(), agentkit.TurnEnvelope{Conversation: "notvalid", Workspace: "notvalid"})
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	_, err = bundle.Commands()[0].CommandExec(ctx, "@U222 hello")
-	if !errors.Is(err, agentkit.ErrOutboundPlatformRequired) {
-		t.Fatalf("err = %v, want ErrOutboundPlatformRequired", err)
+	if err == nil {
+		t.Fatal("expected error without delivery route in context")
 	}
 	if len(platform.sent) != 0 {
 		t.Fatalf("sent = %#v", platform.sent)

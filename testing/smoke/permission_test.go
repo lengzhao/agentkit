@@ -103,12 +103,12 @@ func runPermissionLoopSmoke(t *testing.T, tc permissionLoopCase) {
 
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			SessionID:  sessionID,
 			PlatformID: "cli",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "echo secret"}},
 			},
+			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
 		},
 		Capability: permission.Capability{
 			Interactive: true,
@@ -143,7 +143,7 @@ func deliverPermissionReply(t *testing.T, l *loop.Default, sessionID agentkit.Se
 	deadline := time.After(2 * time.Second)
 	for {
 		if l.TryDeliverPermission(agentkit.MessageEvent{
-			SessionID: sessionID,
+			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
 			Reply: permission.MarshalReply(permission.Reply{
 				RequestID: requestID,
 				Text:      text,

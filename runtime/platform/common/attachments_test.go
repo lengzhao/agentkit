@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestInboundFromContentSavesFiles(t *testing.T) {
@@ -22,8 +23,11 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	}}
 	event := InboundFromContent(
 		"assistant",
-		agentkit.SessionID("slack:D0AK8MAHW22:u:U02LNUW8KV5"),
-		"slack",
+		session.SessionRouteInput{
+			Platform:   "slack",
+			DeliveryID: agentkit.SessionID("slack:D0AK8MAHW22:u:U02LNUW8KV5"),
+			ScopeUserID: "U02LNUW8KV5",
+		},
 		"U02LNUW8KV5",
 		"附件里面的内容是什么",
 		"",
@@ -63,8 +67,11 @@ func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 	}}
 	event := InboundFromContent(
 		"assistant",
-		agentkit.SessionID("slack:C001"),
-		"slack",
+		session.SessionRouteInput{
+			Platform:   "slack",
+			DeliveryID: agentkit.SessionID("slack:C001"),
+			ScopeUserID: "U1",
+		},
 		"U1",
 		"what is this",
 		"",

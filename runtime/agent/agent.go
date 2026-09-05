@@ -116,7 +116,7 @@ type turnRun struct {
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
 	}
@@ -368,7 +368,6 @@ func (a *Runtime) extendTurn(
 	)
 	if emit != nil {
 		if err := emit(ctx, agentkit.OutboundEvent{
-			SessionID: sess.ID(),
 			AgentID:   a.id,
 			Type:      agentkit.EventTurnContinue,
 			Data:      agentkit.MarshalOutboundData(data),
@@ -590,8 +589,14 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 }
 
 func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
+	env := session.EnvelopeFromContext(ctx)
+	if sessionID != "" {
+		env = env.WithConversation(string(sessionID))
+	}
+	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	if agentID != "" {
+		ctx = session.WithAgentID(ctx, agentID)
+	}
 	return ctx
 }
 
@@ -605,7 +610,6 @@ func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit,
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sessionID,
 		AgentID:   a.id,
 		Type:      typ,
 		Data:      agentkit.MarshalOutboundData(data),

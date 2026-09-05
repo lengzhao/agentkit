@@ -181,7 +181,7 @@ func TestLearnCommandSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
 	sess, err := store.Get(ctx, agentkit.SessionID("cli:default"))
 	if err != nil {
 		t.Fatal(err)

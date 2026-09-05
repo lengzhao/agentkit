@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
 type stubAgent struct {
@@ -34,17 +35,14 @@ func TestDispatchRecordsTelemetryTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = l.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID:  "cli:default",
-			AgentID:    "coder",
-			PlatformID: "cli",
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-			},
+	err = l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
+		AgentID:    "coder",
+		PlatformID: "cli",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}

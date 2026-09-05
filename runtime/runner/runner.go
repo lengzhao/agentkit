@@ -166,28 +166,6 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	return err
 }
 
-func (r *Root) inboundDeliveryID(event agentkit.MessageEvent) agentkit.SessionID {
-	if id := strings.TrimSpace(string(event.DeliverySessionID)); id != "" {
-		return agentkit.SessionID(id)
-	}
-	return event.SessionID
-}
-
-func (r *Root) scopedEvent(event agentkit.MessageEvent) (delivery, effective agentkit.SessionID, scoped agentkit.MessageEvent) {
-	delivery = r.inboundDeliveryID(event)
-	effective = session.ApplyScope(event.SessionID, r.sessionScope, event.UserID)
-	scoped = event
-	scoped.SessionID = effective
-	return delivery, effective, scoped
-}
-
-func deliverySessionID(req agentkit.LoopRequest) agentkit.SessionID {
-	if req.DeliverySessionID != "" {
-		return req.DeliverySessionID
-	}
-	return req.Event.SessionID
-}
-
 // receiveLoop reads inbound events without holding concurrency slots. Permission
 // replies are delivered immediately; new turns are queued for the scheduler.
 // When keepAlive is true, platform EOF keeps the process serving schedule runtimes.
@@ -210,21 +188,23 @@ func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- er
 // reportTurnError surfaces a failed turn on its own session's channel and keeps
 // the process serving. A turn failure is never fatal to the runner.
 func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, err error) {
-	deliveryID := deliverySessionID(req)
+	deliveryID := session.DeliveryFromEnvelope(req.Event.Envelope)
+	conversation := session.ConversationFromLoopRequest(req)
 	slog.Error("loop dispatch failed",
-		"session_id", req.Event.SessionID,
+		"session_id", conversation,
 		"delivery_session_id", deliveryID,
 		"agent_id", req.Event.AgentID,
 		"err", err,
 	)
-	if sendErr := r.platform.Send(ctx, agentkit.OutboundEvent{
-		SessionID:  deliveryID,
-		AgentID:    req.Event.AgentID,
-		PlatformID: req.Event.PlatformID,
-		UserID:     req.Event.UserID,
-		Type:       "error",
-		Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
-	}); sendErr != nil {
+	out := session.OutboundFromEnvelope(req.Event.Envelope, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
+	out.AgentID = req.Event.AgentID
+	if out.PlatformID == "" {
+		out.PlatformID = req.Event.PlatformID
+	}
+	if out.UserID == "" {
+		out.UserID = req.Event.UserID
+	}
+	if sendErr := r.platform.Send(ctx, out); sendErr != nil {
 		slog.Error("reporting turn error failed", "session_id", deliveryID, "err", sendErr)
 	}
 }
@@ -241,8 +221,8 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 			return
 		}
 		slog.Error("turn panicked",
-			"session_id", req.Event.SessionID,
-			"delivery_session_id", deliverySessionID(req),
+			"session_id", session.ConversationFromLoopRequest(req),
+			"delivery_session_id", session.DeliveryFromEnvelope(req.Event.Envelope),
 			"agent_id", req.Event.AgentID,
 			"panic", fmt.Sprint(recovered),
 			"stack", string(debug.Stack()),

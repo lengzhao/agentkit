@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
 type permissionPrompt struct {
@@ -68,14 +69,16 @@ func decodePermissionRequest(data json.RawMessage) (permission.RequestPayload, e
 }
 
 func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) agentkit.MessageEvent {
-	return agentkit.MessageEvent{
-		SessionID:  p.sessionID,
+	return common.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: platformID,
+		Envelope: agentkit.TurnEnvelope{
+			Conversation: string(p.sessionID),
+		},
 		Reply: permission.MarshalReply(permission.Reply{
 			RequestID: pending.requestID,
 			Text:      text,
 		}),
-	}
+	}, platformID, p.sessionID)
 }
 
 func (p *Platform) hasPending() bool {

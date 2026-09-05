@@ -9,6 +9,14 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+func slashCtx(platform string, delivery agentkit.SessionID, scope session.SessionScope, userID string) SlashContext {
+	return SlashContext{
+		Route:        agentkit.SessionRoute(platform, string(delivery)),
+		SessionScope: scope,
+		UserID:       userID,
+	}
+}
+
 type stubCommand struct {
 	name string
 	out  string
@@ -52,11 +60,7 @@ func TestParseSlashCommand(t *testing.T) {
 }
 
 func TestProcessSlashHelp(t *testing.T) {
-	out, err := ProcessSlash(context.Background(), nil, SlashContext{
-		DeliverySessionID: "slack:C:u:U",
-		PlatformID:        "slack",
-		SessionScope:      session.ScopeChannel,
-	}, "/help")
+	out, err := ProcessSlash(context.Background(), nil, slashCtx("slack", "slack:C:u:U", session.ScopeChannel, ""), "/help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,11 +89,7 @@ func TestProcessSlashDispatch(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": stubCommand{name: "ping", out: "pong"},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
-		DeliverySessionID: "slack:C:u:U",
-		PlatformID:        "slack",
-		SessionScope:      session.ScopeChannel,
-	}, "/ping")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C:u:U", session.ScopeChannel, ""), "/ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +104,7 @@ func TestProcessSlashInjectsPlatformID(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": captureSessionCommand{gotPlatform: &gotPlatform},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
-		DeliverySessionID: delivery,
-		PlatformID:        "chat-api",
-		SessionScope:      session.ScopeChannel,
-	}, "/ping")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("chat-api", delivery, session.ScopeChannel, ""), "/ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,12 +122,7 @@ func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"new": captureSessionCommand{t: &gotSession},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
-		DeliverySessionID: delivery,
-		PlatformID:        "slack",
-		SessionScope:      session.ScopeChannel,
-		UserID:            "U02LNUW8KV5",
-	}, "/new")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, session.ScopeChannel, "U02LNUW8KV5"), "/new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,21 +144,16 @@ func (c captureSessionCommand) Alias() string       { return "" }
 func (c captureSessionCommand) Description() string { return "capture" }
 func (c captureSessionCommand) CommandExec(ctx context.Context, _ string) (string, error) {
 	if c.t != nil {
-		*c.t, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+		*c.t = session.SessionIDFromContext(ctx)
 	}
 	if c.gotPlatform != nil {
-		*c.gotPlatform, _ = ctx.Value(agentkit.KeyPlatformID).(string)
+		*c.gotPlatform = session.PlatformFromContext(ctx)
 	}
 	return "ok", nil
 }
 
-
 func TestProcessSlashUnknownForwards(t *testing.T) {
-	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, SlashContext{
-		DeliverySessionID: "slack:C:u:U",
-		PlatformID:        "slack",
-		SessionScope:      session.ScopeChannel,
-	}, "/missing")
+	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, slashCtx("slack", "slack:C:u:U", session.ScopeChannel, ""), "/missing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +168,7 @@ type adminRegistry struct {
 }
 
 func (r adminRegistry) EnrichSlashContext(ctx context.Context) context.Context {
-	userID, _ := ctx.Value(agentkit.KeyUserID).(string)
+	userID := session.UserIDFromContext(ctx)
 	for _, id := range r.admins {
 		if strings.EqualFold(id, userID) {
 			return context.WithValue(ctx, agentkit.KeyIsAdmin, true)
@@ -206,12 +192,7 @@ func TestProcessSlashForbidden(t *testing.T) {
 		}},
 		admins: []string{"U1"},
 	}
-	out, err := ProcessSlash(context.Background(), cmds, SlashContext{
-		DeliverySessionID: "slack:C",
-		PlatformID:        "slack",
-		SessionScope:      session.ScopeChannel,
-		UserID:            "U2",
-	}, "/shell echo hi")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C", session.ScopeChannel, "U2"), "/shell echo hi")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatalf("unexpected commands: %+v", commands)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	out, err := commands[0].CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)

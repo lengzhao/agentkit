@@ -132,9 +132,9 @@ platform.http:
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `loop/default` | `agentkit.Loop` | Turn/Step 调度、按 SessionID 串行，并向 ctx 写入 agentkit context key | DSH `agent-loop` / Pi `agentLoop` |
+| `loop/default` | `agentkit.Loop` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key | DSH `agent-loop` / Pi `agentLoop` |
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation | Pi AgentHarness |
-| `agent/coding` | `agentkit.Agent` | Coding Agent；从 `ctx.Value(KeySessionID)` 取 ID 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
+| `agent/coding` | `agentkit.Agent` | Coding Agent；从 `session.SessionIDFromContext` 取 conversation 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
@@ -374,7 +374,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | Kind | 返回类型 | 说明 |
 |---|---|---|
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
-| `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `cap/tenant` 租户键一租户一个（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
+| `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `TurnEnvelope.Workspace`（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
 | `credentials/env` | `credentials.Store` | 环境变量；`config.env` 内联内存键值、`config.files` 读取 dotenv 文件；优先级：进程 env > config env > files；`/env add` 写入 `.env`，`/env -u` 重载 files |
 | `credentials/file` | `credentials.Store` | 文件存储 |

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/cap/tenant"
+	"github.com/lengzhao/agentkit/runtime/session"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -73,7 +73,7 @@ func (p *clientPool) tools(ctx context.Context, server serverConfig, creds crede
 	}
 	result, err := client.ListTools(ctx, mcplib.ListToolsRequest{})
 	if err != nil {
-		p.evict(poolKey(ctx, server))
+		p.evict(p.poolKey(ctx, server))
 		return nil, err
 	}
 	var out []toolDefinition
@@ -115,27 +115,22 @@ func (p *clientPool) call(ctx context.Context, server serverConfig, toolName str
 		},
 	})
 	if err != nil {
-		p.evict(poolKey(ctx, server))
+		p.evict(p.poolKey(ctx, server))
 		return mcpCallOutcome{}, err
 	}
 	return convertCallResult(result), nil
 }
 
-// poolKey scopes a pooled client. Global servers (from global:mcp.json) share one
-// slot process-wide; local servers are keyed per tenant so two tenants can run
-// same-named servers pointed at different workspaces without evicting each other.
-// Within a slot the fingerprint still decides replacement, so editing mcp.json
-// reconnects rather than accumulating a second client.
-func poolKey(ctx context.Context, server serverConfig) string {
+func (p *clientPool) poolKey(ctx context.Context, server serverConfig) string {
 	if server.Global {
 		return "global\x00" + server.Name
 	}
-	return tenant.FromContext(ctx) + "\x00" + server.Name
+	return session.WorkspaceFromContext(ctx) + "\x00" + server.Name
 }
 
 func (p *clientPool) ensure(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {
 	fp := server.fingerprint()
-	key := poolKey(ctx, server)
+	key := p.poolKey(ctx, server)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.evictIdleLocked(p.now())

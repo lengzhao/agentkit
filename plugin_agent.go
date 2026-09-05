@@ -13,10 +13,10 @@ const (
 // Agent is the execution unit below Loop. It owns prompt, model, tools,
 // policies and hooks for a single agent identity. Conversation state lives in
 // Session; the agent implementation resolves Session via SessionStore using
-// ctx.Value(KeySessionID). Loop does not inject Session objects or duplicate
+// SessionIDFromContext. Loop does not inject Session objects or duplicate
 // routing fields in TurnInput.
 //
-// Steer/follow-up/cancel are owned by Loop per SessionID. Loop seeds
+// Steer/follow-up/cancel are owned by Loop per conversation. Loop seeds
 // ctx.Value(KeySessionControl) before RunTurn; Agent reads it to inject
 // queued steering messages at step boundaries without interrupting in-flight steps.
 //
@@ -32,8 +32,7 @@ type AgentCatalogEntry interface {
 }
 
 // TurnInput carries one turn's payload. Routing context is available through
-// ctx.Value(KeySessionID), ctx.Value(KeyAgentID), ctx.Value(KeyUserID), and
-// related agentkit keys.
+// TurnEnvelope on ctx (SessionIDFromContext, AgentIDFromContext, PlatformFromContext, UserIDFromContext).
 type TurnInput struct {
 	Message ModelMessage
 	Emit    OutboundEmit

@@ -40,7 +40,7 @@ func newDriver(t *testing.T, cfg hook.TurnContinueConfig) (agentkit.TurnStopping
 }
 
 func driverCtx(sess agentkit.Session) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeySessionID, sess.ID())
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sess.ID()), Workspace: string(sess.ID())})
 }
 
 // startRun records the inbound user message that marks the run's beginning.

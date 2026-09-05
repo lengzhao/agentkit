@@ -10,7 +10,7 @@ import (
 )
 
 func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
-	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	agentID := AgentIDFromContext(ctx)
 
 	compactAfterSeq, summary, retainedTail := latestCompactionView(events, agentID)
 

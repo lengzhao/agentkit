@@ -319,8 +319,8 @@ func New() (agentkit.Tool, error) {
 
 实现 `agentkit.Platform`：
 
-- `Receive`：把外部消息转成 `MessageEvent`（**必须带 SessionID**）
-- `Send`：把 `OutboundEvent` 写回外部（流式文本、tool 结果、权限弹窗等）
+- `Receive`：把外部消息转成 `MessageEvent`（入站设置 `Envelope.Route`；Runner 填充 `Conversation` / `Workspace`）
+- `Send`：把 `OutboundEvent`（`Route` 回邮地址）写回外部（流式文本、tool 结果、权限弹窗等）
 
 注册为 `platform/<name>`，在 `runner` 的 `deps.platform` 或通过 `platform/multiplex` 聚合多个入口。
 

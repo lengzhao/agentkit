@@ -36,7 +36,7 @@ func newRunToolsFixture(t *testing.T) (todoTool, finishTool agentkit.Tool, sess 
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = context.WithValue(context.Background(), agentkit.KeySessionID, sess.ID())
+	ctx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sess.ID()), Workspace: string(sess.ID())})
 	return todoTool, finishTool, sess, ctx
 }
 

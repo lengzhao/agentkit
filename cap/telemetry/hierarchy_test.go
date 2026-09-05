@@ -3,10 +3,9 @@ package telemetry_test
 import (
 	"context"
 	"testing"
-
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry"
-)
+	"github.com/lengzhao/agentkit/cap/telemetry")
 
 func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 	t.Parallel()
@@ -18,8 +17,11 @@ func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 		SessionID: "cli:default",
 		AgentID:   "coder",
 	})
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+		Conversation: "cli:default",
+		Workspace:    "cli:default",
+		AgentID:      agentkit.AgentID("coder"),
+	})
 
 	ctx, endParentGen := rec.BeginObservation(ctx, telemetry.ObservationMeta{
 		Name:    "llm.generation",
@@ -34,8 +36,11 @@ func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 		Input: `{"agent":"researcher"}`,
 	})
 
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("sub:researcher"))
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("sub:cli:researcher:1"))
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+		Conversation: "sub:cli:researcher:1",
+		Workspace:    "sub:cli:researcher:1",
+		AgentID:      agentkit.AgentID("sub:researcher"),
+	})
 	ctx, endSubagent := rec.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
 		Name:  "subagent.researcher",
 		Kind:  telemetry.KindSpan,

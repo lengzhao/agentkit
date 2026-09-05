@@ -13,8 +13,7 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 	t.Parallel()
 
 	parentSession := agentkit.SessionID("chat-api:default_channel:t:conv_abc")
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, parentSession)
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "chat-api", parentSession)
 
 	var got []agentkit.OutboundEvent
 	parent := agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
@@ -36,10 +35,10 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		SessionID: "sub:parent:researcher:1",
-		AgentID:   "sub:researcher",
-		Type:      agentkit.EventMessageUpdate,
-		Data:      toolEnd,
+		Route:   agentkit.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		AgentID: "sub:researcher",
+		Type:    agentkit.EventMessageUpdate,
+		Data:    toolEnd,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +49,10 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		Content: "matched 3 lines",
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		SessionID: "sub:parent:researcher:1",
-		AgentID:   "sub:researcher",
-		Type:      agentkit.EventToolResult,
-		Data:      resultData,
+		Route:   agentkit.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		AgentID: "sub:researcher",
+		Type:    agentkit.EventToolResult,
+		Data:    resultData,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,9 +64,9 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		SessionID: "sub:parent:researcher:1",
-		Type:      agentkit.EventMessageUpdate,
-		Data:      textDelta,
+		Route: agentkit.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Type:  agentkit.EventMessageUpdate,
+		Data:  textDelta,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +74,8 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("forwarded %d events, want 2 (tool call end + tool result)", len(got))
 	}
-	if got[0].SessionID != parentSession {
-		t.Fatalf("session = %q, want parent delivery %q", got[0].SessionID, parentSession)
+	if session.OutboundRouteID(got[0]) != parentSession {
+		t.Fatalf("route = %q, want parent delivery %q", session.OutboundRouteID(got[0]), parentSession)
 	}
 	if got[0].Type != agentkit.EventMessageUpdate {
 		t.Fatalf("first event type = %q, want message/update", got[0].Type)
@@ -91,8 +90,8 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 	if got[1].Type != agentkit.EventToolResult {
 		t.Fatalf("second event type = %q, want tool/result", got[1].Type)
 	}
-	if got[1].SessionID != parentSession {
-		t.Fatalf("result session = %q, want parent delivery %q", got[1].SessionID, parentSession)
+	if session.OutboundRouteID(got[1]) != parentSession {
+		t.Fatalf("result route = %q, want parent delivery %q", session.OutboundRouteID(got[1]), parentSession)
 	}
 }
 
@@ -100,8 +99,7 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 	t.Parallel()
 
 	parentSession := agentkit.SessionID("feishu:default:chat")
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, parentSession)
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
 
 	var got []agentkit.OutboundEvent
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
@@ -124,8 +122,8 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 	if got[0].Type != agentkit.EventSubagentStart || got[1].Type != agentkit.EventSubagentEnd {
 		t.Fatalf("event types = %q, %q", got[0].Type, got[1].Type)
 	}
-	if got[0].SessionID != parentSession {
-		t.Fatalf("session = %q, want parent delivery %q", got[0].SessionID, parentSession)
+	if session.OutboundRouteID(got[0]) != parentSession {
+		t.Fatalf("route = %q, want parent delivery %q", session.OutboundRouteID(got[0]), parentSession)
 	}
 }
 

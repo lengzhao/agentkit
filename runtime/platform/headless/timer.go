@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
 const timerPlatformID = "timer"
@@ -124,11 +125,11 @@ func (t *Timer) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	t.mu.Unlock()
 
 	slog.Info("timer tick", "run", run+1, "interval", t.interval.String())
-	return agentkit.MessageEvent{
-		SessionID:  t.naming.forRun(run),
+	sessionID := t.naming.forRun(run)
+	return common.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: timerPlatformID,
 		Message:    userMessage(t.prompt),
-	}, nil
+	}, timerPlatformID, sessionID), nil
 }
 
 // waitForTick sleeps until the next boundary at or after now. Boundaries are

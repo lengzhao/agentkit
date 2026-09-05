@@ -158,14 +158,16 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 		p.done = true
 	}
 	p.beginTurnWait()
-	return agentkit.MessageEvent{
-		SessionID:  p.sessionID,
+	return common.WithInboundRoute(agentkit.MessageEvent{
 		PlatformID: platformID,
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
-	}, nil
+	}, session.SessionRouteInput{
+		Platform:   platformID,
+		DeliveryID: p.sessionID,
+	}), nil
 }
 
 func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, error) {
@@ -183,10 +185,14 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 		return true, nil
 	}
 
-	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, p.sessionID)
-	if userID := cliUserID(); userID != "" {
-		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, userID)
+	env := agentkit.TurnEnvelope{
+		Conversation: string(p.sessionID),
+		Route:        session.SessionRouteFromDelivery(platformID, p.sessionID, ""),
 	}
+	if userID := cliUserID(); userID != "" {
+		env.Actor.UserID = userID
+	}
+	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
 	if enricher, ok := p.commands.(agentkit.SlashAdminContext); ok {
 		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
 	}
@@ -387,7 +393,10 @@ func (p *Platform) dispatchHelpTopic(args string) {
 		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
 		return
 	}
-	cmdCtx := context.WithValue(context.Background(), agentkit.KeySessionID, p.sessionID)
+	cmdCtx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: string(p.sessionID),
+		Route:        session.SessionRouteFromDelivery(platformID, p.sessionID, ""),
+	})
 	rest := ""
 	if len(fields) > 1 {
 		rest = strings.TrimSpace(args[len(fields[0]):])

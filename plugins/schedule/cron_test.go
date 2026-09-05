@@ -12,6 +12,7 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type fakeClock struct {
@@ -170,11 +171,11 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 
 	select {
 	case event := <-got:
-		if event.SessionID == "chat-api:default:t:conv_1" {
-			t.Fatalf("schedule fire should use side session, got delivery session %q", event.SessionID)
+		if session.ConversationFromEvent(event) == "chat-api:default:t:conv_1" {
+			t.Fatalf("schedule fire should use side session, got delivery conversation %q", session.ConversationFromEvent(event))
 		}
-		if event.DeliverySessionID != "chat-api:default:t:conv_1" {
-			t.Fatalf("delivery = %q", event.DeliverySessionID)
+		if session.InboundDeliveryID(event) != "chat-api:default:t:conv_1" {
+			t.Fatalf("delivery = %q", session.InboundDeliveryID(event))
 		}
 		if event.PlatformID != "chat-api" {
 			t.Fatalf("platform = %q", event.PlatformID)
@@ -220,8 +221,8 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 
 	select {
 	case event := <-got:
-		if event.SessionID != "chat-api:default:t:conv_reuse" {
-			t.Fatalf("reuse session = %q, want delivery session", event.SessionID)
+		if session.ConversationFromEvent(event) != "chat-api:default:t:conv_reuse" {
+			t.Fatalf("reuse conversation = %q, want delivery session", session.ConversationFromEvent(event))
 		}
 		meta, ok := event.Metadata["schedule"].(map[string]any)
 		if !ok {
@@ -265,8 +266,8 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 
 	select {
 	case event := <-got:
-		if !strings.HasPrefix(string(event.SessionID), "schedule:agent-9:") {
-			t.Fatalf("stateless session = %q", event.SessionID)
+		if !strings.HasPrefix(string(session.ConversationFromEvent(event)), "schedule:agent-9:") {
+			t.Fatalf("stateless conversation = %q", session.ConversationFromEvent(event))
 		}
 		meta, ok := event.Metadata["schedule"].(map[string]any)
 		if !ok {

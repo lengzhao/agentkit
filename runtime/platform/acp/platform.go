@@ -116,10 +116,11 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
+	delivery := session.OutboundRouteID(event)
 	if p.conn == nil {
 		return nil
 	}
-	sess := p.sessionByDeliveryID(event.SessionID)
+	sess := p.sessionByDeliveryID(delivery)
 	if sess == nil {
 		return nil
 	}

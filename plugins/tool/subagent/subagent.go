@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // maxDelegateDepth is the maximum number of delegate calls in one chain
@@ -15,8 +16,8 @@ import (
 const maxDelegateDepth = 2
 
 func delegationDepth(ctx context.Context) int {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	return strings.Count(string(sessionID), "sub:")
+	sessionID := session.SessionIDFromContext(ctx)
+	return strings.Count(string(sessionID), ":sub:")
 }
 
 type SubagentConfig struct{}

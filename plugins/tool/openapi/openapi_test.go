@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -278,8 +279,8 @@ func TestOpenAPIToolBindFromContext(t *testing.T) {
 		t.Fatalf("new: %v", err)
 	}
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeyUserID, "user-42")
-	ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, map[string]any{"org_id": "org-7"})
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Actor.UserID = "user-42"; return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Metadata = map[string]any{"org_id": "org-7"}; return session.ApplyEnvelopeToContext(ctx, env) }()
 
 	tools, err := provider.ListTools(ctx)
 	if err != nil {
@@ -349,7 +350,7 @@ func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "user-99")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "user-99"}})
 	tools, err := provider.ListTools(ctx)
 	if err != nil {
 		t.Fatalf("list: %v", err)

@@ -118,8 +118,8 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 	// stamping the assistant with the user who prompted it would make the reply
 	// look like that person's words on replay.
 	if typ == agentkit.EventUserMessage {
-		event.UserID, _ = ctx.Value(agentkit.KeyUserID).(string)
-		if md, ok := ctx.Value(agentkit.KeyMessageMetadata).(map[string]any); ok && len(md) > 0 {
+		event.UserID = UserIDFromContext(ctx)
+		if md := MetadataFromContext(ctx); len(md) > 0 {
 			if event.Metadata == nil {
 				event.Metadata = make(map[string]any, len(md))
 			}

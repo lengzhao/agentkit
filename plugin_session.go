@@ -14,7 +14,7 @@ type Session interface {
 // generate SessionID values (cc-connect style: platform:segment:...); agent
 // plugins depend on SessionStore and call Get with the logical history id
 // resolved for the turn. Loop only uses SessionID for routing and per-session
-// locking, never SessionStore.Get.
+// locking (TurnEnvelope.Conversation), never SessionStore.Get.
 type SessionStore interface {
 	Get(context.Context, SessionID) (Session, error)
 }

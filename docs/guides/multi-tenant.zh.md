@@ -2,40 +2,52 @@
 
 一个常驻 agent 进程同时服务多个 Slack 频道（或飞书群、多个项目）时，要同时回答三个**互相独立**的问题：
 
-| 问题 | 由谁回答 | 落点 |
+| 问题 | TurnEnvelope 字段 | 由谁决定 |
 |---|---|---|
-| 这条消息接到哪段历史后面？ | `runner.config.sessionScope` 折叠 delivery SessionID | `runtime/session.ApplyScope` |
-| 这句话是谁说的？ | `runner.config.inject` 入站 prepend `[meta ...]` | `runtime/runner/inbound_format`、`MessageEvent.UserID` / `Metadata` |
-| 这个 turn 在哪个目录干活？ | SessionID 推出的**租户键**（`/new` 后仍按 channel 段折叠） | `cap/tenant.Key`、`workspace/tenant` |
+| 出站回哪里？ | `Route` | Platform 生成 `Envelope.Route`；出站原路返回 |
+| 这条消息接到哪段历史后面？ | `Conversation` | `runner.config.sessionScope` + active mapping |
+| 这个 turn 在哪个目录干活？ | `Workspace` | `RoutePolicy` 从 route 推出 channel 级工作区 |
+| 这句话是谁说的？ | `Actor` | Platform `UserID` / Metadata；runner `inject` prepend `[meta ...]` |
 
-把三者拆开是这套设计的核心。**会话粒度与工作目录粒度可以分别决定**：一个群从"整群共用一段历史"改成"每个 thread 一段历史"，工作目录不会跟着分裂 —— 因为三种 scope 推出的租户键都是同一个。
+Runner 在入站边界把 platform 消息规范化为 `TurnEnvelope`，Loop / Agent / Tool 只读 envelope 字段，不再从 `SessionID` 字符串反推路由语义。
 
 ```mermaid
 flowchart LR
-  Msg["Slack 消息<br/>channel=C001 user=U111 thread=17.9"]
-  Msg -->|BuildDeliverySessionID| D["delivery SessionID<br/>slack:C001:t:17.9:u:U111"]
-  D -->|runner sessionScope| E["effective key<br/>slack:C001"]
-  E -->|active mapping| S["resolved SessionID<br/>slack:C001 或 :new:…"]
-  Msg -->|UserID| UID["U111"]
-  S -->|"Loop 按此加锁 + session/store"| Hist["历史：一个 resolved ID 一个 JSONL"]
-  UID -->|inject| Attr["入站 prepend [meta ...]"]
-  S -->|"cap/tenant.Key"| TK["租户键<br/>slack:C001"]
-  TK -->|workspace/tenant| Root["local 根<br/>~/.agentkit/tenants/slack_C001"]
-  Root --> Runtime["sessions / agents / mcp / skills"]
-  Root --> Work["work/ — shell cwd 与临时产物"]
-  D -->|"OutboundEvent 仍用 delivery"| Reply["Platform.Send 投递"]
+  Msg["Slack 消息"] --> Route["Route 出站地址"]
+  Route --> Router["RoutePolicy"]
+  Router --> Conv["Conversation 历史/锁"]
+  Router --> WS["Workspace 租户目录"]
+  Conv --> Hist["session/store JSONL"]
+  WS --> Root["workspace/tenant local 根"]
+  Route --> Out["Platform.Send 原路返回"]
 ```
 
 ## 1. 会话隔离
 
-Platform 只生成 **delivery SessionID**（最细粒度，含 channel / thread / user 路由信息）。Runner 按 `sessionScope` 折叠为 **effective key**，再查 `session/store` 的 active-session 映射得到 **resolved SessionID**；Loop 按 resolved SessionID 串行加锁，Agent 读写历史也用同一 ID。`/new` 不改变 IM 的 delivery key，只更新 stable key → SessionID 的映射；没有映射时 SessionID 默认等于 effective key。Outbound 仍回写 delivery ID，platform 据此投递。
+Platform 生成 **Route**（`RouteRef`：`platform` + `kind` + `target` wire contract；`session` kind 的 `target` 由 `runtime/session` codec 解码为 `SessionRouteTarget`——`deliveryId` 为稳定回邮地址，`replyTo` 为本轮临时回复锚点，`scopeUserId` 为 delivery 的 `:u:` 路由段而非说话人；`channelId` / `threadId` 为可选反查字段）。Runner / Loop / Agent 只复制 opaque `RouteRef`；Platform 构造与解码走 `session.BuildSessionRoute` / `session.DecodeSessionRoute`。Runner 用 `RoutePolicy` 推导 `Conversation` 与 `Workspace`；Loop 按 `Conversation` 串行加锁。`/new` 只替换 `Conversation`，不改变 `Route` 与 `Workspace`。
+
+`chat-api` 等平台可通过 `session.RegisterPlatformPolicy` 覆盖 active-entry 等行为；默认注册见 `runtime/session/platform_policy.go`。
 
 Platform 侧：
 
 ```go
 delivery := session.BuildDeliverySessionID("slack", channelID, threadTS, userID)
-// MessageEvent.SessionID = delivery
+event := common.WithInboundRoute(agentkit.MessageEvent{
+    PlatformID: "slack",
+    UserID:     userID,
+    // Message ...
+}, session.SessionRouteInput{
+    Platform:    "slack",
+    DeliveryID:  delivery,
+    ChannelID:   channelID,
+    ThreadID:    threadTS,
+    ReplyTo:     messageID,
+    ScopeUserID: userID,
+})
+// Runner SyncMessageEvent 后 Envelope 含 Conversation / Workspace / Route
 ```
+
+或 `common.InboundFromContent(agentID, route, userID, ...)`；仅需 delivery id 时用 `common.WithDeliverySession`。
 
 Runner 侧（`config.base.yaml` 或 preset）：
 
@@ -53,19 +65,19 @@ runner.default:
 
 未知 scope 配置值回落到 `channel`。
 
-### `/new` 与 SessionID
+### `/new` 与 Conversation
 
 Slack / 飞书这类 IM 的 sessionKey 是固定投递地址，不能因为 `/new` 改掉。`/new` 只更新 active-session 映射：
 
 | key | value | 文件 |
 |---|---|---|
-| stable delivery/effective SessionID | 当前 SessionID | `sessions/<stable>/current.json` |
+| stable delivery/effective SessionID | 当前 Conversation | `sessions/<stable>/current.json` |
 
-Runner 每次入站先拿 delivery / effective key 查 active mapping，解析出当前 SessionID 后写入 `MessageEvent.SessionID` 再交给 Loop；Agent 读写历史、Loop 串行锁都使用这个 SessionID。Outbound 仍回写 delivery ID，回复仍投回原来的 channel/thread/user/conversation。
+Runner 每次入站先拿 delivery / effective key 查 active mapping，解析出当前 `Envelope.Conversation` 再交给 Loop；Agent 读写历史、Loop 串行锁都使用 `Conversation`（`session.ConversationFromLoopRequest` / `session.ConversationFromEvent` / `session.SessionIDFromContext`）。Platform 入站只写 `Envelope.Route`，不写 conversation。Outbound 仍回写 delivery route，回复仍投回原来的 channel/thread/user/conversation。
 
 ### Agent 路由
 
-与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：解析 SessionID 后，从持久化存储读出绑定，写入 `MessageEvent.AgentID` 再交给 Loop。
+与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：解析 `Conversation` 后，从持久化存储读出绑定，写入 `MessageEvent.AgentID` 再交给 Loop。
 
 | 优先级 | 来源 | 存储 |
 |---|---|---|
@@ -214,13 +226,13 @@ go run ./cmd/agent -config presets/multi-tenant.yaml
 go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 ```
 
-`presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就两件：
+`presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就三件：
 
-1. 用 `session.BuildDeliverySessionID` 生成 `MessageEvent.SessionID`（delivery，最细粒度）；
+1. 用 `session.BuildDeliverySessionID` 生成 delivery，并通过 `common.WithInboundRoute`（推荐，含 `ReplyTo`）或 `common.WithDeliverySession` / `InboundFromContent` / `InboundMessage` 写入 `MessageEvent.Envelope.Route`；
 2. 在 `MessageEvent.UserID` 填上发言人；
 3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。`x-task-id` 默认已纳入白名单；`X-Chat-API-User-Name`（或配置的 `userNameHeader`）会自动写入 Metadata，无需重复配置。
 
-`sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent` 回带 **delivery** SessionID，由 platform 解析投递目标。
+`sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent.Route` 携带入站捕获的 delivery；platform 通过 `session.OutboundRouteID` 解析投递目标。
 
 `platform/chat-api` 在 workspace 下维护两层持久化：
 
@@ -268,5 +280,5 @@ Agent 通过 `tool/send` 发出的文件会以 SSE `file_ready` 事件推送，�
 | `runtime/runner/runner_test.go` | scope 折叠调度键、outbound 仍用 delivery ID |
 | `runtime/workspace/tenant_test.go` | 默认隔离、三种粒度同租户、pin 生效、`global:` 共享、`..` 越权被拒、无 session 落 `_default` |
 | `runtime/session/attribution_test.go` | 只标 user 消息、无 `UserID` 不改变回放、重启后归属仍在、图片消息也具名 |
-| `cap/tenant/tenant_test.go` | 租户键推导规则、目录名不可能变成 `..` |
+| `runtime/session/workspace_key_test.go` | 工作目录键推导规则、目录名不可能变成 `..` |
 | `config/presets_test.go` | preset 单独可构建，且与 `autonomous.yaml` 可叠加 |

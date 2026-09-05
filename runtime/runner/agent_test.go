@@ -17,7 +17,7 @@ type agentRecordingLoop struct {
 
 func (l *agentRecordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) error {
 	l.lastAgent = req.Event.AgentID
-	l.lastSession = req.Event.SessionID
+	l.lastSession = session.ConversationFromLoopRequest(req)
 	return nil
 }
 
@@ -71,7 +71,7 @@ type tenantScopedActiveStore struct {
 }
 
 func (s tenantScopedActiveStore) ActiveSession(ctx context.Context, id agentkit.SessionID) (agentkit.SessionID, error) {
-	effective, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	effective := session.SessionIDFromContext(ctx)
 	if effective == "" {
 		return id, nil
 	}
@@ -275,8 +275,11 @@ func TestRunnerMessageAgentOverridesSessionBind(t *testing.T) {
 	loop := &agentRecordingLoop{}
 	root, err := runner.New(runner.Config{}, runner.Deps{
 		Platform: &scriptedPlatform{events: []agentkit.MessageEvent{{
-			SessionID: sessionID,
-			AgentID:   "assistant",
+			Envelope: agentkit.TurnEnvelope{
+				Route:        agentkit.SessionRoute("", string(sessionID)),
+				Conversation: string(sessionID),
+			},
+			AgentID: "assistant",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "override"}},
@@ -313,9 +316,11 @@ func TestRunnerScheduleStatelessIgnoresActiveSessionMapping(t *testing.T) {
 
 	loop := &agentRecordingLoop{}
 	event := agentkit.MessageEvent{
-		SessionID:         side,
-		DeliverySessionID: delivery,
-		PlatformID:        "chat-api",
+		PlatformID: "chat-api",
+		Envelope: agentkit.TurnEnvelope{
+			Route:        agentkit.SessionRoute("chat-api", string(delivery)),
+			Conversation: string(side),
+		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "remind"}},

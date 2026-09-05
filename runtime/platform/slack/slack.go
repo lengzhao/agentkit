@@ -47,6 +47,17 @@ type delivery struct {
 	slashResponseURL string
 }
 
+func (d delivery) inboundRoute(user string) session.SessionRouteInput {
+	return session.SessionRouteInput{
+		Platform:    "slack",
+		DeliveryID:  d.sessionID,
+		ChannelID:   d.channel,
+		ThreadID:    d.threadTS,
+		ReplyTo:     d.msgTS,
+		ScopeUserID: user,
+	}
+}
+
 type Platform struct {
 	cfg        Config
 	agentID    agentkit.AgentID
@@ -146,20 +157,21 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
+	delivery := session.OutboundRouteID(event)
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
 	case agentkit.EventMessageStart:
-		p.stopTyping(event.SessionID)
-		if stop := p.startTypingForSession(event.SessionID); stop != nil {
+		p.stopTyping(delivery)
+		if stop := p.startTypingForSession(delivery); stop != nil {
 			p.typingMu.Lock()
-			p.typingStops[event.SessionID] = stop
+			p.typingStops[delivery] = stop
 			p.typingMu.Unlock()
 		}
 		return p.outbound.Handle(ctx, event)
 	case agentkit.EventTurnEnd:
-		p.stopTyping(event.SessionID)
-		p.reactDone(ctx, event.SessionID)
+		p.stopTyping(delivery)
+		p.reactDone(ctx, delivery)
 		return nil
 	default:
 		return p.outbound.Handle(ctx, event)
@@ -357,12 +369,11 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 }
 
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
-	outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-		DeliverySessionID: d.sessionID,
-		PlatformID:        "slack",
-		SessionScope:      p.sessionScope,
-		UserID:            user,
-	}, text)
+		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
+			Route: session.BuildSessionRoute(d.inboundRoute(user)),
+			SessionScope: p.sessionScope,
+			UserID:       user,
+		}, text)
 	if err != nil {
 		_ = p.replyText(ctx, d, fmt.Sprintf("命令执行失败: %v", err))
 		return
@@ -383,7 +394,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 	if react {
 		p.reactReceived(ctx, d)
 	}
-	event := common.InboundFromContent(p.agentID, d.sessionID, "slack", user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
+	event := common.InboundFromContent(p.agentID, d.inboundRoute(user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
 	_ = p.inbox.Push(ctx, event)
 }
 

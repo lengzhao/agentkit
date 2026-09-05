@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type chatSlashResult struct {
@@ -15,9 +16,8 @@ type chatSlashResult struct {
 
 func (p *Platform) slashContext(delivery agentkit.SessionID) common.SlashContext {
 	return common.SlashContext{
-		DeliverySessionID: delivery,
-		PlatformID:        "chat-api",
-		SessionScope:      p.sessionScope,
+		Route:        session.SessionRouteFromDelivery("chat-api", delivery, ""),
+		SessionScope: p.sessionScope,
 	}
 }
 

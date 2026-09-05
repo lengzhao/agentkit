@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
@@ -60,7 +59,7 @@ type fileView struct {
 }
 
 func (p *Platform) channelCtx(ctx context.Context, channelKey string) context.Context {
-	return context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID(engineSessionKey(channelKey, "file_probe")))
+	return channelWorkspaceCtx(ctx, channelKey)
 }
 
 func (p *Platform) uploadDir(ctx context.Context, channelKey string) (string, error) {

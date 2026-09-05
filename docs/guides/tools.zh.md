@@ -152,15 +152,15 @@ go run ./cmd/agent -config presets/web.yaml "查一下官方说法并附来源"
 
 | `from` | 对应 context |
 |---|---|
-| `ctx:user_id` | `KeyUserID` |
-| `ctx:session_id` | `KeySessionID`（Runner 已解析 active-session 映射） |
-| `ctx:delivery_session_id` | `KeyDeliverySessionID` |
-| `ctx:agent_id` | `KeyAgentID` |
-| `ctx:platform_id` | `KeyPlatformID` |
+| `ctx:user_id` | `UserIDFromContext` |
+| `ctx:session_id` | `TurnEnvelope.Conversation`（`session.SessionIDFromContext`） |
+| `ctx:delivery_session_id` | `TurnEnvelope.Route`（经 `session.DeliveryRouteFromContext`） |
+| `ctx:agent_id` | `AgentIDFromContext` |
+| `ctx:platform_id` | `PlatformFromContext` |
 | `ctx:turn_id` | `KeyTurnID` / telemetry turn id |
 | `ctx:tool_call_id` | `KeyToolCallID` |
 | `ctx:tenant` | 租户键（由 session 推导，如 `slack:C001`） |
-| `ctx:metadata.<key>` | `KeyMessageMetadata[key]` |
+| `ctx:metadata.<key>` | `MetadataFromContext(ctx)[key]` |
 
 行为：
 
@@ -285,12 +285,12 @@ tools.default:
 
 | `from` | 对应 context |
 |---|---|
-| `ctx:user_id` | `KeyUserID` |
-| `ctx:session_id` | `KeySessionID`（Runner 已解析 active-session 映射） |
-| `ctx:delivery_session_id` | `KeyDeliverySessionID` |
-| `ctx:agent_id` | `KeyAgentID` |
-| `ctx:platform_id` | `KeyPlatformID` |
-| `ctx:metadata.<key>` | `KeyMessageMetadata[key]` |
+| `ctx:user_id` | `UserIDFromContext` |
+| `ctx:session_id` | `TurnEnvelope.Conversation`（`session.SessionIDFromContext`） |
+| `ctx:delivery_session_id` | `TurnEnvelope.Route`（经 `session.DeliveryRouteFromContext`） |
+| `ctx:agent_id` | `AgentIDFromContext` |
+| `ctx:platform_id` | `PlatformFromContext` |
+| `ctx:metadata.<key>` | `MetadataFromContext(ctx)[key]` |
 
 行为：
 

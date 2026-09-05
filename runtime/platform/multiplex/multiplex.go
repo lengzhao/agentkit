@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type Config struct{}
@@ -137,6 +139,17 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 			return
 		}
 		event.PlatformID = id
+		if delivery := session.InboundDeliveryID(event); delivery != "" {
+			if event.Envelope.Route.HasTarget() {
+				if event.Envelope.Route.Platform == "" {
+					route := event.Envelope.Route
+					route.Platform = id
+					event = common.WithDeliveryRoute(event, route)
+				}
+			} else {
+				event = common.WithDeliverySession(event, id, delivery)
+			}
+		}
 		m.inbox <- incoming{id: id, event: event}
 	}
 }

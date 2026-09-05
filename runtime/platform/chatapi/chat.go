@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 const (
@@ -167,7 +168,12 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	event := common.InboundFromContent(inboundAgentID, agentkit.SessionID(engineSessionKey), "chat-api", user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
+	event := common.InboundFromContent(inboundAgentID, session.SessionRouteInput{
+		Platform:    "chat-api",
+		DeliveryID:  agentkit.SessionID(engineSessionKey),
+		ReplyTo:     msgID,
+		ScopeUserID: user,
+	}, user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
 	if md := p.requestMetadata(r); len(md) > 0 {
 		event.Metadata = md
 	}
@@ -238,10 +244,11 @@ func (p *Platform) runForSession(sessionID agentkit.SessionID) *runState {
 }
 
 func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEvent) error {
-	run := p.runForSession(event.SessionID)
+	delivery := session.OutboundRouteID(event)
+	run := p.runForSession(delivery)
 	if run == nil {
 		if event.Type == agentkit.EventAssistantMessage {
-			return fmt.Errorf("chat-api: no active request for session %s", event.SessionID)
+			return fmt.Errorf("chat-api: no active request for session %s", delivery)
 		}
 		return nil
 	}

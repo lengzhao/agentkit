@@ -33,16 +33,14 @@ func TestSmokeSessionScopeChannelFoldsDeliveries(t *testing.T) {
 	ctx := context.Background()
 	for i, ev := range []agentkit.MessageEvent{
 		{
-			SessionID: delivery1,
-			UserID:    "U111",
+			UserID: "U111",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "one"}},
 			},
 		},
 		{
-			SessionID: delivery2,
-			UserID:    "U222",
+			UserID: "U222",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "two"}},
@@ -50,14 +48,11 @@ func TestSmokeSessionScopeChannelFoldsDeliveries(t *testing.T) {
 		},
 	} {
 		_ = i
-		if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-			Event: agentkit.MessageEvent{
-				SessionID: effective,
-				UserID:    ev.UserID,
-				AgentID:   "smoke",
-				Message:   ev.Message,
-			},
-		}); err != nil {
+		if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(effective, agentkit.MessageEvent{
+			UserID:  ev.UserID,
+			AgentID: "smoke",
+			Message: ev.Message,
+		})); err != nil {
 			t.Fatalf("dispatch: %v", err)
 		}
 	}
@@ -91,30 +86,24 @@ func TestSmokeSessionScopeThreadSplitsDeliveries(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: effective1,
-			UserID:    "U111",
-			AgentID:   "smoke",
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "thread one"}},
-			},
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(effective1, agentkit.MessageEvent{
+		UserID:  "U111",
+		AgentID: "smoke",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "thread one"}},
 		},
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
-	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: effective2,
-			UserID:    "U222",
-			AgentID:   "smoke",
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "thread two"}},
-			},
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(effective2, agentkit.MessageEvent{
+		UserID:  "U222",
+		AgentID: "smoke",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "thread two"}},
 		},
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 

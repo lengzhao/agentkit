@@ -28,7 +28,7 @@ func TestStoreCommands(t *testing.T) {
 		t.Fatalf("commands=%d want 2", len(commands))
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
 	for _, cmd := range commands {
 		switch cmd.Name() {
 		case "new":
@@ -71,7 +71,11 @@ func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
 
 	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
 	entry := session.ApplyScope(stable, session.ScopeChannel, "U111")
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, entry)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: string(entry),
+		Workspace:    string(entry),
+		Route:        agentkit.SessionRoute("slack", string(stable)),
+	})
 	out, err := newCmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)

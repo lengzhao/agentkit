@@ -102,7 +102,16 @@ func readUserTexts(t *testing.T, storeDir string, sessionID agentkit.SessionID) 
 }
 
 func testContext(sessionID agentkit.SessionID) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+}
+
+func loopReq(sessionID agentkit.SessionID, msg agentkit.ModelMessage) agentkit.LoopRequest {
+	return agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			Message: msg,
+			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
+		},
+	}
 }
 
 func TestDispatchDrainsAllFollowUps(t *testing.T) {
@@ -122,12 +131,7 @@ func TestDispatchDrainsAllFollowUps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: testSessionID,
-			Message:   userMessage("initial"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(context.Background(), loopReq(testSessionID, userMessage("initial"))); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
@@ -160,12 +164,7 @@ func TestDispatchDrainsOneFollowUpAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: testSessionID,
-			Message:   userMessage("initial"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(context.Background(), loopReq(testSessionID, userMessage("initial"))); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
@@ -180,12 +179,7 @@ func TestDispatchDrainsOneFollowUpAtATime(t *testing.T) {
 		}
 	}
 
-	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: testSessionID,
-			Message:   userMessage("second round"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(context.Background(), loopReq(testSessionID, userMessage("second round"))); err != nil {
 		t.Fatalf("second dispatch: %v", err)
 	}
 	got = readUserTexts(t, storeDir, testSessionID)
@@ -213,12 +207,7 @@ func TestDispatchFollowUpTurnLifecycle(t *testing.T) {
 	if err := loop.FollowUp(ctx, userMessage("follow one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: testSessionID,
-			Message:   userMessage("initial"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(context.Background(), loopReq(testSessionID, userMessage("initial"))); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
@@ -259,12 +248,7 @@ func TestLoopSteerRoutesToAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := loop.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: testSessionID,
-			Message:   userMessage("initial"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(context.Background(), loopReq(testSessionID, userMessage("initial"))); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
@@ -298,20 +282,10 @@ func TestSessionControlsAreIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := loopA.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: sessionA,
-			Message:   userMessage("turn-a"),
-		},
-	}); err != nil {
+	if err := loopA.Dispatch(context.Background(), loopReq(sessionA, userMessage("turn-a"))); err != nil {
 		t.Fatalf("dispatch A: %v", err)
 	}
-	if err := loopB.Dispatch(context.Background(), agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: sessionB,
-			Message:   userMessage("turn-b"),
-		},
-	}); err != nil {
+	if err := loopB.Dispatch(context.Background(), loopReq(sessionB, userMessage("turn-b"))); err != nil {
 		t.Fatalf("dispatch B: %v", err)
 	}
 

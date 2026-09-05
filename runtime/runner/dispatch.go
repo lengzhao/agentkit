@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // scheduler runs turns from distinct sessions in parallel while keeping each
@@ -77,7 +78,7 @@ func (s *scheduler) release() {
 // submit queues a new turn request, starting a worker for the session when one
 // is not already draining it.
 func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
-	sessionID := req.Event.SessionID
+	sessionID := session.ConversationFromLoopRequest(req)
 
 	s.mu.Lock()
 	queue := s.queues[sessionID]

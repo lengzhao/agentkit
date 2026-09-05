@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // forwardParentEmit returns an emit hook for a child agent that forwards only
@@ -14,14 +15,15 @@ func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) agentk
 	if parent == nil {
 		return nil
 	}
-	parentSession := parentSessionID(ctx)
-	if parentSession == "" {
+	parentRoute := session.RouteRefFromContext(ctx)
+	id, ok := session.RouteSessionID(parentRoute)
+	if !ok || id == "" {
 		return nil
 	}
 	return func(emitCtx context.Context, event agentkit.OutboundEvent) error {
 		switch event.Type {
 		case agentkit.EventToolResult:
-			event.SessionID = parentSession
+			event.Route = parentRoute
 			return parent(ctx, event)
 		case agentkit.EventMessageUpdate:
 		default:
@@ -34,24 +36,13 @@ func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) agentk
 		if payload.AssistantMessageEvent.Type != agentkit.AssistantEventToolCallEnd {
 			return nil
 		}
-		event.SessionID = parentSession
+		event.Route = parentRoute
 		return parent(ctx, event)
 	}
 }
 
-func parentSessionID(ctx context.Context) agentkit.SessionID {
-	if delivery, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID); ok && delivery != "" {
-		return delivery
-	}
-	if effective, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID); ok {
-		return effective
-	}
-	return ""
-}
-
 func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
-	emit, _ := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit)
-	return emit
+	return agentkit.OutboundEmitFromContext(ctx)
 }
 
 // emitSubagentLifecycle forwards subagent/start and subagent/end to the parent
@@ -61,18 +52,19 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 	if emit == nil {
 		return nil
 	}
-	sessionID := parentSessionID(ctx)
-	if sessionID == "" {
+	parentRoute := session.RouteRefFromContext(ctx)
+	id, ok := session.RouteSessionID(parentRoute)
+	if !ok || id == "" {
 		return nil
 	}
 	agentID := parentAgent
 	if agentID == "" {
-		agentID, _ = ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+		agentID = session.AgentIDFromContext(ctx)
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sessionID,
-		AgentID:   agentID,
-		Type:      typ,
-		Data:      agentkit.MarshalOutboundData(data),
+		Route:   parentRoute,
+		AgentID: agentID,
+		Type:    typ,
+		Data:    agentkit.MarshalOutboundData(data),
 	})
 }

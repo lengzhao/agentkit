@@ -1,3 +1,5 @@
+// Package common holds shared platform helpers for inbound routing, slash
+// commands, and outbound delivery.
 package common
 
 import (
@@ -30,10 +32,9 @@ type SlashOutcome struct {
 
 // SlashContext carries delivery routing and sessionScope for slash commands.
 type SlashContext struct {
-	DeliverySessionID agentkit.SessionID
-	PlatformID        string
-	SessionScope      session.SessionScope
-	UserID            string
+	Route        agentkit.RouteRef
+	SessionScope session.SessionScope
+	UserID       string
 }
 
 // IsSlashCommand reports whether text starts with a slash command.
@@ -88,20 +89,13 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 		}, nil
 	}
 
-	entryKey := session.ActiveSessionEntryKey(slash.PlatformID, slash.DeliverySessionID, slash.SessionScope, slash.UserID)
-	if entryKey == "" {
-		entryKey = slash.DeliverySessionID
-	}
-	cmdCtx := context.WithValue(ctx, agentkit.KeySessionID, entryKey)
-	if slash.DeliverySessionID != "" {
-		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyDeliverySessionID, slash.DeliverySessionID)
-	}
-	if slash.PlatformID != "" {
-		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyPlatformID, slash.PlatformID)
-	}
-	if slash.UserID != "" {
-		cmdCtx = context.WithValue(cmdCtx, agentkit.KeyUserID, slash.UserID)
-	}
+	platformID := strings.TrimSpace(slash.Route.Platform)
+	policy := session.RoutePolicyForPlatform(platformID, session.DefaultRoutePolicy(slash.SessionScope))
+	env := session.ResolveEnvelope(WithDeliveryRoute(agentkit.MessageEvent{
+		PlatformID: platformID,
+		UserID:     slash.UserID,
+	}, slash.Route), policy)
+	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
 	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
 		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
 	}
@@ -143,4 +137,3 @@ func FormatHelp(commands agentkit.Commands) string {
 func FormatUnknownCommand(name string) string {
 	return fmt.Sprintf("`/%s` 不是已注册命令，转发给 Agent...", name)
 }
-

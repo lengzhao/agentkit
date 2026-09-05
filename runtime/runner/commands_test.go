@@ -5,10 +5,9 @@ import (
 	"io"
 	"strings"
 	"testing"
-
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/runner"
-)
+	"github.com/lengzhao/agentkit/runtime/runner")
 
 type stubPlatform struct{}
 
@@ -32,7 +31,7 @@ func (l *stubStopLoop) Dispatch(context.Context, agentkit.LoopRequest) error { r
 func (l *stubStopLoop) Steer(context.Context, agentkit.ModelMessage) error   { return nil }
 func (l *stubStopLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *stubStopLoop) Cancel(ctx context.Context, reason string) error {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	l.cancel = append(l.cancel, cancelCall{sessionID: sessionID, reason: reason})
 	return l.cancelErr
 }
@@ -61,7 +60,7 @@ func TestStopCommandNoTurnInProgress(t *testing.T) {
 	if stopCmd == nil {
 		t.Fatal("missing /stop command")
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
 	out, err := stopCmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +95,7 @@ func TestStopCommandCancelsBusySession(t *testing.T) {
 	if stopCmd == nil {
 		t.Fatal("missing /stop command")
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	out, err := stopCmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +132,7 @@ func TestStopCommandRejectsArgs(t *testing.T) {
 			break
 		}
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
 	_, err = stopCmd.CommandExec(ctx, "now")
 	if err == nil || !strings.Contains(err.Error(), "usage: /stop") {
 		t.Fatalf("err = %v, want usage error", err)

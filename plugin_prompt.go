@@ -17,7 +17,7 @@ type Section struct {
 }
 
 // PromptRequest carries model-visible prompt inputs. Routing context is read
-// from ctx.Value(KeySessionID) / ctx.Value(KeyAgentID) / ctx.Value(KeyUserID),
+// from TurnEnvelope / SessionIDFromContext / AgentIDFromContext / UserIDFromContext,
 // not duplicated here.
 type PromptRequest struct {
 	Messages []ModelMessage

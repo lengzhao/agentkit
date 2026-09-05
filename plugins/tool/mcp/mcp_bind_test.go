@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 )
 
@@ -45,11 +46,11 @@ func TestResolveCtxValue(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeyUserID, "u-42")
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("slack:C001:t:1"))
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Actor.UserID = "u-42"; return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Conversation = "slack:C001:t:1"; return session.ApplyEnvelopeToContext(ctx, env) }()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, "turn-abc")
-	ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, map[string]any{"channel": "general"})
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Metadata = map[string]any{"channel": "general"}; return session.ApplyEnvelopeToContext(ctx, env) }()
 
 	cases := []struct {
 		from string
@@ -117,7 +118,7 @@ func TestHeaderBindFunc(t *testing.T) {
 		{Key: "X-User-Id", From: "ctx:user_id", In: "header"},
 		{Key: "trace", From: "ctx:turn_id", In: "meta"},
 	})
-	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "u-7")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "u-7"}})
 	headers := fn(ctx)
 	if headers["X-User-Id"] != "u-7" {
 		t.Fatalf("headers = %#v", headers)

@@ -189,7 +189,6 @@ func (s *streamEmitter) emitUpdate(ame agentkit.AssistantMessageEvent, _ *agentk
 
 func (s *streamEmitter) sendOutbound(typ agentkit.EventType, payload any) error {
 	return s.emitFn(s.ctx, agentkit.OutboundEvent{
-		SessionID: s.sessionID,
 		AgentID:   s.agentID,
 		Type:      typ,
 		Data:      agentkit.MarshalOutboundData(payload),

@@ -76,7 +76,6 @@ func (a *Runtime) emitOverflowRecovery(ctx context.Context, sess agentkit.Sessio
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sess.ID(),
 		AgentID:   a.id,
 		Type:      agentkit.EventOverflowRecovery,
 		Data:      agentkit.MarshalOutboundData(data),

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/tenant"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 const defaultSessionsDir = "sessions"
@@ -103,7 +103,7 @@ func (p *Platform) scanSessionDir(ctx context.Context, channelKey, dir string) e
 }
 
 func (p *Platform) sessionCtx(ctx context.Context, channelKey, conversationID string) context.Context {
-	return context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID(engineSessionKey(channelKey, conversationID)))
+	return session.ApplyEnvelopeToContext(ctx, sessionEnvelope(channelKey, conversationID))
 }
 
 func (p *Platform) loadConversationFromSession(ctx context.Context, channelKey, conversationID, createdBy string) (*conversation, error) {
@@ -171,7 +171,7 @@ func (p *Platform) sessionsDirForChannel(ctx context.Context, channelKey, rel st
 	if p.workspace == nil {
 		return "", fmt.Errorf("chat-api: workspace is required")
 	}
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID(engineSessionKey(channelKey, "conv_probe")))
+	ctx = channelWorkspaceCtx(ctx, channelKey)
 	return p.workspace.Resolve(ctx, rel)
 }
 
@@ -242,7 +242,8 @@ type tenantStaticWorkspace struct {
 }
 
 func (s tenantStaticWorkspace) Resolve(ctx context.Context, rel string) (string, error) {
-	dir := tenant.LocalDirName(tenant.FromContext(ctx), s.omitPlatformPrefix)
+	key := session.WorkspaceFromContext(ctx)
+	dir := session.WorkspaceLocalDirName(key, s.omitPlatformPrefix)
 	if dir == "" {
 		dir = "_default"
 	}

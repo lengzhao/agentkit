@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/tenant"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -49,7 +48,7 @@ func TestEverySlackScopeSharesOneTenant(t *testing.T) {
 	scopes := []session.SessionScope{session.ScopeChannel, session.ScopeThread, session.ScopeUser}
 	for _, scope := range scopes {
 		id := session.SlackSessionIDForScope(scope, "C001", "123.456", "U777")
-		if key := tenant.Key(string(id)); key != "slack:C001" {
+		if key := session.WorkspaceKey(string(id)); key != "slack:C001" {
 			t.Fatalf("scope %q: session %q -> tenant %q, want slack:C001", scope, id, key)
 		}
 	}

@@ -5,15 +5,25 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
+
+func testEnvelope(route, conversation, workspace, userID string) agentkit.TurnEnvelope {
+	return agentkit.TurnEnvelope{
+		Route:        agentkit.SessionRoute("slack", route),
+		Conversation: conversation,
+		Workspace:    workspace,
+		Actor:        agentkit.ActorRef{UserID: userID},
+	}
+}
 
 func TestWithTurnContextSetsUserID(t *testing.T) {
 	t.Parallel()
 
 	ctx := withTurnContext(
 		context.Background(),
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456"),
 		agentkit.SessionID("slack:C001"),
-		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -22,9 +32,9 @@ func TestWithTurnContextSetsUserID(t *testing.T) {
 		nil,
 	)
 
-	userID, ok := ctx.Value(agentkit.KeyUserID).(string)
-	if !ok || userID != "U456" {
-		t.Fatalf("user id = %q, ok = %v", userID, ok)
+	userID := session.UserIDFromContext(ctx)
+	if userID != "U456" {
+		t.Fatalf("user id = %q", userID)
 	}
 }
 
@@ -33,7 +43,11 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 
 	ctx := withTurnContext(
 		context.Background(),
-		agentkit.SessionID("cli:default"),
+		agentkit.TurnEnvelope{
+			Route:        agentkit.SessionRoute("cli", "cli:default"),
+			Conversation: "cli:default",
+			Workspace:    "cli:default",
+		},
 		agentkit.SessionID("cli:default"),
 		agentkit.AgentID("coder"),
 		"cli",
@@ -43,18 +57,18 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 		nil,
 	)
 
-	if _, ok := ctx.Value(agentkit.KeyUserID).(string); ok {
+	if session.UserIDFromContext(ctx) != "" {
 		t.Fatal("expected no user id in context")
 	}
 }
 
-func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
+func TestWithTurnContextSetsDeliveryRoute(t *testing.T) {
 	t.Parallel()
 
 	ctx := withTurnContext(
 		context.Background(),
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456"),
 		agentkit.SessionID("slack:C001"),
-		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -63,13 +77,12 @@ func TestWithTurnContextSetsDeliverySessionID(t *testing.T) {
 		nil,
 	)
 
-	delivery, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID)
-	if !ok || delivery != "slack:C001:t:111.0:u:U456" {
-		t.Fatalf("delivery session id = %q, ok = %v", delivery, ok)
+	delivery := session.DeliveryRouteFromContext(ctx)
+	if delivery != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("delivery session id = %q", delivery)
 	}
-	effective, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	if effective != "slack:C001" {
-		t.Fatalf("effective session id = %q", effective)
+	if session.SessionIDFromContext(ctx) != "slack:C001" {
+		t.Fatalf("effective session id = %q", session.SessionIDFromContext(ctx))
 	}
 }
 
@@ -78,8 +91,8 @@ func TestWithTurnContextSetsResolvedSessionID(t *testing.T) {
 
 	ctx := withTurnContext(
 		context.Background(),
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001:new:20260829", "slack:C001", "U456"),
 		agentkit.SessionID("slack:C001:new:20260829"),
-		agentkit.SessionID("slack:C001:t:111.0:u:U456"),
 		agentkit.AgentID("coder"),
 		"slack",
 		"U456",
@@ -88,12 +101,32 @@ func TestWithTurnContextSetsResolvedSessionID(t *testing.T) {
 		nil,
 	)
 
-	sessionID, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	if !ok || sessionID != "slack:C001:new:20260829" {
-		t.Fatalf("session id = %q, ok = %v", sessionID, ok)
+	if session.SessionIDFromContext(ctx) != "slack:C001:new:20260829" {
+		t.Fatalf("session id = %q", session.SessionIDFromContext(ctx))
 	}
-	delivery, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID)
-	if !ok || delivery != "slack:C001:t:111.0:u:U456" {
-		t.Fatalf("delivery session id = %q, ok = %v", delivery, ok)
+	delivery := session.DeliveryRouteFromContext(ctx)
+	if delivery != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("delivery session id = %q", delivery)
+	}
+}
+
+func TestWithTurnContextSetsEnvelopeWorkspace(t *testing.T) {
+	t.Parallel()
+
+	ctx := withTurnContext(
+		context.Background(),
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456"),
+		agentkit.SessionID("slack:C001"),
+		agentkit.AgentID("coder"),
+		"slack",
+		"U456",
+		nil,
+		nil,
+		nil,
+	)
+
+	env, ok := ctx.Value(agentkit.KeyTurnEnvelope).(agentkit.TurnEnvelope)
+	if !ok || env.Workspace != "slack:C001" {
+		t.Fatalf("envelope workspace = %q, ok = %v", env.Workspace, ok)
 	}
 }

@@ -23,7 +23,16 @@ func turnContext(parent context.Context, sessionID, deliverySessionID agentkit.S
 	if ctrl != nil {
 		ctrl.setTurnCapability(cap)
 	}
-	return withTurnContext(parent, sessionID, deliverySessionID, agentID, platformID, userID, nil, ctrl, emit)
+	routeID := deliverySessionID
+	if routeID == "" {
+		routeID = sessionID
+	}
+	env := agentkit.TurnEnvelope{
+		Route:        agentkit.SessionRoute(platformID, string(routeID)),
+		Conversation: string(sessionID),
+		Actor:        agentkit.ActorRef{UserID: userID},
+	}
+	return withTurnContext(parent, env, sessionID, agentID, platformID, userID, nil, ctrl, emit)
 }
 
 type stubAgent struct{}
@@ -263,7 +272,7 @@ func TestTryDeliverPermissionConsumesReply(t *testing.T) {
 	}, interactiveCapability())
 
 	event := agentkit.MessageEvent{
-		SessionID: "feishu:oc_test",
+		Envelope: agentkit.TurnEnvelope{Conversation: "feishu:oc_test"},
 		Reply: permission.MarshalReply(permission.Reply{
 			RequestID: "perm1",
 			Text:      "beta",

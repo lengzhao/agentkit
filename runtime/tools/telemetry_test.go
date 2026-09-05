@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/tools"
-)
+	"github.com/lengzhao/agentkit/runtime/tools")
 
 type echoTool struct{}
 
@@ -33,8 +32,8 @@ func TestExecuteRecordsToolObservation(t *testing.T) {
 	}
 
 	ctx := telemetry.WithExporter(context.Background(), rec)
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("cli:default"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
 	result, err := rt.Execute(ctx, agentkit.ToolCall{
 		ID:    "call-1",

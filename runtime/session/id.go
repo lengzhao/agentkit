@@ -26,7 +26,7 @@ func NewSessionID(base agentkit.SessionID) agentkit.SessionID {
 // SessionScope selects how delivery SessionIDs collapse for Loop scheduling
 // and session history. It is configured on runner.config.sessionScope and is
 // deliberately independent of the working directory: every scope below derives
-// the same cap/tenant key, so a channel keeps one workdir no matter how finely
+// the same tenant key, so a channel keeps one workdir no matter how finely
 // its history is split.
 type SessionScope string
 

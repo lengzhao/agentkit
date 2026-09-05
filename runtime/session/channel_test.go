@@ -8,14 +8,16 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-func TestChannelKeyFromContext(t *testing.T) {
+func TestWorkspaceFromContextUsesDeliveryRoute(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C001:t:17.9:u:U111"))
-	ctx = context.WithValue(ctx, agentkit.KeyUserID, "U111")
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "slack", agentkit.SessionID("slack:C001:t:17.9:u:U111"))
+	env := session.EnvelopeFromContext(ctx)
+	env.Actor.UserID = "U111"
+	ctx = session.ApplyEnvelopeToContext(ctx, env)
 
-	got := session.ChannelKeyFromContext(ctx)
+	got := session.WorkspaceFromContext(ctx)
 	if got != "slack:C001" {
-		t.Fatalf("ChannelKeyFromContext = %q, want slack:C001", got)
+		t.Fatalf("WorkspaceFromContext = %q, want slack:C001", got)
 	}
 }

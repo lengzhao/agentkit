@@ -31,7 +31,7 @@ func TestListConversationsFromPersistedSessions(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
-	ws := tenantWorkspaceRoot(root)
+	ws := staticWorkspace{root: root}
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
-	ws := tenantWorkspaceRoot(root)
+	ws := staticWorkspace{root: root}
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 
 	delivery := agentkit.SessionID(engineSessionKey(channel, convID))
 	effective := session.ApplyScope(delivery, session.ScopeChannel, "demo")
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, effective)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(effective)})
 	sess, err := store.Get(ctx, effective)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestConversationMessagesFromAgentSession(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
-	ws := tenantWorkspaceRoot(root)
+	ws := staticWorkspace{root: root}
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestResolveConversationAfterRestart(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
-	ws := tenantWorkspaceRoot(root)
+	ws := staticWorkspace{root: root}
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -223,14 +223,14 @@ func appendTestUserMessage(ctx context.Context, store agentkit.SessionStore, cha
 }
 
 func tenantCtx(channel, convID string) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID(engineSessionKey(channel, convID)))
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(engineSessionKey(channel, convID))})
 }
 
 func TestPersistedSessionSurvivesStoreReopen(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
-	ws := tenantWorkspaceRoot(root)
+	ws := staticWorkspace{root: root}
 
 	store1, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {

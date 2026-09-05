@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	caphistory "github.com/lengzhao/agentkit/cap/chathistory"
 	"github.com/lengzhao/agentkit/plugins/tool/chathistory"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type stubProvider struct {
@@ -47,8 +48,8 @@ func TestChatHistoryReturnsEmptyWithoutProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyDeliverySessionID, agentkit.SessionID("feishu:oc_test"))
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "feishu")
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", agentkit.SessionID("feishu:oc_test"))
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("feishu", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
 
 	raw, err := tool.Call(ctx, []byte(`{}`))
 	if err != nil {
@@ -83,8 +84,8 @@ func TestChatHistoryRoutesThroughMultiplex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyDeliverySessionID, agentkit.SessionID("feishu:oc_test:t:om_root"))
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "feishu")
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", agentkit.SessionID("feishu:oc_test:t:om_root"))
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("feishu", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
 
 	raw, err := tool.Call(ctx, []byte(`{"limit":10}`))
 	if err != nil {
@@ -117,8 +118,8 @@ func TestChatHistoryThreadCanBeDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyDeliverySessionID, agentkit.SessionID("feishu:oc_test:t:om_root"))
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "feishu")
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", agentkit.SessionID("feishu:oc_test:t:om_root"))
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("feishu", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
 
 	if _, err := tool.Call(ctx, []byte(`{"thread":false}`)); err != nil {
 		t.Fatal(err)

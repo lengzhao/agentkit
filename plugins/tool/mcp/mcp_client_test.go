@@ -5,9 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"github.com/lengzhao/agentkit"
-)
+	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit")
 
 func TestResolveEnvValueURL(t *testing.T) {
 	const key = "AGENTKIT_MCP_URL_TEST"
@@ -49,7 +48,7 @@ func TestMergeHeaderFuncStaticAndBind(t *testing.T) {
 	}, []bindConfig{
 		{Key: "X-User-Id", From: "ctx:user_id", In: "header"},
 	})
-	ctx := context.WithValue(context.Background(), agentkit.KeyUserID, "u-9")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "u-9"}})
 	headers := fn(ctx)
 	if headers["X-agenthub-apikey"] != "static-key" {
 		t.Fatalf("static header = %q", headers["X-agenthub-apikey"])
@@ -65,17 +64,19 @@ func TestPoolKeyGlobalVsTenant(t *testing.T) {
 	globalServer := serverConfig{Name: "remote", Global: true}
 	localServer := serverConfig{Name: "filesystem"}
 
-	ctxA := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
-	ctxB := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C002"))
+	pool := &clientPool{}
 
-	globalA := poolKey(ctxA, globalServer)
-	globalB := poolKey(ctxB, globalServer)
+	ctxA := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctxB := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
+
+	globalA := pool.poolKey(ctxA, globalServer)
+	globalB := pool.poolKey(ctxB, globalServer)
 	if globalA != globalB {
 		t.Fatalf("global pool keys differ: %q vs %q", globalA, globalB)
 	}
 
-	localA := poolKey(ctxA, localServer)
-	localB := poolKey(ctxB, localServer)
+	localA := pool.poolKey(ctxA, localServer)
+	localB := pool.poolKey(ctxB, localServer)
 	if localA == localB {
 		t.Fatalf("local pool keys should differ by tenant: %q", localA)
 	}

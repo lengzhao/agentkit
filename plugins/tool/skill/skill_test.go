@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capskill "github.com/lengzhao/agentkit/cap/skill"
 	skilltool "github.com/lengzhao/agentkit/plugins/tool/skill"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -63,8 +64,8 @@ func TestSkillToolLoadsAndRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("skill-load"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("assistant"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "skill-load", Workspace: "skill-load"})
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	out, err := tool.Call(ctx, []byte(`{"name":"demo"}`))
 	if err != nil {
 		t.Fatalf("call: %v", err)

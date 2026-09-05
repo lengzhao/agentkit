@@ -6,12 +6,13 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestNormalizeSlashSessionIDSlackChannel(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyPlatformID, "slack")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "delivery")})
 	got := common.NormalizeDeliverySessionID(ctx, "D0AK8MAHW22")
 	want := agentkit.SessionID("slack:D0AK8MAHW22")
 	if got != want {
@@ -22,8 +23,8 @@ func TestNormalizeSlashSessionIDSlackChannel(t *testing.T) {
 func TestResolveRouteSlackBareChannel(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyPlatformID, "slack")
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C001:u:U1"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "delivery")})
+	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:u:U1"))
 	route, err := resolveRoute(ctx, SendInput{SessionID: "D0AK8MAHW22", Text: "123"})
 	if err != nil {
 		t.Fatal(err)

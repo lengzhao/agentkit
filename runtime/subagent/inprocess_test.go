@@ -80,8 +80,8 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	}
 
 	parentID := agentkit.SessionID("cli:default")
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, parentID)
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coding"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(parentID), Workspace: string(parentID)})
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coding"))
 	return fixture{spawner: spawner, store: store, parentID: parentID, ctx: ctx}
 }
 
@@ -137,7 +137,7 @@ func TestRunTakesSummaryFromFinish(t *testing.T) {
 	if len(childEvents) == 0 {
 		t.Fatal("child session is empty")
 	}
-	if !strings.HasPrefix(result.Session, "sub:"+string(f.parentID)+":researcher:") {
+	if !strings.HasPrefix(result.Session, string(f.parentID)+":sub:researcher:") {
 		t.Errorf("child session id = %q, want it derived from the parent", result.Session)
 	}
 
@@ -288,7 +288,7 @@ func TestRunAcceptsDelegationBelowDepthLimit(t *testing.T) {
 	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{{Text: "done"}})
 
 	ctx := context.WithValue(f.ctx, agentkit.KeyInSubagent, true)
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("sub:cli:default:parent:1"))
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: "sub:cli:default:parent:1", Workspace: "sub:cli:default:parent:1"})
 	if _, err := f.spawner.Run(ctx, subagent.Request{Agent: "researcher", Task: "nested once"}); err != nil {
 		if strings.Contains(err.Error(), "cannot delegate further") {
 			t.Fatalf("spawner should allow delegation below depth limit, got %v", err)

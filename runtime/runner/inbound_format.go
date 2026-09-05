@@ -34,10 +34,11 @@ type inboundFormatConfig struct {
 	defaultTimezone string
 }
 
-func (r *Root) formatInboundEvent(event agentkit.MessageEvent, deliveryID agentkit.SessionID) agentkit.MessageEvent {
+func (r *Root) formatInboundEvent(event agentkit.MessageEvent, env agentkit.TurnEnvelope) agentkit.MessageEvent {
 	if event.Message.Role == "" || skipInboundPromptMeta(event.Metadata) {
 		return event
 	}
+	deliveryID, _ := session.RouteSessionID(env.Route)
 	prefix := r.buildInboundPromptPrefix(event, deliveryID)
 	if prefix == "" {
 		return event

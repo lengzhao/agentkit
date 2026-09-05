@@ -21,7 +21,7 @@ type storeRecordingAgent struct {
 func (a *storeRecordingAgent) ID() agentkit.AgentID { return a.id }
 
 func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
 		return err
@@ -68,11 +68,78 @@ func newLoopSpawner(t *testing.T, async bool, summary string) (*LoopAgentSpawner
 }
 
 func loopParentCtx() context.Context {
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("assistant"))
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "cli")
-	ctx = context.WithValue(ctx, agentkit.KeyUserID, "user-1")
+	env := agentkit.TurnEnvelope{
+		Route:        agentkit.SessionRoute("cli", "cli:default:t:1:u:user-1"),
+		Conversation: "cli:default",
+		Workspace:    "cli:default",
+		Actor:        agentkit.ActorRef{UserID: "user-1"},
+	}
+	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	return ctx
+}
+
+func TestLoopAgentInheritsParentEnvelope(t *testing.T) {
+	t.Parallel()
+
+	var captured agentkit.TurnEnvelope
+	root := t.TempDir()
+	ws := workspace.Static(root)
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := &envelopeCapturingAgent{id: "cursor", store: store, capture: &captured}
+	spawner, err := NewLoopAgent(LoopAgentConfig{
+		Agents: []LoopAgentEntry{{
+			Name:        "cursor",
+			Description: "coding helper",
+			Agent:       "cursor",
+		}},
+	}, LoopAgentDeps{
+		SessionStore: store,
+		Agents:       []agentkit.Agent{agent},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := spawner.Run(loopParentCtx(), capsubagent.Request{Agent: "cursor", Task: "check envelope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := session.RouteSessionID(captured.Route); !ok || id != "cli:default:t:1:u:user-1" {
+		t.Fatalf("route = %v", captured.Route)
+	}
+	if captured.Workspace != "cli:default" {
+		t.Fatalf("workspace = %q", captured.Workspace)
+	}
+	if captured.Conversation != result.Session {
+		t.Fatalf("conversation = %q, child session = %q", captured.Conversation, result.Session)
+	}
+	if captured.Conversation == "cli:default" {
+		t.Fatal("child should use derived conversation id")
+	}
+}
+
+type envelopeCapturingAgent struct {
+	id      agentkit.AgentID
+	store   agentkit.SessionStore
+	capture *agentkit.TurnEnvelope
+}
+
+func (a *envelopeCapturingAgent) ID() agentkit.AgentID { return a.id }
+
+func (a *envelopeCapturingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
+	*a.capture = session.EnvelopeFromContext(ctx)
+	sessionID := session.SessionIDFromContext(ctx)
+	sess, err := a.store.Get(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	return session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+		Role:    "assistant",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
+	})
 }
 
 func TestLoopAgentSyncReturnsSummary(t *testing.T) {
@@ -120,13 +187,14 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 
 	started := make(chan struct{})
 	unblock := make(chan struct{})
+	finished := make(chan struct{})
 	root := t.TempDir()
 	ws := workspace.Static(root)
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := &blockingLoopAgent{id: "cursor", started: started, unblock: unblock, store: store}
+	agent := &blockingLoopAgent{id: "cursor", started: started, unblock: unblock, finished: finished, store: store}
 	spawner, err := NewLoopAgent(LoopAgentConfig{
 		Agents: []LoopAgentEntry{{
 			Name:        "cursor",
@@ -157,12 +225,18 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 		t.Fatal("expected second async job to be rejected")
 	}
 	close(unblock)
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first async job did not finish")
+	}
 }
 
 type blockingLoopAgent struct {
 	id      agentkit.AgentID
 	started chan struct{}
 	unblock chan struct{}
+	finished chan struct{}
 	store   agentkit.SessionStore
 }
 
@@ -171,15 +245,22 @@ func (a *blockingLoopAgent) ID() agentkit.AgentID { return a.id }
 func (a *blockingLoopAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
 	close(a.started)
 	<-a.unblock
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
+		if a.finished != nil {
+			close(a.finished)
+		}
 		return err
 	}
-	return session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	err = session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
 	})
+	if a.finished != nil {
+		close(a.finished)
+	}
+	return err
 }
 
 func TestLoopAgentDefinitionsFromConfig(t *testing.T) {

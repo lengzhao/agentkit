@@ -12,7 +12,7 @@ import (
 )
 
 func userCtx(userID string) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeyUserID, userID)
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: userID}})
 }
 
 func textMessage(role, text string) agentkit.ModelMessage {

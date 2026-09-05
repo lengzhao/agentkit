@@ -143,7 +143,7 @@ func TestRunTurnUsesResolvedSessionID(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	ctx = agenttest.LoopTurnContext(storeID, "cursor")
+	ctx = agenttest.TurnContext(storeID, "cursor")
 	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
 	_ = rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{

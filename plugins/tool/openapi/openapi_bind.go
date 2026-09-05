@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type bindConfig struct {
@@ -140,27 +140,27 @@ func resolveCtxValue(ctx context.Context, from string) (string, error) {
 	key := strings.TrimPrefix(from, "ctx:")
 	switch {
 	case key == "user_id":
-		if v, ok := ctx.Value(agentkit.KeyUserID).(string); ok {
+		if v := session.UserIDFromContext(ctx); v != "" {
 			return v, nil
 		}
 		return "", nil
 	case key == "session_id":
-		if v, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID); ok && v != "" {
+		if v := session.SessionIDFromContext(ctx); v != "" {
 			return string(v), nil
 		}
 		return "", nil
 	case key == "delivery_session_id":
-		if v, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID); ok && v != "" {
+		if v := session.DeliveryRouteFromContext(ctx); v != "" {
 			return string(v), nil
 		}
 		return "", nil
 	case key == "agent_id":
-		if v, ok := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID); ok && v != "" {
+		if v := session.AgentIDFromContext(ctx); v != "" {
 			return string(v), nil
 		}
 		return "", nil
 	case key == "platform_id":
-		if v, ok := ctx.Value(agentkit.KeyPlatformID).(string); ok {
+		if v := session.PlatformFromContext(ctx); v != "" {
 			return v, nil
 		}
 		return "", nil
@@ -169,8 +169,8 @@ func resolveCtxValue(ctx context.Context, from string) (string, error) {
 		if mdKey == "" {
 			return "", fmt.Errorf("metadata key is required")
 		}
-		md, ok := ctx.Value(agentkit.KeyMessageMetadata).(map[string]any)
-		if !ok || md == nil {
+		md := session.MetadataFromContext(ctx)
+		if md == nil {
 			return "", nil
 		}
 		v, ok := md[mdKey]

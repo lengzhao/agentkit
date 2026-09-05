@@ -15,7 +15,7 @@ type IndexedMessage = compaction.IndexedMessage
 // IndexMessagesForCompaction rebuilds the model-visible list used for compaction,
 // including the latest compaction summary and retained tail when present.
 func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEvent) []IndexedMessage {
-	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	agentID := AgentIDFromContext(ctx)
 
 	prevCompactionIdx := -1
 	var prevData compaction.EventData

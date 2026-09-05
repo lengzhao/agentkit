@@ -151,7 +151,6 @@ func (a *Runtime) emitAutoRetryStart(ctx context.Context, sess agentkit.Session,
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sess.ID(),
 		AgentID:   a.id,
 		Type:      agentkit.EventAutoRetryStart,
 		Data:      agentkit.MarshalOutboundData(data),
@@ -173,7 +172,6 @@ func (a *Runtime) emitAutoRetryEnd(ctx context.Context, sess agentkit.Session, e
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sess.ID(),
 		AgentID:   a.id,
 		Type:      agentkit.EventAutoRetryEnd,
 		Data:      agentkit.MarshalOutboundData(data),

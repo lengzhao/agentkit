@@ -52,7 +52,7 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 		return nil
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	err = rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

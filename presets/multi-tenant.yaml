@@ -6,8 +6,7 @@
 #                得到 effective SessionID；Loop 按 effective 串行加锁，session/store 一 ID 一 JSONL。
 #   用户识别   —— runner.config.inject 在入站时 prepend [meta ...]；
 #                支持 sender_id / sender_name / timestamp / task_id 等，对齐 cc-connect。
-#   工作目录   —— cap/tenant 从 effective SessionID 推出租户键（平台段 + 第一个路由段），
-#                workspace/tenant 按租户键给出 local 根。
+#   工作目录   —— RoutePolicy 从 route 推出 Workspace；workspace/tenant 按该键给出 local 根。
 #
 # 关键性质：三种 sessionScope（channel / thread / user）都落在同一个租户键上，
 # 所以「历史切多细」与「在哪个目录干活」可以分别决定。

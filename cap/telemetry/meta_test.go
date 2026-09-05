@@ -3,17 +3,19 @@ package telemetry_test
 import (
 	"context"
 	"testing"
-
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/telemetry"
-)
+	"github.com/lengzhao/agentkit/cap/telemetry")
 
 func TestObservationMetaFromContextFillsAgentAndSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("sub:researcher"))
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("sub:parent:researcher:1"))
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+		Conversation: "sub:parent:researcher:1",
+		Workspace:    "sub:parent:researcher:1",
+		AgentID:      agentkit.AgentID("sub:researcher"),
+	})
 
 	meta := telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{
 		Name: "llm.generation",
@@ -31,8 +33,11 @@ func TestEnrichEventAttrsAddsAgentAndSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, agentkit.SessionID("cli:default"))
+	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+		Conversation: "cli:default",
+		Workspace:    "cli:default",
+		AgentID:      agentkit.AgentID("coder"),
+	})
 
 	attrs := telemetry.EnrichEventAttrs(ctx, map[string]string{"steps": "2"})
 	if attrs["agent_id"] != "coder" {

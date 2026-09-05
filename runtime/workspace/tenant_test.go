@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/tenant"
+	"github.com/lengzhao/agentkit/runtime/session"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func tenantCtx(id string) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID(id))
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: id})
 }
 
 func newTenantSvc(t *testing.T, cfg rw.TenantConfig) *rw.TenantService {
@@ -232,10 +232,32 @@ func TestTenantConfigValidation(t *testing.T) {
 func TestTenantKeyFromContext(t *testing.T) {
 	t.Parallel()
 
-	if got := tenant.FromContext(tenantCtx("slack:C001:t:17.9")); got != "slack:C001" {
-		t.Fatalf("FromContext = %q", got)
+	if got := session.WorkspaceFromContext(tenantCtx("slack:C001:t:17.9")); got != "slack:C001" {
+		t.Fatalf("WorkspaceFromContext = %q", got)
 	}
-	if got := tenant.FromContext(context.Background()); got != "" {
-		t.Fatalf("FromContext without session = %q", got)
+	if got := session.WorkspaceFromContext(context.Background()); got != "" {
+		t.Fatalf("WorkspaceFromContext without session = %q", got)
+	}
+}
+
+func TestTenantUsesEnvelopeWorkspace(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	svc := newTenantSvc(t, rw.TenantConfig{Global: t.TempDir(), LocalBase: base})
+	env := agentkit.TurnEnvelope{
+		Route:        agentkit.SessionRoute("slack", "slack:C001:t:17.9"),
+		Conversation: "schedule:job:1",
+		Workspace:    "slack:C001",
+	}
+	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+
+	got, err := svc.Resolve(ctx, "work/marker.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(base, "slack_C001", "work", "marker.txt")
+	if got != want {
+		t.Fatalf("resolve = %q, want %q", got, want)
 	}
 }

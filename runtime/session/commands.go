@@ -27,17 +27,30 @@ func (c newCommand) CommandExec(ctx context.Context, args string) (string, error
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /new")
 	}
-	current, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	id := NewSessionID(current)
-	if c.store != nil {
-		if isCLISessionID(current) {
+	env := EnvelopeFromContext(ctx)
+	current := SessionIDFromContext(ctx)
+	if current == "" {
+		current = agentkit.SessionID(env.Conversation)
+	}
+
+	if isCLISessionID(current) {
+		id := agentkit.SessionID(NewConversationID(string(current)))
+		if c.store != nil {
 			if err := c.store.SetCLICurrent(ctx, id); err != nil {
 				return "", err
 			}
-		} else if current != "" {
-			if err := c.store.SetActiveSession(ctx, current, id); err != nil {
-				return "", err
-			}
+		}
+		return string(id), nil
+	}
+
+	entryKey := ActiveEntryKeyFromContext(ctx)
+	if entryKey == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	id := agentkit.SessionID(NewConversationID(string(entryKey)))
+	if c.store != nil {
+		if err := c.store.SetActiveSession(ctx, entryKey, id); err != nil {
+			return "", err
 		}
 	}
 	return string(id), nil
@@ -61,7 +74,10 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /session")
 	}
-	entryKey, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	entryKey := ActiveEntryKeyFromContext(ctx)
+	if entryKey == "" {
+		entryKey = SessionIDFromContext(ctx)
+	}
 	sessionID, err := ResolveActiveSessionID(ctx, c.store, entryKey)
 	if err != nil {
 		return "", err

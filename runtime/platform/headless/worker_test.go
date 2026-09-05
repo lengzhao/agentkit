@@ -13,6 +13,7 @@ import (
 	capshell "github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/headless"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // newWorker builds a worker without a schedule registry, i.e. batch mode.
@@ -27,6 +28,10 @@ func tasks(prompts ...string) []headless.TaskSpec {
 		out = append(out, headless.TaskSpec{Prompt: prompt})
 	}
 	return out
+}
+
+func deliveryID(event agentkit.MessageEvent) agentkit.SessionID {
+	return session.InboundDeliveryID(event)
 }
 
 func textOfMessage(msg agentkit.ModelMessage) string {
@@ -59,7 +64,7 @@ func TestWorkerRunsEachTaskThenReportsEOF(t *testing.T) {
 			t.Fatalf("receive: %v", err)
 		}
 		got = append(got, textOfMessage(event.Message))
-		sessions = append(sessions, event.SessionID)
+		sessions = append(sessions, deliveryID(event))
 		if event.PlatformID != "worker" {
 			t.Fatalf("platform id = %q, want worker", event.PlatformID)
 		}
@@ -111,11 +116,11 @@ func TestWorkerFixedModeSharesOneSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SessionID != second.SessionID {
-		t.Fatalf("fixed mode gave different sessions: %q vs %q", first.SessionID, second.SessionID)
+	if deliveryID(first) != deliveryID(second) {
+		t.Fatalf("fixed mode gave different sessions: %q vs %q", deliveryID(first), deliveryID(second))
 	}
-	if !strings.HasPrefix(string(first.SessionID), "batch") {
-		t.Fatalf("session id = %q, want the configured prefix", first.SessionID)
+	if !strings.HasPrefix(string(deliveryID(first)), "batch") {
+		t.Fatalf("session id = %q, want the configured prefix", deliveryID(first))
 	}
 }
 
@@ -135,7 +140,7 @@ func TestWorkerFreshSessionsAreUniqueAcrossProcesses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ids = append(ids, event.SessionID)
+		ids = append(ids, deliveryID(event))
 	}
 	if ids[0] == ids[1] {
 		t.Fatalf("two runs produced the same fresh session id %q", ids[0])

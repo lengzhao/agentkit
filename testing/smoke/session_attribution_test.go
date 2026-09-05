@@ -12,7 +12,7 @@ import (
 )
 
 func userContext(userID string) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeyUserID, userID)
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: userID}})
 }
 
 // E2E-513: multi-user channel history replays stored inject prefix verbatim.

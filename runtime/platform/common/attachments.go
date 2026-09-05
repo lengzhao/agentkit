@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // ImageAttachment is an inbound image from an IM platform.
@@ -73,9 +74,17 @@ func InboundOptsFor(ws workspace.Service) *InboundOpts {
 // InboundFromContent builds a MessageEvent from text and optional media.
 // extraContent is prepended (e.g. quoted reply context). Non-image files are
 // saved under the tenant work dir and referenced in the prompt for the read tool.
-func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
+func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
+	if route.ScopeUserID == "" {
+		route.ScopeUserID = strings.TrimSpace(userID)
+	}
+	deliveryID := route.DeliveryID
+	if deliveryID == "" && route.Platform != "" && strings.TrimSpace(route.ChannelID) != "" {
+		deliveryID = session.BuildDeliverySessionID(route.Platform, route.ChannelID, route.ThreadID, route.ScopeUserID)
+		route.DeliveryID = deliveryID
+	}
 	if len(files) > 0 {
-		saved := saveInboundFiles(sessionID, files, opts)
+		saved := saveInboundFiles(deliveryID, files, opts)
 		filePaths = append(filePaths, saved...)
 	}
 	text := strings.TrimSpace(content)
@@ -108,7 +117,7 @@ func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, 
 		if opts == nil || opts.Workspace == nil {
 			continue
 		}
-		saved := saveInboundFiles(sessionID, []FileAttachment{{
+		saved := saveInboundFiles(deliveryID, []FileAttachment{{
 			MimeType: images[i].MimeType,
 			Data:     images[i].Data,
 			FileName: images[i].FileName,
@@ -139,16 +148,15 @@ func InboundFromContent(agentID agentkit.AgentID, sessionID agentkit.SessionID, 
 	if len(parts) == 0 {
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: ""})
 	}
-	return agentkit.MessageEvent{
-		SessionID:  sessionID,
+	return WithInboundRoute(agentkit.MessageEvent{
 		AgentID:    agentID,
-		PlatformID: platformID,
+		PlatformID: strings.TrimSpace(route.Platform),
 		UserID:     userID,
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: parts,
 		},
-	}
+	}, route)
 }
 
 // IsImageAttachment reports whether an inbound attachment should be sent to the
@@ -167,12 +175,15 @@ func appendFileRefs(prompt string, filePaths []string) string {
 	return prompt + "\n\n(Files saved locally, please read them: " + strings.Join(filePaths, ", ") + ")"
 }
 
-func saveInboundFiles(sessionID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []string {
+func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []string {
 	if opts == nil || opts.Workspace == nil {
 		slog.Warn("common: inbound attachments require workspace")
 		return nil
 	}
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: string(deliveryID),
+		Workspace:    session.WorkspaceKey(string(deliveryID)),
+	})
 	attachDir, err := opts.Workspace.Resolve(ctx, UploadWorkRel())
 	if err != nil {
 		slog.Warn("common: resolve inbound upload dir failed", "error", err)

@@ -21,11 +21,11 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 	if incomplete == nil {
 		return nil
 	}
-	// A subagent turn must only touch its own KeySessionID history. If a caller
+	// A subagent turn must only touch its own conversation history. If a caller
 	// ever resolves the wrong session object, skip rather than repair a parent
 	// delegate turn.
 	if ctx.Value(agentkit.KeyInSubagent) != nil {
-		turnSessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+		turnSessionID := session.SessionIDFromContext(ctx)
 		if turnSessionID != "" && sess.ID() != turnSessionID {
 			return nil
 		}
@@ -57,7 +57,6 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sess.ID(),
 		AgentID:   a.id,
 		Type:      agentkit.EventSessionRecovery,
 		Data:      agentkit.MarshalOutboundData(data),

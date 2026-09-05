@@ -42,7 +42,7 @@ func TestSmokeSubagentDelegateWithLogicalStoreSession(t *testing.T) {
 	logical := agentkit.SessionID("chat-api:nex-channel")
 	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{LogicalID: logical})
 
-	ctx := agenttest.LoopTurnContext(logical, agentkit.AgentID("nex"))
+	ctx := agenttest.TurnContext(logical, agentkit.AgentID("nex"))
 	agenttest.RunTurn(t, ctx, env.Agent, "调研一下 loop 串行机制")
 
 	events := agenttest.SessionEvents(t, ctx, env.Store, logical)
@@ -68,20 +68,17 @@ func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: logical,
-			AgentID:   "nex",
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "委派 researcher"}},
-			},
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(logical, agentkit.MessageEvent{
+		AgentID: "nex",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "委派 researcher"}},
 		},
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("loop dispatch: %v", err)
 	}
 
-	ctx = agenttest.LoopTurnContext(logical, agentkit.AgentID("nex"))
+	ctx = agenttest.TurnContext(logical, agentkit.AgentID("nex"))
 	events := agenttest.SessionEvents(t, ctx, env.Store, logical)
 	agenttest.AssertSubagentParentSession(t, events)
 	agenttest.AssertNoToolResultWithContent(t, events, "call-delegate", "interrupted")

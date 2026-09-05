@@ -848,16 +848,28 @@ type SessionStore interface {
 
 示例：`slack:C123ABC`、`slack:C123ABC:u:U456`、`slack:C123ABC:t:1712345678.123456`、`feishu:oc_xxx:t:om_yyy`、`chat-api:default_channel:t:conv_abc`、`cli:default`。
 
+**RouteRef wire contract**（根包 `agentkit.RouteRef`）：
+
+```go
+type RouteRef struct {
+    Platform string          // 投递平台 id
+    Kind     RouteKind       // payload 类型，如 "session"
+    Target   json.RawMessage // 由 kind 对应 codec 解码
+}
+```
+
+核心层（Runner / Loop / Agent / tools）只存储或复制 `RouteRef`，不解析 `Target`。`runtime/session` 是 `RouteKindSession` 的 codec owner：`BuildSessionRoute` 构造、`DecodeSessionRoute` / `RouteSessionID` 解码 delivery id。JSON 读取兼容 legacy `session` 嵌套字段、flat `sessionId/channelId/...` 与旧 `data` 编码；写出统一使用 `target`。
+
 路由约定：
 
 | 组件 | 职责 |
 |------|------|
-| **Platform**（如 `platform/slack`） | 从 IM 事件生成稳定 `MessageEvent.SessionID`（必填）；出站 `OutboundEvent` 回带同一 ID，由 `Send` 解析投递目标（含主动发送） |
-| **Loop** | 按 `MessageEvent.SessionID` 选择 Agent 并串行调度；不调用 `SessionStore` |
-| **Agent** | `RunTurn` 从 `ctx.Value(agentkit.KeySessionID)` 读取 SessionID，并通过 `deps.sessionStore.Get` 加载 Session |
+| **Platform**（如 `platform/slack`） | 从 IM 事件生成稳定 `Envelope.Route`（delivery）；出站 `OutboundEvent.Route` 原路返回，由 `Send` 解析投递目标 |
+| **Loop** | 按 `TurnEnvelope.Conversation` 串行调度；不调用 `SessionStore` |
+| **Agent** | `RunTurn` 从 `session.SessionIDFromContext` 读取 conversation，并通过 `deps.sessionStore.Get` 加载 Session |
 | **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；进程内 LRU 缓存最近活跃的 session；内存只保留 compaction 标记 + 最近 `maxLoadedEvents` 条事件，压缩后裁剪已折叠历史；完整审计读盘 |
 
-所有入口（含 CLI）必须在 `MessageEvent` 上设置 `SessionID`。CLI 启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话（缺省指向 `cli:default`）；`/new` 创建新 id 并更新软链。配置示例：
+所有入口（含 CLI）必须在 `MessageEvent.Envelope.Route` 上设置 delivery。CLI 启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话（缺省指向 `cli:default`）；`/new` 创建新 conversation 并更新 active mapping。配置示例：
 
 ```yaml
 loop:
@@ -884,8 +896,8 @@ agent.coder:
 
 ```mermaid
 flowchart LR
-  Slack["platform/slack"] -->|"SessionID=slack:C:t:ts"| Loop
-  Loop -->|"ctx.Value(KeySessionID)"| Agent
+  Slack["platform/slack"] -->|"Envelope.Route"| Loop
+  Loop -->|"SessionIDFromContext"| Agent
   Agent -->|"SessionStore.Get"| Store["session/store"]
   Store --> F1["C001.jsonl"]
   Store --> F2["C002.jsonl"]
@@ -895,10 +907,10 @@ flowchart LR
 进程内上下文键由 `agentkit` 根包定义，插件直接读取，不再提供 `WithTurn` / `TurnFrom` 包装层：
 
 ```go
-ctx.Value(agentkit.KeySessionID)
-ctx.Value(agentkit.KeyAgentID)
-ctx.Value(agentkit.KeyPlatformID)
-ctx.Value(agentkit.KeyUserID)
+session.SessionIDFromContext(ctx)   // TurnEnvelope.Conversation
+session.PlatformFromContext(ctx)
+session.UserIDFromContext(ctx)
+session.AgentIDFromContext(ctx)
 ctx.Value(agentkit.KeyTurnID)
 ctx.Value(agentkit.KeyToolCallID)
 ```
@@ -941,7 +953,7 @@ type Platform interface {
 }
 ```
 
-Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`（**必填 `SessionID`**），以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。各 `platform/*` 插件拥有 SessionID 生成规则；Loop 与 Agent 不解析 ID 段。
+Platform 是消息入口适配层。CLI、HTTP、SDK、IM、Worker 都可以是不同 Platform 插件。它只负责把外部输入转成 `MessageEvent`（入站时设置 `Envelope.Route` 作为 delivery 回邮地址；`Conversation` / `Workspace` 由 Runner 在 dispatch 前填充），以及把 Runner / Loop 产生的输出写回外部系统，不负责 Agent 决策、工具执行或模型调用。各 `platform/*` 插件拥有 delivery id 生成规则；Loop 与 Agent 不解析 route target 段。
 
 多个 Platform 可在同一 Agent 中共存：用 `platform/multiplex` 聚合各入口，Runner 仍只依赖一个 `Platform`。入站消息携带 `PlatformID`，出站事件必须携带 `PlatformID` 并路由回对应 leaf 通道；`multiplex` 不接受空 `PlatformID`，不会向所有子平台广播。
 
@@ -967,11 +979,11 @@ type Agent interface {
 }
 ```
 
-- **context key**：Loop 在 `Dispatch` 时把已解析的 `MessageEvent.SessionID`、`DeliverySessionID`、解析后的 `AgentID`、`PlatformID`、`UserID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件读取 SessionID 做租户隔离，Agent 读写历史使用同一 SessionID。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
+- **context key**：Loop 在 `Dispatch` 时把 `TurnEnvelope`（含 conversation、delivery route、workspace、actor）、`AgentID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件从 envelope 推导租户目录，Agent 读写历史使用 `SessionIDFromContext`。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
 - **Active Session**：Slack / 飞书等 IM 以及 chat-api 的 delivery key 是固定投递地址，`/new` 不改变它，而是在 `session/store` 里记录 `sessions/<stable>/current.json`，把 stable delivery/effective key 指向新的 SessionID；没有映射时 SessionID 默认等于 runner 折叠后的 effective id，chat-api 的 stable key 由 `conversation_id` 组成。
 - **Agent 路由**：Runner 在解析 SessionID 后统一解析 agent，再交给 Loop。优先级为 `MessageEvent.AgentID`（Platform 从自己的存储/请求填入）→ session 工作目录下的 `agent.json` → `loop.defaultAgent`。channel / user 级绑定不由 Runner 静态配置，而由 Platform 在入站时写入 `AgentID`。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
-- **Loop.Steer/FollowUp**：从 `ctx.Value(agentkit.KeySessionID)` 路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；有待处理的 steering 时重置 segment 内 `maxSteps` 计数，避免 steer 刚入队就因步数耗尽而结束 turn；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。
+- **Loop.Steer/FollowUp**：从 `TurnEnvelope.Conversation`（`session.SessionIDFromContext`）路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；有待处理的 steering 时重置 segment 内 `maxSteps` 计数，避免 steer 刚入队就因步数耗尽而结束 turn；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。
 - **Cancel**：设置取消原因并打断当前 step；与 steer 不同，会终止整个 turn。
 

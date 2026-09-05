@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // Dispatch sends a proactive message through the platform.
@@ -31,7 +32,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	}
 	modelMsg := agentkit.ModelMessage{Role: "assistant", Content: parts}
 	event := agentkit.OutboundEvent{
-		SessionID:  route.sessionID,
+		Route:      session.SessionRouteFromDelivery(route.platformID, route.sessionID, ""),
 		AgentID:    route.agentID,
 		PlatformID: route.platformID,
 		UserID:     route.userID,
@@ -42,7 +43,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 		return err
 	}
 	if useEmit(ctx, input) {
-		if emit, ok := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit); ok && emit != nil {
+		if emit := agentkit.OutboundEmitFromContext(ctx); emit != nil {
 			ctx = context.WithValue(ctx, agentkit.KeyProactiveSendUsed, true)
 			return emit(ctx, event)
 		}

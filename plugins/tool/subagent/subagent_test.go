@@ -9,6 +9,7 @@ import (
 
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/plugins/tool/subagent"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 )
@@ -117,7 +118,7 @@ func TestSubagentToolRejectsAtDepthLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("sub:sub:cli:default:researcher:1:reviewer:2"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default:sub:researcher:1:sub:reviewer:2", Workspace: "cli:default:sub:researcher:1:sub:reviewer:2"})
 	out := testutil.CallTool(t, ctx, delegate, `{"agent":"researcher","task":"go deeper"}`)
 	if !strings.Contains(out, "depth limit") {
 		t.Fatalf("output = %q, want depth limit error", out)
@@ -136,7 +137,7 @@ func TestSubagentToolAllowsDelegationBelowDepthLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("sub:cli:default:researcher:1"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default:sub:researcher:1", Workspace: "cli:default:sub:researcher:1"})
 	out := testutil.CallTool(t, ctx, delegate, `{"agent":"researcher","task":"one more level"}`)
 	var got subagent.SubagentOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {

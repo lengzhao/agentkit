@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // TextSender delivers finalized assistant text to a conversation.
@@ -31,9 +32,10 @@ func NewOutbound(send TextSender, media MediaSender) *Outbound {
 }
 
 func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) error {
+	delivery := session.OutboundRouteID(event)
 	switch event.Type {
 	case agentkit.EventMessageStart:
-		o.clear(event.SessionID)
+		o.clear(delivery)
 		return nil
 	case agentkit.EventMessageUpdate:
 		var payload agentkit.MessageUpdatePayload
@@ -42,11 +44,11 @@ func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) err
 		}
 		switch payload.AssistantMessageEvent.Type {
 		case agentkit.AssistantEventTextDelta, agentkit.AssistantEventThinkingDelta:
-			o.append(event.SessionID, payload.AssistantMessageEvent.Delta)
+			o.append(delivery, payload.AssistantMessageEvent.Delta)
 		}
 		return nil
 	case agentkit.EventMessageEnd, agentkit.EventAssistantMessage:
-		text := o.take(event.SessionID)
+		text := o.take(delivery)
 		var msg agentkit.ModelMessage
 		if event.Type == agentkit.EventAssistantMessage {
 			if err := json.Unmarshal(event.Data, &msg); err == nil {
@@ -56,7 +58,7 @@ func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) err
 			}
 		}
 		if text != "" {
-			if err := o.send(ctx, event.SessionID, text); err != nil {
+			if err := o.send(ctx, delivery, text); err != nil {
 				return err
 			}
 		}
@@ -65,7 +67,7 @@ func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) err
 				if !isOutboundMediaPart(part.Type) {
 					continue
 				}
-				if err := o.media(ctx, event.SessionID, part); err != nil {
+				if err := o.media(ctx, delivery, part); err != nil {
 					return err
 				}
 			}
@@ -81,7 +83,7 @@ func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) err
 			Error string `json:"error"`
 		}
 		if err := json.Unmarshal(event.Data, &payload); err == nil && payload.Error != "" {
-			return o.send(ctx, event.SessionID, "error: "+payload.Error)
+			return o.send(ctx, delivery, "error: "+payload.Error)
 		}
 	}
 	return nil

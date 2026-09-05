@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/openapi"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -179,13 +180,14 @@ func NewProvider(t *testing.T, root string) agentkit.ToolProvider {
 // TurnContext returns a turn context seeded for bind tests.
 func TurnContext(sessionID agentkit.SessionID, agentID agentkit.AgentID, userID string, metadata map[string]any) context.Context {
 	ctx := agenttest.TurnContext(sessionID, agentID)
+	env := session.EnvelopeFromContext(ctx)
 	if userID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyUserID, userID)
+		env.Actor.UserID = userID
 	}
 	if len(metadata) > 0 {
-		ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, metadata)
+		env.Metadata = metadata
 	}
-	return ctx
+	return session.ApplyEnvelopeToContext(ctx, env)
 }
 
 // ToolByName lists tools from the provider and returns the named tool.

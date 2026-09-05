@@ -1,8 +1,10 @@
 package chatapi
 
 import (
+	"context"
 	"strings"
 
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -10,7 +12,7 @@ const defaultWorkspaceChannelID = "default_channel"
 
 // engineSessionKey is the delivery SessionID:
 // chat-api:<channel>:t:<conversationID>.
-// tenant.Key -> chat-api:<channel> for per-channel workspace isolation.
+// session.WorkspaceKey -> chat-api:<channel> for per-channel workspace isolation.
 func engineSessionKey(channelKey, conversationID string) string {
 	if channelKey == "" {
 		channelKey = defaultWorkspaceChannelID
@@ -21,6 +23,26 @@ func engineSessionKey(channelKey, conversationID string) string {
 		conversationID,
 		"",
 	))
+}
+
+func channelWorkspaceEnvelope(channelKey string) agentkit.TurnEnvelope {
+	delivery := engineSessionKey(channelKey, "probe")
+	return agentkit.TurnEnvelope{
+		Workspace: session.WorkspaceKey(delivery),
+	}
+}
+
+func sessionEnvelope(channelKey, conversationID string) agentkit.TurnEnvelope {
+	delivery := agentkit.SessionID(engineSessionKey(channelKey, conversationID))
+	return agentkit.TurnEnvelope{
+		Conversation: string(delivery),
+		Route:        session.SessionRouteFromDelivery("chat-api", delivery, ""),
+		Workspace:    session.WorkspaceKey(string(delivery)),
+	}
+}
+
+func channelWorkspaceCtx(ctx context.Context, channelKey string) context.Context {
+	return session.ApplyEnvelopeToContext(ctx, channelWorkspaceEnvelope(channelKey))
 }
 
 func encodeSessionChannelSegment(channelKey string) string {

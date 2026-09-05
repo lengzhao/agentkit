@@ -33,14 +33,10 @@ func TestSmokeLoopSameSessionSequentialTurns(t *testing.T) {
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		}
 	}
-	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{SessionID: sessionID, AgentID: "loop-smoke", Message: msg("第一条")},
-	}); err != nil {
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{AgentID: "loop-smoke", Message: msg("第一条")})); err != nil {
 		t.Fatalf("first dispatch: %v", err)
 	}
-	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{SessionID: sessionID, AgentID: "loop-smoke", Message: msg("第二条")},
-	}); err != nil {
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{AgentID: "loop-smoke", Message: msg("第二条")})); err != nil {
 		t.Fatalf("second dispatch: %v", err)
 	}
 
@@ -83,16 +79,13 @@ func TestSmokeLoopDifferentSessionsIsolated(t *testing.T) {
 	ctx := context.Background()
 	dispatch := func(sessionID agentkit.SessionID, text string) {
 		t.Helper()
-		if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
-			Event: agentkit.MessageEvent{
-				SessionID: sessionID,
-				AgentID:   "loop-smoke",
-				Message: agentkit.ModelMessage{
-					Role:    "user",
-					Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-				},
+		if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{
+			AgentID: "loop-smoke",
+			Message: agentkit.ModelMessage{
+				Role:    "user",
+				Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 			},
-		}); err != nil {
+		})); err != nil {
 			t.Fatalf("dispatch %s: %v", sessionID, err)
 		}
 	}

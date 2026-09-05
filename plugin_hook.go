@@ -34,7 +34,7 @@ type TurnStoppingHook interface {
 }
 
 // BeforeStep is invoked before a model step. Hooks read routing context from
-// ctx.Value(KeySessionID) / ctx.Value(KeyAgentID); hooks that need durable
+// ctx.Value(KeyTurnEnvelope) / SessionIDFromContext; hooks that need durable
 // state should depend on SessionStore via pluginkit Deps.
 type BeforeStep struct {
 	Messages []ModelMessage

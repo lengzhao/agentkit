@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type Config struct {
@@ -83,21 +83,21 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	if err != nil {
 		return err
 	}
-	sessionID := req.Event.SessionID
-	if sessionID == "" {
-		return fmt.Errorf("message event requires session id")
+	conversation := session.ConversationFromLoopRequest(req)
+	if conversation == "" {
+		return fmt.Errorf("loop request requires conversation")
 	}
 
-	unlock := l.lockSession(sessionID)
+	unlock := l.lockSession(conversation)
 	defer unlock()
 
-	l.markSessionBusy(sessionID, true)
-	defer l.markSessionBusy(sessionID, false)
+	l.markSessionBusy(conversation, true)
+	defer l.markSessionBusy(conversation, false)
 
-	control := l.controlFor(sessionID)
+	control := l.controlFor(conversation)
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
-	ctx = withTurnContext(ctx, sessionID, deliverySessionID(req), agentID, req.Event.PlatformID, req.Event.UserID, req.Event.Metadata, control, req.Emit)
+	ctx = withTurnContext(ctx, req.Event.Envelope, conversation, agentID, req.Event.PlatformID, req.Event.UserID, req.Event.Metadata, control, req.Emit)
 	ctx = telemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
@@ -136,8 +136,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	turnID := uuid.NewString()
 	meta := telemetry.TurnMeta{
 		TurnID:            turnID,
-		SessionID:         string(req.Event.SessionID),
-		DeliverySessionID: string(deliverySessionID(req)),
+		SessionID:         string(session.ConversationFromLoopRequest(req)),
+		DeliverySessionID: string(session.DeliveryFromEnvelope(req.Event.Envelope)),
 		AgentID:           string(agentID),
 		PlatformID:        req.Event.PlatformID,
 		UserID:            req.Event.UserID,
@@ -146,8 +146,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	slog.Info("turn start",
 		"turn_id", turnID,
 		"agent_id", agentID,
-		"session_id", req.Event.SessionID,
-		"delivery_session_id", deliverySessionID(req),
+		"session_id", session.ConversationFromLoopRequest(req),
+		"delivery_session_id", session.DeliveryFromEnvelope(req.Event.Envelope),
 		"platform_id", req.Event.PlatformID,
 		"user_id", req.Event.UserID,
 	)
@@ -162,7 +162,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		attrs := []any{
 			"turn_id", turnID,
 			"agent_id", agentID,
-			"session_id", req.Event.SessionID,
+			"session_id", session.ConversationFromLoopRequest(req),
 			"duration", time.Since(turnStarted),
 		}
 		if end.Steps > 0 {
@@ -252,20 +252,24 @@ func (l *Default) lockSession(id agentkit.SessionID) func() {
 	return mu.Unlock
 }
 
-func withTurnContext(ctx context.Context, sessionID, deliverySessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, metadata map[string]any, control *Control, emit agentkit.OutboundEmit) context.Context {
-	ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
-	if deliverySessionID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliverySessionID)
+func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, metadata map[string]any, control *Control, emit agentkit.OutboundEmit) context.Context {
+	if sessionID != "" {
+		env = env.WithConversation(string(sessionID))
 	}
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentID)
-	if platformID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyPlatformID, platformID)
+	if env.Route.Platform == "" && platformID != "" {
+		env.Route.Platform = platformID
 	}
-	if userID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyUserID, userID)
+	if env.Actor.UserID == "" && userID != "" {
+		env.Actor.UserID = userID
 	}
+	if agentID != "" {
+		env.AgentID = agentID
+	}
+	if len(metadata) > 0 && len(env.Metadata) == 0 {
+		env.Metadata = metadata
+	}
+	ctx = session.ApplyEnvelopeToContext(ctx, env)
 	if len(metadata) > 0 {
-		ctx = context.WithValue(ctx, agentkit.KeyMessageMetadata, metadata)
 		if capschedule.IsFireTurn(metadata) {
 			ctx = context.WithValue(ctx, agentkit.KeyScheduleFireTurn, true)
 		}
@@ -274,7 +278,7 @@ func withTurnContext(ctx context.Context, sessionID, deliverySessionID agentkit.
 		}
 	}
 	if emit != nil {
-		ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, emit)
+		ctx = agentkit.ContextWithOutboundEmit(ctx, emit)
 	}
 	if control != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)
@@ -290,19 +294,9 @@ func permissionCapability(raw any) permission.Capability {
 	return capab
 }
 
-func deliverySessionID(req agentkit.LoopRequest) agentkit.SessionID {
-	if req.DeliverySessionID != "" {
-		return req.DeliverySessionID
-	}
-	if id := strings.TrimSpace(string(req.Event.DeliverySessionID)); id != "" {
-		return agentkit.SessionID(id)
-	}
-	return req.Event.SessionID
-}
-
 func sessionIDFromContext(ctx context.Context) (agentkit.SessionID, error) {
-	id, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	if !ok || id == "" {
+	id := session.SessionIDFromContext(ctx)
+	if id == "" {
 		return "", fmt.Errorf("session id required in context")
 	}
 	return id, nil

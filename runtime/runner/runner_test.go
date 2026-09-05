@@ -59,7 +59,7 @@ func (l *panickyLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) erro
 	l.mu.Lock()
 	l.calls++
 	l.mu.Unlock()
-	if req.Event.SessionID == "s:1" {
+	if session.ConversationFromLoopRequest(req) == "s:1" {
 		panic("boom")
 	}
 	return nil
@@ -80,12 +80,31 @@ func (l *panickyLoop) count() int {
 
 func userEvent(sessionID agentkit.SessionID, text string) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
-		SessionID: sessionID,
+		Envelope: agentkit.TurnEnvelope{
+			Route: agentkit.SessionRoute("", string(sessionID)),
+		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
 	}
+}
+
+func deliveryUserEvent(platform, userID string, delivery agentkit.SessionID, text string) agentkit.MessageEvent {
+	evt := agentkit.MessageEvent{
+		UserID: userID,
+		Envelope: agentkit.TurnEnvelope{
+			Route: agentkit.SessionRoute(platform, string(delivery)),
+		},
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
+		},
+	}
+	if platform != "" {
+		evt.PlatformID = platform
+	}
+	return evt
 }
 
 // TestRunSurvivesPanickingTurn is the daemon guarantee: one bad turn must not
@@ -122,8 +141,8 @@ func TestRunSurvivesPanickingTurn(t *testing.T) {
 		if err := json.Unmarshal(event.Data, &payload); err != nil {
 			t.Fatalf("decode error event: %v", err)
 		}
-		if event.SessionID != "s:1" {
-			t.Fatalf("error reported on session %q, want s:1", event.SessionID)
+		if session.OutboundRouteID(event) != "s:1" {
+			t.Fatalf("error reported on route %q, want s:1", session.OutboundRouteID(event))
 		}
 		reported = payload.Error
 	}
@@ -233,7 +252,9 @@ func (p *stagedPermissionPlatform) Receive(ctx context.Context) (agentkit.Messag
 		default:
 		}
 		return agentkit.MessageEvent{
-			SessionID: "s:1",
+			Envelope: agentkit.TurnEnvelope{
+				Route: agentkit.SessionRoute("", "s:1"),
+			},
 			Reply: permission.MarshalReply(permission.Reply{
 				RequestID: "perm1",
 				Text:      "yes",
@@ -342,27 +363,13 @@ func TestSessionScopeChannelCollapsesDistinctUsers(t *testing.T) {
 	order := make([]agentkit.SessionID, 0, 2)
 	loop := &recordingLoop{hold: func(req agentkit.LoopRequest) {
 		mu.Lock()
-		order = append(order, req.Event.SessionID)
+		order = append(order, session.ConversationFromLoopRequest(req))
 		mu.Unlock()
 	}}
 
 	events := []agentkit.MessageEvent{
-		{
-			SessionID: session.BuildDeliverySessionID("slack", "C001", "111.0", "U111"),
-			UserID:    "U111",
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "one"}},
-			},
-		},
-		{
-			SessionID: session.BuildDeliverySessionID("slack", "C001", "222.0", "U222"),
-			UserID:    "U222",
-			Message: agentkit.ModelMessage{
-				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "two"}},
-			},
-		},
+		deliveryUserEvent("slack", "U111", session.BuildDeliverySessionID("slack", "C001", "111.0", "U111"), "one"),
+		deliveryUserEvent("slack", "U222", session.BuildDeliverySessionID("slack", "C001", "222.0", "U222"), "two"),
 	}
 	runToCompletion(t, runner.Config{SessionScope: "channel"}, &scriptedPlatform{events: events}, loop)
 
@@ -382,14 +389,9 @@ func TestOutboundUsesDeliverySessionID(t *testing.T) {
 	t.Parallel()
 
 	delivery := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
-	platform := &scriptedPlatform{events: []agentkit.MessageEvent{{
-		SessionID: delivery,
-		UserID:    "U111",
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		},
-	}}}
+	platform := &scriptedPlatform{events: []agentkit.MessageEvent{
+		deliveryUserEvent("slack", "U111", delivery, "hi"),
+	}}
 	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{
 		Platform: platform,
 		Loop:     errorLoop{err: io.ErrUnexpectedEOF},
@@ -404,8 +406,8 @@ func TestOutboundUsesDeliverySessionID(t *testing.T) {
 		if out.Type != "error" {
 			continue
 		}
-		if out.SessionID != delivery {
-			t.Fatalf("error outbound session = %q, want delivery %q", out.SessionID, delivery)
+		if session.OutboundRouteID(out) != delivery {
+			t.Fatalf("error outbound route = %q, want delivery %q", session.OutboundRouteID(out), delivery)
 		}
 		return
 	}

@@ -52,11 +52,11 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	}
 	store := deps.SessionStore
 	tool, err := agentkit.NewTool[TodoInput, TodoOutput]("todo", func(ctx context.Context, input TodoInput) (TodoOutput, error) {
-		sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+		sessionID := session.SessionIDFromContext(ctx)
 		if sessionID == "" {
 			return TodoOutput{}, fmt.Errorf("todo requires a session")
 		}
-		agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+		agentID := session.AgentIDFromContext(ctx)
 		sess, err := store.Get(ctx, sessionID)
 		if err != nil {
 			return TodoOutput{}, err

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
+	"github.com/lengzhao/agentkit/runtime/session"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -96,5 +97,5 @@ func TestIntegrationMultiTenantWorkDirIsolation(t *testing.T) {
 }
 
 func tenantCtx(sessionID string) context.Context {
-	return context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID(sessionID))
+	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: sessionID, Workspace: sessionID})
 }

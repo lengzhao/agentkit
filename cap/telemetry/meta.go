@@ -9,13 +9,13 @@ import (
 // ObservationMetaFromContext fills agent and session ids from ctx when unset.
 func ObservationMetaFromContext(ctx context.Context, meta ObservationMeta) ObservationMeta {
 	if meta.AgentID == "" {
-		if id, ok := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID); ok && id != "" {
-			meta.AgentID = string(id)
+		if id := agentIDFromEnvelope(ctx); id != "" {
+			meta.AgentID = id
 		}
 	}
 	if meta.SessionID == "" {
-		if id, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID); ok && id != "" {
-			meta.SessionID = string(id)
+		if id := conversationFromEnvelope(ctx); id != "" {
+			meta.SessionID = id
 		}
 	}
 	return meta
@@ -28,14 +28,28 @@ func EnrichEventAttrs(ctx context.Context, attrs map[string]string) map[string]s
 		out[k] = v
 	}
 	if _, ok := out["agent_id"]; !ok {
-		if id, ok := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID); ok && id != "" {
-			out["agent_id"] = string(id)
+		if id := agentIDFromEnvelope(ctx); id != "" {
+			out["agent_id"] = id
 		}
 	}
 	if _, ok := out["session_id"]; !ok {
-		if id, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID); ok && id != "" {
-			out["session_id"] = string(id)
+		if id := conversationFromEnvelope(ctx); id != "" {
+			out["session_id"] = id
 		}
 	}
 	return out
+}
+
+func agentIDFromEnvelope(ctx context.Context) string {
+	if env, ok := ctx.Value(agentkit.KeyTurnEnvelope).(agentkit.TurnEnvelope); ok && env.AgentID != "" {
+		return string(env.AgentID)
+	}
+	return ""
+}
+
+func conversationFromEnvelope(ctx context.Context) string {
+	if env, ok := ctx.Value(agentkit.KeyTurnEnvelope).(agentkit.TurnEnvelope); ok && env.Conversation != "" {
+		return env.Conversation
+	}
+	return ""
 }

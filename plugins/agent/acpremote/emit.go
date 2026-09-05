@@ -122,7 +122,6 @@ func (e *updateEmitter) emitUpdate(ame agentkit.AssistantMessageEvent) error {
 
 func (e *updateEmitter) sendOutbound(typ agentkit.EventType, payload any) error {
 	return e.emit(e.ctx, agentkit.OutboundEvent{
-		SessionID: e.sessionID,
 		AgentID:   e.agentID,
 		Type:      typ,
 		Data:      agentkit.MarshalOutboundData(payload),

@@ -25,10 +25,7 @@ type DeliveryRouteInput struct {
 
 // ResolveDeliveryRoute resolves the delivery session and platform from context.
 func ResolveDeliveryRoute(ctx context.Context, input DeliveryRouteInput) (DeliveryRoute, error) {
-	inbox, _ := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID)
-	if inbox == "" {
-		inbox, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	}
+	inbox := session.DeliveryRouteFromContext(ctx)
 
 	var r DeliveryRoute
 	switch {
@@ -42,12 +39,12 @@ func ResolveDeliveryRoute(ctx context.Context, input DeliveryRouteInput) (Delive
 	if r.SessionID == "" {
 		return DeliveryRoute{}, fmt.Errorf("requires inbox session in context, or sessionId/userId")
 	}
-	r.AgentID, _ = ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	r.PlatformID, _ = ctx.Value(agentkit.KeyPlatformID).(string)
+	r.AgentID = session.AgentIDFromContext(ctx)
+	r.PlatformID = session.PlatformFromContext(ctx)
 	if id := strings.TrimSpace(input.UserID); id != "" {
 		r.UserID = id
 	} else {
-		r.UserID, _ = ctx.Value(agentkit.KeyUserID).(string)
+		r.UserID = session.UserIDFromContext(ctx)
 	}
 	if p := session.ParseDelivery(r.SessionID, r.UserID).Platform; p != "" {
 		if r.PlatformID == "" || strings.TrimSpace(input.SessionID) != "" {
@@ -66,7 +63,7 @@ func NormalizeDeliverySessionID(ctx context.Context, raw string) agentkit.Sessio
 	if strings.Contains(raw, ":") {
 		return agentkit.SessionID(raw)
 	}
-	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
+	platformID := session.PlatformFromContext(ctx)
 	if platformID == "slack" && IsSlackChannelID(raw) {
 		return agentkit.SessionID("slack:" + raw)
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // Config controls which contributed commands are exposed.
@@ -142,7 +143,7 @@ func (r *Registry) EnrichSlashContext(ctx context.Context) context.Context {
 	if len(r.cfg.Admins) == 0 {
 		return ctx
 	}
-	userID, _ := ctx.Value(agentkit.KeyUserID).(string)
+	userID := session.UserIDFromContext(ctx)
 	if !isAdminUser(r.cfg.Admins, userID) {
 		return ctx
 	}

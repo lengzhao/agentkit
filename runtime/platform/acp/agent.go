@@ -9,6 +9,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
 type agentBridge struct {
@@ -110,11 +111,10 @@ func (a *agentBridge) Prompt(ctx context.Context, params acp.PromptRequest) (acp
 	sess.setTurnWait(turnCh)
 
 	msg := promptToModelMessage(params.Prompt)
-	event := agentkit.MessageEvent{
-		SessionID:  sess.deliveryID,
+	event := common.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: platformID,
 		Message:    msg,
-	}
+	}, platformID, sess.deliveryID)
 	if err := a.platform.inbox.Push(promptCtx, event); err != nil {
 		return acp.PromptResponse{}, err
 	}

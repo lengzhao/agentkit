@@ -19,8 +19,8 @@ func newTestEmitter(mode string, stream bool) (*emitter, *bytes.Buffer, *bytes.B
 
 func messageEnd(text string) agentkit.OutboundEvent {
 	return agentkit.OutboundEvent{
-		SessionID: "s:1",
-		Type:      agentkit.EventMessageEnd,
+		Route: agentkit.SessionRoute("headless", "s:1"),
+		Type:  agentkit.EventMessageEnd,
 		Data: agentkit.MarshalOutboundData(agentkit.MessageEndPayload{
 			Message: agentkit.ModelMessage{
 				Role:    "assistant",
@@ -101,9 +101,9 @@ func TestEmitterJSONModeEmitsOneObjectPerLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := e.send(agentkit.OutboundEvent{
-		SessionID: "s:1",
-		Type:      "error",
-		Data:      []byte(`{"error":"boom"}`),
+		Route: agentkit.SessionRoute("headless", "s:1"),
+		Type:  "error",
+		Data:  []byte(`{"error":"boom"}`),
 	}); err != nil {
 		t.Fatal(err)
 	}

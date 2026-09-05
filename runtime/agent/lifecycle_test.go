@@ -82,7 +82,7 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

@@ -6,9 +6,10 @@ import (
 	"sync"
 	"testing"
 	"time"
-
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
 func TestLoopCancelInterruptsBusySession(t *testing.T) {
@@ -26,20 +27,17 @@ func TestLoopCancelInterruptsBusySession(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- l.Dispatch(ctx, agentkit.LoopRequest{
-			Event: agentkit.MessageEvent{
-				SessionID: sessionID,
-				Message: agentkit.ModelMessage{
-					Role:    "user",
-					Content: []agentkit.ContentPart{{Type: "text", Text: "go"}},
-				},
+		errCh <- l.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{
+			Message: agentkit.ModelMessage{
+				Role:    "user",
+				Content: []agentkit.ContentPart{{Type: "text", Text: "go"}},
 			},
-		})
+		}))
 	}()
 
 	waitUntil(t, func() bool { return l.IsSessionBusy(sessionID) })
 
-	cancelCtx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	cancelCtx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := l.Cancel(cancelCtx, "/stop"); err != nil {
 		t.Fatal(err)
 	}

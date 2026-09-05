@@ -12,6 +12,7 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -333,10 +334,11 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 
 	prompt := scheduleInboundPrompt(job)
 	evt := agentkit.MessageEvent{
-		SessionID:         sessionID,
-		DeliverySessionID: deliverySessionID,
-		PlatformID:        platformID,
-		UserID:            strings.TrimSpace(job.UserID),
+		PlatformID: platformID,
+		UserID:     strings.TrimSpace(job.UserID),
+		Envelope: agentkit.TurnEnvelope{
+			Conversation: string(sessionID),
+		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: prompt}},
@@ -349,6 +351,9 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 				"sessionMode": c.sessionMode,
 			},
 		},
+	}
+	if deliverySessionID != "" {
+		evt = common.WithDeliverySession(evt, platformID, deliverySessionID)
 	}
 	if agent := strings.TrimSpace(job.AgentID); agent != "" {
 		evt.AgentID = agentkit.AgentID(agent)

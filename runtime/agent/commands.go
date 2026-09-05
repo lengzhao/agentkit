@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // Command exposes the agent catalog and session agent switching.
@@ -47,7 +48,7 @@ func (c agentCommand) useAgent(ctx context.Context, name string) (string, error)
 	if _, err := agentDoc(c.agents, name); err != nil {
 		return "", err
 	}
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}

@@ -110,11 +110,11 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		return subagent.Result{}, fmt.Errorf("subagent %q maps to unknown loop agent %q", def.Name, loopID)
 	}
 
-	parentID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	parentID := session.SessionIDFromContext(ctx)
 	if parentID == "" {
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
-	parentAgent, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	parentAgent := session.AgentIDFromContext(ctx)
 	parent, err := s.store.Get(ctx, parentID)
 	if err != nil {
 		return subagent.Result{}, err
@@ -123,8 +123,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	childID := agentkit.SessionID(fmt.Sprintf("sub:%s:%s:%d",
-		parentID, def.Name, session.LatestEventSeq(parentEvents)))
+	childID := agentkit.SessionID(session.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
 	jobID := string(childID)
 
 	async := def.Async
@@ -217,34 +216,34 @@ func (s *LoopAgentSpawner) untrackRunning(parentID agentkit.SessionID) {
 }
 
 type parentContext struct {
-	sessionID  agentkit.SessionID
-	deliveryID agentkit.SessionID
-	agentID    agentkit.AgentID
-	platformID string
-	userID     string
-	emit       agentkit.OutboundEmit
+	conversation agentkit.SessionID
+	agentID      agentkit.AgentID
+	envelope     agentkit.TurnEnvelope
+	emit         agentkit.OutboundEmit
 }
 
 func captureParentContext(ctx context.Context) parentContext {
-	var out parentContext
-	out.sessionID, _ = ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	out.deliveryID, _ = ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID)
-	out.agentID, _ = ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	out.platformID, _ = ctx.Value(agentkit.KeyPlatformID).(string)
-	out.userID, _ = ctx.Value(agentkit.KeyUserID).(string)
-	out.emit = emitFromContext(ctx)
-	return out
+	env := session.EnvelopeFromContext(ctx)
+	if env.Conversation == "" {
+		if id := session.SessionIDFromContext(ctx); id != "" {
+			env = env.WithConversation(string(id))
+		}
+	}
+	agentID := session.AgentIDFromContext(ctx)
+	return parentContext{
+		conversation: agentkit.SessionID(env.Conversation),
+		agentID:      agentID,
+		envelope:     env,
+		emit:         emitFromContext(ctx),
+	}
 }
 
 func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID) {
 	defer s.untrackRunning(parentID)
 	bg := context.Background()
-	ctx := context.WithValue(bg, agentkit.KeySessionID, parentID)
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, parent.deliveryID)
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, parentAgent)
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, parent.platformID)
-	ctx = context.WithValue(ctx, agentkit.KeyUserID, parent.userID)
-	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, parent.emit)
+	ctx := session.ApplyEnvelopeToContext(bg, parent.envelope)
+	ctx = session.WithAgentID(ctx, parentAgent)
+	ctx = agentkit.ContextWithOutboundEmit(ctx, parent.emit)
 
 	result, runErr := s.runChild(ctx, def, ag, task, childID)
 	parentSess, err := s.store.Get(bg, parentID)
@@ -274,12 +273,12 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 		return
 	}
 	text := formatSubagentComplete(def.Name, jobID, result)
-	event := agentkit.MessageEvent{
-		SessionID:         parentID,
-		DeliverySessionID: parent.deliveryID,
-		PlatformID:        parent.platformID,
-		UserID:            parent.userID,
-		AgentID:           parentAgent,
+	parentEnv := parent.envelope
+	if parentEnv.Conversation == "" {
+		parentEnv = parentEnv.WithConversation(string(parent.conversation))
+	}
+	event := session.SyncMessageEvent(agentkit.MessageEvent{
+		AgentID: parentAgent,
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
@@ -290,7 +289,7 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 			"subagent_agent":    def.Name,
 			"subagent_status":   result.Status,
 		},
-	}
+	}, parentEnv)
 	if err := s.submit(bg, event); err != nil {
 		slog.Error("async subagent: submit follow-up", "job_id", jobID, "err", err)
 	}
@@ -313,8 +312,10 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
-	childCtx = context.WithValue(childCtx, agentkit.KeySessionID, childID)
-	childCtx = context.WithValue(childCtx, agentkit.KeyAgentID, ag.ID())
+	parentEnv := session.EnvelopeFromContext(ctx)
+	childEnv := parentEnv.WithConversation(string(childID))
+	childCtx = session.ApplyEnvelopeToContext(childCtx, childEnv)
+	childCtx = session.WithAgentID(childCtx, ag.ID())
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
 
 	timeout := s.timeoutFor(def)

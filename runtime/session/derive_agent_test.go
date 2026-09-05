@@ -12,7 +12,7 @@ import (
 func TestDeriveMessagesFiltersByAgent(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyAgentID, agentkit.AgentID("meetingbot"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: agentkit.AgentID("meetingbot")})
 	mem, err := session.NewMemory(session.MemoryConfig{ID: "mem-test"})
 	if err != nil {
 		t.Fatal(err)

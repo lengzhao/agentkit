@@ -55,6 +55,17 @@ type MessageEndPayload struct {
 // OutboundEmit sends platform events during a turn. When nil, streaming is suppressed.
 type OutboundEmit func(context.Context, OutboundEvent) error
 
+// OutboundEmitFromContext returns the per-turn outbound hook, if any.
+func OutboundEmitFromContext(ctx context.Context) OutboundEmit {
+	emit, _ := ctx.Value(KeyOutboundEmit).(OutboundEmit)
+	return emit
+}
+
+// ContextWithOutboundEmit attaches the per-turn outbound hook to ctx.
+func ContextWithOutboundEmit(ctx context.Context, emit OutboundEmit) context.Context {
+	return context.WithValue(ctx, KeyOutboundEmit, emit)
+}
+
 func MarshalOutboundData(v any) json.RawMessage {
 	raw, _ := json.Marshal(v)
 	return raw

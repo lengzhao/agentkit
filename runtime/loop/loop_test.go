@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -82,20 +83,14 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 		}
 	}
 
-	if err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: "slack:C001",
-			Message:   msg("channel one"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(ctx, agenttest.LoopRequest("slack:C001", agentkit.MessageEvent{
+		Message: msg("channel one"),
+	})); err != nil {
 		t.Fatalf("dispatch C001: %v", err)
 	}
-	if err := loop.Dispatch(ctx, agentkit.LoopRequest{
-		Event: agentkit.MessageEvent{
-			SessionID: "slack:C002",
-			Message:   msg("channel two"),
-		},
-	}); err != nil {
+	if err := loop.Dispatch(ctx, agenttest.LoopRequest("slack:C002", agentkit.MessageEvent{
+		Message: msg("channel two"),
+	})); err != nil {
 		t.Fatalf("dispatch C002: %v", err)
 	}
 

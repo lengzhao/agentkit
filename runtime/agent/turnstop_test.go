@@ -118,7 +118,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 
 func (f turnFixture) run(t *testing.T) error {
 	t.Helper()
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, f.sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(f.sessionID), Workspace: string(f.sessionID)})
 	return f.agent.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

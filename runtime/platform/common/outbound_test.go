@@ -44,9 +44,9 @@ func TestOutboundSendsTextAndDocument(t *testing.T) {
 	}
 
 	if err := out.Handle(context.Background(), agentkit.OutboundEvent{
-		SessionID: "slack:C1",
-		Type:      agentkit.EventAssistantMessage,
-		Data:      data,
+		Route: agentkit.SessionRoute("slack", "slack:C1"),
+		Type:  agentkit.EventAssistantMessage,
+		Data:  data,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,9 +81,9 @@ func TestOutboundDocumentOnly(t *testing.T) {
 	}
 
 	if err := out.Handle(context.Background(), agentkit.OutboundEvent{
-		SessionID: "slack:C1",
-		Type:      agentkit.EventAssistantMessage,
-		Data:      data,
+		Route: agentkit.SessionRoute("slack", "slack:C1"),
+		Type:  agentkit.EventAssistantMessage,
+		Data:  data,
 	}); err != nil {
 		t.Fatal(err)
 	}

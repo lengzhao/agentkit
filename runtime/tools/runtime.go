@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type RuntimeConfig struct {
@@ -164,8 +165,8 @@ func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 }
 
 func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	sessionID := session.SessionIDFromContext(ctx)
+	agentID := session.AgentIDFromContext(ctx)
 
 	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, telemetry.ObservationMeta{

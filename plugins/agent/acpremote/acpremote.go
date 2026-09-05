@@ -100,7 +100,7 @@ func (a *Runtime) AgentCatalogEntry() string {
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
 	}
@@ -195,7 +195,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 
 func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID, typ agentkit.EventType, payload any) error {
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID: sessionID,
 		AgentID:   a.id,
 		Type:      typ,
 		Data:      agentkit.MarshalOutboundData(payload),

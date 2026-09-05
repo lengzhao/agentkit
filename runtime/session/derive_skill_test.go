@@ -13,7 +13,7 @@ import (
 func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), agentkit.KeyAgentID, agentkit.AgentID("assistant"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: agentkit.AgentID("assistant")})
 	sess, err := session.NewMemory(session.MemoryConfig{ID: "mem-skill-order"})
 	if err != nil {
 		t.Fatal(err)

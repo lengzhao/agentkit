@@ -36,10 +36,10 @@ func TestSendUsesEmitForCurrentInbox(t *testing.T) {
 	}
 
 	var emitted []agentkit.OutboundEvent
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C001:t:111.0:u:U456"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
-	ctx = context.WithValue(ctx, agentkit.KeyPlatformID, "slack")
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:t:111.0:u:U456"))
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("slack", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
 		emitted = append(emitted, event)
 		return nil
@@ -65,9 +65,9 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C001:t:111.0:u:U456"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:t:111.0:u:U456"))
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
 	if _, err := tool.Call(ctx, []byte(`{"text":"ping"}`)); err != nil {
 		t.Fatal(err)
@@ -75,8 +75,8 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
-	if platform.sent[0].SessionID != "slack:C001:t:111.0:u:U456" {
-		t.Fatalf("session=%q", platform.sent[0].SessionID)
+	if session.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("route=%q", session.OutboundRouteID(platform.sent[0]))
 	}
 }
 
@@ -90,9 +90,9 @@ func TestSendUserIDTarget(t *testing.T) {
 	}
 
 	inbox := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C001"))
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, inbox)
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx = session.ContextWithDeliveryRoute(ctx, "slack", inbox)
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
 	if _, err := tool.Call(ctx, []byte(`{"text":"hi","userId":"U222"}`)); err != nil {
 		t.Fatal(err)
@@ -101,8 +101,8 @@ func TestSendUserIDTarget(t *testing.T) {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
 	want := session.BuildDeliverySessionID("slack", "C001", "111.0", "U222")
-	if platform.sent[0].SessionID != want {
-		t.Fatalf("session=%q want %q", platform.sent[0].SessionID, want)
+	if session.OutboundRouteID(platform.sent[0]) != want {
+		t.Fatalf("route=%q want %q", session.OutboundRouteID(platform.sent[0]), want)
 	}
 	if platform.sent[0].UserID != "U222" {
 		t.Fatalf("user=%q", platform.sent[0].UserID)
@@ -127,9 +127,9 @@ func TestSendFilePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C1"))
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C1"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C1"), Conversation: "slack:C1", Workspace: "slack:C1"})
+	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C1"))
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
 	if _, err := tool.Call(ctx, []byte(`{"path":"work/report.pdf"}`)); err != nil {
 		t.Fatal(err)
@@ -164,8 +164,8 @@ func TestSendTextAndPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("cli:default"))
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("cli:default"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
+	ctx = session.ContextWithDeliveryRoute(ctx, "cli", agentkit.SessionID("cli:default"))
 	if _, err := tool.Call(ctx, []byte(`{"text":"see attached","path":"work/report.pdf"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -199,9 +199,9 @@ func TestSendInboundAttachmentPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, agentkit.SessionID("slack:C1"))
-	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, agentkit.SessionID("slack:C1"))
-	ctx = context.WithValue(ctx, agentkit.KeyAgentID, agentkit.AgentID("coder"))
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C1"), Conversation: "slack:C1", Workspace: "slack:C1"})
+	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C1"))
+	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
 	if _, err := tool.Call(ctx, []byte(`{"path":"work/upload/hello.go"}`)); err != nil {
 		t.Fatal(err)

@@ -218,8 +218,8 @@ flowchart TB
 runtime 触发时构造 inbound event：
 
 ```go
-event.SessionID = sideSession(job.ID)          // 侧会话（stateless）或 delivery 会话（reuse）
-event.DeliverySessionID = job.DeliverySessionID // outbound/send 仍回原 inbox
+event.Envelope.Conversation = string(sideSession(job.ID)) // 侧会话（stateless）或 delivery 会话（reuse）
+event.Envelope.Route = agentkit.SessionRoute(job.PlatformID, job.DeliverySessionID) // outbound/send 仍回原 inbox
 event.PlatformID = job.PlatformID
 event.UserID = job.UserID
 event.AgentID = job.AgentID
@@ -229,10 +229,10 @@ event.Metadata = {"schedule": {"fired": true, "jobId": "agent-1", "kind": "delay
 
 然后 runner 仍按现有逻辑处理：
 
-- `DeliverySessionID` 决定 outbound / send 往哪发。
-- `SessionID` 决定 loop 锁与历史：`stateless` 为独立侧会话，`reuse` 为原对话。
+- `job.DeliverySessionID` 决定 outbound / send 往哪发（写入 `Envelope.Route`）。
+- `Envelope.Conversation` 决定 loop 锁与历史：`stateless` 为独立侧会话，`reuse` 为原对话。
 - 若 turn 内已调用 `send`，框架抑制 turn-end 重复文本。
-- **Permission**：`metadata.schedule.fired=true` 时 runner 强制该 turn 为**非交互**（`ask_user` 降级为 `NoHuman`），避免 cron 在 chat-api 等交互平台上挂起等人；`send` 仍走 `DeliverySessionID` 回原 inbox。
+- **Permission**：`metadata.schedule.fired=true` 时 runner 强制该 turn 为**非交互**（`ask_user` 降级为 `NoHuman`），避免 cron 在 chat-api 等交互平台上挂起等人；`send` 仍走 `Envelope.Route` 回原 inbox。
 
 因此创建 job 时 prompt 只需要写提醒内容，例如：
 
@@ -250,7 +250,7 @@ event.Metadata = {"schedule": {"fired": true, "jobId": "agent-1", "kind": "delay
 | `reuse` | `SessionID` 使用 delivery 会话，在原对话上执行 | 需要上下文延续的周期任务 |
 | `fixed` | 所有触发共享固定侧会话 `{sessionId}:default` | 跨触发累积记忆（需配合 compaction） |
 
-`fresh` 是 `stateless` 的别名。outbound / `send` 始终通过 `DeliverySessionID` 回到原 inbox，与 sessionMode 无关。
+`fresh` 是 `stateless` 的别名。outbound / `send` 始终通过 `Envelope.Route`（源自 `job.DeliverySessionID`）回到原 inbox，与 sessionMode 无关。
 
 ## 9. 配置
 

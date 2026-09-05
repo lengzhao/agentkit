@@ -96,7 +96,7 @@ func TestSteerDoesNotInterruptInFlightStep(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	turnDone := make(chan error, 1)
 	go func() {
@@ -188,7 +188,7 @@ func TestRunTurnLeavesFollowUpsForLoop(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, mem.ID())
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	if err := ctrl.FollowUp(ctx, agentkit.ModelMessage{
 		Role:    "user",

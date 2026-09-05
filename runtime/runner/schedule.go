@@ -39,25 +39,30 @@ func (r *Root) inboundSubmit(sched *scheduler) capschedule.SubmitFunc {
 	}
 }
 
+func (r *Root) routePolicy(event agentkit.MessageEvent) session.RoutePolicy {
+	return session.RoutePolicyForPlatform(event.PlatformID, session.DefaultRoutePolicy(r.sessionScope))
+}
+
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
-	deliveryID, effectiveID, scoped := r.scopedEvent(event)
-	// Seed effective id before active-session lookup so session/store can resolve
-	// the tenant workspace (workspace/tenant keys off KeySessionID).
-	ctx = withInboundRoutingContext(ctx, effectiveID, deliveryID)
-	sessionID, err := r.resolveSessionID(ctx, event, effectiveID)
+	policy := r.routePolicy(event)
+	env := session.ResolveEnvelope(event, policy)
+	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	conversation, err := r.resolveConversation(ctx, event, env, policy)
 	if err != nil {
-		r.reportInboundError(ctx, deliveryID, event, err)
+		r.reportInboundError(ctx, env, event, err)
 		return
 	}
-	scoped.SessionID = sessionID
-	ctx = withInboundRoutingContext(ctx, sessionID, deliveryID)
-	agentID, err := r.resolveAgentID(ctx, scoped, sessionID)
+	env = env.WithConversation(conversation)
+	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	scoped := session.SyncMessageEvent(event, env)
+	agentID, err := r.resolveAgentID(ctx, scoped, agentkit.SessionID(conversation))
 	if err != nil {
-		r.reportInboundError(ctx, deliveryID, event, err)
+		r.reportInboundError(ctx, env, event, err)
 		return
 	}
 	if agentID != "" {
 		scoped.AgentID = agentID
+		env = env.WithAgentID(agentID)
 	}
 	if r.loop.TryDeliverPermission(scoped) {
 		return
@@ -68,46 +73,43 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	if event.Message.Role == "" {
 		return
 	}
-	if r.loop.IsSessionBusy(sessionID) {
-		steerMsg := r.formatInboundEvent(scoped, deliveryID).Message
+	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) {
+		steerMsg := r.formatInboundEvent(scoped, env).Message
 		slog.Info("inbound steered to busy session",
 			"platform", event.PlatformID,
-			"user_id", event.UserID,
-			"delivery_session_id", deliveryID,
-			"session_id", sessionID,
+			"user_id", env.Actor.UserID,
+			"route", routeLogID(env.Route),
+			"conversation", conversation,
+			"workspace", env.Workspace,
 			"agent_id", scoped.AgentID,
 			"preview", telemetry.SummarizeMessage(steerMsg),
 		)
 		if err := r.loop.Steer(ctx, steerMsg); err != nil {
-			r.reportInboundError(ctx, deliveryID, scoped, err)
+			r.reportInboundError(ctx, env, scoped, err)
 		}
 		return
 	}
-	scoped = r.formatInboundEvent(scoped, deliveryID)
+	scoped = r.formatInboundEvent(scoped, env)
 	slog.Info("inbound turn queued",
 		"platform", event.PlatformID,
-		"user_id", event.UserID,
-		"delivery_session_id", deliveryID,
-		"session_id", sessionID,
+		"user_id", env.Actor.UserID,
+		"route", routeLogID(env.Route),
+		"conversation", conversation,
+		"workspace", env.Workspace,
 		"agent_id", scoped.AgentID,
 		"preview", telemetry.SummarizeMessage(scoped.Message),
 	)
 	fmt.Fprintln(os.Stderr)
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
-		out.SessionID = deliveryID
+		out.Route = env.Route
 		if out.AgentID == "" {
 			out.AgentID = scoped.AgentID
 		}
 		if out.PlatformID == "" {
-			out.PlatformID = event.PlatformID
+			out.PlatformID = env.Route.Platform
 		}
 		if out.UserID == "" {
-			out.UserID = event.UserID
-		}
-		if out.PlatformID == "" {
-			if p := session.ParseDelivery(deliveryID, out.UserID).Platform; p != "" {
-				out.PlatformID = p
-			}
+			out.UserID = env.Actor.UserID
 		}
 		if err := out.RequirePlatformID(); err != nil {
 			return err
@@ -115,37 +117,28 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		return r.platform.Send(ctx, out)
 	}
 	sched.submit(ctx, agentkit.LoopRequest{
-		Event:             scoped,
-		DeliverySessionID: deliveryID,
-		Emit:              emit,
-		Capability:        inboundPermissionCapability(r.platform, scoped),
+		Event:      scoped,
+		Emit:       emit,
+		Capability: inboundPermissionCapability(r.platform, scoped),
 	})
 }
 
-func withInboundRoutingContext(ctx context.Context, sessionID, deliveryID agentkit.SessionID) context.Context {
-	if sessionID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeySessionID, sessionID)
+func routeLogID(route agentkit.RouteRef) string {
+	if id, ok := session.RouteSessionID(route); ok {
+		return string(id)
 	}
-	if deliveryID != "" {
-		ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, deliveryID)
-	}
-	return ctx
+	return string(route.Kind)
 }
 
-func (r *Root) reportInboundError(ctx context.Context, deliveryID agentkit.SessionID, event agentkit.MessageEvent, err error) {
+func (r *Root) reportInboundError(ctx context.Context, env agentkit.TurnEnvelope, event agentkit.MessageEvent, err error) {
 	slog.Error("inbound routing failed",
-		"session_id", event.SessionID,
-		"delivery_session_id", deliveryID,
+		"conversation", env.Conversation,
+		"route", routeLogID(env.Route),
 		"err", err,
 	)
-	_ = r.platform.Send(ctx, agentkit.OutboundEvent{
-		SessionID:  deliveryID,
-		AgentID:    event.AgentID,
-		PlatformID: event.PlatformID,
-		UserID:     event.UserID,
-		Type:       "error",
-		Data:       json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())),
-	})
+	out := session.OutboundFromEnvelope(env, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
+	out.AgentID = event.AgentID
+	_ = r.platform.Send(ctx, out)
 }
 
 func (r *Root) reportScheduleError(_ context.Context, err error) {

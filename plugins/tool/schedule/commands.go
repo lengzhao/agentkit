@@ -74,7 +74,7 @@ func formatCronList(ctx context.Context, registry capschedule.Registry, includeF
 	if err != nil {
 		return "", err
 	}
-	channel := session.ChannelKeyFromContext(ctx)
+	channel := session.WorkspaceFromContext(ctx)
 	var b strings.Builder
 	if channel != "" {
 		fmt.Fprintf(&b, "channel: %s\n", channel)

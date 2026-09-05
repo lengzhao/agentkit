@@ -256,20 +256,18 @@ func parseAt(raw string, loc *time.Location) (time.Time, error) {
 }
 
 func agentJobFromContext(ctx context.Context, job schedule.Job) schedule.Job {
-	if delivery, ok := ctx.Value(agentkit.KeyDeliverySessionID).(agentkit.SessionID); ok && delivery != "" {
+	if delivery := session.DeliveryRouteFromContext(ctx); delivery != "" {
 		job.DeliverySessionID = string(delivery)
-	} else if session, ok := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID); ok && session != "" {
-		job.DeliverySessionID = string(session)
 	}
-	if platform, ok := ctx.Value(agentkit.KeyPlatformID).(string); ok {
+	if platform := session.PlatformFromContext(ctx); platform != "" {
 		job.PlatformID = strings.TrimSpace(platform)
 	}
-	if user, ok := ctx.Value(agentkit.KeyUserID).(string); ok {
+	if user := session.UserIDFromContext(ctx); user != "" {
 		job.UserID = strings.TrimSpace(user)
 	}
-	if agent, ok := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID); ok && agent != "" {
+	if agent := session.AgentIDFromContext(ctx); agent != "" {
 		job.AgentID = string(agent)
 	}
-	job.ChannelKey = session.ChannelKeyFromContext(ctx)
+	job.ChannelKey = session.WorkspaceFromContext(ctx)
 	return job
 }

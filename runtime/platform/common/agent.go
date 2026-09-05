@@ -21,8 +21,7 @@ func (c AgentRoutingConfig) ResolveAgentID() agentkit.AgentID {
 }
 
 func InboundMessage(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, text string) agentkit.MessageEvent {
-	return agentkit.MessageEvent{
-		SessionID:  sessionID,
+	return WithDeliverySession(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
@@ -30,15 +29,14 @@ func InboundMessage(agentID agentkit.AgentID, sessionID agentkit.SessionID, plat
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
-	}
+	}, platformID, sessionID)
 }
 
 func PermissionReplyEvent(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID string, reply permission.Reply) agentkit.MessageEvent {
-	return agentkit.MessageEvent{
-		SessionID:  sessionID,
+	return WithDeliverySession(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
 		Reply:      permission.MarshalReply(reply),
-	}
+	}, platformID, sessionID)
 }

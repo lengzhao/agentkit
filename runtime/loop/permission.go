@@ -12,6 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type pendingPermission struct {
@@ -53,7 +54,7 @@ func (c *Control) Await(ctx context.Context, req permission.Request) (permission
 		req.ID = newPermissionRequestID()
 	}
 	if req.AskedBy == "" {
-		if userID, ok := ctx.Value(agentkit.KeyUserID).(string); ok {
+		if userID := session.UserIDFromContext(ctx); userID != "" {
 			req.AskedBy = userID
 		}
 	}
@@ -91,8 +92,8 @@ func validateRequest(req permission.Request) error {
 }
 
 func (c *Control) awaitOne(ctx context.Context, req permission.Request, capab permission.Capability) (permission.Result, error) {
-	emit, ok := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit)
-	if !ok || emit == nil {
+	emit := agentkit.OutboundEmitFromContext(ctx)
+	if emit == nil {
 		return permission.NoHuman(req, "no outbound channel for permission"), nil
 	}
 
@@ -232,30 +233,31 @@ func (c *Control) SupersedePending(_ agentkit.SessionID, reason string) bool {
 }
 
 func (l *Default) TryDeliverPermission(event agentkit.MessageEvent) bool {
-	if event.SessionID == "" || len(event.Reply) == 0 {
+	conversation := session.ConversationFromEvent(event)
+	if conversation == "" || len(event.Reply) == 0 {
 		return false
 	}
 	reply, err := permission.DecodeReply(event.Reply)
 	if err != nil {
 		return false
 	}
-	return l.controlFor(event.SessionID).DeliverPermissionReply(event.SessionID, reply)
+	return l.controlFor(conversation).DeliverPermissionReply(conversation, reply)
 }
 
 func (l *Default) SupersedePendingForInbound(event agentkit.MessageEvent) {
-	if event.SessionID == "" || event.Message.Role == "" || len(event.Reply) > 0 {
+	conversation := session.ConversationFromEvent(event)
+	if conversation == "" || event.Message.Role == "" || len(event.Reply) > 0 {
 		return
 	}
-	l.controlFor(event.SessionID).SupersedePending(event.SessionID, "superseded by new inbound message")
+	l.controlFor(conversation).SupersedePending(conversation, "superseded by new inbound message")
 }
 
 func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.OutboundEmit, req permission.Request) error {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
-	userID, _ := ctx.Value(agentkit.KeyUserID).(string)
+	agentID := session.AgentIDFromContext(ctx)
+	platformID := session.PlatformFromContext(ctx)
+	userID := session.UserIDFromContext(ctx)
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID:  sessionID,
+		Route:      session.RouteRefFromContext(ctx),
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
@@ -267,14 +269,13 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 }
 
 func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.OutboundEmit, id string, result permission.Result) error {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
-	agentID, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
-	platformID, _ := ctx.Value(agentkit.KeyPlatformID).(string)
-	userID, _ := ctx.Value(agentkit.KeyUserID).(string)
+	agentID := session.AgentIDFromContext(ctx)
+	platformID := session.PlatformFromContext(ctx)
+	userID := session.UserIDFromContext(ctx)
 	resolved := result
 	resolved.ID = id
 	return emit(ctx, agentkit.OutboundEvent{
-		SessionID:  sessionID,
+		Route:      session.RouteRefFromContext(ctx),
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,

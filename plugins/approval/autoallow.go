@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // AutoAllowConfig configures unattended approval.
@@ -31,7 +32,7 @@ type autoAllow struct {
 }
 
 func (a autoAllow) Ask(ctx context.Context, req agentkit.ApprovalRequest) (agentkit.ApprovalDecision, error) {
-	sessionID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	sessionID := session.SessionIDFromContext(ctx)
 	toolName := ""
 	if req.ToolCall != nil {
 		toolName = req.ToolCall.Name

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/headless"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // fakeClock advances only when the code under test sleeps, so schedule maths can
@@ -93,7 +94,7 @@ func TestTimerFiresImmediatelyThenOnInterval(t *testing.T) {
 		if event.PlatformID != "timer" {
 			t.Fatalf("platform id = %q, want timer", event.PlatformID)
 		}
-		sessions = append(sessions, event.SessionID)
+		sessions = append(sessions, session.InboundDeliveryID(event))
 	}
 
 	if len(sessions) != 3 {
@@ -224,8 +225,8 @@ func TestTimerFixedModeReusesOneSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SessionID != second.SessionID {
-		t.Fatalf("fixed mode gave %q then %q", first.SessionID, second.SessionID)
+	if session.InboundDeliveryID(first) != session.InboundDeliveryID(second) {
+		t.Fatalf("fixed mode gave %q then %q", session.InboundDeliveryID(first), session.InboundDeliveryID(second))
 	}
 }
 

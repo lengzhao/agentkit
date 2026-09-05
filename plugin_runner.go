@@ -16,10 +16,10 @@ type Runner interface {
 	Stop(context.Context) error
 }
 
-// Platform adapts external transports into AgentKit message events. Every
-// inbound MessageEvent must carry a delivery SessionID (finest grain); runner
-// applies sessionScope for scheduling and history. OutboundEvent.SessionID must
-// be the delivery id so replies reach the correct IM target.
+// Platform adapts external transports into AgentKit message events. Platforms
+// should populate Envelope.Route on ingress (e.g. common.WithDeliveryRoute);
+// runner normalizes TurnEnvelope before Loop.Dispatch. OutboundEvent.Route is
+// the return address.
 //
 // Concurrency contract:
 //   - Receive is called from a single goroutine and may block.

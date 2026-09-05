@@ -107,7 +107,7 @@ func TestRunTurnRecoversCrashedSession(t *testing.T) {
 	recorder := &recordingLLM{inner: scripted}
 	ag := newAgentOn(t, store, recorder)
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -181,7 +181,7 @@ func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := foreign.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -241,7 +241,7 @@ func TestRunTurnLeavesCleanSessionAlone(t *testing.T) {
 	ag := newAgentOn(t, store, scripted)
 
 	sessionID := agentkit.SessionID("test:clean")
-	ctx := context.WithValue(context.Background(), agentkit.KeySessionID, sessionID)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

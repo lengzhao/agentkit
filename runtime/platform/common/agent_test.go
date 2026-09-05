@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestResolveAgentID(t *testing.T) {
@@ -20,7 +21,8 @@ func TestInboundMessageSetsAgentID(t *testing.T) {
 	if event.AgentID != "coder" {
 		t.Fatalf("AgentID = %q, want coder", event.AgentID)
 	}
-	if event.SessionID != "s1" || event.PlatformID != "slack" || event.UserID != "u1" {
+	delivery, ok := session.RouteSessionID(event.Envelope.Route)
+	if !ok || delivery != "s1" || event.PlatformID != "slack" || event.UserID != "u1" {
 		t.Fatalf("unexpected routing fields: %+v", event)
 	}
 }

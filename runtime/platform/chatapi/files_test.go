@@ -16,6 +16,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestUploadAndChatWithLocalFile(t *testing.T) {
@@ -87,8 +88,11 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 
 	event := common.InboundFromContent(
 		"assistant",
-		agentkit.SessionID("chat-api:"+channel+":t:conv1"),
-		"chat-api",
+		session.SessionRouteInput{
+			Platform:   "chat-api",
+			DeliveryID: agentkit.SessionID("chat-api:" + channel + ":t:conv1"),
+			ScopeUserID: user,
+		},
 		user,
 		"read the file",
 		"",
@@ -176,8 +180,11 @@ func TestUploadAndChatWithLocalImageFile(t *testing.T) {
 
 	event := common.InboundFromContent(
 		"assistant",
-		agentkit.SessionID("chat-api:"+channel+":t:conv1"),
-		"chat-api",
+		session.SessionRouteInput{
+			Platform:   "chat-api",
+			DeliveryID: agentkit.SessionID("chat-api:" + channel + ":t:conv1"),
+			ScopeUserID: user,
+		},
 		user,
 		"extract assets",
 		"",

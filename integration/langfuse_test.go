@@ -71,11 +71,15 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 	ctx := context.Background()
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			SessionID:  agentkit.SessionID("cli:langfuse-e2e"),
 			PlatformID: "cli",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "hello langfuse"}},
+			},
+			Envelope: agentkit.TurnEnvelope{
+				Conversation: "cli:langfuse-e2e",
+				Workspace:    "cli:langfuse-e2e",
+				Route:        agentkit.SessionRoute("cli", "cli:langfuse-e2e"),
 			},
 		},
 	}); err != nil {

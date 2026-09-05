@@ -70,6 +70,17 @@ type inboundMessage struct {
 	rctx         replyContext
 }
 
+func (msg inboundMessage) inboundRoute(platform string) session.SessionRouteInput {
+	return session.SessionRouteInput{
+		Platform:    platform,
+		DeliveryID:  msg.sessionID,
+		ChannelID:   msg.rctx.chatID,
+		ThreadID:    threadIDFromSessionKey(string(msg.sessionID)),
+		ReplyTo:     msg.messageID,
+		ScopeUserID: msg.userID,
+	}
+}
+
 type streamState struct {
 	mu                 sync.Mutex
 	handle             any // legacy mode preview handle
@@ -286,13 +297,14 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
+	delivery := session.OutboundRouteID(event)
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
 	case agentkit.EventTurnEnd:
-		p.addDoneReactionForSession(event.SessionID)
+		p.addDoneReactionForSession(delivery)
 		if p.useInteractiveCard && p.useRichStream() {
-			return p.handleRichTurnEnd(ctx, event.SessionID)
+			return p.handleRichTurnEnd(ctx, delivery)
 		}
 		return nil
 	}
@@ -301,16 +313,16 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	}
 	switch event.Type {
 	case agentkit.EventTurnStart:
-		p.clearStream(event.SessionID)
+		p.clearStream(delivery)
 		if p.useRichStream() {
-			p.startProgressHeartbeat(event.SessionID)
+			p.startProgressHeartbeat(delivery)
 		}
 		return nil
 	case agentkit.EventMessageStart:
 		if p.useRichStream() {
-			return p.handleRichStreamMessageStart(ctx, event.SessionID)
+			return p.handleRichStreamMessageStart(ctx, delivery)
 		}
-		p.clearStream(event.SessionID)
+		p.clearStream(delivery)
 		return nil
 	case agentkit.EventMessageUpdate:
 		return p.handleStreamUpdate(ctx, event)
@@ -401,10 +413,9 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	text := strings.TrimSpace(msg.content)
 	if text != "" {
 		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-			DeliverySessionID: msg.sessionID,
-			PlatformID:        p.platformTag,
-			SessionScope:      p.sessionScope,
-			UserID:            msg.userID,
+			Route: session.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
+			SessionScope: p.sessionScope,
+			UserID:       msg.userID,
 		}, text)
 		if err != nil {
 			_ = p.sendText(ctx, msg.sessionID, fmt.Sprintf("命令执行失败: %v", err))
@@ -425,7 +436,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	}
 
 	_ = p.inbox.Push(ctx, common.InboundFromContent(
-		p.agentID, msg.sessionID, p.platformTag, msg.userID,
+		p.agentID, msg.inboundRoute(p.platformTag), msg.userID,
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
 		common.InboundOptsFor(p.workspace),
 	))
@@ -462,7 +473,7 @@ func (p *Platform) sendPermissionCard(ctx context.Context, event agentkit.Outbou
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
-	rc, ok := p.deliveryFor(event.SessionID)
+	rc, ok := p.deliveryFor(session.OutboundRouteID(event))
 	if !ok {
 		return nil
 	}
@@ -520,12 +531,13 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 }
 
 func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.OutboundEvent) error {
+	delivery := session.OutboundRouteID(event)
 	var payload agentkit.MessageUpdatePayload
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
 	if p.useRichStream() {
-		return p.handleRichStreamUpdate(ctx, event.SessionID, payload.AssistantMessageEvent)
+		return p.handleRichStreamUpdate(ctx, delivery, payload.AssistantMessageEvent)
 	}
 	delta := ""
 	switch payload.AssistantMessageEvent.Type {
@@ -540,7 +552,7 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 		return nil
 	}
 
-	st := p.streamState(event.SessionID)
+	st := p.streamState(delivery)
 	st.mu.Lock()
 	st.accumulated += delta
 	accumulated := st.accumulated
@@ -550,11 +562,12 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	if !shouldFlush {
 		return nil
 	}
-	return p.flushStream(ctx, event.SessionID, accumulated)
+	return p.flushStream(ctx, delivery, accumulated)
 }
 
 func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundEvent) error {
-	st := p.streamState(event.SessionID)
+	delivery := session.OutboundRouteID(event)
+	st := p.streamState(delivery)
 	st.mu.Lock()
 	text := st.accumulated
 	handle := st.handle
@@ -575,14 +588,14 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 			}
 		}
 	}
-	p.clearStream(event.SessionID)
+	p.clearStream(delivery)
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 
-	rc, ok := p.deliveryFor(event.SessionID)
+	rc, ok := p.deliveryFor(delivery)
 	if !ok {
-		return fmt.Errorf("%s: unknown session %s", p.tag(), event.SessionID)
+		return fmt.Errorf("%s: unknown session %s", p.tag(), delivery)
 	}
 
 	if handle != nil {
@@ -624,6 +637,14 @@ func assistantText(msg agentkit.ModelMessage) string {
 		}
 	}
 	return string(b)
+}
+
+func threadIDFromSessionKey(sessionKey string) string {
+	parts := session.ParseDelivery(agentkit.SessionID(sessionKey), "")
+	if !parts.Routable {
+		return ""
+	}
+	return parts.Thread
 }
 
 func (p *Platform) startWebSocketMode() error {

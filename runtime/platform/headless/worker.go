@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
 const workerPlatformID = "worker"
@@ -234,11 +235,11 @@ func (w *Worker) runScript(ctx context.Context, scriptPath string) error {
 }
 
 func (w *Worker) event(run int, prompt string) agentkit.MessageEvent {
-	return agentkit.MessageEvent{
-		SessionID:  w.naming.forRun(run),
+	sessionID := w.naming.forRun(run)
+	return common.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: workerPlatformID,
 		Message:    userMessage(prompt),
-	}
+	}, workerPlatformID, sessionID)
 }
 
 func (w *Worker) Send(_ context.Context, event agentkit.OutboundEvent) error {

@@ -136,11 +136,11 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 		return subagent.Result{}, fmt.Errorf("unknown subagent %q; available: %s", name, namesOf(defs))
 	}
 
-	parentID, _ := ctx.Value(agentkit.KeySessionID).(agentkit.SessionID)
+	parentID := session.SessionIDFromContext(ctx)
 	if parentID == "" {
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
-	parentAgent, _ := ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	parentAgent := session.AgentIDFromContext(ctx)
 	parent, err := s.store.Get(ctx, parentID)
 	if err != nil {
 		return subagent.Result{}, err
@@ -152,8 +152,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 
 	// The parent's current seq makes the id deterministic per call site and
 	// unique within the parent session; session/store sanitizes the separators.
-	childID := agentkit.SessionID(fmt.Sprintf("sub:%s:%s:%d",
-		parentID, def.Name, session.LatestEventSeq(parentEvents)))
+	childID := agentkit.SessionID(session.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
 
 	startData := session.SubagentStartData{
 		Agent:   def.Name,
@@ -216,8 +215,10 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
-	childCtx = context.WithValue(childCtx, agentkit.KeySessionID, childID)
-	childCtx = context.WithValue(childCtx, agentkit.KeyAgentID, child.ID())
+	parentEnv := session.EnvelopeFromContext(ctx)
+	childEnv := parentEnv.WithConversation(string(childID))
+	childCtx = session.ApplyEnvelopeToContext(childCtx, childEnv)
+	childCtx = session.WithAgentID(childCtx, child.ID())
 	// Drop the parent's turn control: steering and cancel reasons belong to the
 	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
