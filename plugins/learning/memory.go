@@ -3,11 +3,11 @@ package learning
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/lengzhao/agentkit/runtime/configfile"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 )
 
@@ -96,15 +96,8 @@ func (s *MemoryStore) Remove(oldText string) error {
 }
 
 func (s *MemoryStore) Save(entries []MemoryEntry) error {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
-		return err
-	}
 	body := rtlearning.RenderMemory(entries)
-	tmp := s.Path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.Path)
+	return configfile.WriteAtomic(s.Path, []byte(body), 0o644)
 }
 
 // ParseMemory splits a memory.md body into entries.

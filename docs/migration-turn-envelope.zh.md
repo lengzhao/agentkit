@@ -24,7 +24,7 @@
 |----|-------------------|-------------------|
 | session | `Todo`、`RunState`、`DeliveryParts` 等 | `EnvelopeFromContext`、`LoadRunState`、`ApplyEnvelopeToContext`… |
 | delivery | `Sender`、`Route`、`RouteInput` | `ResolveRoute`、`NormalizeSessionID`、`OutboundRoute`… |
-| bind | `Resolver` | `ResolveCtxValue`、`Default` |
+| bind | —（无 `cap/bind`） | `Resolver`、`ResolveCtxValue`、`Default`（`runtime/bind`） |
 | chathistory | `Provider`、`Router` | `RouterFromPlatform` 适配器 |
 | compaction | `Service`、`Request`、`EventData`、`Preparation` 等 | `ApplyAll`、`Prepare`、`PruneToolResults`、`SerializeConversation`… |
 | workspace | `Service`、`ScopeGlobal`/`ScopeLocal` | `ParseScoped`、`Resolve`、`ResolveRel`、`Static`… |
