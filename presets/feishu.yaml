@@ -23,8 +23,8 @@ platform.default:
     groupReplyAll: false # false：群内仅 @ 机器人时响应
     # threadIsolation: false # true：群话题在 delivery SessionID 中带 :t:<rootID>
     # replyInThread: true # false：群聊出站不创建/进入话题；私聊始终平铺回复
-    # reactionEmoji: OnIt # 处理中 reaction；none 关闭
-    # doneEmoji: "" # turn 结束 reaction；none 关闭
+    # reactionEmoji: OnIt # 默认 OnIt；none 关闭
+    # doneEmoji: CheckMark # 默认 CheckMark；none 关闭
     # groupOnly: false # true：仅群聊，忽略私聊
     # respondToAtEveryoneAndHere: false # @_all 无 mention 时也响应
     # replyToTrigger: true # false：出站不引用原消息（Im.Message.Create）

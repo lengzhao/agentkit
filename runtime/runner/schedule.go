@@ -64,7 +64,16 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		scoped.AgentID = agentID
 		env = env.WithAgentID(agentID)
 	}
-	if r.loop.TryDeliverPermission(scoped) {
+	if len(scoped.Reply) > 0 {
+		if r.loop.TryDeliverPermission(scoped) {
+			return
+		}
+		slog.Warn("permission reply not delivered",
+			"platform", event.PlatformID,
+			"user_id", env.Actor.UserID,
+			"route", routeLogID(env.Route),
+			"conversation", conversation,
+		)
 		return
 	}
 	if event.Message.Role != "" {

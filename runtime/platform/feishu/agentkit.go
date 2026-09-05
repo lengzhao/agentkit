@@ -170,6 +170,9 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		reactionEmoji = ""
 	}
 	doneEmoji := cfg.DoneEmoji
+	if doneEmoji == "" {
+		doneEmoji = "CheckMark"
+	}
 	if doneEmoji == "none" {
 		doneEmoji = ""
 	}
@@ -405,10 +408,10 @@ func (p *Platform) dispatchCoreMessage(msg *inboundMessage) {
 }
 
 func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
-	p.storeDelivery(msg.sessionID, msg.rctx)
 	if msg.messageID != "" && p.reactionEmoji != "" {
-		p.addReaction(msg.messageID)
+		msg.rctx.processingReactionID = p.addReaction(msg.messageID)
 	}
+	p.storeDelivery(msg.sessionID, msg.rctx)
 
 	text := strings.TrimSpace(msg.content)
 	if text != "" {
@@ -489,22 +492,33 @@ func (p *Platform) sendCard(ctx context.Context, rc replyContext, card *common.C
 	return p.createMessage(ctx, rc.chatID, larkim.MsgTypeInteractive, cardJSON, "send card")
 }
 
-func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, reply permission.Reply) {
+func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, reply permission.Reply, extra map[string]string) {
 	if strings.TrimSpace(sessionKey) == "" {
 		return
 	}
-	_ = p.inbox.Push(ctx, common.PermissionReplyEvent(p.agentID, agentkit.SessionID(sessionKey), p.platformTag, reply.UserID, reply))
+	_ = p.inbox.Push(ctx, common.PermissionReplyEventWithConversation(
+		p.agentID,
+		agentkit.SessionID(sessionKey),
+		p.platformTag,
+		reply.UserID,
+		common.PermissionConversationFromExtra(extra),
+		reply,
+	))
 }
 
 func (p *Platform) addDoneReactionForSession(sessionID agentkit.SessionID) {
-	if p.doneEmoji == "" {
-		return
-	}
 	rc, ok := p.deliveryFor(sessionID)
 	if !ok || rc.messageID == "" {
 		return
 	}
-	p.addReactionWithEmoji(rc.messageID, p.doneEmoji)
+	if rc.processingReactionID != "" {
+		p.removeReaction(rc.messageID, rc.processingReactionID)
+		rc.processingReactionID = ""
+		p.deliveries.Store(sessionID, rc)
+	}
+	if p.doneEmoji != "" {
+		p.addReactionWithEmoji(rc.messageID, p.doneEmoji)
+	}
 }
 
 const streamUpdateInterval = 800 * time.Millisecond

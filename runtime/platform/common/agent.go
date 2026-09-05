@@ -34,10 +34,18 @@ func InboundMessage(agentID agentkit.AgentID, sessionID agentkit.SessionID, plat
 }
 
 func PermissionReplyEvent(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID string, reply permission.Reply) agentkit.MessageEvent {
-	return WithDeliverySession(agentkit.MessageEvent{
+	return PermissionReplyEventWithConversation(agentID, sessionID, platformID, userID, "", reply)
+}
+
+func PermissionReplyEventWithConversation(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, conversation string, reply permission.Reply) agentkit.MessageEvent {
+	event := WithDeliverySession(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
 		Reply:      rtpermission.MarshalReply(reply),
 	}, platformID, sessionID)
+	if conversation = strings.TrimSpace(conversation); conversation != "" {
+		event.Envelope.Conversation = conversation
+	}
+	return event
 }

@@ -35,6 +35,27 @@ func TestPermissionCardFromQuestionPayload(t *testing.T) {
 	}
 }
 
+func TestPermissionCardFromQuestionPayloadIncludesConversation(t *testing.T) {
+	card := PermissionCardFromPayload(permission.RequestPayload{
+		Request: permission.Request{
+			ID:   "permabc",
+			Kind: permission.KindQuestion,
+			Question: &permission.Question{
+				Prompt:  "Pick one",
+				Options: []permission.Option{{Label: "A"}},
+			},
+		},
+		Conversation: "lark:oc_test:new:20260101",
+	})
+	item, ok := card.Elements[1].(CardListItem)
+	if !ok {
+		t.Fatalf("element type %T", card.Elements[1])
+	}
+	if item.Extra["conversation_id"] != "lark:oc_test:new:20260101" {
+		t.Fatalf("conversation_id = %q", item.Extra["conversation_id"])
+	}
+}
+
 func TestPermissionCardFromAllowDenyPayload(t *testing.T) {
 	card := PermissionCardFromPayload(permission.RequestPayload{
 		Request: permission.Request{
@@ -60,12 +81,16 @@ func TestPermissionCardFromAllowDenyPayload(t *testing.T) {
 
 func TestPermissionFieldsFromAction(t *testing.T) {
 	reply, ok := PermissionReplyFromAction("perm:0", "user1", map[string]string{
-		"request_id":  "abc",
-		"answer_text": "yes",
-		"selected":    "0",
+		"request_id":      "abc",
+		"answer_text":     "yes",
+		"selected":        "0",
+		"conversation_id": "lark:oc_test:new:20260101",
 	})
 	if !ok || reply.RequestID != "abc" || reply.UserID != "user1" || reply.Text != "yes" || len(reply.Selected) != 1 || reply.Selected[0] != 0 {
 		t.Fatalf("reply = %+v ok=%v", reply, ok)
+	}
+	if got := PermissionConversationFromExtra(map[string]string{"conversation_id": "lark:oc_test:new:20260101"}); got != "lark:oc_test:new:20260101" {
+		t.Fatalf("conversation = %q", got)
 	}
 
 	reply, ok = PermissionReplyFromAction("perm:allow", "user1", map[string]string{

@@ -98,10 +98,11 @@ func (l *sanitizingLogger) Error(ctx context.Context, args ...interface{}) {
 }
 
 type replyContext struct {
-	messageID  string
-	chatID     string
-	chatType   string
-	sessionKey string
+	messageID            string
+	chatID               string
+	chatType             string
+	sessionKey           string
+	processingReactionID string
 }
 
 type Platform struct {
@@ -282,7 +283,7 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 		if !common.AllowList(p.allowFrom, userID) {
 			return nil, nil
 		}
-		p.pushPermissionReply(context.Background(), sessionKey, reply)
+		p.pushPermissionReply(context.Background(), sessionKey, reply, extra)
 		confirmed := common.ConfirmedCardFromReply(reply, extra)
 		return &callback.CardActionTriggerResponse{
 			Card: &callback.Card{

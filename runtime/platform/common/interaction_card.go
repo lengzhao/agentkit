@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lengzhao/agentkit/cap/permission"
 )
@@ -41,11 +42,12 @@ func questionCard(payload permission.RequestPayload) *Card {
 			desc += "\n" + opt.Description
 		}
 		extra := map[string]string{
-			"request_id":  payload.ID,
-			"answer_text": label,
-			"selected":    fmt.Sprintf("%d", i),
-			"askq_label":  label,
-			"askq_question": q.Prompt,
+			"request_id":      payload.ID,
+			"answer_text":     label,
+			"selected":        fmt.Sprintf("%d", i),
+			"askq_label":      label,
+			"askq_question":   q.Prompt,
+			"conversation_id": strings.TrimSpace(payload.Conversation),
 		}
 		b.ListItemBtnExtra(desc, label, "default", PermissionActionValue(i), extra)
 	}
@@ -64,11 +66,12 @@ func allowDenyCard(payload permission.RequestPayload) *Card {
 	b := NewCard().Title(title, "orange").Markdown(reason)
 	permExtra := func(label, color, decision string) map[string]string {
 		return map[string]string{
-			"request_id": payload.ID,
-			"decision":   decision,
-			"perm_label": label,
-			"perm_color": color,
-			"perm_body":  reason,
+			"request_id":      payload.ID,
+			"decision":          decision,
+			"perm_label":        label,
+			"perm_color":        color,
+			"perm_body":         reason,
+			"conversation_id":   strings.TrimSpace(payload.Conversation),
 		}
 	}
 	b.ListItemBtnExtra("允许", "允许", "primary", PermissionDecisionValue("allow"), permExtra("✅ 允许", "green", "allow"))

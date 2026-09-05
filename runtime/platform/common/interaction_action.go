@@ -9,6 +9,15 @@ import (
 )
 
 const permissionActionPrefix = "perm:"
+const permissionConversationKey = "conversation_id"
+
+// PermissionConversationFromExtra reads the Loop conversation id echoed on card buttons.
+func PermissionConversationFromExtra(extra map[string]string) string {
+	if extra == nil {
+		return ""
+	}
+	return strings.TrimSpace(extra[permissionConversationKey])
+}
 
 // PermissionActionValue is the short action token stored in card button values.
 func PermissionActionValue(index int) string {

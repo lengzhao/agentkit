@@ -49,6 +49,19 @@ func (p *Platform) addReaction(ctx context.Context, d delivery, name string) {
 	}
 }
 
+func (p *Platform) removeReaction(ctx context.Context, d delivery, name string) {
+	if p.client == nil || d.channel == "" || d.msgTS == "" {
+		return
+	}
+	err := p.client.RemoveReactionContext(ctx, name, slack.ItemRef{
+		Channel:   d.channel,
+		Timestamp: d.msgTS,
+	})
+	if err != nil {
+		slog.Debug("slack: remove reaction failed", "emoji", name, "channel", d.channel, "ts", d.msgTS, "err", err)
+	}
+}
+
 func (p *Platform) reactReceived(ctx context.Context, d delivery) {
 	go p.addReaction(context.WithoutCancel(ctx), d, reactionReceived)
 }
@@ -58,5 +71,10 @@ func (p *Platform) reactDone(ctx context.Context, sessionID agentkit.SessionID) 
 	if !ok {
 		return
 	}
-	go p.addReaction(context.WithoutCancel(ctx), raw.(delivery), reactionDone)
+	d := raw.(delivery)
+	go func() {
+		bg := context.WithoutCancel(ctx)
+		p.removeReaction(bg, d, reactionReceived)
+		p.addReaction(bg, d, reactionDone)
+	}()
 }

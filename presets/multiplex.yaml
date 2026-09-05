@@ -71,8 +71,8 @@ platform.feishu:
     groupReplyAll: false
     # threadIsolation: false
     # replyInThread: true # false：群聊出站不创建/进入话题
-    # reactionEmoji: OnIt
-    # doneEmoji: ""
+    # reactionEmoji: OnIt # 默认 OnIt；none 关闭
+    # doneEmoji: CheckMark # 默认 CheckMark；none 关闭
     # enableFeishuCard: true
     # progressStyle: card # legacy | compact | card
     # showThinking: false

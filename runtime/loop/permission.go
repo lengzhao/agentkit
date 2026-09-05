@@ -264,7 +264,8 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 		UserID:     userID,
 		Type:       agentkit.EventPermissionRequest,
 		Data: agentkit.MarshalOutboundData(permission.RequestPayload{
-			Request: req,
+			Request:      req,
+			Conversation: string(session.SessionIDFromContext(ctx)),
 		}),
 	})
 }

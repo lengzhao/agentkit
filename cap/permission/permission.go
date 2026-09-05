@@ -77,6 +77,9 @@ type Broker interface {
 // RequestPayload is emitted on permission/request.
 type RequestPayload struct {
 	Request
+	// Conversation is the Loop history/lock key; platforms echo it on card replies
+	// so permission answers route back to the turn that created the pending request.
+	Conversation string `json:"conversation,omitempty"`
 }
 
 // AllowDenyMatch is the parsed allow/deny reply.

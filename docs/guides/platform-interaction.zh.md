@@ -155,6 +155,27 @@ platform.default:
 
 与 hermes-agent `display.*` 的对应关系：`tool_progress` → `showToolProgress` + `progressStyle: card`；`thinking_progress` → `showThinking`；进度气泡原地编辑 → 单卡 `Patch` 更新。
 
+## 消息 Reaction（处理中 / 完成）
+
+飞书 / Lark 与 Slack 在收到用户消息时会给原消息加「处理中」reaction；turn 结束（`turn/end`）时移除处理中 reaction，并视配置加上「完成」reaction。
+
+| 平台 | 收到消息 | turn 结束 |
+|---|---|---|
+| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 移除处理中 reaction，添加 `doneEmoji`（默认 `CheckMark`；`none` 关闭） |
+| `platform/slack` | `eyes` | 移除 `eyes`，添加 `white_check_mark` |
+
+飞书 / Lark 默认开启 reaction，无需配置。关闭示例：
+
+```yaml
+platform.default:
+  use: platform/feishu
+  config:
+    reactionEmoji: none  # 关闭处理中 reaction
+    doneEmoji: none      # 关闭完成 reaction
+```
+
+Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1` 等），`turn/end` 时一并清理。
+
 ## 停止进行中的 Turn
 
 `/stop` 由 `runner` 贡献，通过 `Loop.Cancel` 打断当前 session 正在执行的 turn（取消进行中的 step，并在下一步边界收尾）。与 `Steer` 不同，**不会**把消息注入对话历史。

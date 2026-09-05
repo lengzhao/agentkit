@@ -61,7 +61,7 @@ func (p *Platform) handleBlockAction(callback slack.InteractionCallback, action 
 		p.trackCardMessage(sessionKey, channelID, messageTS, threadTS)
 	}
 
-	p.pushPermissionReply(context.Background(), sessionKey, reply)
+	p.pushPermissionReply(context.Background(), sessionKey, reply, extra)
 
 	confirmed := common.ConfirmedCardFromReply(reply, extra)
 	ref := cardMessageRef{channel: channelID, ts: messageTS, threadTS: threadTS}
@@ -77,7 +77,14 @@ func threadTSFromInteractive(callback slack.InteractionCallback) string {
 	return callback.Container.ThreadTs
 }
 
-func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, reply permission.Reply) {
+func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, reply permission.Reply, extra map[string]string) {
 	sessionID := agentkit.SessionID(sessionKey)
-	_ = p.inbox.Push(ctx, common.PermissionReplyEvent(p.agentID, sessionID, "slack", reply.UserID, reply))
+	_ = p.inbox.Push(ctx, common.PermissionReplyEventWithConversation(
+		p.agentID,
+		sessionID,
+		"slack",
+		reply.UserID,
+		common.PermissionConversationFromExtra(extra),
+		reply,
+	))
 }
