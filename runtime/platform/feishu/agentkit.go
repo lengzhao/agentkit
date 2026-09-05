@@ -99,6 +99,8 @@ type streamState struct {
 	lastProgressUpdate time.Time
 	lastBodyUpdate     time.Time
 	heartbeatStop      context.CancelFunc
+	bodyFlushTimer     *time.Timer
+	legacyFlushTimer   *time.Timer
 }
 
 type streamCardKind string
@@ -540,6 +542,8 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 			st.heartbeatStop()
 			st.heartbeatStop = nil
 		}
+		stopStreamTimer(&st.bodyFlushTimer)
+		stopStreamTimer(&st.legacyFlushTimer)
 		st.mu.Unlock()
 	}
 }
@@ -570,13 +574,15 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	st.mu.Lock()
 	st.accumulated += delta
 	accumulated := st.accumulated
-	shouldFlush := st.handle == nil || time.Since(st.lastUpdate) >= streamUpdateInterval
+	shouldFlushNow := st.handle == nil || time.Since(st.lastUpdate) >= streamUpdateInterval
 	st.mu.Unlock()
 
-	if !shouldFlush {
-		return nil
+	if shouldFlushNow {
+		p.cancelLegacyFlushTimer(delivery)
+		return p.flushStream(ctx, delivery, accumulated)
 	}
-	return p.flushStream(ctx, delivery, accumulated)
+	p.scheduleLegacyFlush(delivery)
+	return nil
 }
 
 func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundEvent) error {

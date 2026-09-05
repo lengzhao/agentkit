@@ -357,6 +357,48 @@ func TestHandleRichBodyDeltaKeepsProgressState(t *testing.T) {
 	}
 }
 
+func TestStreamFlushDelay(t *testing.T) {
+	interval := 800 * time.Millisecond
+	if streamFlushDelay(time.Time{}, interval) != 0 {
+		t.Fatal("zero last update should flush immediately")
+	}
+	recent := time.Now()
+	if d := streamFlushDelay(recent, interval); d <= 0 || d > interval {
+		t.Fatalf("recent update delay = %v, want (0, %v]", d, interval)
+	}
+	stale := time.Now().Add(-interval)
+	if streamFlushDelay(stale, interval) != 0 {
+		t.Fatal("stale update should flush immediately")
+	}
+}
+
+func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
+	p := &Platform{progressStyle: "card"}
+	sessionID := agentkit.SessionID("session-body-timer")
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	st.bodyHandle = &feishuPreviewHandle{messageID: "body"}
+	st.lastBodyUpdate = time.Now()
+	st.mu.Unlock()
+
+	p.scheduleBodyFlush(sessionID)
+	st.mu.Lock()
+	first := st.bodyFlushTimer
+	st.mu.Unlock()
+	if first == nil {
+		t.Fatal("expected body flush timer")
+	}
+
+	p.scheduleBodyFlush(sessionID)
+	st.mu.Lock()
+	second := st.bodyFlushTimer
+	st.mu.Unlock()
+	if first != second {
+		t.Fatal("expected pending body flush timer to be reused")
+	}
+	first.Stop()
+}
+
 func boolPtr(v bool) *bool {
 	return &v
 }

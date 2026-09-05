@@ -96,6 +96,7 @@ func (p *Platform) richStreamState(sessionID agentkit.SessionID) *streamState {
 }
 
 func (p *Platform) handleRichStreamMessageStart(_ context.Context, sessionID agentkit.SessionID) error {
+	p.cancelBodyFlushTimer(sessionID)
 	st := p.richStreamState(sessionID)
 	st.mu.Lock()
 	st.thinking = ""
@@ -126,6 +127,85 @@ func (p *Platform) handleRichStreamUpdate(ctx context.Context, sessionID agentki
 	return p.flushProgressCard(ctx, sessionID, true)
 }
 
+func stopStreamTimer(t **time.Timer) {
+	if *t != nil {
+		(*t).Stop()
+		*t = nil
+	}
+}
+
+func streamFlushDelay(lastUpdate time.Time, interval time.Duration) time.Duration {
+	if lastUpdate.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(lastUpdate)
+	if elapsed >= interval {
+		return 0
+	}
+	return interval - elapsed
+}
+
+func (p *Platform) cancelBodyFlushTimer(sessionID agentkit.SessionID) {
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	stopStreamTimer(&st.bodyFlushTimer)
+	st.mu.Unlock()
+}
+
+func (p *Platform) cancelLegacyFlushTimer(sessionID agentkit.SessionID) {
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	stopStreamTimer(&st.legacyFlushTimer)
+	st.mu.Unlock()
+}
+
+func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	if st.bodyFlushTimer != nil {
+		st.mu.Unlock()
+		return
+	}
+	delay := streamFlushDelay(st.lastBodyUpdate, streamUpdateInterval)
+	sid := sessionID
+	st.bodyFlushTimer = time.AfterFunc(delay, func() {
+		st.mu.Lock()
+		stopStreamTimer(&st.bodyFlushTimer)
+		st.mu.Unlock()
+		if err := p.flushBodyCard(context.Background(), sid, true); err != nil {
+			slog.Debug(p.tag()+": debounced body flush failed", "session_id", sid, "error", err)
+		}
+	})
+	st.mu.Unlock()
+}
+
+func (p *Platform) scheduleLegacyFlush(sessionID agentkit.SessionID) {
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	if st.legacyFlushTimer != nil {
+		st.mu.Unlock()
+		return
+	}
+	delay := streamFlushDelay(st.lastUpdate, streamUpdateInterval)
+	sid := sessionID
+	st.legacyFlushTimer = time.AfterFunc(delay, func() {
+		st.mu.Lock()
+		stopStreamTimer(&st.legacyFlushTimer)
+		st.mu.Unlock()
+		st = p.streamState(sid)
+		st.mu.Lock()
+		text := st.accumulated
+		st.mu.Unlock()
+		if strings.TrimSpace(text) == "" {
+			return
+		}
+		if err := p.flushStream(context.Background(), sid, text); err != nil {
+			slog.Debug(p.tag()+": debounced legacy flush failed", "session_id", sid, "error", err)
+		}
+	})
+	st.mu.Unlock()
+}
+
 func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.SessionID, delta string) error {
 	if delta == "" {
 		return nil
@@ -135,12 +215,14 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 	st.mu.Lock()
 	st.bodyText += delta
 	st.status = cardStatusWorking
-	shouldFlush := st.bodyHandle == nil || time.Since(st.lastBodyUpdate) >= streamUpdateInterval
+	shouldFlushNow := st.bodyHandle == nil || time.Since(st.lastBodyUpdate) >= streamUpdateInterval
 	st.mu.Unlock()
-	if !shouldFlush {
-		return nil
+	if shouldFlushNow {
+		p.cancelBodyFlushTimer(sessionID)
+		return p.flushBodyCard(ctx, sessionID, true)
 	}
-	return p.flushBodyCard(ctx, sessionID, true)
+	p.scheduleBodyFlush(sessionID)
+	return nil
 }
 
 func (st *streamState) enqueueCard(kind streamCardKind, handle any) {
@@ -401,6 +483,7 @@ func appendSubagentEndStep(st *streamState, data session.SubagentEndData) {
 }
 
 func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentkit.OutboundEvent) error {
+	p.cancelBodyFlushTimer(session.OutboundRouteID(event))
 	var payload agentkit.MessageEndPayload
 	fallbackText := ""
 	if err := json.Unmarshal(event.Data, &payload); err == nil {
