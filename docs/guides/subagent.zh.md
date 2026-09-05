@@ -198,6 +198,8 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 
 启用 `platform/chat-api` 的 `debugUi` 时，子 Agent 内部的 tool call 会通过 SSE `tool_call`（参数完整后）与 `tool_result`（结果限长 1k）事件转发到 `/debug/` 页面（标签为 `subagent · <name>`），主 Agent 的文本流仍不会与子 Agent 交错。
 
+同步委派时，runtime 还会把 `subagent/start`、`subagent/end` 经父 delivery session 的 outbound 发给平台（如飞书过程卡展示「子 Agent · {agentID}」）；子 Agent 内部的 text/thinking delta 仍不转发。
+
 两个容易踩的配置点：
 
 - **`delegate` 的超时要单独放宽**。子 Agent 要跑十几步，默认 120s 的工具超时一定被砍：

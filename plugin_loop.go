@@ -14,6 +14,9 @@ type Loop interface {
 	Dispatch(context.Context, LoopRequest) error
 	Steer(context.Context, ModelMessage) error
 	FollowUp(context.Context, ModelMessage) error
+	// Cancel requests the in-flight turn for the session in ctx to stop. The
+	// session ID is read from KeySessionID, same as Steer/FollowUp.
+	Cancel(context.Context, string) error
 	// IsSessionBusy reports whether a turn is currently executing for the session.
 	IsSessionBusy(SessionID) bool
 	// TryDeliverPermission consumes a typed permission reply. It returns true

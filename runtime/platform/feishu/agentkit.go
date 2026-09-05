@@ -71,18 +71,36 @@ type inboundMessage struct {
 }
 
 type streamState struct {
-	mu            sync.Mutex
-	handle        any
-	accumulated   string // legacy mode text buffer
-	text          string // rich mode answer markdown
-	thinking      string
-	steps         []toolStep
-	toolStepIdx   map[int]int // contentIndex -> index in steps
-	toolCallIDIdx map[string]int
-	status        cardStatus
-	startedAt     time.Time
-	lastUpdate    time.Time
-	heartbeatStop context.CancelFunc
+	mu                 sync.Mutex
+	handle             any // legacy mode preview handle
+	progressHandle     any // rich mode: current message segment progress card
+	bodyHandle         any // rich mode: current message segment body card
+	cards              []streamCard // ordered cards for eviction (oldest first)
+	accumulated        string // legacy mode text buffer
+	bodyText           string // rich mode in-flight assistant markdown
+	thinking           string
+	steps              []toolStep
+	toolStepIdx        map[int]int // contentIndex -> index in steps
+	status             cardStatus
+	startedAt          time.Time
+	progressStartedAt  time.Time
+	lastUpdate         time.Time // legacy flush throttle
+	lastProgressUpdate time.Time
+	lastBodyUpdate     time.Time
+	heartbeatStop      context.CancelFunc
+}
+
+type streamCardKind string
+
+const (
+	streamCardProgress streamCardKind = "progress"
+	streamCardBody     streamCardKind = "body"
+	maxStreamCards     = 3
+)
+
+type streamCard struct {
+	Kind   streamCardKind
+	Handle any
 }
 
 type cardStatus string
@@ -100,6 +118,7 @@ const (
 	toolStepKindTool       toolStepKind = "tool"
 	toolStepKindToolResult toolStepKind = "tool_result"
 	toolStepKindThinking   toolStepKind = "thinking"
+	toolStepKindSubagent   toolStepKind = "subagent"
 )
 
 type toolStep struct {
@@ -288,9 +307,10 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		}
 		return nil
 	case agentkit.EventMessageStart:
-		if !p.useRichStream() {
-			p.clearStream(event.SessionID)
+		if p.useRichStream() {
+			return p.handleRichStreamMessageStart(ctx, event.SessionID)
 		}
+		p.clearStream(event.SessionID)
 		return nil
 	case agentkit.EventMessageUpdate:
 		return p.handleStreamUpdate(ctx, event)
@@ -302,6 +322,11 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	case agentkit.EventToolResult:
 		if p.useRichStream() {
 			return p.handleRichToolResult(ctx, event)
+		}
+		return nil
+	case agentkit.EventSubagentStart, agentkit.EventSubagentEnd:
+		if p.useRichStream() {
+			return p.handleRichSubagentEvent(ctx, event)
 		}
 		return nil
 	case agentkit.EventAssistantMessage:

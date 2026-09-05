@@ -396,6 +396,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 |---|---|
 | `commands/registry` | `/plugin` |
 | `loop/default` | `/agent`、`/acp` |
+| `runner` | `/stop` |
 | `subagent/inprocess` | `/subagent` |
 | `session/store` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |

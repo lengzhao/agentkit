@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
@@ -92,6 +93,39 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 	}
 	if got[1].SessionID != parentSession {
 		t.Fatalf("result session = %q, want parent delivery %q", got[1].SessionID, parentSession)
+	}
+}
+
+func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
+	t.Parallel()
+
+	parentSession := agentkit.SessionID("feishu:default:chat")
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, agentkit.KeyDeliverySessionID, parentSession)
+
+	var got []agentkit.OutboundEvent
+	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
+		got = append(got, event)
+		return nil
+	}))
+
+	start := session.SubagentStartData{Agent: "researcher", Session: "sub:1", Task: "survey"}
+	if err := emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentStart, start); err != nil {
+		t.Fatal(err)
+	}
+	end := session.SubagentEndData{Agent: "researcher", Session: "sub:1", Status: "completed", Summary: "done"}
+	if err := emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentEnd, end); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("events = %d, want 2", len(got))
+	}
+	if got[0].Type != agentkit.EventSubagentStart || got[1].Type != agentkit.EventSubagentEnd {
+		t.Fatalf("event types = %q, %q", got[0].Type, got[1].Type)
+	}
+	if got[0].SessionID != parentSession {
+		t.Fatalf("session = %q, want parent delivery %q", got[0].SessionID, parentSession)
 	}
 }
 

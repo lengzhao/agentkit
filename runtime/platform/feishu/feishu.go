@@ -3272,6 +3272,13 @@ func richStepDisplayName(step toolStep) string {
 	if step.Kind == toolStepKindThinking {
 		return "Thinking"
 	}
+	if step.Kind == toolStepKindSubagent {
+		name := strings.TrimSpace(step.Name)
+		if name == "" {
+			return "subagent"
+		}
+		return name
+	}
 	if step.Kind == toolStepKindToolResult {
 		name := strings.TrimSpace(step.Name)
 		if name == "" {
@@ -3306,6 +3313,36 @@ func richStepBody(step toolStep) string {
 		} else {
 			lines = append(lines, summary)
 		}
+		if !step.Done {
+			lines = append(lines, "status: running")
+		}
+		return strings.Join(lines, "\n")
+	case toolStepKindSubagent:
+		summary := strings.TrimSpace(step.Summary)
+		if summary == "" {
+			summary = name
+		}
+		if step.Done {
+			lines := []string{"🤖 子 Agent · " + name}
+			if step.Success != nil {
+				if *step.Success {
+					lines = append(lines, "🟢")
+				} else {
+					lines = append(lines, "🔴")
+				}
+			}
+			result := strings.TrimSpace(step.Result)
+			if result == "" {
+				result = summary
+			}
+			if body := formatProgressToolResult(result); body != "" {
+				lines = append(lines, body)
+			} else if result != "" {
+				lines = append(lines, result)
+			}
+			return strings.Join(lines, "\n")
+		}
+		lines := []string{"🤖 子 Agent · " + name, summary}
 		if !step.Done {
 			lines = append(lines, "status: running")
 		}
@@ -3466,15 +3503,13 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 			"text": map[string]any{"tag": "plain_text", "content": "Thinking..."},
 		})
 	} else {
-		// Cap the number of step rows so the collapsible panel doesn't
-		// balloon into hundreds of elements (lark client renders that
-		// poorly and the whole card can hit the ~30KB API limit).
-		const maxPanelSteps = 30
+		// Keep only the most recent progress rows so the collapsible panel
+		// stays short during long tool-heavy turns.
 		visible := steps
 		overflow := 0
-		if len(steps) > maxPanelSteps {
-			visible = steps[:maxPanelSteps]
-			overflow = len(steps) - maxPanelSteps
+		if len(steps) > maxRecentProgressSteps {
+			visible = steps[len(steps)-maxRecentProgressSteps:]
+			overflow = len(steps) - maxRecentProgressSteps
 		}
 		for _, step := range visible {
 			summary := richStepBody(step)

@@ -120,20 +120,29 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 ## 飞书流式进度卡片
 
-`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 Interactive Card 的 `Patch` 原地更新展示 agent 输出。整轮 turn 复用**一张卡片**，thinking / tool 进度与最终正文都在同一条消息里更新，不再为中间状态单独发消息。
+`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 Interactive Card 的 `Patch` 原地更新展示 agent 输出。`card` / `compact` 模式采用**双车道**展示，与 chat-api 的 `text_delta` 语义对齐：
+
+| 车道 | 内容 | 行为 |
+|---|---|---|
+| **过程卡** | thinking / tool / subagent | 可 `Patch` 的进度卡；与正文卡并存，不随正文开始而删除 |
+| **正文卡** | `text_delta` | 新建正文卡并流式 `Patch`，与当前过程卡同时保留 |
+| **定稿** | `message/end` | 正文卡与当前过程卡分别 finalize，均保留在会话中 |
+| **淘汰** | 超过 3 张卡 | 从最老开始，仅删除**过程卡**直到 ≤3 张；正文卡永不淘汰。新建过程卡时还会删掉更早的过程卡 |
+
+`legacy` 模式仍为单卡流式正文，不含进度面板。
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `progressStyle` | `legacy` | `card`：Card 2.0 可折叠进度面板 + 正文；`compact`：结构化进度列表；`legacy`：仅流式正文 |
+| `progressStyle` | `legacy` | `card`：Card 2.0 可折叠进度面板；`compact`：结构化进度列表；`legacy`：仅流式正文 |
 | `showThinking` | `false` | `card`/`compact` 下是否在进度区展示 thinking |
 | `showToolProgress` | `card`/`compact` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
 | `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
 | `replyInThread` | `true` | 仅群聊出站时 `Im.Message.Reply` 带 `reply_in_thread`；私聊（p2p）始终平铺回复 |
 | `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
-`card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。
+`card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。subagent 委托经 runtime outbound 发出 `subagent/start`、`subagent/end`，在过程卡中以「子 Agent · {agentID}」展示（与 tool 同级）。进度区仅保留最近 **2** 条 thinking / tool / subagent 记录（`compact` 超出时显示「仅显示最近更新」提示），避免长任务把卡片撑得过长。
 
-`card` / `compact` 模式下，turn 未完成且已发出进度卡片后，平台每 **5 秒** 原地 `Patch` 一次卡片，刷新页脚「⏱ 运行中 …」耗时；tool 长时间无新事件时用户仍能看到状态在更新。
+`card` / `compact` 模式下，turn 未完成且过程卡已发出后，平台每 **5 秒** 原地 `Patch` 一次过程卡，刷新页脚「⏱ 运行中 …」耗时；正文卡流式期间按常规节流 `Patch`。会话滑动窗口最多保留 **3** 张卡，超出时从最老开始仅淘汰过程卡；同一 turn 内只保留**最新一张**过程卡，更早的过程段在新建过程卡时删除。
 
 ```yaml
 platform.default:
@@ -145,6 +154,18 @@ platform.default:
 ```
 
 与 hermes-agent `display.*` 的对应关系：`tool_progress` → `showToolProgress` + `progressStyle: card`；`thinking_progress` → `showThinking`；进度气泡原地编辑 → 单卡 `Patch` 更新。
+
+## 停止进行中的 Turn
+
+`/stop` 由 `runner` 贡献，通过 `Loop.Cancel` 打断当前 session 正在执行的 turn（取消进行中的 step，并在下一步边界收尾）。与 `Steer` 不同，**不会**把消息注入对话历史。
+
+| 平台 | 行为 |
+|---|---|
+| 飞书 / Slack / chat-api | slash 在入队前本地处理，turn 进行中也可 `/stop` |
+| CLI | turn 进行中仅接受 `/stop`（及 `/exit`）；其他输入会暂存到 turn 结束后再处理 |
+| ACP | 客户端 `session/cancel` 走同一条 `Control.Cancel` 路径 |
+
+无进行中的 turn 时返回 `no turn in progress`。
 
 ## 无人值守与 Policy 分工
 

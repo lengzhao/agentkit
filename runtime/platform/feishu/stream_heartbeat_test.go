@@ -11,7 +11,7 @@ func TestShouldHeartbeatFlush(t *testing.T) {
 	st := &streamState{
 		startedAt: time.Now(),
 		status:    cardStatusWorking,
-		handle:    &feishuPreviewHandle{messageID: "msg"},
+		progressHandle: &feishuPreviewHandle{messageID: "msg"},
 	}
 	if !shouldHeartbeatFlush(st) {
 		t.Fatal("expected active rich stream to heartbeat")
@@ -23,9 +23,9 @@ func TestShouldHeartbeatFlush(t *testing.T) {
 	}
 
 	st.status = cardStatusWorking
-	st.handle = nil
+	st.progressHandle = nil
 	if shouldHeartbeatFlush(st) {
-		t.Fatal("expected stream without preview handle to skip heartbeat")
+		t.Fatal("expected stream without progress handle to skip heartbeat")
 	}
 }
 

@@ -366,6 +366,7 @@ Slash 命令**不必**在 `commands.default.deps` 里逐个挂：只要贡献方
 | `/subagent` | `subagent/inprocess` | `subagent.default` |
 | `/compact` | `hook/before-step` | `hooks.deps.providers` |
 | `/status` | `hook/turn-continue` | 需 preset 挂到 hooks（如 autonomous） |
+| `/stop` | `runner` | `runner` 根插件（随主图启动） |
 | `/learn` | `learning/default` | `prompt.memory.deps.learning` |
 
 关掉某个 tool 或从图里移除对应实例，其 slash 命令一并消失。

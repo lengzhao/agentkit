@@ -47,6 +47,7 @@ func (l *recordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) er
 }
 
 func (l *recordingLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
+func (l *recordingLoop) Cancel(context.Context, string) error                  { return nil }
 func (l *recordingLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *recordingLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 func (l *recordingLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }

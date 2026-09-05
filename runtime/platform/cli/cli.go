@@ -47,6 +47,7 @@ type Platform struct {
 	sessionID     agentkit.SessionID
 	pending       *permissionPrompt
 	turnDone      chan struct{}
+	heldLine      string
 }
 
 // New registers platform/cli: Interactive terminal platform with slash commands.
@@ -107,20 +108,45 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	}
 
 	waitingPermission := p.hasPending()
-	if !waitingPermission {
-		if err := p.waitTurnIdle(ctx); err != nil {
+	turnBusy := p.isTurnBusy()
+
+	var text string
+	if p.heldLine != "" {
+		text = p.heldLine
+		p.heldLine = ""
+	} else {
+		if !waitingPermission && !turnBusy {
+			if err := p.waitTurnIdle(ctx); err != nil {
+				return agentkit.MessageEvent{}, err
+			}
+		}
+		var err error
+		text, err = p.readInput(waitingPermission)
+		if err != nil {
 			return agentkit.MessageEvent{}, err
 		}
-	}
-	text, err := p.readInput(waitingPermission)
-	if err != nil {
-		return agentkit.MessageEvent{}, err
 	}
 	if pending := p.takePending(); pending != nil {
 		return p.permissionReplyEvent(text, pending), nil
 	}
 	if text == "" {
 		return agentkit.MessageEvent{}, nil
+	}
+	if turnBusy {
+		if name, args, ok := common.ParseSlashCommand(text); ok && isTurnControlSlash(name) {
+			if handled, err := p.handleSlash(ctx, name, args); handled || err != nil {
+				return agentkit.MessageEvent{}, err
+			}
+		}
+		p.heldLine = text
+		if err := p.waitTurnIdle(ctx); err != nil {
+			return agentkit.MessageEvent{}, err
+		}
+		text = p.heldLine
+		p.heldLine = ""
+		if text == "" {
+			return agentkit.MessageEvent{}, nil
+		}
 	}
 	if name, args, ok := common.ParseSlashCommand(text); ok {
 		if handled, err := p.handleSlash(ctx, name, args); handled || err != nil {
@@ -407,6 +433,15 @@ func cliUserID() string {
 		return user
 	}
 	return "cli"
+}
+
+func isTurnControlSlash(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "stop", "exit", "quit", "q":
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveCLISessionID(store agentkit.SessionStore) agentkit.SessionID {

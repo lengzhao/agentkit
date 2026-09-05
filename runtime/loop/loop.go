@@ -207,6 +207,14 @@ func (l *Default) FollowUp(ctx context.Context, msg agentkit.ModelMessage) error
 	return l.controlFor(sessionID).FollowUp(ctx, msg)
 }
 
+func (l *Default) Cancel(ctx context.Context, reason string) error {
+	sessionID, err := sessionIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return l.controlFor(sessionID).Cancel(ctx, reason)
+}
+
 // IsSessionBusy reports whether a turn is currently executing for the session.
 func (l *Default) IsSessionBusy(sessionID agentkit.SessionID) bool {
 	_, ok := l.sessionBusy.Load(sessionID)

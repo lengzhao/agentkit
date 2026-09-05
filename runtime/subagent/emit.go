@@ -48,3 +48,31 @@ func parentSessionID(ctx context.Context) agentkit.SessionID {
 	}
 	return ""
 }
+
+func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
+	emit, _ := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit)
+	return emit
+}
+
+// emitSubagentLifecycle forwards subagent/start and subagent/end to the parent
+// delivery session so platforms can render delegation in the progress card.
+func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, typ agentkit.EventType, data any) error {
+	emit := emitFromContext(ctx)
+	if emit == nil {
+		return nil
+	}
+	sessionID := parentSessionID(ctx)
+	if sessionID == "" {
+		return nil
+	}
+	agentID := parentAgent
+	if agentID == "" {
+		agentID, _ = ctx.Value(agentkit.KeyAgentID).(agentkit.AgentID)
+	}
+	return emit(ctx, agentkit.OutboundEvent{
+		SessionID: sessionID,
+		AgentID:   agentID,
+		Type:      typ,
+		Data:      agentkit.MarshalOutboundData(data),
+	})
+}

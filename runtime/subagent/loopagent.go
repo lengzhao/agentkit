@@ -141,13 +141,20 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		}
 	}
 
-	if err := session.AppendSubagentStart(ctx, parent, parentAgent, session.SubagentStartData{
+	startData := session.SubagentStartData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Task:    task,
 		Async:   async,
 		JobID:   jobID,
-	}); err != nil {
+	}
+	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
+		if async {
+			s.untrackRunning(parentID)
+		}
+		return subagent.Result{}, err
+	}
+	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData); err != nil {
 		if async {
 			s.untrackRunning(parentID)
 		}
@@ -179,6 +186,9 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		end.Error = runErr.Error()
 	}
 	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
+		return subagent.Result{}, err
+	}
+	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
 		return subagent.Result{}, err
 	}
 	result.JobID = jobID
@@ -256,6 +266,9 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 	if err := session.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
 		slog.Error("async subagent: append end", "job_id", jobID, "err", err)
 		return
+	}
+	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
+		slog.Error("async subagent: emit end", "job_id", jobID, "err", err)
 	}
 	if s.submit == nil {
 		return

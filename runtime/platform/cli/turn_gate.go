@@ -21,6 +21,12 @@ func (p *Platform) endTurnWait() {
 	}
 }
 
+func (p *Platform) isTurnBusy() bool {
+	p.turnMu.Lock()
+	defer p.turnMu.Unlock()
+	return p.turnDone != nil
+}
+
 func (p *Platform) waitTurnIdle(ctx context.Context) error {
 	p.turnMu.Lock()
 	ch := p.turnDone

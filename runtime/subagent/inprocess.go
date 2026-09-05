@@ -155,11 +155,15 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	childID := agentkit.SessionID(fmt.Sprintf("sub:%s:%s:%d",
 		parentID, def.Name, session.LatestEventSeq(parentEvents)))
 
-	if err := session.AppendSubagentStart(ctx, parent, parentAgent, session.SubagentStartData{
+	startData := session.SubagentStartData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Task:    task,
-	}); err != nil {
+	}
+	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
+		return subagent.Result{}, err
+	}
+	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData); err != nil {
 		return subagent.Result{}, err
 	}
 
@@ -175,6 +179,9 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 		end.Error = runErr.Error()
 	}
 	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
+		return subagent.Result{}, err
+	}
+	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
 		return subagent.Result{}, err
 	}
 	return result, runErr
@@ -268,11 +275,6 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		out.Summary = session.LastAssistantText(events, 0)
 	}
 	return out, runErr
-}
-
-func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
-	emit, _ := ctx.Value(agentkit.KeyOutboundEmit).(agentkit.OutboundEmit)
-	return emit
 }
 
 func findDefinition(defs []subagent.Definition, name string) (subagent.Definition, bool) {
