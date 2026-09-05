@@ -9,9 +9,8 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 const defaultSessionsDir = "sessions"
@@ -249,8 +248,4 @@ func (s tenantStaticWorkspace) Resolve(ctx context.Context, rel string) (string,
 		dir = "_default"
 	}
 	return rtworkspace.ResolveRel(filepath.Join(s.localBase, dir), rel)
-}
-
-func tenantWorkspaceRoot(localBase string) workspace.Service {
-	return tenantStaticWorkspace{localBase: localBase}
 }
