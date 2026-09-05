@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/configfile"
 )
 
@@ -97,7 +98,7 @@ func filterGlobalMCPFiles(files []string) []string {
 		if rel == "" {
 			continue
 		}
-		scope, _, scoped := workspace.ParseScoped(rel)
+		scope, _, scoped := rtworkspace.ParseScoped(rel)
 		if scoped && scope == workspace.ScopeGlobal {
 			out = append(out, rel)
 		}
@@ -337,7 +338,7 @@ func (p *mcpProvider) loadServers(ctx context.Context) ([]serverConfig, error) {
 	seen := make(map[string]struct{})
 	var out []serverConfig
 	for _, rel := range p.files {
-		scope, _, scoped := workspace.ParseScoped(rel)
+		scope, _, scoped := rtworkspace.ParseScoped(rel)
 		fromGlobal := scoped && scope == workspace.ScopeGlobal
 		path, err := p.workspace.Resolve(ctx, rel)
 		if err != nil {

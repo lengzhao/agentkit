@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/compaction"
 	"github.com/lengzhao/agentkit/plugins/hook"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -16,7 +16,7 @@ import (
 func TestCompactCommand(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}

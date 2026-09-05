@@ -9,8 +9,7 @@ agent.assistant.default:
             maxRetries: 3
     deps:
         compaction:
-            - compaction.prune.default
-            - compaction.token-limit.default
+            - compaction.pipeline.default
         hooks: hooks.default
         llm: llm.fallback
         prompt: prompt.default
@@ -50,8 +49,7 @@ agent.worker.default:
             maxRetries: 3
     deps:
         compaction:
-            - compaction.prune.default
-            - compaction.token-limit.worker
+            - compaction.pipeline.worker
         hooks: hooks.worker
         llm: llm.fallback
         prompt: prompt.worker.default
@@ -69,6 +67,18 @@ bootstrap.shell.default:
     use: bootstrap/shell
 commands.default:
     use: commands/registry
+compaction.pipeline.default:
+    deps:
+        services:
+            - compaction.prune.default
+            - compaction.token-limit.default
+    use: compaction/pipeline
+compaction.pipeline.worker:
+    deps:
+        services:
+            - compaction.prune.default
+            - compaction.token-limit.worker
+    use: compaction/pipeline
 compaction.prune.default:
     config:
         maxToolResultBytes: 8192
@@ -115,15 +125,13 @@ hook.before-step.default:
         contributeCommands: true
     deps:
         services:
-            - compaction.prune.default
-            - compaction.token-limit.default
+            - compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.before-step.worker:
     deps:
         services:
-            - compaction.prune.default
-            - compaction.token-limit.worker
+            - compaction.pipeline.worker
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.turn-continue.default:
@@ -399,8 +407,7 @@ subagent.inprocess.default:
         timeoutSeconds: 600
     deps:
         compaction:
-            - compaction.prune.default
-            - compaction.token-limit.default
+            - compaction.pipeline.default
         hooks: hooks.default
         llm: llm.fallback
         prompt: prompt.subagent.default
@@ -433,7 +440,7 @@ tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
-        platform: platform.default
+        history: platform.default
     use: tool/chat-history
 tool.finish.default:
     deps:
@@ -467,7 +474,7 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
-        platform: platform.default
+        sender: platform.default
         workspace: workspace.default
     use: tool/send
 tool.shell-bash.default:

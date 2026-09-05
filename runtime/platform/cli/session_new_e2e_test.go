@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -23,7 +23,7 @@ import (
 // E2E-101: /new switches CLI logical session; prior history stays in the old file.
 func TestE2ECLINewSwitchesSession(t *testing.T) {
 	dir := t.TempDir()
-	ws := workspace.Static(dir)
+	ws := rtworkspace.Static(dir)
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)

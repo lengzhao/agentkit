@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -14,7 +14,7 @@ func TempFileStore(t *testing.T) (agentkit.SessionStore, string) {
 	t.Helper()
 	root := t.TempDir()
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{
-		Workspace: workspace.Static(root),
+		Workspace: rtworkspace.Static(root),
 	})
 	if err != nil {
 		t.Fatalf("session store: %v", err)

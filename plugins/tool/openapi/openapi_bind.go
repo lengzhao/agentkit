@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/lengzhao/agentkit/runtime/session"
+	ctxbind "github.com/lengzhao/agentkit/runtime/bind"
 )
 
 type bindConfig struct {
@@ -93,15 +93,15 @@ func operationHasParameter(op operationConfig, in, key string) bool {
 }
 
 func applyBinds(ctx context.Context, binds []bindConfig, args map[string]any) error {
-	for _, bind := range binds {
-		value, err := resolveCtxValue(ctx, bind.From)
+	for _, b := range binds {
+		value, err := ctxbind.ResolveCtxValue(ctx, b.From)
 		if err != nil {
-			return fmt.Errorf("bind %q: %w", bind.Key, err)
+			return fmt.Errorf("bind %q: %w", b.Key, err)
 		}
 		if value == "" {
-			return fmt.Errorf("bind %q: %s is empty", bind.Key, bind.From)
+			return fmt.Errorf("bind %q: %s is empty", b.Key, b.From)
 		}
-		args[bind.Key] = value
+		args[b.Key] = value
 	}
 	return nil
 }
@@ -130,55 +130,4 @@ func applyBindOnlyParams(op operationConfig, binds []bindConfig, args map[string
 		}
 	}
 	return nil
-}
-
-func resolveCtxValue(ctx context.Context, from string) (string, error) {
-	from = strings.TrimSpace(from)
-	if !strings.HasPrefix(from, "ctx:") {
-		return "", fmt.Errorf("from %q must use ctx: prefix", from)
-	}
-	key := strings.TrimPrefix(from, "ctx:")
-	switch {
-	case key == "user_id":
-		if v := session.UserIDFromContext(ctx); v != "" {
-			return v, nil
-		}
-		return "", nil
-	case key == "session_id":
-		if v := session.SessionIDFromContext(ctx); v != "" {
-			return string(v), nil
-		}
-		return "", nil
-	case key == "delivery_session_id":
-		if v := session.DeliveryRouteFromContext(ctx); v != "" {
-			return string(v), nil
-		}
-		return "", nil
-	case key == "agent_id":
-		if v := session.AgentIDFromContext(ctx); v != "" {
-			return string(v), nil
-		}
-		return "", nil
-	case key == "platform_id":
-		if v := session.PlatformFromContext(ctx); v != "" {
-			return v, nil
-		}
-		return "", nil
-	case strings.HasPrefix(key, "metadata."):
-		mdKey := strings.TrimPrefix(key, "metadata.")
-		if mdKey == "" {
-			return "", fmt.Errorf("metadata key is required")
-		}
-		md := session.MetadataFromContext(ctx)
-		if md == nil {
-			return "", nil
-		}
-		v, ok := md[mdKey]
-		if !ok || v == nil {
-			return "", nil
-		}
-		return stringifyValue(v), nil
-	default:
-		return "", fmt.Errorf("unsupported ctx source %q", key)
-	}
 }

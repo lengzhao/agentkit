@@ -10,7 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -42,7 +42,7 @@ func (c *fakeClock) Sleep(_ context.Context, d time.Duration) error {
 func newCronRuntime(t *testing.T, cfg pluginschedule.CronConfig) (capschedule.Runtime, capschedule.Registry, *fakeClock) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: workspace.Static(t.TempDir())})
+		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestCronStopsOnCancellation(t *testing.T) {
 	t.Parallel()
 
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: workspace.Static(t.TempDir())})
+		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}

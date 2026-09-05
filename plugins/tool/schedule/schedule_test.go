@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
@@ -19,7 +19,7 @@ import (
 func newScheduleTool(t *testing.T, cfg schedule.ScheduleConfig) (agentkit.Tool, capschedule.Registry) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: workspace.Static(t.TempDir())})
+		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}

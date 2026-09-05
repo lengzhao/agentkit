@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/credentials"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 func TestResolvePrefersContextOverEnvironment(t *testing.T) {
@@ -18,7 +18,7 @@ func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := credentials.WithSecrets(context.Background(), map[string]string{
+	ctx := rtcredentials.WithSecrets(context.Background(), map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-ctx",
 	})
 	secret, err := store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")

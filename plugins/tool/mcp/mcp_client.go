@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/session"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -279,7 +280,7 @@ func resolveEnvValue(ctx context.Context, value string, creds credentials.Store)
 				return secret.Value, nil
 			}
 		}
-		key := credentials.EnvKey(value)
+		key := rtcredentials.EnvKey(value)
 		if v := os.Getenv(key); v != "" {
 			return v, nil
 		}

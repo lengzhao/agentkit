@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/settings"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
@@ -28,7 +28,7 @@ func TestCompactionPruneToolResults(t *testing.T) {
 			Content: long,
 		}},
 	}}
-	pruned := compaction.PruneToolResults(messages, 20)
+	pruned := rtcompaction.PruneToolResults(messages, 20)
 	if len(pruned[0].ToolResults[0].Content) >= len(long) {
 		t.Fatalf("expected truncated tool result, got len=%d", len(pruned[0].ToolResults[0].Content))
 	}
@@ -132,7 +132,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(sessionDir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(sessionDir)})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

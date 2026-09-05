@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 	workspaceruntime "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -113,7 +113,7 @@ func TestLearnCommandHelp(t *testing.T) {
 	t.Parallel()
 
 	svc, err := New(Config{}, Deps{
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 		SessionStore: stubSessionStore{},
 	})
 	if err != nil {
@@ -133,7 +133,7 @@ func TestSummarizeSessionUserMessages(t *testing.T) {
 
 	dir := t.TempDir()
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
-		Workspace: workspace.Static(dir),
+		Workspace: rtworkspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/tools"
@@ -144,7 +145,7 @@ func deliverPermissionReply(t *testing.T, l *loop.Default, sessionID agentkit.Se
 	for {
 		if l.TryDeliverPermission(agentkit.MessageEvent{
 			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
-			Reply: permission.MarshalReply(permission.Reply{
+			Reply: rtpermission.MarshalReply(permission.Reply{
 				RequestID: requestID,
 				Text:      text,
 			}),

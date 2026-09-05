@@ -11,7 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lengzhao/agentkit/cap/schedule"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -26,7 +27,7 @@ type FileDeps struct {
 
 // fileRegistry keeps jobs in a JSON file so an agent-created schedule survives a
 // restart. Writes go through a temp file and rename: a daemon killed mid-write
-// must not come back to a truncated schedule.
+// must not come back to a truncated capschedule.
 type fileRegistry struct {
 	relPath   string
 	workspace workspace.Service
@@ -37,27 +38,27 @@ type fileRegistry struct {
 }
 
 type fileState struct {
-	Jobs []schedule.Job `json:"jobs"`
+	Jobs []capschedule.Job `json:"jobs"`
 }
 
-// NewFile registers schedule/file: Durable cron job table, shared by schedule/cron and tool/schedule.
+// NewFile registers schedule/file: Durable cron job table, shared by schedule/cron and tool/capschedule.
 //
 // Best practices:
 //   - Point schedule/cron and tool/schedule at one instance, or the agent will schedule jobs nothing fires.
 //   - Jobs carry a source: config jobs are reconciled against the preset on every start, agent jobs are left alone.
 //   - Writes go through a temp file and rename, so a process killed mid-write leaves no truncated table.
-func NewFile(cfg FileConfig, deps FileDeps) (schedule.Registry, error) {
+func NewFile(cfg FileConfig, deps FileDeps) (capschedule.Registry, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("schedule/file requires workspace dependency")
 	}
 	path := strings.TrimSpace(cfg.Path)
 	if path == "" {
-		path = "schedule.json"
+		path = "capschedule.json"
 	}
 	return &fileRegistry{relPath: path, workspace: deps.Workspace, now: time.Now}, nil
 }
 
-func (r *fileRegistry) List(ctx context.Context) ([]schedule.Job, error) {
+func (r *fileRegistry) List(ctx context.Context) ([]capschedule.Job, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	state, err := r.load(ctx)
@@ -67,20 +68,20 @@ func (r *fileRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 	return state.Jobs, nil
 }
 
-func (r *fileRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job, error) {
+func (r *fileRegistry) Add(ctx context.Context, job capschedule.Job) (capschedule.Job, error) {
 	if err := validateJob(job, false); err != nil {
-		return schedule.Job{}, err
+		return capschedule.Job{}, err
 	}
 	if job.Source == "" {
-		job.Source = schedule.SourceAgent
+		job.Source = capschedule.SourceAgent
 	}
-	job.Kind = schedule.JobKind(job)
+	job.Kind = rtschedule.JobKind(job)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	state, err := r.load(ctx)
 	if err != nil {
-		return schedule.Job{}, err
+		return capschedule.Job{}, err
 	}
 	if job.ID == "" {
 		job.ID = nextJobID(state.Jobs, job.Source)
@@ -88,9 +89,9 @@ func (r *fileRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job,
 	if job.CreatedAt.IsZero() {
 		job.CreatedAt = r.now()
 	}
-	if job.Kind == schedule.KindCron && job.LastRun.IsZero() {
+	if job.Kind == capschedule.KindCron && job.LastRun.IsZero() {
 		// Anchor at creation time, otherwise the first Next() lands in the past
-		// and the job fires immediately instead of at its schedule.
+		// and the job fires immediately instead of at its capschedule.
 		job.LastRun = r.now()
 	}
 
@@ -106,7 +107,7 @@ func (r *fileRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job,
 		state.Jobs = append(state.Jobs, job)
 	}
 	if err := r.save(ctx, state); err != nil {
-		return schedule.Job{}, err
+		return capschedule.Job{}, err
 	}
 	return job, nil
 }
@@ -118,7 +119,7 @@ func (r *fileRegistry) Remove(ctx context.Context, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	kept := make([]schedule.Job, 0, len(state.Jobs))
+	kept := make([]capschedule.Job, 0, len(state.Jobs))
 	found := false
 	for _, job := range state.Jobs {
 		if job.ID == id {
@@ -137,18 +138,18 @@ func (r *fileRegistry) Remove(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-func validateJob(job schedule.Job, allowScript bool) error {
+func validateJob(job capschedule.Job, allowScript bool) error {
 	if strings.TrimSpace(job.Prompt) == "" && (!allowScript || strings.TrimSpace(job.Script) == "") {
 		return fmt.Errorf("job requires a prompt")
 	}
-	switch schedule.JobKind(job) {
-	case schedule.KindCron:
-		if _, err := schedule.ParseCron(job.Cron); err != nil {
+	switch rtschedule.JobKind(job) {
+	case capschedule.KindCron:
+		if _, err := rtschedule.ParseCron(job.Cron); err != nil {
 			return err
 		}
-	case schedule.KindDelay, schedule.KindAt:
+	case capschedule.KindDelay, capschedule.KindAt:
 		if job.FireAt.IsZero() {
-			return fmt.Errorf("%s job requires fireAt", schedule.JobKind(job))
+			return fmt.Errorf("%s job requires fireAt", rtschedule.JobKind(job))
 		}
 	default:
 		return fmt.Errorf("unknown schedule kind %q", job.Kind)
@@ -157,11 +158,11 @@ func validateJob(job schedule.Job, allowScript bool) error {
 }
 
 // SyncSource reconciles one source's jobs, preserving each surviving job's
-// LastRun so a restart does not re-anchor (and therefore delay) the schedule.
-func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []schedule.Job) error {
+// LastRun so a restart does not re-anchor (and therefore delay) the capschedule.
+func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []capschedule.Job) error {
 	for i := range jobs {
 		if jobs[i].Kind == "" {
-			jobs[i].Kind = schedule.KindCron
+			jobs[i].Kind = capschedule.KindCron
 		}
 		if err := validateJob(jobs[i], true); err != nil {
 			return fmt.Errorf("job %q: %w", jobs[i].ID, err)
@@ -176,8 +177,8 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []sch
 		return err
 	}
 
-	previous := make(map[string]schedule.Job, len(state.Jobs))
-	kept := make([]schedule.Job, 0, len(state.Jobs)+len(jobs))
+	previous := make(map[string]capschedule.Job, len(state.Jobs))
+	kept := make([]capschedule.Job, 0, len(state.Jobs)+len(jobs))
 	for _, job := range state.Jobs {
 		if job.Source == source {
 			previous[job.ID] = job
@@ -192,7 +193,7 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []sch
 		}
 		if old, ok := previous[job.ID]; ok && !old.LastRun.IsZero() {
 			job.LastRun = old.LastRun
-		} else if job.Kind == schedule.KindCron && job.LastRun.IsZero() {
+		} else if job.Kind == capschedule.KindCron && job.LastRun.IsZero() {
 			job.LastRun = now
 		}
 		kept = append(kept, job)
@@ -204,7 +205,7 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []sch
 // Due returns the jobs whose next boundary has arrived and stamps them as run.
 // Missed boundaries are skipped rather than backfilled, matching the timer
 // platform: replaying a backlog of stale schedules is never what was meant.
-func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]schedule.Job, error) {
+func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Job, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	state, err := r.load(ctx)
@@ -212,18 +213,18 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]schedule.Job, 
 		return nil, err
 	}
 
-	var due []schedule.Job
+	var due []capschedule.Job
 	changed := false
 	for i, job := range state.Jobs {
 		if job.Disabled || job.Fired {
 			continue
 		}
-		switch schedule.JobKind(job) {
-		case schedule.KindDelay, schedule.KindAt:
+		switch rtschedule.JobKind(job) {
+		case capschedule.KindDelay, capschedule.KindAt:
 			if job.FireAt.After(now) {
 				continue
 			}
-			if job.InFlight && !schedule.InFlightExpired(job, now) {
+			if job.InFlight && !rtschedule.InFlightExpired(job, now) {
 				continue
 			}
 			state.Jobs[i].InFlight = true
@@ -231,7 +232,7 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]schedule.Job, 
 			changed = true
 			due = append(due, state.Jobs[i])
 		default:
-			next, ok := schedule.NextFire(job, job.LastRun)
+			next, ok := rtschedule.NextFire(job, job.LastRun)
 			if !ok || next.After(now) {
 				continue
 			}
@@ -275,7 +276,7 @@ func (r *fileRegistry) MarkFired(ctx context.Context, id string, firedAt time.Ti
 		}
 		return r.save(ctx, state)
 	}
-	return fmt.Errorf("%w: %q", schedule.ErrJobNotFound, id)
+	return fmt.Errorf("%w: %q", capschedule.ErrJobNotFound, id)
 }
 
 func (r *fileRegistry) resolve(ctx context.Context) (string, error) {
@@ -347,7 +348,7 @@ func (r *fileRegistry) save(ctx context.Context, state fileState) error {
 
 // nextJobID picks the lowest unused sequence number for a source, so ids stay
 // short and readable in logs.
-func nextJobID(jobs []schedule.Job, source string) string {
+func nextJobID(jobs []capschedule.Job, source string) string {
 	used := make(map[string]bool, len(jobs))
 	for _, job := range jobs {
 		used[job.ID] = true

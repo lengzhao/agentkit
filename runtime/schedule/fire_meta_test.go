@@ -3,7 +3,7 @@ package schedule_test
 import (
 	"testing"
 
-	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 func TestIsStatelessSessionMode(t *testing.T) {
@@ -19,7 +19,7 @@ func TestIsStatelessSessionMode(t *testing.T) {
 		{"reuse", false},
 		{"fixed", false},
 	} {
-		if got := capschedule.IsStatelessSessionMode(tc.mode); got != tc.want {
+		if got := rtschedule.IsStatelessSessionMode(tc.mode); got != tc.want {
 			t.Fatalf("mode %q: got %v want %v", tc.mode, got, tc.want)
 		}
 	}
@@ -28,7 +28,7 @@ func TestIsStatelessSessionMode(t *testing.T) {
 func TestIsFireStateless(t *testing.T) {
 	t.Parallel()
 
-	if !capschedule.IsFireStateless(map[string]any{
+	if !rtschedule.IsFireStateless(map[string]any{
 		"schedule": map[string]any{
 			"fired":       true,
 			"sessionMode": "stateless",
@@ -36,12 +36,12 @@ func TestIsFireStateless(t *testing.T) {
 	}) {
 		t.Fatal("expected stateless fire")
 	}
-	if capschedule.IsFireStateless(map[string]any{
+	if rtschedule.IsFireStateless(map[string]any{
 		"schedule": map[string]any{
 			"fired":       true,
 			"sessionMode": "reuse",
 		},
 	}) {
-		t.Fatal("expected reuse fire to keep parent history")
+		t.Fatal("expected reuse fire to be stateful")
 	}
 }

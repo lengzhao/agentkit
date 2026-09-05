@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 func interactiveCapability() permission.Capability {
@@ -273,7 +274,7 @@ func TestTryDeliverPermissionConsumesReply(t *testing.T) {
 
 	event := agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{Conversation: "feishu:oc_test"},
-		Reply: permission.MarshalReply(permission.Reply{
+		Reply: rtpermission.MarshalReply(permission.Reply{
 			RequestID: "perm1",
 			Text:      "beta",
 		}),

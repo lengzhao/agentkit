@@ -5,20 +5,21 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/compaction"
+	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/telemetry"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 )
 
 type countingCompaction struct {
 	applied bool
 }
 
-func (c *countingCompaction) Compact(_ context.Context, req compaction.Request) (compaction.Result, error) {
+func (c *countingCompaction) Compact(_ context.Context, req capscompaction.Request) (capscompaction.Result, error) {
 	if req.Force {
 		c.applied = true
-		return compaction.Result{Applied: true, Messages: req.Messages}, nil
+		return capscompaction.Result{Applied: true, Messages: req.Messages}, nil
 	}
-	return compaction.Result{Messages: req.Messages}, nil
+	return capscompaction.Result{Messages: req.Messages}, nil
 }
 
 func TestApplyAllRecordsCompactionSpan(t *testing.T) {
@@ -29,7 +30,7 @@ func TestApplyAllRecordsCompactionSpan(t *testing.T) {
 	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
 
 	svc := &countingCompaction{}
-	_, applied, err := compaction.ApplyAll(ctx, []compaction.Service{svc}, compaction.Request{
+	_, applied, err := rtcompaction.ApplyAll(ctx, []capscompaction.Service{svc}, capscompaction.Request{
 		Messages: []agentkit.ModelMessage{{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}}},
 		Force:    true,
 	})
@@ -64,7 +65,7 @@ func TestApplyAllSkipsCompactionSpanWhenNoop(t *testing.T) {
 	ctx, _ = rec.BeginTurn(ctx, telemetry.TurnMeta{TurnID: "turn-1"})
 
 	svc := &countingCompaction{}
-	_, applied, err := compaction.ApplyAll(ctx, []compaction.Service{svc}, compaction.Request{
+	_, applied, err := rtcompaction.ApplyAll(ctx, []capscompaction.Service{svc}, capscompaction.Request{
 		Messages: []agentkit.ModelMessage{{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}}},
 	})
 	if err != nil {

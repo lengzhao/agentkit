@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/loop"
@@ -87,7 +87,7 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestSteerResetsSegmentMaxSteps(t *testing.T) {
 		LLM:          block,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

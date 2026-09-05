@@ -287,8 +287,8 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
-| `tool/send` | `platform`, `workspace?` | `send` | 经 platform 主动发送文本或工作区文件；`/send` 管理面投递（指定 session / Slack channel / @user）；L0 `tools.default` 已启用 |
-| `tool/chat-history` | `platform` | `chat_history` | 经 platform 读取 IM 传输层群/会话历史；平台未实现 `chathistory.Provider` 时返回空；`thread` 默认 true；L0 `tools.default` 已启用 |
+| `tool/send` | `sender`, `workspace?` | `send` | 经 delivery.Sender 主动发送文本或工作区文件；`/send` 管理面投递（指定 session / Slack channel / @user）；L0 `tools.default` 已启用 |
+| `tool/chat-history` | `history`（`agentkit.Platform`，运行时适配为 `chathistory.Router`） | `chat_history` | 读取 IM 传输层群/会话历史；平台未实现 Provider 时返回空；`thread` 默认 true；L0 `tools.default` 已启用 |
 | `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 | `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
@@ -368,6 +368,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `compaction/summary` | `compaction.Service` | LLM 摘要压缩 |
 | `compaction/prune-tool-results` | `compaction.Service` | 无模型工具结果裁剪 |
 | `compaction/token-limit` | `compaction.Service` | 按 token 阈值门控内层压缩链（deps.services）；阈值取 `maxTokens` 或 `contextWindow × triggerRatio` |
+| `compaction/pipeline` | `compaction.Service` | 按序执行 deps.services 中的压缩链，供 agent / hook 单点引用 |
 
 ### 3.7 Infrastructure
 
@@ -430,10 +431,13 @@ commands:
 
 ```text
 cap/<domain>/
-  *.go               # 可替换能力接口（workspace、compaction、permission…）
+  *.go               # 可替换能力接口与 DTO（workspace、compaction、permission…）
   doc.go             # 接口文档（可选）
 
+runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、schedule、skill、media…）
+
 cap/filesystem/      # 例外：grep/find DTO + gitignore，非 Provider 边界
+cap/media/           # 例外：仅 ContentTypeAttachmentRef 常量；实现见 runtime/media
 
 plugins/
   tool/fs/           # tool/fs-workspace、tool/fs-memory（内聚实现，共用 cap/filesystem 类型）
@@ -453,6 +457,7 @@ plugins/
 
 **规则**：
 
+- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。
 - 文件/Shell 等模型工具优先单插件内聚；共享 deps 通常是 `workspace.Service`，不是 `filesystem.Service`。
 - 只有 workspace、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
 - 换 workspace Provider（如 `workspace/default` → `workspace/tenant`）不换 tool kind：修改 deps 指向即可。

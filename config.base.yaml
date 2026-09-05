@@ -181,8 +181,7 @@ agent.assistant.default:
     tools: tools.default
     workspace: workspace.default
     compaction:
-      - compaction.prune.default
-      - compaction.token-limit.default
+      - compaction.pipeline.default
 
 # 工作模式 agent：自主续跑直到 todo 完成并 finish。通过 /agent use worker 或 chat-api agent_id=worker 触发。
 agent.worker.default:
@@ -209,8 +208,7 @@ agent.worker.default:
     tools: tools.worker.default
     workspace: workspace.default
     compaction:
-      - compaction.prune.default
-      - compaction.token-limit.worker
+      - compaction.pipeline.worker
 
 # 通过 ACP 调用 Cursor CLI（agent acp）。需先在本机完成 agent login；子进程注入 NO_OPEN_BROWSER=1（见 docs/plugin-catalog.zh.md §3.2）。
 agent.cursor.default:
@@ -303,8 +301,7 @@ subagent.inprocess.default:
     prompt: prompt.subagent.default
     hooks: hooks.default
     compaction:
-      - compaction.prune.default
-      - compaction.token-limit.default
+      - compaction.pipeline.default
 
 # Loop agent 委派：将 loop 里注册的重型 agent（如 cursor）暴露给主 agent 的 delegate 工具。
 subagent.loop.default:
@@ -385,16 +382,14 @@ hook.before-step.default:
   deps:
     sessionStore: sessionStore.default
     services:
-      - compaction.prune.default
-      - compaction.token-limit.default
+      - compaction.pipeline.default
 
 hook.before-step.worker:
   use: hook/before-step
   deps:
     sessionStore: sessionStore.default
     services:
-      - compaction.prune.default
-      - compaction.token-limit.worker
+      - compaction.pipeline.worker
 
 hook.turn-continue.default:
   use: hook/turn-continue
@@ -405,6 +400,20 @@ hook.turn-continue.default:
     requireTodosDone: true
   deps:
     sessionStore: sessionStore.default
+
+compaction.pipeline.default:
+  use: compaction/pipeline
+  deps:
+    services:
+      - compaction.prune.default
+      - compaction.token-limit.default
+
+compaction.pipeline.worker:
+  use: compaction/pipeline
+  deps:
+    services:
+      - compaction.prune.default
+      - compaction.token-limit.worker
 
 compaction.prune.default:
   use: compaction/prune-tool-results
@@ -761,13 +770,13 @@ tool.ask-user.default:
 tool.send.default:
   use: tool/send
   deps:
-    platform: platform.default
+    sender: platform.default
     workspace: workspace.default
 
 tool.chat-history.default:
   use: tool/chat-history
   deps:
-    platform: platform.default
+    history: platform.default
 
 mcp.default:
   use: tool/mcp

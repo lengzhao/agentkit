@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -71,7 +72,7 @@ func TestSendSlashCommandRequiresTarget(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Platform: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Platform: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 	if out != "" {
 		t.Fatalf("reply = %q", out)
 	}
-	if len(platform.sent) != 1 || session.OutboundRouteID(platform.sent[0]) != "slack:C002" {
+	if len(platform.sent) != 1 || delivery.OutboundRouteID(platform.sent[0]) != "slack:C002" {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
 	if platform.sent[0].PlatformID != "slack" {
@@ -116,7 +117,7 @@ func TestSendSlashCommandRoutesToTargetSessionPlatform(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Platform: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,8 +132,8 @@ func TestSendSlashCommandRoutesToTargetSessionPlatform(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
-	if session.OutboundRouteID(platform.sent[0]) != agentkit.SessionID(target) {
-		t.Fatalf("route = %q", session.OutboundRouteID(platform.sent[0]))
+	if delivery.OutboundRouteID(platform.sent[0]) != agentkit.SessionID(target) {
+		t.Fatalf("route = %q", delivery.OutboundRouteID(platform.sent[0]))
 	}
 	if platform.sent[0].PlatformID != "chat-api" {
 		t.Fatalf("platformID = %q, want chat-api", platform.sent[0].PlatformID)
@@ -143,7 +144,7 @@ func TestSendSlashCommandTargetUser(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Platform: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestSendSlashCommandRequiresPlatformID(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Platform: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}

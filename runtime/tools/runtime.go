@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -276,7 +277,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 		}
 	}
 	if r.maxResultBytes > 0 {
-		result = compaction.TruncateToolResult(result, r.maxResultBytes)
+		result = rtcompaction.TruncateToolResult(result, r.maxResultBytes)
 	}
 	return result, nil
 }
@@ -300,7 +301,7 @@ func (r *Runtime) resolveAskDecision(ctx context.Context, call *agentkit.ToolCal
 		return decision.Allowed, decision.Reason, nil
 	}
 
-	broker, ok := permission.BrokerFrom(ctx)
+	broker, ok := rtpermission.BrokerFrom(ctx)
 	if !ok {
 		return false, "approval required but no permission broker on this session", nil
 	}

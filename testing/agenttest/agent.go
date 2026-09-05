@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
@@ -46,9 +47,9 @@ type ScriptedAgentConfig struct {
 func TestWorkspace(t *testing.T, root ...string) workspace.Service {
 	t.Helper()
 	if len(root) > 0 && root[0] != "" {
-		return workspace.Static(root[0])
+		return rtworkspace.Static(root[0])
 	}
-	return workspace.Static(t.TempDir())
+	return rtworkspace.Static(t.TempDir())
 }
 
 // NewScriptedAgent builds an agent on a temp store unless Store is set.

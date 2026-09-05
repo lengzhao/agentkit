@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -41,7 +41,7 @@ func TestSanitizeModelMessageForStorageKeepsAttachmentRef(t *testing.T) {
 	if len(msg.Content) != 1 {
 		t.Fatalf("content = %#v", msg.Content)
 	}
-	if msg.Content[0].Type != media.ContentTypeAttachmentRef || msg.Content[0].Source != "upload/shot.png" {
+	if msg.Content[0].Type != rtmedia.ContentTypeAttachmentRef || msg.Content[0].Source != "upload/shot.png" {
 		t.Fatalf("content = %#v", msg.Content[0])
 	}
 }

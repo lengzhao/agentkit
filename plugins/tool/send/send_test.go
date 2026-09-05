@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/send"
+	"github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -30,7 +31,7 @@ func TestSendUsesEmitForCurrentInbox(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +76,8 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
-	if session.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
-		t.Fatalf("route=%q", session.OutboundRouteID(platform.sent[0]))
+	if delivery.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("route=%q", delivery.OutboundRouteID(platform.sent[0]))
 	}
 }
 
@@ -84,7 +85,7 @@ func TestSendUserIDTarget(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,8 +102,8 @@ func TestSendUserIDTarget(t *testing.T) {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
 	want := session.BuildDeliverySessionID("slack", "C001", "111.0", "U222")
-	if session.OutboundRouteID(platform.sent[0]) != want {
-		t.Fatalf("route=%q want %q", session.OutboundRouteID(platform.sent[0]), want)
+	if delivery.OutboundRouteID(platform.sent[0]) != want {
+		t.Fatalf("route=%q want %q", delivery.OutboundRouteID(platform.sent[0]), want)
 	}
 	if platform.sent[0].UserID != "U222" {
 		t.Fatalf("user=%q", platform.sent[0].UserID)
@@ -121,8 +122,8 @@ func TestSendFilePath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workDir, "report.pdf"), []byte("pdf"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.Static(root)
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
+	ws := rtworkspace.Static(root)
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,8 +159,8 @@ func TestSendTextAndPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workDir, "report.pdf"), []byte("pdf"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.Static(root)
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
+	ws := rtworkspace.Static(root)
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,8 +194,8 @@ func TestSendInboundAttachmentPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(attachDir, "hello.go"), []byte("package main"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.Static(root)
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: platform, Workspace: ws})
+	ws := rtworkspace.Static(root)
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}

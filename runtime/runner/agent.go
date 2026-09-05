@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -22,7 +22,7 @@ func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, 
 }
 
 func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEvent, env agentkit.TurnEnvelope, policy session.RoutePolicy) (string, error) {
-	if capschedule.IsFireStateless(event.Metadata) {
+	if rtschedule.IsFireStateless(event.Metadata) {
 		return env.Conversation, nil
 	}
 	defaultConversation := env.Conversation

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -255,7 +256,7 @@ func (p *stagedPermissionPlatform) Receive(ctx context.Context) (agentkit.Messag
 			Envelope: agentkit.TurnEnvelope{
 				Route: agentkit.SessionRoute("", "s:1"),
 			},
-			Reply: permission.MarshalReply(permission.Reply{
+			Reply: rtpermission.MarshalReply(permission.Reply{
 				RequestID: "perm1",
 				Text:      "yes",
 			}),

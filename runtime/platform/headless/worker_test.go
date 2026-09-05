@@ -11,7 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capshell "github.com/lengzhao/agentkit/cap/shell"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/headless"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -218,7 +218,7 @@ func TestWorkerRunsScriptTaskWithoutAgentTurn(t *testing.T) {
 			{Prompt: "after script"},
 		},
 	}, headless.WorkerDeps{
-		Workspace: workspace.Static(dir),
+		Workspace: rtworkspace.Static(dir),
 		Shell:     sh,
 	})
 	if err != nil {

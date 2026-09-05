@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/lengzhao/agentkit"
+	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 )
 
 // ApplyAll runs compaction services in order, returning the latest message view
 // and how many services reported Applied.
-func ApplyAll(ctx context.Context, services []Service, req Request) ([]agentkit.ModelMessage, int, error) {
+func ApplyAll(ctx context.Context, services []capscompaction.Service, req capscompaction.Request) ([]agentkit.ModelMessage, int, error) {
 	messages, applied, err := applyAll(ctx, services, req)
 	if len(services) == 0 || (applied == 0 && err == nil) {
 		return messages, applied, err
@@ -34,7 +35,7 @@ func ApplyAll(ctx context.Context, services []Service, req Request) ([]agentkit.
 	return messages, applied, err
 }
 
-func applyAll(ctx context.Context, services []Service, req Request) ([]agentkit.ModelMessage, int, error) {
+func applyAll(ctx context.Context, services []capscompaction.Service, req capscompaction.Request) ([]agentkit.ModelMessage, int, error) {
 	messages := req.Messages
 	applied := 0
 	for _, svc := range services {

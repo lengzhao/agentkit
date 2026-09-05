@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/skill"
+	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -55,7 +56,7 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 				return "", err
 			}
 		}
-		return skill.RenderLoaded(content), nil
+		return rtskill.RenderLoaded(content), nil
 	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Read supporting files with read; run bundled scripts with bash.").Build()
 	if err != nil {
 		return nil, err

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -36,7 +36,7 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 	t.Helper()
 	dir := t.TempDir()
 	sessionID := agentkit.SessionID("test:crashresume")
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLM
 		LLM:          provider,
 		Tools:        toolRT,
 		Prompt:       assembler,
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
 		LLM:          scripted,
 		Tools:        toolRT,
 		Prompt:       assembler,
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestRunTurnLeavesCleanSessionAlone(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}

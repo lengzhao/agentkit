@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
 )
 
@@ -93,7 +93,7 @@ func NewProvider(t *testing.T) (agentkit.ToolProvider, string) {
 		EnableLocal: true,
 		Files:       []string{configPath},
 	}, mcpplugin.MCPDeps{
-		Workspace: workspace.Static(dir),
+		Workspace: rtworkspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatal(err)

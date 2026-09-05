@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -94,7 +95,7 @@ func formatCronList(ctx context.Context, registry capschedule.Registry, includeF
 }
 
 func writeCronLine(b *strings.Builder, job capschedule.Job) {
-	kind := capschedule.JobKind(job)
+	kind := rtschedule.JobKind(job)
 	fmt.Fprintf(b, "- %s [%s]", job.ID, kind)
 	switch kind {
 	case capschedule.KindCron:
@@ -110,7 +111,7 @@ func writeCronLine(b *strings.Builder, job capschedule.Job) {
 			fmt.Fprintf(b, " at=%s", job.FireAt.Format(time.RFC3339))
 		}
 	}
-	if next, ok := capschedule.NextFire(job, job.LastRun); ok && !job.Fired {
+	if next, ok := rtschedule.NextFire(job, job.LastRun); ok && !job.Fired {
 		fmt.Fprintf(b, " next=%s", next.Format(time.RFC3339))
 	}
 	if job.Fired {

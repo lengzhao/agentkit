@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 func readImageToolResult(abs, path string) (string, error) {
@@ -15,8 +15,8 @@ func readImageToolResult(abs, path string) (string, error) {
 	if info.IsDir() {
 		return "", fmt.Errorf("not a file: %s", path)
 	}
-	if info.Size() > media.DefaultMaxWorkspaceImageBytes {
-		return media.FormatReadImageTooLarge(path, info.Size(), media.DefaultMaxWorkspaceImageBytes), nil
+	if info.Size() > rtmedia.DefaultMaxWorkspaceImageBytes {
+		return rtmedia.FormatReadImageTooLarge(path, info.Size(), rtmedia.DefaultMaxWorkspaceImageBytes), nil
 	}
-	return media.FormatReadImageResult(path, media.DetectMIME(path, nil), info.Size()), nil
+	return rtmedia.FormatReadImageResult(path, rtmedia.DetectMIME(path, nil), info.Size()), nil
 }

@@ -40,16 +40,11 @@ func WithWorkspace(ctx context.Context, workspace string) context.Context {
 	return ApplyEnvelopeToContext(ctx, env)
 }
 
-// ActiveEntryKeyFromContext derives the stable /new active-session mapping key
-// from the turn route. Conversation may already be resolved to a child session.
-func ActiveEntryKeyFromContext(ctx context.Context) agentkit.SessionID {
+// WithAgentID returns ctx with an updated envelope agent id.
+func WithAgentID(ctx context.Context, agentID agentkit.AgentID) context.Context {
 	env := EnvelopeFromContext(ctx)
-	platform := PlatformFromContext(ctx)
-	if platform == "" {
-		platform = strings.TrimSpace(env.Route.Platform)
-	}
-	policy := RoutePolicyForPlatform(platform, DefaultRoutePolicy(ScopeChannel))
-	return ActiveEntryKey(env.Route, policy, UserIDFromContext(ctx))
+	env.AgentID = agentID
+	return ApplyEnvelopeToContext(ctx, env)
 }
 
 // SessionIDFromContext reports the history/lock key for the current turn.
@@ -89,16 +84,21 @@ func MetadataFromContext(ctx context.Context) map[string]any {
 	return nil
 }
 
-// WithAgentID returns ctx with an updated envelope agent id.
-func WithAgentID(ctx context.Context, agentID agentkit.AgentID) context.Context {
-	env := EnvelopeFromContext(ctx)
-	env.AgentID = agentID
-	return ApplyEnvelopeToContext(ctx, env)
-}
-
 // AgentIDFromContext reports the agent executing the current turn.
 func AgentIDFromContext(ctx context.Context) agentkit.AgentID {
 	return EnvelopeFromContext(ctx).AgentID
+}
+
+// ActiveEntryKeyFromContext derives the stable /new active-session mapping key
+// from the turn route. Conversation may already be resolved to a child session.
+func ActiveEntryKeyFromContext(ctx context.Context) agentkit.SessionID {
+	env := EnvelopeFromContext(ctx)
+	platform := PlatformFromContext(ctx)
+	if platform == "" {
+		platform = strings.TrimSpace(env.Route.Platform)
+	}
+	policy := RoutePolicyForPlatform(platform, DefaultRoutePolicy(ScopeChannel))
+	return ActiveEntryKey(env.Route, policy, UserIDFromContext(ctx))
 }
 
 // WorkspaceFromContext reports the tenant workspace key for the current turn.

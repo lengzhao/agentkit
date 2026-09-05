@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 type AskUserConfig struct{}
@@ -40,7 +41,7 @@ func NewAskUser(_ AskUserConfig, _ AskUserDeps) (agentkit.Tool, error) {
 			return AskUserOutput{}, fmt.Errorf("question is required")
 		}
 
-		broker, ok := permission.BrokerFrom(ctx)
+		broker, ok := rtpermission.BrokerFrom(ctx)
 		if !ok {
 			return unansweredAsk("no permission broker on this session"), nil
 		}

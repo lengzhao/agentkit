@@ -42,63 +42,23 @@ const (
 	KindPrune   = "prune"
 )
 
-// PruneToolResults truncates oversized tool result text deterministically.
-func PruneToolResults(messages []agentkit.ModelMessage, maxBytes int) []agentkit.ModelMessage {
-	if maxBytes <= 0 {
-		return messages
-	}
-	out := make([]agentkit.ModelMessage, len(messages))
-	for i, msg := range messages {
-		out[i] = msg
-		if msg.Role != "tool" && len(msg.ToolResults) == 0 {
-			continue
+// MemoryCutoffSeq returns the highest event seq dropped from hot memory.
+func (d EventData) MemoryCutoffSeq() agentkit.EventSeq {
+	if d.FirstKeptSeq > 0 {
+		if d.FirstKeptSeq > 1 {
+			return d.FirstKeptSeq - 1
 		}
-		out[i] = pruneMessage(msg, maxBytes)
+		return 0
 	}
-	return out
+	return d.BeforeSeq
 }
 
-func pruneMessage(msg agentkit.ModelMessage, maxBytes int) agentkit.ModelMessage {
-	out := msg
-	out.Content = pruneParts(msg.Content, maxBytes)
-	if len(msg.ToolResults) > 0 {
-		results := make([]agentkit.ToolResult, len(msg.ToolResults))
-		for i, result := range msg.ToolResults {
-			results[i] = result
-			results[i].Content = pruneToolText(result.Content, maxBytes)
-		}
-		out.ToolResults = results
-	}
-	return out
-}
-
-func pruneParts(parts []agentkit.ContentPart, maxBytes int) []agentkit.ContentPart {
-	if len(parts) == 0 {
-		return parts
-	}
-	out := make([]agentkit.ContentPart, len(parts))
-	for i, part := range parts {
-		out[i] = part
-		if part.Type == "text" && len(part.Text) > maxBytes {
-			out[i].Text = part.Text[:maxBytes] + "\n...[truncated]"
+// PreviousSummaryText extracts prior summary body from a compaction event.
+func (d EventData) PreviousSummaryText() string {
+	for _, part := range d.Summary.Content {
+		if part.Type == "text" {
+			return part.Text
 		}
 	}
-	return out
-}
-
-func pruneToolText(text string, maxBytes int) string {
-	if maxBytes <= 0 || len(text) <= maxBytes {
-		return text
-	}
-	return text[:maxBytes] + "\n...[truncated]"
-}
-
-// TruncateToolResult truncates oversized tool result content after execution.
-func TruncateToolResult(result agentkit.ToolResult, maxBytes int) agentkit.ToolResult {
-	if maxBytes <= 0 {
-		return result
-	}
-	out := result
-	out.Content = pruneToolText(result.Content, maxBytes)
-	return out
+	return ""
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/loop"
@@ -276,7 +277,7 @@ func permissionCapability(platform agentkit.Platform, platformID string) permiss
 // ask_user.
 func inboundPermissionCapability(platform agentkit.Platform, event agentkit.MessageEvent) permission.Capability {
 	cap := permissionCapability(platform, event.PlatformID)
-	if capschedule.IsFireTurn(event.Metadata) {
+	if rtschedule.IsFireTurn(event.Metadata) {
 		cap.Interactive = false
 	}
 	return cap

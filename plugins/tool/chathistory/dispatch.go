@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/chathistory"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 )
 
-func Dispatch(ctx context.Context, deps ChatHistoryDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
-	if deps.Platform == nil {
-		return ChatHistoryOutput{}, fmt.Errorf("tool/chat-history requires platform dependency")
+func Dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
+	if deps.router == nil {
+		return ChatHistoryOutput{}, fmt.Errorf("tool/chat-history requires history dependency")
 	}
 
-	route, err := common.ResolveDeliveryRoute(ctx, common.DeliveryRouteInput{
+	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{
 		SessionID: input.SessionID,
 		UserID:    input.UserID,
 	})
@@ -23,7 +23,7 @@ func Dispatch(ctx context.Context, deps ChatHistoryDeps, cfg ChatHistoryConfig, 
 		return ChatHistoryOutput{}, err
 	}
 
-	provider := resolveProvider(deps.Platform, route.PlatformID)
+	provider := deps.router.ChatHistoryFor(route.PlatformID)
 	if provider == nil {
 		return ChatHistoryOutput{}, nil
 	}
@@ -59,16 +59,6 @@ func Dispatch(ctx context.Context, deps ChatHistoryDeps, cfg ChatHistoryConfig, 
 		Source:   result.Source,
 		Count:    len(messages),
 	}, nil
-}
-
-func resolveProvider(platform agentkit.Platform, platformID string) chathistory.Provider {
-	if router, ok := platform.(chathistory.Router); ok {
-		return router.ChatHistoryFor(platformID)
-	}
-	if provider, ok := platform.(chathistory.Provider); ok {
-		return provider
-	}
-	return nil
 }
 
 func clampLimit(limit int, cfg ChatHistoryConfig) int {

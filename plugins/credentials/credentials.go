@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/config"
 	"github.com/lengzhao/agentkit/plugins/configfile"
 	"github.com/lengzhao/pluginkit"
@@ -71,10 +72,10 @@ func New(cfg Config, deps EnvDeps) (credentials.Store, error) {
 }
 
 func (s *Store) Resolve(ctx context.Context, ref string) (credentials.Secret, error) {
-	if secret, ok := credentials.SecretFromContext(ctx, ref); ok {
+	if secret, ok := rtcredentials.SecretFromContext(ctx, ref); ok {
 		return secret, nil
 	}
-	key := credentials.EnvKey(ref)
+	key := rtcredentials.EnvKey(ref)
 	if s.prefix != "" {
 		key = s.prefix + key
 	}

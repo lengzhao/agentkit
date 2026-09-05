@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/send"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
@@ -18,7 +18,7 @@ import (
 )
 
 func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) {
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestProcessChatSlashSessionUsesConversation(t *testing.T) {
 }
 
 func TestServeNewConversationSlash(t *testing.T) {
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestSendSlashDeliversMessageContent(t *testing.T) {
 	}
 	plat := p.(*Platform)
 
-	sendTool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Platform: plat})
+	sendTool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: plat})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestSendSlashDeliversMessageContent(t *testing.T) {
 func TestSlashCommandDoesNotPersistSessionHistory(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)

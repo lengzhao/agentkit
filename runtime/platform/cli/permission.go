@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
@@ -74,7 +75,7 @@ func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) 
 		Envelope: agentkit.TurnEnvelope{
 			Conversation: string(p.sessionID),
 		},
-		Reply: permission.MarshalReply(permission.Reply{
+		Reply: rtpermission.MarshalReply(permission.Reply{
 			RequestID: pending.requestID,
 			Text:      text,
 		}),

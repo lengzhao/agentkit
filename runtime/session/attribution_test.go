@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -33,7 +33,7 @@ func firstText(msg agentkit.ModelMessage) string {
 
 func attributionTestStore(t *testing.T, dir string) agentkit.SessionStore {
 	t.Helper()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 func TestNoUserIDLeavesHistoryUntouched(t *testing.T) {
 	t.Parallel()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestImageOnlyMessageDerivesPlaceholder(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("derived %d messages, want 1", len(msgs))
 	}
-	if len(msgs[0].Content) != 1 || msgs[0].Content[0].Type != media.ContentTypeAttachmentRef {
+	if len(msgs[0].Content) != 1 || msgs[0].Content[0].Type != rtmedia.ContentTypeAttachmentRef {
 		t.Fatalf("content = %#v", msgs[0].Content)
 	}
 	if msgs[0].Content[0].URL != "https://example.com/a.png" {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -86,18 +87,18 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 	previousSummary := ""
 	if _, prevData, ok := latestCompactionData(events, req.AgentID); ok {
 		boundaryStart = 1
-		previousSummary = capcompaction.PreviousSummaryText(prevData)
+		previousSummary = prevData.PreviousSummaryText()
 	}
 
-	tokensBefore := capcompaction.EstimateMessagesTokens(req.Messages)
-	prep := capcompaction.Prepare(indexed, boundaryStart, s.cfg.KeepRecentTokens, previousSummary, tokensBefore)
+	tokensBefore := rtcompaction.EstimateMessagesTokens(req.Messages)
+	prep := rtcompaction.Prepare(indexed, boundaryStart, s.cfg.KeepRecentTokens, previousSummary, tokensBefore)
 	if prep == nil {
 		return capcompaction.Result{}, nil
 	}
 
-	policy := capcompaction.ResolveRetrySettings(s.cfg.Retry)
+	policy := rtcompaction.ResolveRetrySettings(s.cfg.Retry)
 	var summaryText string
-	err = capcompaction.RetryCall(ctx, policy, llm.IsRetryableError, func() error {
+	err = rtcompaction.RetryCall(ctx, policy, llm.IsRetryableError, func() error {
 		text, err := s.summarizePrepared(ctx, prep)
 		if err != nil {
 			return err
@@ -189,7 +190,7 @@ func (s *summaryService) summarizePrepared(ctx context.Context, prep *capcompact
 }
 
 func (s *summaryService) summarizeOnce(ctx context.Context, messages []agentkit.ModelMessage, previousSummary string, turnPrefix bool) (string, error) {
-	conversationText := capcompaction.SerializeConversation(messages)
+	conversationText := rtcompaction.SerializeConversation(messages)
 	prompt := s.cfg.SummaryPrompt
 	if previousSummary != "" {
 		prompt = updateSummarizationPrompt

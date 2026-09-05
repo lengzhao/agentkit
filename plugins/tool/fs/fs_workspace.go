@@ -11,7 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -93,7 +93,7 @@ type workspaceFSOps interface {
 
 func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, maxListEntries int, only []string) (agentkit.ToolPack, error) {
 	read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
-		if media.IsImagePath(input.Path) {
+		if rtmedia.IsImagePath(input.Path) {
 			return fs.readImage(ctx, input.Path)
 		}
 		raw, err := fs.readText(ctx, input.Path, 0)

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 )
 
 type PruneConfig struct {
@@ -30,6 +31,6 @@ func NewPrune(cfg PruneConfig) (compaction.Service, error) {
 func (s *pruneService) Compact(_ context.Context, req compaction.Request) (compaction.Result, error) {
 	return compaction.Result{
 		Applied:  true,
-		Messages: compaction.PruneToolResults(req.Messages, s.maxBytes),
+		Messages: rtcompaction.PruneToolResults(req.Messages, s.maxBytes),
 	}, nil
 }

@@ -53,11 +53,11 @@ func New(cfg Config) (cw.Service, error) {
 		return nil, fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
 	}
 
-	globalAbs, err := cw.Resolve(global)
+	globalAbs, err := Resolve(global)
 	if err != nil {
 		return nil, err
 	}
-	localAbs, err := cw.Resolve(local)
+	localAbs, err := Resolve(local)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func New(cfg Config) (cw.Service, error) {
 }
 
 func (s *Service) Resolve(_ context.Context, rel string) (string, error) {
-	scope, path, scoped := cw.ParseScoped(rel)
+	scope, path, scoped := ParseScoped(rel)
 	if !scoped {
 		scope = s.scope
 		path = rel
@@ -74,7 +74,7 @@ func (s *Service) Resolve(_ context.Context, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return cw.ResolveRel(root, path)
+	return ResolveRel(root, path)
 }
 
 func (s *Service) rootFor(scope string) (string, error) {

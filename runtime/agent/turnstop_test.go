@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -78,7 +78,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 	t.Helper()
 	dir := t.TempDir()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 		Tools:        toolRT,
 		Prompt:       assembler,
 		Hooks:        hooks,
-		Workspace:    workspace.Static(dir),
+		Workspace:    rtworkspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatalf("build agent: %v", err)

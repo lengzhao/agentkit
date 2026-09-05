@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -71,7 +71,7 @@ func InboundOptsFor(ws workspace.Service) *InboundOpts {
 	return &InboundOpts{Workspace: ws}
 }
 
-// InboundFromContent builds a MessageEvent from text and optional media.
+// InboundFromContent builds a MessageEvent from text and optional rtmedia.
 // extraContent is prepended (e.g. quoted reply context). Non-image files are
 // saved under the tenant work dir and referenced in the prompt for the read tool.
 func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
@@ -138,7 +138,7 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 		if mime == "" {
 			mime = "image/png"
 		}
-		url := media.DataURL(mime, img.Data)
+		url := rtmedia.DataURL(mime, img.Data)
 		part := agentkit.ContentPart{Type: "image_url", URL: url, MIME: mime}
 		if path := strings.TrimSpace(img.WorkPath); path != "" {
 			part.Source = path
@@ -162,7 +162,7 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 // IsImageAttachment reports whether an inbound attachment should be sent to the
 // model as vision input instead of a read-tool file path.
 func IsImageAttachment(mimeType, filename string) bool {
-	return media.IsImage(mimeType, filename)
+	return rtmedia.IsImage(mimeType, filename)
 }
 
 func appendFileRefs(prompt string, filePaths []string) string {

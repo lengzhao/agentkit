@@ -94,11 +94,11 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 		return nil, fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
 	}
 
-	globalAbs, err := cw.Resolve(global)
+	globalAbs, err := Resolve(global)
 	if err != nil {
 		return nil, err
 	}
-	localBaseAbs, err := cw.Resolve(localBase)
+	localBaseAbs, err := Resolve(localBase)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 		if entry.Root == "" {
 			return nil, fmt.Errorf("workspace/tenant: tenant %q has no root", key)
 		}
-		root, err := cw.Resolve(entry.Root)
+		root, err := Resolve(entry.Root)
 		if err != nil {
 			return nil, fmt.Errorf("workspace/tenant: tenant %q root: %w", key, err)
 		}
@@ -128,7 +128,7 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 }
 
 func (s *TenantService) Resolve(ctx context.Context, rel string) (string, error) {
-	scope, path, scoped := cw.ParseScoped(rel)
+	scope, path, scoped := ParseScoped(rel)
 	if !scoped {
 		scope = s.scope
 		path = rel
@@ -137,7 +137,7 @@ func (s *TenantService) Resolve(ctx context.Context, rel string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return cw.ResolveRelStrict(root, path)
+	return ResolveRelStrict(root, path)
 }
 
 func (s *TenantService) rootFor(ctx context.Context, scope string) (string, error) {

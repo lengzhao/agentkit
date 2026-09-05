@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 const (
@@ -212,7 +213,7 @@ func resolveSecret(ctx context.Context, value string, creds credentials.Store) (
 			return secret.Value, nil
 		}
 	}
-	key := credentials.EnvKey(value)
+	key := rtcredentials.EnvKey(value)
 	if v := os.Getenv(key); v != "" {
 		return v, nil
 	}

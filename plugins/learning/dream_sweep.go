@@ -8,6 +8,7 @@ import (
 	"time"
 
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 // DreamSweep runs scheduled dreaming sweeps without agent turns.
@@ -86,7 +87,7 @@ func (d *DreamSweep) sweepDue(ctx context.Context) bool {
 	if expr == "" {
 		expr = "0 3 * * *"
 	}
-	sched, err := capschedule.ParseCron(expr)
+	sched, err := rtschedule.ParseCron(expr)
 	if err != nil {
 		return false
 	}

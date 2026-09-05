@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/chathistory"
+	rtchathistory "github.com/lengzhao/agentkit/runtime/chathistory"
 )
 
 type ChatHistoryConfig struct {
@@ -14,7 +15,12 @@ type ChatHistoryConfig struct {
 }
 
 type ChatHistoryDeps struct {
-	Platform agentkit.Platform `json:"platform"`
+	// History is typically platform.default; adapted to chathistory.Router at init.
+	History agentkit.Platform `json:"history"`
+}
+
+type runtimeDeps struct {
+	router chathistory.Router
 }
 
 type ChatHistoryInput struct {
@@ -38,11 +44,12 @@ type ChatHistoryOutput struct {
 
 // NewChatHistory registers tool/chat-history: read transport chat history on demand.
 func NewChatHistory(cfg ChatHistoryConfig, deps ChatHistoryDeps) (agentkit.Tool, error) {
-	if deps.Platform == nil {
-		return nil, fmt.Errorf("tool/chat-history requires platform dependency")
+	if deps.History == nil {
+		return nil, fmt.Errorf("tool/chat-history requires history dependency")
 	}
+	rt := runtimeDeps{router: rtchathistory.RouterFromPlatform(deps.History)}
 	return agentkit.NewTool[ChatHistoryInput, ChatHistoryOutput]("chat_history", func(ctx context.Context, input ChatHistoryInput) (ChatHistoryOutput, error) {
-		return Dispatch(ctx, deps, cfg, input)
+		return Dispatch(ctx, rt, cfg, input)
 	}).
 		Description("Read recent chat history from the current conversation or a specified session. Use when you need context from messages the bot has not processed yet, such as earlier group discussion.").
 		Build()

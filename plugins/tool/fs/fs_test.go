@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestSliceReadContentOffsetLimit(t *testing.T) {
@@ -125,7 +125,7 @@ func TestWorkspaceFSRootIsTenantLocal(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.Static(tenantRoot)
+	ws := rtworkspace.Static(tenantRoot)
 	fs := &workspaceFS{relRoot: ".", workspace: ws}
 	ctx := context.Background()
 
@@ -176,7 +176,7 @@ func TestWorkspaceFSRejectsPathEscapeByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := workspace.Static(tenantRoot)
+	ws := rtworkspace.Static(tenantRoot)
 	fs := &workspaceFS{relRoot: "work", workspace: ws}
 	ctx := context.Background()
 
@@ -201,7 +201,7 @@ func TestWorkspaceFSUnrestrictedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := workspace.Static(tenantRoot)
+	ws := rtworkspace.Static(tenantRoot)
 	fs := &workspaceFS{relRoot: "work", workspace: ws, unrestricted: true}
 	ctx := context.Background()
 

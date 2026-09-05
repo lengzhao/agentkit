@@ -6,59 +6,47 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsess "github.com/lengzhao/agentkit/cap/session"
 )
 
-// Todo statuses. Anything other than TodoDone counts as outstanding work.
+type (
+	Todo             = capsess.Todo
+	TodoUpdateData   = capsess.TodoUpdateData
+	RunFinishData    = capsess.RunFinishData
+	TurnContinueData = capsess.TurnContinueData
+	UsageData        = capsess.UsageData
+	RunState         = capsess.RunState
+)
+
 const (
-	TodoPending    = "pending"
-	TodoInProgress = "in_progress"
-	TodoDone       = "done"
+	TodoPending     = capsess.TodoPending
+	TodoInProgress  = capsess.TodoInProgress
+	TodoDone        = capsess.TodoDone
+	FinishCompleted = capsess.FinishCompleted
+	FinishBlocked   = capsess.FinishBlocked
 )
 
-// Todo is one entry of the durable task list written by tool/todo.
-type Todo struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
-}
-
-// Done reports whether this entry no longer needs work.
-func (t Todo) Done() bool { return t.Status == TodoDone }
-
-// TodoUpdateData is the payload of an EventTodoUpdate event. It carries the full
-// list after the update so the latest event alone reconstructs the state.
-type TodoUpdateData struct {
-	Items []Todo `json:"items"`
-}
-
-// RunFinishData is the payload of an EventRunFinish event: the agent's explicit
-// statement that it is done, which is what stops an autonomous run.
-type RunFinishData struct {
-	Status  string `json:"status"`
-	Summary string `json:"summary,omitempty"`
-}
-
-// Run finish statuses.
-const (
-	FinishCompleted = "completed"
-	FinishBlocked   = "blocked"
-)
-
-// TurnContinueData records one autonomous turn extension. Messages holds the
-// text injected to keep the agent going; derive replays it as a user message, so
-// this single event is both the audit record and the model-visible source.
-type TurnContinueData struct {
-	Segment  int                     `json:"segment"`
-	Reason   string                  `json:"reason"`
-	Steps    int                     `json:"steps"`
-	Messages []agentkit.ModelMessage `json:"messages,omitempty"`
-}
-
-// UsageData records token accounting for one model step.
-type UsageData struct {
-	InputTokens  int `json:"inputTokens"`
-	OutputTokens int `json:"outputTokens"`
-	TotalTokens  int `json:"totalTokens"`
+// LoadRunState reads autonomous-run signals for the given session.
+func LoadRunState(ctx context.Context, store agentkit.SessionStore, sessionID agentkit.SessionID) (RunState, error) {
+	sess, err := store.Get(ctx, sessionID)
+	if err != nil {
+		return RunState{}, err
+	}
+	events, err := ReadAllEvents(ctx, sess)
+	if err != nil {
+		return RunState{}, err
+	}
+	startSeq := RunStartSeq(events)
+	todos := LatestTodos(events)
+	return RunState{
+		StartSeq: startSeq,
+		Todos:    todos,
+		Pending:  PendingTodos(todos),
+		Finish:   FinishAfter(events, startSeq),
+		Repeats:  RepeatedToolCalls(events, startSeq),
+		Usage:    TotalUsage(events, startSeq),
+		Context:  LatestUsage(events).InputTokens,
+	}, nil
 }
 
 func AppendTodoUpdate(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, items []Todo) error {
@@ -104,9 +92,7 @@ func PendingTodos(items []Todo) []Todo {
 	return out
 }
 
-// FinishAfter returns the run/finish event recorded after seq, or nil when the
-// agent has not declared completion since then. Callers pass the seq of the
-// message that started the current run so a stale finish cannot end a new run.
+// FinishAfter returns the run/finish event recorded after seq, or nil.
 func FinishAfter(events []agentkit.SessionEvent, seq agentkit.EventSeq) *RunFinishData {
 	var out *RunFinishData
 	for _, ev := range events {
@@ -123,10 +109,7 @@ func FinishAfter(events []agentkit.SessionEvent, seq agentkit.EventSeq) *RunFini
 	return out
 }
 
-// LastAssistantText returns the text of the most recent assistant message after
-// seq. It is the fallback answer for a run that stopped without calling
-// tool/finish, which is the common case for a child agent that was only asked a
-// question.
+// LastAssistantText returns the text of the most recent assistant message after seq.
 func LastAssistantText(events []agentkit.SessionEvent, seq agentkit.EventSeq) string {
 	var out string
 	for _, ev := range events {
@@ -150,8 +133,7 @@ func LastAssistantText(events []agentkit.SessionEvent, seq agentkit.EventSeq) st
 	return out
 }
 
-// StepCount counts the steps completed after seq. Unlike turn/end's Steps field
-// it is also available for a turn that failed partway through.
+// StepCount counts the steps completed after seq.
 func StepCount(events []agentkit.SessionEvent, seq agentkit.EventSeq) int {
 	count := 0
 	for _, ev := range events {
@@ -162,9 +144,7 @@ func StepCount(events []agentkit.SessionEvent, seq agentkit.EventSeq) int {
 	return count
 }
 
-// RunStartSeq returns the seq of the most recent inbound user message, which
-// marks where the current run began. Continuations are recorded as
-// turn/continue events rather than user/message events, so they never shift it.
+// RunStartSeq returns the seq of the most recent inbound user message.
 func RunStartSeq(events []agentkit.SessionEvent) agentkit.EventSeq {
 	var seq agentkit.EventSeq
 	for _, ev := range events {
@@ -193,9 +173,7 @@ func TotalUsage(events []agentkit.SessionEvent, seq agentkit.EventSeq) UsageData
 	return out
 }
 
-// LatestUsage returns the most recent usage event. Its InputTokens is the
-// measured prompt size at that step — the best available reading of how large
-// the context currently is, already net of any earlier compaction.
+// LatestUsage returns the most recent usage event.
 func LatestUsage(events []agentkit.SessionEvent) UsageData {
 	var out UsageData
 	for _, ev := range events {
@@ -212,9 +190,7 @@ func LatestUsage(events []agentkit.SessionEvent) UsageData {
 }
 
 // RepeatedToolCalls returns how many times the most recent tool call signature
-// repeats consecutively at the tail of the log, counting only calls after seq. A
-// stuck agent calling the same tool with the same input is the cheapest stall
-// signal available.
+// repeats consecutively at the tail of the log after seq.
 func RepeatedToolCalls(events []agentkit.SessionEvent, seq agentkit.EventSeq) int {
 	var signatures []string
 	for _, ev := range events {
@@ -249,7 +225,6 @@ func normalizeInput(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return strings.TrimSpace(string(raw))
 	}
-	// Re-marshal so key order and whitespace do not defeat the comparison.
 	out, err := json.Marshal(v)
 	if err != nil {
 		return strings.TrimSpace(string(raw))

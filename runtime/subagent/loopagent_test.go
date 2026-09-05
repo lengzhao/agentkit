@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -35,7 +35,7 @@ func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput)
 func newLoopSpawner(t *testing.T, async bool, summary string) (*LoopAgentSpawner, agentkit.SessionStore, chan agentkit.MessageEvent) {
 	t.Helper()
 	root := t.TempDir()
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
 		Workspace: ws,
 	})
@@ -84,7 +84,7 @@ func TestLoopAgentInheritsParentEnvelope(t *testing.T) {
 
 	var captured agentkit.TurnEnvelope
 	root := t.TempDir()
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 	unblock := make(chan struct{})
 	finished := make(chan struct{})
 	root := t.TempDir()
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestLoopAgentDefinitionsFromConfig(t *testing.T) {
 
 	root := t.TempDir()
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
-		Workspace: workspace.Static(root),
+		Workspace: rtworkspace.Static(root),
 	})
 	if err != nil {
 		t.Fatal(err)

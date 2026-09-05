@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -43,7 +43,7 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	ws := dirWorkspace{"local:agents": agentsDir}
 
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
-		Workspace: workspace.Static(t.TempDir()),
+		Workspace: rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

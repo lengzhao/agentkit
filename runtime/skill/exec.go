@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	capsskill "github.com/lengzhao/agentkit/cap/skill"
 )
 
 const defaultScriptTimeout = 60 * time.Second
@@ -26,7 +28,7 @@ type RunResult struct {
 }
 
 // RunScript executes a script relative to the skill directory identified by name.
-func RunScript(ctx context.Context, reg Registry, name, rel string, args []string, timeout time.Duration) (RunResult, error) {
+func RunScript(ctx context.Context, reg capsskill.Registry, name, rel string, args []string, timeout time.Duration) (RunResult, error) {
 	meta, err := reg.Load(ctx, name)
 	if err != nil {
 		return RunResult{}, err

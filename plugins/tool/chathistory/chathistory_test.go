@@ -21,28 +21,25 @@ func (s *stubProvider) ReadChatHistory(_ context.Context, req caphistory.Request
 	return s.result, nil
 }
 
-type stubRouter struct {
-	noopPlatform
+type stubHistoryPlatform struct {
 	providers map[string]caphistory.Provider
 }
 
-func (r *stubRouter) ChatHistoryFor(id string) caphistory.Provider {
+func (r *stubHistoryPlatform) ChatHistoryFor(id string) caphistory.Provider {
 	return r.providers[id]
 }
 
-type noopPlatform struct{}
-
-func (noopPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
+func (stubHistoryPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
 	return agentkit.MessageEvent{}, nil
 }
 
-func (noopPlatform) Send(context.Context, agentkit.OutboundEvent) error { return nil }
+func (stubHistoryPlatform) Send(context.Context, agentkit.OutboundEvent) error { return nil }
 
 func TestChatHistoryReturnsEmptyWithoutProvider(t *testing.T) {
 	t.Parallel()
 
 	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{
-		Platform: noopPlatform{},
+		History: &stubHistoryPlatform{providers: map[string]caphistory.Provider{}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,9 +74,9 @@ func TestChatHistoryRoutesThroughMultiplex(t *testing.T) {
 			Source:   "feishu",
 		},
 	}
-	router := &stubRouter{providers: map[string]caphistory.Provider{"feishu": provider}}
+	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": provider}}
 
-	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{Platform: router})
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,9 +108,9 @@ func TestChatHistoryThreadCanBeDisabled(t *testing.T) {
 	t.Parallel()
 
 	provider := &stubProvider{result: caphistory.Result{Source: "feishu"}}
-	router := &stubRouter{providers: map[string]caphistory.Provider{"feishu": provider}}
+	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": provider}}
 
-	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{Platform: router})
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
 	if err != nil {
 		t.Fatal(err)
 	}

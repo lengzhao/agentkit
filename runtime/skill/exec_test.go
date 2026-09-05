@@ -1,22 +1,25 @@
-package skill
+package skill_test
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	capsskill "github.com/lengzhao/agentkit/cap/skill"
+	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
 type staticRegistry struct {
 	dir string
 }
 
-func (r staticRegistry) List(context.Context) ([]Descriptor, error) {
-	return []Descriptor{{Name: "demo", Description: "demo", Path: r.dir}}, nil
+func (r staticRegistry) List(context.Context) ([]capsskill.Descriptor, error) {
+	return []capsskill.Descriptor{{Name: "demo", Description: "demo", Path: r.dir}}, nil
 }
 
-func (r staticRegistry) Load(context.Context, string) (Content, error) {
-	return Content{Name: "demo", Description: "demo", Path: r.dir}, nil
+func (r staticRegistry) Load(context.Context, string) (capsskill.Content, error) {
+	return capsskill.Content{Name: "demo", Description: "demo", Path: r.dir}, nil
 }
 
 func TestRunScript(t *testing.T) {
@@ -31,7 +34,7 @@ func TestRunScript(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := RunScript(context.Background(), staticRegistry{dir: filepath.Dir(dir)}, "demo", "scripts/echo.sh", nil, 0)
+	result, err := rtskill.RunScript(context.Background(), staticRegistry{dir: filepath.Dir(dir)}, "demo", "scripts/echo.sh", nil, 0)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -47,7 +50,7 @@ func TestRunScriptRejectsEscape(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	_, err := RunScript(context.Background(), staticRegistry{dir: dir}, "demo", "../secret.sh", nil, 0)
+	_, err := rtskill.RunScript(context.Background(), staticRegistry{dir: dir}, "demo", "../secret.sh", nil, 0)
 	if err == nil {
 		t.Fatal("expected path escape rejection")
 	}

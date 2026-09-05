@@ -2,10 +2,12 @@ package skill
 
 import (
 	"strings"
+
+	capsskill "github.com/lengzhao/agentkit/cap/skill"
 )
 
 // RenderLoaded formats a loaded skill for the model, including resource-base guidance.
-func RenderLoaded(content Content) string {
+func RenderLoaded(content capsskill.Content) string {
 	var b strings.Builder
 	b.WriteString("<skill_content name=\"")
 	b.WriteString(escapeAttr(content.Name))

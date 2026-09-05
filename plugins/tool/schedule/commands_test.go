@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	toolschedule "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -18,7 +18,7 @@ func TestCronSlashListsChannelJobs(t *testing.T) {
 	t.Parallel()
 
 	reg, err := pluginschedule.NewMulti(pluginschedule.MultiConfig{Path: "schedule.json"}, pluginschedule.MultiDeps{
-		Workspace: workspace.Static(t.TempDir()),
+		Workspace: rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestCronSlashRemove(t *testing.T) {
 	t.Parallel()
 
 	reg, err := pluginschedule.NewMulti(pluginschedule.MultiConfig{Path: "schedule.json"}, pluginschedule.MultiDeps{
-		Workspace: workspace.Static(t.TempDir()),
+		Workspace: rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

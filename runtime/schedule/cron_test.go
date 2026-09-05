@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
-func mustParse(t *testing.T, expr string) schedule.Schedule {
+func mustParse(t *testing.T, expr string) rtschedule.Schedule {
 	t.Helper()
-	s, err := schedule.ParseCron(expr)
+	s, err := rtschedule.ParseCron(expr)
 	if err != nil {
 		t.Fatalf("ParseCron(%q): %v", expr, err)
 	}
@@ -210,7 +210,7 @@ func TestParseRejectsBadExpressions(t *testing.T) {
 		"/5 * * * *",        // step with no range
 	}
 	for _, expr := range bad {
-		if _, err := schedule.ParseCron(expr); err == nil {
+		if _, err := rtschedule.ParseCron(expr); err == nil {
 			t.Errorf("ParseCron(%q) should have failed", expr)
 		}
 	}

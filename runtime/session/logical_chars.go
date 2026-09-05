@@ -4,16 +4,15 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	capsess "github.com/lengzhao/agentkit/cap/session"
 )
 
-// MetadataLogicalChars stores pre-sanitize message size on user/assistant events.
-const MetadataLogicalChars = "logical_chars"
+const MetadataLogicalChars = capsess.MetadataLogicalChars
 
 const visionPlaceholderChars = 256
 
 // EstimateLogicalChars approximates model-visible size before session storage.
-// Data URLs are counted as a small fixed slot because media is stripped on disk.
 func EstimateLogicalChars(msg agentkit.ModelMessage) int {
 	chars := len(msg.Role)
 	chars += partsLogicalChars(msg.Content)
@@ -35,7 +34,7 @@ func partsLogicalChars(parts []agentkit.ContentPart) int {
 			if isDataURL(part.URL) {
 				chars += visionPlaceholderChars
 			}
-		case media.ContentTypeAttachmentRef:
+		case rtmedia.ContentTypeAttachmentRef:
 			if part.URL != "" && !isDataURL(part.URL) {
 				chars += len(part.URL)
 			}

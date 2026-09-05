@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/bootstrap"
 )
 
@@ -95,11 +96,11 @@ type scopedWorkspace struct {
 }
 
 func newScopedWorkspace(global, local string) (workspace.Service, error) {
-	g, err := workspace.Resolve(global)
+	g, err := rtworkspace.Resolve(global)
 	if err != nil {
 		return nil, err
 	}
-	l, err := workspace.Resolve(local)
+	l, err := rtworkspace.Resolve(local)
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +108,13 @@ func newScopedWorkspace(global, local string) (workspace.Service, error) {
 }
 
 func (s *scopedWorkspace) Resolve(_ context.Context, rel string) (string, error) {
-	if scope, path, ok := workspace.ParseScoped(rel); ok {
+	if scope, path, ok := rtworkspace.ParseScoped(rel); ok {
 		switch scope {
 		case workspace.ScopeGlobal:
-			return workspace.ResolveRel(s.global, path)
+			return rtworkspace.ResolveRel(s.global, path)
 		case workspace.ScopeLocal:
-			return workspace.ResolveRel(s.local, path)
+			return rtworkspace.ResolveRel(s.local, path)
 		}
 	}
-	return workspace.ResolveRel(s.local, rel)
+	return rtworkspace.ResolveRel(s.local, rel)
 }

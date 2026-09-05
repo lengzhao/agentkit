@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -41,7 +41,7 @@ func TestResolveRunnerSessionStoreFromAgentWhenUnset(t *testing.T) {
 		LLM:          provider,
 		Tools:        toolRT,
 		Prompt:       assembler,
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

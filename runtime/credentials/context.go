@@ -1,6 +1,10 @@
 package credentials
 
-import "context"
+import (
+	"context"
+
+	capscredentials "github.com/lengzhao/agentkit/cap/credentials"
+)
 
 type contextKey string
 
@@ -16,18 +20,18 @@ func WithSecrets(ctx context.Context, secrets map[string]string) context.Context
 }
 
 // SecretFromContext returns a secret when ctx carries an override for ref.
-func SecretFromContext(ctx context.Context, ref string) (Secret, bool) {
+func SecretFromContext(ctx context.Context, ref string) (capscredentials.Secret, bool) {
 	bag, ok := ctx.Value(keySecrets).(map[string]string)
 	if !ok || len(bag) == 0 {
-		return Secret{}, false
+		return capscredentials.Secret{}, false
 	}
 	if value := bag[ref]; value != "" {
-		return Secret{Ref: ref, Value: value}, true
+		return capscredentials.Secret{Ref: ref, Value: value}, true
 	}
 	if key := EnvKey(ref); key != ref {
 		if value := bag[key]; value != "" {
-			return Secret{Ref: ref, Value: value}, true
+			return capscredentials.Secret{Ref: ref, Value: value}, true
 		}
 	}
-	return Secret{}, false
+	return capscredentials.Secret{}, false
 }

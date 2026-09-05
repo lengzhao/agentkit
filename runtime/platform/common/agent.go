@@ -5,6 +5,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 // AgentRoutingConfig optionally pins inbound messages to a Loop agent.
@@ -37,6 +38,6 @@ func PermissionReplyEvent(agentID agentkit.AgentID, sessionID agentkit.SessionID
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
-		Reply:      permission.MarshalReply(reply),
+		Reply:      rtpermission.MarshalReply(reply),
 	}, platformID, sessionID)
 }

@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -88,7 +88,7 @@ func TestRunTurnOverflowCompactAndRetry(t *testing.T) {
 		Tools:        toolRuntime,
 		Prompt:       assembler,
 		Compaction:   []compaction.Service{compact},
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestRunTurnOverflowRecoveryOnlyOnce(t *testing.T) {
 		Tools:        toolRuntime,
 		Prompt:       assembler,
 		Compaction:   []compaction.Service{compact},
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

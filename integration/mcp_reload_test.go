@@ -12,6 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
@@ -32,7 +33,7 @@ func TestIntegrationMCPEndToEndHotReload(t *testing.T) {
 	}
 
 	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{Files: []string{configPath}}, mcpplugin.MCPDeps{
-		Workspace: workspace.Static(dir),
+		Workspace: rtworkspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatal(err)

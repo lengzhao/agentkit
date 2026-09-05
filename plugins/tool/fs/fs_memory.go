@@ -11,7 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 type FSMemoryConfig struct {
@@ -86,10 +86,10 @@ func (s *memoryWorkspaceFS) readImage(_ context.Context, path string) (string, e
 		return "", fmt.Errorf("file not found: %s", path)
 	}
 	data := []byte(content)
-	if len(data) > media.DefaultMaxWorkspaceImageBytes {
-		return media.FormatReadImageTooLarge(path, int64(len(data)), media.DefaultMaxWorkspaceImageBytes), nil
+	if len(data) > rtmedia.DefaultMaxWorkspaceImageBytes {
+		return rtmedia.FormatReadImageTooLarge(path, int64(len(data)), rtmedia.DefaultMaxWorkspaceImageBytes), nil
 	}
-	return media.FormatReadImageResult(path, media.DetectMIME(path, data), int64(len(data))), nil
+	return rtmedia.FormatReadImageResult(path, rtmedia.DetectMIME(path, data), int64(len(data))), nil
 }
 
 func (s *memoryWorkspaceFS) writeText(_ context.Context, path, content string) error {

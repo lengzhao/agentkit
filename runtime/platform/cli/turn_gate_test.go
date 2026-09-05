@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 func TestCLIReceiveWaitsForTurnEnd(t *testing.T) {
@@ -77,7 +77,7 @@ func TestCLIPermissionBypassesTurnWait(t *testing.T) {
 			done <- errMissingReply
 			return
 		}
-		reply, err := permission.DecodeReply(event.Reply)
+		reply, err := rtpermission.DecodeReply(event.Reply)
 		if err != nil {
 			done <- err
 			return

@@ -3,7 +3,7 @@ package slack
 import (
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestNewRejectsInvalidDomain(t *testing.T) {
@@ -11,7 +11,7 @@ func TestNewRejectsInvalidDomain(t *testing.T) {
 		BotToken: "xoxb-test",
 		AppToken: "xapp-test",
 		Domain:   "://bad",
-	}, Deps{Workspace: workspace.Static(t.TempDir())})
+	}, Deps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err == nil {
 		t.Fatal("expected invalid domain error")
 	}

@@ -1,14 +1,17 @@
-package skill
+package skill_test
 
 import (
 	"strings"
 	"testing"
+
+	capsskill "github.com/lengzhao/agentkit/cap/skill"
+	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
 func TestRenderLoadedIncludesResourceBase(t *testing.T) {
 	t.Parallel()
 
-	text := RenderLoaded(Content{
+	text := rtskill.RenderLoaded(capsskill.Content{
 		Name: "demo",
 		Body: "Do the thing.",
 		Path: "/tmp/skills/demo",
@@ -30,10 +33,10 @@ func TestRenderLoadedIncludesResourceBase(t *testing.T) {
 func TestSanitizeRelativePath(t *testing.T) {
 	t.Parallel()
 
-	if _, err := SanitizeRelativePath("../secret.md"); err == nil {
+	if _, err := rtskill.SanitizeRelativePath("../secret.md"); err == nil {
 		t.Fatal("expected escape rejection")
 	}
-	if got, err := SanitizeRelativePath("reference.md"); err != nil || got != "reference.md" {
+	if got, err := rtskill.SanitizeRelativePath("reference.md"); err != nil || got != "reference.md" {
 		t.Fatalf("got %q err=%v", got, err)
 	}
 }

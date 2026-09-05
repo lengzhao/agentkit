@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -22,7 +23,7 @@ type SendConfig struct {
 }
 
 type SendDeps struct {
-	Platform  agentkit.Platform `json:"platform"`
+	Sender    capsdelivery.Sender `json:"sender"`
 	Workspace workspace.Service `json:"workspace,omitempty"`
 }
 
@@ -51,13 +52,13 @@ func useEmit(_ context.Context, input SendInput) bool {
 // NewSend registers tool/send: Send a proactive user-visible message through the platform.
 //
 // Best practices:
-//   - Wire the same platform instance runner uses (platform.default).
+//   - Wire the same sender instance runner uses (platform.default).
 //   - Text and path may be sent together (text first, then file). Path needs the workspace dep.
 //   - Platform/channel routing comes from context. Target sessionId, userId, or neither (current inbox).
 //   - Slash: /send <sessionId|SlackChannelId> <message> | /send @<userId> <message>
 func NewSend(cfg SendConfig, deps SendDeps) (agentkit.Tool, error) {
-	if deps.Platform == nil {
-		return nil, fmt.Errorf("tool/send requires platform dependency")
+	if deps.Sender == nil {
+		return nil, fmt.Errorf("tool/send requires sender dependency")
 	}
 	tool, err := agentkit.NewTool[SendInput, SendOutput]("send", func(ctx context.Context, input SendInput) (SendOutput, error) {
 		if err := Dispatch(ctx, deps, cfg, input); err != nil {

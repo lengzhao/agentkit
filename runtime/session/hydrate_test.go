@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -25,12 +25,12 @@ func TestHydrateLocalAttachmentsReloadsWorkspaceImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	ctx := context.Background()
 	msgs := []agentkit.ModelMessage{{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
-			Type:   media.ContentTypeAttachmentRef,
+			Type:   rtmedia.ContentTypeAttachmentRef,
 			Source: "upload/shot.png",
 			MIME:   "image/png",
 		}},
@@ -60,9 +60,9 @@ func TestHydrateLocalAttachmentsInjectsReadToolVision(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	ctx := context.Background()
-	readResult := media.FormatReadImageResult("upload/shot.png", "image/png", int64(len(png)))
+	readResult := rtmedia.FormatReadImageResult("upload/shot.png", "image/png", int64(len(png)))
 	msgs := []agentkit.ModelMessage{
 		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "look"}}},
 		{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "call-1", Name: "read"}}},
@@ -94,7 +94,7 @@ func TestSanitizeStoresWorkspaceImagePath(t *testing.T) {
 			Source: "upload/shot.png",
 		}},
 	}, 0)
-	if len(msg.Content) != 1 || msg.Content[0].Type != media.ContentTypeAttachmentRef {
+	if len(msg.Content) != 1 || msg.Content[0].Type != rtmedia.ContentTypeAttachmentRef {
 		t.Fatalf("content = %#v", msg.Content)
 	}
 }

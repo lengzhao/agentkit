@@ -7,14 +7,14 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestInboundFromContentSavesFiles(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 
 	files := []FileAttachment{{
 		MimeType: "text/plain",
@@ -59,7 +59,7 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	ws := workspace.Static(root)
+	ws := rtworkspace.Static(root)
 	images := []ImageAttachment{{
 		MimeType: "image/png",
 		Data:     []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a},

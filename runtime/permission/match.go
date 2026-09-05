@@ -4,39 +4,34 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-)
 
-// AllowDenyMatch is the parsed allow/deny reply.
-type AllowDenyMatch struct {
-	Allow        bool
-	Recognized   bool
-	UpdatedInput map[string]any
-}
+	capspermission "github.com/lengzhao/agentkit/cap/permission"
+)
 
 // MatchAllowDeny parses a KindAllowDeny reply. Decision takes precedence; Text is
 // a CLI fallback when Decision is empty.
-func MatchAllowDeny(reply Reply) AllowDenyMatch {
+func MatchAllowDeny(reply capspermission.Reply) capspermission.AllowDenyMatch {
 	decision := strings.TrimSpace(strings.ToLower(reply.Decision))
 	if decision == "" {
 		decision = strings.TrimSpace(strings.ToLower(reply.Text))
 	}
 	switch decision {
 	case "allow", "y", "yes":
-		out := AllowDenyMatch{Allow: true, Recognized: true}
+		out := capspermission.AllowDenyMatch{Allow: true, Recognized: true}
 		if len(reply.UpdatedInput) > 0 {
 			out.UpdatedInput = reply.UpdatedInput
 		}
 		return out
 	case "deny", "n", "no":
-		return AllowDenyMatch{Allow: false, Recognized: true}
+		return capspermission.AllowDenyMatch{Allow: false, Recognized: true}
 	default:
-		return AllowDenyMatch{Allow: false, Recognized: false}
+		return capspermission.AllowDenyMatch{Allow: false, Recognized: false}
 	}
 }
 
 // MatchReply resolves a KindQuestion reply against a question. Uses Selected and
 // Text only; Decision is ignored.
-func MatchReply(reply Reply, q Question) QuestionResult {
+func MatchReply(reply capspermission.Reply, q capspermission.Question) capspermission.QuestionResult {
 	if len(reply.Selected) > 0 {
 		return selectedReply(reply, q)
 	}
@@ -47,13 +42,13 @@ func MatchReply(reply Reply, q Question) QuestionResult {
 		}
 	}
 	if len(q.Options) == 0 {
-		return QuestionResult{Text: text}
+		return capspermission.QuestionResult{Text: text}
 	}
 	return matchOptionText(text, q.Options)
 }
 
-func selectedReply(reply Reply, q Question) QuestionResult {
-	out := QuestionResult{Selected: append([]int(nil), reply.Selected...)}
+func selectedReply(reply capspermission.Reply, q capspermission.Question) capspermission.QuestionResult {
+	out := capspermission.QuestionResult{Selected: append([]int(nil), reply.Selected...)}
 	if len(q.Options) == 0 || len(reply.Selected) == 0 {
 		out.Text = strings.TrimSpace(reply.Text)
 		return out
@@ -65,13 +60,13 @@ func selectedReply(reply Reply, q Question) QuestionResult {
 	return out
 }
 
-func matchOptionText(text string, options []Option) QuestionResult {
+func matchOptionText(text string, options []capspermission.Option) capspermission.QuestionResult {
 	labels := make([]string, len(options))
 	for i, opt := range options {
 		labels[i] = opt.Label
 	}
 	got := matchLabels(text, labels)
-	out := QuestionResult{Text: got.text}
+	out := capspermission.QuestionResult{Text: got.text}
 	if got.selected >= 0 {
 		out.Selected = []int{got.selected}
 	}
@@ -99,7 +94,7 @@ func matchLabels(text string, options []string) matchedLabel {
 }
 
 // UnrecognizedAllowDenyReason formats a reason for an unrecognized allow/deny reply.
-func UnrecognizedAllowDenyReason(reply Reply) string {
+func UnrecognizedAllowDenyReason(reply capspermission.Reply) string {
 	raw := strings.TrimSpace(reply.Text)
 	if raw == "" {
 		raw = strings.TrimSpace(reply.Decision)

@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -191,7 +191,7 @@ func TestStorePassesMaxLoadedEvents(t *testing.T) {
 		Dir:               ".",
 		MaxLoadedEvents:   3,
 		MaxCachedSessions: 1,
-	}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}

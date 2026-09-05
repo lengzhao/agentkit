@@ -123,7 +123,7 @@ type MessageEvent struct {
 	Message           ModelMessage
 	// Metadata is optional platform context copied onto persisted user messages.
 	Metadata map[string]any `json:"metadata,omitempty"`
-	// Reply carries a permission answer as JSON. Decode with permission.DecodeReply.
+	// Reply carries a permission answer as JSON. Decode with runtime/permission.DecodeReply.
 	Reply json.RawMessage `json:"reply,omitempty"`
 }
 

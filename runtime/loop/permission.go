@@ -12,6 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -43,9 +44,9 @@ func (p *pendingPermission) signalSuperseded() {
 }
 
 func (c *Control) Await(ctx context.Context, req permission.Request) (permission.Result, error) {
-	capab := permission.CapabilityFrom(ctx)
+	capab := rtpermission.CapabilityFrom(ctx)
 	if !capab.Interactive {
-		return permission.NoHuman(req, "platform has no interactive user"), nil
+		return rtpermission.NoHuman(req, "platform has no interactive user"), nil
 	}
 	if err := validateRequest(req); err != nil {
 		return permission.Result{}, err
@@ -59,7 +60,7 @@ func (c *Control) Await(ctx context.Context, req permission.Request) (permission
 		}
 	}
 	if req.Timeout == 0 {
-		req.Timeout = permission.EffectiveTimeout(req, capab)
+		req.Timeout = rtpermission.EffectiveTimeout(req, capab)
 	}
 	if req.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -94,7 +95,7 @@ func validateRequest(req permission.Request) error {
 func (c *Control) awaitOne(ctx context.Context, req permission.Request, capab permission.Capability) (permission.Result, error) {
 	emit := agentkit.OutboundEmitFromContext(ctx)
 	if emit == nil {
-		return permission.NoHuman(req, "no outbound channel for permission"), nil
+		return rtpermission.NoHuman(req, "no outbound channel for permission"), nil
 	}
 
 	pending, err := c.registerPermissionPending(req, capab)
@@ -121,14 +122,14 @@ func (c *Control) waitPermissionReply(ctx context.Context, req permission.Reques
 	select {
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return permission.TimedOut(req), nil
+			return rtpermission.TimedOut(req), nil
 		}
-		return permission.Cancelled(req, "permission abandoned: "+ctx.Err().Error()), nil
+		return rtpermission.Cancelled(req, "permission abandoned: "+ctx.Err().Error()), nil
 	case <-pending.superseded:
-		return permission.Superseded(req, "superseded by new inbound message"), nil
+		return rtpermission.Superseded(req, "superseded by new inbound message"), nil
 	case reply, ok := <-pending.replies:
 		if !ok {
-			return permission.Cancelled(req, "permission closed"), nil
+			return rtpermission.Cancelled(req, "permission closed"), nil
 		}
 		return c.resolvePermissionReply(req, reply, capab)
 	}
@@ -136,16 +137,16 @@ func (c *Control) waitPermissionReply(ctx context.Context, req permission.Reques
 
 func (c *Control) resolvePermissionReply(req permission.Request, reply permission.Reply, capab permission.Capability) (permission.Result, error) {
 	if reply.Cancelled {
-		return permission.Cancelled(req, "user declined"), nil
+		return rtpermission.Cancelled(req, "user declined"), nil
 	}
 	switch req.Kind {
 	case permission.KindAllowDeny:
-		matched := permission.MatchAllowDeny(reply)
+		matched := rtpermission.MatchAllowDeny(reply)
 		if !matched.Recognized {
 			return permission.Result{
 				Outcome: permission.OutcomeResolved,
 				Allow:   false,
-				Reason:  permission.UnrecognizedAllowDenyReason(reply),
+				Reason:  rtpermission.UnrecognizedAllowDenyReason(reply),
 			}, nil
 		}
 		out := permission.Result{Outcome: permission.OutcomeResolved, Allow: matched.Allow}
@@ -155,7 +156,7 @@ func (c *Control) resolvePermissionReply(req permission.Request, reply permissio
 		return out, nil
 	case permission.KindQuestion:
 		q := *req.Question
-		answer := permission.MatchReply(reply, q)
+		answer := rtpermission.MatchReply(reply, q)
 		if !capab.MultiSelect && len(answer.Selected) > 1 {
 			answer.Selected = answer.Selected[:1]
 			if len(q.Options) > 0 && answer.Selected[0] >= 0 && answer.Selected[0] < len(q.Options) {
@@ -237,7 +238,7 @@ func (l *Default) TryDeliverPermission(event agentkit.MessageEvent) bool {
 	if conversation == "" || len(event.Reply) == 0 {
 		return false
 	}
-	reply, err := permission.DecodeReply(event.Reply)
+	reply, err := rtpermission.DecodeReply(event.Reply)
 	if err != nil {
 		return false
 	}

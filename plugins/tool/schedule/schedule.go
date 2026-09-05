@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/schedule"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -17,7 +18,7 @@ type ScheduleConfig struct {
 }
 
 type ScheduleDeps struct {
-	Schedule schedule.Registry `json:"schedule"`
+	Schedule capschedule.Registry `json:"schedule"`
 }
 
 type ScheduleInput struct {
@@ -101,7 +102,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return ScheduleOutput{}, err
 			}
-			if countSource(existing, schedule.SourceAgent) >= maxJobs {
+			if countSource(existing, capschedule.SourceAgent) >= maxJobs {
 				return ScheduleOutput{}, fmt.Errorf("cannot add: already at the limit of %d scheduled jobs; remove one first", maxJobs)
 			}
 			added, err := registry.Add(ctx, agentJobFromContext(ctx, job))
@@ -144,7 +145,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	return &scheduleBundle{tool: tool, registry: registry}, nil
 }
 
-func countSource(jobs []schedule.Job, source string) int {
+func countSource(jobs []capschedule.Job, source string) int {
 	n := 0
 	for _, job := range jobs {
 		if job.Source == source && !job.Fired {
@@ -154,7 +155,7 @@ func countSource(jobs []schedule.Job, source string) int {
 	return n
 }
 
-func scheduleOutput(jobs []schedule.Job, instruction string, includeFired bool) ScheduleOutput {
+func scheduleOutput(jobs []capschedule.Job, instruction string, includeFired bool) ScheduleOutput {
 	out := ScheduleOutput{Instruction: instruction, Jobs: make([]ScheduleEntry, 0, len(jobs))}
 	for _, job := range jobs {
 		if job.Fired && !includeFired {
@@ -162,7 +163,7 @@ func scheduleOutput(jobs []schedule.Job, instruction string, includeFired bool) 
 		}
 		entry := ScheduleEntry{
 			ID:       job.ID,
-			Kind:     schedule.JobKind(job),
+			Kind:     rtschedule.JobKind(job),
 			Cron:     job.Cron,
 			In:       job.In,
 			Prompt:   job.Prompt,
@@ -178,7 +179,7 @@ func scheduleOutput(jobs []schedule.Job, instruction string, includeFired bool) 
 		if !job.FiredAt.IsZero() {
 			entry.FiredAt = job.FiredAt.Format(time.RFC3339)
 		}
-		if next, ok := schedule.NextFire(job, job.LastRun); ok {
+		if next, ok := rtschedule.NextFire(job, job.LastRun); ok {
 			entry.NextRun = next.Format(time.RFC3339)
 		}
 		out.Jobs = append(out.Jobs, entry)
@@ -186,54 +187,54 @@ func scheduleOutput(jobs []schedule.Job, instruction string, includeFired bool) 
 	return out
 }
 
-func jobFromInput(now time.Time, input ScheduleInput) (schedule.Job, error) {
+func jobFromInput(now time.Time, input ScheduleInput) (capschedule.Job, error) {
 	kind := strings.ToLower(strings.TrimSpace(input.Kind))
 	if kind == "" {
-		return schedule.Job{}, fmt.Errorf("add requires kind=cron, kind=delay, or kind=at")
+		return capschedule.Job{}, fmt.Errorf("add requires kind=cron, kind=delay, or kind=at")
 	}
-	job := schedule.Job{
+	job := capschedule.Job{
 		Kind:   kind,
 		Prompt: strings.TrimSpace(input.Prompt),
 		Note:   strings.TrimSpace(input.Note),
-		Source: schedule.SourceAgent,
+		Source: capschedule.SourceAgent,
 	}
 	switch kind {
-	case schedule.KindCron:
+	case capschedule.KindCron:
 		if strings.TrimSpace(input.In) != "" || strings.TrimSpace(input.At) != "" {
-			return schedule.Job{}, fmt.Errorf("kind=cron only accepts cron")
+			return capschedule.Job{}, fmt.Errorf("kind=cron only accepts cron")
 		}
 		job.Cron = strings.TrimSpace(input.Cron)
 		if job.Cron == "" {
-			return schedule.Job{}, fmt.Errorf("kind=cron requires cron")
+			return capschedule.Job{}, fmt.Errorf("kind=cron requires cron")
 		}
-		if _, err := schedule.ParseCron(job.Cron); err != nil {
-			return schedule.Job{}, err
+		if _, err := rtschedule.ParseCron(job.Cron); err != nil {
+			return capschedule.Job{}, err
 		}
-	case schedule.KindDelay:
+	case capschedule.KindDelay:
 		if strings.TrimSpace(input.Cron) != "" || strings.TrimSpace(input.At) != "" {
-			return schedule.Job{}, fmt.Errorf("kind=delay only accepts in")
+			return capschedule.Job{}, fmt.Errorf("kind=delay only accepts in")
 		}
 		delayText := strings.TrimSpace(input.In)
 		if delayText == "" {
-			return schedule.Job{}, fmt.Errorf("kind=delay requires in")
+			return capschedule.Job{}, fmt.Errorf("kind=delay requires in")
 		}
 		delay, err := time.ParseDuration(delayText)
 		if err != nil || delay <= 0 {
-			return schedule.Job{}, fmt.Errorf("invalid delay %q", delayText)
+			return capschedule.Job{}, fmt.Errorf("invalid delay %q", delayText)
 		}
 		job.In = delayText
 		job.FireAt = now.Add(delay)
-	case schedule.KindAt:
+	case capschedule.KindAt:
 		if strings.TrimSpace(input.Cron) != "" || strings.TrimSpace(input.In) != "" {
-			return schedule.Job{}, fmt.Errorf("kind=at only accepts at")
+			return capschedule.Job{}, fmt.Errorf("kind=at only accepts at")
 		}
 		at, err := parseAt(strings.TrimSpace(input.At), now.Location())
 		if err != nil {
-			return schedule.Job{}, err
+			return capschedule.Job{}, err
 		}
 		job.FireAt = at
 	default:
-		return schedule.Job{}, fmt.Errorf("unknown schedule kind %q", input.Kind)
+		return capschedule.Job{}, fmt.Errorf("unknown schedule kind %q", input.Kind)
 	}
 	return job, nil
 }
@@ -255,7 +256,7 @@ func parseAt(raw string, loc *time.Location) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid at time %q", raw)
 }
 
-func agentJobFromContext(ctx context.Context, job schedule.Job) schedule.Job {
+func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.Job {
 	if delivery := session.DeliveryRouteFromContext(ctx); delivery != "" {
 		job.DeliverySessionID = string(delivery)
 	}

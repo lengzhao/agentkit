@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -90,7 +91,7 @@ func (s *tokenLimitService) Compact(ctx context.Context, req compaction.Request)
 
 	inner := req
 	inner.Force = true
-	messages, applied, err := compaction.ApplyAll(ctx, s.services, inner)
+	messages, applied, err := rtcompaction.ApplyAll(ctx, s.services, inner)
 	if err != nil {
 		return compaction.Result{}, err
 	}

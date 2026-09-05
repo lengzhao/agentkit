@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 // DefaultMaxStoredTextBytes caps text persisted in session history.
@@ -31,7 +31,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 	if len(msg.ToolResults) > 0 {
 		out.ToolResults = make([]agentkit.ToolResult, len(msg.ToolResults))
 		for i, result := range msg.ToolResults {
-			out.ToolResults[i] = compaction.TruncateToolResult(result, maxTextBytes)
+			out.ToolResults[i] = rtcompaction.TruncateToolResult(result, maxTextBytes)
 		}
 	}
 	return out
@@ -46,7 +46,7 @@ func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int) []agen
 		switch part.Type {
 		case "thinking":
 			continue
-		case media.ContentTypeAttachmentRef:
+		case rtmedia.ContentTypeAttachmentRef:
 			out = append(out, part)
 		case "image", "image_url", "document", "file", "audio", "video":
 			if ref := sanitizeAttachmentRef(part); ref != nil {
@@ -83,7 +83,7 @@ func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int) []agen
 
 func sanitizeAttachmentRef(part agentkit.ContentPart) *agentkit.ContentPart {
 	ref := agentkit.ContentPart{
-		Type: media.ContentTypeAttachmentRef,
+		Type: rtmedia.ContentTypeAttachmentRef,
 		MIME: strings.TrimSpace(part.MIME),
 	}
 	if src := strings.TrimSpace(part.Source); src != "" {

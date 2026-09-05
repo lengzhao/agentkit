@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/learning"
 )
 
@@ -49,14 +49,14 @@ func TestMemoryMDBuildStripsMetadata(t *testing.T) {
 	}
 
 	svc, err := learning.New(learning.Config{}, learning.Deps{
-		Workspace:    workspace.Static(root),
+		Workspace:    rtworkspace.Static(root),
 		SessionStore: learningStubSessionStore{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	provider, err := NewMemoryMD(MemoryMDConfig{Root: "work"}, MemoryMDDeps{
-		Workspace: workspace.Static(root),
+		Workspace: rtworkspace.Static(root),
 		Learning:  svc,
 	})
 	if err != nil {

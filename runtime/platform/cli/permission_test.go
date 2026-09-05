@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 func TestCLIPermissionRequestReply(t *testing.T) {
@@ -47,7 +48,7 @@ func TestCLIPermissionRequestReply(t *testing.T) {
 	if len(event.Reply) == 0 {
 		t.Fatal("expected permission reply event")
 	}
-	reply, err := permission.DecodeReply(event.Reply)
+	reply, err := rtpermission.DecodeReply(event.Reply)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +92,7 @@ func TestCLIApprovalRequestReply(t *testing.T) {
 	if len(event.Reply) == 0 {
 		t.Fatal("expected permission reply event")
 	}
-	reply, err := permission.DecodeReply(event.Reply)
+	reply, err := rtpermission.DecodeReply(event.Reply)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +170,7 @@ func TestReceiveRoutesBlockedPromptToPermission(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("receive: %v", err)
 	case event := <-done:
-		reply, err := permission.DecodeReply(event.Reply)
+		reply, err := rtpermission.DecodeReply(event.Reply)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +236,7 @@ func TestSendReceivePendingConcurrent(t *testing.T) {
 		if len(event.Reply) == 0 {
 			t.Fatalf("event = %+v", event)
 		}
-		reply, err := permission.DecodeReply(event.Reply)
+		reply, err := rtpermission.DecodeReply(event.Reply)
 		if err != nil {
 			t.Fatal(err)
 		}

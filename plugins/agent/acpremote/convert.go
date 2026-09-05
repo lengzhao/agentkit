@@ -11,6 +11,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 func modelMessageToPrompt(msg agentkit.ModelMessage) []acp.ContentBlock {
@@ -97,7 +98,7 @@ func denyPermission(params acp.RequestPermissionRequest) acp.RequestPermissionRe
 }
 
 func requestPermissionViaBroker(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
-	broker, ok := permission.BrokerFrom(ctx)
+	broker, ok := rtpermission.BrokerFrom(ctx)
 	if !ok {
 		return denyPermission(params), nil
 	}

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -21,7 +21,7 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 
 	dir := t.TempDir()
 	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
-		Workspace: workspace.Static(dir),
+		Workspace: rtworkspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatal(err)

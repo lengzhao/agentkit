@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -58,7 +59,7 @@ func (a *Runtime) runForcedCompaction(ctx context.Context, sess agentkit.Session
 	if err != nil {
 		return 0, err
 	}
-	_, applied, err := compaction.ApplyAll(ctx, a.compaction, compaction.Request{
+	_, applied, err := rtcompaction.ApplyAll(ctx, a.compaction, compaction.Request{
 		SessionID: sess.ID(),
 		AgentID:   a.id,
 		Session:   sess,

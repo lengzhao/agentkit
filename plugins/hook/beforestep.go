@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit"
 )
@@ -94,7 +95,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if err != nil {
 		return "", err
 	}
-	_, applied, err := compaction.ApplyAll(ctx, c.services, compaction.Request{
+	_, applied, err := rtcompaction.ApplyAll(ctx, c.services, compaction.Request{
 		SessionID: sessionID,
 		AgentID:   agentID,
 		Session:   sess,
@@ -122,7 +123,7 @@ func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) er
 		}
 	}
 
-	messages, _, err := compaction.ApplyAll(ctx, p.services, compaction.Request{
+	messages, _, err := rtcompaction.ApplyAll(ctx, p.services, compaction.Request{
 		SessionID: sessionID,
 		AgentID:   agentID,
 		Session:   sess,

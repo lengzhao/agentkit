@@ -7,15 +7,16 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/compaction"
+	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 )
 
 func TestRetryCallRecoversTransientError(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int32
-	policy := compaction.RetryPolicy{Enabled: true, MaxRetries: 3, BaseDelayMs: 1}
-	err := compaction.RetryCall(context.Background(), policy, func(err error) bool { return err != nil }, func() error {
+	policy := capscompaction.RetryPolicy{Enabled: true, MaxRetries: 3, BaseDelayMs: 1}
+	err := rtcompaction.RetryCall(context.Background(), policy, func(err error) bool { return err != nil }, func() error {
 		if calls.Add(1) == 1 {
 			return errors.New("rate limit exceeded")
 		}
@@ -32,8 +33,8 @@ func TestRetryCallRecoversTransientError(t *testing.T) {
 func TestRetryCallDoesNotRetryQuotaError(t *testing.T) {
 	t.Parallel()
 
-	policy := compaction.RetryPolicy{Enabled: true, MaxRetries: 3, BaseDelayMs: 1}
-	err := compaction.RetryCall(context.Background(), policy, func(err error) bool {
+	policy := capscompaction.RetryPolicy{Enabled: true, MaxRetries: 3, BaseDelayMs: 1}
+	err := rtcompaction.RetryCall(context.Background(), policy, func(err error) bool {
 		return err != nil && err.Error() != "insufficient_quota"
 	}, func() error {
 		return errors.New("insufficient_quota")
@@ -47,10 +48,10 @@ func TestRetryCallEmitsCallbacks(t *testing.T) {
 	t.Parallel()
 
 	var scheduled, finished int
-	policy := compaction.RetryPolicy{Enabled: true, MaxRetries: 2, BaseDelayMs: 1}
-	err := compaction.RetryCall(context.Background(), policy, func(err error) bool { return true }, func() error {
+	policy := capscompaction.RetryPolicy{Enabled: true, MaxRetries: 2, BaseDelayMs: 1}
+	err := rtcompaction.RetryCall(context.Background(), policy, func(err error) bool { return true }, func() error {
 		return fmt.Errorf("temporary")
-	}, &compaction.SummarizationRetryCallbacks{
+	}, &capscompaction.SummarizationRetryCallbacks{
 		OnScheduled: func(attempt, maxAttempts, delayMs int, errorMessage string) {
 			scheduled++
 		},

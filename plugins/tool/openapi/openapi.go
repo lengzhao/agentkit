@@ -15,6 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/configfile"
 )
 
@@ -96,7 +97,7 @@ func filterGlobalAPIFiles(files []string) []string {
 		if rel == "" {
 			continue
 		}
-		scope, _, scoped := workspace.ParseScoped(rel)
+		scope, _, scoped := rtworkspace.ParseScoped(rel)
 		if scoped && scope == workspace.ScopeGlobal {
 			out = append(out, rel)
 		}

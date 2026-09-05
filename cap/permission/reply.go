@@ -1,10 +1,5 @@
 package permission
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
 // Reply is the inbound answer to a permission/request.
 //
 // Field usage by request Kind:
@@ -21,30 +16,4 @@ type Reply struct {
 	Text         string         `json:"text,omitempty"`
 	UpdatedInput map[string]any `json:"updatedInput,omitempty"`
 	Cancelled    bool           `json:"cancelled,omitempty"`
-}
-
-func MarshalReply(reply Reply) json.RawMessage {
-	return json.RawMessage(mustMarshal(reply))
-}
-
-func DecodeReply(raw json.RawMessage) (Reply, error) {
-	if len(raw) == 0 {
-		return Reply{}, fmt.Errorf("permission reply is empty")
-	}
-	var reply Reply
-	if err := json.Unmarshal(raw, &reply); err != nil {
-		return Reply{}, err
-	}
-	if reply.RequestID == "" {
-		return Reply{}, fmt.Errorf("permission reply missing requestId")
-	}
-	return reply, nil
-}
-
-func mustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return b
 }

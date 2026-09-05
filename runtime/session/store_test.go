@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -15,7 +15,7 @@ func TestStoreIsolatesSessionsByID(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestStoreIsolatesSessionsByID(t *testing.T) {
 func TestStoreRejectsUnsafeSessionID(t *testing.T) {
 	t.Parallel()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(t.TempDir())})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestReopenedSessionContinuesSeqNumbering(t *testing.T) {
 
 	open := func() agentkit.Session {
 		t.Helper()
-		store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(dir)})
+		store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +146,7 @@ func TestStoreLRUCacheReloadsFromDisk(t *testing.T) {
 	store, err := session.NewStore(session.StoreConfig{
 		Dir:               ".",
 		MaxCachedSessions: 2,
-	}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestStoreHeldSessionSurvivesCacheEviction(t *testing.T) {
 	store, err := session.NewStore(session.StoreConfig{
 		Dir:               ".",
 		MaxCachedSessions: 1,
-	}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestStoreEnsuresToolWorkDir(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: workspace.Static(dir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}

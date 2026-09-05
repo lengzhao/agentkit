@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -232,7 +233,7 @@ type staticWorkspace struct {
 }
 
 func (s staticWorkspace) Resolve(_ context.Context, rel string) (string, error) {
-	return workspace.ResolveRel(s.root, rel)
+	return rtworkspace.ResolveRel(s.root, rel)
 }
 
 // tenantStaticWorkspace resolves local: paths under LocalBase/<tenantDir>/.
@@ -247,7 +248,7 @@ func (s tenantStaticWorkspace) Resolve(ctx context.Context, rel string) (string,
 	if dir == "" {
 		dir = "_default"
 	}
-	return workspace.ResolveRel(filepath.Join(s.localBase, dir), rel)
+	return rtworkspace.ResolveRel(filepath.Join(s.localBase, dir), rel)
 }
 
 func tenantWorkspaceRoot(localBase string) workspace.Service {

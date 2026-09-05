@@ -9,16 +9,17 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 func resolveSessionMode(mode string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", capschedule.SessionModeStateless, capschedule.SessionModeFresh:
-		return capschedule.SessionModeStateless, nil
-	case capschedule.SessionModeReuse:
-		return capschedule.SessionModeReuse, nil
-	case capschedule.SessionModeFixed:
-		return capschedule.SessionModeFixed, nil
+	case "", rtschedule.SessionModeStateless, rtschedule.SessionModeFresh:
+		return rtschedule.SessionModeStateless, nil
+	case rtschedule.SessionModeReuse:
+		return rtschedule.SessionModeReuse, nil
+	case rtschedule.SessionModeFixed:
+		return rtschedule.SessionModeFixed, nil
 	default:
 		return "", fmt.Errorf("unknown sessionMode %q: use stateless, reuse, or fixed", mode)
 	}
@@ -45,7 +46,7 @@ func newSessionNamer(mode, base string, now func() time.Time) sessionNamer {
 }
 
 func (n sessionNamer) forRun(run int) agentkit.SessionID {
-	if n.mode == capschedule.SessionModeFixed {
+	if n.mode == rtschedule.SessionModeFixed {
 		return agentkit.SessionID(n.base + ":default")
 	}
 	return agentkit.SessionID(fmt.Sprintf("%s:%s:run-%d", n.base, n.stamp, run+1))

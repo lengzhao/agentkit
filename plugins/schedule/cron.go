@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
@@ -132,7 +133,7 @@ func parseCronJobs(specs []CronJobSpec) ([]capschedule.Job, error) {
 		if spec.Prompt != "" && spec.Script != "" {
 			return nil, fmt.Errorf("schedule/cron job %d: prompt and script are mutually exclusive", i+1)
 		}
-		if _, err := capschedule.ParseCron(spec.Cron); err != nil {
+		if _, err := rtschedule.ParseCron(spec.Cron); err != nil {
 			return nil, fmt.Errorf("schedule/cron job %d: %w", i+1, err)
 		}
 		job := capschedule.Job{
@@ -221,9 +222,9 @@ func (c *Cron) fire(ctx context.Context, submit capschedule.SubmitFunc, job caps
 	run := c.runCount
 	c.runCount++
 	c.mu.Unlock()
-	slog.Info("cron job firing", "job_id", job.ID, "kind", capschedule.JobKind(job), "cron", job.Cron, "source", job.Source)
+	slog.Info("cron job firing", "job_id", job.ID, "kind", rtschedule.JobKind(job), "cron", job.Cron, "source", job.Source)
 	err := submit(ctx, c.event(run, job))
-	if capschedule.IsOneShot(job) {
+	if rtschedule.IsOneShot(job) {
 		if markErr := c.registry.MarkFired(ctx, job.ID, now, err); markErr != nil {
 			return fmt.Errorf("mark one-shot job %q fired: %w", job.ID, markErr)
 		}
@@ -235,7 +236,7 @@ func (c *Cron) fire(ctx context.Context, submit capschedule.SubmitFunc, job caps
 }
 
 func (c *Cron) isStaleOneShot(job capschedule.Job, now time.Time) bool {
-	return capschedule.IsOneShot(job) && !job.FireAt.IsZero() && now.Sub(job.FireAt) > c.missedGrace
+	return rtschedule.IsOneShot(job) && !job.FireAt.IsZero() && now.Sub(job.FireAt) > c.missedGrace
 }
 
 func (c *Cron) runScript(ctx context.Context, scriptPath string) error {
@@ -270,7 +271,7 @@ func (c *Cron) nextWake(ctx context.Context, now time.Time) time.Duration {
 		if job.Disabled || job.Fired {
 			continue
 		}
-		fireAt, ok := capschedule.NextFire(job, job.LastRun)
+		fireAt, ok := rtschedule.NextFire(job, job.LastRun)
 		if !ok {
 			continue
 		}
@@ -320,13 +321,13 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 
 	var sessionID agentkit.SessionID
 	switch c.sessionMode {
-	case capschedule.SessionModeReuse:
+	case rtschedule.SessionModeReuse:
 		if deliverySessionID != "" {
 			sessionID = deliverySessionID
 		} else {
 			sessionID = c.naming.forRun(run)
 		}
-	case capschedule.SessionModeFixed:
+	case rtschedule.SessionModeFixed:
 		sessionID = c.naming.forRun(run)
 	default:
 		sessionID = statelessSessionID(job, now)
@@ -347,7 +348,7 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 			"schedule": map[string]any{
 				"fired":       true,
 				"jobId":       job.ID,
-				"kind":        capschedule.JobKind(job),
+				"kind":        rtschedule.JobKind(job),
 				"sessionMode": c.sessionMode,
 			},
 		},
@@ -362,7 +363,7 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 }
 
 func scheduleInboundPrompt(job capschedule.Job) string {
-	kind := capschedule.JobKind(job)
+	kind := rtschedule.JobKind(job)
 	desc := strings.TrimSpace(job.Note)
 	if desc == "" {
 		desc = strings.TrimSpace(job.Prompt)

@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
 	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -19,7 +20,7 @@ func newRegistry(t *testing.T) (capschedule.Registry, string) {
 	t.Helper()
 	dir := t.TempDir()
 	reg, err := schedule.NewFile(schedule.FileConfig{Path: "schedule.json"}, schedule.FileDeps{
-		Workspace: workspace.Static(dir),
+		Workspace: rtworkspace.Static(dir),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +99,7 @@ func TestAddValidatesAndPersists(t *testing.T) {
 	// A fresh registry over the same file sees the job: this is what makes an
 	// agent-created schedule survive a restart.
 	reopened, err := schedule.NewFile(schedule.FileConfig{Path: "schedule.json"}, schedule.FileDeps{
-		Workspace: workspace.Static(filepath.Dir(path)),
+		Workspace: rtworkspace.Static(filepath.Dir(path)),
 	})
 	if err != nil {
 		t.Fatal(err)

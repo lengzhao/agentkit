@@ -8,34 +8,37 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-// Dispatch sends a proactive message through the platform.
+// Dispatch sends a proactive message through the delivery sender.
 func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInput) error {
 	root := strings.TrimSpace(cfg.Root)
 	if root == "" {
 		root = "."
 	}
-	if deps.Platform == nil {
-		return fmt.Errorf("tool/send requires platform dependency")
+	if deps.Sender == nil {
+		return fmt.Errorf("tool/send requires sender dependency")
 	}
 	parts, err := buildParts(ctx, input, deps.Workspace, root)
 	if err != nil {
 		return err
 	}
-	route, err := resolveRoute(ctx, input)
+	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{
+		SessionID: input.SessionID,
+		UserID:    input.UserID,
+	})
 	if err != nil {
 		return err
 	}
 	modelMsg := agentkit.ModelMessage{Role: "assistant", Content: parts}
 	event := agentkit.OutboundEvent{
-		Route:      session.SessionRouteFromDelivery(route.platformID, route.sessionID, ""),
-		AgentID:    route.agentID,
-		PlatformID: route.platformID,
-		UserID:     route.userID,
+		Route:      rtdelivery.OutboundRoute(route.PlatformID, route.SessionID),
+		AgentID:    route.AgentID,
+		PlatformID: route.PlatformID,
+		UserID:     route.UserID,
 		Type:       agentkit.EventAssistantMessage,
 		Data:       agentkit.MarshalOutboundData(modelMsg),
 	}
@@ -48,7 +51,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 			return emit(ctx, event)
 		}
 	}
-	return deps.Platform.Send(ctx, event)
+	return deps.Sender.Send(ctx, event)
 }
 
 // ParseSlashArgs parses /send arguments.
@@ -90,23 +93,7 @@ func isSlashTarget(token string) bool {
 	if strings.Contains(token, ":") {
 		return true
 	}
-	return common.IsSlackChannelID(token)
-}
-
-func resolveRoute(ctx context.Context, input SendInput) (route, error) {
-	dr, err := common.ResolveDeliveryRoute(ctx, common.DeliveryRouteInput{
-		SessionID: input.SessionID,
-		UserID:    input.UserID,
-	})
-	if err != nil {
-		return route{}, err
-	}
-	return route{
-		sessionID:  dr.SessionID,
-		agentID:    dr.AgentID,
-		platformID: dr.PlatformID,
-		userID:     dr.UserID,
-	}, nil
+	return rtdelivery.IsSlackChannelID(token)
 }
 
 func buildParts(ctx context.Context, input SendInput, ws workspace.Service, root string) ([]agentkit.ContentPart, error) {

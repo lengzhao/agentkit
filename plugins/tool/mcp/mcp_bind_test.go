@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/bind"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/cap/telemetry"
 )
@@ -48,7 +49,7 @@ func TestResolveCtxValue(t *testing.T) {
 	ctx := context.Background()
 	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Actor.UserID = "u-42"; return session.ApplyEnvelopeToContext(ctx, env) }()
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Conversation = "slack:C001:t:1"; return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Conversation = "slack:C001:t:1"; env.Workspace = "slack:C001"; return session.ApplyEnvelopeToContext(ctx, env) }()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, "turn-abc")
 	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Metadata = map[string]any{"channel": "general"}; return session.ApplyEnvelopeToContext(ctx, env) }()
 
@@ -64,7 +65,7 @@ func TestResolveCtxValue(t *testing.T) {
 		{"ctx:tenant", "slack:C001"},
 	}
 	for _, tc := range cases {
-		got, err := resolveCtxValue(ctx, tc.from)
+		got, err := bind.ResolveCtxValue(ctx, tc.from)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.from, err)
 		}
@@ -78,7 +79,7 @@ func TestResolveCtxValueTurnIDFromTelemetry(t *testing.T) {
 	t.Parallel()
 
 	ctx := telemetry.WithTurnID(context.Background(), "telemetry-turn")
-	got, err := resolveCtxValue(ctx, "ctx:turn_id")
+	got, err := bind.ResolveCtxValue(ctx, "ctx:turn_id")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

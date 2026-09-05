@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	fsplugin "github.com/lengzhao/agentkit/plugins/tool/fs"
 )
 
@@ -33,7 +33,7 @@ func TestReadImageReturnsMetadataOnly(t *testing.T) {
 		if strings.Contains(out, "data:") {
 			t.Fatalf("read should not inline base64: %q", out)
 		}
-		if got := media.ParseReadImagePath(out); got != "shot.png" {
+		if got := rtmedia.ParseReadImagePath(out); got != "shot.png" {
 			t.Fatalf("path = %q", got)
 		}
 		return

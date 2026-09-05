@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
@@ -79,7 +79,7 @@ func userMessage(text string) agentkit.ModelMessage {
 
 func readUserTexts(t *testing.T, storeDir string, sessionID agentkit.SessionID) []string {
 	t.Helper()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(storeDir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(storeDir)})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestDispatchFollowUpTurnLifecycle(t *testing.T) {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: workspace.Static(storeDir)})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(storeDir)})
 	if err != nil {
 		t.Fatal(err)
 	}

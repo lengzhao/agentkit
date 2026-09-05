@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/media"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -17,7 +17,7 @@ func HydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, 
 		return msgs, nil
 	}
 	if maxImageBytes <= 0 {
-		maxImageBytes = media.DefaultMaxWorkspaceImageBytes
+		maxImageBytes = rtmedia.DefaultMaxWorkspaceImageBytes
 	}
 
 	lastUser := -1
@@ -49,7 +49,7 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 	out := make([]agentkit.ContentPart, 0, len(msg.Content))
 	for _, part := range msg.Content {
 		switch part.Type {
-		case media.ContentTypeAttachmentRef:
+		case rtmedia.ContentTypeAttachmentRef:
 			expanded, err := expandAttachmentRef(ctx, part, ws, maxImageBytes)
 			if err != nil {
 				return msg, err
@@ -65,18 +65,18 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 
 func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws workspace.Service, maxImageBytes int) ([]agentkit.ContentPart, error) {
 	src := strings.TrimSpace(part.Source)
-	if src != "" && media.IsImagePath(src) {
-		data, mime, err := media.LoadWorkspaceImage(ctx, ws, src, maxImageBytes)
+	if src != "" && rtmedia.IsImagePath(src) {
+		data, mime, err := rtmedia.LoadWorkspaceImage(ctx, ws, src, maxImageBytes)
 		if err != nil {
 			return nil, err
 		}
 		if len(data) > 0 {
 			if mime == "" {
-				mime = media.DetectMIME(src, data)
+				mime = rtmedia.DetectMIME(src, data)
 			}
 			return []agentkit.ContentPart{{
 				Type:   "image_url",
-				URL:    media.DataURL(mime, data),
+				URL:    rtmedia.DataURL(mime, data),
 				MIME:   mime,
 				Source: src,
 			}}, nil
@@ -122,15 +122,15 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 			if result.Name != "read" {
 				continue
 			}
-			path := media.ParseReadImagePath(result.Content)
-			if path == "" || !media.IsImagePath(path) {
+			path := rtmedia.ParseReadImagePath(result.Content)
+			if path == "" || !rtmedia.IsImagePath(path) {
 				continue
 			}
 			if _, ok := seen[path]; ok {
 				continue
 			}
 			seen[path] = struct{}{}
-			data, mime, err := media.LoadWorkspaceImage(ctx, ws, path, maxImageBytes)
+			data, mime, err := rtmedia.LoadWorkspaceImage(ctx, ws, path, maxImageBytes)
 			if err != nil {
 				return nil, err
 			}
@@ -138,11 +138,11 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 				continue
 			}
 			if mime == "" {
-				mime = media.DetectMIME(path, data)
+				mime = rtmedia.DetectMIME(path, data)
 			}
 			parts = append(parts, agentkit.ContentPart{
 				Type:   "image_url",
-				URL:    media.DataURL(mime, data),
+				URL:    rtmedia.DataURL(mime, data),
 				MIME:   mime,
 				Source: path,
 			})

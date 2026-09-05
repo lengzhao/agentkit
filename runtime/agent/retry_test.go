@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -72,7 +72,7 @@ func TestRunTurnRetriesTransientLLMError(t *testing.T) {
 		LLM:          flaky,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestRunTurnDoesNotRetryQuotaError(t *testing.T) {
 		LLM:          quota,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
-		Workspace:    workspace.Static(t.TempDir()),
+		Workspace:    rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatal(err)

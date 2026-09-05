@@ -6,7 +6,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/skill"
+	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
 func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
@@ -72,7 +74,7 @@ func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 	out = answerOrphanToolCalls(out)
 
 	if maxToolBytes > 0 {
-		out = compaction.PruneToolResults(out, maxToolBytes)
+		out = rtcompaction.PruneToolResults(out, maxToolBytes)
 	}
 	return out
 }
@@ -191,7 +193,7 @@ type skillLoadEvent struct {
 func skillLoadMessage(load skillLoadEvent) agentkit.ModelMessage {
 	return agentkit.ModelMessage{
 		Role: "user",
-		Content: []agentkit.ContentPart{{Type: "text", Text: skill.RenderLoaded(skill.Content{
+		Content: []agentkit.ContentPart{{Type: "text", Text: rtskill.RenderLoaded(skill.Content{
 			Name:        load.Name,
 			Description: load.Description,
 			Body:        load.Body,

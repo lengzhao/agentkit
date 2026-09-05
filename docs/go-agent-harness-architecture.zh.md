@@ -1308,7 +1308,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 | LLM 准备 | Span `agent.step.prep`（history hydrate、tools.Visible、prompt.Assemble） | `agent.runStep` |
 | LLM 调用 | Generation（原生 `usage` 字段供 Langfuse 计费；`completionStartTime` 优先取首段 text/thinking，否则取首个 tool call；output 含 content 与 toolCalls） | `agent.runStep` |
 | Tool 执行 | Tool observation | `tools.Execute` |
-| Compaction | Span `compaction.apply`（input 为 `automatic` 或 `force`；无 service 或未实际 apply 时不导出） | `cap/compaction.ApplyAll` |
+| Compaction | Span `compaction.apply`（input 为 `automatic` 或 `force`；无 service 或未实际 apply 时不导出） | `runtime/compaction.ApplyAll` |
 | MCP 初始化 | Span `mcp.init`（读 mcp.json、连接并 initialize 各 server、ListTools 发现工具；无 server 时不导出） | `tool/mcp.reload` |
 | OpenAPI 初始化 | Span `openapi.init`（读 api.json 与引用 spec、解析 operation；无 API 时不导出） | `tool/openapi.reload` |
 | Turn token 汇总 | Trace metadata `usage_*_tokens` | `loop.Dispatch` + `agent.recordUsage` |

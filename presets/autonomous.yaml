@@ -49,8 +49,7 @@ agent.coder.default:
     tools: tools.default
     # overflow 兜底路径（Force=true）也走 token-limit，透传到 summary。
     compaction:
-      - compaction.prune.default
-      - compaction.token-limit.default
+      - compaction.pipeline.default
 
 hooks.default:
   use: hooks/runtime
@@ -66,8 +65,7 @@ hook.before-step.default:
   deps:
     sessionStore: sessionStore.default
     services:
-      - compaction.prune.default
-      - compaction.token-limit.default
+      - compaction.pipeline.default
 
 compaction.token-limit.default:
   use: compaction/token-limit

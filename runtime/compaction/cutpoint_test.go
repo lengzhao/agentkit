@@ -4,19 +4,20 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/compaction"
+	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 )
 
 func TestFindCutPointNeverCutsAtToolResult(t *testing.T) {
 	t.Parallel()
 
-	indexed := []compaction.IndexedMessage{
+	indexed := []capscompaction.IndexedMessage{
 		{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "go"}}}, Seq: 1, IsTurnStart: true},
 		{Message: agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "1", Name: "read"}}}, Seq: 2},
 		{Message: agentkit.ModelMessage{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "1", Name: "read", Content: "ok"}}}, Seq: 3},
 		{Message: agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "done"}}}, Seq: 4},
 	}
-	cut := compaction.FindCutPoint(indexed, 0, len(indexed), 5)
+	cut := rtcompaction.FindCutPoint(indexed, 0, len(indexed), 5)
 	if indexed[cut.FirstKeptIndex].Message.Role == "tool" {
 		t.Fatal("must not cut at tool result index")
 	}
@@ -25,13 +26,13 @@ func TestFindCutPointNeverCutsAtToolResult(t *testing.T) {
 func TestPrepareRetainsTailVerbatim(t *testing.T) {
 	t.Parallel()
 
-	indexed := []compaction.IndexedMessage{
+	indexed := []capscompaction.IndexedMessage{
 		{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: stringsRepeat("old ", 200)}}}, Seq: 1, IsTurnStart: true},
 		{Message: agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: stringsRepeat("old reply ", 200)}}}, Seq: 2},
 		{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "recent"}}}, Seq: 3, IsTurnStart: true},
 		{Message: agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "recent reply"}}}, Seq: 4},
 	}
-	prep := compaction.Prepare(indexed, 0, 50, "", 0)
+	prep := rtcompaction.Prepare(indexed, 0, 50, "", 0)
 	if prep == nil {
 		t.Fatal("expected preparation")
 	}

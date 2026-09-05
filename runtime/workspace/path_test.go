@@ -1,10 +1,13 @@
-package workspace
+package workspace_test
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestResolveHome(t *testing.T) {
@@ -13,7 +16,7 @@ func TestResolveHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Resolve("~/.agentkit")
+	got, err := rtworkspace.Resolve("~/.agentkit")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,15 +28,15 @@ func TestResolveHome(t *testing.T) {
 
 func TestParseScoped(t *testing.T) {
 	t.Parallel()
-	scope, path, ok := ParseScoped("global:skills")
-	if !ok || scope != ScopeGlobal || path != "skills" {
+	scope, path, ok := rtworkspace.ParseScoped("global:skills")
+	if !ok || scope != workspace.ScopeGlobal || path != "skills" {
 		t.Fatalf("ParseScoped(global:skills)=%q %q %v", scope, path, ok)
 	}
-	scope, path, ok = ParseScoped("local:")
-	if !ok || scope != ScopeLocal || path != "." {
+	scope, path, ok = rtworkspace.ParseScoped("local:")
+	if !ok || scope != workspace.ScopeLocal || path != "." {
 		t.Fatalf("ParseScoped(local:)=%q %q %v", scope, path, ok)
 	}
-	_, _, ok = ParseScoped("/abs/path")
+	_, _, ok = rtworkspace.ParseScoped("/abs/path")
 	if ok {
 		t.Fatal("expected absolute path to be unscoped")
 	}
@@ -52,7 +55,7 @@ func TestResolveRelParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := Static(localRoot)
+	svc := rtworkspace.Static(localRoot)
 	ctx := context.Background()
 
 	got, err := svc.Resolve(ctx, "..")
@@ -79,7 +82,7 @@ func TestResolveRelParent(t *testing.T) {
 func TestResolveRelRelative(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
-	got, err := Static(base).Resolve(context.Background(), "sessions")
+	got, err := rtworkspace.Static(base).Resolve(context.Background(), "sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +95,7 @@ func TestResolveRelRelative(t *testing.T) {
 func TestResolveRelAbsolute(t *testing.T) {
 	t.Parallel()
 	abs := t.TempDir()
-	got, err := Static(t.TempDir()).Resolve(context.Background(), abs)
+	got, err := rtworkspace.Static(t.TempDir()).Resolve(context.Background(), abs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +109,7 @@ func TestResolveRelStrictRefusesParent(t *testing.T) {
 
 	base := filepath.Join(t.TempDir(), "tenant-a")
 	for _, rel := range []string{"..", "../tenant-b", "../../etc", "sub/../../tenant-b"} {
-		if got, err := ResolveRelStrict(base, rel); err == nil {
+		if got, err := rtworkspace.ResolveRelStrict(base, rel); err == nil {
 			t.Fatalf("ResolveRelStrict(%q) = %q, want error", rel, got)
 		}
 	}
@@ -116,18 +119,17 @@ func TestResolveRelStrictAllowsOwnSubtree(t *testing.T) {
 	t.Parallel()
 
 	base := filepath.Join(t.TempDir(), "tenant-a")
-	got, err := ResolveRelStrict(base, "sessions/log.jsonl")
+	got, err := rtworkspace.ResolveRelStrict(base, "sessions/log.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := filepath.Join(base, "sessions", "log.jsonl"); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	// "." is the root itself, and a path that dips out and back stays inside.
-	if got, err := ResolveRelStrict(base, "."); err != nil || got != base {
+	if got, err := rtworkspace.ResolveRelStrict(base, "."); err != nil || got != base {
 		t.Fatalf("dot = %q, %v", got, err)
 	}
-	if got, err := ResolveRelStrict(base, "a/../b"); err != nil || got != filepath.Join(base, "b") {
+	if got, err := rtworkspace.ResolveRelStrict(base, "a/../b"); err != nil || got != filepath.Join(base, "b") {
 		t.Fatalf("a/../b = %q, %v", got, err)
 	}
 }
