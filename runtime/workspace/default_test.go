@@ -74,13 +74,14 @@ func TestDefaultLocalScope(t *testing.T) {
 	}
 }
 
-func TestDefaultEmptyLocalUsesAgentkit(t *testing.T) {
+func TestDefaultEmptyLocalUsesGlobal(t *testing.T) {
 	t.Parallel()
 
-	cwd, err := os.Getwd()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
+	want := filepath.Join(home, ".agentkit")
 
 	svc, err := rw.New(rw.Config{Scope: "local"})
 	if err != nil {
@@ -90,9 +91,16 @@ func TestDefaultEmptyLocalUsesAgentkit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(cwd, ".agentkit")
 	if got != want {
-		t.Fatalf("default local root=%q want %q", got, want)
+		t.Fatalf("empty local root=%q want %q (same as global)", got, want)
+	}
+
+	got, err = svc.Resolve(context.Background(), "local:.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("local: with empty local=%q want %q", got, want)
 	}
 }
 

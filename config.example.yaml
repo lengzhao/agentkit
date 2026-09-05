@@ -14,7 +14,7 @@
 #   LARK_APP_ID + LARK_APP_SECRET
 # 仅需 CLI 时无需任何操作；要 chat-api 时在 L1 把 platform.chat-api 加入 platform.default.deps.platforms。
 
-# 示例：切换工作区 scope（global=~/.agentkit，local=.agentkit）
+# 示例：切换工作区 scope（global=~/.agentkit；local 默认同 global，项目 coding 可显式设 local: .agentkit）
 workspace.default:
   use: workspace/default
   config:

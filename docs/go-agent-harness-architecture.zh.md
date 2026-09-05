@@ -504,7 +504,7 @@ workspace.default:
   use: workspace/default
   config:
     global: ~/.agentkit
-    local: .agentkit
+    local:
     scope: local
 
 llm.default:
@@ -1162,7 +1162,7 @@ Policy Plane 判定已可见调用以及能力操作：
 
 ### 8.1 Workspace 路径
 
-`workspace/default` 定义 **global**（默认 `~/.agentkit`）与 **local**（默认 `<cwd>/.agentkit`）两个根，通过 `scope` 选择默认根（L0 默认 `global`）。
+`workspace/default` 定义 **global**（默认 `~/.agentkit`）与 **local**（默认同 global，可显式设为 `<cwd>/.agentkit`）两个根，通过 `scope` 选择默认根（L0 默认 `global`）。
 
 需要解析相对路径的插件（`tool/fs-workspace`、`tool/shell-bash`、`session/store`、`skill/filesystem` 等）调用 `workspace.Resolve(ctx, rel)`：
 

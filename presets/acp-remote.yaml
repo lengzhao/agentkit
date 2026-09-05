@@ -54,6 +54,7 @@ sessionStore.default:
 workspace.default:
   use: workspace/default
   config:
+    local: .agentkit
     scope: local
 
 platform.default:

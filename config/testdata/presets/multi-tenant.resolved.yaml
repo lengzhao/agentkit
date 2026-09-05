@@ -396,8 +396,6 @@ subagent.default:
 subagent.inprocess.default:
     config:
         dirs:
-            - local:agents
-            - local:../examples/agents
             - global:agents
         maxSteps: 20
         timeoutSeconds: 600

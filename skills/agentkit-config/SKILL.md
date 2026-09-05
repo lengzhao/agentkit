@@ -72,7 +72,7 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 `workspace/default` 定义两个根：
 
 - **global**：`~/.agentkit`（跨项目共享）
-- **local**：`<cwd>/.agentkit`（项目/租户私有）
+- **local**：默认同 global；显式设为 `<cwd>/.agentkit` 时用于项目/租户私有
 
 通过 `scope` 选择默认根（常见 preset 用 `local`）。
 

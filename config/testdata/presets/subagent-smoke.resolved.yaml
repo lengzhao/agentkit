@@ -359,8 +359,6 @@ sessionStore.default:
 skills.default:
     config:
         dirs:
-            - local:../skills
-            - local:skills
             - global:skills
     deps:
         workspace: workspace.default
