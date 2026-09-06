@@ -86,6 +86,7 @@ type streamState struct {
 	handle             any // legacy mode preview handle
 	progressHandle     any // rich mode: current message segment progress card
 	bodyHandle         any // rich mode: current message segment body card
+	activeSegment      streamSegmentKind
 	cards              []streamCard // ordered cards for eviction (oldest first)
 	accumulated        string // legacy mode text buffer
 	bodyText           string // rich mode in-flight assistant markdown
@@ -109,6 +110,15 @@ const (
 	streamCardProgress streamCardKind = "progress"
 	streamCardBody     streamCardKind = "body"
 	maxStreamCards     = 3
+)
+
+type streamSegmentKind string
+
+const (
+	streamSegmentNone     streamSegmentKind = ""
+	streamSegmentThinking streamSegmentKind = "thinking"
+	streamSegmentTool     streamSegmentKind = "tool"
+	streamSegmentBody     streamSegmentKind = "body"
 )
 
 type streamCard struct {

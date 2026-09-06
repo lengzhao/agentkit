@@ -253,9 +253,9 @@ func TestHandleRichStreamMessageStartResetsMessageState(t *testing.T) {
 
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if st.thinking != "" || len(st.steps) != 0 || st.bodyText != "" || st.bodyHandle != nil || st.progressHandle != nil {
-		t.Fatalf("expected message state reset, got thinking=%q steps=%d bodyText=%q bodyHandle=%v progressHandle=%v",
-			st.thinking, len(st.steps), st.bodyText, st.bodyHandle, st.progressHandle)
+	if st.thinking != "" || len(st.steps) != 0 || st.bodyText != "" || st.bodyHandle != nil || st.progressHandle != nil || st.activeSegment != streamSegmentNone {
+		t.Fatalf("expected message state reset, got thinking=%q steps=%d bodyText=%q bodyHandle=%v progressHandle=%v segment=%q",
+			st.thinking, len(st.steps), st.bodyText, st.bodyHandle, st.progressHandle, st.activeSegment)
 	}
 	if len(st.cards) != 2 {
 		t.Fatalf("expected prior cards to remain queued, got %d", len(st.cards))
@@ -330,12 +330,13 @@ func TestEvictStreamCardsKeepsBodyAtHead(t *testing.T) {
 	}
 }
 
-func TestHandleRichBodyDeltaKeepsProgressState(t *testing.T) {
-	p := &Platform{progressStyle: "card"}
+func TestHandleRichBodyDeltaDetachesProgressCard(t *testing.T) {
+	p := &Platform{progressStyle: "card", showThinking: true}
 	sessionID := agentkit.SessionID("session-body-delta")
 	st := p.streamState(sessionID)
 	st.mu.Lock()
 	st.progressHandle = &feishuPreviewHandle{messageID: "progress"}
+	st.activeSegment = streamSegmentThinking
 	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"}}
 	st.thinking = "plan"
 	st.toolStepIdx = make(map[int]int)
@@ -349,11 +350,63 @@ func TestHandleRichBodyDeltaKeepsProgressState(t *testing.T) {
 
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if len(st.steps) != 1 || st.thinking != "plan" || st.progressHandle == nil {
-		t.Fatalf("progress state changed unexpectedly: %#v", st)
+	if st.progressHandle != nil {
+		t.Fatal("body delta must not keep patching the previous progress card")
+	}
+	if st.activeSegment != streamSegmentBody {
+		t.Fatalf("activeSegment = %q, want body", st.activeSegment)
 	}
 	if st.bodyText != "hello" {
 		t.Fatalf("bodyText = %q", st.bodyText)
+	}
+}
+
+func TestSwitchSegmentOpensNewCardOnTypeChange(t *testing.T) {
+	p := &Platform{
+		progressStyle:    "card",
+		showThinking:     true,
+		showToolProgress: true,
+	}
+	sessionID := agentkit.SessionID("session-type-switch")
+	st := p.streamState(sessionID)
+	oldProgress := &feishuPreviewHandle{messageID: "p-thinking"}
+	st.mu.Lock()
+	st.progressHandle = oldProgress
+	st.activeSegment = streamSegmentThinking
+	st.thinking = "plan"
+	st.toolStepIdx = make(map[int]int)
+	st.cards = []streamCard{{Kind: streamCardProgress, Handle: oldProgress}}
+	st.startedAt = time.Now()
+	st.progressStartedAt = time.Now()
+	st.mu.Unlock()
+
+	if err := p.handleRichBodyDelta(context.Background(), sessionID, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
+		Type:         agentkit.AssistantEventToolCallStart,
+		ContentIndex: 1,
+		ToolName:     "Read",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.progressHandle == oldProgress {
+		t.Fatal("tool events must open a new progress card instead of patching the thinking card")
+	}
+	if st.activeSegment != streamSegmentTool {
+		t.Fatalf("activeSegment = %q, want tool", st.activeSegment)
+	}
+	if st.thinking != "" {
+		t.Fatalf("tool segment should not reuse thinking buffer, got %q", st.thinking)
+	}
+	if st.bodyHandle != nil {
+		t.Fatal("tool segment must not keep streaming into the previous body card")
+	}
+	if len(st.steps) != 1 || st.steps[0].Name != "Read" {
+		t.Fatalf("steps = %#v", st.steps)
 	}
 }
 

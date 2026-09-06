@@ -122,15 +122,89 @@ func (p *Platform) handleRichStreamMessageStart(_ context.Context, sessionID age
 	st.bodyText = ""
 	st.bodyHandle = nil
 	st.progressHandle = nil
+	st.activeSegment = streamSegmentNone
 	st.status = cardStatusThinking
 	st.progressStartedAt = time.Now()
 	st.mu.Unlock()
 	return nil
 }
 
+func streamSegmentOfAssistantEvent(p *Platform, ame agentkit.AssistantMessageEvent) streamSegmentKind {
+	switch ame.Type {
+	case agentkit.AssistantEventTextDelta:
+		return streamSegmentBody
+	case agentkit.AssistantEventThinkingStart, agentkit.AssistantEventThinkingDelta, agentkit.AssistantEventThinkingEnd:
+		if !p.showThinking {
+			return streamSegmentNone
+		}
+		return streamSegmentThinking
+	case agentkit.AssistantEventToolCallStart, agentkit.AssistantEventToolCallDelta, agentkit.AssistantEventToolCallEnd:
+		if !p.showToolProgress {
+			return streamSegmentNone
+		}
+		return streamSegmentTool
+	default:
+		return streamSegmentNone
+	}
+}
+
+func (p *Platform) switchRichSegment(ctx context.Context, sessionID agentkit.SessionID, next streamSegmentKind) error {
+	if next == streamSegmentNone {
+		return nil
+	}
+	st := p.richStreamState(sessionID)
+	st.mu.Lock()
+	prev := st.activeSegment
+	if prev == next {
+		st.mu.Unlock()
+		return nil
+	}
+	progressHandle := st.progressHandle
+	bodyHandle := st.bodyHandle
+	bodyText := st.bodyText
+	st.mu.Unlock()
+
+	if prev == streamSegmentBody {
+		p.cancelBodyFlushTimer(sessionID)
+	}
+	if p.client != nil {
+		if prev == streamSegmentBody && bodyHandle != nil && strings.TrimSpace(bodyText) != "" {
+			if err := p.finalizeBodyCard(ctx, bodyHandle, bodyText); err != nil {
+				slog.Debug(p.tag()+": finalize body card on segment switch failed", "session_id", sessionID, "error", err)
+			}
+		}
+		if (prev == streamSegmentThinking || prev == streamSegmentTool) && progressHandle != nil {
+			if err := p.finalizeProgressCard(ctx, sessionID, progressHandle); err != nil {
+				slog.Debug(p.tag()+": finalize progress card on segment switch failed", "session_id", sessionID, "error", err)
+			}
+		}
+	}
+
+	st.mu.Lock()
+	st.activeSegment = next
+	st.progressHandle = nil
+	st.bodyHandle = nil
+	st.bodyText = ""
+	if next != streamSegmentBody {
+		st.thinking = ""
+		st.steps = nil
+		st.toolStepIdx = make(map[int]int)
+		st.progressStartedAt = time.Now()
+	}
+	st.mu.Unlock()
+	return nil
+}
+
 func (p *Platform) handleRichStreamUpdate(ctx context.Context, sessionID agentkit.SessionID, ame agentkit.AssistantMessageEvent) error {
-	if ame.Type == agentkit.AssistantEventTextDelta {
+	seg := streamSegmentOfAssistantEvent(p, ame)
+	if seg == streamSegmentBody {
 		return p.handleRichBodyDelta(ctx, sessionID, ame.Delta)
+	}
+	if seg == streamSegmentNone {
+		return nil
+	}
+	if err := p.switchRichSegment(ctx, sessionID, seg); err != nil {
+		return err
 	}
 
 	st := p.richStreamState(sessionID)
@@ -226,6 +300,9 @@ func (p *Platform) scheduleLegacyFlush(sessionID agentkit.SessionID) {
 func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.SessionID, delta string) error {
 	if delta == "" {
 		return nil
+	}
+	if err := p.switchRichSegment(ctx, sessionID, streamSegmentBody); err != nil {
+		return err
 	}
 
 	st := p.richStreamState(sessionID)
@@ -411,7 +488,14 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 	if err := json.Unmarshal(event.Data, &result); err != nil {
 		return err
 	}
-	st := p.richStreamState(session.OutboundRouteID(event))
+	if !p.showToolProgress {
+		return nil
+	}
+	sessionID := session.OutboundRouteID(event)
+	if err := p.switchRichSegment(ctx, sessionID, streamSegmentTool); err != nil {
+		return err
+	}
+	st := p.richStreamState(sessionID)
 	st.mu.Lock()
 	changed := p.applyToolResult(st, result)
 	shouldFlush := changed && (st.progressHandle == nil || time.Since(st.lastProgressUpdate) >= streamUpdateInterval)
@@ -419,11 +503,18 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 	if !shouldFlush {
 		return nil
 	}
-	return p.flushProgressCard(ctx, session.OutboundRouteID(event), true)
+	return p.flushProgressCard(ctx, sessionID, true)
 }
 
 func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.OutboundEvent) error {
-	st := p.richStreamState(session.OutboundRouteID(event))
+	if !p.showToolProgress {
+		return nil
+	}
+	sessionID := session.OutboundRouteID(event)
+	if err := p.switchRichSegment(ctx, sessionID, streamSegmentTool); err != nil {
+		return err
+	}
+	st := p.richStreamState(sessionID)
 	st.mu.Lock()
 	changed := false
 	switch event.Type {
@@ -449,7 +540,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 	if !shouldFlush {
 		return nil
 	}
-	return p.flushProgressCard(ctx, session.OutboundRouteID(event), true)
+	return p.flushProgressCard(ctx, sessionID, true)
 }
 
 func subagentDisplayName(agent string) string {
@@ -518,6 +609,7 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 	st.bodyText = ""
 	st.bodyHandle = nil
 	st.progressHandle = nil
+	st.activeSegment = streamSegmentNone
 	st.mu.Unlock()
 
 	if bodyHandle != nil && strings.TrimSpace(bodyText) != "" {
@@ -562,6 +654,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	st.status = cardStatusDone
 	st.progressHandle = nil
 	st.bodyHandle = nil
+	st.activeSegment = streamSegmentNone
 	st.mu.Unlock()
 
 	if bodyHandle != nil && strings.TrimSpace(bodyText) != "" {
@@ -613,7 +706,6 @@ func (p *Platform) flushProgressCard(ctx context.Context, sessionID agentkit.Ses
 			return err
 		}
 		st.mu.Lock()
-		p.removePriorProgressCards(ctx, st, newHandle)
 		st.progressHandle = newHandle
 		st.enqueueCard(streamCardProgress, newHandle)
 		p.evictStreamCards(ctx, st)
