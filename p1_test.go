@@ -41,7 +41,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Demo\nDo the demo."), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo-skill\ndescription: Demo skill\n---\n\nDo the demo."), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

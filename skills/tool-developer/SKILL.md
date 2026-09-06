@@ -13,7 +13,7 @@ description: 开发 AgentKit 原生 Go 工具插件（tool/*）。在新增 tool
 | **MCP `tool/mcp`** | 已有 MCP server 或希望进程外隔离 |
 | **OpenAPI `tool/openapi`** | 已有 REST API，用 operationId 暴露为工具 |
 
-本 Skill 覆盖 **Go 原生工具插件**。MCP / OpenAPI 只需写 `mcp.json` / `api.json` 磁盘配置并重启进程，不必写 Go 代码。
+本 Skill 覆盖 **Go 原生工具插件**。MCP / OpenAPI 只需写 `mcp.json` / `api.json` 磁盘配置，改完后请用户执行 `/mcp -u` 或 `/openapi -u`，不必写 Go 代码。
 
 ## 三种返回类型
 

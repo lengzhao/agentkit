@@ -1220,6 +1220,17 @@ tool.fs-workspace.unrestricted:
 
 Skills 目录叠加示例：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 
+`skill/filesystem` 按 [Agent Skills 规范](https://agentskills.io/specification) 发现 bundle：`skills/<name>/SKILL.md`，并校验 frontmatter：
+
+| 字段 | 规则 |
+|---|---|
+| `name` | 必填，kebab-case，≤64 字符，**必须与父目录名一致** |
+| `description` | 必填，非空，≤1024 字符 |
+| `license` / `compatibility` / `metadata` / `allowed-tools` | 可选；`compatibility` ≤500 字符；`metadata` 为 string→string |
+| 正文 | frontmatter 之后的 Markdown，加载时注入模型 |
+
+扩展字段（非 Agent Skills 标准，来自 deepseek-harness）：`whenToUse`、`disable-model-invocation`、`user-invocable`。根目录下的 flat `*.md` 不会被当作 skill；不合规 bundle 会 `slog.Warn` 并跳过。
+
 多租户路径语义见 [guides/multi-tenant.zh.md](guides/multi-tenant.zh.md)。
 
 ## 9. 插件发现与开发工作流

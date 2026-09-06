@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/markdown"
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,7 +104,10 @@ func loadDefinitions(ctx context.Context, ws workspace.Service, dirs []string) (
 // parseDefinition reads one agents/<name>.md file: a YAML frontmatter block
 // between --- lines, then the body, which becomes the child's system prompt.
 func parseDefinition(fileName, raw string) (subagent.Definition, error) {
-	head, body := splitFrontmatter(raw)
+	head, body, ok := markdown.Split(raw)
+	if !ok {
+		head, body = "", raw
+	}
 	var fm frontmatter
 	if head != "" {
 		if err := yaml.Unmarshal([]byte(head), &fm); err != nil {
@@ -141,23 +145,6 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 		Model:       strings.TrimSpace(fm.Model),
 		MaxSteps:    fm.MaxSteps,
 	}, nil
-}
-
-// splitFrontmatter separates a leading --- delimited YAML block from the body.
-// A file with no frontmatter, or with an unterminated one, is all body — the
-// caller then reports the missing description rather than a YAML error.
-func splitFrontmatter(raw string) (head, body string) {
-	trimmed := strings.TrimLeft(raw, "\ufeff \t\r\n")
-	if !strings.HasPrefix(trimmed, "---") {
-		return "", raw
-	}
-	lines := strings.Split(trimmed, "\n")
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "---" {
-			return strings.Join(lines[1:i], "\n"), strings.Join(lines[i+1:], "\n")
-		}
-	}
-	return "", raw
 }
 
 func trimAll(in []string) []string {

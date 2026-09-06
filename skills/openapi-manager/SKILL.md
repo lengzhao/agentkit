@@ -1,13 +1,13 @@
 ---
 name: openapi-manager
-description: 维护 AgentKit 的 OpenAPI HTTP 动态工具（api.json、api/*.json）。在添加 API 索引、配置 auth/bind/baseUrl、编写 OpenAPI spec 或修改后需重启 agent 时使用。
+description: 维护 AgentKit 的 OpenAPI HTTP 动态工具（api.json、api/*.json）。在添加 API 索引、配置 auth/bind/baseUrl、编写 OpenAPI spec 或修改后需执行 /openapi -u 时使用。
 ---
 
 # OpenAPI 维护指南
 
 ## 运行态约定
 
-OpenAPI 配置在**进程启动时**由 `openapi.default` 读取；运行中不支持热更新。改完 `api.json` 或 `api/*.json` 后**请用户重启 agent**，不要声称工具已刷新。
+OpenAPI 配置在**进程启动时**由 `openapi.default` 读取并缓存在内存。改完 `api.json` 或 `api/*.json` 后请用户执行 **`/openapi -u`** 重读索引与 spec；也可用 **`/openapi add [-g] <name> <json>`** 写入（失败回滚）。不要声称工具已刷新，直到用户确认已执行 `/openapi -u` 或 `/openapi add`。
 
 ## 文件布局
 
@@ -20,8 +20,8 @@ OpenAPI 配置在**进程启动时**由 `openapi.default` 读取；运行中不�
 ## 工作流
 
 1. 用 read / edit / write 修改 `api.json` 或 `api/*.json`。
-2. 请用户**重启 agent 进程**。
-3. 重启后调用 `petstore__getPet` 等 `<prefix><operationId>` 格式的动态工具。
+2. 请用户执行 **`/openapi -u`**（或 `/openapi add` 写入新 API）。
+3. 调用 `petstore__getPet` 等 `<prefix><operationId>` 格式的动态工具验证。
 
 ## api.json 索引条目
 

@@ -1,15 +1,22 @@
 ---
 name: agentkit-config
-description: 维护已部署 AgentKit 进程的运行时配置（config.yaml、preset、workspace、llm、tools、mcp.json、api.json、agents、skills、.env）。在修改上述配置、解释 L0/L1 覆盖与 workspace 路径、或需提醒用户重启后生效时使用。
+description: 维护已部署 AgentKit 进程的运行时配置（config.yaml、preset、workspace、llm、tools、mcp.json、api.json、agents、skills、.env）。在修改上述配置、解释 L0/L1 覆盖与 workspace 路径、或判断改动是否需要重启时使用。
 ---
 
 # AgentKit 配置指南
 
 ## 运行态约定
 
-本 Skill 面向**已编译、正在运行的 AgentKit 进程**。配置在**进程启动时**加载并装配实例图；运行中**不支持热更新**。
+本 Skill 面向**已编译、正在运行的 AgentKit 进程**。YAML 实例图在**进程启动时**装配；并非所有磁盘配置都需要重启。
 
-改完任何配置后，必须**请用户重启 agent 进程**，新配置才会生效。不要声称「已生效」或尝试调用尚不可用的工具，直到用户确认已重启。
+| 改动 | 生效方式 |
+|---|---|
+| `config.yaml`、preset、`.env`、Go 插件 | **重启进程** |
+| `mcp.json` | 请用户执行 **`/mcp -u`**（或 `/mcp add`） |
+| `api.json`、`api/*.json` | 请用户执行 **`/openapi -u`**（或 `/openapi add`） |
+| `agents/*.md`、`skills/*/SKILL.md`、`AGENTS.md`、`memory.md` | **下一轮**自动从磁盘读取，无需重启 |
+
+改 YAML / preset / `.env` 后必须**请用户重启 agent 进程**。改 MCP / OpenAPI 后请用户执行对应 slash command。不要声称「已生效」，直到用户确认重启或 reload。
 
 可改的运行时文件（路径经 workspace 解析）：
 
@@ -45,8 +52,8 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 1. **确认目标**：要改模型、工具、MCP、OpenAPI、prompt、子 agent 还是 workspace？
 2. **定位文件**：按下方各节找到对应磁盘路径；需要改 YAML 实例时，先弄清当前生效的 `config.yaml` / preset 里写了什么。
 3. **写盘**：用 read / edit / write 修改配置文件。
-4. **请用户重启**：明确告知改了哪些文件、重启后预期变化；不要自行假设已生效。
-5. **重启后验证**：请用户发一条探测消息，或检查预期工具是否出现在工具列表中。
+4. **触发生效**：YAML / preset / `.env` → 请用户**重启**；`mcp.json` → **`/mcp -u`**；`api.json` → **`/openapi -u`**；agents / skills → 下轮自动生效。
+5. **验证**：请用户发一条探测消息，或检查预期工具是否出现在工具列表中。
 
 ## 常用实例 id
 
@@ -155,93 +162,17 @@ prompt.custom.default:
 
 ## MCP 动态工具
 
-YAML 实例 `mcp.default` 在启动时读取磁盘上的 `mcp.json` 并注册动态工具。
-
-**文件布局**：顶层 `mcpServers`，格式与 Cursor 一致。默认只加载 `global:mcp.json`（`~/.agentkit/mcp.json`）。设 `enableLocal: true` 后另加载 `local:mcp.json`（`.agentkit/mcp.json`）。
-
-先命中者赢（按 server 名去重）。部分部署可能配置了额外路径，以 `mcp.default.config.files` 为准。
-
-**工作流**：修改 `mcp.json` → **请用户重启 agent**。
-
-```json
-{
-  "mcpServers": {
-    "github": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/example/github-mcp"],
-      "env": { "GITHUB_TOKEN": "env:GITHUB_TOKEN" },
-      "prefix": "github__",
-      "allowTools": ["search", "get_file"],
-      "denyTools": ["delete_repo"],
-      "timeoutSeconds": 60
-    },
-    "remote": {
-      "url": "http://127.0.0.1:8080/mcp",
-      "type": "sse"
-    }
-  }
-}
-```
-
-| 字段 | 说明 |
-|---|---|
-| `command` / `args` | stdio 子进程 MCP server |
-| `env` | 环境变量；值可为 `env:NAME` |
-| `url` | HTTP/SSE 远程端点 |
-| `type` | `sse`、`http` / `streamable` |
-| `prefix` | 工具名前缀，默认 `<serverName>__` |
-| `allowTools` / `denyTools` | 原始 MCP 工具名白/黑名单 |
-| `timeoutSeconds` | 单次调用墙钟超时 |
-
-每个 server 须提供 `command`（stdio）或 `url`（远程）之一。动态工具命名：`<prefix><原始工具名>`，如 `github__search`。
+YAML 实例 `mcp.default` 在启动时读取 `mcp.json` 并注册动态工具。字段说明、示例与维护流程见 Skill **`mcp-manager`**（`skill(name="mcp-manager")`）。改 `mcp.json` 后请用户执行 **`/mcp -u`**。
 
 ## OpenAPI 动态工具
 
-YAML 实例 `openapi.default` 在启动时读取 `api.json` 并注册 HTTP 动态工具。
-
-**文件布局**：
-
-- `api.json`：纯索引，顶层 `apis` 列出每个 API 的 wiring。
-- `api/<name>.json`：独立 OpenAPI 3 文档；不含 auth/bind/baseUrl。
-- 默认查找：`local:api.json` → `global:api.json`（先命中者赢）。
-
-**工作流**：修改 `api.json` 或 `api/*.json` → **请用户重启 agent**。
-
-```json
-{
-  "apis": {
-    "petstore": {
-      "path": "api/petstore.json",
-      "baseUrl": "https://petstore.example.com",
-      "prefix": "petstore__",
-      "auth": { "type": "bearer", "token": "env:PETSTORE_TOKEN" },
-      "bind": {
-        "uid": { "from": "ctx:user_id", "in": "header", "name": "X-User-Id" }
-      },
-      "allowOperations": ["getPet"],
-      "denyOperations": ["deletePet"],
-      "timeoutSeconds": 30
-    }
-  }
-}
-```
-
-| 字段 | 说明 |
-|---|---|
-| `path` | 指向 OpenAPI 文档 |
-| `baseUrl` | API 根地址；优先于 spec 里的 `servers` |
-| `prefix` | 工具名前缀，默认 `<name>__` |
-| `auth` | `bearer` / `header` / `query` / `basic`；敏感值用 `env:NAME` |
-| `allowOperations` / `denyOperations` | 按 `operationId` 白/黑名单 |
-| `bind` | 从 context 注入参数，不暴露给模型 |
-
-**bind 约定**：`from` 须 `ctx:` 前缀；`in` 为 `path`/`query`/`header`；ctx 值为空时不发起请求。动态工具命名：`<prefix><operationId>`，如 `petstore__getPet`。
+YAML 实例 `openapi.default` 在启动时读取 `api.json` 并注册 HTTP 动态工具。字段说明、bind 约定与维护流程见 Skill **`openapi-manager`**（`skill(name="openapi-manager")`）。改 `api.json` 或 `api/*.json` 后请用户执行 **`/openapi -u`**。
 
 ## 子 Agent
 
 定义文件放在 `local:agents/` 或 `global:agents/`。每个子 agent 一个 `agents/<name>.md`（frontmatter + 指令正文）。主 agent 通过 `delegate` 委派；子 agent 工具集为只读 fs + web。
 
-新增或修改子 agent 定义后**请用户重启 agent**。
+新增或修改子 agent 定义后**下轮自动生效**，无需重启。详见 `docs/guides/subagent.zh.md`。
 
 ## 多租户
 
@@ -276,6 +207,6 @@ YAML 实例 `openapi.default` 在启动时读取 `api.json` 并注册 HTTP 动�
 ## 注意
 
 - 同 id **整颗替换**：改 `deps` 子列表时须写全，漏写会从图中消失。
-- 所有配置（YAML、mcp.json、api.json、agents、skills、.env）改完后**必须重启进程**才生效。
-- 重启前不要声称配置已生效，也不要调用依赖新配置的工具。
+- YAML / preset / `.env` / Go 插件改完后**必须重启**；`mcp.json` / `api.json` 用 **`/mcp -u`** / **`/openapi -u`**；agents / skills 下轮自动生效。
+- 生效前不要声称配置已可用，也不要调用依赖新配置的工具。
 - 密钥用 `env:VAR_NAME` 引用，不写明文 secret。

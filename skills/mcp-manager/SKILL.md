@@ -1,13 +1,13 @@
 ---
 name: mcp-manager
-description: 维护 AgentKit 的 MCP 动态工具配置（mcp.json）。在添加/编辑 mcpServers、配置 env/url/prefix/allowTools、排查 MCP 工具命名或修改后需重启 agent 时使用。
+description: 维护 AgentKit 的 MCP 动态工具配置（mcp.json）。在添加/编辑 mcpServers、配置 env/url/prefix/allowTools、排查 MCP 工具命名或修改后需执行 /mcp -u 时使用。
 ---
 
 # MCP 配置指南
 
 ## 运行态约定
 
-MCP 配置在**进程启动时**由 `mcp.default` 读取；运行中不支持热更新。改完 `mcp.json` 后**请用户重启 agent**，不要声称工具已刷新。
+MCP 配置在**进程启动时**由 `mcp.default` 读取并缓存在内存。改完 `mcp.json` 后请用户执行 **`/mcp -u`** 重读配置并重新发现工具；也可用 **`/mcp add [-g] <name> <json>`** 写入并探活（失败回滚）。不要声称工具已刷新，直到用户确认已执行 `/mcp -u` 或 `/mcp add`。
 
 ## 文件布局
 
@@ -20,8 +20,8 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取；运行中不支持热
 ## 工作流
 
 1. 用 read / edit / write 修改 `mcp.json`（或配置里列出的路径）。
-2. 请用户**重启 agent 进程**。
-3. 重启后调用 `github__search` 等 `<prefix><原始工具名>` 格式的动态工具。
+2. 请用户执行 **`/mcp -u`**（或 `/mcp add` 写入新 server）。
+3. 调用 `github__search` 等 `<prefix><原始工具名>` 格式的动态工具验证。
 
 ## mcp.json 示例
 

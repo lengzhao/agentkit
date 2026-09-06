@@ -3,12 +3,14 @@ package skill
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -30,7 +32,7 @@ func init() {
 	pluginkit.Register("skill/filesystem", New)
 }
 
-// New registers skill/filesystem: Scan directories for SKILL.md definitions.
+// New registers skill/filesystem: Scan skill bundle directories for SKILL.md definitions.
 func New(cfg Config, deps Deps) (skill.Registry, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("skill/filesystem requires workspace")
@@ -50,28 +52,17 @@ func (r *Registry) List(ctx context.Context) ([]skill.Descriptor, error) {
 		if err != nil {
 			continue
 		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
+		for _, candidate := range r.discoverDir(dir) {
+			if _, ok := seen[candidate.Name]; ok {
 				continue
 			}
-			name := entry.Name()
-			if _, ok := seen[name]; ok {
-				continue
-			}
-			skillPath := filepath.Join(dir, name, "SKILL.md")
-			data, err := os.ReadFile(skillPath)
-			if err != nil {
-				continue
-			}
-			seen[name] = struct{}{}
+			seen[candidate.Name] = struct{}{}
 			out = append(out, skill.Descriptor{
-				Name:        name,
-				Description: parseDescription(string(data)),
-				Path:        filepath.Join(dir, name),
+				Name:          candidate.Name,
+				Description:   candidate.Description,
+				Path:          candidate.ResourceDir,
+				License:       candidate.License,
+				Compatibility: candidate.Compatibility,
 			})
 		}
 	}
@@ -79,42 +70,79 @@ func (r *Registry) List(ctx context.Context) ([]skill.Descriptor, error) {
 }
 
 func (r *Registry) Load(ctx context.Context, name string) (skill.Content, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return skill.Content{}, fmt.Errorf("skill name is required")
+	}
 	for _, rel := range r.relDirs {
 		dir, err := r.workspace.Resolve(ctx, rel)
 		if err != nil {
 			continue
 		}
-		skillDir := filepath.Join(dir, name)
-		skillPath := filepath.Join(skillDir, "SKILL.md")
-		data, err := os.ReadFile(skillPath)
-		if err != nil {
-			continue
+		for _, candidate := range r.discoverDir(dir) {
+			if candidate.Name != name {
+				continue
+			}
+			return candidate.Content, nil
 		}
-		body := strings.TrimSpace(string(data))
-		if body == "" {
-			return skill.Content{}, fmt.Errorf("skill %q is empty", name)
-		}
-		return skill.Content{
-			Name:        name,
-			Description: parseDescription(body),
-			Body:        body,
-			Path:        skillDir,
-		}, nil
 	}
 	return skill.Content{}, fmt.Errorf("skill %q not found", name)
 }
 
-func parseDescription(body string) string {
-	lines := strings.Split(body, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+type discoveredSkill struct {
+	Name          string
+	Description   string
+	ResourceDir   string
+	License       string
+	Compatibility string
+	Content       skill.Content
+}
+
+func (r *Registry) discoverDir(root string) []discoveredSkill {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var out []discoveredSkill
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			if strings.HasSuffix(entry.Name(), ".md") {
+				slog.Warn("skill ignored: flat markdown files are not part of the Agent Skills directory layout", "path", filepath.Join(root, entry.Name()))
+			}
 			continue
 		}
-		return line
+		skillPath := filepath.Join(root, entry.Name(), "SKILL.md")
+		raw, err := os.ReadFile(skillPath)
+		if err != nil {
+			continue
+		}
+		parsed, err := rtskill.ParseFile(string(raw), rtskill.ParseOptions{DirName: entry.Name()})
+		if err != nil {
+			slog.Warn("skill ignored", "path", skillPath, "error", err)
+			continue
+		}
+		if parsed.Content == "" {
+			slog.Warn("skill ignored", "path", skillPath, "error", "empty body")
+			continue
+		}
+		resourceDir := filepath.Join(root, entry.Name())
+		out = append(out, discoveredSkill{
+			Name:          parsed.Name,
+			Description:   parsed.Description,
+			ResourceDir:   resourceDir,
+			License:       parsed.License,
+			Compatibility: parsed.Compatibility,
+			Content: skill.Content{
+				Name:          parsed.Name,
+				Description:   parsed.Description,
+				Body:          parsed.Content,
+				Path:          resourceDir,
+				License:       parsed.License,
+				Compatibility: parsed.Compatibility,
+				AllowedTools:  parsed.AllowedTools,
+				Metadata:      parsed.Metadata,
+			},
+		})
 	}
-	if len(lines) > 0 {
-		return strings.TrimPrefix(strings.TrimSpace(lines[0]), "#")
-	}
-	return ""
+	return out
 }
