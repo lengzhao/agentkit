@@ -90,3 +90,36 @@ func TestSplitDelimiterInsideYAMLValue(t *testing.T) {
 		t.Fatalf("body = %q", body)
 	}
 }
+
+func TestSplitIgnoresExtraDelimitersInBody(t *testing.T) {
+	t.Parallel()
+
+	raw := strings.Join([]string{
+		"---",
+		"name: demo",
+		"description: Demo skill",
+		"---",
+		"",
+		"Section one.",
+		"----",
+		"Section two.",
+		"---",
+		"Section three.",
+	}, "\n")
+	yaml, body, ok := markdown.Split(raw)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if !strings.Contains(yaml, "name: demo") {
+		t.Fatalf("yaml = %q", yaml)
+	}
+	if !strings.Contains(body, "----") {
+		t.Fatalf("body should preserve ----, got %q", body)
+	}
+	if strings.Count(body, "---") != 2 {
+		t.Fatalf("body should preserve trailing --- lines, got %q", body)
+	}
+	if !strings.Contains(body, "Section three.") {
+		t.Fatalf("body = %q", body)
+	}
+}
