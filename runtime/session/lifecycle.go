@@ -10,7 +10,10 @@ import (
 type TurnStartData struct{}
 
 type TurnEndData struct {
-	Steps int `json:"steps"`
+	Steps      int    `json:"steps"`
+	StopReason string `json:"stopReason,omitempty"`
+	Cancelled  bool   `json:"cancelled,omitempty"`
+	Failed     bool   `json:"failed,omitempty"`
 }
 
 type StepStartData struct {

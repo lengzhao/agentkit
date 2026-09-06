@@ -120,24 +120,26 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 ## 飞书流式进度卡片
 
-`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 **CardKit 卡片实体 + 流式文本 API** 展示 agent 输出（正文打字机效果）；过程卡仍用卡片实体全量更新。`card` / `compact` 模式按 **片段类型** 出卡，对齐 chat-api debug UI 的 `beginStream`：同一类型继续原地更新，类型切换则定稿旧卡并新开一张，避免往更早的卡片 Patch 造成乱序。
+`platform/feishu` / `platform/lark` 在 `enableFeishuCard: true`（默认）时，通过 **CardKit 卡片实体 + 流式文本 API** 展示 agent 输出。`card` / `compact` 模式下，**整轮 turn 只发一张卡**：thinking 与 tool 合并写入折叠的「处理过程，点开可以看详情」面板（`expanded: false`），正文写入默认展开的「正文」面板（`expanded: true`，用户可自行折叠）；两区分别通过 `progress_md` / `body_md` 的 CardKit 流式 API 更新。
 
-| 片段 | 内容 | 行为 |
+| 区域 | 内容 | 展示 |
 |---|---|---|
-| **thinking** | `thinking_delta` | 过程卡全量更新；**`collapsible_panel` 默认折叠** |
-| **tool** | tool / tool_result / subagent | 新过程卡；同一次 tool 调用与结果留在同一张卡 |
-| **body** | `text_delta` | 新正文卡；CardKit `elements/.../content` 流式上屏；**正文 markdown 默认展开** |
-| **定稿** | 类型切换或 `message/end` | 关闭 `streaming_mode`，当前片段 finalize；不再回写已切走的旧卡 |
-| **淘汰** | 超过 3 张卡 | 从最老开始 pop 直到 ≤3 张；**过程卡**（thinking/tool）同时删除飞书消息，**正文卡**仅从滑动窗口移除、不删消息 |
+| **处理过程** | thinking + tool + subagent（运行中无状态行） | `collapsible_panel` 标题「处理过程，点开可以看详情」，**默认折叠** |
+| **正文** | `text_delta` 正文 | `collapsible_panel` 标题「正文」，**默认展开**（用户可折叠）；CardKit 流式更新 `body_md` |
+| **定稿** | `turn/end` | 关闭 `streaming_mode`；保留流式已上屏内容，不再全量替换卡片 |
 
 ```mermaid
 flowchart TD
-  ev[出站事件] --> kind{片段类型}
-  kind -->|与当前相同| patch[原地更新当前卡]
-  kind -->|thinking / tool / body 不同| fin[定稿旧卡并断开 handle]
-  fin --> open[SendPreviewStart 新卡]
-  open --> patch
+  start[turn/start] --> card[创建统一 CardKit 卡]
+  card --> progress[处理过程面板 默认折叠]
+  card --> body[正文面板 默认展开]
+  thinking[thinking_delta] --> progress
+  tool[tool / subagent] --> progress
+  text[text_delta] --> body
+  end[turn/end] --> fin[关闭 streaming + 定稿]
 ```
+
+未启用 CardKit（`enableFeishuCard: false`）时，`card` / `compact` 仍按片段类型分卡：同一类型原地更新，类型切换则定稿旧卡并新开一张。
 
 `legacy` 模式正文同样走 CardKit 流式（若 `enableFeishuCard: true`），不含进度面板。
 
@@ -150,28 +152,28 @@ flowchart TD
 | `replyInThread` | `true` | 仅群聊出站时 `Im.Message.Reply` 带 `reply_in_thread`；私聊（p2p）始终平铺回复 |
 | `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
-`card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。subagent 委托经 runtime outbound 发出 `subagent/start`、`subagent/end`，在过程卡中以「子 Agent · {agentID}」展示（与 tool 同级）。单张过程卡仅保留最近 **2** 条 thinking / tool / subagent 记录（`compact` 超出时显示「仅显示最近更新」提示），避免长任务把卡片撑得过长。
+`card` / `compact` 模式下，**整轮 turn** 的过程记录（thinking / tool）累积在同一张卡的处理过程面板中，不会因新一轮 assistant `message/start` 清空；仅正文缓冲在每条 assistant 消息开始时重置。平台监听 `tool/result` 生命周期事件写入结果行。subagent 委托经 runtime outbound 发出 `subagent/start`、`subagent/end`，在过程面板中以「子Agent:{agentID}」展示（与 tool 同级）。**统一 CardKit 双面板**模式下过程区保留全部 tool / subagent 记录；旧版分卡 `card` 路径仍仅保留最近 **2** 条（超出时显示「仅显示最近更新」）。
 
-`card` / `compact` 模式下，turn 未完成且当前过程卡已发出后，平台每 **5 秒** 原地更新一次该过程卡，刷新页脚「⏱ 运行中 …」耗时；正文卡流式期间通过 CardKit 文本流式 API 更新（约 **100ms** 节流，无 Patch 5 QPS 限制）。会话滑动窗口最多跟踪 **3** 张卡，新开卡超出时从队首 pop 最老的一张：过程卡会删除对应飞书消息，正文卡仅移出窗口、消息保留。thinking → 正文 → tool 会得到三张按时间顺序排列的卡，后续更新只打在最新同类型卡上。
+`card` / `compact` 模式下，处理过程区通过 CardKit **全量文本 + 前缀延续**实现流式：运行中只追加 thinking / tool 行（不截断、不重写状态行）；`turn/end` 时在末尾追加 `⏱ 用时 …` 状态尾注。正文区同理流式更新 `body_md`。tool 在 `tool_call_end` / `tool/result` 时上屏（不在参数 delta 中途改行，避免前缀断裂）。
 
 ```yaml
 platform.default:
   use: platform/feishu
   config:
     progressStyle: card
-    showThinking: false
+    showThinking: true
     showToolProgress: true
 ```
 
-与 hermes-agent `display.*` 的对应关系：`tool_progress` → `showToolProgress` + `progressStyle: card`；`thinking_progress` → `showThinking`；同类型进度气泡原地 Patch，类型切换则新开卡片。
+与 hermes-agent `display.*` 的对应关系：`tool_progress` → `showToolProgress` + `progressStyle: card`；`thinking_progress` → `showThinking`；过程与正文在同一张卡的两个面板中分别流式更新。
 
 ## 消息 Reaction（处理中 / 完成）
 
-飞书 / Lark 与 Slack 在收到用户消息时会给原消息加「处理中」reaction；turn 结束（`turn/end`）时移除处理中 reaction，并视配置加上「完成」reaction。
+飞书 / Lark 与 Slack 在收到用户消息时会给原消息加「处理中」reaction；turn 结束（`turn/end`）或 slash 命令本地处理完成时，移除处理中 reaction，并视配置加上「完成」reaction。
 
 | 平台 | 收到消息 | turn 结束 |
 |---|---|---|
-| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 移除处理中 reaction，添加 `doneEmoji`（默认 `CheckMark`；`none` 关闭） |
+| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 移除处理中 reaction，添加 `doneEmoji`（默认 `CheckMark`）；取消 turn 时 `cancelledEmoji`（默认 `HEARTBROKEN` 💔）；异常 turn 时 `errorEmoji`（默认 `CrossMark`）；均可设 `none` 关闭 |
 | `platform/slack` | `eyes` | 移除 `eyes`，添加 `white_check_mark` |
 
 飞书 / Lark 默认开启 reaction，无需配置。关闭示例：
@@ -182,6 +184,8 @@ platform.default:
   config:
     reactionEmoji: none  # 关闭处理中 reaction
     doneEmoji: none      # 关闭完成 reaction
+    cancelledEmoji: none # 关闭取消 reaction（/stop 等，默认 HEARTBROKEN 💔）
+    errorEmoji: none     # 关闭异常 reaction（默认 CrossMark）
 ```
 
 Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1` 等），`turn/end` 时一并清理。
@@ -197,6 +201,8 @@ Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1
 | ACP | 客户端 `session/cancel` 走同一条 `Control.Cancel` 路径 |
 
 无进行中的 turn 时返回 `no turn in progress`。
+
+被取消的 turn 在 `turn/end` 时会携带 `cancelled: true`：飞书 / Lark 在**触发该 turn 的原消息**上移除处理中 reaction 并加上 `cancelledEmoji`（默认 `HEARTBROKEN` 💔），流式卡的处理过程/正文区追加「已取消」说明。异常结束的 turn 使用 `errorEmoji`（默认 `CrossMark`）。不会误把 reaction 打到 `/stop` 命令消息上。
 
 ## 无人值守与 Policy 分工
 

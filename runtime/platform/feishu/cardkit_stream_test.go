@@ -36,6 +36,40 @@ func TestBuildStreamingBodyCardEntityJSON(t *testing.T) {
 	}
 }
 
+func TestBuildUnifiedStreamingCardJSON(t *testing.T) {
+	raw := buildUnifiedStreamingCardJSON(true)
+	var card map[string]any
+	if err := json.Unmarshal([]byte(raw), &card); err != nil {
+		t.Fatalf("unmarshal card: %v", err)
+	}
+	body := card["body"].(map[string]any)
+	elements := body["elements"].([]any)
+	if len(elements) != 2 {
+		t.Fatalf("elements len = %d, want 2", len(elements))
+	}
+	progressPanel := elements[0].(map[string]any)
+	if progressPanel["tag"] != "collapsible_panel" || progressPanel["expanded"] != false {
+		t.Fatalf("progress panel = %#v", progressPanel)
+	}
+	bodyPanel := elements[1].(map[string]any)
+	if bodyPanel["tag"] != "collapsible_panel" || bodyPanel["expanded"] != true {
+		t.Fatalf("body panel = %#v", bodyPanel)
+	}
+}
+
+func TestBuildUnifiedStreamingCardJSONWithoutProgress(t *testing.T) {
+	raw := buildUnifiedStreamingCardJSON(false)
+	var card map[string]any
+	if err := json.Unmarshal([]byte(raw), &card); err != nil {
+		t.Fatalf("unmarshal card: %v", err)
+	}
+	body := card["body"].(map[string]any)
+	elements := body["elements"].([]any)
+	if len(elements) != 1 {
+		t.Fatalf("elements len = %d, want 1", len(elements))
+	}
+}
+
 func TestBuildRichCardProgressPanelCollapsed(t *testing.T) {
 	card := buildRichCard(cardStatusWorking, "", []toolStep{
 		{Kind: toolStepKindTool, Name: "Read", Summary: "README.md"},

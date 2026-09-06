@@ -9,6 +9,124 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
+	p := &Platform{
+		progressStyle:    "card",
+		showThinking:     true,
+		showToolProgress: true,
+	}
+	st := &streamState{
+		thinking: "plan",
+		steps: []toolStep{
+			{Kind: toolStepKindTool, Name: "Read", Summary: "README.md", Done: true},
+			{Kind: toolStepKindToolResult, Name: "Read", Result: "hello"},
+		},
+	}
+	md := p.renderProgressMarkdown(st, true)
+	if strings.Contains(md, "⏱ 运行中") {
+		t.Fatalf("streaming progress should not include running status line, got %q", md)
+	}
+	if !strings.Contains(md, "> plan") {
+		t.Fatalf("expected thinking quote block, got %q", md)
+	}
+	if !strings.Contains(md, "**Read**") {
+		t.Fatalf("expected tool line, got %q", md)
+	}
+	if !strings.Contains(md, "hello") {
+		t.Fatalf("expected tool result, got %q", md)
+	}
+}
+
+func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
+	p := &Platform{progressStyle: "card", showToolProgress: true}
+	st := &streamState{
+		startedAt:         time.Now().Add(-2 * time.Second),
+		progressStartedAt: time.Now().Add(-2 * time.Second),
+		steps:             []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"}},
+	}
+	md := p.renderProgressMarkdown(st, false)
+	if !strings.Contains(md, "> ⏱ 用时") {
+		t.Fatalf("expected completed status footer, got %q", md)
+	}
+	if !strings.Contains(md, "---") {
+		t.Fatalf("expected status footer separator, got %q", md)
+	}
+	if !strings.Contains(md, "1 个工具") {
+		t.Fatalf("expected tool count in final status, got %q", md)
+	}
+}
+
+func TestUnifiedMessageEndPreservesBodyForTurnFinalize(t *testing.T) {
+	p := &Platform{progressStyle: "card", useInteractiveCard: true, showToolProgress: true}
+	sessionID := agentkit.SessionID("session-preserve-body")
+	st := p.streamState(sessionID)
+	st.bodyText = "hello"
+	st.lastStreamedBody = "hello"
+	st.startedAt = time.Now()
+	st.cardHandle = &feishuPreviewHandle{messageID: "card", cardID: "entity"}
+
+	st.mu.Lock()
+	bodyText := st.bodyText
+	if bodyText == "" {
+		bodyText = st.lastStreamedBody
+	}
+	st.mu.Unlock()
+	if bodyText != "hello" {
+		t.Fatalf("body for finalize = %q", bodyText)
+	}
+}
+
+func TestUnifiedStreamKeepsSingleCardAcrossSegments(t *testing.T) {
+	p := &Platform{
+		progressStyle:      "card",
+		showThinking:         true,
+		showToolProgress:     true,
+		useInteractiveCard:   true,
+	}
+	if !p.useUnifiedStreamCard() {
+		t.Fatal("expected unified stream card mode")
+	}
+	sessionID := agentkit.SessionID("session-unified")
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	st.thinking = "plan"
+	st.bodyText = "hello"
+	st.toolStepIdx = make(map[int]int)
+	st.startedAt = time.Now()
+	st.lastProgressUpdate = time.Now()
+	st.lastBodyUpdate = time.Now()
+	st.mu.Unlock()
+
+	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
+		Type:  agentkit.AssistantEventThinkingDelta,
+		Delta: "more",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
+		Type:         agentkit.AssistantEventToolCallStart,
+		ContentIndex: 1,
+		ToolName:     "Read",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.progressHandle != nil || st.bodyHandle != nil {
+		t.Fatal("legacy split handles should not be used in unified mode")
+	}
+	if st.thinking != "planmore" {
+		t.Fatalf("thinking should accumulate across events, got %q", st.thinking)
+	}
+	if st.bodyText != "hello" {
+		t.Fatalf("bodyText = %q", st.bodyText)
+	}
+	if len(st.steps) != 1 || st.steps[0].Name != "Read" {
+		t.Fatalf("steps = %#v", st.steps)
+	}
+}
+
 func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 	p := &Platform{
 		progressStyle:    "card",
@@ -228,6 +346,33 @@ func TestRenderCompactProgressCardOmitsBodyText(t *testing.T) {
 	content := p.renderProgressContent(st, true)
 	if strings.Contains(content, "正文应在正文卡中展示") {
 		t.Fatalf("progress card should not carry body text, got %q", content)
+	}
+}
+
+func TestUnifiedMessageStartPreservesToolSteps(t *testing.T) {
+	p := &Platform{progressStyle: "card", useInteractiveCard: true, showToolProgress: true}
+	sessionID := agentkit.SessionID("session-unified-steps")
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "hello.txt", Done: true}}
+	st.thinking = "plan"
+	st.bodyText = "partial answer"
+	st.mu.Unlock()
+
+	if err := p.handleRichStreamMessageStart(context.Background(), sessionID); err != nil {
+		t.Fatal(err)
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.steps) != 1 || st.steps[0].Name != "Read" {
+		t.Fatalf("expected tool steps to persist across messages, got %#v", st.steps)
+	}
+	if st.thinking != "plan" {
+		t.Fatalf("thinking should persist, got %q", st.thinking)
+	}
+	if st.bodyText != "" {
+		t.Fatalf("bodyText should reset for new message, got %q", st.bodyText)
 	}
 }
 
@@ -456,6 +601,32 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 		t.Fatal("expected pending body flush timer to be reused")
 	}
 	first.Stop()
+}
+
+func TestRenderProgressBodyUnifiedKeepsAllSteps(t *testing.T) {
+	p := &Platform{
+		progressStyle:      "card",
+		useInteractiveCard: true,
+		showToolProgress:   true,
+	}
+	if !p.useUnifiedStreamCard() {
+		t.Fatal("expected unified stream card mode")
+	}
+	st := &streamState{
+		steps: []toolStep{
+			{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"},
+			{Kind: toolStepKindToolResult, Name: "Read", Result: "file-a"},
+			{Kind: toolStepKindTool, Name: "Grep", Summary: "pattern"},
+			{Kind: toolStepKindToolResult, Name: "Grep", Result: "match"},
+		},
+	}
+	body := p.renderProgressBody(st)
+	if !strings.Contains(body, "Read") || !strings.Contains(body, "Grep") {
+		t.Fatalf("unified progress should keep all steps, got %q", body)
+	}
+	if strings.Contains(body, "仅显示最近更新") {
+		t.Fatalf("unified progress should not truncate, got %q", body)
+	}
 }
 
 func boolPtr(v bool) *bool {

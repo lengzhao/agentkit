@@ -38,6 +38,8 @@ type Config struct {
 	ReplyInThread              *bool             `json:"replyInThread"`
 	ReactionEmoji              string            `json:"reactionEmoji"`
 	DoneEmoji                  string            `json:"doneEmoji"`
+	CancelledEmoji             string            `json:"cancelledEmoji"`
+	ErrorEmoji                 string            `json:"errorEmoji"`
 	GroupOnly                  bool              `json:"groupOnly"`
 	RespondToAtEveryoneAndHere bool              `json:"respondToAtEveryoneAndHere"`
 	ReplyToTrigger             *bool             `json:"replyToTrigger"`
@@ -84,12 +86,15 @@ func (msg inboundMessage) inboundRoute(platform string) session.SessionRouteInpu
 type streamState struct {
 	mu                 sync.Mutex
 	handle             any // legacy mode preview handle
+	cardHandle         any // unified rich mode: single CardKit card for progress + body
 	progressHandle     any // rich mode: current message segment progress card
 	bodyHandle         any // rich mode: current message segment body card
 	activeSegment      streamSegmentKind
 	cards              []streamCard // ordered cards for eviction (oldest first)
 	accumulated        string // legacy mode text buffer
 	bodyText           string // rich mode in-flight assistant markdown
+	lastStreamedBody     string // unified card: last body flushed to body_md
+	lastStreamedProgress string // unified card: last progress flushed to progress_md
 	thinking           string
 	steps              []toolStep
 	toolStepIdx        map[int]int // contentIndex -> index in steps
@@ -131,8 +136,9 @@ type cardStatus string
 const (
 	cardStatusThinking cardStatus = "thinking"
 	cardStatusWorking  cardStatus = "working"
-	cardStatusDone     cardStatus = "done"
-	cardStatusError    cardStatus = "error"
+	cardStatusDone       cardStatus = "done"
+	cardStatusCancelled  cardStatus = "cancelled"
+	cardStatusError      cardStatus = "error"
 )
 
 type toolStepKind string
@@ -187,6 +193,20 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	}
 	if doneEmoji == "none" {
 		doneEmoji = ""
+	}
+	cancelledEmoji := cfg.CancelledEmoji
+	if cancelledEmoji == "" {
+		cancelledEmoji = "HEARTBROKEN"
+	}
+	if cancelledEmoji == "none" {
+		cancelledEmoji = ""
+	}
+	errorEmoji := cfg.ErrorEmoji
+	if errorEmoji == "" {
+		errorEmoji = "CrossMark"
+	}
+	if errorEmoji == "none" {
+		errorEmoji = ""
 	}
 
 	progressStyle := "legacy"
@@ -256,6 +276,8 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		useInteractiveCard:         useInteractiveCard,
 		reactionEmoji:              reactionEmoji,
 		doneEmoji:                  doneEmoji,
+		cancelledEmoji:             cancelledEmoji,
+		errorEmoji:                 errorEmoji,
 		allowFrom:                  cfg.AllowFrom,
 		allowChat:                  cfg.AllowChat,
 		groupOnly:                  cfg.GroupOnly,
@@ -317,9 +339,18 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
 	case agentkit.EventTurnEnd:
-		p.addDoneReactionForSession(delivery)
+		endData := parseTurnEndData(event)
+		triggerRC, _ := p.turnTriggerFor(delivery)
+		switch {
+		case endData.Cancelled:
+			p.addCancelledReaction(triggerRC)
+		case endData.Failed:
+			p.addErrorReaction(triggerRC)
+		default:
+			p.addDoneReaction(triggerRC)
+		}
 		if p.useInteractiveCard && p.useRichStream() {
-			return p.handleRichTurnEnd(ctx, delivery)
+			return p.handleRichTurnEnd(ctx, delivery, endData)
 		}
 		return nil
 	}
@@ -328,9 +359,18 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	}
 	switch event.Type {
 	case agentkit.EventTurnStart:
+		if rc, ok := p.deliveryFor(delivery); ok && rc.messageID != "" {
+			p.turnTriggers.Store(delivery, rc)
+		}
 		p.clearStream(delivery)
 		if p.useRichStream() {
+			p.richStreamState(delivery)
 			p.startProgressHeartbeat(delivery)
+			if p.useUnifiedStreamCard() && p.showStreamProgress() {
+				if err := p.flushUnifiedProgress(ctx, delivery); err != nil {
+					slog.Debug(p.tag()+": initial unified progress flush failed", "session_id", delivery, "error", err)
+				}
+			}
 		}
 		return nil
 	case agentkit.EventMessageStart:
@@ -434,6 +474,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}, text)
 		if err != nil {
 			_ = p.sendText(ctx, msg.sessionID, fmt.Sprintf("命令执行失败: %v", err))
+			p.addDoneReactionForSession(msg.sessionID)
 			return
 		}
 		switch outcome.Kind {
@@ -441,6 +482,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 			if outcome.Reply != "" {
 				_ = p.sendText(ctx, msg.sessionID, outcome.Reply)
 			}
+			p.addDoneReactionForSession(msg.sessionID)
 			return
 		case common.SlashForward:
 			if outcome.Reply != "" {
@@ -520,17 +562,64 @@ func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, r
 
 func (p *Platform) addDoneReactionForSession(sessionID agentkit.SessionID) {
 	rc, ok := p.deliveryFor(sessionID)
-	if !ok || rc.messageID == "" {
+	if !ok {
+		return
+	}
+	p.addDoneReaction(rc)
+}
+
+func (p *Platform) turnTriggerFor(sessionID agentkit.SessionID) (replyContext, bool) {
+	if raw, ok := p.turnTriggers.LoadAndDelete(sessionID); ok {
+		if rc, ok := raw.(replyContext); ok {
+			return rc, true
+		}
+	}
+	return p.deliveryFor(sessionID)
+}
+
+func (p *Platform) addDoneReaction(rc replyContext) {
+	if rc.messageID == "" {
 		return
 	}
 	if rc.processingReactionID != "" {
 		p.removeReaction(rc.messageID, rc.processingReactionID)
-		rc.processingReactionID = ""
-		p.deliveries.Store(sessionID, rc)
 	}
 	if p.doneEmoji != "" {
 		p.addReactionWithEmoji(rc.messageID, p.doneEmoji)
 	}
+}
+
+func (p *Platform) addCancelledReaction(rc replyContext) {
+	if rc.messageID == "" {
+		return
+	}
+	if rc.processingReactionID != "" {
+		p.removeReaction(rc.messageID, rc.processingReactionID)
+	}
+	if p.cancelledEmoji != "" {
+		p.addReactionWithEmoji(rc.messageID, p.cancelledEmoji)
+	}
+}
+
+func (p *Platform) addErrorReaction(rc replyContext) {
+	if rc.messageID == "" {
+		return
+	}
+	if rc.processingReactionID != "" {
+		p.removeReaction(rc.messageID, rc.processingReactionID)
+	}
+	if p.errorEmoji != "" {
+		p.addReactionWithEmoji(rc.messageID, p.errorEmoji)
+	}
+}
+
+func parseTurnEndData(event agentkit.OutboundEvent) session.TurnEndData {
+	var data session.TurnEndData
+	if len(event.Data) == 0 {
+		return data
+	}
+	_ = json.Unmarshal(event.Data, &data)
+	return data
 }
 
 const streamUpdateInterval = 800 * time.Millisecond

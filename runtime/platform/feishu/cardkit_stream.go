@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -13,8 +14,9 @@ import (
 )
 
 const (
-	bodyStreamElementID   = "body_md"
-	streamCardKitInterval = 100 * time.Millisecond
+	progressStreamElementID = "progress_md"
+	bodyStreamElementID     = "body_md"
+	streamCardKitInterval   = 100 * time.Millisecond
 )
 
 func (p *Platform) useCardKitStream() bool {
@@ -55,6 +57,63 @@ func buildStreamingBodyCardEntityJSON() string {
 					"content":    "",
 				},
 			},
+		},
+	}
+	b, _ := json.Marshal(card)
+	return string(b)
+}
+
+func buildProgressCollapsiblePanel(content string) map[string]any {
+	return map[string]any{
+		"tag":              "collapsible_panel",
+		"expanded":         false,
+		"background_color": "grey",
+		"header": map[string]any{
+			"title": map[string]any{"tag": "plain_text", "content": "处理过程，点开可以看详情"},
+		},
+		"border":           map[string]any{"color": "grey"},
+		"vertical_spacing": "8px",
+		"padding":          "4px 8px",
+		"elements": []map[string]any{
+			{
+				"tag":        "markdown",
+				"element_id": progressStreamElementID,
+				"content":    content,
+			},
+		},
+	}
+}
+
+func buildBodyCollapsiblePanel(content string, expanded bool) map[string]any {
+	return map[string]any{
+		"tag":      "collapsible_panel",
+		"expanded": expanded,
+		"header": map[string]any{
+			"title": map[string]any{"tag": "plain_text", "content": "正文"},
+		},
+		"vertical_spacing": "8px",
+		"padding":          "4px 8px",
+		"elements": []map[string]any{
+			{
+				"tag":        "markdown",
+				"element_id": bodyStreamElementID,
+				"content":    content,
+			},
+		},
+	}
+}
+
+func buildUnifiedStreamingCardJSON(withProgress bool) string {
+	elements := make([]map[string]any, 0, 2)
+	if withProgress {
+		elements = append(elements, buildProgressCollapsiblePanel(""))
+	}
+	elements = append(elements, buildBodyCollapsiblePanel("", true))
+	card := map[string]any{
+		"schema": "2.0",
+		"config": streamingCardConfig(),
+		"body": map[string]any{
+			"elements": elements,
 		},
 	}
 	b, _ := json.Marshal(card)
@@ -222,10 +281,17 @@ func (p *Platform) updateCardEntity(ctx context.Context, h *feishuPreviewHandle,
 }
 
 func (p *Platform) streamCardElementContent(ctx context.Context, h *feishuPreviewHandle, content string) error {
+	return p.streamCardElementByID(ctx, h, h.elementID, content)
+}
+
+func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHandle, elementID, content string) error {
+	if strings.TrimSpace(elementID) == "" {
+		return fmt.Errorf("%s: stream card content: empty element_id", p.tag())
+	}
 	seq := h.nextSequence()
 	req := larkcardkit.NewContentCardElementReqBuilder().
 		CardId(h.cardID).
-		ElementId(h.elementID).
+		ElementId(elementID).
 		Body(larkcardkit.NewContentCardElementReqBodyBuilder().
 			Content(content).
 			Sequence(seq).
@@ -277,6 +343,37 @@ func (p *Platform) closeCardStreaming(ctx context.Context, h *feishuPreviewHandl
 			return nil
 		})
 	})
+}
+
+func (p *Platform) finalizeUnifiedStreamCard(ctx context.Context, h *feishuPreviewHandle, bodyText, progressMD string, withProgress bool) error {
+	if withProgress && strings.TrimSpace(progressMD) != "" {
+		processed := progressMD
+		if containsMarkdown(progressMD) {
+			processed = preprocessFeishuMarkdown(progressMD)
+		}
+		processed = sanitizeMarkdownURLs(processed)
+		if err := p.streamCardElementByID(ctx, h, progressStreamElementID, processed); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(bodyText) != "" {
+		processed := bodyText
+		if containsMarkdown(bodyText) {
+			processed = preprocessFeishuMarkdown(bodyText)
+		}
+		processed = sanitizeMarkdownURLs(processed)
+		if err := p.streamCardElementByID(ctx, h, bodyStreamElementID, processed); err != nil {
+			return err
+		}
+	}
+	if err := p.closeCardStreaming(ctx, h); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	h.elementID = ""
+	h.streaming = false
+	h.mu.Unlock()
+	return nil
 }
 
 func (p *Platform) finalizeStreamingBodyCard(ctx context.Context, h *feishuPreviewHandle, text string) error {

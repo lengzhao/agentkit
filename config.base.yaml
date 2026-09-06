@@ -89,6 +89,9 @@ platform.feishu:
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
     allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
+    progressStyle: card      # legacy=仅正文；card/compact=单卡双面板流式
+    showToolProgress: true
+    showThinking: true
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
@@ -103,6 +106,9 @@ platform.lark:
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
     allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
+    progressStyle: card      # legacy=仅正文；card/compact=单卡双面板流式
+    showToolProgress: true
+    showThinking: true
   deps:
     commands: commands.default
     sessionStore: sessionStore.default

@@ -117,6 +117,8 @@ type Platform struct {
 	useInteractiveCard         bool
 	reactionEmoji              string
 	doneEmoji                  string
+	cancelledEmoji             string
+	errorEmoji                 string
 	allowFrom                  string
 	allowChat                  string
 	groupOnly                  bool
@@ -135,6 +137,7 @@ type Platform struct {
 	inbox                      *common.Inbox
 	outbound                   *common.Outbound
 	deliveries                 sync.Map
+	turnTriggers               sync.Map
 	streams                    sync.Map
 	client                     *lark.Client
 	replayClient               *lark.Client
@@ -3434,6 +3437,8 @@ func buildCardJSONWithStatus(content string, status cardStatus) string {
 		template = "blue"
 	case cardStatusDone:
 		template = "green"
+	case cardStatusCancelled:
+		template = "orange"
 	case cardStatusError:
 		template = "red"
 	}
@@ -3621,6 +3626,9 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 	case cardStatusDone:
 		headerTemplate = "green"
 		headerTitle = "Done"
+	case cardStatusCancelled:
+		headerTemplate = "orange"
+		headerTitle = "Cancelled"
 	case cardStatusError:
 		headerTemplate = "red"
 		headerTitle = "Error"

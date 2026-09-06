@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -116,7 +117,7 @@ type turnRun struct {
 	completed int
 }
 
-func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
+func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr error) {
 	sessionID := session.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
@@ -145,8 +146,17 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
 		telemetry.RecordTurnSteps(ctx, run.completed)
+		endData := session.TurnEndData{Steps: run.completed}
+		if reason, ok := cancelReasonFromError(runErr); ok {
+			endData.Cancelled = true
+			endData.StopReason = reason
+			telemetry.RecordTurnStopReason(ctx, reason)
+		} else if runErr != nil {
+			endData.Failed = true
+			endData.StopReason = runErr.Error()
+		}
 		_ = session.AppendTurnEnd(endCtx, sess, a.id, run.completed)
-		if err := a.emitLifecycle(endCtx, input.Emit, sessionID, agentkit.EventTurnEnd, session.TurnEndData{Steps: run.completed}); err != nil {
+		if err := a.emitLifecycle(endCtx, input.Emit, sessionID, agentkit.EventTurnEnd, endData); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
 	}()
@@ -604,6 +614,25 @@ func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID 
 func EncodeEventData(v any) json.RawMessage {
 	raw, _ := json.Marshal(v)
 	return raw
+}
+
+func cancelReasonFromError(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+	const prefix = "cancelled: "
+	msg := err.Error()
+	if strings.HasPrefix(msg, prefix) {
+		reason := strings.TrimSpace(msg[len(prefix):])
+		if reason == "" {
+			reason = "cancelled"
+		}
+		return reason, true
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled", true
+	}
+	return "", false
 }
 
 func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID, typ agentkit.EventType, data any) error {

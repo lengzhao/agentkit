@@ -13,19 +13,29 @@ func TestShouldHeartbeatFlush(t *testing.T) {
 		status:    cardStatusWorking,
 		progressHandle: &feishuPreviewHandle{messageID: "msg"},
 	}
-	if !shouldHeartbeatFlush(st) {
+	if !shouldHeartbeatFlush(st, false) {
 		t.Fatal("expected active rich stream to heartbeat")
 	}
 
+	st.cardHandle = &feishuPreviewHandle{messageID: "card"}
+	st.progressHandle = nil
+	if shouldHeartbeatFlush(st, true) {
+		t.Fatal("unified card progress is append-only and should not heartbeat")
+	}
+
 	st.status = cardStatusDone
-	if shouldHeartbeatFlush(st) {
+	if shouldHeartbeatFlush(st, true) {
 		t.Fatal("expected completed stream to skip heartbeat")
 	}
 
 	st.status = cardStatusWorking
+	st.cardHandle = nil
 	st.progressHandle = nil
-	if shouldHeartbeatFlush(st) {
-		t.Fatal("expected stream without progress handle to skip heartbeat")
+	if shouldHeartbeatFlush(st, false) {
+		t.Fatal("expected legacy stream without progress handle to skip heartbeat")
+	}
+	if shouldHeartbeatFlush(st, true) {
+		t.Fatal("unified stream should not heartbeat")
 	}
 }
 
