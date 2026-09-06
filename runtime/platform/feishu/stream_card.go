@@ -349,14 +349,13 @@ func (p *Platform) removePriorProgressCards(ctx context.Context, st *streamState
 
 func (p *Platform) evictStreamCards(ctx context.Context, st *streamState) {
 	for len(st.cards) > maxStreamCards {
-		if st.cards[0].Kind != streamCardProgress {
-			break
+		oldest := st.cards[0]
+		if oldest.Kind == streamCardProgress {
+			if err := p.DeletePreviewMessage(ctx, oldest.Handle); err != nil {
+				slog.Debug(p.tag()+": evict progress card failed", "error", err)
+			}
 		}
-		handle := st.cards[0].Handle
-		if err := p.DeletePreviewMessage(ctx, handle); err != nil {
-			slog.Debug(p.tag()+": evict progress card failed", "error", err)
-		}
-		st.clearCardRef(handle)
+		st.clearCardRef(oldest.Handle)
 		st.cards = st.cards[1:]
 	}
 }

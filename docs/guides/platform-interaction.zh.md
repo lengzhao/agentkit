@@ -128,7 +128,7 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | **tool** | tool / tool_result / subagent | 新过程卡；同一次 tool 调用与结果留在同一张卡 |
 | **body** | `text_delta` | 新正文卡；CardKit `elements/.../content` 流式上屏；**正文 markdown 默认展开** |
 | **定稿** | 类型切换或 `message/end` | 关闭 `streaming_mode`，当前片段 finalize；不再回写已切走的旧卡 |
-| **淘汰** | 超过 3 张卡 | 从最老开始，仅删除**过程卡**直到 ≤3 张；正文卡永不淘汰 |
+| **淘汰** | 超过 3 张卡 | 从最老开始 pop 直到 ≤3 张；**过程卡**（thinking/tool）同时删除飞书消息，**正文卡**仅从滑动窗口移除、不删消息 |
 
 ```mermaid
 flowchart TD
@@ -152,7 +152,7 @@ flowchart TD
 
 `card` / `compact` 模式下，进度区将 **tool 调用**（参数）与 **tool 结果**（输出）分两行展示；平台监听 `tool/result` 生命周期事件写入结果行。subagent 委托经 runtime outbound 发出 `subagent/start`、`subagent/end`，在过程卡中以「子 Agent · {agentID}」展示（与 tool 同级）。单张过程卡仅保留最近 **2** 条 thinking / tool / subagent 记录（`compact` 超出时显示「仅显示最近更新」提示），避免长任务把卡片撑得过长。
 
-`card` / `compact` 模式下，turn 未完成且当前过程卡已发出后，平台每 **5 秒** 原地更新一次该过程卡，刷新页脚「⏱ 运行中 …」耗时；正文卡流式期间通过 CardKit 文本流式 API 更新（约 **100ms** 节流，无 Patch 5 QPS 限制）。会话滑动窗口最多保留 **3** 张卡，超出时从最老开始仅淘汰过程卡。thinking → 正文 → tool 会得到三张按时间顺序排列的卡，后续更新只打在最新同类型卡上。
+`card` / `compact` 模式下，turn 未完成且当前过程卡已发出后，平台每 **5 秒** 原地更新一次该过程卡，刷新页脚「⏱ 运行中 …」耗时；正文卡流式期间通过 CardKit 文本流式 API 更新（约 **100ms** 节流，无 Patch 5 QPS 限制）。会话滑动窗口最多跟踪 **3** 张卡，新开卡超出时从队首 pop 最老的一张：过程卡会删除对应飞书消息，正文卡仅移出窗口、消息保留。thinking → 正文 → tool 会得到三张按时间顺序排列的卡，后续更新只打在最新同类型卡上。
 
 ```yaml
 platform.default:

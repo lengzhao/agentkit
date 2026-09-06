@@ -314,7 +314,7 @@ func TestRemovePriorProgressCardsKeepsLatestOnly(t *testing.T) {
 	}
 }
 
-func TestEvictStreamCardsKeepsBodyAtHead(t *testing.T) {
+func TestEvictStreamCardsPopsBodyWithoutDelete(t *testing.T) {
 	p := &Platform{progressStyle: "card", useInteractiveCard: false}
 	st := &streamState{
 		cards: []streamCard{
@@ -325,8 +325,14 @@ func TestEvictStreamCardsKeepsBodyAtHead(t *testing.T) {
 		},
 	}
 	p.evictStreamCards(context.Background(), st)
-	if len(st.cards) != 4 {
-		t.Fatalf("cards len = %d, want 4 when oldest is body", len(st.cards))
+	if len(st.cards) != 3 {
+		t.Fatalf("cards len = %d, want 3", len(st.cards))
+	}
+	if st.cards[0].Handle.(*feishuPreviewHandle).messageID != "p1" {
+		t.Fatalf("oldest card = %v, want progress p1", st.cards[0].Handle)
+	}
+	if st.cards[2].Handle.(*feishuPreviewHandle).messageID != "p2" {
+		t.Fatalf("newest card = %v, want progress p2", st.cards[2].Handle)
 	}
 }
 
