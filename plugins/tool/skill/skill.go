@@ -42,8 +42,8 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return "", err
 		}
-		sessionID := session.SessionIDFromContext(ctx)
-		agentID := session.AgentIDFromContext(ctx)
+		sessionID := agentkit.SessionIDFromContext(ctx)
+		agentID := agentkit.AgentIDFromContext(ctx)
 		if sessionID != "" {
 			if store == nil {
 				return "", fmt.Errorf("tool/skill requires sessionStore dependency")

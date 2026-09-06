@@ -85,6 +85,19 @@ func TestFormatHelpMultiline(t *testing.T) {
 	}
 }
 
+func TestProcessSlashHelpTopic(t *testing.T) {
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"new": stubCommand{name: "new", out: "started new session"},
+	}}
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("cli", session.DefaultCLISessionID, session.ScopeChannel, "cli"), "/help new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled || out.Reply != "started new session" {
+		t.Fatalf("unexpected outcome: %+v", out)
+	}
+}
+
 func TestProcessSlashDispatch(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": stubCommand{name: "ping", out: "pong"},
@@ -118,9 +131,9 @@ func TestProcessSlashInjectsPlatformID(t *testing.T) {
 
 func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
 	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
-	var gotSession agentkit.SessionID
+	var gotEntry agentkit.SessionID
 	cmds := stubCommands{byName: map[string]agentkit.Command{
-		"new": captureSessionCommand{t: &gotSession},
+		"new": captureSessionCommand{entryKey: &gotEntry},
 	}}
 	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, session.ScopeChannel, "U02LNUW8KV5"), "/new")
 	if err != nil {
@@ -129,13 +142,32 @@ func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
 	if out.Kind != SlashHandled {
 		t.Fatalf("kind = %v", out.Kind)
 	}
-	if gotSession != "slack:D0AK8MAHW22" {
-		t.Fatalf("command ctx session = %q, want slack:D0AK8MAHW22", gotSession)
+	if gotEntry != "slack:D0AK8MAHW22" {
+		t.Fatalf("command ctx entry key = %q, want slack:D0AK8MAHW22", gotEntry)
+	}
+}
+
+func TestProcessSlashNewUserScopeEntryKey(t *testing.T) {
+	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
+	var gotEntry agentkit.SessionID
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"new": captureSessionCommand{entryKey: &gotEntry},
+	}}
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, session.ScopeUser, "U02LNUW8KV5"), "/new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+	want := session.ApplyScope(delivery, session.ScopeUser, "U02LNUW8KV5")
+	if gotEntry != want {
+		t.Fatalf("command ctx entry key = %q, want %q", gotEntry, want)
 	}
 }
 
 type captureSessionCommand struct {
-	t           *agentkit.SessionID
+	entryKey    *agentkit.SessionID
 	gotPlatform *string
 }
 
@@ -143,8 +175,8 @@ func (c captureSessionCommand) Name() string        { return "new" }
 func (c captureSessionCommand) Alias() string       { return "" }
 func (c captureSessionCommand) Description() string { return "capture" }
 func (c captureSessionCommand) CommandExec(ctx context.Context, _ string) (string, error) {
-	if c.t != nil {
-		*c.t = session.SessionIDFromContext(ctx)
+	if c.entryKey != nil {
+		*c.entryKey = session.ActiveEntryKeyFromContext(ctx)
 	}
 	if c.gotPlatform != nil {
 		*c.gotPlatform = session.PlatformFromContext(ctx)

@@ -22,7 +22,11 @@ func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{store.(agentkit.CommandProvider)})
+	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{sessionCmds})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +62,19 @@ func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) 
 }
 
 func TestProcessChatSlashSessionUsesConversation(t *testing.T) {
-	p, err := New(Config{}, Deps{})
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{sessionCmds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Config{}, Deps{SessionStore: store, Commands: commands})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +110,11 @@ func TestServeNewConversationSlash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{store.(agentkit.CommandProvider)})
+	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{sessionCmds})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +199,11 @@ func TestSlashCommandDoesNotPersistSessionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{store.(agentkit.CommandProvider)})
+	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{sessionCmds})
 	if err != nil {
 		t.Fatal(err)
 	}

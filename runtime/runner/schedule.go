@@ -46,6 +46,7 @@ func (r *Root) routePolicy(event agentkit.MessageEvent) session.RoutePolicy {
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
 	policy := r.routePolicy(event)
 	env := session.ResolveEnvelope(event, policy)
+	env = session.WithMetadataScope(env, r.sessionScope)
 	ctx = session.ApplyEnvelopeToContext(ctx, env)
 	conversation, err := r.resolveConversation(ctx, event, env, policy)
 	if err != nil {

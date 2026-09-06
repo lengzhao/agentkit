@@ -870,7 +870,7 @@ type RouteRef struct {
 | **Agent** | `RunTurn` 从 `session.SessionIDFromContext` 读取 conversation，并通过 `deps.sessionStore.Get` 加载 Session |
 | **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；进程内 LRU 缓存最近活跃的 session；内存只保留 compaction 标记 + 最近 `maxLoadedEvents` 条事件，压缩后裁剪已折叠历史；完整审计读盘 |
 
-所有入口（含 CLI）必须在 `MessageEvent.Envelope.Route` 上设置 delivery。CLI 启动时读 `sessions/cli_current.jsonl` 软链恢复上次会话（缺省指向 `cli:default`）；`/new` 创建新 conversation 并更新 active mapping。配置示例：
+所有入口（含 CLI）必须在 `MessageEvent.Envelope.Route` 上设置 delivery。CLI 使用稳定 delivery `cli:default`，Runner 经 `session/store` 的 active-session 映射（`sessions/<stable>/current.json`）解析当前 conversation；`/new` 创建新 logical session 并更新该映射。配置示例：
 
 ```yaml
 loop:

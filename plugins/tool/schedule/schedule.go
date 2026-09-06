@@ -260,13 +260,13 @@ func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.J
 	if delivery := session.DeliveryRouteFromContext(ctx); delivery != "" {
 		job.DeliverySessionID = string(delivery)
 	}
-	if platform := session.PlatformFromContext(ctx); platform != "" {
+	if platform := agentkit.PlatformFromContext(ctx); platform != "" {
 		job.PlatformID = strings.TrimSpace(platform)
 	}
-	if user := session.UserIDFromContext(ctx); user != "" {
+	if user := agentkit.UserIDFromContext(ctx); user != "" {
 		job.UserID = strings.TrimSpace(user)
 	}
-	if agent := session.AgentIDFromContext(ctx); agent != "" {
+	if agent := agentkit.AgentIDFromContext(ctx); agent != "" {
 		job.AgentID = string(agent)
 	}
 	job.ChannelKey = session.WorkspaceFromContext(ctx)

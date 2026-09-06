@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // Config controls which contributed commands are exposed.
@@ -27,7 +26,10 @@ type Config struct {
 	AdminOnly []string `json:"adminOnly,omitempty"`
 }
 
-type Deps struct{}
+type Deps struct {
+	// SessionCommands pulls session lifecycle slash commands into the build graph.
+	SessionCommands agentkit.CommandProvider `json:"sessionCommands,omitempty"`
+}
 
 // Registry collects slash commands contributed by built plugins.
 type Registry struct {
@@ -40,7 +42,8 @@ type Registry struct {
 //
 // Best practices:
 //   - Providers are discovered from the built graph, so a command appears as soon as its plugin is wired in.
-func New(cfg Config, _ Deps) (agentkit.Commands, error) {
+func New(cfg Config, deps Deps) (agentkit.Commands, error) {
+	_ = deps.SessionCommands
 	return &Registry{
 		cfg:    cfg,
 		byName: make(map[string]agentkit.Command),
@@ -143,7 +146,7 @@ func (r *Registry) EnrichSlashContext(ctx context.Context) context.Context {
 	if len(r.cfg.Admins) == 0 {
 		return ctx
 	}
-	userID := session.UserIDFromContext(ctx)
+	userID := agentkit.UserIDFromContext(ctx)
 	if !isAdminUser(r.cfg.Admins, userID) {
 		return ctx
 	}

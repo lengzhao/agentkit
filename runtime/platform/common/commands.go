@@ -35,6 +35,7 @@ type SlashContext struct {
 	Route        agentkit.RouteRef
 	SessionScope session.SessionScope
 	UserID       string
+	Metadata     map[string]any
 }
 
 // IsSlashCommand reports whether text starts with a slash command.
@@ -71,16 +72,29 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 	if name == "" {
 		return SlashOutcome{Kind: SlashHandled, Reply: FormatHelp(commands)}, nil
 	}
+
+	platformID := strings.TrimSpace(slash.Route.Platform)
+	policy := session.RoutePolicyForPlatform(platformID, session.DefaultRoutePolicy(slash.SessionScope))
+	env := session.ResolveEnvelope(WithDeliveryRoute(agentkit.MessageEvent{
+		PlatformID: platformID,
+		UserID:     slash.UserID,
+	}, slash.Route), policy)
+	env = session.WithMetadataScope(env, slash.SessionScope)
+	if len(slash.Metadata) > 0 {
+		env = session.MergeEnvelopeMetadata(env, slash.Metadata)
+	}
+	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
+	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
+		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
+	}
+
 	switch name {
 	case "help", "h", "?":
 		topic := strings.TrimSpace(args)
 		if topic == "" {
 			return SlashOutcome{Kind: SlashHandled, Reply: FormatHelp(commands)}, nil
 		}
-		return SlashOutcome{
-			Kind:  SlashHandled,
-			Reply: "用法: /help\n      /help <topic>（平台暂仅支持列出命令）",
-		}, nil
+		return dispatchHelpTopic(cmdCtx, commands, topic)
 	}
 	if commands == nil {
 		return SlashOutcome{
@@ -89,16 +103,6 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 		}, nil
 	}
 
-	platformID := strings.TrimSpace(slash.Route.Platform)
-	policy := session.RoutePolicyForPlatform(platformID, session.DefaultRoutePolicy(slash.SessionScope))
-	env := session.ResolveEnvelope(WithDeliveryRoute(agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     slash.UserID,
-	}, slash.Route), policy)
-	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
-	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
-		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
-	}
 	out, err := commands.Dispatch(cmdCtx, name, args)
 	if errors.Is(err, agentkit.ErrCommandForbidden) {
 		return SlashOutcome{Kind: SlashHandled, Reply: UnauthorizedMessage}, nil
@@ -108,6 +112,28 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 			Kind:  SlashForward,
 			Reply: FormatUnknownCommand(name),
 		}, nil
+	}
+	if err != nil {
+		return SlashOutcome{}, err
+	}
+	return SlashOutcome{Kind: SlashHandled, Reply: out}, nil
+}
+
+func dispatchHelpTopic(ctx context.Context, commands agentkit.Commands, topic string) (SlashOutcome, error) {
+	if commands == nil {
+		return SlashOutcome{Kind: SlashHandled, Reply: "unknown help topic (try /help)"}, nil
+	}
+	fields := strings.Fields(topic)
+	if len(fields) == 0 {
+		return SlashOutcome{Kind: SlashHandled, Reply: "unknown help topic (try /help)"}, nil
+	}
+	rest := ""
+	if len(fields) > 1 {
+		rest = strings.TrimSpace(topic[len(fields[0]):])
+	}
+	out, err := commands.Dispatch(ctx, fields[0], rest)
+	if errors.Is(err, agentkit.ErrCommandNotHandled) {
+		return SlashOutcome{Kind: SlashHandled, Reply: "unknown help topic (try /help)"}, nil
 	}
 	if err != nil {
 		return SlashOutcome{}, err

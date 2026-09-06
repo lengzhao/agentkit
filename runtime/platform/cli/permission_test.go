@@ -125,7 +125,7 @@ func TestReceiveRoutesBlockedPromptToPermission(t *testing.T) {
 	pr, pw := io.Pipe()
 	platform := &Platform{
 		input:     NewInput(pr),
-		sessionID: "cli:default",
+		deliveryID: "cli:default",
 		welcomed:  true,
 	}
 
@@ -188,7 +188,7 @@ func TestSendReceivePendingConcurrent(t *testing.T) {
 	pr, pw := io.Pipe()
 	platform := &Platform{
 		input:     NewInput(pr),
-		sessionID: "cli:default",
+		deliveryID: "cli:default",
 		welcomed:  true,
 	}
 

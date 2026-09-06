@@ -28,8 +28,12 @@ func TestE2ECLINewSwitchesSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
 	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{
-		store.(agentkit.CommandProvider),
+		sessionCmds,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,12 +96,12 @@ func TestE2ECLINewSwitchesSession(t *testing.T) {
 		t.Fatalf("runner: %v", err)
 	}
 
-	current, err := store.(session.CLICurrentStore).ResolveCLICurrent(context.Background())
+	current, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), session.DefaultCLISessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if current == session.DefaultCLISessionID {
-		t.Fatalf("cli current = %q, want a new session after /new", current)
+		t.Fatalf("active session = %q, want a new session after /new", current)
 	}
 
 	firstEvents, err := loadAllSessionEvents(store, session.DefaultCLISessionID)

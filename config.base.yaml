@@ -146,6 +146,8 @@ platform.acp:
 
 commands.default:
   use: commands/registry
+  deps:
+    sessionCommands: sessionCommands.default
   # config:
   #   admins: [U02ABC]
   #   adminOnly: [shell, sh, cron, env, mcp, openapi, send]
@@ -253,6 +255,11 @@ sessionStore.default:
     maxLoadedEvents: 256
   deps:
     workspace: workspace.default
+
+sessionCommands.default:
+  use: session/commands
+  deps:
+    sessionStore: sessionStore.default
 
 # cron job 表持久化；schedule/cron 与 tool/schedule 共用此 registry。
 # 写入走临时文件 + rename，进程写一半被杀不会留下截断的 job 表。

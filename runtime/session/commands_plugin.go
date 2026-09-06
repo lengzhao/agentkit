@@ -8,56 +8,57 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-func (s *Store) Commands() []agentkit.Command {
+type CommandsConfig struct{}
+
+type CommandsDeps struct {
+	SessionStore agentkit.SessionStore `json:"sessionStore"`
+}
+
+// Commands contributes session lifecycle slash commands (/new, /session).
+type Commands struct {
+	store agentkit.SessionStore
+}
+
+// NewCommands registers session/commands: Session lifecycle slash commands backed by SessionStore.
+func NewCommands(_ CommandsConfig, deps CommandsDeps) (agentkit.CommandProvider, error) {
+	if deps.SessionStore == nil {
+		return nil, fmt.Errorf("session/commands requires sessionStore")
+	}
+	return &Commands{store: deps.SessionStore}, nil
+}
+
+func (c *Commands) Commands() []agentkit.Command {
 	return []agentkit.Command{
-		newCommand{store: s},
-		showSessionCommand{store: s},
+		newCommand{store: c.store},
+		showSessionCommand{store: c.store},
 	}
 }
 
 type newCommand struct {
-	store *Store
+	store agentkit.SessionStore
 }
 
 func (newCommand) Name() string        { return "new" }
 func (newCommand) Alias() string       { return "" }
-func (newCommand) Description() string { return "start a new CLI session" }
+func (newCommand) Description() string { return "start a new conversation session" }
 
 func (c newCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /new")
 	}
-	env := EnvelopeFromContext(ctx)
-	current := SessionIDFromContext(ctx)
-	if current == "" {
-		current = agentkit.SessionID(env.Conversation)
-	}
-
-	if isCLISessionID(current) {
-		id := agentkit.SessionID(NewConversationID(string(current)))
-		if c.store != nil {
-			if err := c.store.SetCLICurrent(ctx, id); err != nil {
-				return "", err
-			}
-		}
-		return string(id), nil
-	}
-
 	entryKey := ActiveEntryKeyFromContext(ctx)
 	if entryKey == "" {
 		return "", fmt.Errorf("session id is required")
 	}
 	id := agentkit.SessionID(NewConversationID(string(entryKey)))
-	if c.store != nil {
-		if err := c.store.SetActiveSession(ctx, entryKey, id); err != nil {
-			return "", err
-		}
+	activeStore, ok := c.store.(agentkit.ActiveSessionStore)
+	if !ok {
+		return "", fmt.Errorf("session store does not support active sessions")
+	}
+	if err := activeStore.SetActiveSession(ctx, entryKey, id); err != nil {
+		return "", err
 	}
 	return string(id), nil
-}
-
-func isCLISessionID(id agentkit.SessionID) bool {
-	return id == "" || strings.HasPrefix(string(id), "cli:")
 }
 
 type showSessionCommand struct {
@@ -74,6 +75,7 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /session")
 	}
+	env := EnvelopeFromContext(ctx)
 	entryKey := ActiveEntryKeyFromContext(ctx)
 	if entryKey == "" {
 		entryKey = SessionIDFromContext(ctx)
@@ -99,8 +101,14 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	}
 
 	var b strings.Builder
+	if convID := MetadataString(env, MetadataConversationID); convID != "" {
+		fmt.Fprintf(&b, "conversation id: %s\n", convID)
+	}
 	fmt.Fprintf(&b, "session id: %s\n", sessionID)
 	fmt.Fprintf(&b, "path: %s\n", sessionPath(sess))
+	if turns := MetadataString(env, MetadataTurnCount); turns != "" {
+		fmt.Fprintf(&b, "turns: %s\n", turns)
+	}
 	fmt.Fprintf(&b, "events: %d\n", len(events))
 	fmt.Fprintf(&b, "messages: %d", len(messages))
 	return strings.TrimRight(b.String(), "\n"), nil

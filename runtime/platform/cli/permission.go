@@ -73,13 +73,13 @@ func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) 
 	return common.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: platformID,
 		Envelope: agentkit.TurnEnvelope{
-			Conversation: string(p.sessionID),
+			Conversation: string(p.deliveryID),
 		},
 		Reply: rtpermission.MarshalReply(permission.Reply{
 			RequestID: pending.requestID,
 			Text:      text,
 		}),
-	}, platformID, p.sessionID)
+	}, platformID, p.deliveryID)
 }
 
 func (p *Platform) hasPending() bool {

@@ -31,16 +31,15 @@ type StoreDeps struct {
 // Store opens one JSONL session file per SessionID under Dir.
 // Suitable for IM platforms where each channel/thread maps to a distinct session.
 type Store struct {
-	relDir              string
-	workspace           workspace.Service
-	maxLoadedEvents     int
-	mu                  sync.Mutex
-	cache               sessionCache
-	bindCache           sync.Map // SessionID -> bindCacheEntry
-	activeCache         sync.Map // SessionID -> activeCacheEntry
+	relDir          string
+	workspace       workspace.Service
+	maxLoadedEvents int
+	mu              sync.Mutex
+	cache           sessionCache
+	sidecar         fileSidecar
 }
 
-// NewStore registers session/store: Resolve durable JSONL sessions by id; contributes /new and /session.
+// NewStore registers session/store: Resolve durable JSONL sessions by id.
 func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("session store requires workspace")
@@ -62,8 +61,9 @@ func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 		relDir:          cfg.Dir,
 		workspace:       deps.Workspace,
 		maxLoadedEvents: cfg.MaxLoadedEvents,
-		cache:               newSessionCache(cfg.MaxCachedSessions, idleTTL, time.Now),
+		cache:           newSessionCache(cfg.MaxCachedSessions, idleTTL, time.Now),
 	}
+	s.sidecar.dir = s.storeDir
 	if idleTTL > 0 {
 		interval := idleTTL / 2
 		if interval < time.Minute {

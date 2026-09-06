@@ -10,6 +10,7 @@ func init() {
 	pluginkit.Register("session/jsonl", NewJSONL)
 	pluginkit.Register("session/store", NewStore)
 	pluginkit.Register("session/static", NewStatic)
+	pluginkit.Register("session/commands", NewCommands)
 }
 
 var (
@@ -17,6 +18,5 @@ var (
 	_ agentkit.Session         = (*JSONL)(nil)
 	_ agentkit.SessionStore    = (*Store)(nil)
 	_ agentkit.SessionStore    = (*StaticStore)(nil)
-	_ agentkit.CommandProvider = (*Store)(nil)
-	_ CLICurrentStore          = (*Store)(nil)
+	_ agentkit.CommandProvider = (*Commands)(nil)
 )

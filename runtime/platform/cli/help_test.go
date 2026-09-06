@@ -158,7 +158,7 @@ func TestCLIHelpCommands(t *testing.T) {
 		{
 			name:   "commands",
 			prompt: "/help",
-			want:   []string{"Commands:", "/plugin", "/agent", "/subagent", "/exit, /quit"},
+			want:   []string{"可用命令:", "/help", "/plugin", "/agent", "/subagent"},
 		},
 	}
 	for _, tc := range cases {

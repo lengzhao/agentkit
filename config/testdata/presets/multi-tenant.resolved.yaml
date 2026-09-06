@@ -66,6 +66,8 @@ bootstrap.shell.default:
         workspace: workspace.default
     use: bootstrap/shell
 commands.default:
+    deps:
+        sessionCommands: sessionCommands.default
     use: commands/registry
 compaction.pipeline.default:
     deps:
@@ -378,6 +380,10 @@ schedule.default:
     deps:
         workspace: workspace.default
     use: schedule/multi
+sessionCommands.default:
+    deps:
+        sessionStore: sessionStore.default
+    use: session/commands
 sessionStore.default:
     config:
         cacheIdleTTL: 30m

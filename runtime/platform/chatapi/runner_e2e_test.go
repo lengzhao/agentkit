@@ -32,8 +32,12 @@ func TestE2EHTTPChatMessageAgentTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
 	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{
-		store.(agentkit.CommandProvider),
+		sessionCmds,
 	})
 	if err != nil {
 		t.Fatal(err)

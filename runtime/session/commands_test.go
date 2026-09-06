@@ -2,8 +2,6 @@ package session_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +10,26 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+func sessionCommands(t *testing.T, store agentkit.SessionStore) agentkit.CommandProvider {
+	t.Helper()
+	provider, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return provider
+}
+
+func cliSlashContext(delivery agentkit.SessionID) agentkit.TurnEnvelope {
+	return session.MergeEnvelopeMetadata(agentkit.TurnEnvelope{
+		Conversation: string(delivery),
+		Workspace:    string(delivery),
+		Route:        session.SessionRouteFromDelivery("cli", delivery, ""),
+		Actor:        agentkit.ActorRef{UserID: "cli"},
+	}, map[string]any{
+		session.MetadataSessionScope: string(session.ScopeChannel),
+	})
+}
+
 func TestStoreCommands(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -19,16 +37,13 @@ func TestStoreCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, ok := store.(agentkit.CommandProvider)
-	if !ok {
-		t.Fatal("expected session store to implement CommandProvider")
-	}
+	provider := sessionCommands(t, store)
 	commands := provider.Commands()
 	if len(commands) != 2 {
 		t.Fatalf("commands=%d want 2", len(commands))
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), cliSlashContext(session.DefaultCLISessionID))
 	for _, cmd := range commands {
 		switch cmd.Name() {
 		case "new":
@@ -38,6 +53,13 @@ func TestStoreCommands(t *testing.T) {
 			}
 			if !strings.HasPrefix(out, "cli:") {
 				t.Fatalf("unexpected new session id: %q", out)
+			}
+			active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), session.DefaultCLISessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if active != agentkit.SessionID(out) {
+				t.Fatalf("active session = %q, want %q", active, out)
 			}
 		case "session":
 			if _, err := cmd.CommandExec(ctx, ""); err != nil {
@@ -49,7 +71,7 @@ func TestStoreCommands(t *testing.T) {
 	}
 }
 
-func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
+func TestNewCommandUpdatesActiveSession(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -57,7 +79,7 @@ func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := store.(agentkit.CommandProvider)
+	provider := sessionCommands(t, store)
 	var newCmd agentkit.Command
 	for _, cmd := range provider.Commands() {
 		if cmd.Name() == "new" {
@@ -71,11 +93,14 @@ func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
 
 	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
 	entry := session.ApplyScope(stable, session.ScopeChannel, "U111")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := session.ApplyEnvelopeToContext(context.Background(), session.MergeEnvelopeMetadata(agentkit.TurnEnvelope{
 		Conversation: string(entry),
 		Workspace:    string(entry),
 		Route:        agentkit.SessionRoute("slack", string(stable)),
-	})
+		Actor:        agentkit.ActorRef{UserID: "U111"},
+	}, map[string]any{
+		session.MetadataSessionScope: string(session.ScopeChannel),
+	}))
 	out, err := newCmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)
@@ -90,14 +115,54 @@ func TestNewCommandForNonCLIOnlyUpdatesActiveSession(t *testing.T) {
 	if active != agentkit.SessionID(out) {
 		t.Fatalf("active session = %q, want %q", active, out)
 	}
-	if _, err := os.Lstat(filepath.Join(dir, session.CLICurrentLinkName)); !os.IsNotExist(err) {
-		t.Fatalf("cli current link err = %v, want not exist", err)
-	}
-	current, err := store.(session.CLICurrentStore).ResolveCLICurrent(context.Background())
+}
+
+func TestNewCommandForCLIUsesActiveSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current != session.DefaultCLISessionID {
-		t.Fatalf("cli current = %q, want default", current)
+	provider := sessionCommands(t, store)
+	var newCmd agentkit.Command
+	for _, cmd := range provider.Commands() {
+		if cmd.Name() == "new" {
+			newCmd = cmd
+			break
+		}
+	}
+	if newCmd == nil {
+		t.Fatal("missing /new command")
+	}
+
+	ctx := session.ApplyEnvelopeToContext(context.Background(), cliSlashContext(session.DefaultCLISessionID))
+	out, err := newCmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), session.DefaultCLISessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != agentkit.SessionID(out) {
+		t.Fatalf("active session = %q, want %q", active, out)
+	}
+}
+
+func TestActiveEntryKeyFromContextRespectsUserScope(t *testing.T) {
+	t.Parallel()
+
+	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
+	env := session.WithMetadataScope(agentkit.TurnEnvelope{
+		Route: agentkit.SessionRoute("slack", string(delivery)),
+		Actor: agentkit.ActorRef{UserID: "U02LNUW8KV5"},
+	}, session.ScopeUser)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+	got := session.ActiveEntryKeyFromContext(ctx)
+	want := session.ApplyScope(delivery, session.ScopeUser, "U02LNUW8KV5")
+	if got != want {
+		t.Fatalf("entry key = %q, want %q", got, want)
 	}
 }

@@ -23,8 +23,8 @@ type Config struct {
 	Prompt string `json:"prompt"`
 	// Once runs a single turn and exit instead of looping on stdin.
 	Once bool `json:"once"`
-	// DefaultSessionID overrides the session to attach to. When empty, CLI reads
-	// sessions/cli_current.jsonl (falls back to cli:default when the link is missing).
+	// DefaultSessionID overrides the stable delivery session key. When empty,
+	// CLI uses cli:default and resolves the active conversation via session/store.
 	DefaultSessionID string `json:"defaultSessionId"`
 }
 
@@ -44,7 +44,7 @@ type Platform struct {
 	input         *Input
 	commands      agentkit.Commands
 	sessionStore  agentkit.SessionStore
-	sessionID     agentkit.SessionID
+	deliveryID    agentkit.SessionID
 	pending       *permissionPrompt
 	turnDone      chan struct{}
 	heldLine      string
@@ -56,15 +56,15 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if initial == "" {
 		initial = initialPromptFromArgs(promptArgs())
 	}
-	sessionID := agentkit.SessionID(cfg.DefaultSessionID)
-	if sessionID == "" {
-		sessionID = resolveCLISessionID(deps.SessionStore)
+	deliveryID := agentkit.SessionID(cfg.DefaultSessionID)
+	if deliveryID == "" {
+		deliveryID = session.DefaultCLISessionID
 	}
 	return &Platform{
 		initialPrompt: initial,
 		once:          cfg.Once,
 		input:         NewInput(os.Stdin),
-		sessionID:     sessionID,
+		deliveryID:    deliveryID,
 		commands:      deps.Commands,
 		sessionStore:  deps.SessionStore,
 	}, nil
@@ -160,14 +160,23 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	p.beginTurnWait()
 	return common.WithInboundRoute(agentkit.MessageEvent{
 		PlatformID: platformID,
+		UserID:     cliUserID(),
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
 	}, session.SessionRouteInput{
 		Platform:   platformID,
-		DeliveryID: p.sessionID,
+		DeliveryID: p.deliveryID,
 	}), nil
+}
+
+func (p *Platform) slashContext() common.SlashContext {
+	return common.SlashContext{
+		Route:        session.SessionRouteFromDelivery(platformID, p.deliveryID, ""),
+		SessionScope: session.ScopeChannel,
+		UserID:       cliUserID(),
+	}
 }
 
 func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, error) {
@@ -175,61 +184,50 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	case "exit", "quit", "q":
 		fmt.Fprintln(os.Stderr, "bye")
 		return true, io.EOF
-	case "help", "h", "?":
-		p.printHelp(args)
-		return true, nil
 	}
 
-	if p.commands == nil {
-		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
-		return true, nil
+	line := "/" + name
+	if strings.TrimSpace(args) != "" {
+		line += " " + args
 	}
-
-	env := agentkit.TurnEnvelope{
-		Conversation: string(p.sessionID),
-		Route:        session.SessionRouteFromDelivery(platformID, p.sessionID, ""),
-	}
-	if userID := cliUserID(); userID != "" {
-		env.Actor.UserID = userID
-	}
-	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
-	if enricher, ok := p.commands.(agentkit.SlashAdminContext); ok {
-		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
-	}
-	out, err := p.commands.Dispatch(cmdCtx, name, args)
-	if errors.Is(err, agentkit.ErrCommandForbidden) {
-		fmt.Fprintln(os.Stderr, common.UnauthorizedMessage)
-		return true, nil
-	}
-	if errors.Is(err, agentkit.ErrCommandNotHandled) {
-		fmt.Fprintf(os.Stderr, "unknown command /%s (try /help)\n", name)
-		return true, nil
-	}
+	outcome, err := common.ProcessSlash(ctx, p.commands, p.slashContext(), line)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "command error: %v\n", err)
 		return true, nil
 	}
-	if out != "" {
-		fmt.Fprintln(os.Stderr, out)
+	switch outcome.Kind {
+	case common.SlashHandled:
+		if outcome.Reply != "" {
+			fmt.Fprintln(os.Stderr, outcome.Reply)
+		}
+		if name == "new" {
+			p.notifyActiveSession(ctx)
+		}
+		return true, nil
+	case common.SlashForward:
+		if outcome.Reply != "" {
+			fmt.Fprintln(os.Stderr, outcome.Reply)
+		}
+		return false, nil
+	default:
+		return false, nil
 	}
-	p.refreshSessionID(ctx)
-	return true, nil
 }
 
-func (p *Platform) refreshSessionID(ctx context.Context) {
+func (p *Platform) notifyActiveSession(ctx context.Context) {
 	if p.sessionStore == nil {
 		return
 	}
-	current, ok := p.sessionStore.(session.CLICurrentStore)
+	activeStore, ok := p.sessionStore.(agentkit.ActiveSessionStore)
 	if !ok {
 		return
 	}
-	id, err := current.ResolveCLICurrent(ctx)
-	if err != nil || id == "" || id == p.sessionID {
+	entry := session.ActiveEntryKey(p.slashContext().Route, session.DefaultRoutePolicy(session.ScopeChannel), cliUserID())
+	active, err := activeStore.ActiveSession(ctx, entry)
+	if err != nil || active == "" || active == entry {
 		return
 	}
-	p.sessionID = id
-	fmt.Fprintf(os.Stderr, "new session: %s\n", p.sessionID)
+	fmt.Fprintf(os.Stderr, "new session: %s\n", active)
 }
 
 func (p *Platform) readInput(skipPrompt bool) (string, error) {
@@ -362,67 +360,6 @@ func (p *Platform) printWelcome() {
 	fmt.Fprintln(os.Stderr, "AgentKit interactive mode. Type /help for commands, /exit to quit.")
 }
 
-func (p *Platform) printHelp(args string) {
-	args = strings.TrimSpace(args)
-	if args != "" {
-		p.dispatchHelpTopic(args)
-		return
-	}
-	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  /help, /h, /?              show this help (or /help <command> for details)")
-	fmt.Fprintln(os.Stderr, "  /exit, /quit               exit the session")
-	if p.commands != nil {
-		for _, cmd := range p.commands.List() {
-			line := fmt.Sprintf("  /%-14s %s", cmd.Name(), cmd.Description())
-			if alias := cmd.Alias(); alias != "" {
-				line += fmt.Sprintf(" (alias: %s)", alias)
-			}
-			fmt.Fprintln(os.Stderr, line)
-		}
-	}
-	fmt.Fprintln(os.Stderr, "  Ctrl+D                     exit when the input line is empty")
-}
-
-func (p *Platform) dispatchHelpTopic(args string) {
-	if p.commands == nil {
-		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
-		return
-	}
-	fields := splitArgs(args)
-	if len(fields) == 0 {
-		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
-		return
-	}
-	cmdCtx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-		Conversation: string(p.sessionID),
-		Route:        session.SessionRouteFromDelivery(platformID, p.sessionID, ""),
-	})
-	rest := ""
-	if len(fields) > 1 {
-		rest = strings.TrimSpace(args[len(fields[0]):])
-	}
-	out, err := p.commands.Dispatch(cmdCtx, fields[0], rest)
-	if errors.Is(err, agentkit.ErrCommandNotHandled) {
-		fmt.Fprintln(os.Stderr, "unknown help topic (try /help)")
-		return
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "help error: %v\n", err)
-		return
-	}
-	if out != "" {
-		fmt.Fprintln(os.Stderr, out)
-	}
-}
-
-func splitArgs(args string) []string {
-	args = strings.TrimSpace(args)
-	if args == "" {
-		return nil
-	}
-	return strings.Fields(args)
-}
-
 func textOf(msg agentkit.ModelMessage) string {
 	var b strings.Builder
 	for _, part := range msg.Content {
@@ -451,19 +388,4 @@ func isTurnControlSlash(name string) bool {
 	default:
 		return false
 	}
-}
-
-func resolveCLISessionID(store agentkit.SessionStore) agentkit.SessionID {
-	if store == nil {
-		return session.DefaultCLISessionID
-	}
-	current, ok := store.(session.CLICurrentStore)
-	if !ok {
-		return session.DefaultCLISessionID
-	}
-	id, err := current.ResolveCLICurrent(context.Background())
-	if err != nil || id == "" {
-		return session.DefaultCLISessionID
-	}
-	return id
 }

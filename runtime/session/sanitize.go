@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
@@ -31,7 +30,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 	if len(msg.ToolResults) > 0 {
 		out.ToolResults = make([]agentkit.ToolResult, len(msg.ToolResults))
 		for i, result := range msg.ToolResults {
-			out.ToolResults[i] = rtcompaction.TruncateToolResult(result, maxTextBytes)
+			out.ToolResults[i] = TruncateToolResult(result, maxTextBytes)
 		}
 	}
 	return out

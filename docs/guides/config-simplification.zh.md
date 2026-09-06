@@ -359,7 +359,7 @@ Slash 命令**不必**在 `commands.default.deps` 里逐个挂：只要贡献方
 | 命令 | 贡献方 | 如何进图 |
 |---|---|---|
 | `/plugin` | `commands/registry` | `platform.deps.commands` |
-| `/new`, `/session` | `session/store` | `runner.deps.sessionStore` |
+| `/new`, `/session` | `session/commands` | `commands.default` → `sessionCommands.default` |
 | `/env` | `credentials/env` | `llm.deps.credentials` |
 | `/mcp`, `/openapi` | `tool/mcp`, `tool/openapi` | `tools.deps.dynamicTools` |
 | `/shell`, `/send`, `/cron` | 对应 tool | `tools.deps.tools` |

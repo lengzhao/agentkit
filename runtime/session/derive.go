@@ -6,77 +6,206 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/skill"
-	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
+// IndexedMessage is a model-visible message with its primary source event seq.
+type IndexedMessage = compaction.IndexedMessage
+
+// IndexMessagesForCompaction rebuilds the model-visible list used for compaction,
+// including the latest compaction summary and retained tail when present.
+func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEvent) []IndexedMessage {
+	agentID := agentkit.AgentIDFromContext(ctx)
+	view := resolveCompactionView(events, agentID)
+	out := indexedCompactionPrefix(view)
+	out = append(out, walkIndexedEvents(events, agentID, view.AfterSeq)...)
+	return out
+}
+
 func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
-	agentID := AgentIDFromContext(ctx)
-
-	compactAfterSeq, summary, retainedTail := latestCompactionView(events, agentID)
-
-	var out []agentkit.ModelMessage
-	if summary != nil {
-		out = append(out, *summary)
-		out = append(out, retainedTail...)
+	agentID := agentkit.AgentIDFromContext(ctx)
+	view := resolveCompactionView(events, agentID)
+	out := plainCompactionPrefix(view)
+	out = append(out, walkPlainEvents(events, agentID, view.AfterSeq)...)
+	out = answerOrphanToolCalls(out)
+	if maxToolBytes > 0 {
+		out = PruneToolResults(out, maxToolBytes)
 	}
+	return out
+}
 
-	var pendingSkillLoads []agentkit.ModelMessage
+type compactionView struct {
+	AfterSeq      agentkit.EventSeq
+	Summary       *agentkit.ModelMessage
+	RetainedTail  []agentkit.ModelMessage
+	CompactionSeq agentkit.EventSeq
+	FirstKeptSeq  agentkit.EventSeq
+	HasCompaction bool
+}
+
+func resolveCompactionView(events []agentkit.SessionEvent, agentID agentkit.AgentID) compactionView {
+	seq, data, ok := latestCompactionForAgent(events, agentID)
+	if !ok {
+		return compactionView{}
+	}
+	summary := data.Summary
+	view := compactionView{
+		HasCompaction: true,
+		CompactionSeq: seq,
+		Summary:       &summary,
+		FirstKeptSeq:  data.FirstKeptSeq,
+		AfterSeq:      seq,
+	}
+	if len(data.RetainedTail) > 0 {
+		view.RetainedTail = append([]agentkit.ModelMessage(nil), data.RetainedTail...)
+		return view
+	}
+	// Legacy compaction entries without retainedTail replay events after BeforeSeq.
+	view.AfterSeq = data.BeforeSeq
+	return view
+}
+
+func plainCompactionPrefix(view compactionView) []agentkit.ModelMessage {
+	if !view.HasCompaction || view.Summary == nil {
+		return nil
+	}
+	out := []agentkit.ModelMessage{*view.Summary}
+	return append(out, view.RetainedTail...)
+}
+
+func indexedCompactionPrefix(view compactionView) []IndexedMessage {
+	if !view.HasCompaction || view.Summary == nil {
+		return nil
+	}
+	out := []IndexedMessage{{
+		Message:     *view.Summary,
+		Seq:         view.CompactionSeq,
+		IsTurnStart: false,
+	}}
+	for _, msg := range view.RetainedTail {
+		out = append(out, IndexedMessage{
+			Message:     msg,
+			Seq:         view.FirstKeptSeq,
+			IsTurnStart: msg.Role == "user",
+		})
+	}
+	return out
+}
+
+type visibleWalkItem struct {
+	msg         agentkit.ModelMessage
+	seq         agentkit.EventSeq
+	isTurnStart bool
+	deferSkill  bool
+}
+
+func walkPlainEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID, afterSeq agentkit.EventSeq) []agentkit.ModelMessage {
+	items := collectVisibleEvents(events, agentID, afterSeq)
+	out := make([]agentkit.ModelMessage, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.msg)
+	}
+	return out
+}
+
+func walkIndexedEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID, afterSeq agentkit.EventSeq) []IndexedMessage {
+	items := collectVisibleEvents(events, agentID, afterSeq)
+	out := make([]IndexedMessage, 0, len(items))
+	for _, item := range items {
+		out = append(out, IndexedMessage{
+			Message:     item.msg,
+			Seq:         item.seq,
+			IsTurnStart: item.isTurnStart,
+		})
+	}
+	return out
+}
+
+func collectVisibleEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID, afterSeq agentkit.EventSeq) []visibleWalkItem {
+	var out []visibleWalkItem
+	var pendingSkill []visibleWalkItem
 	flushSkillLoads := func() {
-		if len(pendingSkillLoads) == 0 {
+		if len(pendingSkill) == 0 {
 			return
 		}
-		out = append(out, pendingSkillLoads...)
-		pendingSkillLoads = nil
+		out = append(out, pendingSkill...)
+		pendingSkill = nil
 	}
-
 	for _, ev := range events {
-		if ev.Seq <= compactAfterSeq {
+		if ev.Seq <= afterSeq {
 			continue
 		}
 		if !eventForAgent(ev, agentID) {
 			continue
 		}
-		switch ev.Type {
-		case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
-			var msg agentkit.ModelMessage
-			if err := json.Unmarshal(ev.Data, &msg); err != nil {
+		for _, item := range eventToWalkItems(ev) {
+			if item.deferSkill {
+				pendingSkill = append(pendingSkill, item)
 				continue
 			}
-			out = append(out, msg)
-		case agentkit.EventToolResult:
-			var result agentkit.ToolResult
-			if err := json.Unmarshal(ev.Data, &result); err != nil {
-				continue
+			out = append(out, item)
+			if item.msg.Role == "tool" {
+				flushSkillLoads()
 			}
-			out = append(out, toolResultMessage(result))
-			flushSkillLoads()
-		case agentkit.EventSkillLoad:
-			var load skillLoadEvent
-			if err := json.Unmarshal(ev.Data, &load); err != nil {
-				continue
-			}
-			// Skill loads are recorded during tool execution, before the tool
-			// result event. Defer them so assistant tool_calls are immediately
-			// followed by tool messages, as providers require.
-			pendingSkillLoads = append(pendingSkillLoads, skillLoadMessage(load))
-		case agentkit.EventTurnContinue:
-			var data TurnContinueData
-			if err := json.Unmarshal(ev.Data, &data); err != nil {
-				continue
-			}
-			out = append(out, data.Messages...)
 		}
 	}
 	flushSkillLoads()
-
-	out = answerOrphanToolCalls(out)
-
-	if maxToolBytes > 0 {
-		out = rtcompaction.PruneToolResults(out, maxToolBytes)
-	}
 	return out
+}
+
+func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
+	switch ev.Type {
+	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
+		var msg agentkit.ModelMessage
+		if err := json.Unmarshal(ev.Data, &msg); err != nil {
+			return nil
+		}
+		return []visibleWalkItem{{
+			msg:         msg,
+			seq:         ev.Seq,
+			isTurnStart: ev.Type == agentkit.EventUserMessage,
+		}}
+	case agentkit.EventToolResult:
+		var result agentkit.ToolResult
+		if err := json.Unmarshal(ev.Data, &result); err != nil {
+			return nil
+		}
+		return []visibleWalkItem{{
+			msg:         toolResultMessage(result),
+			seq:         ev.Seq,
+			isTurnStart: false,
+		}}
+	case agentkit.EventSkillLoad:
+		var load skillLoadEvent
+		if err := json.Unmarshal(ev.Data, &load); err != nil {
+			return nil
+		}
+		// Skill loads are recorded during tool execution, before the tool
+		// result event. Defer them so assistant tool_calls are immediately
+		// followed by tool messages, as providers require.
+		return []visibleWalkItem{{
+			msg:         skillLoadMessage(load),
+			seq:         ev.Seq,
+			isTurnStart: true,
+			deferSkill:  true,
+		}}
+	case agentkit.EventTurnContinue:
+		var data TurnContinueData
+		if err := json.Unmarshal(ev.Data, &data); err != nil {
+			return nil
+		}
+		out := make([]visibleWalkItem, 0, len(data.Messages))
+		for _, msg := range data.Messages {
+			out = append(out, visibleWalkItem{
+				msg:         msg,
+				seq:         ev.Seq,
+				isTurnStart: msg.Role == "user",
+			})
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func latestCompactionForAgent(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, compaction.EventData, bool) {
@@ -98,22 +227,6 @@ func latestCompactionForAgent(events []agentkit.SessionEvent, agentID agentkit.A
 		ok = true
 	}
 	return seq, data, ok
-}
-
-func latestCompactionView(events []agentkit.SessionEvent, agentID agentkit.AgentID) (compactAfterSeq agentkit.EventSeq, summary *agentkit.ModelMessage, retainedTail []agentkit.ModelMessage) {
-	seq, data, ok := latestCompactionForAgent(events, agentID)
-	if !ok {
-		return 0, nil, nil
-	}
-	compactAfterSeq = seq
-	s := data.Summary
-	summary = &s
-	if len(data.RetainedTail) > 0 {
-		return compactAfterSeq, summary, append([]agentkit.ModelMessage(nil), data.RetainedTail...)
-	}
-	// Legacy compaction entries without retainedTail replay events after BeforeSeq.
-	compactAfterSeq = data.BeforeSeq
-	return compactAfterSeq, summary, nil
 }
 
 // eventForAgent limits replay to the agent running the current turn. A session
@@ -183,25 +296,6 @@ func consumeResultAfter(positions map[agentkit.ToolCallID][]int, id agentkit.Too
 	return false
 }
 
-type skillLoadEvent struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	Body         string `json:"body"`
-	ResourceBase string `json:"resourceBase,omitempty"`
-}
-
-func skillLoadMessage(load skillLoadEvent) agentkit.ModelMessage {
-	return agentkit.ModelMessage{
-		Role: "user",
-		Content: []agentkit.ContentPart{{Type: "text", Text: rtskill.RenderLoaded(skill.Content{
-			Name:        load.Name,
-			Description: load.Description,
-			Body:        load.Body,
-			Path:        load.ResourceBase,
-		})}},
-	}
-}
-
 func AppendCompaction(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data compaction.EventData) error {
 	raw, err := json.Marshal(data)
 	if err != nil {
@@ -225,6 +319,7 @@ func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.A
 		Description:  content.Description,
 		Body:         content.Body,
 		ResourceBase: content.Path,
+		Rendered:     renderSkillLoaded(content),
 	})
 	if err != nil {
 		return err
