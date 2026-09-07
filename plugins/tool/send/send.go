@@ -32,6 +32,7 @@ type SendInput struct {
 	Path      string `json:"path,omitempty" jsonschema:"Workspace-relative file to send (image or document)"`
 	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional delivery target; defaults to the current inbox"`
 	UserID    string `json:"userId,omitempty" jsonschema:"Optional user target when sessionId is omitted"`
+	Raw       bool   `json:"raw,omitempty" jsonschema:"Send plain text without platform markdown conversion"`
 }
 
 type SendOutput struct {
@@ -48,7 +49,7 @@ func useEmit(_ context.Context, input SendInput) bool {
 //   - Wire the same sender instance runner uses (platform.default).
 //   - Text and path may be sent together (text first, then file). Path needs the workspace dep.
 //   - Platform/channel routing comes from context. Target sessionId, userId, or neither (current inbox).
-//   - Slash: /send <chatId> <message> (bare channel/chat id; platform from context; message may be multiline)
+//   - Slash: /send [-r|--raw] <chatId> <message> (bare channel/chat id; platform from context; message may be multiline)
 func NewSend(cfg SendConfig, deps SendDeps) (agentkit.Tool, error) {
 	if deps.Sender == nil {
 		return nil, fmt.Errorf("tool/send requires sender dependency")

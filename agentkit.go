@@ -1,6 +1,7 @@
 package agentkit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -29,6 +30,9 @@ const (
 	// KeyProactiveSendUsed is set when tool/send delivers through the turn emit
 	// channel during the current turn.
 	KeyProactiveSendUsed contextKey = "agentkit.proactive_send_used"
+	// KeyProactiveSendRaw is set when tool/send requests platform-native plain
+	// text delivery without markdown conversion.
+	KeyProactiveSendRaw contextKey = "agentkit.proactive_send_raw"
 	// KeyScheduleFireTurn marks a turn started by schedule runtime. Turn-end
 	// assistant text may be suppressed when send already delivered the message.
 	KeyScheduleFireTurn contextKey = "agentkit.schedule_fire_turn"
@@ -148,6 +152,13 @@ func (e OutboundEvent) RequirePlatformID() error {
 		return ErrOutboundPlatformRequired
 	}
 	return nil
+}
+
+// ProactiveSendRawFromContext reports whether the current send should skip
+// platform markdown conversion (tool/send raw mode).
+func ProactiveSendRawFromContext(ctx context.Context) bool {
+	raw, _ := ctx.Value(KeyProactiveSendRaw).(bool)
+	return raw
 }
 
 type JSONSchema struct {

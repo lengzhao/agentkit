@@ -45,6 +45,9 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	if err := event.RequirePlatformID(); err != nil {
 		return err
 	}
+	if input.Raw {
+		ctx = context.WithValue(ctx, agentkit.KeyProactiveSendRaw, true)
+	}
 	if useEmit(ctx, input) {
 		if emit := agentkit.OutboundEmitFromContext(ctx); emit != nil {
 			ctx = context.WithValue(ctx, agentkit.KeyProactiveSendUsed, true)
@@ -54,11 +57,29 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	return deps.Sender.Send(ctx, event)
 }
 
-// ParseSlashArgs parses /send arguments: /send <chatId> <message>.
+// ParseSlashArgs parses /send arguments: /send [-r|--raw] <chatId> <message>.
 // chatId is a bare channel/chat id for the current platform from context.
 // Message may span multiple lines when the platform passes them in one payload.
 func ParseSlashArgs(args string) (SendInput, error) {
 	args = strings.TrimSpace(args)
+	raw := false
+	for {
+		switch {
+		case strings.HasPrefix(args, "--raw "):
+			raw = true
+			args = strings.TrimSpace(args[len("--raw "):])
+		case args == "--raw":
+			return SendInput{}, usageError()
+		case strings.HasPrefix(args, "-r "):
+			raw = true
+			args = strings.TrimSpace(args[3:])
+		case args == "-r":
+			return SendInput{}, usageError()
+		default:
+			goto parsedFlags
+		}
+	}
+parsedFlags:
 	if args == "" {
 		return SendInput{}, usageError()
 	}
@@ -77,11 +98,11 @@ func ParseSlashArgs(args string) (SendInput, error) {
 	if message == "" {
 		return SendInput{}, fmt.Errorf("message is required")
 	}
-	return SendInput{Text: message, SessionID: chatID}, nil
+	return SendInput{Text: message, SessionID: chatID, Raw: raw}, nil
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: /send <chatId> <message>")
+	return fmt.Errorf("usage: /send [-r|--raw] <chatId> <message>")
 }
 
 func isChatID(token string) bool {

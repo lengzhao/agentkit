@@ -1839,7 +1839,7 @@ func (p *Platform) Reply(ctx context.Context, rctx any, content string) error {
 	}
 
 	content = p.resolveMentionsInContent(ctx, rc.chatID, content)
-	msgType, msgBody := buildReplyContent(content)
+	msgType, msgBody := buildOutboundContent(ctx, content)
 
 	if !p.shouldUseThreadOrReplyAPI(rc) {
 		return p.sendNewMessageToChat(ctx, rc, msgType, msgBody)
@@ -1861,7 +1861,7 @@ func (p *Platform) sendIMContent(ctx context.Context, rctx any, content string) 
 	}
 
 	content = p.resolveMentionsInContent(ctx, rc.chatID, content)
-	msgType, msgBody := buildReplyContent(content)
+	msgType, msgBody := buildOutboundContent(ctx, content)
 	return p.sendNewMessageToChat(ctx, rc, msgType, msgBody)
 }
 
@@ -2059,10 +2059,21 @@ func predictMsgType(content string) string {
 	return larkim.MsgTypePost
 }
 
+func buildOutboundContent(ctx context.Context, content string) (msgType string, body string) {
+	if agentkit.ProactiveSendRawFromContext(ctx) {
+		return buildPlainTextContent(content)
+	}
+	return buildReplyContent(content)
+}
+
+func buildPlainTextContent(content string) (msgType string, body string) {
+	b, _ := json.Marshal(map[string]string{"text": content})
+	return larkim.MsgTypeText, string(b)
+}
+
 func buildReplyContent(content string) (msgType string, body string) {
 	if !containsMarkdown(content) {
-		b, _ := json.Marshal(map[string]string{"text": content})
-		return larkim.MsgTypeText, string(b)
+		return buildPlainTextContent(content)
 	}
 	// Prefer card for all markdown content — card schema 2.0 has the best
 	// markdown rendering (headings, blockquotes, code blocks, tables, links,

@@ -480,7 +480,9 @@ func (p *Platform) sendText(ctx context.Context, sessionID agentkit.SessionID, t
 	if !ok {
 		return fmt.Errorf("slack: unknown session %s", sessionID)
 	}
-	text = common.MarkdownToSlackMrkdwn(text)
+	if !agentkit.ProactiveSendRawFromContext(ctx) {
+		text = common.MarkdownToSlackMrkdwn(text)
+	}
 	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
 	if d.replyInThread() {
 		opts = append(opts, slack.MsgOptionPostMessageParameters(slack.PostMessageParameters{

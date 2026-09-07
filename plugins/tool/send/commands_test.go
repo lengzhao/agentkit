@@ -38,9 +38,12 @@ func TestParseSlashArgs(t *testing.T) {
 		args    string
 		text    string
 		session string
+		raw     bool
 		wantErr bool
 	}{
 		{args: "C001 ping", session: "C001", text: "ping"},
+		{args: "-r C001 **bold**", session: "C001", text: "**bold**", raw: true},
+		{args: "--raw C001 **bold**", session: "C001", text: "**bold**", raw: true},
 		{args: "D0AK8MAHW22 123", session: "D0AK8MAHW22", text: "123"},
 		{args: "oc_a1b2c3d4e hello", session: "oc_a1b2c3d4e", text: "hello"},
 		{args: "C001 line1\nline2\nline3", session: "C001", text: "line1\nline2\nline3"},
@@ -63,7 +66,7 @@ func TestParseSlashArgs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseSlashArgs(%q): %v", tc.args, err)
 		}
-		if input.Text != tc.text || input.SessionID != tc.session || input.UserID != "" {
+		if input.Text != tc.text || input.SessionID != tc.session || input.UserID != "" || input.Raw != tc.raw {
 			t.Fatalf("ParseSlashArgs(%q) = %#v", tc.args, input)
 		}
 	}
