@@ -9,7 +9,7 @@ import (
 )
 
 func (p *Platform) sendMediaPart(ctx context.Context, sessionID agentkit.SessionID, part agentkit.ContentPart) error {
-	rc, ok := p.deliveryFor(sessionID)
+	rc, ok := p.deliveryForSend(sessionID)
 	if !ok {
 		return fmt.Errorf("%s: unknown session %s", p.tag(), sessionID)
 	}

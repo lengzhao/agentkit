@@ -518,8 +518,22 @@ func (p *Platform) deliveryFor(sessionID agentkit.SessionID) (replyContext, bool
 	return rc, ok
 }
 
+// deliveryForSend resolves reply context for proactive tool/send delivery.
+// It prefers cached inbound context, then reconstructs routing from the session key.
+func (p *Platform) deliveryForSend(sessionID agentkit.SessionID) (replyContext, bool) {
+	if rc, ok := p.deliveryFor(sessionID); ok {
+		return rc, true
+	}
+	raw, err := p.ReconstructReplyCtx(string(sessionID))
+	if err != nil {
+		return replyContext{}, false
+	}
+	rc, ok := raw.(replyContext)
+	return rc, ok
+}
+
 func (p *Platform) sendText(ctx context.Context, sessionID agentkit.SessionID, text string) error {
-	rc, ok := p.deliveryFor(sessionID)
+	rc, ok := p.deliveryForSend(sessionID)
 	if !ok {
 		return fmt.Errorf("%s: unknown session %s", p.tag(), sessionID)
 	}
