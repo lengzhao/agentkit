@@ -98,7 +98,7 @@ flowchart TB
 | `platform/slack` | `agentkit.Platform` + `chathistory.Provider` | Slack Socket Mode；生成 cc-connect 风格 SessionID；供 `tool/chat-history` 读取频道/线程历史 | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` + `chathistory.Provider` | 飞书 WebSocket；生成 cc-connect 风格 SessionID；`progressStyle: card/compact` 时按 thinking / tool / 正文分卡，类型切换则新开卡片避免乱序；`showThinking` / `showToolProgress` 控制过程卡展示；供 `tool/chat-history` 读取 IM 群/话题历史 | cc-connect `platform/feishu` |
 | `platform/lark` | `agentkit.Platform` + `chathistory.Provider` | 国际版 Lark（`platform/feishu` 的 domain 预设）；流式卡片配置同 feishu | cc-connect `platform/feishu` |
-| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | — |
+| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API；SSE 断线重连（`POST /chat-messages` + `run_id`）；`POST /runs/{id}/cancel`；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | — |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 精确回写（`PlatformID` 为空则拒绝，不广播） |
 | `platform/http` | `agentkit.Platform` | 监听并服务 `http.DefaultServeMux`；与 `chat-api.registerOnly` 或其它 `http.Handle` 扩展组合 | DSH Web Host |
 | `platform/acp` | `agentkit.Platform` + `permission.Capable` | stdio ACP Agent；供 Zed 等 ACP 客户端子进程接入；权限经 ACP `request_permission` 回传客户端 | — |

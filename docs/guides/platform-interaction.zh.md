@@ -217,11 +217,30 @@ Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1
 
 `auto-allow` / `auto-deny` 只作用于 allow_deny；`KindQuestion` 始终走 Broker。
 
+## chat-api SSE 重连
+
+SSE 连接与 run 解耦：客户端断开只 **detach** HTTP sink，agent turn 继续在后台执行。
+
+| 操作 | 行为 |
+|---|---|
+| 客户端断开 SSE | run 保留在内存；缓存最后一个可恢复事件 |
+| 重连 | `POST /v1/chat-messages`，body 带 `{"run_id":"run_xxx"}`（`user` / `channel` header 须与创建时一致） |
+| 取消 run | `POST /v1/runs/{run_id}/cancel`（等同 `/stop`，与断开不同） |
+| 交互回复 | `POST /v1/runs/{run_id}/interactions/{id}/respond`（SSE 可断开） |
+
+重连行为：
+
+- run 存在且无活跃 SSE → 200，重放最后一个可恢复快照（`text_delta` / `thinking_delta` / `question_request` / `permission_request`，断线期间为 `replace:true` 全量），然后继续流式输出直至 `message_end`
+- run 不存在或 user 不匹配 → 200，立即 `message_end`（graceful close）
+- run 已有活跃 SSE → 409 `run already attached`
+
+可恢复事件只保留**最后一个**；`tool_call` / `tool_result` / `file_ready` 等断线期间不重放。服务**重启**后 run 不恢复（见下节）。
+
 ## 超时与持久化
 
 - 超时链：`Request.Timeout` → `Capability.DefaultTimeout` → 10 分钟。
 - 等待 ≥ `permissionPersistAfterSeconds`（默认 60s）时 `permission/request` 落入 session 日志（审计用，模型不可见）。
-- **不做 durable resume**：重启后 `session/recovery` 收尾悬挂 pending，补 orphan `tool/result`。
+- **不做跨重启 durable resume**：进程内 SSE 可重连；服务重启后 `session/recovery` 收尾悬挂 pending，补 orphan `tool/result`。
 
 ## 配置
 

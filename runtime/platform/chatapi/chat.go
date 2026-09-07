@@ -18,13 +18,14 @@ import (
 )
 
 const (
-	maxRequestBody          = 10 << 20
-	maxToolResultSSERunes   = 1024
+	maxRequestBody        = 10 << 20
+	maxToolResultSSERunes = 1024
 )
 
 type chatRequest struct {
 	ConversationID string      `json:"conversation_id"`
 	Query          string      `json:"query"`
+	RunID          string      `json:"run_id"`
 	AgentID        string      `json:"agent_id"`
 	Inputs         []chatInput `json:"inputs"`
 }
@@ -57,6 +58,11 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	if runID := strings.TrimSpace(body.RunID); runID != "" {
+		p.handleChatResume(w, r, user, channelKey, runID, strings.TrimSpace(body.ConversationID))
+		return
+	}
+
 	query := strings.TrimSpace(body.Query)
 	if query == "" && len(body.Inputs) == 0 {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -134,6 +140,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)
+		p.serveRunSSE(r.Context(), run, sse, conv.ID, runID)
 		return
 	}
 	outcome := slashResult.outcome
@@ -145,16 +152,17 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		answer := run.answerText
 		run.mu.Unlock()
-		_ = run.flushDeltas()
+		_ = run.flushDelta()
 		p.pending.finish(runID, pendingResult{answer: answer})
 		p.clearActiveConv(conv.ID, runID)
+		p.serveRunSSE(r.Context(), run, sse, conv.ID, runID)
 		return
 	case common.SlashForward:
 		if outcome.Reply != "" {
 			run.mu.Lock()
 			run.answerText = outcome.Reply
 			run.mu.Unlock()
-			_ = run.flushDeltas()
+			_ = run.flushDelta()
 			run.mu.Lock()
 			run.answerText = ""
 			run.sentAnswer = ""
@@ -180,33 +188,97 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)
+		p.serveRunSSE(r.Context(), run, sse, conv.ID, runID)
 		return
 	}
 
-	select {
-	case result := <-run.done:
-		p.clearActiveConv(conv.ID, runID)
-		if result.err != nil {
-			slog.Debug("chat-api: run finished with error", "run_id", runID, "err", result.err)
+	p.serveRunSSE(r.Context(), run, sse, conv.ID, runID)
+}
+
+func (p *Platform) handleChatResume(w http.ResponseWriter, r *http.Request, user, channelKey, runID, conversationID string) {
+	run := p.pending.get(runID)
+	if run == nil || run.user != user || run.channelKey != channelKey {
+		p.writeResumeMessageEnd(w, conversationID)
+		return
+	}
+
+	if err := run.beginAttach(); err != nil {
+		writeErr(w, http.StatusConflict, "run already attached")
+		return
+	}
+
+	sse, err := newSSEWriter(w)
+	if err != nil {
+		run.cancelAttach()
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	run.finishAttach(sse)
+	if ev := run.peekLastRecoverable(); ev != nil {
+		if err := sse.Event(ev.name, ev.payload); err != nil {
+			run.detach()
+			return
 		}
-	case <-r.Context().Done():
-		p.clearActiveConv(conv.ID, runID)
-		p.pending.finish(runID, pendingResult{err: r.Context().Err()})
+		run.clearLastRecoverable()
+	}
+
+	p.serveRunSSE(r.Context(), run, sse, run.conversationID, runID)
+}
+
+func (p *Platform) writeResumeMessageEnd(w http.ResponseWriter, conversationID string) {
+	sse, err := newSSEWriter(w)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	payload := map[string]any{}
+	if conversationID != "" {
+		payload["conversation_id"] = conversationID
+	}
+	_ = sse.Event("message_end", payload)
+}
+
+func (p *Platform) serveRunSSE(reqCtx context.Context, run *runState, sse *sseWriter, convID, runID string) {
+	for {
+		select {
+		case <-run.notify:
+			if err := run.flushDelta(); err != nil {
+				run.detach()
+				return
+			}
+		case result := <-run.done:
+			p.emitTerminalSSE(run, result)
+			p.clearActiveConv(convID, runID)
+			p.pending.delete(runID)
+			return
+		case <-reqCtx.Done():
+			run.detach()
+			return
+		}
 	}
 }
 
 func (p *Platform) emitTerminalSSE(run *runState, result pendingResult) {
-	if run == nil || run.sse == nil {
+	run.mu.Lock()
+	sink := run.sink
+	msgID := run.messageID
+	conversationID := run.conversationID
+	run.mu.Unlock()
+	if sink == nil || !sink.Active() {
 		return
 	}
-	_ = run.flushDeltas()
+	_ = run.flushDelta()
+	if errors.Is(result.err, errUserCanceled) {
+		_ = sink.Event("error", map[string]string{"error": errUserCanceled.Error()})
+		return
+	}
 	if result.err != nil {
-		_ = run.sse.Error(result.err.Error())
+		_ = sink.Event("error", map[string]string{"error": result.err.Error()})
 		return
 	}
-	_ = run.sse.Event("message_end", map[string]string{
-		"message_id":      run.messageID,
-		"conversation_id": run.conversationID,
+	_ = sink.Event("message_end", map[string]string{
+		"message_id":      msgID,
+		"conversation_id": conversationID,
 	})
 }
 
@@ -268,10 +340,10 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 		switch payload.AssistantMessageEvent.Type {
 		case agentkit.AssistantEventTextDelta:
 			run.appendAnswer(payload.AssistantMessageEvent.Delta)
-			return run.flushDeltas()
+			return nil
 		case agentkit.AssistantEventThinkingDelta:
 			run.appendThinking(payload.AssistantMessageEvent.Delta)
-			return run.flushDeltas()
+			return nil
 		case agentkit.AssistantEventToolCallEnd:
 			return run.emitToolCallSSE(event, payload)
 		}
@@ -285,9 +357,10 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 				run.mu.Lock()
 				run.answerText = text
 				run.mu.Unlock()
+				run.signal()
 			}
 		}
-		return run.flushDeltas()
+		return nil
 	case agentkit.EventAssistantMessage:
 		var msg agentkit.ModelMessage
 		if err := json.Unmarshal(event.Data, &msg); err == nil {
@@ -295,16 +368,15 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 				run.mu.Lock()
 				run.answerText = text
 				run.mu.Unlock()
+				run.signal()
 			}
 			if err := p.emitAssistantMedia(ctx, run, msg); err != nil {
 				return err
 			}
 		}
-		return run.flushDeltas()
+		return nil
 	case agentkit.EventTurnEnd:
-		if err := run.flushDeltas(); err != nil {
-			return err
-		}
+		run.signal()
 		run.scheduleFinish()
 		return nil
 	case agentkit.EventPermissionRequest:
@@ -328,7 +400,7 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 		if payload.Kind == permission.KindQuestion {
 			eventName = "question_request"
 		}
-		return run.sse.Event(eventName, map[string]any{
+		return run.emitSSE(eventName, map[string]any{
 			"interaction_id": requestID,
 			"request_id":     requestID,
 			"run_id":         run.id,
@@ -350,6 +422,14 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 }
 
 func (r *runState) emitToolCallSSE(event agentkit.OutboundEvent, payload agentkit.MessageUpdatePayload) error {
+	r.mu.Lock()
+	sink := r.sink
+	active := sink != nil && sink.Active()
+	r.mu.Unlock()
+	if !active {
+		return nil
+	}
+
 	ame := payload.AssistantMessageEvent
 	toolID := ame.ID
 	name := ame.ToolName
@@ -377,10 +457,18 @@ func (r *runState) emitToolCallSSE(event agentkit.OutboundEvent, payload agentki
 	if event.AgentID != "" {
 		data["agent_id"] = string(event.AgentID)
 	}
-	return r.sse.Event("tool_call", data)
+	return r.emitSSE("tool_call", data)
 }
 
 func (r *runState) emitToolResultSSE(event agentkit.OutboundEvent) error {
+	r.mu.Lock()
+	sink := r.sink
+	active := sink != nil && sink.Active()
+	r.mu.Unlock()
+	if !active {
+		return nil
+	}
+
 	var result agentkit.ToolResult
 	if err := json.Unmarshal(event.Data, &result); err != nil {
 		return err
@@ -402,7 +490,7 @@ func (r *runState) emitToolResultSSE(event agentkit.OutboundEvent) error {
 	if event.AgentID != "" {
 		data["agent_id"] = string(event.AgentID)
 	}
-	return r.sse.Event("tool_result", data)
+	return r.emitSSE("tool_result", data)
 }
 
 func truncateRunes(s string, max int) (string, bool) {

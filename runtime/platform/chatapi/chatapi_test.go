@@ -49,6 +49,7 @@ func TestChatOutboundSSE(t *testing.T) {
 		t.Fatal("pending create failed")
 	}
 	plat.setActiveConv(conv.ID, runID)
+	startRunSSE(plat, run, sse, conv.ID)
 
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -107,6 +108,7 @@ func TestToolCallSSEOnlyOnEnd(t *testing.T) {
 		t.Fatal("pending create failed")
 	}
 	plat.setActiveConv(conv.ID, runID)
+	startRunSSE(plat, run, sse, conv.ID)
 
 	ctx := context.Background()
 	toolStart, _ := json.Marshal(agentkit.MessageUpdatePayload{
@@ -171,6 +173,7 @@ func TestToolResultSSETruncates(t *testing.T) {
 		t.Fatal("pending create failed")
 	}
 	plat.setActiveConv(conv.ID, runID)
+	startRunSSE(plat, run, sse, conv.ID)
 
 	long := strings.Repeat("x", maxToolResultSSERunes+50)
 	resultData, _ := json.Marshal(agentkit.ToolResult{
@@ -317,6 +320,7 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 		t.Fatal("pending create failed")
 	}
 	plat.setActiveConv(conv.ID, runID)
+	startRunSSE(plat, run, sse, conv.ID)
 
 	ctx := context.Background()
 	toolEnd, _ := json.Marshal(agentkit.MessageEndPayload{

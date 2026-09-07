@@ -10,7 +10,13 @@ import (
 )
 
 func (p *Platform) emitAssistantMedia(ctx context.Context, run *runState, msg agentkit.ModelMessage) error {
-	if run == nil || run.sse == nil || p.workspace == nil {
+	if run == nil || p.workspace == nil {
+		return nil
+	}
+	run.mu.Lock()
+	active := run.sink != nil && run.sink.Active()
+	run.mu.Unlock()
+	if !active {
 		return nil
 	}
 	for _, part := range msg.Content {
@@ -48,5 +54,5 @@ func (p *Platform) emitMediaPart(ctx context.Context, run *runState, part agentk
 	for k, v := range p.fileLinkFields(run.apiBase, run.channelKey, meta.ID) {
 		payload[k] = v
 	}
-	return run.sse.Event("file_ready", payload)
+	return run.emitSSE("file_ready", payload)
 }
