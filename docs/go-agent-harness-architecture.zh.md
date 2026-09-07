@@ -1316,6 +1316,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|
 | RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；output 为用户可见文本；metadata 含 `usage_*_tokens`、`steps`、`stop_reason`） | `loop.Dispatch` |
+| Loop 子 agent 委派 | 独立 Trace `agent.turn`（`sessionId` 为子 session；`agent_id` 为实际 Loop agent，如 `cursor`；async 委派同样在后台 goroutine 导出） | `subagent/loop-agent.runChild` |
 | LLM 准备 | Span `agent.step.prep`（history hydrate、tools.Visible、prompt.Assemble） | `agent.runStep` |
 | LLM 调用 | Generation（原生 `usage` 字段供 Langfuse 计费；`completionStartTime` 优先取首段 text/thinking，否则取首个 tool call；output 含 content 与 toolCalls） | `agent.runStep` |
 | Tool 执行 | Tool observation | `tools.Execute` |

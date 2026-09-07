@@ -325,6 +325,7 @@ subagent.loop.default:
         agents:
             - agent.cursor.default
         sessionStore: sessionStore.default
+        telemetry: telemetry.default
     use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none

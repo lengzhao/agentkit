@@ -10,10 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -40,8 +43,9 @@ type LoopAgentConfig struct {
 
 // LoopAgentDeps holds injected capabilities for Loop-backed delegation.
 type LoopAgentDeps struct {
-	SessionStore agentkit.SessionStore `json:"sessionStore"`
-	Agents       []agentkit.Agent      `json:"agents"`
+	SessionStore agentkit.SessionStore   `json:"sessionStore"`
+	Agents       []agentkit.Agent        `json:"agents"`
+	Telemetry    captelemetry.Exporter   `json:"telemetry,omitempty"`
 }
 
 // LoopAgentSpawner delegates to configured Loop agents (e.g. agent/acp-remote).
@@ -50,6 +54,7 @@ type LoopAgentSpawner struct {
 	defaultTO time.Duration
 	store     agentkit.SessionStore
 	agents    map[agentkit.AgentID]agentkit.Agent
+	telemetry captelemetry.Exporter
 	submit    capschedule.SubmitFunc
 	running   sync.Map // parentSession -> count
 }
@@ -73,11 +78,16 @@ func NewLoopAgent(cfg LoopAgentConfig, deps LoopAgentDeps) (subagent.Spawner, er
 	if cfg.TimeoutSeconds > 0 {
 		defaultTO = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
+	exp := deps.Telemetry
+	if exp == nil {
+		exp = rttelemetry.Noop
+	}
 	return &LoopAgentSpawner{
 		entries:   cfg.Agents,
 		defaultTO: defaultTO,
 		store:     deps.SessionStore,
 		agents:    agents,
+		telemetry: exp,
 	}, nil
 }
 
@@ -317,6 +327,25 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 	childCtx = session.ApplyEnvelopeToContext(childCtx, childEnv)
 	childCtx = session.WithAgentID(childCtx, ag.ID())
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
+	childCtx = rttelemetry.WithExporter(childCtx, s.telemetry)
+
+	turnMeta := s.childTurnMeta(childCtx, ag, task, childID)
+	childCtx, endTurn := rttelemetry.BeginTurn(childCtx, turnMeta)
+	childCtx = rttelemetry.WithTurnAccum(childCtx)
+	defer func() {
+		end := rttelemetry.TurnEndFromAccum(childCtx)
+		if end.Output == "" {
+			end.Output = strings.TrimSpace(out.Summary)
+		}
+		if end.Steps == 0 && out.Steps > 0 {
+			end.Steps = out.Steps
+		}
+		if end.StopReason == "" && out.Status != "" {
+			end.StopReason = out.Status
+		}
+		end.Err = runErr
+		endTurn(end)
+	}()
 
 	timeout := s.timeoutFor(def)
 	if timeout > 0 {
@@ -325,7 +354,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		defer cancel()
 	}
 
-	emit := forwardParentEmit(ctx, emitFromContext(ctx))
+	emit := forwardParentEmit(childCtx, emitFromContext(ctx))
 	runErr = ag.RunTurn(childCtx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -366,6 +395,23 @@ func (s *LoopAgentSpawner) timeoutFor(def subagent.Definition) time.Duration {
 		}
 	}
 	return s.defaultTO
+}
+
+func (s *LoopAgentSpawner) childTurnMeta(ctx context.Context, ag agentkit.Agent, task string, childID agentkit.SessionID) captelemetry.TurnMeta {
+	env := session.EnvelopeFromContext(ctx)
+	msg := agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: task}},
+	}
+	return captelemetry.TurnMeta{
+		TurnID:            uuid.NewString(),
+		SessionID:         string(childID),
+		DeliverySessionID: string(session.DeliveryFromEnvelope(env)),
+		AgentID:           string(ag.ID()),
+		PlatformID:        env.Route.Platform,
+		UserID:            env.Actor.UserID,
+		Input:             rttelemetry.FormatMessage(msg),
+	}
 }
 
 func loopAgentID(def subagent.Definition) agentkit.AgentID {

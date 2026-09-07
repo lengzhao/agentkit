@@ -336,6 +336,7 @@ subagent.loop.default:
         timeoutSeconds: 1800
   deps:
     sessionStore: sessionStore.default
+    telemetry: telemetry.default
     agents:
       - agent.cursor.default
       - agent.claude.default

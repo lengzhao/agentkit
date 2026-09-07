@@ -8,8 +8,10 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type storeRecordingAgent struct {
@@ -33,6 +35,10 @@ func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput)
 }
 
 func newLoopSpawner(t *testing.T, async bool, summary string) (*LoopAgentSpawner, agentkit.SessionStore, chan agentkit.MessageEvent) {
+	return newLoopSpawnerWithTelemetry(t, async, summary, nil)
+}
+
+func newLoopSpawnerWithTelemetry(t *testing.T, async bool, summary string, telemetry captelemetry.Exporter) (*LoopAgentSpawner, agentkit.SessionStore, chan agentkit.MessageEvent) {
 	t.Helper()
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
@@ -43,6 +49,13 @@ func newLoopSpawner(t *testing.T, async bool, summary string) (*LoopAgentSpawner
 		t.Fatal(err)
 	}
 	agent := &storeRecordingAgent{id: "cursor", summary: summary, store: store}
+	deps := LoopAgentDeps{
+		SessionStore: store,
+		Agents:       []agentkit.Agent{agent},
+	}
+	if telemetry != nil {
+		deps.Telemetry = telemetry
+	}
 	spawner, err := NewLoopAgent(LoopAgentConfig{
 		Agents: []LoopAgentEntry{{
 			Name:        "cursor",
@@ -50,10 +63,7 @@ func newLoopSpawner(t *testing.T, async bool, summary string) (*LoopAgentSpawner
 			Agent:       "cursor",
 			Async:       async,
 		}},
-	}, LoopAgentDeps{
-		SessionStore: store,
-		Agents:       []agentkit.Agent{agent},
-	})
+	}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +189,66 @@ func TestLoopAgentAsyncSubmitsFollowUp(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected async follow-up submit")
+	}
+}
+
+func TestLoopAgentAsyncRecordsSeparateTurnTrace(t *testing.T) {
+	t.Parallel()
+
+	rec := &rttelemetry.RecordingExporter{}
+	spawner, _, ch := newLoopSpawnerWithTelemetry(t, true, "async done", rec)
+	result, err := spawner.Run(loopParentCtx(), capsubagent.Request{Agent: "cursor", Task: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected async follow-up submit")
+	}
+
+	turns, _, _ := rec.Snapshot()
+	if len(turns) != 1 {
+		t.Fatalf("turns = %d, want 1 child trace", len(turns))
+	}
+	turn := turns[0]
+	if turn.Meta.AgentID != "cursor" {
+		t.Fatalf("agent id = %q, want cursor", turn.Meta.AgentID)
+	}
+	if turn.Meta.SessionID != result.Session {
+		t.Fatalf("session id = %q, want %q", turn.Meta.SessionID, result.Session)
+	}
+	if turn.End.Output != "async done" {
+		t.Fatalf("output = %q", turn.End.Output)
+	}
+	if turn.End.StopReason != capsubagent.StatusStopped {
+		t.Fatalf("stop reason = %q", turn.End.StopReason)
+	}
+}
+
+func TestLoopAgentSyncRecordsSeparateTurnTrace(t *testing.T) {
+	t.Parallel()
+
+	rec := &rttelemetry.RecordingExporter{}
+	spawner, _, _ := newLoopSpawnerWithTelemetry(t, false, "sync done", rec)
+	result, err := spawner.Run(loopParentCtx(), capsubagent.Request{Agent: "cursor", Task: "sync job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	turns, _, _ := rec.Snapshot()
+	if len(turns) != 1 {
+		t.Fatalf("turns = %d, want 1 child trace", len(turns))
+	}
+	turn := turns[0]
+	if turn.Meta.AgentID != "cursor" {
+		t.Fatalf("agent id = %q, want cursor", turn.Meta.AgentID)
+	}
+	if turn.Meta.SessionID != result.Session {
+		t.Fatalf("session id = %q, want %q", turn.Meta.SessionID, result.Session)
+	}
+	if turn.End.Output != "sync done" {
+		t.Fatalf("output = %q", turn.End.Output)
 	}
 }
 
