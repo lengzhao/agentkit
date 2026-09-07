@@ -238,7 +238,7 @@ func (p *Platform) writeResumeMessageEnd(w http.ResponseWriter, conversationID s
 	_ = sse.Event("message_end", payload)
 }
 
-func (p *Platform) serveRunSSE(reqCtx context.Context, run *runState, sse *sseWriter, convID, runID string) {
+func (p *Platform) serveRunSSE(reqCtx context.Context, run *runState, _ *sseWriter, convID, runID string) {
 	for {
 		select {
 		case <-run.notify:
