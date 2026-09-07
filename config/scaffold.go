@@ -200,7 +200,7 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 		"tool/send": {
 			ID: "tool.send.default",
 			Deps: map[string]any{
-				"platform":  "platform.default",
+				"sender":    "platform.default",
 				"workspace": "workspace.default",
 			},
 		},
