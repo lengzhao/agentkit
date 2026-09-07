@@ -241,6 +241,9 @@ platform.feishu:
         appId: cli_REPLACE_ME
         appSecret: REPLACE_ME
         groupReplyAll: false
+        progressStyle: card
+        showThinking: true
+        showToolProgress: true
     deps:
         commands: commands.default
         sessionStore: sessionStore.default
