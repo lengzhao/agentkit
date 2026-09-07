@@ -112,7 +112,7 @@ runner.default:
     defaultTimezone: Asia/Shanghai
 ```
 
-内置项：`sender_id`、`sender_name`、`sender_email`、`platform`、`chat_id`、`timestamp`、`task_id`、`trace_id`、`language`、`custom.*`，或任意 `MessageEvent.Metadata` 键名。
+内置项：`sender_id`、`sender_name`、`sender_email`、`platform`、`chat_id`、`timestamp`、`task_id`、`trace_id`、`language`、`custom.*`，或任意 `MessageEvent.Metadata` 键名。`sender_name` / `sender_email` 由各 platform 入站时写入 Metadata（Lark/Slack 查询用户 API；chat-api 由 `X-Chat-API-User-Name` / `X-Chat-API-User-Email` header 提供）。
 
 ### 切换模型
 

@@ -36,7 +36,7 @@ func (sendSlashCommand) Name() string { return "send" }
 func (sendSlashCommand) Alias() string { return "" }
 
 func (sendSlashCommand) Description() string {
-	return "send a proactive message to a target session or user without invoking the model"
+	return "send a proactive message to another chat/channel on the current platform without invoking the model"
 }
 
 func (c sendSlashCommand) CommandExec(ctx context.Context, args string) (string, error) {

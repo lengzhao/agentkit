@@ -240,7 +240,7 @@ func senderNameFromMetadata(metadata map[string]any) string {
 }
 
 func senderEmailFromMetadata(metadata map[string]any) string {
-	return contextValueFromMetadata(metadata, "sender_email", "email")
+	return contextValueFromMetadata(metadata, "sender_email", "email", "X-Chat-API-User-Email")
 }
 
 func contextValueFromMetadata(metadata map[string]any, keys ...string) string {

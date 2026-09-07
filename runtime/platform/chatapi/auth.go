@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	defaultUserHeader     = "X-Chat-API-User"
-	defaultUserNameHeader = "X-Chat-API-User-Name"
-	defaultChannelHeader  = "X-Chat-API-Channel"
+	defaultUserHeader      = "X-Chat-API-User"
+	defaultUserNameHeader  = "X-Chat-API-User-Name"
+	defaultUserEmailHeader = "X-Chat-API-User-Email"
+	defaultChannelHeader   = "X-Chat-API-Channel"
 	maxUserLen            = 128
 	maxChannelLen         = 256
 )

@@ -46,6 +46,27 @@ func TestBuildInboundPromptPrefixInjectList(t *testing.T) {
 	}
 }
 
+func TestBuildInboundPromptPrefixSenderEmailFromMetadata(t *testing.T) {
+	t.Parallel()
+	root, err := runner.New(runner.Config{
+		Inject: []string{"sender_email"},
+	}, runner.Deps{
+		Platform: &scriptedPlatform{},
+		Loop:     &recordingLoop{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*runner.Root)
+	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{
+		UserID:   "U1",
+		Metadata: map[string]any{"email": "carol@example.com"},
+	}, agentkit.SessionID("slack:C1:u:U1"))
+	if !strings.Contains(got, `sender_email="carol@example.com"`) {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestBuildInboundPromptPrefixDisabled(t *testing.T) {
 	t.Parallel()
 	root, err := runner.New(runner.Config{Inject: []string{}}, runner.Deps{

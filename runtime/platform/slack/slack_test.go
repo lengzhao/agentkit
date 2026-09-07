@@ -6,6 +6,13 @@ import (
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
+func TestUserProfileMetadataWithoutClient(t *testing.T) {
+	p := &Platform{}
+	if md := p.userProfileMetadata("U123"); md != nil {
+		t.Fatalf("got %v", md)
+	}
+}
+
 func TestNewRejectsInvalidDomain(t *testing.T) {
 	_, err := New(Config{
 		BotToken: "xoxb-test",

@@ -31,6 +31,7 @@ runner.default:
     # 单租户 coding CLI 若担心 workspace 写冲突，可在 L1 显式调低。
     maxConcurrentTurns: 64
     # 入站 user 消息 prepend [meta sender_id=... sender_name="..." timestamp="..."]。
+    # sender_name / sender_email：各 platform 入站时查询并写入 Metadata（失败则省略）；chat-api 由调用方 header 提供。
     inject:
       - sender_id
       - sender_name
@@ -122,7 +123,8 @@ platform.chat-api:
     path: /v1/
     apiToken: ${var:CHAT_API_TOKEN:-}              # Bearer 鉴权；空=不校验（仅内网调试）
     # userHeader: X-Chat-API-User
-    # userNameHeader: X-Chat-API-User-Name  # 自动写入 Metadata（sender_name inject）
+    # userNameHeader: X-Chat-API-User-Name   # 自动写入 Metadata（sender_name inject）
+    # userEmailHeader: X-Chat-API-User-Email # 自动写入 Metadata（sender_email inject）
     # channelHeader: X-Chat-API-Channel
     metadataHeaders:
       - x-task-id                   # 框架默认已内置；可追加自定义头

@@ -78,7 +78,7 @@ type Platform struct {
 
 	channelCacheMu   sync.RWMutex
 	channelNameCache map[string]string
-	userNameCache    sync.Map
+	userProfileCache  sync.Map
 
 	typingMu    sync.Mutex
 	typingStops map[agentkit.SessionID]func()
@@ -131,6 +131,58 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 }
 
 func (p *Platform) PlatformID() string { return "slack" }
+
+type slackUserProfileEntry struct {
+	name  string
+	email string
+	ok    bool
+}
+
+func (p *Platform) cachedUserProfile(userID string) slackUserProfileEntry {
+	if cached, ok := p.userProfileCache.Load(userID); ok {
+		return cached.(slackUserProfileEntry)
+	}
+	entry := p.fetchUserProfile(userID)
+	if entry.ok {
+		p.userProfileCache.Store(userID, entry)
+	}
+	return entry
+}
+
+func (p *Platform) fetchUserProfile(userID string) slackUserProfileEntry {
+	if p.client == nil {
+		return slackUserProfileEntry{}
+	}
+	info, err := p.client.GetUserInfoContext(context.Background(), userID)
+	if err != nil {
+		slog.Debug("slack: user profile lookup failed", "user", userID, "error", err)
+		return slackUserProfileEntry{}
+	}
+	name := strings.TrimSpace(info.Profile.DisplayName)
+	if name == "" {
+		name = strings.TrimSpace(info.Profile.RealName)
+	}
+	if name == "" {
+		name = strings.TrimSpace(info.Name)
+	}
+	return slackUserProfileEntry{
+		name:  name,
+		email: strings.TrimSpace(info.Profile.Email),
+		ok:    true,
+	}
+}
+
+func (p *Platform) userProfileMetadata(userID string) map[string]any {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	entry := p.cachedUserProfile(userID)
+	if !entry.ok {
+		return nil
+	}
+	return common.UserProfileMetadata(entry.name, entry.email)
+}
 
 func (p *Platform) PermissionCapability() permission.Capability {
 	return permission.Capability{
@@ -395,7 +447,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 		p.reactReceived(ctx, d)
 	}
 	event := common.InboundFromContent(p.agentID, d.inboundRoute(user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
-	_ = p.inbox.Push(ctx, event)
+	_ = p.inbox.Push(ctx, common.WithMetadata(event, p.userProfileMetadata(user)))
 }
 
 func (p *Platform) replyText(ctx context.Context, d delivery, text string) error {

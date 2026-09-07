@@ -54,46 +54,53 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	return deps.Sender.Send(ctx, event)
 }
 
-// ParseSlashArgs parses /send arguments.
-//   - /send <sessionId> <message>      → explicit session (contains ":" or Slack channel id)
-//   - /send @<userId> <message>        → user in current channel context
+// ParseSlashArgs parses /send arguments: /send <chatId> <message>.
+// chatId is a bare channel/chat id for the current platform from context.
+// Message may span multiple lines when the platform passes them in one payload.
 func ParseSlashArgs(args string) (SendInput, error) {
 	args = strings.TrimSpace(args)
 	if args == "" {
-		return SendInput{}, fmt.Errorf("usage: /send <sessionId> <message>\n       /send @<userId> <message>")
+		return SendInput{}, usageError()
 	}
 	firstSpace := strings.IndexByte(args, ' ')
 	if firstSpace < 0 {
-		if isSlashTarget(args) {
+		if isChatID(args) {
 			return SendInput{}, fmt.Errorf("message is required")
 		}
-		return SendInput{}, fmt.Errorf("usage: /send <sessionId> <message>\n       /send @<userId> <message>")
+		return SendInput{}, usageError()
 	}
-	first := args[:firstSpace]
-	if !isSlashTarget(first) {
-		return SendInput{}, fmt.Errorf("usage: /send <sessionId> <message>\n       /send @<userId> <message>")
+	chatID := args[:firstSpace]
+	if !isChatID(chatID) {
+		return SendInput{}, usageError()
 	}
 	message := strings.TrimSpace(args[firstSpace+1:])
 	if message == "" {
 		return SendInput{}, fmt.Errorf("message is required")
 	}
-	input := SendInput{Text: message}
-	if strings.HasPrefix(first, "@") {
-		input.UserID = strings.TrimPrefix(first, "@")
-	} else {
-		input.SessionID = first
-	}
-	return input, nil
+	return SendInput{Text: message, SessionID: chatID}, nil
 }
 
-func isSlashTarget(token string) bool {
-	if strings.HasPrefix(token, "@") && len(token) > 1 {
-		return true
+func usageError() error {
+	return fmt.Errorf("usage: /send <chatId> <message>")
+}
+
+func isChatID(token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" || strings.Contains(token, ":") || strings.HasPrefix(token, "@") {
+		return false
 	}
-	if strings.Contains(token, ":") {
-		return true
+	hasUpper, hasDigit, hasUnderscore := false, false, false
+	for _, r := range token {
+		switch {
+		case r == '_':
+			hasUnderscore = true
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		}
 	}
-	return rtdelivery.IsSlackChannelID(token)
+	return hasUnderscore || (hasUpper && hasDigit)
 }
 
 func buildParts(ctx context.Context, input SendInput, ws workspace.Service, root string) ([]agentkit.ContentPart, error) {

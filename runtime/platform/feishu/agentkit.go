@@ -492,11 +492,12 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}
 	}
 
-	_ = p.inbox.Push(ctx, common.InboundFromContent(
+	event := common.InboundFromContent(
 		p.agentID, msg.inboundRoute(p.platformTag), msg.userID,
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
 		common.InboundOptsFor(p.workspace),
-	))
+	)
+	_ = p.inbox.Push(ctx, common.WithMetadata(event, p.userProfileMetadata(msg.userID)))
 }
 
 func (p *Platform) storeDelivery(sessionID agentkit.SessionID, rc replyContext) {

@@ -114,14 +114,13 @@ runner.default:
 
 ```text
 [meta timestamp="2026-08-31T10:00:00+08:00" timezone="Asia/Shanghai" sender_id=U111 sender_name="Alice" platform=slack chat_id=C001 task_id="job-9"]
-改一下 README
 ```
 
 | inject 项 | 来源 | 输出 attr |
 |---|---|---|
 | `sender_id` | `MessageEvent.UserID` | `sender_id=U111` |
-| `sender_name` | Metadata（displayName / userName / name 等） | `sender_name="Alice"` |
-| `sender_email` | Metadata（email / sender_email） | `sender_email="..."` |
+| `sender_name` | `MessageEvent.Metadata`（平台入站写入 `displayName`，或 chat-api header） | `sender_name="Alice"` |
+| `sender_email` | `MessageEvent.Metadata`（平台入站写入 `email`，或 chat-api header） | `sender_email="alice@example.com"` |
 | `platform` | `MessageEvent.PlatformID` 或 delivery SessionID | `platform=slack` |
 | `chat_id` | delivery SessionID 的 channel 段 | `chat_id=C001` |
 | `timestamp` | 当前时间 + 时区 | `timestamp="RFC3339" timezone="IANA"` |

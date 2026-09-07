@@ -111,6 +111,24 @@ func TestRequestMetadataIncludesTaskIDAndUserName(t *testing.T) {
 	}
 }
 
+func TestRequestMetadataIncludesUserEmailByDefault(t *testing.T) {
+	p, err := New(Config{}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	req := httptest.NewRequest("POST", "/v1/chat-messages", nil)
+	req.Header.Set("X-Chat-API-User-Email", "carol@example.com")
+	md := plat.requestMetadata(req)
+	if md == nil {
+		t.Fatal("metadata is nil")
+	}
+	if md["X-Chat-API-User-Email"] != "carol@example.com" {
+		t.Fatalf("email = %v", md["X-Chat-API-User-Email"])
+	}
+}
+
 func TestCORSAllowedHeadersIncludesMetadataHeaders(t *testing.T) {
 	p, err := New(Config{
 		MetadataHeaders: []string{"X-Org-Id", "X-Org-Id"},
@@ -125,7 +143,7 @@ func TestCORSAllowedHeadersIncludesMetadataHeaders(t *testing.T) {
 	for _, h := range headers {
 		seen[h] = true
 	}
-	for _, want := range []string{"Authorization", "X-Chat-API-User", "X-Org-Id"} {
+	for _, want := range []string{"Authorization", "X-Chat-API-User", "X-Org-Id", "X-Chat-API-User-Email"} {
 		if !seen[want] {
 			t.Fatalf("missing %q in %v", want, headers)
 		}

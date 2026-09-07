@@ -13,5 +13,4 @@ type (
 var (
 	ResolveDeliveryRoute       = rtdelivery.ResolveRoute
 	NormalizeDeliverySessionID = rtdelivery.NormalizeSessionID
-	IsSlackChannelID           = rtdelivery.IsSlackChannelID
 )

@@ -42,6 +42,7 @@ func ResolveRoute(ctx context.Context, input delivery.RouteInput) (delivery.Rout
 }
 
 // NormalizeSessionID maps slash-style targets to delivery session ids.
+// Bare ids without ":" are qualified with the inbox platform from context.
 func NormalizeSessionID(ctx context.Context, raw string) agentkit.SessionID {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -50,31 +51,10 @@ func NormalizeSessionID(ctx context.Context, raw string) agentkit.SessionID {
 	if strings.Contains(raw, ":") {
 		return agentkit.SessionID(raw)
 	}
-	platformID := session.PlatformFromContext(ctx)
-	if platformID == "slack" && IsSlackChannelID(raw) {
-		return agentkit.SessionID("slack:" + raw)
+	if platformID := session.PlatformFromContext(ctx); platformID != "" {
+		return agentkit.SessionID(platformID + ":" + raw)
 	}
 	return agentkit.SessionID(raw)
-}
-
-// IsSlackChannelID reports bare Slack conversation ids (C/G/D + alnum).
-func IsSlackChannelID(token string) bool {
-	token = strings.TrimSpace(token)
-	if len(token) < 9 {
-		return false
-	}
-	switch token[0] {
-	case 'C', 'G', 'D':
-	default:
-		return false
-	}
-	for _, r := range token[1:] {
-		if r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 // OutboundRoute builds a session-kind route for proactive delivery.

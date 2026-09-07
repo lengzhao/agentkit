@@ -37,6 +37,7 @@ type Config struct {
 	APIToken           string   `json:"apiToken"`
 	UserHeader         string   `json:"userHeader"`
 	UserNameHeader     string   `json:"userNameHeader"`
+	UserEmailHeader    string   `json:"userEmailHeader"`
 	ChannelHeader      string   `json:"channelHeader"`
 	// MetadataHeaders lists HTTP headers copied into MessageEvent.Metadata.
 	MetadataHeaders    []string `json:"metadataHeaders"`
@@ -74,6 +75,7 @@ type Platform struct {
 	availableAgents     []string
 	userHeader          string
 	userNameHeader      string
+	userEmailHeader     string
 	channelHeader       string
 	metadataHeaders     []string
 	corsOrigins         []string
@@ -144,6 +146,10 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if userNameHeader == "" {
 		userNameHeader = defaultUserNameHeader
 	}
+	userEmailHeader := strings.TrimSpace(cfg.UserEmailHeader)
+	if userEmailHeader == "" {
+		userEmailHeader = defaultUserEmailHeader
+	}
 	maxRuns := cfg.MaxRuns
 	if maxRuns <= 0 {
 		maxRuns = defaultMaxRuns
@@ -171,6 +177,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		availableAgents:    collectAgentIDs(cfg.Agents, deps.Agents),
 		userHeader:         userHeader,
 		userNameHeader:     userNameHeader,
+		userEmailHeader:    userEmailHeader,
 		channelHeader:      channelHeader,
 		metadataHeaders:    resolveMetadataHeaders(cfg.MetadataHeaders),
 		corsOrigins:        cfg.CORSOrigins,

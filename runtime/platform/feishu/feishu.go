@@ -147,7 +147,7 @@ type Platform struct {
 	dedup                      *common.MessageDedup
 	botOpenID                  string
 	peerBots                   map[string]string
-	userNameCache              sync.Map
+	userProfileCache           sync.Map
 	chatNameCache              sync.Map
 	chatMemberCache            sync.Map
 	recalledMu                 sync.Mutex
@@ -685,8 +685,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		return
 	}
 
-	// Resolve user and chat names asynchronously so SDK dispatcher is not blocked.
-	_ = p.resolveUserName(userID)
+	// Resolve user profile asynchronously so SDK dispatcher is not blocked.
+	_ = p.cachedUserProfile(userID)
 	_ = p.resolveChatName(chatID)
 
 	// If this message is a reply to another message, fetch the quoted content
@@ -923,25 +923,71 @@ func (p *Platform) resolveUserName(openID string) string {
 	if !isValidFeishuLookupID(openID) {
 		return openID
 	}
-	if cached, ok := p.userNameCache.Load(openID); ok {
-		return cached.(string)
+	entry := p.cachedUserProfile(openID)
+	if entry.ok && entry.name != "" {
+		return entry.name
+	}
+	return openID
+}
+
+type feishuUserProfileEntry struct {
+	name  string
+	email string
+	ok    bool
+}
+
+func (p *Platform) cachedUserProfile(userID string) feishuUserProfileEntry {
+	if cached, ok := p.userProfileCache.Load(userID); ok {
+		return cached.(feishuUserProfileEntry)
+	}
+	entry := p.fetchUserProfile(userID)
+	if entry.ok {
+		p.userProfileCache.Store(userID, entry)
+	}
+	return entry
+}
+
+func (p *Platform) fetchUserProfile(userID string) feishuUserProfileEntry {
+	if p.client == nil {
+		return feishuUserProfileEntry{}
 	}
 	resp, err := p.client.Contact.User.Get(context.Background(),
 		larkcontact.NewGetUserReqBuilder().
-			UserId(openID).
+			UserId(userID).
 			UserIdType("open_id").
 			Build())
 	if err != nil {
-		slog.Debug(p.tag()+": resolve user name failed", "open_id", openID, "error", err)
-		return openID
+		slog.Debug(p.tag()+": user profile lookup failed", "open_id", userID, "error", err)
+		return feishuUserProfileEntry{}
 	}
-	if !resp.Success() || resp.Data == nil || resp.Data.User == nil || resp.Data.User.Name == nil {
-		slog.Debug(p.tag()+": resolve user name: no data", "open_id", openID, "code", resp.Code)
-		return openID
+	if !resp.Success() || resp.Data == nil || resp.Data.User == nil {
+		slog.Debug(p.tag()+": user profile lookup: no data", "open_id", userID, "code", resp.Code)
+		return feishuUserProfileEntry{}
 	}
-	name := *resp.Data.User.Name
-	p.userNameCache.Store(openID, name)
-	return name
+	user := resp.Data.User
+	entry := feishuUserProfileEntry{ok: true}
+	if user.Name != nil {
+		entry.name = strings.TrimSpace(*user.Name)
+	}
+	if user.Email != nil {
+		entry.email = strings.TrimSpace(*user.Email)
+	}
+	if entry.email == "" && user.EnterpriseEmail != nil {
+		entry.email = strings.TrimSpace(*user.EnterpriseEmail)
+	}
+	return entry
+}
+
+func (p *Platform) userProfileMetadata(userID string) map[string]any {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || !isValidFeishuLookupID(userID) {
+		return nil
+	}
+	entry := p.cachedUserProfile(userID)
+	if !entry.ok {
+		return nil
+	}
+	return common.UserProfileMetadata(entry.name, entry.email)
 }
 
 func userIDFromEvent(id *larkim.UserId) string {

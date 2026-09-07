@@ -38,18 +38,19 @@ func TestParseSlashArgs(t *testing.T) {
 		args    string
 		text    string
 		session string
-		user    string
 		wantErr bool
 	}{
-		{args: "slack:C001 ping", session: "slack:C001", text: "ping"},
+		{args: "C001 ping", session: "C001", text: "ping"},
 		{args: "D0AK8MAHW22 123", session: "D0AK8MAHW22", text: "123"},
-		{args: "@U222 hi there", user: "U222", text: "hi there"},
+		{args: "oc_a1b2c3d4e hello", session: "oc_a1b2c3d4e", text: "hello"},
+		{args: "C001 line1\nline2\nline3", session: "C001", text: "line1\nline2\nline3"},
+		{args: "slack:C001 ping", wantErr: true},
+		{args: "@U222 hi there", wantErr: true},
 		{args: "hello inbox", wantErr: true},
 		{args: "hello", wantErr: true},
 		{args: "not-a-target hello", wantErr: true},
 		{args: "", wantErr: true},
-		{args: "slack:C001", wantErr: true},
-		{args: "@U222", wantErr: true},
+		{args: "C001", wantErr: true},
 	}
 	for _, tc := range cases {
 		input, err := ParseSlashArgs(tc.args)
@@ -62,7 +63,7 @@ func TestParseSlashArgs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseSlashArgs(%q): %v", tc.args, err)
 		}
-		if input.Text != tc.text || input.SessionID != tc.session || input.UserID != tc.user {
+		if input.Text != tc.text || input.SessionID != tc.session || input.UserID != "" {
 			t.Fatalf("ParseSlashArgs(%q) = %#v", tc.args, input)
 		}
 	}
@@ -87,7 +88,7 @@ func TestSendSlashCommandRequiresTarget(t *testing.T) {
 	}
 }
 
-func TestSendSlashCommandTargetSession(t *testing.T) {
+func TestSendSlashCommandTargetChat(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
@@ -97,8 +98,12 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 	}
 	bundle := tool.(*sendBundle)
 	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("slack", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
-	out, err := bundle.Commands()[0].CommandExec(ctx, "slack:C002 remote ping")
+	ctx = func() context.Context {
+		env := session.EnvelopeFromContext(ctx)
+		env.Route = agentkit.SessionRoute("slack", "delivery")
+		return session.ApplyEnvelopeToContext(ctx, env)
+	}()
+	out, err := bundle.Commands()[0].CommandExec(ctx, "C002 remote ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +118,7 @@ func TestSendSlashCommandTargetSession(t *testing.T) {
 	}
 }
 
-func TestSendSlashCommandRoutesToTargetSessionPlatform(t *testing.T) {
+func TestSendSlashCommandRejectsCrossPlatformSession(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
@@ -122,39 +127,12 @@ func TestSendSlashCommandRoutesToTargetSessionPlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := tool.(*sendBundle)
-	target := "chat-api:nex-channel:t:conv_test"
 	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("slack", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
-	_, err = bundle.Commands()[0].CommandExec(ctx, target+" hello")
-	if err != nil {
-		t.Fatal(err)
+	_, err = bundle.Commands()[0].CommandExec(ctx, "chat-api:nex-channel:t:conv_test hello")
+	if err == nil {
+		t.Fatal("expected error for full session id")
 	}
-	if len(platform.sent) != 1 {
-		t.Fatalf("sent = %#v", platform.sent)
-	}
-	if delivery.OutboundRouteID(platform.sent[0]) != agentkit.SessionID(target) {
-		t.Fatalf("route = %q", delivery.OutboundRouteID(platform.sent[0]))
-	}
-	if platform.sent[0].PlatformID != "chat-api" {
-		t.Fatalf("platformID = %q, want chat-api", platform.sent[0].PlatformID)
-	}
-}
-
-func TestSendSlashCommandTargetUser(t *testing.T) {
-	t.Parallel()
-
-	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle := tool.(*sendBundle)
-	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001:t:1:u:U1")
-	_, err = bundle.Commands()[0].CommandExec(ctx, "@U222 hello")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(platform.sent) != 1 || platform.sent[0].UserID != "U222" {
+	if len(platform.sent) != 0 {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
 }
@@ -170,7 +148,7 @@ func TestSendSlashCommandRequiresPlatformID(t *testing.T) {
 	bundle := tool.(*sendBundle)
 	ctx := session.ApplyEnvelopeToContext(t.Context(), agentkit.TurnEnvelope{Conversation: "notvalid", Workspace: "notvalid"})
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
-	_, err = bundle.Commands()[0].CommandExec(ctx, "@U222 hello")
+	_, err = bundle.Commands()[0].CommandExec(ctx, "C002 hello")
 	if err == nil {
 		t.Fatal("expected error without delivery route in context")
 	}
