@@ -7,7 +7,9 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -90,6 +92,93 @@ func TestUpdateEmitterStreamsText(t *testing.T) {
 	msg := e.assistantMessage()
 	if msg.Content[0].Text != "hi there" {
 		t.Fatalf("assistant: %+v", msg)
+	}
+}
+
+func TestUpdateEmitterRecordsGenerationAndToolObservations(t *testing.T) {
+	rec := &rttelemetry.RecordingExporter{}
+	ctx := rttelemetry.WithExporter(t.Context(), rec)
+	e := newUpdateEmitter(ctx, "sess-1", "acp", func(context.Context, agentkit.OutboundEvent) error {
+		return nil
+	})
+
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+				Content: acp.TextBlock("checking files"),
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			ToolCall: &acp.SessionUpdateToolCall{
+				ToolCallId: "call-1",
+				Title:      "Read file",
+				RawInput:   map[string]any{"path": "README.md"},
+				Status:     acp.ToolCallStatusInProgress,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			ToolCallUpdate: &acp.SessionToolCallUpdate{
+				ToolCallId: "call-1",
+				Content:    []acp.ToolCallContent{acp.ToolContent(acp.TextBlock("reading"))},
+				Status:     acp.Ptr(acp.ToolCallStatusInProgress),
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			ToolCallUpdate: &acp.SessionToolCallUpdate{
+				ToolCallId: "call-1",
+				RawOutput:  "file contents",
+				Status:     acp.Ptr(acp.ToolCallStatusCompleted),
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.finalize(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 2 {
+		t.Fatalf("observations = %d, want 2", len(observations))
+	}
+	byName := make(map[string]rttelemetry.RecordedObservation, len(observations))
+	for _, observation := range observations {
+		byName[observation.Meta.Name] = observation
+	}
+	generation := byName["acp.generation"]
+	tool := byName["tool.Read file"]
+	if generation.ID == "" || tool.ID == "" {
+		t.Fatalf("observations = %#v", observations)
+	}
+	if generation.End.Output == "" {
+		t.Fatal("generation output is empty")
+	}
+	if tool.Meta.Input != `{"path":"README.md"}` {
+		t.Fatalf("tool input = %q", tool.Meta.Input)
+	}
+	if tool.End.Output != `"file contents"` {
+		t.Fatalf("tool output = %q", tool.End.Output)
+	}
+	if tool.ParentID != generation.ID {
+		t.Fatalf("tool parent = %q, want %q", tool.ParentID, generation.ID)
+	}
+	if generation.Meta.Kind != captelemetry.KindGeneration {
+		t.Fatalf("generation kind = %q", generation.Meta.Kind)
+	}
+	if tool.Meta.Kind != captelemetry.KindTool {
+		t.Fatalf("tool kind = %q", tool.Meta.Kind)
 	}
 }
 

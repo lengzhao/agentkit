@@ -2,10 +2,15 @@ package acpremote
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type updateEmitter struct {
@@ -14,9 +19,14 @@ type updateEmitter struct {
 	agentID   agentkit.AgentID
 	emit      agentkit.OutboundEmit
 
-	started  bool
-	textBuf  strings.Builder
-	thought  strings.Builder
+	started bool
+	textBuf strings.Builder
+	thought strings.Builder
+
+	generationCtx context.Context
+	endGeneration func(captelemetry.ObservationEnd)
+	firstTextAt   time.Time
+	tools         map[acp.ToolCallId]func(captelemetry.ObservationEnd)
 }
 
 func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit) *updateEmitter {
@@ -25,6 +35,7 @@ func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID
 		sessionID: sessionID,
 		agentID:   agentID,
 		emit:      emit,
+		tools:     make(map[acp.ToolCallId]func(captelemetry.ObservationEnd)),
 	}
 }
 
@@ -40,6 +51,7 @@ func (e *updateEmitter) consume(n acp.SessionNotification) error {
 			return err
 		}
 		e.textBuf.WriteString(text)
+		e.markFirstText()
 		return e.emitDelta(agentkit.AssistantEventTextDelta, 0, text)
 	case u.AgentThoughtChunk != nil:
 		text := contentText(u.AgentThoughtChunk.Content)
@@ -50,11 +62,13 @@ func (e *updateEmitter) consume(n acp.SessionNotification) error {
 			return err
 		}
 		e.thought.WriteString(text)
+		e.markFirstText()
 		return e.emitDelta(agentkit.AssistantEventThinkingDelta, 1, text)
 	case u.ToolCall != nil:
 		if err := e.ensureStarted(); err != nil {
 			return err
 		}
+		e.beginTool(u.ToolCall)
 		ame := agentkit.AssistantMessageEvent{
 			Type:         agentkit.AssistantEventToolCallStart,
 			ContentIndex: 2,
@@ -66,6 +80,7 @@ func (e *updateEmitter) consume(n acp.SessionNotification) error {
 		if err := e.ensureStarted(); err != nil {
 			return err
 		}
+		e.endTool(u.ToolCallUpdate)
 		ame := agentkit.AssistantMessageEvent{
 			Type:         agentkit.AssistantEventToolCallEnd,
 			ContentIndex: 2,
@@ -85,6 +100,20 @@ func (e *updateEmitter) finalize() error {
 		e.started = true
 	}
 	msg := e.assistantMessage()
+	for id, end := range e.tools {
+		end(captelemetry.ObservationEnd{
+			Err: fmt.Errorf("acp tool call %s ended before completion", id),
+		})
+		delete(e.tools, id)
+	}
+	if e.endGeneration != nil {
+		e.endGeneration(captelemetry.ObservationEnd{
+			Output:              rttelemetry.FormatMessage(msg),
+			FirstTextTime:       e.firstTextAt,
+			CompletionStartTime: e.firstTextAt,
+		})
+		e.endGeneration = nil
+	}
 	return e.sendOutbound(agentkit.EventMessageEnd, agentkit.MessageEndPayload{Message: msg})
 }
 
@@ -101,6 +130,11 @@ func (e *updateEmitter) ensureStarted() error {
 		return nil
 	}
 	e.started = true
+	e.generationCtx, e.endGeneration = rttelemetry.BeginObservation(e.ctx,
+		rttelemetry.ObservationMetaFromContext(e.ctx, captelemetry.ObservationMeta{
+			Name: "acp.generation",
+			Kind: captelemetry.KindGeneration,
+		}))
 	return e.sendOutbound(agentkit.EventMessageStart, agentkit.MessageStartPayload{
 		Message: agentkit.ModelMessage{Role: "assistant"},
 	})
@@ -122,10 +156,78 @@ func (e *updateEmitter) emitUpdate(ame agentkit.AssistantMessageEvent) error {
 
 func (e *updateEmitter) sendOutbound(typ agentkit.EventType, payload any) error {
 	return e.emit(e.ctx, agentkit.OutboundEvent{
-		AgentID:   e.agentID,
-		Type:      typ,
-		Data:      agentkit.MarshalOutboundData(payload),
+		AgentID: e.agentID,
+		Type:    typ,
+		Data:    agentkit.MarshalOutboundData(payload),
 	})
+}
+
+func (e *updateEmitter) markFirstText() {
+	if e.firstTextAt.IsZero() {
+		e.firstTextAt = time.Now().UTC()
+	}
+}
+
+func (e *updateEmitter) beginTool(call *acp.SessionUpdateToolCall) {
+	if _, ok := e.tools[call.ToolCallId]; ok {
+		return
+	}
+	input := marshalObservationValue(call.RawInput)
+	_, end := rttelemetry.BeginObservation(e.generationCtx,
+		rttelemetry.ObservationMetaFromContext(e.generationCtx, captelemetry.ObservationMeta{
+			Name:  "tool." + toolName(call),
+			Kind:  captelemetry.KindTool,
+			Input: input,
+		}))
+	e.tools[call.ToolCallId] = end
+}
+
+func toolName(call *acp.SessionUpdateToolCall) string {
+	if strings.TrimSpace(call.Title) != "" {
+		return strings.TrimSpace(call.Title)
+	}
+	return string(call.ToolCallId)
+}
+
+func (e *updateEmitter) endTool(update *acp.SessionToolCallUpdate) {
+	end, ok := e.tools[update.ToolCallId]
+	if !ok {
+		return
+	}
+	if update.Status != nil &&
+		*update.Status != acp.ToolCallStatusCompleted &&
+		*update.Status != acp.ToolCallStatusFailed {
+		return
+	}
+	delete(e.tools, update.ToolCallId)
+	observationEnd := captelemetry.ObservationEnd{
+		Output: marshalObservationOutput(update.RawOutput, update.Content),
+	}
+	if update.Status != nil && *update.Status == acp.ToolCallStatusFailed {
+		observationEnd.Err = fmt.Errorf("acp tool call failed: %s", update.ToolCallId)
+	}
+	end(observationEnd)
+}
+
+func marshalObservationOutput(raw any, content []acp.ToolCallContent) string {
+	if raw != nil {
+		return marshalObservationValue(raw)
+	}
+	if len(content) > 0 {
+		return marshalObservationValue(content)
+	}
+	return ""
+}
+
+func marshalObservationValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(raw)
 }
 
 func contentText(block acp.ContentBlock) string {
