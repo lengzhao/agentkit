@@ -31,10 +31,12 @@ runner.default:
     # 单租户 coding CLI 若担心 workspace 写冲突，可在 L1 显式调低。
     maxConcurrentTurns: 64
     # 入站 user 消息 prepend [meta sender_id=... sender_name="..." timestamp="..."]。
-    # sender_name / sender_email：各 platform 入站时查询并写入 Metadata（失败则省略）；chat-api 由调用方 header 提供。
+    # sender_name / sender_email / mentions：各 platform 入站时查询并写入 Metadata（失败则省略）；chat-api 由调用方 header 提供。
     inject:
       - sender_id
       - sender_name
+      - sender_email
+      - mentions
       - timestamp
   deps:
     platform: platform.default

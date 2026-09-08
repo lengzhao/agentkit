@@ -37,7 +37,7 @@ type Config struct {
 	MaxConcurrentTurns int `json:"maxConcurrentTurns"`
 	// Inject lists fields prepended to each inbound user message as
 	// [meta sender_id=... timestamp="..." task_id="..." ...].
-	// Built-in tokens: sender_id, sender_name, sender_email, platform, chat_id,
+	// Built-in tokens: sender_id, sender_name, sender_email, mentions, platform, chat_id,
 	// timestamp, task_id, trace_id, language, custom.*, or any Metadata key.
 	// L0 config.base.yaml defaults to sender_id, sender_name, timestamp; inject: [] disables.
 	Inject []string `json:"inject"`

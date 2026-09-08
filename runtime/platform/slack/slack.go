@@ -78,7 +78,8 @@ type Platform struct {
 
 	channelCacheMu   sync.RWMutex
 	channelNameCache map[string]string
-	userProfileCache  sync.Map
+	userProfileCache sync.Map
+	botUserID        string
 
 	typingMu    sync.Mutex
 	typingStops map[agentkit.SessionID]func()
@@ -255,6 +256,14 @@ func (p *Platform) run(ctx context.Context) {
 	}
 	client := slack.New(p.cfg.BotToken, opts...)
 	p.client = client
+	if auth, err := client.AuthTestContext(ctx); err != nil {
+		slog.Warn("slack: auth test failed, bot mention filtering disabled", "error", err)
+	} else if auth != nil {
+		p.botUserID = strings.TrimSpace(auth.UserID)
+		if p.botUserID != "" {
+			slog.Info("slack: bot identified", "user_id", p.botUserID)
+		}
+	}
 	p.socket = socketmode.New(client)
 
 	go func() {
@@ -421,12 +430,13 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 }
 
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
-		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-			Route:        session.BuildSessionRoute(d.inboundRoute(user)),
-			SessionScope: p.sessionScope,
-			UserID:       user,
-			Metadata:     p.userProfileMetadata(user),
-		}, text)
+	metadata := p.inboundMetadata(user, text)
+	outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
+		Route:        session.BuildSessionRoute(d.inboundRoute(user)),
+		SessionScope: p.sessionScope,
+		UserID:       user,
+		Metadata:     metadata,
+	}, text)
 	if err != nil {
 		_ = p.replyText(ctx, d, fmt.Sprintf("命令执行失败: %v", err))
 		return
@@ -448,7 +458,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 		p.reactReceived(ctx, d)
 	}
 	event := common.InboundFromContent(p.agentID, d.inboundRoute(user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
-	_ = p.inbox.Push(ctx, common.WithMetadata(event, p.userProfileMetadata(user)))
+	_ = p.inbox.Push(ctx, common.WithMetadata(event, metadata))
 }
 
 func (p *Platform) replyText(ctx context.Context, d delivery, text string) error {

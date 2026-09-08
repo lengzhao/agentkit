@@ -329,6 +329,8 @@ runner.default:
         inject:
             - sender_id
             - sender_name
+            - sender_email
+            - mentions
             - timestamp
         maxConcurrentTurns: 4
         sessionScope: channel

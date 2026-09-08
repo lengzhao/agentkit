@@ -138,6 +138,7 @@ type Platform struct {
 	outbound                   *common.Outbound
 	deliveries                 sync.Map
 	turnTriggers               sync.Map
+	turnReactions              sync.Map
 	streams                    sync.Map
 	client                     *lark.Client
 	replayClient               *lark.Client
@@ -687,6 +688,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 
 	// Resolve user profile asynchronously so SDK dispatcher is not blocked.
 	_ = p.cachedUserProfile(userID)
+	if len(mentions) > 0 {
+		_ = p.mentionMetadata(mentions)
+	}
 	_ = p.resolveChatName(chatID)
 
 	// If this message is a reply to another message, fetch the quoted content
@@ -723,6 +727,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			userID:       userID,
 			content:      text,
 			extraContent: quotedPrefix,
+			mentions:     mentions,
 			rctx:         rctx,
 		})
 
@@ -747,6 +752,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			messageID: messageID,
 			userID:    userID,
 			images:    []common.ImageAttachment{{MimeType: mimeType, Data: imgData}},
+			mentions:  mentions,
 			rctx:      rctx,
 		})
 
@@ -778,7 +784,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 				Format:   "ogg",
 				Duration: audioBody.Duration / 1000,
 			},
-			rctx: rctx,
+			mentions: mentions,
+			rctx:     rctx,
 		})
 
 	case "post":
@@ -794,6 +801,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			content:      text,
 			extraContent: quotedPrefix,
 			images:       images,
+			mentions:     mentions,
 			rctx:         rctx,
 		})
 
@@ -826,7 +834,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 				Data:     fileData,
 				FileName: fileBody.FileName,
 			}},
-			rctx: rctx,
+			mentions: mentions,
+			rctx:     rctx,
 		})
 
 	case "merge_forward":
@@ -842,6 +851,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			content:   text,
 			images:    images,
 			files:     files,
+			mentions:  mentions,
 			rctx:      rctx,
 		}
 		p.dispatchCoreMessage(coreMsg)
@@ -864,6 +874,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 				userID:       userID,
 				content:      "[sticker]",
 				extraContent: quotedPrefix,
+				mentions:     mentions,
 				rctx:         rctx,
 			})
 			return
@@ -873,6 +884,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			messageID: messageID,
 			userID:    userID,
 			images:    []common.ImageAttachment{{MimeType: mimeType, Data: imgData}},
+			mentions:  mentions,
 			rctx:      rctx,
 		})
 
@@ -910,7 +922,9 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			userID:       userID,
 			content:      text,
 			extraContent: quotedPrefix,
-			images:       images, rctx: rctx,
+			images:       images,
+			mentions:     mentions,
+			rctx:         rctx,
 		})
 
 	default:
@@ -988,6 +1002,49 @@ func (p *Platform) userProfileMetadata(userID string) map[string]any {
 		return nil
 	}
 	return common.UserProfileMetadata(entry.name, entry.email)
+}
+
+func (p *Platform) mentionMetadata(mentions []*larkim.MentionEvent) map[string]any {
+	if len(mentions) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(mentions))
+	profiles := make([]common.MentionProfile, 0, len(mentions))
+	for _, mention := range mentions {
+		if mention == nil || mention.Id == nil {
+			continue
+		}
+		if p.botOpenID != "" && mention.Id.OpenId != nil && *mention.Id.OpenId == p.botOpenID {
+			continue
+		}
+		userID := userIDFromEvent(mention.Id)
+		if userID == "" || !isValidFeishuLookupID(userID) {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+
+		name := ""
+		if mention.Name != nil {
+			name = strings.TrimSpace(*mention.Name)
+		}
+		entry := p.cachedUserProfile(userID)
+		if name == "" && entry.ok {
+			name = entry.name
+		}
+		email := ""
+		if entry.ok {
+			email = entry.email
+		}
+		profiles = append(profiles, common.MentionProfile{
+			ID:    userID,
+			Name:  name,
+			Email: email,
+		})
+	}
+	return common.MentionProfilesMetadata(profiles)
 }
 
 func userIDFromEvent(id *larkim.UserId) string {

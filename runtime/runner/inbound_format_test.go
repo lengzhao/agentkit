@@ -46,6 +46,33 @@ func TestBuildInboundPromptPrefixInjectList(t *testing.T) {
 	}
 }
 
+func TestBuildInboundPromptPrefixMentionsFromMetadata(t *testing.T) {
+	t.Parallel()
+	root, err := runner.New(runner.Config{
+		Inject: []string{"mentions"},
+	}, runner.Deps{
+		Platform: &scriptedPlatform{},
+		Loop:     &recordingLoop{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*runner.Root)
+	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{
+		UserID: "U1",
+		Metadata: map[string]any{
+			"mentions": []map[string]string{
+				{"name": "Xiang GU", "id": "ou_xiang", "email": "xiang@example.com"},
+				{"name": "Rock Zheng", "id": "ou_rock", "email": "rock@example.com"},
+			},
+		},
+	}, agentkit.SessionID("lark:oc_1:u:U1"))
+	want := `mentions="name=Xiang GU id=ou_xiang email=xiang@example.com|name=Rock Zheng id=ou_rock email=rock@example.com"`
+	if !strings.Contains(got, want) {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestBuildInboundPromptPrefixSenderEmailFromMetadata(t *testing.T) {
 	t.Parallel()
 	root, err := runner.New(runner.Config{

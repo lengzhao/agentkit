@@ -100,6 +100,7 @@ runner.default:
       - sender_id
       - sender_name
       - sender_email      # 可选，Metadata 有 email 时注入
+      - mentions            # 可选，Metadata 有 mentions 时注入（Lark/飞书/Slack @ 提及用户）
       - platform
       - chat_id
       - timestamp         # 可选
@@ -121,6 +122,7 @@ runner.default:
 | `sender_id` | `MessageEvent.UserID` | `sender_id=U111` |
 | `sender_name` | `MessageEvent.Metadata`（平台入站写入 `displayName`，或 chat-api header） | `sender_name="Alice"` |
 | `sender_email` | `MessageEvent.Metadata`（平台入站写入 `email`，或 chat-api header） | `sender_email="alice@example.com"` |
+| `mentions` | `MessageEvent.Metadata.mentions`（Lark/飞书/Slack 入站解析 @ 提及用户） | `mentions="name=Alice id=ou_xxx email=alice@example.com\|name=Bob id=ou_yyy email=bob@example.com"` |
 | `platform` | `MessageEvent.PlatformID` 或 delivery SessionID | `platform=slack` |
 | `chat_id` | delivery SessionID 的 channel 段 | `chat_id=C001` |
 | `timestamp` | 当前时间 + 时区 | `timestamp="RFC3339" timezone="IANA"` |

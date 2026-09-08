@@ -14,13 +14,14 @@ import (
 // Built-in inject tokens for runner.config.inject (cc-connect inject_* style).
 //
 //	sender_id sender_name sender_email platform chat_id timestamp
-//	task_id trace_id language
+//	mentions task_id trace_id language
 //	custom.*   — metadata keys with prefix custom.
 //	<any-key>  — exact MessageEvent.Metadata lookup
 const (
 	injectSenderID    = "sender_id"
 	injectSenderName  = "sender_name"
 	injectSenderEmail = "sender_email"
+	injectMentions    = "mentions"
 	injectPlatform    = "platform"
 	injectChatID      = "chat_id"
 	injectTimestamp   = "timestamp"
@@ -110,6 +111,10 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 			if email := senderEmailFromMetadata(event.Metadata); email != "" {
 				attrs = append(attrs, fmt.Sprintf(`sender_email="%s"`, promptAttrValue(email)))
 			}
+		case injectMentions:
+			if mentions := mentionsFromMetadata(event.Metadata); mentions != "" {
+				attrs = append(attrs, fmt.Sprintf(`mentions="%s"`, promptAttrValue(mentions)))
+			}
 		case injectPlatform:
 			if platformID != "" {
 				attrs = append(attrs, fmt.Sprintf("platform=%s", platformID))
@@ -175,7 +180,7 @@ func normalizeInjectAllowlist(keys []string) []string {
 
 func isKnownInjectToken(key string) bool {
 	switch key {
-	case injectSenderID, injectSenderName, injectSenderEmail, injectPlatform, injectChatID,
+	case injectSenderID, injectSenderName, injectSenderEmail, injectMentions, injectPlatform, injectChatID,
 		injectTimestamp, injectTaskID, injectTraceID, injectLanguage:
 		return true
 	default:
@@ -241,6 +246,94 @@ func senderNameFromMetadata(metadata map[string]any) string {
 
 func senderEmailFromMetadata(metadata map[string]any) string {
 	return contextValueFromMetadata(metadata, "sender_email", "email", "X-Chat-API-User-Email")
+}
+
+func mentionsFromMetadata(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	raw, ok := metadata["mentions"]
+	if !ok || raw == nil {
+		return ""
+	}
+	profiles := parseMentionProfiles(raw)
+	if len(profiles) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		var attrs []string
+		if name := strings.TrimSpace(profile.Name); name != "" {
+			attrs = append(attrs, "name="+name)
+		}
+		if id := strings.TrimSpace(profile.UserID); id != "" {
+			attrs = append(attrs, "id="+id)
+		}
+		if email := strings.TrimSpace(profile.Email); email != "" {
+			attrs = append(attrs, "email="+email)
+		}
+		if len(attrs) == 0 {
+			continue
+		}
+		parts = append(parts, strings.Join(attrs, " "))
+	}
+	return strings.Join(parts, "|")
+}
+
+func parseMentionProfiles(raw any) []agentkit.ActorRef {
+	switch items := raw.(type) {
+	case []agentkit.ActorRef:
+		return items
+	case []map[string]string:
+		return mentionProfilesFromStringMaps(items)
+	case []map[string]any:
+		return mentionProfilesFromAnyMaps(items)
+	case []any:
+		profiles := make([]agentkit.ActorRef, 0, len(items))
+		for _, item := range items {
+			switch typed := item.(type) {
+			case map[string]string:
+				profiles = append(profiles, mentionProfilesFromStringMaps([]map[string]string{typed})...)
+			case map[string]any:
+				profiles = append(profiles, mentionProfilesFromAnyMaps([]map[string]any{typed})...)
+			}
+		}
+		return profiles
+	default:
+		return nil
+	}
+}
+
+func mentionProfilesFromStringMaps(items []map[string]string) []agentkit.ActorRef {
+	profiles := make([]agentkit.ActorRef, 0, len(items))
+	for _, item := range items {
+		profile := agentkit.ActorRef{
+			UserID: strings.TrimSpace(item["id"]),
+			Name:   strings.TrimSpace(item["name"]),
+			Email:  strings.TrimSpace(item["email"]),
+		}
+		if profile.UserID == "" && profile.Name == "" && profile.Email == "" {
+			continue
+		}
+		profiles = append(profiles, profile)
+	}
+	return profiles
+}
+
+func mentionProfilesFromAnyMaps(items []map[string]any) []agentkit.ActorRef {
+	profiles := make([]agentkit.ActorRef, 0, len(items))
+	for _, item := range items {
+		profile := agentkit.ActorRef{
+			UserID: metadataString(item, "id"),
+			Name:   metadataString(item, "name"),
+			Email:  metadataString(item, "email"),
+		}
+		if profile.UserID == "" && profile.Name == "" && profile.Email == "" {
+			continue
+		}
+		profiles = append(profiles, profile)
+	}
+	return profiles
 }
 
 func contextValueFromMetadata(metadata map[string]any, keys ...string) string {

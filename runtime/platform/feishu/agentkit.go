@@ -69,6 +69,7 @@ type inboundMessage struct {
 	images       []common.ImageAttachment
 	files        []common.FileAttachment
 	audio        *common.AudioAttachment
+	mentions     []*larkim.MentionEvent
 	rctx         replyContext
 }
 
@@ -340,28 +341,20 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		return p.sendPermissionCard(ctx, event)
 	case agentkit.EventTurnEnd:
 		endData := parseTurnEndData(event)
-		triggerRC, _ := p.turnTriggerFor(delivery)
-		switch {
-		case endData.Cancelled:
-			p.addCancelledReaction(triggerRC)
-		case endData.Failed:
-			p.addErrorReaction(triggerRC)
-		default:
-			p.addDoneReaction(triggerRC)
-		}
+		p.applyTurnEndReactions(delivery, endData)
 		if p.useInteractiveCard && p.useRichStream() {
 			return p.handleRichTurnEnd(ctx, delivery, endData)
 		}
 		return nil
+	}
+	if event.Type == agentkit.EventTurnStart {
+		p.onTurnStartReactions(delivery)
 	}
 	if !p.useInteractiveCard {
 		return p.outbound.Handle(ctx, event)
 	}
 	switch event.Type {
 	case agentkit.EventTurnStart:
-		if rc, ok := p.deliveryFor(delivery); ok && rc.messageID != "" {
-			p.turnTriggers.Store(delivery, rc)
-		}
 		p.clearStream(delivery)
 		if p.useRichStream() {
 			p.richStreamState(delivery)
@@ -463,15 +456,17 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	if msg.messageID != "" && p.reactionEmoji != "" {
 		msg.rctx.processingReactionID = p.addReaction(msg.messageID)
 	}
+	p.appendTurnReactionIfActive(msg.sessionID, msg.rctx)
 	p.storeDelivery(msg.sessionID, msg.rctx)
 
 	text := strings.TrimSpace(msg.content)
+	metadata := p.inboundMetadata(msg)
 	if text != "" {
 		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
 			Route:        session.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
 			SessionScope: p.sessionScope,
 			UserID:       msg.userID,
-			Metadata:     p.userProfileMetadata(msg.userID),
+			Metadata:     metadata,
 		}, text)
 		if err != nil {
 			_ = p.sendText(ctx, msg.sessionID, fmt.Sprintf("命令执行失败: %v", err))
@@ -498,7 +493,11 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
 		common.InboundOptsFor(p.workspace),
 	)
-	_ = p.inbox.Push(ctx, common.WithMetadata(event, p.userProfileMetadata(msg.userID)))
+	_ = p.inbox.Push(ctx, common.WithMetadata(event, metadata))
+}
+
+func (p *Platform) inboundMetadata(msg inboundMessage) map[string]any {
+	return common.MergeMetadata(p.userProfileMetadata(msg.userID), p.mentionMetadata(msg.mentions))
 }
 
 func (p *Platform) storeDelivery(sessionID agentkit.SessionID, rc replyContext) {
