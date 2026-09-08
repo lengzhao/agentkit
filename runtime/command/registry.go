@@ -3,10 +3,12 @@ package command
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // Config controls which contributed commands are exposed.
@@ -136,9 +138,15 @@ func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (s
 		return "", agentkit.ErrCommandNotHandled
 	}
 	if r.requiresAdmin(key, cmd) && !agentkit.IsAdmin(ctx) {
+		slog.Warn("command forbidden", commandLogAttrs(ctx, cmd.Name(), rawArgs)...)
 		return "", agentkit.ErrCommandForbidden
 	}
-	return cmd.CommandExec(ctx, rawArgs)
+	slog.Info("command execute", commandLogAttrs(ctx, cmd.Name(), rawArgs)...)
+	out, err := cmd.CommandExec(ctx, rawArgs)
+	if err != nil {
+		slog.Error("command failed", commandLogAttrs(ctx, cmd.Name(), rawArgs, "err", err)...)
+	}
+	return out, err
 }
 
 // EnrichSlashContext sets KeyIsAdmin when the current user matches Config.Admins.
@@ -204,4 +212,25 @@ var (
 
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func commandLogAttrs(ctx context.Context, name, rawArgs string, extra ...any) []any {
+	attrs := []any{
+		"command", strings.TrimSpace(name),
+		"user_id", agentkit.UserIDFromContext(ctx),
+		"platform_id", agentkit.PlatformFromContext(ctx),
+		"session_id", session.ConversationFromContext(ctx),
+		"delivery_session_id", session.DeliveryRouteFromContext(ctx),
+		"args", summarizeCommandArgs(rawArgs),
+	}
+	return append(attrs, extra...)
+}
+
+func summarizeCommandArgs(args string) string {
+	args = strings.TrimSpace(args)
+	const maxLen = 200
+	if len(args) <= maxLen {
+		return args
+	}
+	return args[:maxLen] + "…"
 }
