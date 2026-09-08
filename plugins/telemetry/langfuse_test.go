@@ -12,6 +12,7 @@ import (
 	"time"
 
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
 	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
 )
@@ -281,6 +282,91 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 	}
 	if !strings.Contains(text, "parentObservationId") {
 		t.Fatalf("expected tool span parentObservationId in %s", text)
+	}
+}
+
+func TestLangfuseExporterDedupesGenerationPrefix(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, payload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+
+	store, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, err := plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
+		BaseURL:              server.URL,
+		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
+		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
+		FlushIntervalSeconds: 1,
+	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	system := agentkit.ModelMessage{
+		Role:    "system",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "system prompt"}},
+	}
+	user := agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
+	}
+	assistant := agentkit.ModelMessage{
+		Role:      "assistant",
+		ToolCalls: []agentkit.ToolCall{{ID: "1", Name: "read", Input: []byte(`{"path":"a.txt"}`)}},
+	}
+
+	ctx, endTurn := exp.BeginTurn(context.Background(), captelemetry.TurnMeta{
+		TurnID:    "turn-1",
+		SessionID: "cli:default",
+		Input:     "hello",
+	})
+	ctx, endGen1 := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name:               "llm.generation",
+		Kind:               captelemetry.KindGeneration,
+		Model:              "gpt-5.4",
+		GenerationMessages: []agentkit.ModelMessage{system, user},
+	})
+	endGen1(captelemetry.ObservationEnd{Output: "tool call"})
+	ctx, endGen2 := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name:               "llm.generation",
+		Kind:               captelemetry.KindGeneration,
+		Model:              "gpt-5.4",
+		GenerationMessages: []agentkit.ModelMessage{system, user, assistant},
+	})
+	endGen2(captelemetry.ObservationEnd{Output: "answer"})
+	endTurn(captelemetry.TurnEnd{Output: "done"})
+	if err := exp.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `sharedPrefixMessages\":2`) {
+		t.Fatalf("expected shared prefix dedup in %s", text)
+	}
+	if strings.Count(text, "system prompt") != 1 {
+		t.Fatalf("system prompt should appear once, got %s", text)
 	}
 }
 

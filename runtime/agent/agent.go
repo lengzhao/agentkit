@@ -467,13 +467,13 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	prepEnd.Output = fmt.Sprintf("%d messages, %d tools", len(messages), len(specs))
 	finishPrep()
 
-	inputSummary := telemetry.SummarizeMessages(messages, 8192, false)
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
-		Name:      "llm.generation",
-		Kind:      captelemetry.KindGeneration,
-		Model:     a.model,
-		Input:     inputSummary,
-		ToolNames: telemetry.ToolNamesFromSpecs(specs),
+		Name:               "llm.generation",
+		Kind:               captelemetry.KindGeneration,
+		Model:              a.model,
+		Input:              telemetry.ExportMessages(messages),
+		GenerationMessages: messages,
+		ToolNames:          telemetry.ToolNamesFromSpecs(specs),
 	}))
 	var observationEnd captelemetry.ObservationEnd
 	defer func() {

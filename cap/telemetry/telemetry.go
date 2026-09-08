@@ -6,6 +6,8 @@ package telemetry
 import (
 	"context"
 	"time"
+
+	"github.com/lengzhao/agentkit"
 )
 
 // Exporter mirrors agent activity to an external observability backend.
@@ -52,6 +54,9 @@ type ObservationMeta struct {
 	Kind  ObservationKind
 	Model string
 	Input string
+	// GenerationMessages carries the full assembled prompt for exporters that
+	// optimize generation input recording (e.g. Langfuse). Does not affect LLM calls.
+	GenerationMessages []agentkit.ModelMessage
 	// ToolNames lists model-visible tools for an LLM generation.
 	ToolNames []string
 	// AgentID labels which agent produced this observation.

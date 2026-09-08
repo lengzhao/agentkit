@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -13,7 +14,7 @@ func FormatMessage(msg agentkit.ModelMessage) string {
 	if msg.Role == "" && len(msg.Content) == 0 && len(msg.ToolCalls) == 0 && len(msg.ToolResults) == 0 {
 		return ""
 	}
-	entry := messageEntryForExport(msg)
+	entry := messageEntryForExport(msg, 0)
 	if len(msg.ToolResults) > 0 {
 		entry["toolResults"] = msg.ToolResults
 	}
@@ -51,7 +52,7 @@ func SummarizeMessage(msg agentkit.ModelMessage) string {
 			b.WriteString(part.Text)
 		}
 	}
-	if attachments := exportAttachmentParts(msg.Content); len(attachments) > 0 {
+	if attachments := exportAttachmentParts(msg.Content, 0); len(attachments) > 0 {
 		if raw, err := json.Marshal(attachments); err == nil {
 			if b.Len() > 0 {
 				b.WriteString(" ")
@@ -79,53 +80,96 @@ func SummarizeMessage(msg agentkit.ModelMessage) string {
 }
 
 // SummarizeMessages JSON-encodes a message list for exporter input.
-func SummarizeMessages(messages []agentkit.ModelMessage, maxBytes int, redact bool) string {
-	if len(messages) == 0 {
-		return ""
+func SummarizeMessages(messages []agentkit.ModelMessage, maxFieldBytes int, redact bool) string {
+	raw := ExportMessages(messages)
+	if maxFieldBytes > 0 {
+		raw = FormatGenerationInputForExport(nil, messages, maxFieldBytes, false)
 	}
-	summaries := make([]map[string]any, 0, len(messages))
-	for _, msg := range messages {
-		entry := messageEntryForExport(msg)
-		summaries = append(summaries, entry)
+	if redact {
+		raw = RedactJSON(raw)
 	}
-	raw, err := json.Marshal(summaries)
-	if err != nil {
-		return ""
-	}
-	return PreparePayload(string(raw), maxBytes, redact)
+	return raw
 }
 
-func messageEntryForExport(msg agentkit.ModelMessage) map[string]any {
+func messageEntryForExport(msg agentkit.ModelMessage, maxFieldBytes int) map[string]any {
 	entry := map[string]any{}
 	if msg.Role != "" {
 		entry["role"] = msg.Role
 	}
 	if text := textFromParts(msg.Content); text != "" {
-		entry["content"] = text
+		entry["content"] = truncateFieldText(text, maxFieldBytes)
 	}
-	if attachments := exportAttachmentParts(msg.Content); len(attachments) > 0 {
+	if attachments := exportAttachmentParts(msg.Content, maxFieldBytes); len(attachments) > 0 {
 		entry["attachments"] = attachments
 	}
 	if len(msg.ToolCalls) > 0 {
-		entry["toolCalls"] = msg.ToolCalls
+		entry["toolCalls"] = exportToolCalls(msg.ToolCalls, maxFieldBytes)
+	}
+	if len(msg.ToolResults) > 0 {
+		entry["toolResults"] = exportToolResults(msg.ToolResults, maxFieldBytes)
 	}
 	return entry
 }
 
-func exportAttachmentParts(parts []agentkit.ContentPart) []map[string]any {
+func exportToolResults(results []agentkit.ToolResult, maxFieldBytes int) []map[string]any {
+	out := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		entry := map[string]any{
+			"id":   string(result.ID),
+			"name": result.Name,
+		}
+		if result.Content != "" {
+			entry["content"] = truncateFieldText(result.Content, maxFieldBytes)
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func exportToolCalls(calls []agentkit.ToolCall, maxFieldBytes int) []map[string]any {
+	out := make([]map[string]any, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, map[string]any{
+			"id":    string(call.ID),
+			"name":  call.Name,
+			"input": truncateFieldText(string(call.Input), maxFieldBytes),
+		})
+	}
+	return out
+}
+
+const fieldTruncationSuffix = "\n...[truncated]"
+
+func truncateFieldText(text string, maxBytes int) string {
+	if maxBytes <= 0 || text == "" || len(text) <= maxBytes {
+		return text
+	}
+	suffix := fieldTruncationSuffix
+	limit := maxBytes - len(suffix)
+	if limit < 1 {
+		return TruncatePayload(text, maxBytes)
+	}
+	cut := text[:limit]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut + suffix
+}
+
+func exportAttachmentParts(parts []agentkit.ContentPart, maxFieldBytes int) []map[string]any {
 	var out []map[string]any
 	for _, part := range parts {
 		if isTextOnlyPart(part) {
 			continue
 		}
-		if exported := exportContentPart(part); exported != nil {
+		if exported := exportContentPart(part, maxFieldBytes); exported != nil {
 			out = append(out, exported)
 		}
 	}
 	return out
 }
 
-func exportContentPart(part agentkit.ContentPart) map[string]any {
+func exportContentPart(part agentkit.ContentPart, maxFieldBytes int) map[string]any {
 	typ := strings.TrimSpace(part.Type)
 	if typ == "thinking" {
 		return nil
@@ -139,7 +183,7 @@ func exportContentPart(part agentkit.ContentPart) map[string]any {
 	}
 	entry := map[string]any{"type": typ}
 	if text := strings.TrimSpace(part.Text); text != "" && !strings.HasPrefix(text, "data:") {
-		entry["text"] = text
+		entry["text"] = truncateFieldText(text, maxFieldBytes)
 	}
 	if mime := strings.TrimSpace(part.MIME); mime != "" {
 		entry["mime"] = mime

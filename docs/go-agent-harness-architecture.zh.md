@@ -1318,7 +1318,7 @@ go run ./cmd/agent --preset coding "inspect this repo"
 | RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；output 为用户可见文本；metadata 含 `usage_*_tokens`、`steps`、`stop_reason`） | `loop.Dispatch` |
 | Loop 子 agent 委派 | 独立 Trace `agent.turn`（`sessionId` 为子 session；`agent_id` 为实际 Loop agent，如 `cursor`；async 委派同样在后台 goroutine 导出） | `subagent/loop-agent.runChild` |
 | LLM 准备 | Span `agent.step.prep`（history hydrate、tools.Visible、prompt.Assemble） | `agent.runStep` |
-| LLM 调用 | Generation（原生 `usage` 字段供 Langfuse 计费；`completionStartTime` 优先取首段 text/thinking，否则取首个 tool call；output 含 content 与 toolCalls） | `agent.runStep` |
+| LLM 调用 | Generation（agent 传入完整 `GenerationMessages`；Langfuse exporter 记录时做逐字段截断与同 trace 前缀去重，格式 `{"sharedPrefixMessages":N,"messages":[...]}`；不影响实际 LLM 请求） | `agent.runStep` + `telemetry/langfuse` |
 | Tool 执行 | Tool observation | `tools.Execute` |
 | Compaction | Span `compaction.apply`（input 为 `automatic` 或 `force`；无 service 或未实际 apply 时不导出） | `runtime/compaction.ApplyAll` |
 | MCP 初始化 | Span `mcp.init`（读 mcp.json、连接并 initialize 各 server、ListTools 发现工具；无 server 时不导出） | `tool/mcp.reload` |

@@ -14,7 +14,9 @@ telemetry.default:
     publicKeyRef: env:LANGFUSE_PUBLIC_KEY
     secretKeyRef: env:LANGFUSE_SECRET_KEY
     environment: development
-    maxPayloadBytes: 8192
+    maxPayloadBytes: 1048576
+    maxFieldBytes: 8192
+    deduplicateGenerationPrefix: true
     redactInputs: true
     redactOutputs: true
   deps:

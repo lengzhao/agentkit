@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
-	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/henomis/langfuse-go"
 	"github.com/henomis/langfuse-go/model"
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -34,8 +35,14 @@ type LangfuseConfig struct {
 	SampleRate float64 `json:"sampleRate"`
 	// FlushIntervalSeconds configures the Langfuse SDK batch flush interval.
 	FlushIntervalSeconds int `json:"flushIntervalSeconds"`
-	// MaxPayloadBytes truncates exported input/output payloads.
+	// MaxPayloadBytes truncates exported input/output payloads. 0 means no limit.
 	MaxPayloadBytes int `json:"maxPayloadBytes"`
+	// MaxFieldBytes truncates individual message content fields in llm.generation
+	// input while keeping JSON valid. Omit to default to 8192; set 0 for no limit.
+	MaxFieldBytes *int `json:"maxFieldBytes"`
+	// DeduplicateGenerationPrefix omits message prefixes identical to the previous
+	// llm.generation observation within the same trace.
+	DeduplicateGenerationPrefix *bool `json:"deduplicateGenerationPrefix"`
 	// RedactInputs scrubs sensitive keys from exported inputs.
 	RedactInputs bool `json:"redactInputs"`
 	// RedactOutputs scrubs sensitive keys from exported outputs.
@@ -47,15 +54,18 @@ type LangfuseDeps struct {
 }
 
 type Langfuse struct {
-	client          *langfuse.Langfuse
-	maxPayloadBytes int
-	redactInputs    bool
-	redactOutputs   bool
-	sampleRate      float64
-	environment     string
-	release         string
-	mu              sync.Mutex
-	rng             *rand.Rand
+	client                 *langfuse.Langfuse
+	maxPayloadBytes        int
+	maxFieldBytes          int
+	dedupeGenerationPrefix bool
+	genMessages            map[string][]agentkit.ModelMessage
+	redactInputs           bool
+	redactOutputs          bool
+	sampleRate             float64
+	environment            string
+	release                string
+	mu                     sync.Mutex
+	rng                    *rand.Rand
 }
 
 type langfuseCtxKey int
@@ -106,8 +116,21 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 	}
 
 	maxPayload := cfg.MaxPayloadBytes
-	if maxPayload <= 0 {
-		maxPayload = 8192
+	if maxPayload < 0 {
+		maxPayload = 0
+	}
+
+	maxFieldBytes := 8192
+	if cfg.MaxFieldBytes != nil {
+		maxFieldBytes = *cfg.MaxFieldBytes
+	}
+	if maxFieldBytes < 0 {
+		maxFieldBytes = 0
+	}
+
+	dedupePrefix := true
+	if cfg.DeduplicateGenerationPrefix != nil {
+		dedupePrefix = *cfg.DeduplicateGenerationPrefix
 	}
 
 	env := strings.TrimSpace(cfg.Environment)
@@ -123,14 +146,17 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 	client := langfuse.New(context.Background()).WithFlushInterval(flushInterval)
 
 	return &Langfuse{
-		client:          client,
-		maxPayloadBytes: maxPayload,
-		redactInputs:    cfg.RedactInputs,
-		redactOutputs:   cfg.RedactOutputs,
-		sampleRate:      sampleRate,
-		environment:     env,
-		release:         strings.TrimSpace(cfg.Release),
-		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		client:                 client,
+		maxPayloadBytes:        maxPayload,
+		maxFieldBytes:          maxFieldBytes,
+		dedupeGenerationPrefix: dedupePrefix,
+		genMessages:            map[string][]agentkit.ModelMessage{},
+		redactInputs:           cfg.RedactInputs,
+		redactOutputs:          cfg.RedactOutputs,
+		sampleRate:             sampleRate,
+		environment:            env,
+		release:                strings.TrimSpace(cfg.Release),
+		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
 }
 
@@ -175,7 +201,9 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 	}
 
 	ctx = rttelemetry.WithExporter(ctx, l)
+	l.clearGenerationState(traceID)
 	return ctx, func(end captelemetry.TurnEnd) {
+		l.clearGenerationState(traceID)
 		update := &model.Trace{
 			ID:     traceID,
 			Output: l.preparePayload(end.Output, l.redactOutputs),
@@ -211,7 +239,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			TraceID:   traceID,
 			Name:      name,
 			Model:     meta.Model,
-			Input:     l.preparePayload(meta.Input, l.redactInputs),
+			Input:     l.prepareGenerationInput(traceID, meta),
 			StartTime: &now,
 			Metadata:  obsMetadata,
 		}
@@ -330,6 +358,56 @@ func (l *Langfuse) preparePayload(value string, redact bool) any {
 		return nil
 	}
 	return rttelemetry.PreparePayload(value, l.maxPayloadBytes, redact)
+}
+
+func (l *Langfuse) prepareGenerationInput(traceID string, meta captelemetry.ObservationMeta) any {
+	messages := meta.GenerationMessages
+	if len(messages) == 0 && strings.TrimSpace(meta.Input) != "" {
+		return l.preparePayload(meta.Input, l.redactInputs)
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+
+	l.mu.Lock()
+	prev := l.genMessages[traceID]
+	formatted := rttelemetry.FormatGenerationInputForExport(prev, messages, l.maxFieldBytes, l.dedupeGenerationPrefix)
+	l.genMessages[traceID] = cloneMessages(messages)
+	l.mu.Unlock()
+
+	if l.redactInputs {
+		formatted = rttelemetry.RedactJSON(formatted)
+	}
+	if formatted == "" {
+		return nil
+	}
+	return formatted
+}
+
+func (l *Langfuse) clearGenerationState(traceID string) {
+	l.mu.Lock()
+	delete(l.genMessages, traceID)
+	l.mu.Unlock()
+}
+
+func cloneMessages(messages []agentkit.ModelMessage) []agentkit.ModelMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	out := make([]agentkit.ModelMessage, len(messages))
+	for i, msg := range messages {
+		out[i] = msg
+		if len(msg.Content) > 0 {
+			out[i].Content = append([]agentkit.ContentPart(nil), msg.Content...)
+		}
+		if len(msg.ToolCalls) > 0 {
+			out[i].ToolCalls = append([]agentkit.ToolCall(nil), msg.ToolCalls...)
+		}
+		if len(msg.ToolResults) > 0 {
+			out[i].ToolResults = append([]agentkit.ToolResult(nil), msg.ToolResults...)
+		}
+	}
+	return out
 }
 
 func (l *Langfuse) traceMetadata(meta captelemetry.TurnMeta) map[string]string {
