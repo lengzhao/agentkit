@@ -75,14 +75,15 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 
 	platformID := strings.TrimSpace(slash.Route.Platform)
 	policy := session.RoutePolicyForPlatform(platformID, session.DefaultRoutePolicy(slash.SessionScope))
-	env := session.ResolveEnvelope(WithDeliveryRoute(agentkit.MessageEvent{
+	event := agentkit.MessageEvent{
 		PlatformID: platformID,
 		UserID:     slash.UserID,
-	}, slash.Route), policy)
-	env = session.WithMetadataScope(env, slash.SessionScope)
-	if len(slash.Metadata) > 0 {
-		env = session.MergeEnvelopeMetadata(env, slash.Metadata)
 	}
+	if len(slash.Metadata) > 0 {
+		event.Metadata = slash.Metadata
+	}
+	env := session.ResolveEnvelope(WithDeliveryRoute(event, slash.Route), policy)
+	env = session.WithMetadataScope(env, slash.SessionScope)
 	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
 	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
 		cmdCtx = enricher.EnrichSlashContext(cmdCtx)

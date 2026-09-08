@@ -136,7 +136,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	engineSessionID := agentkit.SessionID(engineSessionKey)
-	slashResult, err := p.processChatSlash(r.Context(), channelKey, conv, engineSessionID, query)
+	slashResult, err := p.processChatSlash(r.Context(), channelKey, conv, engineSessionID, user, p.requestMetadata(r), query)
 	if err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)

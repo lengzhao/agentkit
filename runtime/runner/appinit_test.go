@@ -21,6 +21,15 @@ func (r *initRecorder) InitApp(context.Context) error {
 	return r.err
 }
 
+type uidCapturingInit struct {
+	uid *string
+}
+
+func (r *uidCapturingInit) InitApp(ctx context.Context) error {
+	*r.uid = agentkit.UserIDFromContext(ctx)
+	return nil
+}
+
 type noopPlatform struct{}
 
 func (noopPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
@@ -43,6 +52,24 @@ func TestRunRunsAppInitBeforeServe(t *testing.T) {
 	}
 	if len(rec.calls) != 1 {
 		t.Fatalf("InitApp calls = %d, want 1", len(rec.calls))
+	}
+}
+
+func TestRunAppInitInjectsBootstrapUserID(t *testing.T) {
+	t.Parallel()
+
+	var gotUID string
+	rec := &uidCapturingInit{uid: &gotUID}
+	root, err := runner.New(runner.Config{}, runner.Deps{Platform: noopPlatform{}, Loop: &panickyLoop{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := &build.Result{Instances: []build.Instance{{ID: "bootstrap.test", Use: "bootstrap/test", Value: rec}}}
+	if err := root.Run(context.Background(), result); err != nil {
+		t.Fatal(err)
+	}
+	if gotUID != "agentkit" {
+		t.Fatalf("uid = %q, want agentkit", gotUID)
 	}
 }
 

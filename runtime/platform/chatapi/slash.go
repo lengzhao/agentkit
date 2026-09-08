@@ -13,21 +13,41 @@ type chatSlashResult struct {
 	outcome common.SlashOutcome
 }
 
-func (p *Platform) slashContext(delivery agentkit.SessionID, conv *conversation) common.SlashContext {
+func (p *Platform) slashContext(delivery agentkit.SessionID, conv *conversation, user string, metadata map[string]any) common.SlashContext {
 	ctx := common.SlashContext{
-		Route:        session.SessionRouteFromDelivery("chat-api", delivery, ""),
+		Route: session.BuildSessionRoute(session.SessionRouteInput{
+			Platform:    "chat-api",
+			DeliveryID:  delivery,
+			ScopeUserID: user,
+		}),
 		SessionScope: p.sessionScope,
+		UserID:       user,
 	}
-	if conv != nil {
-		ctx.Metadata = map[string]any{
-			session.MetadataConversationID: conv.ID,
-			session.MetadataTurnCount:      conv.TurnCount,
-		}
+	if conv != nil || len(metadata) > 0 {
+		ctx.Metadata = mergeSlashMetadata(metadata, conv)
 	}
 	return ctx
 }
 
-func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *conversation, engineSessionID agentkit.SessionID, query string) (chatSlashResult, error) {
+func mergeSlashMetadata(metadata map[string]any, conv *conversation) map[string]any {
+	var out map[string]any
+	if len(metadata) > 0 {
+		out = make(map[string]any, len(metadata)+2)
+		for k, v := range metadata {
+			out[k] = v
+		}
+	}
+	if conv != nil {
+		if out == nil {
+			out = make(map[string]any, 2)
+		}
+		out[session.MetadataConversationID] = conv.ID
+		out[session.MetadataTurnCount] = conv.TurnCount
+	}
+	return out
+}
+
+func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *conversation, engineSessionID agentkit.SessionID, user string, metadata map[string]any, query string) (chatSlashResult, error) {
 	name, args, ok := common.ParseSlashCommand(query)
 	if ok && name == "help" && strings.TrimSpace(args) == "" {
 		return chatSlashResult{outcome: common.SlashOutcome{
@@ -35,7 +55,7 @@ func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *convers
 			Reply: formatChatAPIHelp(p.commands),
 		}}, nil
 	}
-	out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID, conv), query)
+	out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID, conv, user, metadata), query)
 	return chatSlashResult{outcome: out}, err
 }
 

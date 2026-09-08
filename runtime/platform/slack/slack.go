@@ -422,9 +422,10 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
 		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-			Route: session.BuildSessionRoute(d.inboundRoute(user)),
+			Route:        session.BuildSessionRoute(d.inboundRoute(user)),
 			SessionScope: p.sessionScope,
 			UserID:       user,
+			Metadata:     p.userProfileMetadata(user),
 		}, text)
 	if err != nil {
 		_ = p.replyText(ctx, d, fmt.Sprintf("命令执行失败: %v", err))

@@ -111,6 +111,67 @@ func TestProcessSlashDispatch(t *testing.T) {
 	}
 }
 
+func TestProcessSlashInjectsUserID(t *testing.T) {
+	var gotUser string
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"ping": captureUserCommand{userID: &gotUser},
+	}}
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C:u:U", session.ScopeChannel, "U123"), "/ping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+	if gotUser != "U123" {
+		t.Fatalf("user = %q, want U123", gotUser)
+	}
+}
+
+func TestProcessSlashInjectsMetadata(t *testing.T) {
+	var gotEmail string
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"ping": captureMetadataCommand{key: "email", value: &gotEmail},
+	}}
+	ctx := slashCtx("slack", "slack:C:u:U", session.ScopeChannel, "U123")
+	ctx.Metadata = map[string]any{"email": "alice@example.com", "displayName": "Alice"}
+	out, err := ProcessSlash(context.Background(), cmds, ctx, "/ping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+	if gotEmail != "alice@example.com" {
+		t.Fatalf("email = %q", gotEmail)
+	}
+}
+
+type captureUserCommand struct {
+	userID *string
+}
+
+func (captureUserCommand) Name() string        { return "ping" }
+func (captureUserCommand) Alias() string       { return "" }
+func (captureUserCommand) Description() string { return "capture user" }
+func (c captureUserCommand) CommandExec(ctx context.Context, _ string) (string, error) {
+	*c.userID = session.UserIDFromContext(ctx)
+	return "ok", nil
+}
+
+type captureMetadataCommand struct {
+	key   string
+	value *string
+}
+
+func (captureMetadataCommand) Name() string        { return "ping" }
+func (captureMetadataCommand) Alias() string       { return "" }
+func (captureMetadataCommand) Description() string { return "capture metadata" }
+func (c captureMetadataCommand) CommandExec(ctx context.Context, _ string) (string, error) {
+	*c.value = session.MetadataString(session.EnvelopeFromContext(ctx), c.key)
+	return "ok", nil
+}
+
 func TestProcessSlashInjectsPlatformID(t *testing.T) {
 	var gotPlatform string
 	delivery := session.BuildDeliverySessionID("chat-api", "default_channel", "conv_1", "")

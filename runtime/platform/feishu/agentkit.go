@@ -468,9 +468,10 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	text := strings.TrimSpace(msg.content)
 	if text != "" {
 		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-			Route: session.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
+			Route:        session.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
 			SessionScope: p.sessionScope,
 			UserID:       msg.userID,
+			Metadata:     p.userProfileMetadata(msg.userID),
 		}, text)
 		if err != nil {
 			_ = p.sendText(ctx, msg.sessionID, fmt.Sprintf("命令执行失败: %v", err))

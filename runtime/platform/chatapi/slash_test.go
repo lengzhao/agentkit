@@ -42,7 +42,7 @@ func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) 
 	}
 
 	stable := agentkit.SessionID(engineSessionKey("default_channel", oldConv.ID))
-	result, err := plat.processChatSlash(context.Background(), "default_channel", oldConv, stable, "/new")
+	result, err := plat.processChatSlash(context.Background(), "default_channel", oldConv, stable, "demo", nil, "/new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestProcessChatSlashSessionUsesConversation(t *testing.T) {
 	plat.conversations.bumpTurn(conv.ID)
 
 	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
-	result, err := plat.processChatSlash(context.Background(), "default_channel", conv, sessionID, "/session")
+	result, err := plat.processChatSlash(context.Background(), "default_channel", conv, sessionID, "demo", nil, "/session")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,8 +170,7 @@ func TestSendSlashDeliversMessageContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionKey := engineSessionKey(channel, conv.ID)
-	body, _ := json.Marshal(chatRequest{ConversationID: conv.ID, Query: "/send " + sessionKey + " 123"})
+	body, _ := json.Marshal(chatRequest{ConversationID: conv.ID, Query: "/send " + channel + " 123"})
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat-messages", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
