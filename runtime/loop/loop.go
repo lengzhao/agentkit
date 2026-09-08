@@ -115,6 +115,17 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	}
 
 	for {
+		if steered := control.PopSteering(); len(steered) > 0 {
+			for _, msg := range steered {
+				if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+					Message: msg,
+					Emit:    req.Emit,
+				}); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		followUps, err := control.DrainFollowUps(ctx, l.followUpMode)
 		if err != nil {
 			return err

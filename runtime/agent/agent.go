@@ -175,6 +175,11 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			return err
 		}
 		if !extended {
+			// Steering may arrive after the last step returned but before this turn
+			// unwinds (e.g. outbound delivery). Keep the turn alive for it.
+			if ctrl.HasSteering() {
+				continue
+			}
 			stopReason := string(reason)
 			telemetry.RecordTurnStopReason(ctx, stopReason)
 			telemetry.RecordEvent(ctx, "turn.completed", map[string]string{

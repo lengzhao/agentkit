@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,12 +10,130 @@ import (
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit/build"
 )
+
+type gateTurnStopping struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (h *gateTurnStopping) BeforeStep(context.Context, *agentkit.BeforeStep) error { return nil }
+func (h *gateTurnStopping) BeforeTool(context.Context, *agentkit.ToolCall) error   { return nil }
+func (h *gateTurnStopping) AfterTool(context.Context, *agentkit.ToolResult) error  { return nil }
+
+func (h *gateTurnStopping) TurnStopping(context.Context, *agentkit.TurnStopping) error {
+	h.once.Do(func() { close(h.entered) })
+	<-h.release
+	return nil
+}
+
+func TestLateSteerAfterSegmentEnds(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sessionID := agentkit.SessionID("test:late-steer")
+	provider, err := llm.NewScripted(llm.ScriptedConfig{Steps: []llm.ScriptedStep{
+		{Text: "hello"},
+		{Text: "steered reply"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assembler, err := prompt.NewAssembler(prompt.AssemblerConfig{}, prompt.AssemblerDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolRuntime, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := &gateTurnStopping{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	ag, err := agent.New(agent.Config{ID: "test", Model: "scripted", MaxSteps: 5}, agent.Deps{
+		SessionStore: store,
+		LLM:          provider,
+		Tools:        toolRuntime,
+		Prompt:       assembler,
+		Hooks:        gate,
+		Workspace:    rtworkspace.Static(dir),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctrl := loop.NewControl()
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
+	turnDone := make(chan error, 1)
+	go func() {
+		turnDone <- ag.RunTurn(ctx, agentkit.TurnInput{
+			Message: agentkit.ModelMessage{
+				Role:    "user",
+				Content: []agentkit.ContentPart{{Type: "text", Text: "start"}},
+			},
+		})
+	}()
+
+	select {
+	case <-gate.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for turn stopping hook")
+	}
+
+	if err := ctrl.Steer(ctx, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "late steer"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	close(gate.release)
+
+	select {
+	case err := <-turnDone:
+		if err != nil {
+			t.Fatalf("run turn: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for turn to finish")
+	}
+
+	sess, err := store.Get(context.Background(), sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := sess.DeriveMessages(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var texts []string
+	for _, msg := range msgs {
+		if msg.Role == "user" && len(msg.Content) > 0 {
+			texts = append(texts, msg.Content[0].Text)
+		}
+	}
+	want := []string{"start", "late steer"}
+	if len(texts) < len(want) {
+		t.Fatalf("user messages = %v, want %v", texts, want)
+	}
+	for i, text := range want {
+		if texts[i] != text {
+			t.Fatalf("user messages = %v, want prefix %v", texts, want)
+		}
+	}
+}
 
 func TestSteerInjectsBeforeNextStep(t *testing.T) {
 	t.Parallel()
