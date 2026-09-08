@@ -129,11 +129,11 @@ type Platform struct {
 	replyInThread              bool
 	noReplyToTrigger           bool
 	resolveMentions            bool
-		cfg                        Config
-		agentID                    agentkit.AgentID
-		commands                   agentkit.Commands
-		sessionScope               session.SessionScope
-		workspace                  workspace.Service
+	cfg                        Config
+	agentID                    agentkit.AgentID
+	commands                   agentkit.Commands
+	sessionScope               session.SessionScope
+	workspace                  workspace.Service
 	inbox                      *common.Inbox
 	outbound                   *common.Outbound
 	deliveries                 sync.Map
