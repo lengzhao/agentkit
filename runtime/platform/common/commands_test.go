@@ -41,7 +41,7 @@ func (s stubCommands) Dispatch(ctx context.Context, name string, rawArgs string)
 	return cmd.CommandExec(ctx, rawArgs)
 }
 
-func (s stubCommands) List() []agentkit.Command {
+func (s stubCommands) List(_ context.Context) []agentkit.Command {
 	out := make([]agentkit.Command, 0, len(s.byName))
 	for _, cmd := range s.byName {
 		out = append(out, cmd)
@@ -73,7 +73,7 @@ func TestFormatHelpMultiline(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": stubCommand{name: "ping", out: "pong"},
 	}}
-	text := FormatHelp(cmds)
+	text := FormatHelp(context.Background(), cmds)
 	if !strings.Contains(text, "可用命令:\n") {
 		t.Fatalf("expected header newline, got %q", text)
 	}
@@ -276,6 +276,44 @@ func (r adminRegistry) Dispatch(ctx context.Context, name string, rawArgs string
 		return "", agentkit.ErrCommandForbidden
 	}
 	return r.stubCommands.Dispatch(ctx, name, rawArgs)
+}
+
+func (r adminRegistry) List(ctx context.Context) []agentkit.Command {
+	ctx = r.EnrichSlashContext(ctx)
+	all := r.stubCommands.List(ctx)
+	if agentkit.IsAdmin(ctx) {
+		return all
+	}
+	out := make([]agentkit.Command, 0, len(all))
+	for _, cmd := range all {
+		if cmd.Name() != "shell" {
+			out = append(out, cmd)
+		}
+	}
+	return out
+}
+
+func TestFormatHelpHidesAdminCommands(t *testing.T) {
+	cmds := adminRegistry{
+		stubCommands: stubCommands{byName: map[string]agentkit.Command{
+			"shell": stubCommand{name: "shell", out: "ran"},
+			"ping":  stubCommand{name: "ping", out: "pong"},
+		}},
+		admins: []string{"U1"},
+	}
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C", session.ScopeChannel, "U2"), "/help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashHandled {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+	if strings.Contains(out.Reply, "/shell") {
+		t.Fatalf("help should hide admin command: %q", out.Reply)
+	}
+	if !strings.Contains(out.Reply, "/ping") {
+		t.Fatalf("help should list public command: %q", out.Reply)
+	}
 }
 
 func TestProcessSlashForbidden(t *testing.T) {

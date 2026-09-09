@@ -34,7 +34,7 @@ type SlashAdminContext interface {
 // Commands is a post-build slash command catalog for platforms.
 type Commands interface {
 	Dispatch(ctx context.Context, name string, rawArgs string) (string, error)
-	List() []Command
+	List(ctx context.Context) []Command
 }
 
 // CommandCollector receives CommandProvider contributions after pluginkit build.

@@ -20,7 +20,7 @@ func (stubStopCommands) Dispatch(ctx context.Context, name, _ string) (string, e
 	return "", agentkit.ErrCommandNotHandled
 }
 
-func (stubStopCommands) List() []agentkit.Command { return nil }
+func (stubStopCommands) List(context.Context) []agentkit.Command { return nil }
 
 func TestCLIStopDuringTurn(t *testing.T) {
 	p, err := New(Config{}, Deps{Commands: stubStopCommands{}})

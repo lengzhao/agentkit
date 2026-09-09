@@ -62,17 +62,9 @@ func ParseSlashCommand(line string) (name, args string, ok bool) {
 	return name, args, true
 }
 
-// ProcessSlash resolves slash commands via the injected commands registry.
-// Non-slash input returns SlashNotCommand.
-func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashContext, text string) (SlashOutcome, error) {
-	name, args, ok := ParseSlashCommand(text)
-	if !ok {
-		return SlashOutcome{Kind: SlashNotCommand}, nil
-	}
-	if name == "" {
-		return SlashOutcome{Kind: SlashHandled, Reply: FormatHelp(commands)}, nil
-	}
-
+// SlashCommandContext builds the slash command execution context from routing
+// metadata and optional admin enrichment.
+func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash SlashContext) context.Context {
 	platformID := strings.TrimSpace(slash.Route.Platform)
 	policy := session.RoutePolicyForPlatform(platformID, session.DefaultRoutePolicy(slash.SessionScope))
 	event := agentkit.MessageEvent{
@@ -88,12 +80,26 @@ func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashCo
 	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
 		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
 	}
+	return cmdCtx
+}
+
+// ProcessSlash resolves slash commands via the injected commands registry.
+// Non-slash input returns SlashNotCommand.
+func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashContext, text string) (SlashOutcome, error) {
+	name, args, ok := ParseSlashCommand(text)
+	if !ok {
+		return SlashOutcome{Kind: SlashNotCommand}, nil
+	}
+	cmdCtx := SlashCommandContext(ctx, commands, slash)
+	if name == "" {
+		return SlashOutcome{Kind: SlashHandled, Reply: FormatHelp(cmdCtx, commands)}, nil
+	}
 
 	switch name {
 	case "help", "h", "?":
 		topic := strings.TrimSpace(args)
 		if topic == "" {
-			return SlashOutcome{Kind: SlashHandled, Reply: FormatHelp(commands)}, nil
+			return SlashOutcome{Kind: SlashHandled, Reply: FormatHelp(cmdCtx, commands)}, nil
 		}
 		return dispatchHelpTopic(cmdCtx, commands, topic)
 	}
@@ -143,12 +149,12 @@ func dispatchHelpTopic(ctx context.Context, commands agentkit.Commands, topic st
 }
 
 // FormatHelp renders a plain-text command list for IM platforms.
-func FormatHelp(commands agentkit.Commands) string {
+func FormatHelp(ctx context.Context, commands agentkit.Commands) string {
 	var b strings.Builder
 	b.WriteString("可用命令:\n")
 	b.WriteString("  /help, /h, /?   显示帮助\n")
 	if commands != nil {
-		for _, cmd := range commands.List() {
+		for _, cmd := range commands.List(ctx) {
 			line := fmt.Sprintf("  /%-14s %s", cmd.Name(), cmd.Description())
 			if alias := cmd.Alias(); alias != "" {
 				line += fmt.Sprintf(" (别名: %s)", alias)

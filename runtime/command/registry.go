@@ -194,9 +194,15 @@ func isAdminUser(admins []string, userID string) bool {
 	return false
 }
 
-func (r *Registry) List() []agentkit.Command {
-	out := make([]agentkit.Command, len(r.cmds))
-	copy(out, r.cmds)
+func (r *Registry) List(ctx context.Context) []agentkit.Command {
+	ctx = r.EnrichSlashContext(ctx)
+	out := make([]agentkit.Command, 0, len(r.cmds))
+	for _, cmd := range r.cmds {
+		if r.requiresAdmin(normalizeName(cmd.Name()), cmd) && !agentkit.IsAdmin(ctx) {
+			continue
+		}
+		out = append(out, cmd)
+	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Name() < out[j].Name()
 	})

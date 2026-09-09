@@ -50,17 +50,19 @@ func mergeSlashMetadata(metadata map[string]any, conv *conversation) map[string]
 func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *conversation, engineSessionID agentkit.SessionID, user string, metadata map[string]any, query string) (chatSlashResult, error) {
 	name, args, ok := common.ParseSlashCommand(query)
 	if ok && name == "help" && strings.TrimSpace(args) == "" {
+		slash := p.slashContext(engineSessionID, conv, user, metadata)
+		cmdCtx := common.SlashCommandContext(ctx, p.commands, slash)
 		return chatSlashResult{outcome: common.SlashOutcome{
 			Kind:  common.SlashHandled,
-			Reply: formatChatAPIHelp(p.commands),
+			Reply: formatChatAPIHelp(cmdCtx, p.commands),
 		}}, nil
 	}
 	out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID, conv, user, metadata), query)
 	return chatSlashResult{outcome: out}, err
 }
 
-func formatChatAPIHelp(commands agentkit.Commands) string {
-	text := common.FormatHelp(commands)
+func formatChatAPIHelp(ctx context.Context, commands agentkit.Commands) string {
+	text := common.FormatHelp(ctx, commands)
 	replacements := map[string]string{
 		"start a new conversation session":                 "开始新的 conversation",
 		"show current session id, path, and message count": "显示当前 conversation 和 session 信息",

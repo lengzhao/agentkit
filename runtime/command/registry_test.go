@@ -144,7 +144,7 @@ func TestRegistryListSorted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	list := r.List()
+	list := r.List(context.Background())
 	if len(list) != 2 || list[0].Name() != "alpha" || list[1].Name() != "zeta" {
 		t.Fatalf("unexpected list order: %+v", list)
 	}
@@ -161,8 +161,8 @@ func TestRegistryDenyList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.List()) != 1 || r.List()[0].Name() != "new" {
-		t.Fatalf("unexpected list after deny: %+v", r.List())
+	if len(r.List(context.Background())) != 1 || r.List(context.Background())[0].Name() != "new" {
+		t.Fatalf("unexpected list after deny: %+v", r.List(context.Background()))
 	}
 }
 
@@ -177,8 +177,8 @@ func TestRegistryAllowList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.List()) != 1 || r.List()[0].Name() != "session" {
-		t.Fatalf("unexpected list after allow: %+v", r.List())
+	if len(r.List(context.Background())) != 1 || r.List(context.Background())[0].Name() != "session" {
+		t.Fatalf("unexpected list after allow: %+v", r.List(context.Background()))
 	}
 }
 
@@ -227,6 +227,32 @@ func TestRegistryAdminOnlySkippedWhenAdminsUnset(t *testing.T) {
 	out, err := r.Dispatch(context.Background(), "shell", "")
 	if err != nil || out != "secret" {
 		t.Fatalf("dispatch = %q err %v", out, err)
+	}
+}
+
+func TestRegistryListHidesAdminOnlyCommands(t *testing.T) {
+	t.Parallel()
+	r, err := NewFromProviders(Config{
+		Admins:    []string{"U1"},
+		AdminOnly: []string{"shell"},
+	}, []agentkit.CommandProvider{
+		stubProvider{commands: []agentkit.Command{
+			adminOnlyCommand{name: "shell"},
+			stubCommand{name: "ping"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonAdmin := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U2"}})
+	list := r.List(nonAdmin)
+	if len(list) != 1 || list[0].Name() != "ping" {
+		t.Fatalf("non-admin list = %+v", list)
+	}
+	admin := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U1"}})
+	list = r.List(admin)
+	if len(list) != 2 {
+		t.Fatalf("admin list = %+v", list)
 	}
 }
 
