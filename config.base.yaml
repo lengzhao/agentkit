@@ -618,6 +618,15 @@ tools.default:
   config:
     defaultTimeoutSeconds: 120
     maxResultBytes: 8192
+    # 跨来源统一过滤模型可见工具名（静态 + MCP/OpenAPI 动态工具，用模型侧名称）。
+    # allowTools 非空时为白名单；否则 denyTools 为黑名单。与 mcp.json / api.json 内过滤可叠加。
+    # allowTools:
+    #   - read
+    #   - grep
+    #   - github__search
+    # denyTools:
+    #   - write
+    #   - bash
     # 子 agent 要跑多步，delegate 单独放宽墙钟上限。
     toolTimeouts:
       delegate: 900

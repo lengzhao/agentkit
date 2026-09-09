@@ -1130,7 +1130,7 @@ plugins/tool/
 | `tool/subagent` | `delegate` | 子 agent 委派 |
 | `tool/ask-user` | `ask_user` | HIL 提问 |
 
-`tools/runtime` 按工具来源分开挂载：`deps.tools` 接收单个 `agentkit.Tool`，`deps.toolPacks` 接收 `agentkit.ToolPack`（一个插件实例暴露多个模型工具），`deps.dynamicTools` 接收运行时动态发现的 `agentkit.ToolProvider`。
+`tools/runtime` 按工具来源分开挂载：`deps.tools` 接收单个 `agentkit.Tool`，`deps.toolPacks` 接收 `agentkit.ToolPack`（一个插件实例暴露多个模型工具），`deps.dynamicTools` 接收运行时动态发现的 `agentkit.ToolProvider`。聚合后可通过 `config.allowTools` / `config.denyTools` 按模型可见工具名再做统一 restriction（与 MCP/OpenAPI 来源侧过滤可叠加）。
 
 `cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`compaction.Service`、`telemetry.Exporter`）；`cap/filesystem` 仅是 grep/find 共享 DTO，**不是 Provider 边界**（`.gitignore` 在 `runtime/filesystem`）。Tool 内聚实现为主，只有 workspace、credentials、session 等运行时共享能力继续作为 deps 注入。
 

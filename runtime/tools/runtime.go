@@ -25,6 +25,10 @@ type RuntimeConfig struct {
 	MaxResultBytes int `json:"maxResultBytes"`
 	// ToolTimeouts are per-tool timeout overrides, keyed by tool name.
 	ToolTimeouts map[string]int `json:"toolTimeouts,omitempty"`
+	// AllowTools is a model-visible tool name whitelist. When non-empty, only listed tools are exposed.
+	AllowTools []string `json:"allowTools,omitempty"`
+	// DenyTools is a model-visible tool name blacklist. Ignored when AllowTools is set.
+	DenyTools []string `json:"denyTools,omitempty"`
 }
 
 type RuntimeDeps struct {
@@ -48,6 +52,8 @@ type Runtime struct {
 	defaultTimeout   time.Duration
 	maxResultBytes   int
 	toolTimeouts     map[string]time.Duration
+	filter           toolNameFilter
+	filterWarnOnce   sync.Once
 }
 
 // NewRuntime registers tools/runtime: Tool orchestration: visibility, policy evaluation, hooks, execution, result capping.
@@ -90,6 +96,7 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		defaultTimeout:   defaultTimeout,
 		maxResultBytes:   cfg.MaxResultBytes,
 		toolTimeouts:     toolTimeouts,
+		filter:           newToolNameFilter(cfg.AllowTools, cfg.DenyTools),
 	}, nil
 }
 
@@ -147,23 +154,29 @@ func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 		return nil, err
 	}
 	specs := make([]agentkit.ToolSpec, 0, len(r.tools)+len(r.dynamicTools))
+	available := make(map[string]bool)
 	for _, tool := range r.tools {
+		name := tool.Name()
+		available[name] = true
 		specs = append(specs, agentkit.ToolSpec{
-			Name:        tool.Name(),
+			Name:        name,
 			Description: tool.Description(),
 			InputSchema: tool.InputSchema(),
 		})
 	}
 	r.dynamicMu.Lock()
 	for _, tool := range r.dynamicTools {
+		name := tool.Name()
+		available[name] = true
 		specs = append(specs, agentkit.ToolSpec{
-			Name:        tool.Name(),
+			Name:        name,
 			Description: tool.Description(),
 			InputSchema: tool.InputSchema(),
 		})
 	}
 	r.dynamicMu.Unlock()
-	return specs, nil
+	r.filter.warnUnknownAllowNames(available, &r.filterWarnOnce)
+	return filterToolSpecs(specs, r.filter), nil
 }
 
 func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
@@ -191,6 +204,10 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 }
 
 func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID agentkit.SessionID, agentID agentkit.AgentID) (agentkit.ToolResult, error) {
+	if r.filter.active() && !r.filter.allows(call.Name) {
+		return filteredOutResult(call), nil
+	}
+
 	tool, ok := r.tools[call.Name]
 	if !ok {
 		if err := r.refreshDynamic(ctx); err != nil {
@@ -347,6 +364,15 @@ func (r *Runtime) evaluatePolicies(ctx context.Context, call agentkit.ToolCall) 
 		}
 	}
 	return agentkit.Allow(), nil
+}
+
+func filteredOutResult(call agentkit.ToolCall) agentkit.ToolResult {
+	return agentkit.ToolResult{
+		ID:      call.ID,
+		Name:    call.Name,
+		Content: "tool not available",
+		Audit:   map[string]string{"decision": "deny", "reason": "filtered by tools/runtime allow/deny list"},
+	}
 }
 
 func deniedResult(call agentkit.ToolCall, reason string, audit map[string]string) agentkit.ToolResult {

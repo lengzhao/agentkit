@@ -2,6 +2,37 @@
 
 本文覆盖三类动态/外部工具：**网络抓取与搜索**、**MCP 动态工具**、**OpenAPI 动态工具**。
 
+## `tools/runtime` 工具过滤
+
+`tools/runtime` 可在聚合所有来源（`deps.tools`、`deps.toolPacks`、`deps.dynamicTools`）之后，再按**模型可见工具名**做统一白 / 黑名单：
+
+```yaml
+tools.default:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+    maxResultBytes: 8192
+    allowTools:
+      - read
+      - grep
+      - github__search
+    # denyTools:
+    #   - write
+    #   - bash
+```
+
+| 字段 | 说明 |
+|---|---|
+| `allowTools` | 白名单；非空时仅暴露列出的工具 |
+| `denyTools` | 黑名单；仅在 `allowTools` 为空时生效 |
+
+规则：
+
+- 名称使用模型侧最终名称（如 MCP 的 `github__search`、OpenAPI 的 `petstore__getPet`）。
+- `Visible` 与 `Execute` 都会应用过滤；名单外调用返回 `tool not available`。
+- 与 `mcp.json` 的 `allowTools` / `api.json` 的 `allowOperations` 可叠加：先在来源侧收窄，再在 runtime 侧统一裁剪。
+- 更细粒度仍可用 deps 选择（不挂载插件）或各动态工具源自己的 allow/deny。
+
 ## 网络工具
 
 ### 插件一览

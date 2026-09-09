@@ -365,6 +365,85 @@ func (s stubApproval) Ask(context.Context, agentkit.ApprovalRequest) (agentkit.A
 	return agentkit.ApprovalDecision{Allowed: s.allowed}, nil
 }
 
+func TestRuntimeVisibleFiltersByDenyTools(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		DenyTools: []string{"write", "mcp__ping"},
+	}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{
+			stubTool{name: "read"},
+			stubTool{name: "write"},
+		},
+		DynamicTools: []agentkit.ToolProvider{&stubProvider{tools: []agentkit.Tool{
+			stubTool{name: "mcp__ping"},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	specs, err := rt.Visible(context.Background())
+	if err != nil {
+		t.Fatalf("visible: %v", err)
+	}
+	if len(specs) != 1 || specs[0].Name != "read" {
+		t.Fatalf("visible tools = %#v", specs)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: "write"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "tool not available" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+}
+
+func TestRuntimeVisibleFiltersByAllowTools(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		AllowTools: []string{"read", "mcp__ping"},
+	}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{
+			stubTool{name: "read"},
+			stubTool{name: "write"},
+		},
+		DynamicTools: []agentkit.ToolProvider{&stubProvider{tools: []agentkit.Tool{
+			stubTool{
+				name: "mcp__ping",
+				fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+					return "pong", nil
+				},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	specs, err := rt.Visible(context.Background())
+	if err != nil {
+		t.Fatalf("visible: %v", err)
+	}
+	names := map[string]bool{}
+	for _, spec := range specs {
+		names[spec.Name] = true
+	}
+	if !names["read"] || !names["mcp__ping"] || names["write"] {
+		t.Fatalf("visible tools = %v", names)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: "mcp__ping"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "pong" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+}
+
 func TestRuntimeVisibleIncludesDynamicTools(t *testing.T) {
 	t.Parallel()
 
