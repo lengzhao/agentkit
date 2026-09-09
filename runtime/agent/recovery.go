@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -57,8 +58,8 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		AgentID:   a.id,
-		Type:      agentkit.EventSessionRecovery,
-		Data:      agentkit.MarshalOutboundData(data),
+		AgentID: a.id,
+		Type:    agentkit.EventSessionRecovery,
+		Data:    loop.MarshalOutboundData(data),
 	})
 }

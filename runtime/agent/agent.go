@@ -13,9 +13,10 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type Config struct {
@@ -384,9 +385,9 @@ func (a *Runtime) extendTurn(
 	)
 	if emit != nil {
 		if err := emit(ctx, agentkit.OutboundEvent{
-			AgentID:   a.id,
-			Type:      agentkit.EventTurnContinue,
-			Data:      agentkit.MarshalOutboundData(data),
+			AgentID: a.id,
+			Type:    agentkit.EventTurnContinue,
+			Data:    loop.MarshalOutboundData(data),
 		}); err != nil {
 			return false, err
 		}
@@ -645,8 +646,8 @@ func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit,
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		AgentID:   a.id,
-		Type:      typ,
-		Data:      agentkit.MarshalOutboundData(data),
+		AgentID: a.id,
+		Type:    typ,
+		Data:    loop.MarshalOutboundData(data),
 	})
 }

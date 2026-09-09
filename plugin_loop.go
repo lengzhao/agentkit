@@ -4,6 +4,9 @@ import (
 	"context"
 )
 
+// OutboundEmit sends platform events during a turn. When nil, streaming is suppressed.
+type OutboundEmit func(context.Context, OutboundEvent) error
+
 // Loop is the turn scheduler. It routes inbound MessageEvents to agents,
 // serializes work per Conversation, and owns per-session steer/follow-up control.
 // Loop seeds ctx with KeyTurnEnvelope (conversation, agent, route, workspace) and
@@ -23,6 +26,15 @@ type Loop interface {
 	// SupersedePendingForInbound cancels an active permission wait when a new
 	// user message arrives without a permission reply.
 	SupersedePendingForInbound(MessageEvent)
+}
+
+// AgentCatalogLoop optionally exposes registered agents for /agent slash help.
+// loop/default implements it; wrappers such as loop/agent-guard should delegate
+// to the inner loop.
+type AgentCatalogLoop interface {
+	Loop
+	Agents() []Agent
+	DefaultAgentID() AgentID
 }
 
 // LoopRequest wraps one inbound message. Runner resolves TurnEnvelope on

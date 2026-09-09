@@ -62,14 +62,5 @@ type RunState struct {
 	Context  int
 }
 
-// DeliveryParts holds parsed segments of a platform delivery SessionID.
-type DeliveryParts struct {
-	Platform string
-	Channel  string
-	Thread   string
-	User     string
-	Routable bool
-}
-
 // MetadataLogicalChars stores pre-sanitize message size on user/assistant events.
 const MetadataLogicalChars = "logical_chars"

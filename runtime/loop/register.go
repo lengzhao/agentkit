@@ -10,5 +10,6 @@ func init() {
 }
 
 var (
-	_ agentkit.Loop = (*Default)(nil)
+	_ agentkit.Loop             = (*Default)(nil)
+	_ agentkit.AgentCatalogLoop = (*Default)(nil)
 )

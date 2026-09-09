@@ -12,7 +12,7 @@ func TestResolveEnvelopePreservesInboundRoute(t *testing.T) {
 	t.Parallel()
 
 	delivery := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
-	route := agentkit.SessionRoute("slack", string(delivery))
+	route := session.SessionRoute("slack", string(delivery))
 	event := agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{
 			Route: route,
@@ -36,7 +36,7 @@ func TestResolveEnvelopeSlackChannelScope(t *testing.T) {
 		PlatformID: "slack",
 		UserID:     "U111",
 		Envelope: agentkit.TurnEnvelope{
-			Route: agentkit.SessionRoute("slack", string(delivery)),
+			Route: session.SessionRoute("slack", string(delivery)),
 		},
 	}
 	policy := session.DefaultRoutePolicy(session.ScopeChannel)
@@ -61,7 +61,7 @@ func TestResolveEnvelopeChatAPIUsesDeliveryConversation(t *testing.T) {
 	event := agentkit.MessageEvent{
 		PlatformID: "chat-api",
 		Envelope: agentkit.TurnEnvelope{
-			Route: agentkit.SessionRoute("chat-api", string(delivery)),
+			Route: session.SessionRoute("chat-api", string(delivery)),
 		},
 	}
 	policy := session.RoutePolicyForPlatform("chat-api", session.DefaultRoutePolicy(session.ScopeChannel))
@@ -79,7 +79,7 @@ func TestEnvelopeWithConversationPreservesRouteAndWorkspace(t *testing.T) {
 	t.Parallel()
 
 	env := agentkit.TurnEnvelope{
-		Route:        agentkit.SessionRoute("slack", "slack:C001:t:1:u:U1"),
+		Route:        session.SessionRoute("slack", "slack:C001:t:1:u:U1"),
 		Conversation: "slack:C001",
 		Workspace:    "slack:C001",
 	}
@@ -109,7 +109,7 @@ func TestApplyEnvelopeToContextStoresEnvelope(t *testing.T) {
 	t.Parallel()
 
 	env := agentkit.TurnEnvelope{
-		Route:        agentkit.SessionRoute("slack", "slack:C001:t:1:u:U1"),
+		Route:        session.SessionRoute("slack", "slack:C001:t:1:u:U1"),
 		Conversation: "slack:C001:new:20260101",
 		Workspace:    "slack:C001",
 		AgentID:      agentkit.AgentID("coder"),
@@ -135,12 +135,12 @@ func TestWithRouteUpdatesEnvelopeRoute(t *testing.T) {
 	t.Parallel()
 
 	base := agentkit.TurnEnvelope{
-		Route:        agentkit.SessionRoute("slack", "slack:C001"),
+		Route:        session.SessionRoute("slack", "slack:C001"),
 		Conversation: "slack:C001",
 		Workspace:    "slack:C001",
 	}
 	ctx := session.ApplyEnvelopeToContext(context.Background(), base)
-	ctx = session.WithRoute(ctx, agentkit.SessionRoute("slack", "slack:C002"))
+	ctx = session.WithRoute(ctx, session.SessionRoute("slack", "slack:C002"))
 
 	if got := session.DeliveryRouteFromContext(ctx); got != "slack:C002" {
 		t.Fatalf("delivery = %q", got)
@@ -154,7 +154,7 @@ func TestOutboundRouteIDPrefersRoute(t *testing.T) {
 	t.Parallel()
 
 	event := agentkit.OutboundEvent{
-		Route: agentkit.SessionRoute("slack", "slack:C001:t:1"),
+		Route: session.SessionRoute("slack", "slack:C001:t:1"),
 	}
 	if got := session.OutboundRouteID(event); got != "slack:C001:t:1" {
 		t.Fatalf("got %q", got)

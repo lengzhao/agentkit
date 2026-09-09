@@ -360,6 +360,7 @@ Slash 命令**不必**在 `commands.default.deps` 里逐个挂：只要贡献方
 |---|---|---|
 | `/plugin` | `commands/registry` | `platform.deps.commands` |
 | `/new`, `/session` | `session/commands` | `commands.default` → `sessionCommands.default` |
+| `/agent`, `/acp` | `agent/catalog-commands` | `runner.default` → `agent.catalogCommands.default`（不经 `commands/registry`，避免 `platform → commands → loop` 环） |
 | `/env` | `credentials/env` | `llm.deps.credentials` |
 | `/mcp`, `/openapi` | `tool/mcp`, `tool/openapi` | `tools.deps.dynamicTools` |
 | `/shell`, `/send`, `/cron` | 对应 tool | `tools.deps.tools` |

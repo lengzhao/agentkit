@@ -96,7 +96,7 @@ func TestNewCommandUpdatesActiveSession(t *testing.T) {
 	ctx := session.ApplyEnvelopeToContext(context.Background(), session.MergeEnvelopeMetadata(agentkit.TurnEnvelope{
 		Conversation: string(entry),
 		Workspace:    string(entry),
-		Route:        agentkit.SessionRoute("slack", string(stable)),
+		Route:        session.SessionRoute("slack", string(stable)),
 		Actor:        agentkit.ActorRef{UserID: "U111"},
 	}, map[string]any{
 		session.MetadataSessionScope: string(session.ScopeChannel),
@@ -156,7 +156,7 @@ func TestActiveEntryKeyFromContextRespectsUserScope(t *testing.T) {
 
 	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
 	env := session.WithMetadataScope(agentkit.TurnEnvelope{
-		Route: agentkit.SessionRoute("slack", string(delivery)),
+		Route: session.SessionRoute("slack", string(delivery)),
 		Actor: agentkit.ActorRef{UserID: "U02LNUW8KV5"},
 	}, session.ScopeUser)
 	ctx := session.ApplyEnvelopeToContext(context.Background(), env)

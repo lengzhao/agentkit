@@ -78,7 +78,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /compact")
 	}
-	entryKey := agentkit.SessionIDFromContext(ctx)
+	entryKey := session.SessionIDFromContext(ctx)
 	sessionID, err := session.ResolveActiveSessionID(ctx, c.sessionStore, entryKey)
 	if err != nil {
 		return "", err
@@ -86,7 +86,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	agentID := agentkit.AgentIDFromContext(ctx)
+	agentID := session.AgentIDFromContext(ctx)
 	sess, err := c.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return "", err
@@ -112,8 +112,8 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 }
 
 func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) error {
-	sessionID := agentkit.SessionIDFromContext(ctx)
-	agentID := agentkit.AgentIDFromContext(ctx)
+	sessionID := session.SessionIDFromContext(ctx)
+	agentID := session.AgentIDFromContext(ctx)
 	var sess agentkit.Session
 	if sessionID != "" {
 		var err error

@@ -17,6 +17,11 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.catalogCommands.default:
+    deps:
+        loop: loop.default
+        sessionStore: sessionStore.default
+    use: agent/catalog-commands
 agent.cursor.default:
     config:
         authMethod: cursor_login
@@ -353,6 +358,7 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
+        catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
         loop: loop.default
@@ -446,8 +452,10 @@ subagent.loop.default:
 telemetry.default:
     config:
         baseUrl: https://cloud.langfuse.com
+        deduplicateGenerationPrefix: true
         environment: development
-        maxPayloadBytes: 8192
+        maxFieldBytes: 8192
+        maxPayloadBytes: 1048576
         publicKeyRef: env:LANGFUSE_PUBLIC_KEY
         redactInputs: true
         redactOutputs: true

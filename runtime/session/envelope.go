@@ -10,89 +10,127 @@ import (
 
 // EnvelopeFromContext returns the current turn envelope, or zero when unset.
 func EnvelopeFromContext(ctx context.Context) agentkit.TurnEnvelope {
-	return agentkit.EnvelopeFromContext(ctx)
+	env, _ := ctx.Value(agentkit.KeyTurnEnvelope).(agentkit.TurnEnvelope)
+	return env
 }
 
 // ApplyEnvelopeToContext stores the turn envelope on ctx.
 func ApplyEnvelopeToContext(ctx context.Context, env agentkit.TurnEnvelope) context.Context {
-	return agentkit.ApplyEnvelopeToContext(ctx, env)
+	return context.WithValue(ctx, agentkit.KeyTurnEnvelope, env)
 }
 
 // WithRoute returns ctx with an updated envelope route.
 func WithRoute(ctx context.Context, route agentkit.RouteRef) context.Context {
-	return agentkit.WithRoute(ctx, route)
+	env := EnvelopeFromContext(ctx)
+	env.Route = route
+	return ApplyEnvelopeToContext(ctx, env)
 }
 
 // WithConversation returns ctx with an updated envelope conversation.
 func WithConversation(ctx context.Context, conversation string) context.Context {
-	return agentkit.WithConversation(ctx, conversation)
+	env := EnvelopeFromContext(ctx)
+	env.Conversation = conversation
+	return ApplyEnvelopeToContext(ctx, env)
 }
 
 // WithWorkspace returns ctx with an updated envelope workspace.
 func WithWorkspace(ctx context.Context, workspace string) context.Context {
-	return agentkit.WithWorkspace(ctx, workspace)
+	env := EnvelopeFromContext(ctx)
+	env.Workspace = workspace
+	return ApplyEnvelopeToContext(ctx, env)
 }
 
 // WithAgentID returns ctx with an updated envelope agent id.
 func WithAgentID(ctx context.Context, agentID agentkit.AgentID) context.Context {
-	return agentkit.WithAgentID(ctx, agentID)
+	env := EnvelopeFromContext(ctx)
+	env.AgentID = agentID
+	return ApplyEnvelopeToContext(ctx, env)
+}
+
+// WithContextMetadata merges metadata onto the turn envelope.
+func WithContextMetadata(ctx context.Context, extra map[string]any) context.Context {
+	if len(extra) == 0 {
+		return ctx
+	}
+	env := EnvelopeFromContext(ctx)
+	meta := env.Metadata
+	if meta == nil {
+		meta = make(map[string]any, len(extra))
+	}
+	for k, v := range extra {
+		meta[k] = v
+	}
+	env.Metadata = meta
+	return ApplyEnvelopeToContext(ctx, env)
 }
 
 // SessionIDFromContext reports the history/lock key for the current turn.
 func SessionIDFromContext(ctx context.Context) agentkit.SessionID {
-	return agentkit.SessionIDFromContext(ctx)
+	return agentkit.SessionID(ConversationFromContext(ctx))
 }
 
 // ConversationFromContext reports the history/lock key for the current turn.
 func ConversationFromContext(ctx context.Context) string {
-	return agentkit.ConversationFromContext(ctx)
+	if env := EnvelopeFromContext(ctx); env.Conversation != "" {
+		return env.Conversation
+	}
+	return ""
 }
 
 // PlatformFromContext reports the platform id for the current turn.
 func PlatformFromContext(ctx context.Context) string {
-	return agentkit.PlatformFromContext(ctx)
+	if env := EnvelopeFromContext(ctx); env.Route.Platform != "" {
+		return env.Route.Platform
+	}
+	return ""
 }
 
 // UserIDFromContext reports the end-user id for the current turn.
 func UserIDFromContext(ctx context.Context) string {
-	return agentkit.UserIDFromContext(ctx)
+	if env := EnvelopeFromContext(ctx); env.Actor.UserID != "" {
+		return env.Actor.UserID
+	}
+	return ""
 }
 
 // MetadataFromContext returns platform metadata for the current turn.
 func MetadataFromContext(ctx context.Context) map[string]any {
-	return agentkit.MetadataFromContext(ctx)
+	if env := EnvelopeFromContext(ctx); len(env.Metadata) > 0 {
+		return env.Metadata
+	}
+	return nil
 }
 
 // AgentIDFromContext reports the agent executing the current turn.
 func AgentIDFromContext(ctx context.Context) agentkit.AgentID {
-	return agentkit.AgentIDFromContext(ctx)
+	return EnvelopeFromContext(ctx).AgentID
 }
 
 // ActiveEntryKeyFromContext derives the stable /new active-session mapping key
 // from the turn route. Conversation may already be resolved to a child session.
 func ActiveEntryKeyFromContext(ctx context.Context) agentkit.SessionID {
-	env := agentkit.EnvelopeFromContext(ctx)
-	platform := agentkit.PlatformFromContext(ctx)
+	env := EnvelopeFromContext(ctx)
+	platform := PlatformFromContext(ctx)
 	if platform == "" {
 		platform = strings.TrimSpace(env.Route.Platform)
 	}
 	policy := RoutePolicyForPlatform(platform, DefaultRoutePolicy(SessionScopeFromContext(ctx)))
-	return ActiveEntryKey(env.Route, policy, agentkit.UserIDFromContext(ctx))
+	return ActiveEntryKey(env.Route, policy, UserIDFromContext(ctx))
 }
 
 // WorkspaceFromContext reports the tenant workspace key for the current turn.
 // Runner should set TurnEnvelope.Workspace explicitly; fallback derivation logs a warning.
 func WorkspaceFromContext(ctx context.Context) string {
-	if env := agentkit.EnvelopeFromContext(ctx); env.Workspace != "" {
+	if env := EnvelopeFromContext(ctx); env.Workspace != "" {
 		return env.Workspace
 	}
 	if delivery := DeliveryRouteFromContext(ctx); delivery != "" {
 		slog.Warn("workspace derived from delivery route; set TurnEnvelope.Workspace at ingress",
 			"delivery", delivery)
-		scoped := ApplyScope(delivery, ScopeChannel, agentkit.UserIDFromContext(ctx))
+		scoped := ApplyScope(delivery, ScopeChannel, UserIDFromContext(ctx))
 		return WorkspaceKey(string(scoped))
 	}
-	if conv := agentkit.ConversationFromContext(ctx); conv != "" {
+	if conv := ConversationFromContext(ctx); conv != "" {
 		slog.Warn("workspace derived from conversation; set TurnEnvelope.Workspace at ingress",
 			"conversation", conv)
 		return WorkspaceKey(conv)

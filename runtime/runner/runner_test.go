@@ -70,8 +70,8 @@ func (l *panickyLoop) Steer(context.Context, agentkit.ModelMessage) error    { r
 func (l *panickyLoop) Cancel(context.Context, string) error                  { return nil }
 func (l *panickyLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *panickyLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
-func (l *panickyLoop) TryDeliverPermission(agentkit.MessageEvent) bool      { return false }
-func (l *panickyLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
+func (l *panickyLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }
+func (l *panickyLoop) SupersedePendingForInbound(agentkit.MessageEvent)      {}
 
 func (l *panickyLoop) count() int {
 	l.mu.Lock()
@@ -82,7 +82,7 @@ func (l *panickyLoop) count() int {
 func userEvent(sessionID agentkit.SessionID, text string) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{
-			Route: agentkit.SessionRoute("", string(sessionID)),
+			Route: session.SessionRoute("", string(sessionID)),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -95,7 +95,7 @@ func deliveryUserEvent(platform, userID string, delivery agentkit.SessionID, tex
 	evt := agentkit.MessageEvent{
 		UserID: userID,
 		Envelope: agentkit.TurnEnvelope{
-			Route: agentkit.SessionRoute(platform, string(delivery)),
+			Route: session.SessionRoute(platform, string(delivery)),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -160,8 +160,8 @@ func (l errorLoop) Steer(context.Context, agentkit.ModelMessage) error    { retu
 func (l errorLoop) Cancel(context.Context, string) error                  { return nil }
 func (l errorLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l errorLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
-func (l errorLoop) TryDeliverPermission(agentkit.MessageEvent) bool        { return false }
-func (l errorLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
+func (l errorLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }
+func (l errorLoop) SupersedePendingForInbound(agentkit.MessageEvent)      {}
 
 // permissionLoop blocks the first dispatch until closed, and records permission
 // deliveries via TryDeliverPermission.
@@ -254,7 +254,7 @@ func (p *stagedPermissionPlatform) Receive(ctx context.Context) (agentkit.Messag
 		}
 		return agentkit.MessageEvent{
 			Envelope: agentkit.TurnEnvelope{
-				Route: agentkit.SessionRoute("", "s:1"),
+				Route: session.SessionRoute("", "s:1"),
 			},
 			Reply: rtpermission.MarshalReply(permission.Reply{
 				RequestID: "perm1",

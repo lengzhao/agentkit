@@ -103,7 +103,7 @@ func TestSendSlashCommandTargetChat(t *testing.T) {
 	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
 	ctx = func() context.Context {
 		env := session.EnvelopeFromContext(ctx)
-		env.Route = agentkit.SessionRoute("slack", "delivery")
+		env.Route = session.SessionRoute("slack", "delivery")
 		return session.ApplyEnvelopeToContext(ctx, env)
 	}()
 	out, err := bundle.Commands()[0].CommandExec(ctx, "C002 remote ping")

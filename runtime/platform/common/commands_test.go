@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func slashCtx(platform string, delivery agentkit.SessionID, scope session.SessionScope, userID string) SlashContext {
 	return SlashContext{
-		Route:        agentkit.SessionRoute(platform, string(delivery)),
+		Route:        session.SessionRoute(platform, string(delivery)),
 		SessionScope: scope,
 		UserID:       userID,
 	}
@@ -272,7 +273,7 @@ func (r adminRegistry) EnrichSlashContext(ctx context.Context) context.Context {
 
 func (r adminRegistry) Dispatch(ctx context.Context, name string, rawArgs string) (string, error) {
 	ctx = r.EnrichSlashContext(ctx)
-	if name == "shell" && !agentkit.IsAdmin(ctx) {
+	if name == "shell" && !command.IsAdmin(ctx) {
 		return "", agentkit.ErrCommandForbidden
 	}
 	return r.stubCommands.Dispatch(ctx, name, rawArgs)
@@ -281,7 +282,7 @@ func (r adminRegistry) Dispatch(ctx context.Context, name string, rawArgs string
 func (r adminRegistry) List(ctx context.Context) []agentkit.Command {
 	ctx = r.EnrichSlashContext(ctx)
 	all := r.stubCommands.List(ctx)
-	if agentkit.IsAdmin(ctx) {
+	if command.IsAdmin(ctx) {
 		return all
 	}
 	out := make([]agentkit.Command, 0, len(all))

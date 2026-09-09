@@ -7,9 +7,11 @@ import (
 
 func init() {
 	pluginkit.Register("agent/coding", New)
+	pluginkit.Register("agent/catalog-commands", NewCatalogCommands)
 }
 
 var (
-	_ agentkit.Agent            = (*Runtime)(nil)
+	_ agentkit.Agent             = (*Runtime)(nil)
 	_ agentkit.AgentCatalogEntry = (*Runtime)(nil)
+	_ agentkit.CommandProvider   = (*catalogCommands)(nil)
 )

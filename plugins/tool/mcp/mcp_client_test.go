@@ -5,8 +5,10 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
-	"github.com/lengzhao/agentkit")
+)
 
 func TestResolveEnvValueURL(t *testing.T) {
 	const key = "AGENTKIT_MCP_URL_TEST"
@@ -66,8 +68,8 @@ func TestPoolKeyGlobalVsTenant(t *testing.T) {
 
 	pool := &clientPool{}
 
-	ctxA := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
-	ctxB := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
+	ctxA := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctxB := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
 
 	globalA := pool.poolKey(ctxA, globalServer)
 	globalB := pool.poolKey(ctxB, globalServer)

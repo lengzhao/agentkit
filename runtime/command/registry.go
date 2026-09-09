@@ -137,7 +137,7 @@ func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (s
 	if !ok {
 		return "", agentkit.ErrCommandNotHandled
 	}
-	if r.requiresAdmin(key, cmd) && !agentkit.IsAdmin(ctx) {
+	if r.requiresAdmin(key, cmd) && !IsAdmin(ctx) {
 		slog.Warn("command forbidden", commandLogAttrs(ctx, cmd.Name(), rawArgs)...)
 		return "", agentkit.ErrCommandForbidden
 	}
@@ -154,7 +154,7 @@ func (r *Registry) EnrichSlashContext(ctx context.Context) context.Context {
 	if len(r.cfg.Admins) == 0 {
 		return ctx
 	}
-	userID := agentkit.UserIDFromContext(ctx)
+	userID := session.UserIDFromContext(ctx)
 	if !isAdminUser(r.cfg.Admins, userID) {
 		return ctx
 	}
@@ -198,7 +198,7 @@ func (r *Registry) List(ctx context.Context) []agentkit.Command {
 	ctx = r.EnrichSlashContext(ctx)
 	out := make([]agentkit.Command, 0, len(r.cmds))
 	for _, cmd := range r.cmds {
-		if r.requiresAdmin(normalizeName(cmd.Name()), cmd) && !agentkit.IsAdmin(ctx) {
+		if r.requiresAdmin(normalizeName(cmd.Name()), cmd) && !IsAdmin(ctx) {
 			continue
 		}
 		out = append(out, cmd)
@@ -223,8 +223,8 @@ func normalizeName(name string) string {
 func commandLogAttrs(ctx context.Context, name, rawArgs string, extra ...any) []any {
 	attrs := []any{
 		"command", strings.TrimSpace(name),
-		"user_id", agentkit.UserIDFromContext(ctx),
-		"platform_id", agentkit.PlatformFromContext(ctx),
+		"user_id", session.UserIDFromContext(ctx),
+		"platform_id", session.PlatformFromContext(ctx),
 		"session_id", session.ConversationFromContext(ctx),
 		"delivery_session_id", session.DeliveryRouteFromContext(ctx),
 		"args", summarizeCommandArgs(rawArgs),

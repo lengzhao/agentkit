@@ -14,11 +14,11 @@ import (
 func TestNormalizeSessionIDBareChat(t *testing.T) {
 	t.Parallel()
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("feishu", "delivery")})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("feishu", "delivery")})
 	if got := rtdelivery.NormalizeSessionID(ctx, "oc_a1b2c3d4e5"); got != "feishu:oc_a1b2c3d4e5" {
 		t.Fatalf("feishu: got %q", got)
 	}
-	ctx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "delivery")})
+	ctx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "delivery")})
 	if got := rtdelivery.NormalizeSessionID(ctx, "D0AK8MAHW22"); got != "slack:D0AK8MAHW22" {
 		t.Fatalf("slack: got %q", got)
 	}
@@ -33,7 +33,7 @@ func TestNormalizeSessionIDBareChat(t *testing.T) {
 func TestResolveRouteSlackBareChannel(t *testing.T) {
 	t.Parallel()
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "delivery")})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "delivery")})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:u:U1"))
 	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "D0AK8MAHW22"})
 	if err != nil {
@@ -50,7 +50,7 @@ func TestResolveRouteSlackBareChannel(t *testing.T) {
 func TestResolveRouteFeishuBareChat(t *testing.T) {
 	t.Parallel()
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("feishu", "delivery")})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("feishu", "delivery")})
 	ctx = session.ContextWithDeliveryRoute(ctx, "feishu", agentkit.SessionID("feishu:oc_src"))
 	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "oc_dst"})
 	if err != nil {
@@ -76,7 +76,7 @@ func TestSendSlashCommandBareFeishuChat(t *testing.T) {
 	ctx := withSendCtx(t.Context(), "feishu", "feishu:oc_src", "feishu:oc_src")
 	ctx = func() context.Context {
 		env := session.EnvelopeFromContext(ctx)
-		env.Route = agentkit.SessionRoute("feishu", "delivery")
+		env.Route = session.SessionRoute("feishu", "delivery")
 		return session.ApplyEnvelopeToContext(ctx, env)
 	}()
 	_, err = bundle.Commands()[0].CommandExec(ctx, "oc_dst hello\nworld")

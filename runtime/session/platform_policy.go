@@ -1,12 +1,8 @@
 package session
 
-import "strings"
-
-// PlatformSessionPolicy holds per-platform routing overrides applied on top of
-// runner defaults.
-type PlatformSessionPolicy struct {
-	ActiveEntryMode ActiveEntryMode
-}
+import (
+	"strings"
+)
 
 var platformSessionPolicies = map[string]PlatformSessionPolicy{
 	"chat-api": {ActiveEntryMode: ActiveEntryDelivery},

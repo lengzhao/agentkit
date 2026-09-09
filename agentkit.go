@@ -68,6 +68,19 @@ const MetadataSkipPromptMeta = "skipPromptMeta"
 // Only platform plugins decode delivery SessionIDs into IM routing targets.
 type SessionID string
 
+// DefaultSessionScope is the runner default when sessionScope is unset.
+const DefaultSessionScope = SessionScopeChannel
+
+// SessionScope selects how delivery SessionIDs collapse for Loop scheduling
+// and session history.
+type SessionScope string
+
+const (
+	SessionScopeChannel SessionScope = "channel"
+	SessionScopeThread  SessionScope = "thread"
+	SessionScopeUser    SessionScope = "user"
+)
+
 type ToolCallID string
 type EventID string
 type EventType string

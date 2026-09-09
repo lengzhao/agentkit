@@ -5,24 +5,24 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, conversation agentkit.SessionID) (agentkit.AgentID, error) {
-	if id := strings.TrimSpace(string(event.AgentID)); id != "" {
-		return agentkit.AgentID(id), nil
-	}
 	if bound, err := r.boundAgent(ctx, conversation); err != nil {
 		return "", err
 	} else if bound != "" {
 		return bound, nil
 	}
+	if id := strings.TrimSpace(string(event.AgentID)); id != "" {
+		return agentkit.AgentID(id), nil
+	}
 	return "", nil
 }
 
 func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEvent, env agentkit.TurnEnvelope, policy session.RoutePolicy) (string, error) {
-	if rtschedule.IsFireStateless(event.Metadata) {
+	if capschedule.IsFireStateless(event.Metadata) {
 		return env.Conversation, nil
 	}
 	defaultConversation := env.Conversation

@@ -5,9 +5,11 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"github.com/lengzhao/agentkit/runtime/session"
+
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/runner")
+	"github.com/lengzhao/agentkit/runtime/runner"
+	"github.com/lengzhao/agentkit/runtime/session"
+)
 
 type stubPlatform struct{}
 
@@ -17,8 +19,8 @@ func (stubPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
 func (stubPlatform) Send(context.Context, agentkit.OutboundEvent) error { return nil }
 
 type stubStopLoop struct {
-	busy    map[agentkit.SessionID]bool
-	cancel  []cancelCall
+	busy      map[agentkit.SessionID]bool
+	cancel    []cancelCall
 	cancelErr error
 }
 
@@ -27,16 +29,16 @@ type cancelCall struct {
 	reason    string
 }
 
-func (l *stubStopLoop) Dispatch(context.Context, agentkit.LoopRequest) error { return nil }
-func (l *stubStopLoop) Steer(context.Context, agentkit.ModelMessage) error   { return nil }
+func (l *stubStopLoop) Dispatch(context.Context, agentkit.LoopRequest) error  { return nil }
+func (l *stubStopLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *stubStopLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *stubStopLoop) Cancel(ctx context.Context, reason string) error {
 	sessionID := session.SessionIDFromContext(ctx)
 	l.cancel = append(l.cancel, cancelCall{sessionID: sessionID, reason: reason})
 	return l.cancelErr
 }
-func (l *stubStopLoop) IsSessionBusy(id agentkit.SessionID) bool { return l.busy[id] }
-func (l *stubStopLoop) TryDeliverPermission(agentkit.MessageEvent) bool { return false }
+func (l *stubStopLoop) IsSessionBusy(id agentkit.SessionID) bool         { return l.busy[id] }
+func (l *stubStopLoop) TryDeliverPermission(agentkit.MessageEvent) bool  { return false }
 func (l *stubStopLoop) SupersedePendingForInbound(agentkit.MessageEvent) {}
 
 func TestStopCommandNoTurnInProgress(t *testing.T) {

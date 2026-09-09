@@ -10,7 +10,7 @@ import (
 
 func testEnvelope(route, conversation, workspace, userID string) agentkit.TurnEnvelope {
 	return agentkit.TurnEnvelope{
-		Route:        agentkit.SessionRoute("slack", route),
+		Route:        session.SessionRoute("slack", route),
 		Conversation: conversation,
 		Workspace:    workspace,
 		Actor:        agentkit.ActorRef{UserID: userID},
@@ -44,7 +44,7 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 	ctx := withTurnContext(
 		context.Background(),
 		agentkit.TurnEnvelope{
-			Route:        agentkit.SessionRoute("cli", "cli:default"),
+			Route:        session.SessionRoute("cli", "cli:default"),
 			Conversation: "cli:default",
 			Workspace:    "cli:default",
 		},

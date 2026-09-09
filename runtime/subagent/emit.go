@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -42,7 +43,7 @@ func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) agentk
 }
 
 func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
-	return agentkit.OutboundEmitFromContext(ctx)
+	return loop.OutboundEmitFromContext(ctx)
 }
 
 // emitSubagentLifecycle forwards subagent/start and subagent/end to the parent
@@ -65,6 +66,6 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 		Route:   parentRoute,
 		AgentID: agentID,
 		Type:    typ,
-		Data:    agentkit.MarshalOutboundData(data),
+		Data:    loop.MarshalOutboundData(data),
 	})
 }

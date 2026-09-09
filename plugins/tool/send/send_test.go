@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/send"
 	"github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type recordingPlatform struct {
@@ -37,10 +37,14 @@ func TestSendUsesEmitForCurrentInbox(t *testing.T) {
 	}
 
 	var emitted []agentkit.OutboundEvent
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:t:111.0:u:U456"))
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Route = agentkit.SessionRoute("slack", "delivery"); return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = func() context.Context {
+		env := session.EnvelopeFromContext(ctx)
+		env.Route = session.SessionRoute("slack", "delivery")
+		return session.ApplyEnvelopeToContext(ctx, env)
+	}()
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
 		emitted = append(emitted, event)
 		return nil
@@ -66,7 +70,7 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:t:111.0:u:U456"))
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
@@ -91,7 +95,7 @@ func TestSendUserIDTarget(t *testing.T) {
 	}
 
 	inbox := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", inbox)
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
@@ -128,7 +132,7 @@ func TestSendFilePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C1"), Conversation: "slack:C1", Workspace: "slack:C1"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C1"), Conversation: "slack:C1", Workspace: "slack:C1"})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C1"))
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 
@@ -200,7 +204,7 @@ func TestSendInboundAttachmentPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C1"), Conversation: "slack:C1", Workspace: "slack:C1"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C1"), Conversation: "slack:C1", Workspace: "slack:C1"})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C1"))
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
 

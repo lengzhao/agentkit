@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestOutboundSendsTextAndDocument(t *testing.T) {
@@ -44,7 +45,7 @@ func TestOutboundSendsTextAndDocument(t *testing.T) {
 	}
 
 	if err := out.Handle(context.Background(), agentkit.OutboundEvent{
-		Route: agentkit.SessionRoute("slack", "slack:C1"),
+		Route: session.SessionRoute("slack", "slack:C1"),
 		Type:  agentkit.EventAssistantMessage,
 		Data:  data,
 	}); err != nil {
@@ -81,7 +82,7 @@ func TestOutboundDocumentOnly(t *testing.T) {
 	}
 
 	if err := out.Handle(context.Background(), agentkit.OutboundEvent{
-		Route: agentkit.SessionRoute("slack", "slack:C1"),
+		Route: session.SessionRoute("slack", "slack:C1"),
 		Type:  agentkit.EventAssistantMessage,
 		Data:  data,
 	}); err != nil {

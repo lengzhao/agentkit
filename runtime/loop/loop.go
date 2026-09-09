@@ -25,7 +25,7 @@ type Config struct {
 
 type Deps struct {
 	Agents    []agentkit.Agent      `json:"agents"`
-	Telemetry captelemetry.Exporter    `json:"telemetry,omitempty"`
+	Telemetry captelemetry.Exporter `json:"telemetry,omitempty"`
 }
 
 type Default struct {
@@ -295,7 +295,7 @@ func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID a
 		}
 	}
 	if emit != nil {
-		ctx = agentkit.ContextWithOutboundEmit(ctx, emit)
+		ctx = ContextWithOutboundEmit(ctx, emit)
 	}
 	if control != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)

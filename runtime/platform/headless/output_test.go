@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func newTestEmitter(mode string, stream bool) (*emitter, *bytes.Buffer, *bytes.Buffer) {
@@ -19,9 +21,9 @@ func newTestEmitter(mode string, stream bool) (*emitter, *bytes.Buffer, *bytes.B
 
 func messageEnd(text string) agentkit.OutboundEvent {
 	return agentkit.OutboundEvent{
-		Route: agentkit.SessionRoute("headless", "s:1"),
+		Route: session.SessionRoute("headless", "s:1"),
 		Type:  agentkit.EventMessageEnd,
-		Data: agentkit.MarshalOutboundData(agentkit.MessageEndPayload{
+		Data: loop.MarshalOutboundData(agentkit.MessageEndPayload{
 			Message: agentkit.ModelMessage{
 				Role:    "assistant",
 				Content: []agentkit.ContentPart{{Type: "text", Text: text}},
@@ -51,7 +53,7 @@ func TestEmitterDoesNotDoublePrintWhenStreaming(t *testing.T) {
 	e, out, _ := newTestEmitter(OutputText, true)
 	update := agentkit.OutboundEvent{
 		Type: agentkit.EventMessageUpdate,
-		Data: agentkit.MarshalOutboundData(agentkit.MessageUpdatePayload{
+		Data: loop.MarshalOutboundData(agentkit.MessageUpdatePayload{
 			AssistantMessageEvent: agentkit.AssistantMessageEvent{
 				Type:  agentkit.AssistantEventTextDelta,
 				Delta: "the answer",
@@ -101,7 +103,7 @@ func TestEmitterJSONModeEmitsOneObjectPerLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := e.send(agentkit.OutboundEvent{
-		Route: agentkit.SessionRoute("headless", "s:1"),
+		Route: session.SessionRoute("headless", "s:1"),
 		Type:  "error",
 		Data:  []byte(`{"error":"boom"}`),
 	}); err != nil {
@@ -135,7 +137,7 @@ func TestEmitterJSONModeSuppressesDeltasUnlessStreaming(t *testing.T) {
 
 	update := agentkit.OutboundEvent{
 		Type: agentkit.EventMessageUpdate,
-		Data: agentkit.MarshalOutboundData(agentkit.MessageUpdatePayload{
+		Data: loop.MarshalOutboundData(agentkit.MessageUpdatePayload{
 			AssistantMessageEvent: agentkit.AssistantMessageEvent{
 				Type:  agentkit.AssistantEventTextDelta,
 				Delta: "partial",

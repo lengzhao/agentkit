@@ -110,6 +110,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	msgID := messageID(conv.ID, conv.TurnCount)
 	runID := newRunID()
 	inboundAgentID := p.resolveInboundAgentID(requestAgentID, conv)
+	eventAgentID := common.AgentRoutingConfig{AgentID: requestAgentID}.ResolveAgentID()
 
 	sse, err := newSSEWriter(w)
 	if err != nil {
@@ -176,7 +177,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	event := common.InboundFromContent(inboundAgentID, session.SessionRouteInput{
+	event := common.InboundFromContent(eventAgentID, session.SessionRouteInput{
 		Platform:    "chat-api",
 		DeliveryID:  agentkit.SessionID(engineSessionKey),
 		ReplyTo:     msgID,

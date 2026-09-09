@@ -10,10 +10,10 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/permission"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
@@ -21,10 +21,10 @@ import (
 
 type Config struct {
 	common.AgentRoutingConfig
-	BotToken    string `json:"botToken"`
-	BotTokenRef string `json:"botTokenRef"`
-	AppToken    string `json:"appToken"`
-	AppTokenRef string `json:"appTokenRef"`
+	BotToken      string `json:"botToken"`
+	BotTokenRef   string `json:"botTokenRef"`
+	AppToken      string `json:"appToken"`
+	AppTokenRef   string `json:"appTokenRef"`
 	Domain        string `json:"domain"` // optional Slack Web API base URL override
 	AllowFrom     string `json:"allowFrom"`
 	AllowChannels string `json:"allowChannels"`
@@ -59,15 +59,15 @@ func (d delivery) inboundRoute(user string) session.SessionRouteInput {
 }
 
 type Platform struct {
-	cfg        Config
-	agentID    agentkit.AgentID
-	apiURL     string
-	commands   agentkit.Commands
+	cfg          Config
+	agentID      agentkit.AgentID
+	apiURL       string
+	commands     agentkit.Commands
 	sessionScope session.SessionScope
-	workspace  workspace.Service
-	inbox      *common.Inbox
-	outbound   *common.Outbound
-	deliveries sync.Map
+	workspace    workspace.Service
+	inbox        *common.Inbox
+	outbound     *common.Outbound
+	deliveries   sync.Map
 
 	client *slack.Client
 	socket *socketmode.Client
@@ -121,7 +121,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		agentID:          cfg.ResolveAgentID(),
 		apiURL:           apiURL,
 		commands:         deps.Commands,
-		workspace:          deps.Workspace,
+		workspace:        deps.Workspace,
 		sessionScope:     session.ParseScope(cfg.SessionScope),
 		inbox:            common.NewInbox(64),
 		channelNameCache: make(map[string]string),

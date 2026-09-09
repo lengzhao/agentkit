@@ -90,7 +90,7 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	if p.cfg.MaxContinuations <= 0 {
 		return nil
 	}
-	sessionID := agentkit.SessionIDFromContext(ctx)
+	sessionID := session.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return nil
 	}
@@ -193,7 +193,7 @@ func (c statusCommand) CommandExec(ctx context.Context, args string) (string, er
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /status")
 	}
-	sessionID := agentkit.SessionIDFromContext(ctx)
+	sessionID := session.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}

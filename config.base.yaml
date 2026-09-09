@@ -48,6 +48,7 @@ runner.default:
     # 启动前一次性初始化（AppInitializer）；示例见 bootstrap.shell.default
     init:
       - bootstrap.shell.default
+    catalogCommands: agent.catalogCommands.default
 
 # 默认聚合 CLI + 可选 IM（Slack / 飞书 / Lark）。未配置对应环境变量时，loader 自动清理该平台实例。
 platform.default:
@@ -171,6 +172,12 @@ loop.default:
       - agent.cursor.default
       - agent.claude.default
     telemetry: telemetry.default
+
+agent.catalogCommands.default:
+  use: agent/catalog-commands
+  deps:
+    loop: loop.default
+    sessionStore: sessionStore.default
 
 telemetry.default:
   use: telemetry/none

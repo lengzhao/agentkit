@@ -7,7 +7,17 @@ import (
 )
 
 // DefaultSessionScope is the runner default when sessionScope is unset.
-const DefaultSessionScope = ScopeChannel
+const DefaultSessionScope = agentkit.DefaultSessionScope
+
+// SessionScope selects how delivery SessionIDs collapse for Loop scheduling
+// and session history.
+type SessionScope = agentkit.SessionScope
+
+const (
+	ScopeChannel = agentkit.SessionScopeChannel
+	ScopeThread  = agentkit.SessionScopeThread
+	ScopeUser    = agentkit.SessionScopeUser
+)
 
 // ParseScope normalizes runner config. Unknown values fall back to channel scope.
 func ParseScope(raw string) SessionScope {
@@ -23,27 +33,33 @@ func ParseScope(raw string) SessionScope {
 	}
 }
 
+// DeliveryParts holds parsed segments of a platform delivery SessionID.
+type DeliveryParts struct {
+	Platform string
+	Channel  string
+	Thread   string
+	User     string
+	Routable bool
+}
+
+// opaqueDeliveryPlatforms lists platforms whose two-segment ids (platform:segment)
+// should not be treated as IM-style routable deliveries. These are runtime
+// conventions for headless/CLI transports, not a root-package contract.
+var opaqueDeliveryPlatforms = map[string]bool{
+	"cli":    true,
+	"sub":    true,
+	"jsonl":  true,
+	"worker": true,
+	"timer":  true,
+	"cron":   true,
+}
+
 // ParseDelivery splits a delivery SessionID into routing segments.
-// fallbackUser fills a missing :u: segment when present on the event envelope.
 func ParseDelivery(id agentkit.SessionID, fallbackUser string) DeliveryParts {
-	p := parseDelivery(string(id), fallbackUser)
-	return DeliveryParts{
-		Platform: p.platform,
-		Channel:  p.channel,
-		Thread:   p.thread,
-		User:     p.user,
-		Routable: p.routable,
-	}
+	return parseDeliveryParts(string(id), fallbackUser)
 }
 
 // BuildDeliverySessionID is the canonical finest-grain id platforms should emit.
-// Runner applies sessionScope to collapse it for scheduling and history.
-//
-// Examples:
-//
-//	slack:C001
-//	slack:C001:t:1712345678.9
-//	slack:C001:t:1712345678.9:u:U456
 func BuildDeliverySessionID(platform, channel, thread, user string) agentkit.SessionID {
 	platform = strings.TrimSpace(platform)
 	channel = strings.TrimSpace(channel)
@@ -61,53 +77,53 @@ func BuildDeliverySessionID(platform, channel, thread, user string) agentkit.Ses
 }
 
 // ApplyScope derives the effective session id used for Loop locking, history,
-// and permission pending. delivery is the platform-owned routing id; userID
-// fills in a missing :u: segment when present on the event envelope.
+// and permission pending.
 func ApplyScope(delivery agentkit.SessionID, scope SessionScope, userID string) agentkit.SessionID {
 	id := strings.TrimSpace(string(delivery))
 	if id == "" {
 		return delivery
 	}
-	parts := parseDelivery(id, userID)
-	if !parts.routable {
+	parts := parseDeliveryParts(id, userID)
+	if !parts.Routable {
 		return delivery
 	}
 	return parts.effective(ParseScope(string(scope)))
 }
 
-type deliveryParts struct {
-	platform string
-	channel  string
-	thread   string
-	user     string
-	routable bool
+// DeliveryWithUser returns a delivery SessionID with the :u: segment set or replaced.
+func DeliveryWithUser(delivery agentkit.SessionID, userID string) agentkit.SessionID {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return delivery
+	}
+	parts := ParseDelivery(delivery, "")
+	if !parts.Routable {
+		return delivery
+	}
+	parts.User = userID
+	return BuildDeliverySessionID(parts.Platform, parts.Channel, parts.Thread, parts.User)
 }
 
-func parseDelivery(id, fallbackUser string) deliveryParts {
+func parseDeliveryParts(id, fallbackUser string) DeliveryParts {
 	segments := strings.Split(id, ":")
 	if len(segments) < 2 {
-		return deliveryParts{routable: false}
+		return DeliveryParts{Routable: false}
 	}
 
-	p := deliveryParts{
-		platform: segments[0],
-		channel:  segments[1],
-		routable: true,
+	p := DeliveryParts{
+		Platform: segments[0],
+		Channel:  segments[1],
+		Routable: true,
 	}
 
-	// Schedule side sessions are opaque ids, not IM delivery routes.
-	if p.platform == "schedule" {
-		p.routable = false
+	if p.Platform == "schedule" {
+		p.Routable = false
 		return p
 	}
 
-	// Single-segment transports (cli:default, sub:...) keep their id verbatim.
-	switch p.platform {
-	case "cli", "sub", "jsonl", "worker", "timer", "cron":
-		if len(segments) == 2 {
-			p.routable = false
-			return p
-		}
+	if opaqueDeliveryPlatforms[p.Platform] && len(segments) == 2 {
+		p.Routable = false
+		return p
 	}
 
 	for i := 2; i < len(segments); {
@@ -117,66 +133,40 @@ func parseDelivery(id, fallbackUser string) deliveryParts {
 				i++
 				continue
 			}
-			p.thread = segments[i+1]
+			p.Thread = segments[i+1]
 			i += 2
 		case "u":
 			if i+1 >= len(segments) {
 				i++
 				continue
 			}
-			p.user = segments[i+1]
+			p.User = segments[i+1]
 			i += 2
 		default:
 			i++
 		}
 	}
 
-	if p.user == "" {
-		p.user = strings.TrimSpace(fallbackUser)
+	if p.User == "" {
+		p.User = strings.TrimSpace(fallbackUser)
 	}
 	return p
 }
 
-// DeliveryWithUser returns a delivery SessionID with the :u: segment set or replaced.
-// Non-routable ids (cli:default, sub:...) are returned unchanged.
-func DeliveryWithUser(delivery agentkit.SessionID, userID string) agentkit.SessionID {
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return delivery
-	}
-	parts := parseDelivery(string(delivery), "")
-	if !parts.routable {
-		return delivery
-	}
-	parts.user = userID
-	return parts.deliveryID()
-}
-
-func (p deliveryParts) deliveryID() agentkit.SessionID {
-	id := p.platform + ":" + p.channel
-	if p.thread != "" {
-		id += ":t:" + p.thread
-	}
-	if p.user != "" {
-		id += ":u:" + p.user
-	}
-	return agentkit.SessionID(id)
-}
-
-func (p deliveryParts) effective(scope SessionScope) agentkit.SessionID {
-	base := p.platform + ":" + p.channel
+func (p DeliveryParts) effective(scope SessionScope) agentkit.SessionID {
+	base := p.Platform + ":" + p.Channel
 	switch scope {
 	case ScopeChannel:
 		return agentkit.SessionID(base)
 	case ScopeUser:
-		if p.user == "" {
+		if p.User == "" {
 			return agentkit.SessionID(base)
 		}
-		return agentkit.SessionID(base + ":u:" + p.user)
-	default: // ScopeThread
-		if p.thread == "" {
+		return agentkit.SessionID(base + ":u:" + p.User)
+	default:
+		if p.Thread == "" {
 			return agentkit.SessionID(base)
 		}
-		return agentkit.SessionID(base + ":t:" + p.thread)
+		return agentkit.SessionID(base + ":t:" + p.Thread)
 	}
 }

@@ -3,23 +3,14 @@ package runner
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/agent"
-	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func (r *Root) Commands() []agentkit.Command {
-	agents := r.loopAgents()
-	sort.Slice(agents, func(i, j int) bool {
-		return agents[i].ID() < agents[j].ID()
-	})
 	return []agentkit.Command{
-		agent.Command(agents, r.sessionStore, r.loopDefaultAgent()),
-		agent.ACPCommand(agents, r.sessionStore),
 		stopCommand{loop: r.loop, store: r.sessionStore},
 	}
 }
@@ -55,18 +46,4 @@ func (c stopCommand) CommandExec(ctx context.Context, args string) (string, erro
 		return "", err
 	}
 	return "stopping current turn", nil
-}
-
-func (r *Root) loopAgents() []agentkit.Agent {
-	if ld, ok := r.loop.(*loop.Default); ok {
-		return ld.Agents()
-	}
-	return nil
-}
-
-func (r *Root) loopDefaultAgent() agentkit.AgentID {
-	if ld, ok := r.loop.(*loop.Default); ok {
-		return ld.DefaultAgentID()
-	}
-	return ""
 }

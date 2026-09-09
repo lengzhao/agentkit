@@ -47,7 +47,7 @@ func mergeSlashMetadata(metadata map[string]any, conv *conversation) map[string]
 	return out
 }
 
-func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *conversation, engineSessionID agentkit.SessionID, user string, metadata map[string]any, query string) (chatSlashResult, error) {
+func (p *Platform) processChatSlash(ctx context.Context, channelKey string, conv *conversation, engineSessionID agentkit.SessionID, user string, metadata map[string]any, query string) (chatSlashResult, error) {
 	name, args, ok := common.ParseSlashCommand(query)
 	if ok && name == "help" && strings.TrimSpace(args) == "" {
 		slash := p.slashContext(engineSessionID, conv, user, metadata)
@@ -58,7 +58,26 @@ func (p *Platform) processChatSlash(ctx context.Context, _ string, conv *convers
 		}}, nil
 	}
 	out, err := common.ProcessSlash(ctx, p.commands, p.slashContext(engineSessionID, conv, user, metadata), query)
+	if err == nil && out.Kind == common.SlashHandled && syncConversationAgentFromSlash(conv, query) {
+		p.persistConversationIndex(ctx, channelKey)
+	}
 	return chatSlashResult{outcome: out}, err
+}
+
+func syncConversationAgentFromSlash(conv *conversation, query string) bool {
+	if conv == nil {
+		return false
+	}
+	name, args, ok := common.ParseSlashCommand(query)
+	if !ok || name != "agent" {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(args))
+	if len(fields) < 2 || fields[0] != "use" {
+		return false
+	}
+	conv.bindAgent(agentkit.AgentID(strings.TrimSpace(strings.Join(fields[1:], " "))))
+	return true
 }
 
 func formatChatAPIHelp(ctx context.Context, commands agentkit.Commands) string {

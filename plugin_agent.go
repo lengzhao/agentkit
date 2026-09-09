@@ -26,6 +26,12 @@ type Agent interface {
 	RunTurn(context.Context, TurnInput) error
 }
 
+// AgentSessionStore exposes the durable session backend wired into an agent.
+type AgentSessionStore interface {
+	Agent
+	SessionStore() SessionStore
+}
+
 // AgentCatalogEntry optionally describes a built agent for /agent help output.
 type AgentCatalogEntry interface {
 	AgentCatalogEntry() string

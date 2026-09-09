@@ -136,6 +136,7 @@ platform.http:
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；从 `session.SessionIDFromContext` 取 conversation 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
+| `agent/catalog-commands` | `agentkit.CommandProvider` | `/agent`、`/acp` slash；deps 注入 `loop`、`sessionStore` | — |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
@@ -397,7 +398,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | 贡献方 | 命令 |
 |---|---|
 | `commands/registry` | `/plugin` |
-| `loop/default` | `/agent`、`/acp` |
+| `agent/catalog-commands` | `/agent`、`/acp` |
 | `runner` | `/stop` |
 | `subagent/inprocess` | `/subagent` |
 | `session/commands` | `/new`、`/session` |

@@ -9,9 +9,9 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type storeRecordingAgent struct {
@@ -79,7 +79,7 @@ func newLoopSpawnerWithTelemetry(t *testing.T, async bool, summary string, telem
 
 func loopParentCtx() context.Context {
 	env := agentkit.TurnEnvelope{
-		Route:        agentkit.SessionRoute("cli", "cli:default:t:1:u:user-1"),
+		Route:        session.SessionRoute("cli", "cli:default:t:1:u:user-1"),
 		Conversation: "cli:default",
 		Workspace:    "cli:default",
 		Actor:        agentkit.ActorRef{UserID: "user-1"},
@@ -303,11 +303,11 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 }
 
 type blockingLoopAgent struct {
-	id      agentkit.AgentID
-	started chan struct{}
-	unblock chan struct{}
+	id       agentkit.AgentID
+	started  chan struct{}
+	unblock  chan struct{}
 	finished chan struct{}
-	store   agentkit.SessionStore
+	store    agentkit.SessionStore
 }
 
 func (a *blockingLoopAgent) ID() agentkit.AgentID { return a.id }

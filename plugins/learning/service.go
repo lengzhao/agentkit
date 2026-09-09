@@ -320,7 +320,7 @@ func (s *Service) removeMemory(ctx context.Context, text string) (string, error)
 }
 
 func (s *Service) learnSession(ctx context.Context) (string, error) {
-	sessionID := agentkit.SessionIDFromContext(ctx)
+	sessionID := session.SessionIDFromContext(ctx)
 	summary, err := SummarizeSessionUserMessages(ctx, s.sessions, sessionID, 8)
 	if err != nil {
 		return "", err
@@ -420,7 +420,7 @@ func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) 
 	if !s.workshopCfg().Enabled() {
 		return "", fmt.Errorf("skill workshop is disabled (workshop.mode=off)")
 	}
-	sessionID := agentkit.SessionIDFromContext(ctx)
+	sessionID := session.SessionIDFromContext(ctx)
 	summary, err := SummarizeSessionUserMessages(ctx, s.sessions, sessionID, 12)
 	if err != nil {
 		return "", err

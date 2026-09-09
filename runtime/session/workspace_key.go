@@ -2,27 +2,24 @@ package session
 
 import (
 	"strings"
+
+	"github.com/lengzhao/agentkit"
 )
 
-// WorkspaceKey derives the workspace isolation key from an opaque SessionID by a
-// fixed rule: the platform segment plus the first routing segment.
-//
-//	slack:C123ABC              -> slack:C123ABC
-//	slack:C123ABC:U456         -> slack:C123ABC
-//	slack:C123ABC:t:171234.56  -> slack:C123ABC
-//	cli:default                -> cli:default
-//	                           -> "" (no session, no workspace key)
-//
-// Every Slack session scope therefore lands on the same workspace key for a given
-// channel, which is why session granularity and workdir granularity can be
-// chosen independently.
-//
-// This is the only place the rule lives. Platforms stay free to encode whatever
-// they like after the second segment; nothing here parses further.
+// WorkspaceKey derives the workspace isolation key from an opaque SessionID.
+// Routable IM-style ids collapse to platform:channel; non-routable ids keep
+// platform plus the first segment after the platform prefix.
 func WorkspaceKey(sessionID string) string {
 	id := strings.TrimSpace(sessionID)
 	if id == "" {
 		return ""
+	}
+	parts := ParseDelivery(agentkit.SessionID(id), "")
+	if parts.Routable {
+		if parts.Channel == "" {
+			return parts.Platform
+		}
+		return parts.Platform + ":" + parts.Channel
 	}
 	platform, rest, ok := strings.Cut(id, ":")
 	if !ok || platform == "" {

@@ -23,7 +23,7 @@ func TestEngineSessionKeyEncodesColon(t *testing.T) {
 }
 
 func chatAPIRoute(sessionID agentkit.SessionID) agentkit.RouteRef {
-	return agentkit.SessionRoute("chat-api", string(sessionID))
+	return session.SessionRoute("chat-api", string(sessionID))
 }
 
 func TestChatOutboundSSE(t *testing.T) {
@@ -56,7 +56,7 @@ func TestChatOutboundSSE(t *testing.T) {
 		ctx := context.Background()
 		_ = plat.Send(ctx, agentkit.OutboundEvent{
 			Route: chatAPIRoute(sessionID),
-			Type:      agentkit.EventMessageStart,
+			Type:  agentkit.EventMessageStart,
 		})
 		delta, _ := json.Marshal(agentkit.MessageUpdatePayload{
 			AssistantMessageEvent: agentkit.AssistantMessageEvent{
@@ -66,12 +66,12 @@ func TestChatOutboundSSE(t *testing.T) {
 		})
 		_ = plat.Send(ctx, agentkit.OutboundEvent{
 			Route: chatAPIRoute(sessionID),
-			Type:      agentkit.EventMessageUpdate,
-			Data:      delta,
+			Type:  agentkit.EventMessageUpdate,
+			Data:  delta,
 		})
 		_ = plat.Send(ctx, agentkit.OutboundEvent{
 			Route: chatAPIRoute(sessionID),
-			Type:      agentkit.EventMessageEnd,
+			Type:  agentkit.EventMessageEnd,
 		})
 	}()
 
@@ -132,13 +132,13 @@ func TestToolCallSSEOnlyOnEnd(t *testing.T) {
 	})
 	_ = plat.Send(ctx, agentkit.OutboundEvent{
 		Route: chatAPIRoute(sessionID),
-		Type:      agentkit.EventMessageUpdate,
-		Data:      toolStart,
+		Type:  agentkit.EventMessageUpdate,
+		Data:  toolStart,
 	})
 	_ = plat.Send(ctx, agentkit.OutboundEvent{
 		Route: chatAPIRoute(sessionID),
-		Type:      agentkit.EventMessageUpdate,
-		Data:      toolEnd,
+		Type:  agentkit.EventMessageUpdate,
+		Data:  toolEnd,
 	})
 
 	body := rec.Body.String()
@@ -183,8 +183,8 @@ func TestToolResultSSETruncates(t *testing.T) {
 	})
 	if err := plat.Send(context.Background(), agentkit.OutboundEvent{
 		Route: chatAPIRoute(sessionID),
-		Type:      agentkit.EventToolResult,
-		Data:      resultData,
+		Type:  agentkit.EventToolResult,
+		Data:  resultData,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -334,8 +334,8 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 	})
 	_ = plat.Send(ctx, agentkit.OutboundEvent{
 		Route: chatAPIRoute(sessionID),
-		Type:      agentkit.EventMessageEnd,
-		Data:      toolEnd,
+		Type:  agentkit.EventMessageEnd,
+		Data:  toolEnd,
 	})
 	time.Sleep(500 * time.Millisecond)
 	if strings.Contains(rec.Body.String(), "event: message_end") {

@@ -12,7 +12,7 @@ import (
 func TestRouteSessionIDUsesDeliveryIDField(t *testing.T) {
 	t.Parallel()
 
-	route := agentkit.SessionRoute("slack", "slack:C001:t:1:u:U1")
+	route := session.SessionRoute("slack", "slack:C001:t:1:u:U1")
 	id, ok := session.RouteSessionID(route)
 	if !ok || id != "slack:C001:t:1:u:U1" {
 		t.Fatalf("id = %q ok = %v", id, ok)
@@ -41,7 +41,7 @@ func TestRouteSessionIDBuildsFromParts(t *testing.T) {
 func TestRouteSessionIDDecodesStringData(t *testing.T) {
 	t.Parallel()
 
-	route := agentkit.SessionRoute("slack", "slack:C001:t:1:u:U1")
+	route := session.SessionRoute("slack", "slack:C001:t:1:u:U1")
 	id, ok := session.RouteSessionID(route)
 	if !ok || id != "slack:C001:t:1:u:U1" {
 		t.Fatalf("id = %q ok = %v", id, ok)
@@ -123,7 +123,7 @@ func TestSessionRouteFromDeliveryPopulatesParts(t *testing.T) {
 func TestRouteTargetFromRouteFillsPartsFromDeliveryID(t *testing.T) {
 	t.Parallel()
 
-	route := agentkit.SessionRoute("slack", "slack:C001:t:1.0:u:U1")
+	route := session.SessionRoute("slack", "slack:C001:t:1.0:u:U1")
 	target, ok := session.RouteTargetFromRoute(route)
 	if !ok {
 		t.Fatal("RouteTargetFromRoute failed")
@@ -197,7 +197,7 @@ func TestRouteRefHasTarget(t *testing.T) {
 	if (agentkit.RouteRef{}).HasTarget() {
 		t.Fatal("empty route should not have target")
 	}
-	if !agentkit.SessionRoute("slack", "slack:C001").HasTarget() {
+	if !session.SessionRoute("slack", "slack:C001").HasTarget() {
 		t.Fatal("session route should have target")
 	}
 	if !session.BuildSessionRoute(session.SessionRouteInput{
@@ -214,7 +214,7 @@ func TestRouteRefIsZero(t *testing.T) {
 	if !(agentkit.RouteRef{}).IsZero() {
 		t.Fatal("empty route should be zero")
 	}
-	if agentkit.SessionRoute("slack", "slack:C001").IsZero() {
+	if session.SessionRoute("slack", "slack:C001").IsZero() {
 		t.Fatal("session route should not be zero")
 	}
 }

@@ -35,7 +35,7 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route:   agentkit.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route:   session.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		AgentID: "sub:researcher",
 		Type:    agentkit.EventMessageUpdate,
 		Data:    toolEnd,
@@ -49,7 +49,7 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		Content: "matched 3 lines",
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route:   agentkit.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route:   session.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		AgentID: "sub:researcher",
 		Type:    agentkit.EventToolResult,
 		Data:    resultData,
@@ -64,7 +64,7 @@ func TestForwardParentEmitForwardsToolCallsOnly(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route: agentkit.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route: session.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		Type:  agentkit.EventMessageUpdate,
 		Data:  textDelta,
 	}); err != nil {

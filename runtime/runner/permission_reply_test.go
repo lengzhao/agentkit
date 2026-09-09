@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/runner"
@@ -69,8 +70,8 @@ type permissionCapturingLoop struct {
 	releaseTurn chan struct{}
 	delivered   chan struct{}
 
-	mu          sync.Mutex
-	pendingID   string
+	mu           sync.Mutex
+	pendingID    string
 	conversation agentkit.SessionID
 }
 
@@ -88,7 +89,7 @@ func (l *permissionCapturingLoop) Dispatch(ctx context.Context, req agentkit.Loo
 		}
 		_ = emit(ctx, agentkit.OutboundEvent{
 			Type: agentkit.EventPermissionRequest,
-			Data: agentkit.MarshalOutboundData(permission.RequestPayload{
+			Data: loop.MarshalOutboundData(permission.RequestPayload{
 				Request: permission.Request{
 					ID:   "perm-test",
 					Kind: permission.KindQuestion,

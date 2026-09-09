@@ -37,7 +37,7 @@ func TestInboundDeliveryIDPrefersRoute(t *testing.T) {
 	delivery := session.BuildDeliverySessionID("slack", "C001", "1", "U1")
 	event := agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{
-			Route: agentkit.SessionRoute("slack", string(delivery)),
+			Route: session.SessionRoute("slack", string(delivery)),
 		},
 	}
 	if got := session.InboundDeliveryID(event); got != delivery {
@@ -50,7 +50,7 @@ func TestDeliveryFromEnvelopeUsesRoute(t *testing.T) {
 
 	delivery := agentkit.SessionID("slack:C001:t:1")
 	env := agentkit.TurnEnvelope{
-		Route: agentkit.SessionRoute("slack", string(delivery)),
+		Route: session.SessionRoute("slack", string(delivery)),
 	}
 	if got := session.DeliveryFromEnvelope(env); got != delivery {
 		t.Fatalf("got %q want %q", got, delivery)
@@ -62,7 +62,7 @@ func TestDeliveryRouteFromContextPrefersEnvelope(t *testing.T) {
 
 	delivery := session.BuildDeliverySessionID("slack", "C001", "1", "U1")
 	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-		Route: agentkit.SessionRoute("slack", string(delivery)),
+		Route: session.SessionRoute("slack", string(delivery)),
 	})
 	if got := session.DeliveryRouteFromContext(ctx); got != delivery {
 		t.Fatalf("got %q want %q", got, delivery)

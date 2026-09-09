@@ -9,8 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
+	"github.com/lengzhao/agentkit/runtime/loop"
 )
 
 // Dispatch sends a proactive message through the delivery sender.
@@ -40,7 +41,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 		PlatformID: route.PlatformID,
 		UserID:     route.UserID,
 		Type:       agentkit.EventAssistantMessage,
-		Data:       agentkit.MarshalOutboundData(modelMsg),
+		Data:       loop.MarshalOutboundData(modelMsg),
 	}
 	if err := event.RequirePlatformID(); err != nil {
 		return err
@@ -49,7 +50,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 		ctx = context.WithValue(ctx, agentkit.KeyProactiveSendRaw, true)
 	}
 	if useEmit(ctx, input) {
-		if emit := agentkit.OutboundEmitFromContext(ctx); emit != nil {
+		if emit := loop.OutboundEmitFromContext(ctx); emit != nil {
 			ctx = context.WithValue(ctx, agentkit.KeyProactiveSendUsed, true)
 			return emit(ctx, event)
 		}

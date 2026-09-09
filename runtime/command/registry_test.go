@@ -264,7 +264,7 @@ func TestRegistryEnrichSlashContext(t *testing.T) {
 	}
 	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U1"}})
 	ctx = r.EnrichSlashContext(ctx)
-	if !agentkit.IsAdmin(ctx) {
+	if !IsAdmin(ctx) {
 		t.Fatal("expected admin ctx")
 	}
 }

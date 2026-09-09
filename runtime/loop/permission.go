@@ -93,7 +93,7 @@ func validateRequest(req permission.Request) error {
 }
 
 func (c *Control) awaitOne(ctx context.Context, req permission.Request, capab permission.Capability) (permission.Result, error) {
-	emit := agentkit.OutboundEmitFromContext(ctx)
+	emit := OutboundEmitFromContext(ctx)
 	if emit == nil {
 		return rtpermission.NoHuman(req, "no outbound channel for permission"), nil
 	}
@@ -263,7 +263,7 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 		PlatformID: platformID,
 		UserID:     userID,
 		Type:       agentkit.EventPermissionRequest,
-		Data: agentkit.MarshalOutboundData(permission.RequestPayload{
+		Data: MarshalOutboundData(permission.RequestPayload{
 			Request:      req,
 			Conversation: string(session.SessionIDFromContext(ctx)),
 		}),
@@ -282,7 +282,7 @@ func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.Outb
 		PlatformID: platformID,
 		UserID:     userID,
 		Type:       agentkit.EventPermissionResolved,
-		Data:       agentkit.MarshalOutboundData(resolved),
+		Data:       MarshalOutboundData(resolved),
 	})
 }
 

@@ -36,19 +36,19 @@ type ScheduleInput struct {
 // ScheduleEntry is one job as reported to the model, with the next fire time
 // resolved so the agent can reason about it without parsing cron itself.
 type ScheduleEntry struct {
-	ID       string `json:"id"`
-	Kind     string `json:"kind"`
-	Cron     string `json:"cron,omitempty"`
-	In       string `json:"in,omitempty"`
-	FireAt   string `json:"fireAt,omitempty"`
-	Prompt   string `json:"prompt"`
-	Source   string `json:"source"`
-	Note     string `json:"note,omitempty"`
-	Disabled bool   `json:"disabled,omitempty"`
-	Fired    bool   `json:"fired,omitempty"`
-	FiredAt  string `json:"firedAt,omitempty"`
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Cron      string `json:"cron,omitempty"`
+	In        string `json:"in,omitempty"`
+	FireAt    string `json:"fireAt,omitempty"`
+	Prompt    string `json:"prompt"`
+	Source    string `json:"source"`
+	Note      string `json:"note,omitempty"`
+	Disabled  bool   `json:"disabled,omitempty"`
+	Fired     bool   `json:"fired,omitempty"`
+	FiredAt   string `json:"firedAt,omitempty"`
 	LastError string `json:"lastError,omitempty"`
-	NextRun  string `json:"nextRun,omitempty"`
+	NextRun   string `json:"nextRun,omitempty"`
 }
 
 type ScheduleOutput struct {
@@ -162,15 +162,15 @@ func scheduleOutput(jobs []capschedule.Job, instruction string, includeFired boo
 			continue
 		}
 		entry := ScheduleEntry{
-			ID:       job.ID,
-			Kind:     rtschedule.JobKind(job),
-			Cron:     job.Cron,
-			In:       job.In,
-			Prompt:   job.Prompt,
-			Source:   job.Source,
-			Note:     job.Note,
-			Disabled: job.Disabled,
-			Fired:    job.Fired,
+			ID:        job.ID,
+			Kind:      rtschedule.JobKind(job),
+			Cron:      job.Cron,
+			In:        job.In,
+			Prompt:    job.Prompt,
+			Source:    job.Source,
+			Note:      job.Note,
+			Disabled:  job.Disabled,
+			Fired:     job.Fired,
 			LastError: job.LastError,
 		}
 		if !job.FireAt.IsZero() {
@@ -260,13 +260,13 @@ func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.J
 	if delivery := session.DeliveryRouteFromContext(ctx); delivery != "" {
 		job.DeliverySessionID = string(delivery)
 	}
-	if platform := agentkit.PlatformFromContext(ctx); platform != "" {
+	if platform := session.PlatformFromContext(ctx); platform != "" {
 		job.PlatformID = strings.TrimSpace(platform)
 	}
-	if user := agentkit.UserIDFromContext(ctx); user != "" {
+	if user := session.UserIDFromContext(ctx); user != "" {
 		job.UserID = strings.TrimSpace(user)
 	}
-	if agent := agentkit.AgentIDFromContext(ctx); agent != "" {
+	if agent := session.AgentIDFromContext(ctx); agent != "" {
 		job.AgentID = string(agent)
 	}
 	job.ChannelKey = session.WorkspaceFromContext(ctx)

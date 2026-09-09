@@ -39,11 +39,11 @@ func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 		if summary == "" {
 			return FinishOutput{}, fmt.Errorf("finish requires a summary")
 		}
-		sessionID := agentkit.SessionIDFromContext(ctx)
+		sessionID := session.SessionIDFromContext(ctx)
 		if sessionID == "" {
 			return FinishOutput{}, fmt.Errorf("finish requires a session")
 		}
-		agentID := agentkit.AgentIDFromContext(ctx)
+		agentID := session.AgentIDFromContext(ctx)
 		sess, err := store.Get(ctx, sessionID)
 		if err != nil {
 			return FinishOutput{}, err

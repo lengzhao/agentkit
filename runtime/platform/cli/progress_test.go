@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/loop"
 )
 
 func TestFormatTurnProgress(t *testing.T) {
@@ -38,14 +39,14 @@ func TestCLITurnLifecycleOnStderr(t *testing.T) {
 	ctx := context.Background()
 	if err := platform.Send(ctx, agentkit.OutboundEvent{
 		Type: agentkit.EventTurnStart,
-		Data: agentkit.MarshalOutboundData(struct{}{}),
+		Data: loop.MarshalOutboundData(struct{}{}),
 	}); err != nil {
 		restore()
 		t.Fatal(err)
 	}
 	if err := platform.Send(ctx, agentkit.OutboundEvent{
 		Type: agentkit.EventTurnEnd,
-		Data: agentkit.MarshalOutboundData(struct {
+		Data: loop.MarshalOutboundData(struct {
 			Steps int `json:"steps"`
 		}{Steps: 2}),
 	}); err != nil {

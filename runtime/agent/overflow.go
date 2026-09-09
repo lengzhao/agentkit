@@ -9,6 +9,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -77,8 +78,8 @@ func (a *Runtime) emitOverflowRecovery(ctx context.Context, sess agentkit.Sessio
 		return nil
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		AgentID:   a.id,
-		Type:      agentkit.EventOverflowRecovery,
-		Data:      agentkit.MarshalOutboundData(data),
+		AgentID: a.id,
+		Type:    agentkit.EventOverflowRecovery,
+		Data:    loop.MarshalOutboundData(data),
 	})
 }

@@ -1,8 +1,6 @@
 package session
 
-import (
-	"github.com/lengzhao/agentkit"
-)
+import "github.com/lengzhao/agentkit"
 
 // ActiveSessionEntryKey returns the stable session-store key used for /new
 // active-session mapping.

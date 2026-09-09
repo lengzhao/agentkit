@@ -8,10 +8,10 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	toolschedule "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestCronSlashListsChannelJobs(t *testing.T) {
@@ -23,7 +23,7 @@ func TestCronSlashListsChannelJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:u:U1"))
 	if _, err := reg.Add(ctx, capschedule.Job{
 		Kind:   capschedule.KindCron,
@@ -73,7 +73,7 @@ func TestCronSlashRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: agentkit.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
 	if _, err := reg.Add(ctx, capschedule.Job{
 		Kind:   capschedule.KindDelay,
 		FireAt: time.Now().Add(time.Minute),

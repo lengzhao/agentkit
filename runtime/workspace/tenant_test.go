@@ -246,7 +246,7 @@ func TestTenantUsesEnvelopeWorkspace(t *testing.T) {
 	base := t.TempDir()
 	svc := newTenantSvc(t, rw.TenantConfig{Global: t.TempDir(), LocalBase: base})
 	env := agentkit.TurnEnvelope{
-		Route:        agentkit.SessionRoute("slack", "slack:C001:t:17.9"),
+		Route:        session.SessionRoute("slack", "slack:C001:t:17.9"),
 		Conversation: "schedule:job:1",
 		Workspace:    "slack:C001",
 	}

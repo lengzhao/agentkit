@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/loop"
 )
 
 type streamEmitter struct {
@@ -189,9 +190,9 @@ func (s *streamEmitter) emitUpdate(ame agentkit.AssistantMessageEvent, _ *agentk
 
 func (s *streamEmitter) sendOutbound(typ agentkit.EventType, payload any) error {
 	return s.emitFn(s.ctx, agentkit.OutboundEvent{
-		AgentID:   s.agentID,
-		Type:      typ,
-		Data:      agentkit.MarshalOutboundData(payload),
+		AgentID: s.agentID,
+		Type:    typ,
+		Data:    loop.MarshalOutboundData(payload),
 	})
 }
 

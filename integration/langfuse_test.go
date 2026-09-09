@@ -16,6 +16,7 @@ import (
 	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -79,7 +80,7 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 			Envelope: agentkit.TurnEnvelope{
 				Conversation: "cli:langfuse-e2e",
 				Workspace:    "cli:langfuse-e2e",
-				Route:        agentkit.SessionRoute("cli", "cli:langfuse-e2e"),
+				Route:        session.SessionRoute("cli", "cli:langfuse-e2e"),
 			},
 		},
 	}); err != nil {

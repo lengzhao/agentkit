@@ -8,7 +8,6 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-// Envelope metadata keys for slash commands and platform extensions.
 const (
 	MetadataSessionScope   = "sessionScope"
 	MetadataConversationID = "conversationId"
@@ -20,17 +19,13 @@ func WithMetadataScope(env agentkit.TurnEnvelope, scope SessionScope) agentkit.T
 	if scope == "" {
 		scope = DefaultSessionScope
 	}
-	return mergeEnvelopeMetadata(env, map[string]any{
+	return MergeEnvelopeMetadata(env, map[string]any{
 		MetadataSessionScope: string(scope),
 	})
 }
 
 // MergeEnvelopeMetadata copies extra metadata onto env.
 func MergeEnvelopeMetadata(env agentkit.TurnEnvelope, extra map[string]any) agentkit.TurnEnvelope {
-	return mergeEnvelopeMetadata(env, extra)
-}
-
-func mergeEnvelopeMetadata(env agentkit.TurnEnvelope, extra map[string]any) agentkit.TurnEnvelope {
 	if len(extra) == 0 {
 		return env
 	}

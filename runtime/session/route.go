@@ -7,18 +7,11 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+// SessionRouteInput carries structured session-kind route fields.
+type SessionRouteInput = agentkit.SessionRouteInput
+
 type sessionRouteData struct {
 	ID string `json:"id"`
-}
-
-// SessionRouteInput carries structured session-kind route fields.
-type SessionRouteInput struct {
-	Platform    string
-	DeliveryID  agentkit.SessionID
-	ChannelID   string
-	ThreadID    string
-	ReplyTo     string
-	ScopeUserID string
 }
 
 // RouteTarget is the decoded delivery target for a session-kind route.
@@ -30,24 +23,7 @@ type RouteTarget struct {
 	ScopeUserID string
 }
 
-func encodeSessionRouteTarget(target agentkit.SessionRouteTarget) (json.RawMessage, error) {
-	return json.Marshal(target)
-}
-
-func sessionRouteFromTarget(platform string, target agentkit.SessionRouteTarget) agentkit.RouteRef {
-	raw, err := encodeSessionRouteTarget(target)
-	if err != nil {
-		return agentkit.RouteRef{}
-	}
-	return agentkit.RouteRef{
-		Platform: strings.TrimSpace(platform),
-		Kind:     agentkit.RouteKindSession,
-		Target:   raw,
-	}
-}
-
 // BuildSessionRoute builds a session-kind RouteRef from structured fields.
-// When DeliveryID is empty, it is derived from platform/channel/thread/scope user.
 func BuildSessionRoute(in SessionRouteInput) agentkit.RouteRef {
 	platform := strings.TrimSpace(in.Platform)
 	channel := strings.TrimSpace(in.ChannelID)
@@ -56,7 +32,7 @@ func BuildSessionRoute(in SessionRouteInput) agentkit.RouteRef {
 	replyTo := strings.TrimSpace(in.ReplyTo)
 	deliveryID := strings.TrimSpace(string(in.DeliveryID))
 	if deliveryID == "" && platform != "" && channel != "" {
-		deliveryID = string(BuildDeliverySessionID(platform, channel, thread, scopeUser))
+		deliveryID = string(buildDeliverySessionID(platform, channel, thread, scopeUser))
 	}
 	return sessionRouteFromTarget(platform, agentkit.SessionRouteTarget{
 		DeliveryID:  agentkit.SessionID(deliveryID),
@@ -75,7 +51,8 @@ func SessionRouteFromDelivery(platform string, delivery agentkit.SessionID, repl
 	}
 	parts := ParseDelivery(delivery, "")
 	if !parts.Routable {
-		return sessionRouteFromTarget(platform, agentkit.SessionRouteTarget{
+		return BuildSessionRoute(SessionRouteInput{
+			Platform:   platform,
 			DeliveryID: delivery,
 			ReplyTo:    strings.TrimSpace(replyTo),
 		})
@@ -135,7 +112,7 @@ func RouteSessionID(route agentkit.RouteRef) (agentkit.SessionID, bool) {
 	platform := strings.TrimSpace(route.Platform)
 	channel := strings.TrimSpace(target.ChannelID)
 	if platform != "" && channel != "" {
-		id := BuildDeliverySessionID(platform, channel, target.ThreadID, target.ScopeUserID)
+		id := buildDeliverySessionID(platform, channel, target.ThreadID, target.ScopeUserID)
 		if id != "" {
 			return id, true
 		}
@@ -188,4 +165,40 @@ func OutboundRouteID(event agentkit.OutboundEvent) agentkit.SessionID {
 		return id
 	}
 	return ""
+}
+
+func sessionRouteFromTarget(platform string, target agentkit.SessionRouteTarget) agentkit.RouteRef {
+	raw, err := json.Marshal(target)
+	if err != nil {
+		return agentkit.RouteRef{}
+	}
+	return agentkit.RouteRef{
+		Platform: strings.TrimSpace(platform),
+		Kind:     agentkit.RouteKindSession,
+		Target:   raw,
+	}
+}
+
+// SessionRoute builds a minimal session-kind route from a delivery id string.
+func SessionRoute(platform, deliveryID string) agentkit.RouteRef {
+	return BuildSessionRoute(SessionRouteInput{
+		Platform:   strings.TrimSpace(platform),
+		DeliveryID: agentkit.SessionID(strings.TrimSpace(deliveryID)),
+	})
+}
+
+func buildDeliverySessionID(platform, channel, thread, user string) agentkit.SessionID {
+	platform = strings.TrimSpace(platform)
+	channel = strings.TrimSpace(channel)
+	if platform == "" || channel == "" {
+		return ""
+	}
+	id := platform + ":" + channel
+	if thread = strings.TrimSpace(thread); thread != "" {
+		id += ":t:" + thread
+	}
+	if user = strings.TrimSpace(user); user != "" {
+		id += ":u:" + user
+	}
+	return agentkit.SessionID(id)
 }

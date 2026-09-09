@@ -259,7 +259,7 @@ func TestRunnerResolvesSessionAgentBind(t *testing.T) {
 	}
 }
 
-func TestRunnerMessageAgentOverridesSessionBind(t *testing.T) {
+func TestRunnerSessionBindOverridesMessageAgent(t *testing.T) {
 	t.Parallel()
 
 	const sessionID = agentkit.SessionID("cli:test")
@@ -276,13 +276,13 @@ func TestRunnerMessageAgentOverridesSessionBind(t *testing.T) {
 	root, err := runner.New(runner.Config{}, runner.Deps{
 		Platform: &scriptedPlatform{events: []agentkit.MessageEvent{{
 			Envelope: agentkit.TurnEnvelope{
-				Route:        agentkit.SessionRoute("", string(sessionID)),
+				Route:        session.SessionRoute("", string(sessionID)),
 				Conversation: string(sessionID),
 			},
 			AgentID: "assistant",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
-				Content: []agentkit.ContentPart{{Type: "text", Text: "override"}},
+				Content: []agentkit.ContentPart{{Type: "text", Text: "platform default"}},
 			},
 		}}},
 		Loop:         loop,
@@ -294,8 +294,8 @@ func TestRunnerMessageAgentOverridesSessionBind(t *testing.T) {
 	if err := root.Run(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if loop.lastAgent != "assistant" {
-		t.Fatalf("agent = %q, want assistant", loop.lastAgent)
+	if loop.lastAgent != "reviewer" {
+		t.Fatalf("agent = %q, want reviewer", loop.lastAgent)
 	}
 }
 
@@ -318,7 +318,7 @@ func TestRunnerScheduleStatelessIgnoresActiveSessionMapping(t *testing.T) {
 	event := agentkit.MessageEvent{
 		PlatformID: "chat-api",
 		Envelope: agentkit.TurnEnvelope{
-			Route:        agentkit.SessionRoute("chat-api", string(delivery)),
+			Route:        session.SessionRoute("chat-api", string(delivery)),
 			Conversation: string(side),
 		},
 		Message: agentkit.ModelMessage{

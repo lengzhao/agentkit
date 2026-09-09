@@ -13,13 +13,10 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
-	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/agent"
-	"github.com/lengzhao/agentkit/runtime/loop"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -53,6 +50,9 @@ type Deps struct {
 	Schedules    []capschedule.Runtime     `json:"schedules,omitempty"`
 	Init         []agentkit.AppInitializer `json:"init,omitempty"`
 	Telemetry    captelemetry.Exporter        `json:"telemetry,omitempty"`
+	// CatalogCommands pulls agent catalog slash commands (/agent, /acp) into the
+	// build graph without routing through commands/registry (which platform depends on).
+	CatalogCommands agentkit.CommandProvider `json:"catalogCommands,omitempty"`
 }
 
 type Root struct {
@@ -61,7 +61,7 @@ type Root struct {
 	sessionStore    agentkit.SessionStore
 	schedules       []capschedule.Runtime
 	telemetry       captelemetry.Exporter
-	sessionScope    session.SessionScope
+	sessionScope    agentkit.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
 	inject          []string
@@ -81,6 +81,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if deps.Loop == nil {
 		return nil, fmt.Errorf("runner requires loop")
 	}
+	_ = deps.CatalogCommands
 	if cfg.MaxConcurrentTurns < 0 {
 		return nil, fmt.Errorf("runner maxConcurrentTurns must not be negative")
 	}
@@ -114,11 +115,11 @@ func resolveRunnerSessionStore(deps Deps) agentkit.SessionStore {
 	if deps.SessionStore != nil {
 		return deps.SessionStore
 	}
-	ld, ok := deps.Loop.(*loop.Default)
+	catalog, ok := deps.Loop.(agentkit.AgentCatalogLoop)
 	if !ok {
 		return nil
 	}
-	for _, ag := range ld.Agents() {
+	for _, ag := range catalog.Agents() {
 		if store := agentSessionStore(ag); store != nil {
 			return store
 		}
@@ -127,11 +128,11 @@ func resolveRunnerSessionStore(deps Deps) agentkit.SessionStore {
 }
 
 func agentSessionStore(ag agentkit.Agent) agentkit.SessionStore {
-	runtime, ok := ag.(*agent.Runtime)
+	src, ok := ag.(agentkit.AgentSessionStore)
 	if !ok {
 		return nil
 	}
-	return runtime.SessionStore()
+	return src.SessionStore()
 }
 
 func (r *Root) Run(ctx context.Context, result *build.Result) error {
@@ -278,7 +279,7 @@ func permissionCapability(platform agentkit.Platform, platformID string) permiss
 // ask_user.
 func inboundPermissionCapability(platform agentkit.Platform, event agentkit.MessageEvent) permission.Capability {
 	cap := permissionCapability(platform, event.PlatformID)
-	if rtschedule.IsFireTurn(event.Metadata) {
+	if capschedule.IsFireTurn(event.Metadata) {
 		cap.Interactive = false
 	}
 	return cap

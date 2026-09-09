@@ -10,6 +10,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -158,7 +159,7 @@ func (e *updateEmitter) sendOutbound(typ agentkit.EventType, payload any) error 
 	return e.emit(e.ctx, agentkit.OutboundEvent{
 		AgentID: e.agentID,
 		Type:    typ,
-		Data:    agentkit.MarshalOutboundData(payload),
+		Data:    loop.MarshalOutboundData(payload),
 	})
 }
 

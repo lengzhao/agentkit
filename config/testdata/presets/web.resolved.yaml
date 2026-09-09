@@ -17,6 +17,11 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.catalogCommands.default:
+    deps:
+        loop: loop.default
+        sessionStore: sessionStore.default
+    use: agent/catalog-commands
 agent.cursor.default:
     config:
         authMethod: cursor_login
@@ -353,6 +358,7 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
+        catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
         loop: loop.default

@@ -51,6 +51,16 @@ type routeRefJSON struct {
 	UserID    string `json:"userId,omitempty"`
 }
 
+// SessionRouteInput carries structured session-kind route fields.
+type SessionRouteInput struct {
+	Platform    string
+	DeliveryID  SessionID
+	ChannelID   string
+	ThreadID    string
+	ReplyTo     string
+	ScopeUserID string
+}
+
 // SessionRouteTarget is the delivery payload for RouteKindSession.
 //
 // DeliveryID is the stable return path (active-session / delivery key). When
@@ -182,17 +192,3 @@ func (e TurnEnvelope) WithMetadata(metadata map[string]any) TurnEnvelope {
 	return e
 }
 
-// SessionRoute builds a session-kind route from a delivery id string.
-//
-// Deprecated: prefer runtime/session.SessionRouteFromDelivery or BuildSessionRoute
-// so ReplyTo and channel/thread fields are preserved when needed.
-func SessionRoute(platform, deliveryID string) RouteRef {
-	platform = strings.TrimSpace(platform)
-	deliveryID = strings.TrimSpace(deliveryID)
-	target, _ := json.Marshal(SessionRouteTarget{DeliveryID: SessionID(deliveryID)})
-	return RouteRef{
-		Platform: platform,
-		Kind:     RouteKindSession,
-		Target:   target,
-	}
-}

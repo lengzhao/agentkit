@@ -13,8 +13,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/subagent"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
@@ -43,9 +44,9 @@ type LoopAgentConfig struct {
 
 // LoopAgentDeps holds injected capabilities for Loop-backed delegation.
 type LoopAgentDeps struct {
-	SessionStore agentkit.SessionStore   `json:"sessionStore"`
-	Agents       []agentkit.Agent        `json:"agents"`
-	Telemetry    captelemetry.Exporter   `json:"telemetry,omitempty"`
+	SessionStore agentkit.SessionStore `json:"sessionStore"`
+	Agents       []agentkit.Agent      `json:"agents"`
+	Telemetry    captelemetry.Exporter `json:"telemetry,omitempty"`
 }
 
 // LoopAgentSpawner delegates to configured Loop agents (e.g. agent/acp-remote).
@@ -253,7 +254,7 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 	bg := context.Background()
 	ctx := session.ApplyEnvelopeToContext(bg, parent.envelope)
 	ctx = session.WithAgentID(ctx, parentAgent)
-	ctx = agentkit.ContextWithOutboundEmit(ctx, parent.emit)
+	ctx = loop.ContextWithOutboundEmit(ctx, parent.emit)
 
 	result, runErr := s.runChild(ctx, def, ag, task, childID)
 	parentSess, err := s.store.Get(bg, parentID)
