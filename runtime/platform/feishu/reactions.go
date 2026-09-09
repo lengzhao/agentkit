@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/lengzhao/agentkit"
@@ -63,6 +64,54 @@ func (p *Platform) finishTurnReactions(sessionID agentkit.SessionID) []replyCont
 	out := append([]replyContext(nil), batch.rcs...)
 	batch.rcs = nil
 	return out
+}
+
+func botReplyMessageID(st *streamState) string {
+	if h, ok := st.cardHandle.(*feishuPreviewHandle); ok && h != nil {
+		if id := strings.TrimSpace(h.messageID); id != "" {
+			return id
+		}
+	}
+	if h, ok := st.bodyHandle.(*feishuPreviewHandle); ok && h != nil {
+		if id := strings.TrimSpace(h.messageID); id != "" {
+			return id
+		}
+	}
+	for i := len(st.cards) - 1; i >= 0; i-- {
+		if st.cards[i].Kind != streamCardBody {
+			continue
+		}
+		if h, ok := st.cards[i].Handle.(*feishuPreviewHandle); ok && h != nil {
+			if id := strings.TrimSpace(h.messageID); id != "" {
+				return id
+			}
+		}
+	}
+	if h, ok := st.progressHandle.(*feishuPreviewHandle); ok && h != nil {
+		return strings.TrimSpace(h.messageID)
+	}
+	return ""
+}
+
+func (p *Platform) addBotReplyEndReaction(messageID string, endData session.TurnEndData) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return
+	}
+	switch {
+	case endData.Cancelled:
+		if p.cancelledEmoji != "" {
+			go p.addReactionWithEmoji(messageID, p.cancelledEmoji)
+		}
+	case endData.Failed:
+		if p.errorEmoji != "" {
+			go p.addReactionWithEmoji(messageID, p.errorEmoji)
+		}
+	default:
+		if p.doneEmoji != "" {
+			go p.addReactionWithEmoji(messageID, p.doneEmoji)
+		}
+	}
 }
 
 func (p *Platform) applyTurnEndReactions(sessionID agentkit.SessionID, endData session.TurnEndData) {

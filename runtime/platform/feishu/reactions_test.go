@@ -52,3 +52,23 @@ func TestApplyTurnEndReactionsFallsBackToTurnTrigger(t *testing.T) {
 		t.Fatal("turn trigger should be cleared")
 	}
 }
+
+func TestBotReplyMessageIDPrefersUnifiedCard(t *testing.T) {
+	st := &streamState{
+		cardHandle: &feishuPreviewHandle{messageID: "card-1"},
+		bodyHandle: &feishuPreviewHandle{messageID: "body-1"},
+	}
+	if id := botReplyMessageID(st); id != "card-1" {
+		t.Fatalf("messageID = %q, want card-1", id)
+	}
+}
+
+func TestBotReplyMessageIDPrefersBodyCard(t *testing.T) {
+	st := &streamState{
+		bodyHandle: &feishuPreviewHandle{messageID: "body-1"},
+		progressHandle: &feishuPreviewHandle{messageID: "progress-1"},
+	}
+	if id := botReplyMessageID(st); id != "body-1" {
+		t.Fatalf("messageID = %q, want body-1", id)
+	}
+}

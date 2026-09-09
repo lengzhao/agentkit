@@ -786,6 +786,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	}
 	if p.useUnifiedStreamCard() {
 		cardHandle := st.cardHandle
+		botReplyID := botReplyMessageID(st)
 		bodyText := st.bodyText
 		if strings.TrimSpace(bodyText) == "" {
 			bodyText = st.lastStreamedBody
@@ -808,12 +809,14 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 				slog.Debug(p.tag()+": finalize unified card on turn end failed", "session_id", sessionID, "error", err)
 			}
 		}
+		p.addBotReplyEndReaction(botReplyID, endData)
 		p.clearStream(sessionID)
 		return nil
 	}
 
 	progressHandle := st.progressHandle
 	bodyHandle := st.bodyHandle
+	botReplyID := botReplyMessageID(st)
 	bodyText := st.bodyText
 	if endData.Cancelled && strings.TrimSpace(bodyText) == "" {
 		bodyText = cancelledBodyText(endData.StopReason)
@@ -847,6 +850,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 			slog.Debug(p.tag()+": finalize progress card on turn end failed", "session_id", sessionID, "error", err)
 		}
 	}
+	p.addBotReplyEndReaction(botReplyID, endData)
 	p.clearStream(sessionID)
 	return nil
 }
