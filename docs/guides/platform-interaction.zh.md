@@ -213,7 +213,7 @@ Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1
 | `policy` deny | 不进入 Permission 平面 |
 | headless / `Interactive=false` | allow_deny → deny；question → guidance |
 | schedule fire turn | 出站仍走 delivery platform（如 chat-api `send`）；permission 强制 `Interactive=false`，`ask_user` 降级为 `NoHuman` |
-| 超时 | `OutcomeTimeout`，按 kind 降级并**继续** turn |
+| 超时 | `OutcomeTimeout`，按 kind 降级并**继续** turn；policy ask 的 tool result 含 `reason` + `guidance` |
 
 `auto-allow` / `auto-deny` 只作用于 allow_deny；`KindQuestion` 始终走 Broker。
 
@@ -263,3 +263,5 @@ loop.default:
 `cap/permission/`、`runtime/loop/permission.go`、`runtime/runner/dispatch.go`、`runtime/tools/runtime.go`、`runtime/platform/cli/permission.go`
 
 外部 ACP Agent 的权限请求经 `agent/acp-remote` 桥接到同一 Broker，见 [plugin-catalog.zh.md](../plugin-catalog.zh.md) §3.2 `agent/acp-remote`。
+
+**`agent/acp-remote` 权限回传**：Broker 超时、用户拒绝或被新消息 supersede 时，桥接层向 ACP Agent 返回 `reject_once`（而非 `cancelled`），并在响应 `_meta` 中携带 `outcome` / `reason` / `guidance`，便于外部 Agent 自行决定跳过该工具后继续或结束 turn。仅 session/turn 取消（`session/cancel`、context abandoned）才回传 ACP `cancelled`。

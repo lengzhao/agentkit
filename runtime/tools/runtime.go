@@ -217,7 +217,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 		tool, ok = r.dynamicTools[call.Name]
 		r.dynamicMu.Unlock()
 		if !ok {
-			return deniedResult(call, "tool not found", nil), nil
+			return deniedResult(call, "tool not found", "", nil), nil
 		}
 	}
 
@@ -227,9 +227,9 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 	}
 	switch decision.Kind {
 	case agentkit.DecisionDeny:
-		return deniedResult(call, decision.Reason, decision.Audit), nil
+		return deniedResult(call, decision.Reason, "", decision.Audit), nil
 	case agentkit.DecisionAsk:
-		allowed, reason, err := r.resolveAskDecision(ctx, &call, decision.Reason)
+		allowed, reason, guidance, err := r.resolveAskDecision(ctx, &call, decision.Reason)
 		if err != nil {
 			return agentkit.ToolResult{}, err
 		}
@@ -237,7 +237,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 			if reason == "" {
 				reason = "approval denied"
 			}
-			return deniedResult(call, reason, nil), nil
+			return deniedResult(call, reason, guidance, nil), nil
 		}
 	}
 
@@ -307,21 +307,24 @@ func (r *Runtime) timeoutFor(name string) time.Duration {
 	return r.defaultTimeout
 }
 
-func (r *Runtime) resolveAskDecision(ctx context.Context, call *agentkit.ToolCall, policyReason string) (bool, string, error) {
+func (r *Runtime) resolveAskDecision(ctx context.Context, call *agentkit.ToolCall, policyReason string) (bool, string, string, error) {
 	if r.approval != nil {
 		decision, err := r.approval.Ask(ctx, agentkit.ApprovalRequest{
 			Reason:   policyReason,
 			ToolCall: call,
 		})
 		if err != nil {
-			return false, "", err
+			return false, "", "", err
 		}
-		return decision.Allowed, decision.Reason, nil
+		return decision.Allowed, decision.Reason, "", nil
 	}
 
 	broker, ok := rtpermission.BrokerFrom(ctx)
 	if !ok {
-		return false, "approval required but no permission broker on this session", nil
+		noHuman := rtpermission.NoHuman(permission.Request{
+			Kind: permission.KindAllowDeny,
+		}, "approval required but no permission broker on this session")
+		return false, noHuman.Reason, noHuman.Guidance, nil
 	}
 	result, err := broker.Await(ctx, permission.Request{
 		Kind:     permission.KindAllowDeny,
@@ -329,23 +332,23 @@ func (r *Runtime) resolveAskDecision(ctx context.Context, call *agentkit.ToolCal
 		ToolCall: call,
 	})
 	if err != nil {
-		return false, "", err
+		return false, "", "", err
 	}
 	if len(result.UpdatedInput) > 0 {
 		raw, err := json.Marshal(result.UpdatedInput)
 		if err != nil {
-			return false, "", err
+			return false, "", "", err
 		}
 		call.Input = raw
 	}
 	if result.Allow {
-		return true, result.Reason, nil
+		return true, result.Reason, "", nil
 	}
 	reason := result.Reason
 	if reason == "" {
 		reason = string(result.Outcome)
 	}
-	return false, reason, nil
+	return false, reason, result.Guidance, nil
 }
 
 func (r *Runtime) evaluatePolicies(ctx context.Context, call agentkit.ToolCall) (agentkit.Decision, error) {
@@ -375,20 +378,30 @@ func filteredOutResult(call agentkit.ToolCall) agentkit.ToolResult {
 	}
 }
 
-func deniedResult(call agentkit.ToolCall, reason string, audit map[string]string) agentkit.ToolResult {
+func deniedResult(call agentkit.ToolCall, reason, guidance string, audit map[string]string) agentkit.ToolResult {
 	if reason == "" {
 		reason = "denied"
 	}
 	merged := map[string]string{"decision": "deny", "reason": reason}
+	if guidance != "" {
+		merged["guidance"] = guidance
+	}
 	for k, v := range audit {
 		merged[k] = v
 	}
 	return agentkit.ToolResult{
 		ID:      call.ID,
 		Name:    call.Name,
-		Content: reason,
+		Content: denialContent(reason, guidance),
 		Audit:   merged,
 	}
+}
+
+func denialContent(reason, guidance string) string {
+	if guidance == "" {
+		return reason
+	}
+	return reason + "\n\n" + guidance
 }
 
 func timeoutResult(call agentkit.ToolCall) agentkit.ToolResult {

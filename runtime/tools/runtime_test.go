@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -342,10 +343,54 @@ func TestRuntimeExecuteAutoAllowSkipsBroker(t *testing.T) {
 	}
 }
 
+func TestRuntimeExecuteAskDenialIncludesGuidance(t *testing.T) {
+	t.Parallel()
+
+	broker := &stubPermissionBroker{
+		result: permission.Result{
+			Outcome:  permission.OutcomeTimeout,
+			Allow:    false,
+			Reason:   "permission timed out",
+			Guidance: "The user did not respond in time; treat this tool call as denied and continue.",
+		},
+	}
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{
+			name: "demo",
+			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+				t.Fatal("tool body should not run")
+				return "", nil
+			},
+		}},
+		Policies: []agentkit.Policy{agentkit.PolicyFunc(func(_ context.Context, _ agentkit.PolicyInput) agentkit.Decision {
+			return agentkit.Decision{Kind: agentkit.DecisionAsk, Reason: "confirm demo"}
+		})},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), agentkit.KeySessionControl, broker)
+	result, err := rt.Execute(ctx, agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if result.Audit["guidance"] == "" {
+		t.Fatalf("audit = %#v, want guidance", result.Audit)
+	}
+	if !strings.Contains(tools.ResultText(result), "permission timed out") {
+		t.Fatalf("content = %q", tools.ResultText(result))
+	}
+	if !strings.Contains(tools.ResultText(result), "did not respond in time") {
+		t.Fatalf("content = %q", tools.ResultText(result))
+	}
+}
+
 type stubPermissionBroker struct {
-	got     permission.Request
-	allow   bool
-	awaited bool
+	got      permission.Request
+	allow    bool
+	awaited  bool
+	result   permission.Result
 }
 
 func (b *stubPermissionBroker) Await(_ context.Context, req permission.Request) (permission.Result, error) {
@@ -353,6 +398,9 @@ func (b *stubPermissionBroker) Await(_ context.Context, req permission.Request) 
 	b.got = req
 	if b.allow {
 		return permission.Result{Outcome: permission.OutcomeResolved, Allow: true}, nil
+	}
+	if b.result.Outcome != "" {
+		return b.result, nil
 	}
 	return permission.Result{Outcome: permission.OutcomeResolved, Allow: false, Reason: "denied"}, nil
 }

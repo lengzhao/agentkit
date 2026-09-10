@@ -97,10 +97,63 @@ func denyPermission(params acp.RequestPermissionRequest) acp.RequestPermissionRe
 	}
 }
 
+func isTurnCancelled(result permission.Result) bool {
+	if result.Outcome != permission.OutcomeCancelled {
+		return false
+	}
+	reason := result.Reason
+	return strings.Contains(reason, "abandoned") ||
+		strings.Contains(reason, "permission closed")
+}
+
+func rejectPermissionOption(params acp.RequestPermissionRequest) (acp.PermissionOptionId, bool) {
+	for _, o := range params.Options {
+		if o.Kind == acp.PermissionOptionKindRejectOnce || o.Kind == acp.PermissionOptionKindRejectAlways {
+			return o.OptionId, true
+		}
+	}
+	return "", false
+}
+
+func permissionResultMeta(result permission.Result) map[string]any {
+	meta := map[string]any{
+		"outcome": string(result.Outcome),
+	}
+	if result.Reason != "" {
+		meta["reason"] = result.Reason
+	}
+	if result.Guidance != "" {
+		meta["guidance"] = result.Guidance
+	}
+	return meta
+}
+
+// mapPermissionResultToACP maps a broker denial into an ACP permission response.
+// Timeout, user deny, and superseded become reject_once (tool skipped, turn may continue).
+// Only session/turn cancellation uses ACP cancelled.
+func mapPermissionResultToACP(params acp.RequestPermissionRequest, result permission.Result) acp.RequestPermissionResponse {
+	if isTurnCancelled(result) {
+		return denyPermission(params)
+	}
+	resp := acp.RequestPermissionResponse{Meta: permissionResultMeta(result)}
+	if id, ok := rejectPermissionOption(params); ok {
+		resp.Outcome = acp.RequestPermissionOutcome{
+			Selected: &acp.RequestPermissionOutcomeSelected{OptionId: id},
+		}
+		return resp
+	}
+	resp.Outcome = acp.RequestPermissionOutcome{
+		Cancelled: &acp.RequestPermissionOutcomeCancelled{},
+	}
+	return resp
+}
+
 func requestPermissionViaBroker(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 	broker, ok := rtpermission.BrokerFrom(ctx)
 	if !ok {
-		return denyPermission(params), nil
+		return mapPermissionResultToACP(params, rtpermission.NoHuman(permission.Request{
+			Kind: permission.KindAllowDeny,
+		}, "no permission broker on this session")), nil
 	}
 	title := ""
 	if params.ToolCall.Title != nil {
@@ -124,7 +177,7 @@ func requestPermissionViaBroker(ctx context.Context, params acp.RequestPermissio
 		return acp.RequestPermissionResponse{}, err
 	}
 	if !result.Allow {
-		return denyPermission(params), nil
+		return mapPermissionResultToACP(params, result), nil
 	}
 	for _, o := range params.Options {
 		if o.Kind == acp.PermissionOptionKindAllowOnce || o.Kind == acp.PermissionOptionKindAllowAlways {
