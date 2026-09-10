@@ -11,10 +11,28 @@ type StdioMCPServer struct {
 	Env     map[string]string
 }
 
+// HTTPMCPServer is HTTP transport configuration (requires agent mcp_capabilities.http).
+type HTTPMCPServer struct {
+	Name    string
+	URL     string
+	Type    string
+	Headers map[string]string
+}
+
+// SSEMCPServer is SSE transport configuration (requires agent mcp_capabilities.sse).
+type SSEMCPServer struct {
+	Name    string
+	URL     string
+	Type    string
+	Headers map[string]string
+}
+
 // SessionMCPServer describes one harness-provided MCP server for an ACP session.
-// Additional transports (HTTP/SSE/ACP inline) may be added when virtual tools land.
+// Set exactly one of Stdio, HTTP, or SSE. ACP inline transport may be added later.
 type SessionMCPServer struct {
 	Stdio *StdioMCPServer
+	HTTP  *HTTPMCPServer
+	SSE   *SSEMCPServer
 }
 
 // SessionMCPProvider supplies per-turn MCP servers for agent/acp-remote.

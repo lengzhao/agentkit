@@ -14,26 +14,74 @@ func ToMCPServers(specs []capacp.SessionMCPServer) []acpsdk.McpServer {
 	}
 	out := make([]acpsdk.McpServer, 0, len(specs))
 	for _, spec := range specs {
-		if spec.Stdio == nil {
-			continue
+		if srv, ok := toMCPServer(spec); ok {
+			out = append(out, srv)
 		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func toMCPServer(spec capacp.SessionMCPServer) (acpsdk.McpServer, bool) {
+	switch {
+	case spec.Stdio != nil:
 		s := spec.Stdio
-		env := make([]acpsdk.EnvVariable, 0, len(s.Env))
-		for k, v := range s.Env {
-			env = append(env, acpsdk.EnvVariable{Name: k, Value: v})
-		}
-		sort.Slice(env, func(i, j int) bool { return env[i].Name < env[j].Name })
-		out = append(out, acpsdk.McpServer{
+		env := envVariables(s.Env)
+		return acpsdk.McpServer{
 			Stdio: &acpsdk.McpServerStdio{
 				Name:    s.Name,
 				Command: s.Command,
 				Args:    append([]string(nil), s.Args...),
 				Env:     env,
 			},
-		})
+		}, true
+	case spec.HTTP != nil:
+		s := spec.HTTP
+		return acpsdk.McpServer{
+			Http: &acpsdk.McpServerHttpInline{
+				Name:    s.Name,
+				Url:     s.URL,
+				Type:    s.Type,
+				Headers: httpHeaders(s.Headers),
+			},
+		}, true
+	case spec.SSE != nil:
+		s := spec.SSE
+		return acpsdk.McpServer{
+			Sse: &acpsdk.McpServerSseInline{
+				Name:    s.Name,
+				Url:     s.URL,
+				Type:    s.Type,
+				Headers: httpHeaders(s.Headers),
+			},
+		}, true
+	default:
+		return acpsdk.McpServer{}, false
 	}
-	if len(out) == 0 {
+}
+
+func envVariables(env map[string]string) []acpsdk.EnvVariable {
+	if len(env) == 0 {
 		return nil
 	}
+	out := make([]acpsdk.EnvVariable, 0, len(env))
+	for k, v := range env {
+		out = append(out, acpsdk.EnvVariable{Name: k, Value: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func httpHeaders(headers map[string]string) []acpsdk.HttpHeader {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make([]acpsdk.HttpHeader, 0, len(headers))
+	for k, v := range headers {
+		out = append(out, acpsdk.HttpHeader{Name: k, Value: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
