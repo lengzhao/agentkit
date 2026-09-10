@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
@@ -21,7 +20,7 @@ import (
 type RuntimeConfig struct {
 	// DefaultTimeoutSeconds is per-call timeout when a tool has no specific entry.
 	DefaultTimeoutSeconds int `json:"defaultTimeoutSeconds"`
-	// MaxResultBytes is truncation limit applied to every tool result.
+	// MaxResultBytes is deprecated and ignored; spill/truncation happens in session.PrepareToolResultForStorage.
 	MaxResultBytes int `json:"maxResultBytes"`
 	// ToolTimeouts are per-tool timeout overrides, keyed by tool name.
 	ToolTimeouts map[string]int `json:"toolTimeouts,omitempty"`
@@ -49,9 +48,8 @@ type Runtime struct {
 	policies         []agentkit.Policy
 	approval         agentkit.Approval
 	hooks            agentkit.HookRuntime
-	defaultTimeout   time.Duration
-	maxResultBytes   int
-	toolTimeouts     map[string]time.Duration
+	defaultTimeout time.Duration
+	toolTimeouts   map[string]time.Duration
 	filter           toolNameFilter
 	filterWarnOnce   sync.Once
 }
@@ -93,9 +91,8 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		policies:         deps.Policies,
 		approval:         deps.Approval,
 		hooks:            deps.Hooks,
-		defaultTimeout:   defaultTimeout,
-		maxResultBytes:   cfg.MaxResultBytes,
-		toolTimeouts:     toolTimeouts,
+		defaultTimeout: defaultTimeout,
+		toolTimeouts:   toolTimeouts,
 		filter:           newToolNameFilter(cfg.AllowTools, cfg.DenyTools),
 	}, nil
 }
@@ -293,9 +290,6 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 		if err := r.hooks.AfterTool(ctx, &result); err != nil {
 			return agentkit.ToolResult{}, err
 		}
-	}
-	if r.maxResultBytes > 0 {
-		result = rtcompaction.TruncateToolResult(result, r.maxResultBytes)
 	}
 	return result, nil
 }

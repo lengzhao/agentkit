@@ -123,6 +123,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
 	}
+	ctx = session.WithWorkspaceService(ctx, a.workspace)
 	sess, err := a.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return err
@@ -274,12 +275,18 @@ func (a *Runtime) runSegment(
 				endStepOnce()
 				return "", err
 			}
-			if err := session.AppendToolResult(ctx, sess, a.id, result); err != nil {
+			stored, err := session.PrepareToolResultForStorage(ctx, sess.ID(), result, 0)
+			if err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
-			if err := a.emitLifecycle(ctx, emit, sess.ID(), agentkit.EventToolResult, result); err != nil {
+			if err := session.AppendToolResult(ctx, sess, a.id, stored); err != nil {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				endStepOnce()
+				return "", err
+			}
+			if err := a.emitLifecycle(ctx, emit, sess.ID(), agentkit.EventToolResult, stored); err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err

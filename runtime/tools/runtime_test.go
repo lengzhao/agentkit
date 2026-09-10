@@ -145,7 +145,7 @@ func TestRuntimeExecuteRunsBeforeAndAfterToolHooks(t *testing.T) {
 	}
 }
 
-func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
+func TestRuntimeExecuteReturnsFullToolOutput(t *testing.T) {
 	t.Parallel()
 
 	rt, err := tools.NewRuntime(tools.RuntimeConfig{MaxResultBytes: 20}, tools.RuntimeDeps{
@@ -165,11 +165,9 @@ func TestRuntimeExecuteTruncatesLargeResults(t *testing.T) {
 		t.Fatalf("execute: %v", err)
 	}
 	text := tools.ResultText(result)
-	if len(text) <= 20 {
-		t.Fatalf("expected truncated result, got %q", text)
-	}
-	if text[len(text)-len("\n...[truncated]"):] != "\n...[truncated]" {
-		t.Fatalf("expected truncation suffix, got %q", text)
+	want := "01234567890123456789012345"
+	if text != want {
+		t.Fatalf("execute returns full output for session spill; got %q want %q", text, want)
 	}
 }
 

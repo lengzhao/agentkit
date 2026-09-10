@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -22,9 +23,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 		out.ToolCalls = make([]agentkit.ToolCall, len(msg.ToolCalls))
 		for i, call := range msg.ToolCalls {
 			out.ToolCalls[i] = call
-			if len(call.Input) > maxTextBytes {
-				out.ToolCalls[i].Input = append(append([]byte(nil), call.Input[:maxTextBytes]...), []byte("\n...[truncated]")...)
-			}
+			out.ToolCalls[i].Input = sanitizeToolCallInputForStorage(call.Input)
 		}
 	}
 	if len(msg.ToolResults) > 0 {
@@ -114,4 +113,40 @@ func truncateText(text string, maxBytes int) string {
 		return text
 	}
 	return text[:maxBytes] + "\n...[truncated]"
+}
+
+// sanitizeToolCallInputForStorage keeps ToolCall.Input valid JSON so json.Marshal on
+// ModelMessage and ToolCall never fails (json.RawMessage must be valid JSON).
+// Valid arguments are persisted in full (aligned with pi session history); only
+// empty or malformed payloads are normalized.
+func sanitizeToolCallInputForStorage(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("{}")
+	}
+	if json.Valid(raw) {
+		return raw
+	}
+	return toolCallInputInvalidJSONPlaceholder(raw)
+}
+
+func toolCallInputInvalidJSONPlaceholder(raw json.RawMessage) json.RawMessage {
+	preview := string(raw)
+	if len(preview) > DefaultMaxStoredTextBytes {
+		preview = preview[:DefaultMaxStoredTextBytes] + "\n...[truncated]"
+	}
+	placeholder := map[string]string{
+		"_storage_note": "tool call arguments were not valid JSON",
+		"preview":       preview,
+	}
+	out, err := json.Marshal(placeholder)
+	if err != nil {
+		return json.RawMessage(`{"_storage_note":"tool call arguments omitted"}`)
+	}
+	return out
+}
+
+// SanitizeToolCall prepares a tool call for durable session storage.
+func SanitizeToolCall(call agentkit.ToolCall) agentkit.ToolCall {
+	call.Input = sanitizeToolCallInputForStorage(call.Input)
+	return call
 }

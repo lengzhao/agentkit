@@ -125,7 +125,6 @@ func runtimeNodeForProfile(profile ToolProfile) (string, map[string]any, error) 
 			"use": "tools/runtime",
 			"config": map[string]any{
 				"defaultTimeoutSeconds": 120,
-				"maxResultBytes":        8192,
 				"toolTimeouts": map[string]any{
 					"delegate": 900,
 					"ask_user": 900,
@@ -137,7 +136,6 @@ func runtimeNodeForProfile(profile ToolProfile) (string, map[string]any, error) 
 			"use": "tools/runtime",
 			"config": map[string]any{
 				"defaultTimeoutSeconds": 120,
-				"maxResultBytes":        8192,
 			},
 		}, nil
 	default:

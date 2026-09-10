@@ -11,7 +11,6 @@ tools.default:
   use: tools/runtime
   config:
     defaultTimeoutSeconds: 120
-    maxResultBytes: 8192
     allowTools:
       - read
       - grep

@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -55,6 +56,48 @@ func TestSanitizeModelMessageForStorageTruncatesText(t *testing.T) {
 	}, 100)
 	if !strings.HasSuffix(msg.Content[0].Text, "\n...[truncated]") {
 		t.Fatalf("text not truncated: len=%d", len(msg.Content[0].Text))
+	}
+}
+
+func TestSanitizeModelMessageForStorageKeepsFullToolCallInput(t *testing.T) {
+	t.Parallel()
+
+	largeContent := strings.Repeat("a", 9000)
+	rawInput := []byte(`{"path":"skills/chatai-cs/SKILL.md","content":"` + largeContent + `"}`)
+	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+		Role: "assistant",
+		ToolCalls: []agentkit.ToolCall{{
+			ID:    "write-1",
+			Name:  "write",
+			Input: rawInput,
+		}},
+	}, 100)
+
+	if len(msg.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %d", len(msg.ToolCalls))
+	}
+	if string(msg.ToolCalls[0].Input) != string(rawInput) {
+		t.Fatalf("tool call input truncated: got %d bytes want %d", len(msg.ToolCalls[0].Input), len(rawInput))
+	}
+	full := agentkit.ModelMessage{Role: "assistant", ToolCalls: msg.ToolCalls}
+	if _, err := json.Marshal(full); err != nil {
+		t.Fatalf("marshal sanitized assistant message: %v", err)
+	}
+}
+
+func TestSanitizeToolCallInvalidJSONPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	call := session.SanitizeToolCall(agentkit.ToolCall{
+		ID:    "x",
+		Name:  "write",
+		Input: json.RawMessage(`{"path":"x","content":"`),
+	})
+	if !json.Valid(call.Input) {
+		t.Fatalf("invalid JSON: %s", string(call.Input))
+	}
+	if !strings.Contains(string(call.Input), "_storage_note") {
+		t.Fatalf("expected placeholder, got %s", string(call.Input))
 	}
 }
 

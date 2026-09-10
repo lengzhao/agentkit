@@ -12,7 +12,7 @@ import (
 type MemoryConfig struct {
 	// ID is fixed session id.
 	ID agentkit.SessionID `json:"id"`
-	// MaxToolResultBytes truncates tool results as they are appended.
+	// MaxToolResultBytes caps tool result text in DeriveMessages (PruneToolResults).
 	MaxToolResultBytes int `json:"maxToolResultBytes"`
 }
 
@@ -133,6 +133,7 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 }
 
 func AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, call agentkit.ToolCall) error {
+	call = SanitizeToolCall(call)
 	raw, err := json.Marshal(call)
 	if err != nil {
 		return err

@@ -529,7 +529,6 @@ tool.web-fetch-http.default:
 tools.default:
     config:
         defaultTimeoutSeconds: 120
-        maxResultBytes: 8192
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -555,7 +554,6 @@ tools.default:
 tools.subagent.default:
     config:
         defaultTimeoutSeconds: 120
-        maxResultBytes: 8192
     deps:
         hooks: hooks.default
         policies:
@@ -570,7 +568,6 @@ tools.subagent.default:
 tools.worker.default:
     config:
         defaultTimeoutSeconds: 120
-        maxResultBytes: 8192
         toolTimeouts:
             ask_user: 900
             delegate: 900

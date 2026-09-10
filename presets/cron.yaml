@@ -74,7 +74,6 @@ tools.default:
   use: tools/runtime
   config:
     defaultTimeoutSeconds: 120
-    maxResultBytes: 8192
   deps:
     hooks: hooks.default
     tools:

@@ -41,6 +41,8 @@ type ScriptedAgentConfig struct {
 	Steps    []llm.ScriptedStep
 	Tools    agentkit.ToolRuntime
 	Store    agentkit.SessionStore
+	// Workspace overrides the default; use with Store from TempFileStore so spill files land beside sessions.
+	Workspace workspace.Service
 }
 
 // TestWorkspace returns a temp-dir workspace for agent tests.
@@ -66,6 +68,10 @@ func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, ag
 	if store == nil {
 		store, wsRoot = TempFileStore(t)
 	}
+	ws := cfg.Workspace
+	if ws == nil {
+		ws = TestWorkspace(t, wsRoot)
+	}
 	if cfg.Tools == nil {
 		cfg.Tools = EmptyToolsRuntime(t)
 	}
@@ -74,7 +80,7 @@ func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, ag
 		LLM:          MustScripted(t, cfg.Steps...),
 		Tools:        cfg.Tools,
 		Prompt:       DefaultAssembler(t),
-		Workspace:    TestWorkspace(t, wsRoot),
+		Workspace:    ws,
 	})
 	if err != nil {
 		t.Fatal(err)

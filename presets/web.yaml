@@ -13,7 +13,6 @@ tools.default:
   use: tools/runtime
   config:
     defaultTimeoutSeconds: 120
-    maxResultBytes: 8192
     toolTimeouts:
       delegate: 900
       ask_user: 900
@@ -37,7 +36,6 @@ tools.subagent.default:
   use: tools/runtime
   config:
     defaultTimeoutSeconds: 120
-    maxResultBytes: 8192
   deps:
     hooks: hooks.default
     tools:
