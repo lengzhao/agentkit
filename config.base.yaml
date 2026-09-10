@@ -353,8 +353,8 @@ subagent.loop.default:
 credentials.default:
   use: credentials/env
   config:
-    files:
-      - global:.env
+    encryptedFile: global:secrets.enc.json
+    # Set AGENTKIT_SECRETS_KEY in L1 config.yaml credentials.config.env to unlock /env add.
   deps:
     workspace: workspace.default
 

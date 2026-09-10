@@ -22,17 +22,17 @@ workspace.default:
     local: .agentkit
     scope: local
 
-# 示例：从 .env 读取密钥（进程环境变量仍然优先）
+# 示例：加密密钥库（/env add 写入 global:secrets.enc.json；进程环境变量仍然优先）
 # credentials.default:
 #   use: credentials/env
 #   config:
-#     files:
-#       - .env
+#     encryptedFile: global:secrets.enc.json
+#     env:
+#       # 32 字节随机数的 base64，仅放在本机 L1 config.yaml，勿提交 git
+#       AGENTKIT_SECRETS_KEY: "<base64-32-bytes>"
 #
-# .env:
-#   OPENAI_API_KEY=sk-...
-#   LANGFUSE_PUBLIC_KEY=pk-lf-...
-#   LANGFUSE_SECRET_KEY=sk-lf-...
+# 在聊天或 CLI 执行：/env add OPENAI_API_KEY=sk-...
+# mcp.json / api.json 继续写 env:OPENAI_API_KEY 引用即可。
 
 # 示例：LLM 配置
 #

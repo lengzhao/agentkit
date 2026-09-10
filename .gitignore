@@ -26,6 +26,7 @@ go.work.sum
 
 # env file
 .env
+secrets.enc.json
 
 # Ephemeral dirs created by mistaken local test runs (use t.TempDir / testing/fixtures)
 config/testing/

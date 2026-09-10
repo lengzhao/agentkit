@@ -78,8 +78,7 @@ compaction.token-limit.default:
     use: compaction/token-limit
 credentials.default:
     config:
-        files:
-            - global:.env
+        encryptedFile: global:secrets.enc.json
     deps:
         workspace: workspace.default
     use: credentials/env

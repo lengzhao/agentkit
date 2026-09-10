@@ -2,6 +2,8 @@ package credentials
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,7 +110,8 @@ func TestResolveConfigEnvOverridesEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, err := New(Config{
-		Files: []string{path},
+		EncryptedFile: EncryptedFileDisabled,
+		Files:         []string{path},
 		Env: map[string]string{
 			"AGENTKIT_TEST_SECRET": "from-config",
 		},
@@ -132,7 +135,7 @@ func TestResolveFallsBackToEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{Files: []string{path}}, EnvDeps{})
+	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +156,7 @@ func TestResolveEnvironmentOverridesEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{Files: []string{path}}, EnvDeps{})
+	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +208,7 @@ func TestEnvReloadCommand(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=before\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{Files: []string{path}}, EnvDeps{})
+	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +259,7 @@ func TestEnvAddCommand(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	store, err := New(Config{Files: []string{path}}, EnvDeps{})
+	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +301,7 @@ func TestEnvAddCommand(t *testing.T) {
 func TestEnvAddRejectsOnVerifyFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	store, err := New(Config{Files: []string{path}}, EnvDeps{})
+	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,5 +323,89 @@ func TestEnvAddRejectsOnVerifyFailure(t *testing.T) {
 		if strings.Contains(string(data), "AGENTKIT_EMPTY_VERIFY_TEST") {
 			t.Fatalf(".env should not contain rejected key: %s", data)
 		}
+	}
+}
+
+func TestEnvAddEncryptedCommand(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secrets.enc.json")
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(Config{
+		EncryptedFile: path,
+		Env: map[string]string{
+			rtcredentials.SecretsMasterKeyEnv: base64.StdEncoding.EncodeToString(key),
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cp := store.(agentkit.CommandProvider)
+	cmd := cp.Commands()[0]
+
+	out, err := cmd.CommandExec(ctx, "add AGENTKIT_TEST_SECRET=injected")
+	if err != nil {
+		t.Fatalf("add command: %v", err)
+	}
+	if !strings.Contains(out, "verified") {
+		t.Fatalf("output=%q, want verified", out)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "injected") {
+		t.Fatalf("secrets file must not contain plaintext: %s", data)
+	}
+	secret, err := store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "injected" {
+		t.Fatalf("value=%q, want injected", secret.Value)
+	}
+}
+
+func TestResolveEncryptedOverridesDotenv(t *testing.T) {
+	dir := t.TempDir()
+	dotenv := filepath.Join(dir, ".env")
+	secretsPath := filepath.Join(dir, "secrets.enc.json")
+	if err := os.WriteFile(dotenv, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	enc, err := rtcredentials.EncryptSecretsFile(map[string]string{
+		"AGENTKIT_TEST_SECRET": "from-encrypted",
+	}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secretsPath, enc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(Config{
+		EncryptedFile: secretsPath,
+		Files:         []string{dotenv},
+		Env: map[string]string{
+			rtcredentials.SecretsMasterKeyEnv: base64.StdEncoding.EncodeToString(key),
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-encrypted" {
+		t.Fatalf("value=%q, want from-encrypted", secret.Value)
 	}
 }
