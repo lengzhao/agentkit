@@ -1,23 +1,26 @@
 # AgentKit
 
-基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Agent Harness 运行时。通过 YAML 配置装配 Runner、Platform、Loop、Agent、工具与策略，支持交互式 REPL、自主长跑、子 Agent 委派、MCP 与 headless 守护等多种运行形态。
+**English** | **[中文](README.zh.md)**
 
-## 特性
+Go Agent Harness runtime built on [pluginkit](https://github.com/lengzhao/pluginkit). Assemble Runner, Platform, Loop, Agent, tools, and policies from YAML. Supports interactive REPL, long-running autonomous loops, sub-agent delegation, MCP, Slack/Feishu/ACP integrations, and headless daemons.
 
-- **插件化装配** — 64+ 已注册 Plugin Kind，L0 默认配置 + L1 overlay 按需覆盖
-- **Coding Agent 闭环** — 文件读写、Shell、策略审批、Session 持久化（jsonl）
-- **自主运行** — turn 续跑、预算分层、todo/finish 收尾、token 阈值压缩、崩溃恢复
-- **子 Agent 委派** — `agents/*.md` 定义子 agent，主 agent 只读回结论
-- **自我学习** — `/learn` 管理 `memory.md`，Grounded Dreaming 巩固短期信号，Skill Workshop 生成可审阅技能提案
-- **网络能力** — HTTP 抓取、Exa 搜索、向用户提问（HIL）
-- **Headless 模式** — worker（一次性）、timer（固定间隔）、cron（日历 + 自主排期）
-- **Web 管理台** — 装配树编辑、结构诊断、试装配与 build 校验
+## Features
 
-## 架构概览
+- **Plugin assembly** — 79 registered plugin kinds; L0 defaults plus L1 overlays
+- **Coding agent loop** — file I/O, shell, policy approval, JSONL session persistence
+- **Autonomous runs** — turn continuation, layered budgets, todo/finish, token compaction, crash recovery
+- **Sub-agent delegation** — define sub-agents in `agents/*.md`; the main agent only sees summarized results
+- **Self-learning** — `/learn` for `memory.md`, Grounded Dreaming, Skill Workshop proposals
+- **Network tools** — HTTP fetch, Exa search, human-in-the-loop prompts
+- **Integrations** — Slack, Feishu, HTTP chat API, Langfuse; multiplex several IM channels; expose AgentKit or call remote agents over ACP (e.g. Cursor CLI). See [presets — Integrations](presets/README.md#integrations)
+- **Headless** — worker (one-shot), timer (fixed interval), cron (calendar + agent scheduling)
+- **Web manager** — edit the assembly graph, diagnose structure, dry-run build validation
+
+## Architecture
 
 ```mermaid
 flowchart TB
-  subgraph entry["进程入口"]
+  subgraph entry["Entry"]
     CLI["cmd/agent"]
     MGR["-manager Web UI"]
   end
@@ -29,7 +32,7 @@ flowchart TB
     A["Agent<br/>(coding / …)"]
   end
 
-  subgraph deps["依赖组件"]
+  subgraph deps["Dependencies"]
     LLM["LLM Provider"]
     TOOLS["Tools Runtime"]
     SESS["Session Store"]
@@ -38,7 +41,7 @@ flowchart TB
   end
 
   CLI --> R
-  MGR -.->|配置编辑| R
+  MGR -.->|config edit| R
   R --> P
   P --> L
   L --> A
@@ -49,16 +52,16 @@ flowchart TB
   TOOLS --> POL
 ```
 
-配置模型：`config.base.yaml`（L0 随仓库发布）+ `config.yaml` 或 `presets/*.yaml`（L1 overlay，后者覆盖前者）。实例图由 `pluginkit/build` 构造，root 通常为 `runner`。
+Configuration: `config.base.yaml` (L0, shipped with the repo) plus `config.yaml` or `presets/*.yaml` (L1 overlays; later files win). The instance graph is built with `pluginkit/build`; the root id is `runner.default`.
 
-## 快速开始
+## Quick start
 
-### 环境要求
+### Requirements
 
 - Go 1.26+
-- OpenAI 兼容 API Key（冒烟 preset 可跳过）
+- OpenAI-compatible API key (optional for smoke presets)
 
-### 安装与运行
+### Install and run
 
 ```sh
 git clone https://github.com/lengzhao/agentkit.git
@@ -66,104 +69,104 @@ cd agentkit
 
 export OPENAI_API_KEY=sk-...
 
-# 交互式 REPL
+# Interactive REPL
 go run ./cmd/agent
 
-# 带首条消息进入 REPL
-go run ./cmd/agent "帮我看看这个项目结构"
+# REPL with an initial message
+go run ./cmd/agent "Summarize this repo layout"
 
-# 项目目录 coding preset
-go run ./cmd/agent -config presets/coding.yaml "你的任务"
+# Project coding preset
+go run ./cmd/agent -config presets/coding.yaml "your task"
 
-# 无 API Key 本地冒烟（scripted LLM）
-go run ./cmd/agent -config presets/coding-smoke.yaml "列出当前目录并读取 README"
+# Local smoke without an API key (scripted LLM)
+go run ./cmd/agent -config presets/coding-smoke.yaml "List the directory and read README"
 ```
 
-### 本地配置
+### Local overrides
 
-复制示例配置为 L1 override（已在 `.gitignore` 中）：
+Copy the example into an L1 file (listed in `.gitignore`):
 
 ```sh
 cp config.example.yaml config.yaml
 ```
 
-`-config` 支持逗号分隔的多个 overlay，按顺序合并，后面的覆盖前面的：
+`-config` accepts comma-separated overlays merged in order (later overrides earlier):
 
 ```sh
-go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次性任务"
+go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "one-shot job"
 ```
 
-## 常用场景
+## Common scenarios
 
-| 场景 | 命令示例 |
+| Scenario | Example |
 |---|---|
-| 交互式 coding | `go run ./cmd/agent -config presets/coding.yaml` |
-| 自主长跑 | `go run ./cmd/agent -config presets/autonomous.yaml "多轮任务"` |
-| 子 Agent 委派 | `go run ./cmd/agent "让 researcher 调研 …"`（L0 默认；冒烟见 `presets/subagent-smoke.yaml`） |
-| 自我学习 | REPL 内执行 `/learn`、`/learn dream run`、`/learn skill 部署检查清单` |
-| 网络搜索 + 抓取 | `export TAVILY_API_KEY=...` 后 `-config presets/web.yaml` |
-| Headless 批处理 | `-config presets/autonomous.yaml,presets/worker.yaml` |
-| 定时守护 | `-config presets/autonomous.yaml,presets/cron.yaml` |
-| 配置管理 Web UI | `go run ./cmd/agent -manager -addr :8080` |
+| Interactive coding | `go run ./cmd/agent -config presets/coding.yaml` |
+| Autonomous run | `go run ./cmd/agent -config presets/autonomous.yaml "multi-step task"` |
+| Sub-agent delegation | `go run ./cmd/agent "ask researcher to …"` (L0 default; smoke: `presets/subagent-smoke.yaml`) |
+| Self-learning | `/learn`, `/learn dream run`, `/learn skill …` in the REPL |
+| Search + fetch | `export TAVILY_API_KEY=...` and `-config presets/web.yaml` |
+| Headless batch | `-config presets/autonomous.yaml,presets/worker.yaml` |
+| Scheduled daemon | `-config presets/autonomous.yaml,presets/cron.yaml` |
+| Config Web UI | `go run ./cmd/agent -manager -addr :8080` |
 
-完整 preset 索引见 [presets/README.md](presets/README.md)。
+Full preset index: [presets/README.md](presets/README.md) ([中文](presets/README.zh.md)).
 
-## 项目结构
+## Layout
 
 ```
 agentkit/
-├── cmd/agent/          # 主入口（REPL / headless / -manager）
-├── config.base.yaml    # L0 默认装配
-├── presets/            # 场景 L1 overlay
-├── runtime/            # Runner、Loop、Platform 及 cap 对应实现（session、telemetry、filesystem…）
-├── plugins/            # 工具、Hook、Policy、Prompt、learning 等插件实现
-├── cap/                # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
+├── cmd/agent/          # Main binary (REPL / headless / -manager)
+├── config.base.yaml    # L0 default graph
+├── presets/            # Scenario L1 overlays
+├── runtime/            # Runner, Loop, Platform, cap implementations
+├── plugins/            # Tools, hooks, policy, prompts, learning, …
+├── cap/                # Swappable capability interfaces and DTOs
 ├── examples/
-│   ├── agents/       # 子 Agent 定义示例
-│   └── skills/       # Agent Skill 示例（插件开发与配置更新）
-└── docs/               # 架构与设计文档（中文）
+│   ├── agents/         # Sub-agent examples
+│   └── skills/         # Agent skill examples
+└── docs/               # Design docs (Chinese; see docs/README.md)
 ```
 
-## 文档
+## Documentation
 
-详细设计文档见 [docs/README.zh.md](docs/README.zh.md)。建议阅读顺序：
+Detailed design docs live under `docs/` (Chinese). Start here:
+
+- English index: [docs/README.md](docs/README.md)
+- 中文索引: [docs/README.zh.md](docs/README.zh.md)
+
+Suggested reading order:
 
 ```mermaid
 flowchart LR
-  A["plugin-catalog<br/>插件边界"] --> B["go-agent-harness-architecture<br/>实现细节"]
-  B --> C["roadmap<br/>现状与规划"]
+  A["plugin-catalog"] --> B["go-agent-harness-architecture"]
+  B --> C["roadmap"]
 ```
 
-| 文档 | 说明 |
+| Doc | Topic |
 |---|---|
-| [go-agent-harness-architecture.zh.md](docs/go-agent-harness-architecture.zh.md) | 完整架构：Runner、Spine、装配模型、生命周期 |
-| [plugin-catalog.zh.md](docs/plugin-catalog.zh.md) | Plugin Kind 目录与分阶段落地 |
-| [roadmap.zh.md](docs/roadmap.zh.md) | 现状基线与路线图 |
-| [guides/learning-dreaming.zh.md](docs/guides/learning-dreaming.zh.md) | 自我学习：Dreaming、Dream Diary、Skill Workshop |
-| [guides/](docs/guides/) | 场景专题：自主运行、多租户、工具、人机交互等 |
+| [go-agent-harness-architecture.zh.md](docs/go-agent-harness-architecture.zh.md) | Runner, spine, assembly, lifecycle |
+| [plugin-catalog.zh.md](docs/plugin-catalog.zh.md) | Plugin kind catalog |
+| [roadmap.zh.md](docs/roadmap.zh.md) | Status and roadmap |
+| [guides/learning-dreaming.zh.md](docs/guides/learning-dreaming.zh.md) | Dreaming, diary, Skill Workshop |
+| [guides/](docs/guides/) | Autonomous runs, multi-tenant, tools, HIL, … |
 
-## 开发
+## Development
 
 ```sh
-# 运行测试
 go test ./...
-
-# 新增插件后更新 blank import
-go generate ./...
-
-# 查看日志（默认写入 ~/.agentkit/agent.log）
+go generate ./...   # refresh blank imports after adding plugins
 tail -f ~/.agentkit/agent.log
 ```
 
-插件通过 `pluginkit.Register(kind, New)` 注册；构造函数支持 `(Config, Deps)` 形态，依赖由配置中的 `deps` 字段注入。
+Plugins register with `pluginkit.Register(kind, New)`. Constructors use `(Config, Deps)`; dependencies come from the `deps` field in YAML.
 
-## 外部参考
+## References
 
-| 项目 | 说明 |
+| Project | Notes |
 |---|---|
-| [pluginkit](https://github.com/lengzhao/pluginkit) | 插件注册与实例图构建 |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | Agent Harness 参考实现 |
-| [Pi](https://github.com/badlogic/pi) | Coding Agent 扩展模型参考 |
+| [pluginkit](https://github.com/lengzhao/pluginkit) | Plugin registry and graph build |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | Agent harness reference |
+| [Pi](https://github.com/earendil-works/pi) | Coding agent extension model |
 
 ## License
 

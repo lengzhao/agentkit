@@ -4,7 +4,7 @@
 
 ## 现状
 
-64 个已注册 kind。spine、Coding 闭环、自主运行、网络工具、多租户、IM/HTTP 接入（slack/feishu/chat-api）、Langfuse、子 Agent、MCP、ACP 均已落地。
+79 个已注册 kind。spine、Coding 闭环、自主运行、网络工具、多租户、IM/HTTP 接入（slack/feishu/chat-api）、Langfuse、子 Agent、MCP、ACP 均已落地。
 
 **缺口**：
 

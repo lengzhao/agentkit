@@ -1,11 +1,16 @@
 # AgentKit 文档
 
+**[English](README.md)** | **中文**
+
 基于 [pluginkit](https://github.com/lengzhao/pluginkit) 的 Go Agent Harness 运行时。
+
+项目 README：[English](../README.md) · [中文](../README.zh.md)
 
 ## 文档结构
 
 ```
 docs/
+├── README.md                         # English index
 ├── README.zh.md                      # 本页：索引与快速开始
 ├── go-agent-harness-architecture.zh.md  # 架构与装配模型
 ├── plugin-catalog.zh.md              # Plugin Kind 目录
@@ -25,7 +30,7 @@ docs/
     └── e2e-scenarios.zh.md           # E2E 场景梳理与用例目录
 ```
 
-Preset 用法见 [presets/README.md](../presets/README.md)。
+Preset 用法见 [presets/README.zh.md](../presets/README.zh.md)（[English](../presets/README.md)）。
 
 ## 快速开始
 
