@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -39,6 +40,8 @@ type Config struct {
 type Deps struct {
 	Workspace    workspace.Service     `json:"workspace"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	// SessionMCP supplies harness MCP servers for session/new (not project mcp.json).
+	SessionMCP capacp.SessionMCPProvider `json:"sessionMcp,omitempty"`
 }
 
 // Runtime proxies turns to an external ACP agent over stdio.
@@ -81,7 +84,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		cfg:          cfg,
 		workspace:    deps.Workspace,
 		sessionStore: deps.SessionStore,
-		bridge:       newBridge(cfg, deps.Workspace),
+		bridge:       newBridge(cfg, deps.Workspace, deps.SessionMCP),
 	}, nil
 }
 

@@ -22,6 +22,8 @@ type acpSessionBind struct {
 	AgentID      agentkit.AgentID `json:"agentId"`
 	ACPSessionID acp.SessionId    `json:"acpSessionId"`
 	Cwd          string           `json:"cwd"`
+	// McpFingerprint matches runtime/acpclient.Fingerprint of harness MCP servers at session/new.
+	McpFingerprint string `json:"mcpFingerprint,omitempty"`
 }
 
 func acpSessionBindPath(storeDir string, sessionID agentkit.SessionID, agentID agentkit.AgentID) (string, error) {

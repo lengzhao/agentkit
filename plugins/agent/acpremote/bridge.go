@@ -12,7 +12,9 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/acpclient"
 )
 
 type sessionUpdateConsumer interface {
@@ -32,8 +34,9 @@ type acpPromptResponse struct {
 }
 
 type bridge struct {
-	cfg       Config
-	workspace workspace.Service
+	cfg        Config
+	workspace  workspace.Service
+	sessionMCP capacp.SessionMCPProvider
 
 	mu     sync.Mutex
 	proc   *subprocess
@@ -51,10 +54,21 @@ type subprocess struct {
 	states        sync.Map // agentkit.SessionID -> *sessionState
 }
 
-func newBridge(cfg Config, ws workspace.Service) *bridge {
-	b := &bridge{cfg: cfg, workspace: ws}
+func newBridge(cfg Config, ws workspace.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
+	b := &bridge{cfg: cfg, workspace: ws, sessionMCP: sessionMCP}
 	b.proc = nil
 	return b
+}
+
+func (b *bridge) resolveSessionMCP(ctx context.Context) ([]acp.McpServer, string, error) {
+	if b.sessionMCP == nil {
+		return nil, "", nil
+	}
+	specs, err := b.sessionMCP.SessionMCPServers(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	return acpclient.ToMCPServers(specs), acpclient.Fingerprint(specs), nil
 }
 
 func (b *bridge) setTurn(state turnState) {
@@ -202,13 +216,18 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		return "", err
 	}
 
+	mcpServers, mcpFingerprint, err := b.resolveSessionMCP(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	if bind, ok, err := loadACPSessionBind(bindPath); err != nil {
 		return "", err
-	} else if ok && bind.Cwd == cwd {
+	} else if ok && bind.Cwd == cwd && bind.McpFingerprint == mcpFingerprint {
 		resp, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
 			SessionId:  bind.ACPSessionID,
 			Cwd:        cwd,
-			McpServers: []acp.McpServer{},
+			McpServers: mcpServers,
 		})
 		if err == nil {
 			state := &sessionState{}
@@ -222,7 +241,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 
 	resp, err := proc.conn.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        cwd,
-		McpServers: []acp.McpServer{},
+		McpServers: mcpServers,
 	})
 	if err != nil {
 		return "", fmt.Errorf("acp session/new: %w", err)
@@ -231,9 +250,10 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	state.applyBootstrap(resp.ConfigOptions, resp.Modes)
 	proc.trackSession(sessionID, resp.SessionId, state)
 	if err := saveACPSessionBind(bindPath, acpSessionBind{
-		AgentID:      agentID,
-		ACPSessionID: resp.SessionId,
-		Cwd:          cwd,
+		AgentID:        agentID,
+		ACPSessionID:   resp.SessionId,
+		Cwd:            cwd,
+		McpFingerprint: mcpFingerprint,
 	}); err != nil {
 		slog.Debug("acp-remote: save session bind failed", "err", err)
 	}
