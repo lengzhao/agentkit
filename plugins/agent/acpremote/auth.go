@@ -125,7 +125,7 @@ func (a *Runtime) runCursorLogin(ctx context.Context, emit agentkit.OutboundEmit
 
 // ensureACPSessionWithAuth tries ACP first; on auth failure runs agent login then retries once.
 func (a *Runtime) ensureACPSessionWithAuth(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID) (acp.SessionId, error) {
-	acpSessionID, err := a.bridge.ensureACPSession(ctx, sessionID)
+	acpSessionID, err := a.bridge.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
 	if err == nil {
 		return acpSessionID, nil
 	}
@@ -144,5 +144,5 @@ func (a *Runtime) ensureACPSessionWithAuth(ctx context.Context, emit agentkit.Ou
 		return "", loginErr
 	}
 
-	return a.bridge.ensureACPSession(ctx, sessionID)
+	return a.bridge.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
 }

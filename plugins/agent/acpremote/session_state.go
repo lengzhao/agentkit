@@ -15,15 +15,15 @@ type sessionState struct {
 	modes         *acp.SessionModeState
 }
 
-func (s *sessionState) applyNewSession(resp acp.NewSessionResponse) {
+func (s *sessionState) applyBootstrap(configOptions []acp.SessionConfigOption, modes *acp.SessionModeState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(resp.ConfigOptions) > 0 {
-		s.configOptions = append([]acp.SessionConfigOption(nil), resp.ConfigOptions...)
+	if len(configOptions) > 0 {
+		s.configOptions = append([]acp.SessionConfigOption(nil), configOptions...)
 	}
-	if resp.Modes != nil {
-		modes := *resp.Modes
-		s.modes = &modes
+	if modes != nil {
+		copied := *modes
+		s.modes = &copied
 	}
 }
 

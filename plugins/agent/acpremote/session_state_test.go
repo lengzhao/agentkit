@@ -11,20 +11,17 @@ func TestSessionStateCatalog(t *testing.T) {
 
 	state := &sessionState{}
 	modelCategory := acp.SessionConfigOptionCategoryModel
-	state.applyNewSession(acp.NewSessionResponse{
-		SessionId: "sess_1",
-		ConfigOptions: []acp.SessionConfigOption{
-			{
-				Select: &acp.SessionConfigOptionSelect{
-					Id:           "model",
-					Name:         "Model",
-					Category:     &modelCategory,
-					CurrentValue: "claude-opus-5",
-					Type:         "select",
-				},
+	state.applyBootstrap([]acp.SessionConfigOption{
+		{
+			Select: &acp.SessionConfigOptionSelect{
+				Id:           "model",
+				Name:         "Model",
+				Category:     &modelCategory,
+				CurrentValue: "claude-opus-5",
+				Type:         "select",
 			},
 		},
-	})
+	}, nil)
 	state.applyUpdate(acp.SessionUpdate{
 		AvailableCommandsUpdate: &acp.SessionAvailableCommandsUpdate{
 			AvailableCommands: []acp.AvailableCommand{
@@ -47,25 +44,22 @@ func TestFindConfigOption(t *testing.T) {
 
 	state := &sessionState{}
 	modelCategory := acp.SessionConfigOptionCategoryModel
-	state.applyNewSession(acp.NewSessionResponse{
-		SessionId: "sess_1",
-		ConfigOptions: []acp.SessionConfigOption{
-			{
-				Select: &acp.SessionConfigOptionSelect{
-					Id:           "model",
-					Name:         "Model",
-					Category:     &modelCategory,
-					CurrentValue: "claude-opus-5",
-					Type:         "select",
-					Options: acp.SessionConfigSelectOptions{
-						Ungrouped: &acp.SessionConfigSelectOptionsUngrouped{
-							{Value: "claude-sonnet-5", Name: "Sonnet 5"},
-						},
+	state.applyBootstrap([]acp.SessionConfigOption{
+		{
+			Select: &acp.SessionConfigOptionSelect{
+				Id:           "model",
+				Name:         "Model",
+				Category:     &modelCategory,
+				CurrentValue: "claude-opus-5",
+				Type:         "select",
+				Options: acp.SessionConfigSelectOptions{
+					Ungrouped: &acp.SessionConfigSelectOptionsUngrouped{
+						{Value: "claude-sonnet-5", Name: "Sonnet 5"},
 					},
 				},
 			},
 		},
-	})
+	}, nil)
 
 	ref, ok := state.findConfigOption("model")
 	if !ok || string(ref.id) != "model" {
@@ -73,5 +67,24 @@ func TestFindConfigOption(t *testing.T) {
 	}
 	if _, ok := ref.options["claude-sonnet-5"]; !ok {
 		t.Fatalf("options: %+v", ref.options)
+	}
+}
+
+func TestApplyBootstrap(t *testing.T) {
+	t.Parallel()
+
+	state := &sessionState{}
+	state.applyBootstrap([]acp.SessionConfigOption{
+		{
+			Boolean: &acp.SessionConfigOptionBoolean{
+				Id:           acp.SessionConfigId("fast"),
+				Name:         "Fast",
+				CurrentValue: true,
+			},
+		},
+	}, nil)
+	ref, ok := state.findConfigOption("fast")
+	if !ok || !ref.boolean {
+		t.Fatalf("expected config option, got %+v ok=%v", ref, ok)
 	}
 }

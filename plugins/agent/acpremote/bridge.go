@@ -35,9 +35,9 @@ type bridge struct {
 	cfg       Config
 	workspace workspace.Service
 
-	mu    sync.Mutex
-	proc  *subprocess
-	turn  *turnState
+	mu     sync.Mutex
+	proc   *subprocess
+	turn   *turnState
 	turnMu sync.Mutex
 }
 
@@ -73,6 +73,16 @@ func (b *bridge) currentTurn() *turnState {
 	b.turnMu.Lock()
 	defer b.turnMu.Unlock()
 	return b.turn
+}
+
+func (b *bridge) sessionStoreDir(ctx context.Context) (string, error) {
+	return b.workspace.Resolve(ctx, defaultSessionDir)
+}
+
+func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID acp.SessionId, state *sessionState) {
+	proc.sessions.Store(sessionID, acpSessionID)
+	proc.acpSessions.Store(acpSessionID, sessionID)
+	proc.states.Store(sessionID, state)
 }
 
 func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
@@ -170,7 +180,7 @@ func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
 	return b.workspace.Resolve(ctx, ".")
 }
 
-func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.SessionID) (acp.SessionId, error) {
+func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, sessionStore agentkit.SessionStore) (acp.SessionId, error) {
 	proc, err := b.ensureConn(ctx)
 	if err != nil {
 		return "", err
@@ -182,6 +192,34 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if err != nil {
 		return "", err
 	}
+
+	storeDir, err := b.sessionStoreDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	bindPath, err := acpSessionBindPath(storeDir, sessionID, agentID)
+	if err != nil {
+		return "", err
+	}
+
+	if bind, ok, err := loadACPSessionBind(bindPath); err != nil {
+		return "", err
+	} else if ok && bind.Cwd == cwd {
+		resp, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
+			SessionId:  bind.ACPSessionID,
+			Cwd:        cwd,
+			McpServers: []acp.McpServer{},
+		})
+		if err == nil {
+			state := &sessionState{}
+			state.applyBootstrap(resp.ConfigOptions, resp.Modes)
+			proc.trackSession(sessionID, bind.ACPSessionID, state)
+			slog.Info("acp-remote: resumed acp session", "session_id", sessionID, "acp_session_id", bind.ACPSessionID)
+			return bind.ACPSessionID, nil
+		}
+		slog.Warn("acp-remote: resume failed, creating new session", "session_id", sessionID, "err", err)
+	}
+
 	resp, err := proc.conn.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        cwd,
 		McpServers: []acp.McpServer{},
@@ -190,10 +228,24 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		return "", fmt.Errorf("acp session/new: %w", err)
 	}
 	state := &sessionState{}
-	state.applyNewSession(resp)
-	proc.sessions.Store(sessionID, resp.SessionId)
-	proc.acpSessions.Store(resp.SessionId, sessionID)
-	proc.states.Store(sessionID, state)
+	state.applyBootstrap(resp.ConfigOptions, resp.Modes)
+	proc.trackSession(sessionID, resp.SessionId, state)
+	if err := saveACPSessionBind(bindPath, acpSessionBind{
+		AgentID:      agentID,
+		ACPSessionID: resp.SessionId,
+		Cwd:          cwd,
+	}); err != nil {
+		slog.Debug("acp-remote: save session bind failed", "err", err)
+	}
+	if sessionStore != nil {
+		sess, err := sessionStore.Get(ctx, sessionID)
+		if err != nil {
+			return "", err
+		}
+		if err := b.replayHistory(ctx, sess, resp.SessionId); err != nil {
+			slog.Warn("acp-remote: history replay failed", "session_id", sessionID, "err", err)
+		}
+	}
 	return resp.SessionId, nil
 }
 

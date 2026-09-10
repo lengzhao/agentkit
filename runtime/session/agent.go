@@ -23,6 +23,11 @@ type ActiveSessionData struct {
 	SessionID agentkit.SessionID `json:"sessionId"`
 }
 
+// WorkDir returns the per-session directory under storeDir (agent.json, current.json, etc.).
+func WorkDir(storeDir string, id agentkit.SessionID) (string, error) {
+	return sessionWorkDir(storeDir, id)
+}
+
 func sessionWorkDir(storeDir string, id agentkit.SessionID) (string, error) {
 	name, err := safeSessionName(id)
 	if err != nil {
