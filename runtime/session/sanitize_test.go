@@ -47,15 +47,30 @@ func TestSanitizeModelMessageForStorageKeepsAttachmentRef(t *testing.T) {
 	}
 }
 
-func TestSanitizeModelMessageForStorageTruncatesText(t *testing.T) {
+func TestSanitizeModelMessageForStorageTruncatesUserText(t *testing.T) {
 	t.Parallel()
 
 	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
-		Role:    "assistant",
+		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 9000)}},
 	}, 100)
 	if !strings.HasSuffix(msg.Content[0].Text, "\n...[truncated]") {
 		t.Fatalf("text not truncated: len=%d", len(msg.Content[0].Text))
+	}
+}
+
+func TestSanitizeModelMessageForStorageKeepsFullChatTextByDefault(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("y", 12000)
+	for _, role := range []string{"user", "assistant"} {
+		msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+			Role:    role,
+			Content: []agentkit.ContentPart{{Type: "text", Text: long}},
+		}, 0)
+		if msg.Content[0].Text != long {
+			t.Fatalf("%s text truncated: len=%d want %d", role, len(msg.Content[0].Text), len(long))
+		}
 	}
 }
 

@@ -13,16 +13,17 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-func TestAppendMessageRecordsLogicalCharsWhenTruncated(t *testing.T) {
+func TestAppendMessageStoresFullUserText(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "mem-logical"})
+	mem, err := session.NewMemory(session.MemoryConfig{ID: "mem-full-user"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	long := strings.Repeat("x", 12000)
 	raw := agentkit.ModelMessage{
 		Role:    "user",
-		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 12000)}},
+		Content: []agentkit.ContentPart{{Type: "text", Text: long}},
 	}
 	if err := session.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
 		t.Fatal(err)
@@ -34,15 +35,8 @@ func TestAppendMessageRecordsLogicalCharsWhenTruncated(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("events = %d", len(events))
 	}
-	got := 0
-	switch v := events[0].Metadata[session.MetadataLogicalChars].(type) {
-	case int:
-		got = v
-	case float64:
-		got = int(v)
-	}
-	if got < 12000 {
-		t.Fatalf("logical_chars = %v, want >= 12000", events[0].Metadata[session.MetadataLogicalChars])
+	if !strings.Contains(string(events[0].Data), long) {
+		t.Fatalf("user message truncated in session")
 	}
 }
 

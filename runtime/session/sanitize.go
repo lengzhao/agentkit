@@ -8,17 +8,24 @@ import (
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
-// DefaultMaxStoredTextBytes caps text persisted in session history.
+// DefaultMaxStoredTextBytes caps embedded tool-result text and spill preview views (pi-style
+// truncation applies at tool execution / PrepareToolResultForStorage, not chat message bodies).
 const DefaultMaxStoredTextBytes = 8192
 
-// SanitizeModelMessageForStorage removes bulky media payloads and truncates long text
-// before writing user/assistant messages to durable session history.
+// SanitizeModelMessageForStorage strips bulky inline media before durable session history.
+// User and assistant message text is persisted in full (aligned with pi session JSONL).
+// When maxTextBytes > 0, only tests or explicit callers may cap message body text.
 func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int) agentkit.ModelMessage {
-	if maxTextBytes <= 0 {
-		maxTextBytes = DefaultMaxStoredTextBytes
+	contentMaxBytes := maxTextBytes
+	if contentMaxBytes < 0 {
+		contentMaxBytes = 0
+	}
+	toolResultMax := maxTextBytes
+	if toolResultMax <= 0 {
+		toolResultMax = DefaultMaxStoredTextBytes
 	}
 	out := msg
-	out.Content = sanitizeContentParts(msg.Content, maxTextBytes)
+	out.Content = sanitizeContentParts(msg.Content, contentMaxBytes)
 	if len(msg.ToolCalls) > 0 {
 		out.ToolCalls = make([]agentkit.ToolCall, len(msg.ToolCalls))
 		for i, call := range msg.ToolCalls {
@@ -29,7 +36,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 	if len(msg.ToolResults) > 0 {
 		out.ToolResults = make([]agentkit.ToolResult, len(msg.ToolResults))
 		for i, result := range msg.ToolResults {
-			out.ToolResults[i] = TruncateToolResult(result, maxTextBytes)
+			out.ToolResults[i] = TruncateToolResult(result, toolResultMax)
 		}
 	}
 	return out

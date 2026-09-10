@@ -62,5 +62,5 @@ type RunState struct {
 	Context  int
 }
 
-// MetadataLogicalChars stores pre-sanitize message size on user/assistant events.
+// MetadataLogicalChars stores pre-sanitize size when storage shrinks the message (e.g. stripped inline media).
 const MetadataLogicalChars = "logical_chars"
