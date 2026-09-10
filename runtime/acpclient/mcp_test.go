@@ -31,11 +31,11 @@ func TestToMCPServersHTTPAndSSE(t *testing.T) {
 	}
 }
 
-func TestToMCPServersSkipsEmpty(t *testing.T) {
-	if got := ToMCPServers(nil); got != nil {
-		t.Fatalf("expected nil, got %v", got)
+func TestToMCPServersEmptyIsNonNilSlice(t *testing.T) {
+	if got := ToMCPServers(nil); got == nil {
+		t.Fatal("expected non-nil empty slice for ACP mcpServers field")
 	}
-	if got := ToMCPServers([]capacp.SessionMCPServer{{}}); got != nil {
-		t.Fatalf("expected nil for missing transport, got %v", got)
+	if len(ToMCPServers([]capacp.SessionMCPServer{{}})) != 0 {
+		t.Fatal("expected empty slice for missing transport")
 	}
 }

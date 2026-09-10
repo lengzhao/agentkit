@@ -10,16 +10,13 @@ import (
 // ToMCPServers converts harness MCP specs into ACP SDK values for session/new.
 func ToMCPServers(specs []capacp.SessionMCPServer) []acpsdk.McpServer {
 	if len(specs) == 0 {
-		return nil
+		return []acpsdk.McpServer{}
 	}
 	out := make([]acpsdk.McpServer, 0, len(specs))
 	for _, spec := range specs {
 		if srv, ok := toMCPServer(spec); ok {
 			out = append(out, srv)
 		}
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
