@@ -243,7 +243,8 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 		_, _ = p.reload(ctx)
 		return "", fmt.Errorf("api %q failed validation after reload", name)
 	}
-	return fmt.Sprintf("openapi: wrote %s to %s (%d ops, %d tools), verified", name, target, len(loaded.Operations), len(tools)), nil
+	msg := fmt.Sprintf("openapi: wrote %s to %s (%d ops, %d tools), verified", name, target, len(loaded.Operations), len(tools))
+	return msg + p.credentialWarningSuffix(ctx, apis), nil
 }
 
 func (p *openapiProvider) toolsForAPI(api apiConfig) ([]agentkit.Tool, error) {
@@ -286,6 +287,7 @@ func openapiHelp() string {
   /openapi                         show status and help
   /openapi add [-g] <name> <json>  write API to api.json, validate, reload, and verify
   /openapi -u                      reload api.json and referenced spec files
+                                   (warns when env: auth/header refs are unset)
 
 JSON format matches one apis entry in api.json, e.g.:
   {"baseUrl":"https://api.example.com","paths":{"/ping":{"get":{"operationId":"ping"}}}}
@@ -365,7 +367,7 @@ func (c *openapiSyncCommand) CommandExec(ctx context.Context, args string) (stri
 		if err != nil {
 			return "", err
 		}
-		return summarizeAPIs(apis), nil
+		return c.provider.summarizeReload(ctx, apis), nil
 	case len(rest) >= 1 && rest[0] == "add":
 		global, addRest := configfile.PeelGlobalFlag(rest[1:])
 		if len(addRest) < 2 {

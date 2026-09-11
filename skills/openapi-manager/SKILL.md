@@ -170,7 +170,7 @@ flowchart TB
 | 命令 | 作用 |
 |---|---|
 | `/openapi` | 已加载 API 与帮助 |
-| `/openapi -u` | 重读索引与 spec，刷新动态工具 |
+| `/openapi -u` | 重读索引与 spec，刷新动态工具；缺 `env:` 时输出 warning 并提示 `/env add KEY=<value>` |
 | `/openapi add [-g] <name> <json>` | 追加条目；默认形式写 local，`-g` 形式从 local spec 提升到 global（校验、写盘、失败回滚） |
 
 Agent 给出命令让用户执行；用户确认 `verified` 后，再说明工具已刷新。
@@ -184,6 +184,7 @@ Agent 给出命令让用户执行；用户确认 `verified` 后，再说明工�
 | `add` 找不到 `path` | 先把 spec 写到命令里 `path` 指向的位置，再执行 `add` |
 | global 侧 `$ref` 失败 | `add -g` 只复制主文件；依赖文件同步到 global 可解析位置 |
 | 工具刷新状态存疑 | 以用户确认 `/openapi -u` 成功或 `add` 输出 `verified` 为准 |
+| reload 后 warning: missing credentials | 按输出中的 `hint: /env add KEY=<value>` 配置凭据（或 export 环境变量），再 `/openapi -u` |
 | 文件或对话出现 secret | 改成 `env:VAR`，由用户通过 credentials / 环境配置值 |
 
 ## 配置与文档参考

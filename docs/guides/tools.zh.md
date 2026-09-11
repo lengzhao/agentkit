@@ -367,7 +367,7 @@ tools.default:
 | 命令 | 作用 |
 |---|---|
 | `/openapi` | 查看当前已加载 API 与帮助 |
-| `/openapi -u` | 重读 `api.json` 与 OpenAPI 文档，刷新动态 HTTP 工具 |
+| `/openapi -u` | 重读 `api.json` 与 OpenAPI 文档，刷新动态 HTTP 工具；未解析的 `env:` 会附带 warning 与 `/env add KEY=<value>` 提示 |
 | `/openapi add [-g] <name> <json>` | 追加索引条目（`-g` 写全局；校验、写盘、失败回滚） |
 
 推荐流程：`skill(openapi-manager)` → `read`/`edit` 改文件 → 请用户 `/openapi -u`。
