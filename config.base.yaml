@@ -694,13 +694,13 @@ tools.subagent.default:
     policies:
       - policy.dangerous-shell.default
 
-# fs 读写租户 local 根（skills、memory、AGENTS.md、work/）；shell 默认 cwd 仍是 work/。
-# 更强隔离后续交给 sandbox，不在 fs 工具里堆路径例外。
+# fs 默认 unrestricted：可读 global:/local:、绝对路径与 ..（含 global skill reference）；相对路径仍以 local 根为默认拼接基准。
+# shell 默认 cwd 仍是 work/。更强隔离交给 sandbox 或单独建 unrestricted: false 的 fs 实例。
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
     root: .
-    # unrestricted: true  # 关闭路径权限控制，不限于 root（含 ../、绝对路径等）
+    unrestricted: true
     maxBytes: 1048576
   deps:
     workspace: workspace.default
@@ -709,6 +709,7 @@ tool.fs-workspace.readonly.default:
   use: tool/fs-workspace
   config:
     root: .
+    unrestricted: true
     maxBytes: 1048576
     readOnly: true
     tools:

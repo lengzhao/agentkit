@@ -1190,9 +1190,9 @@ Policy Plane 判定已可见调用以及能力操作：
 
 | 场景 | fs 根 / shell cwd | 说明 |
 |---|---|---|
-| L0 默认 | `.` / `work` | fs 读写租户 local 根；shell 默认 cwd 为 `work/` |
+| L0 默认 | `.` / `work` | fs 默认 `unrestricted: true`：可读 `global:` / `local:`、绝对路径与 `..`；相对路径仍以 local 根为默认拼接基准 |
 | `presets/coding.yaml` | `.` / `work` | 与 L0 相同；local 根为 `<cwd>/.agentkit/` |
-| `presets/multi-tenant.yaml` | `.` / `work` | fs 读写租户根；可设 `unrestricted: true` 关闭路径限制 |
+| `presets/multi-tenant.yaml` | `.` / `work` | 与 L0 相同；租户隔离靠 local 根分目录，fs 默认可跨根读 global skill 等资源 |
 
 ```yaml
 # 典型绑定（L0 默认，多数 preset 无需覆盖）
@@ -1205,15 +1205,16 @@ tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
     root: .
+    unrestricted: true
   deps:
     workspace: workspace.default
 
-# 关闭路径权限控制（不限于 root，可用 ../、绝对路径等）
-tool.fs-workspace.unrestricted:
+# 需要把 fs 限制在 root 内时，单独建实例并设 unrestricted: false
+tool.fs-workspace.restricted:
   use: tool/fs-workspace
   config:
     root: .
-    unrestricted: true
+    unrestricted: false
   deps:
     workspace: workspace.default
 ```

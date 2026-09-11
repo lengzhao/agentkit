@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -285,8 +286,13 @@ func (s *workspaceFS) rootDir(ctx context.Context) (string, error) {
 }
 
 func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) {
-	if s.unrestricted && filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
+	if s.unrestricted {
+		if _, _, scoped := rtworkspace.ParseScoped(path); scoped {
+			return s.workspace.Resolve(ctx, path)
+		}
+		if filepath.IsAbs(path) {
+			return filepath.Clean(path), nil
+		}
 	}
 	clean := filepath.Clean(path)
 	if filepath.IsAbs(clean) {

@@ -193,9 +193,9 @@ tool.fs-workspace.default:
 
 但租户根是**并列**的（`tenants/slack_C001` 与 `tenants/slack_C002` 互为兄弟），同一个豁免就成了越权通道：A 群一个 `../slack_C002` 就读写到 B 群。所以 `workspace/tenant` 全部走 `cap/workspace.ResolveRelStrict`，`..` 一律不解析，`global:` 也一样。
 
-`tool/fs-workspace` 默认将路径限制在 `root` 内（多租户为租户 local 根；如 `../` 逃出根会被拒绝）。若需关闭路径权限控制，在实例 config 设 `unrestricted: true`。更强隔离后续走 sandbox。
+`tool/fs-workspace` 默认 **`unrestricted: true`**（与 L0 `config.base.yaml` 一致）：模型可用 `global:` / `local:`、绝对路径与相对 `..` 读取 global skill reference 等共享资源；`readOnly` 子实例同样放开读路径，但仍禁止 write/edit。租户数据隔离仍靠 **local 根分目录**；`workspace/tenant` 下 `..` 不能用于在租户根之间跳转。若要把 fs 限制在租户 `root` 内，单独建实例并设 `unrestricted: false`。更强隔离后续走 sandbox。
 
-要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`。若必须直接改项目源码树，把租户 `root` 指到项目目录本身，或单独设 `tool.fs-workspace` 的 `root` / `unrestricted`（默认不再使用 `..`）。
+要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`。若必须直接改项目源码树，把租户 `root` 指到项目目录本身，或单独设 `tool.fs-workspace` 的 `root` / `unrestricted`。
 
 ## 4. 并发
 

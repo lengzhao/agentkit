@@ -235,3 +235,74 @@ func TestWorkspaceFSUnrestrictedPaths(t *testing.T) {
 		t.Fatalf("abs file = %q", got)
 	}
 }
+
+func TestWorkspaceFSUnrestrictedScopedPaths(t *testing.T) {
+	t.Parallel()
+
+	global := t.TempDir()
+	local := t.TempDir()
+	skillDir := filepath.Join(global, "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "reference.md"), []byte("global-ref"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	localSkill := filepath.Join(local, "skills", "demo")
+	if err := os.MkdirAll(localSkill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localSkill, "reference.md"), []byte("local-ref"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := rtworkspace.New(rtworkspace.Config{
+		Global: global,
+		Local:  local,
+		Scope:  "local",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := &workspaceFS{relRoot: ".", workspace: svc, unrestricted: true}
+	ctx := context.Background()
+
+	got, err := fs.readText(ctx, "global:skills/demo/reference.md", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "global-ref" {
+		t.Fatalf("global ref = %q", got)
+	}
+
+	got, err = fs.readText(ctx, "local:skills/demo/reference.md", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "local-ref" {
+		t.Fatalf("local ref = %q", got)
+	}
+}
+
+func TestWorkspaceFSRestrictedAbsolutePathStaysUnderRoot(t *testing.T) {
+	t.Parallel()
+
+	tenantRoot := t.TempDir()
+	workDir := filepath.Join(tenantRoot, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(tenantRoot, "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := rtworkspace.Static(tenantRoot)
+	fs := &workspaceFS{relRoot: "work", workspace: ws, unrestricted: false}
+	ctx := context.Background()
+
+	_, err := fs.readText(ctx, outside, 0)
+	if err == nil {
+		t.Fatal("expected restricted absolute path not to read file outside root join semantics")
+	}
+}
