@@ -198,6 +198,13 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 	if err != nil {
 		return "", err
 	}
+	if global {
+		rewritten, err := rewriteAPIEntryPathsForGlobalAdd(ctx, p.workspace, raw)
+		if err != nil {
+			return "", err
+		}
+		raw = rewritten
+	}
 
 	target, err := p.writeTarget(ctx, global)
 	if err != nil {
@@ -286,6 +293,7 @@ JSON format matches one apis entry in api.json, e.g.:
 
 Notes:
   add writes to local api.json by default; -g writes to global:api.json
+  -g copies local spec files to global: (same relative path) and updates path in the index
   when enableLocal is off, only -g is allowed
   See docs/guides/tools.zh.md for full api.json format`
 }

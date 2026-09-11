@@ -15,7 +15,7 @@ OpenAPI 配置在**进程启动时**由 `openapi.default` 读取并缓存在内�
 - `api/<name>.json`：独立 OpenAPI 3 文档（paths、schema、components）；不含 auth/bind/baseUrl。
 - 默认查找：`local:api.json` → `global:api.json`（先命中者赢，按 `apis` 名字去重）。
 
-路径经 workspace 解析，可用 `local:` / `global:` 前缀。
+路径经 workspace 解析，可用 `local:` / `global:` 前缀。`/openapi add -g` 会把 local spec **复制**到 `global:` 同路径并更新索引。
 
 ## 工作流
 

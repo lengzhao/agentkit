@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -8,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type rawServer struct {
@@ -45,7 +48,7 @@ type rawAPIEntry struct {
 	DenyOperations  []string           `json:"denyOperations"`
 	TimeoutSeconds  int                `json:"timeoutSeconds"`
 	Bind            map[string]rawBind `json:"bind,omitempty"`
-	Paths           json.RawMessage    `json:"paths"`
+	Paths           json.RawMessage    `json:"paths,omitempty"`
 }
 
 // rawIndexDocument is api.json's top-level shape: an index naming APIs and
@@ -150,6 +153,34 @@ func parseIndexFile(path string, raw []byte, loadSpec specLoader) ([]apiConfig, 
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("%s declares no apis", path)
+	}
+	return out, nil
+}
+
+func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service, raw []byte) ([]byte, error) {
+	var entry rawAPIEntry
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		return nil, fmt.Errorf("parse api json: %w", err)
+	}
+	doc, err := entryDocumentPath(entry)
+	if err != nil {
+		return nil, err
+	}
+	if doc == "" {
+		return raw, nil
+	}
+	globalDoc, err := rtworkspace.CopyLocalToGlobal(ctx, ws, doc)
+	if err != nil {
+		return nil, err
+	}
+	if globalDoc == doc && strings.TrimSpace(entry.Path) == globalDoc && strings.TrimSpace(entry.SpecFile) == "" {
+		return raw, nil
+	}
+	entry.Path = globalDoc
+	entry.SpecFile = ""
+	out, err := json.Marshal(entry)
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
