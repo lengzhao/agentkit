@@ -2,8 +2,6 @@ package credentials
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -331,14 +329,11 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secrets.enc.json")
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		t.Fatal(err)
-	}
+	const secretsPass = "agentkit-test-secrets-passphrase"
 	store, err := New(Config{
 		EncryptedFile: path,
 		Env: map[string]string{
-			rtcredentials.SecretsMasterKeyEnv: base64.StdEncoding.EncodeToString(key),
+			rtcredentials.SecretsMasterKeyEnv: secretsPass,
 		},
 	}, EnvDeps{})
 	if err != nil {
@@ -378,8 +373,9 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 	if err := os.WriteFile(dotenv, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
+	const secretsPass = "agentkit-test-secrets-passphrase"
+	key, err := rtcredentials.ParseSecretsMasterKey(secretsPass)
+	if err != nil {
 		t.Fatal(err)
 	}
 	enc, err := rtcredentials.EncryptSecretsFile(map[string]string{
@@ -395,7 +391,7 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 		EncryptedFile: secretsPath,
 		Files:         []string{dotenv},
 		Env: map[string]string{
-			rtcredentials.SecretsMasterKeyEnv: base64.StdEncoding.EncodeToString(key),
+			rtcredentials.SecretsMasterKeyEnv: secretsPass,
 		},
 	}, EnvDeps{})
 	if err != nil {

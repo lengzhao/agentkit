@@ -4,8 +4,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,19 +29,14 @@ type encryptedSecretEntry struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
-// ParseSecretsMasterKey decodes a 32-byte key from base64 (preferred) or hex.
+// ParseSecretsMasterKey derives a 32-byte AES key via SHA-256(passphrase).
 func ParseSecretsMasterKey(raw string) ([]byte, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, errors.New("master key is empty")
 	}
-	if key, err := base64.StdEncoding.DecodeString(raw); err == nil && len(key) == 32 {
-		return key, nil
-	}
-	if key, err := hex.DecodeString(raw); err == nil && len(key) == 32 {
-		return key, nil
-	}
-	return nil, fmt.Errorf("%s must be 32 bytes as base64 or hex", SecretsMasterKeyEnv)
+	sum := sha256.Sum256([]byte(raw))
+	return sum[:], nil
 }
 
 // DecryptSecretsFile parses and decrypts all entries in data.

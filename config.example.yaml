@@ -29,7 +29,7 @@ workspace.default:
 #     encryptedFile: global:secrets.enc.json
 #     env:
 #       # 32 字节随机数的 base64，仅放在本机 L1 config.yaml，勿提交 git
-#       AGENTKIT_SECRETS_KEY: "<base64-32-bytes>"
+#       AGENTKIT_SECRETS_KEY: "<passphrase>"
 #
 # 在聊天或 CLI 执行：/env add OPENAI_API_KEY=sk-...
 # mcp.json / api.json 继续写 env:OPENAI_API_KEY 引用即可。

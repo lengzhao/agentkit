@@ -2,7 +2,7 @@ package credentials
 
 import (
 	"crypto/rand"
-	"encoding/base64"
+	"crypto/sha256"
 	"testing"
 )
 
@@ -14,13 +14,14 @@ func testMasterKey(t *testing.T) []byte {
 	return key
 }
 
-func TestParseSecretsMasterKeyBase64(t *testing.T) {
-	key := testMasterKey(t)
-	got, err := ParseSecretsMasterKey(base64.StdEncoding.EncodeToString(key))
+func TestParseSecretsMasterKeyPassphrase(t *testing.T) {
+	pass := "my-long-passphrase"
+	got, err := ParseSecretsMasterKey(pass)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(key) {
+	want := sha256.Sum256([]byte(pass))
+	if string(got) != string(want[:]) {
 		t.Fatal("key mismatch")
 	}
 }
