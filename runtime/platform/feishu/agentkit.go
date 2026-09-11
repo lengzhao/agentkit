@@ -105,6 +105,10 @@ type streamState struct {
 	lastUpdate         time.Time // legacy flush throttle
 	lastProgressUpdate time.Time
 	lastBodyUpdate     time.Time
+	unifiedTextFallback bool   // CardKit stream closed; reply via plain text IM messages
+	textFallbackHandle  any    // feishuPreviewHandle for plain text reply
+	cardReactionID     string    // processing reaction on bot reply card (Typing / OneSecond)
+	heartbeatDigitIndex int      // next pulse index for 5s card reaction alternation (0/1)
 	heartbeatStop      context.CancelFunc
 	bodyFlushTimer     *time.Timer
 	legacyFlushTimer   *time.Timer
@@ -181,7 +185,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	}
 	common.WarnAllowFromEmpty(name, cfg.AllowFrom)
 
-	reactionEmoji := cfg.ReactionEmoji
+	reactionEmoji := strings.TrimSpace(cfg.ReactionEmoji)
 	if reactionEmoji == "" {
 		reactionEmoji = "OnIt"
 	}
@@ -358,11 +362,11 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		p.clearStream(delivery)
 		if p.useRichStream() {
 			p.richStreamState(delivery)
-			p.startProgressHeartbeat(delivery)
-			if p.useUnifiedStreamCard() && p.showStreamProgress() {
-				if err := p.flushUnifiedProgress(ctx, delivery); err != nil {
-					slog.Debug(p.tag()+": initial unified progress flush failed", "session_id", delivery, "error", err)
-				}
+			if p.useUnifiedStreamCard() {
+				p.startProgressHeartbeat(delivery)
+			}
+			if err := p.bootstrapReplyCard(ctx, delivery); err != nil {
+				slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", delivery, "error", err)
 			}
 		}
 		return nil

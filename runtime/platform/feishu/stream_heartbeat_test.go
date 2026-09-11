@@ -7,35 +7,23 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-func TestShouldHeartbeatFlush(t *testing.T) {
+func TestShouldCardReactionHeartbeat(t *testing.T) {
 	st := &streamState{
 		startedAt: time.Now(),
 		status:    cardStatusWorking,
-		progressHandle: &feishuPreviewHandle{messageID: "msg"},
 	}
-	if !shouldHeartbeatFlush(st, false) {
-		t.Fatal("expected active rich stream to heartbeat")
+	if shouldCardReactionHeartbeat(st) {
+		t.Fatal("expected no heartbeat before reply card exists")
 	}
 
-	st.cardHandle = &feishuPreviewHandle{messageID: "card"}
-	st.progressHandle = nil
-	if shouldHeartbeatFlush(st, true) {
-		t.Fatal("unified card progress is append-only and should not heartbeat")
+	st.progressHandle = &feishuPreviewHandle{messageID: "msg"}
+	if !shouldCardReactionHeartbeat(st) {
+		t.Fatal("expected heartbeat when progress card is active")
 	}
 
 	st.status = cardStatusDone
-	if shouldHeartbeatFlush(st, true) {
+	if shouldCardReactionHeartbeat(st) {
 		t.Fatal("expected completed stream to skip heartbeat")
-	}
-
-	st.status = cardStatusWorking
-	st.cardHandle = nil
-	st.progressHandle = nil
-	if shouldHeartbeatFlush(st, false) {
-		t.Fatal("expected legacy stream without progress handle to skip heartbeat")
-	}
-	if shouldHeartbeatFlush(st, true) {
-		t.Fatal("unified stream should not heartbeat")
 	}
 }
 

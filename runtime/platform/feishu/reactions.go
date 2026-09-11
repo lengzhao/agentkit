@@ -8,6 +8,121 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+// cardProcessingReactionTypes alternate on the unified CardKit reply card every progressHeartbeatInterval.
+var cardProcessingReactionTypes = [2]string{"Typing", "OneSecond"}
+
+func cardProcessingReactionEmoji(pulseIndex int) string {
+	if pulseIndex < 0 {
+		pulseIndex = 0
+	}
+	return cardProcessingReactionTypes[pulseIndex%len(cardProcessingReactionTypes)]
+}
+
+func shouldReactionHeartbeat(st *streamState) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.startedAt.IsZero() {
+		return false
+	}
+	switch st.status {
+	case cardStatusDone, cardStatusCancelled, cardStatusError:
+		return false
+	}
+	return true
+}
+
+func shouldCardReactionHeartbeat(st *streamState) bool {
+	if !shouldReactionHeartbeat(st) {
+		return false
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return botReplyMessageID(st) != ""
+}
+
+func (p *Platform) swapMessageReaction(messageID, oldReactionID, emojiType string) string {
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(emojiType) == "" {
+		return oldReactionID
+	}
+	if oldReactionID != "" {
+		p.removeReaction(messageID, oldReactionID)
+	}
+	return p.addReactionWithEmoji(messageID, emojiType)
+}
+
+func (p *Platform) attachCardProcessingReaction(sessionID agentkit.SessionID) {
+	if !p.useUnifiedStreamCard() {
+		return
+	}
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	if st.cardReactionID != "" {
+		st.mu.Unlock()
+		return
+	}
+	msgID := botReplyMessageID(st)
+	st.mu.Unlock()
+	if msgID == "" {
+		return
+	}
+	id := p.addReactionWithEmoji(msgID, cardProcessingReactionEmoji(0))
+	if id == "" {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.cardReactionID != "" {
+		p.removeReaction(msgID, id)
+		return
+	}
+	st.cardReactionID = id
+	st.heartbeatDigitIndex = 1
+}
+
+func (p *Platform) rotateCardReplyReaction(sessionID agentkit.SessionID) {
+	if !p.useUnifiedStreamCard() {
+		return
+	}
+	raw, ok := p.streams.Load(sessionID)
+	if !ok {
+		return
+	}
+	st := raw.(*streamState)
+	st.mu.Lock()
+	msgID := botReplyMessageID(st)
+	oldID := st.cardReactionID
+	if msgID == "" {
+		st.mu.Unlock()
+		return
+	}
+	if oldID == "" {
+		st.mu.Unlock()
+		p.attachCardProcessingReaction(sessionID)
+		return
+	}
+	idx := st.heartbeatDigitIndex % len(cardProcessingReactionTypes)
+	st.heartbeatDigitIndex++
+	st.mu.Unlock()
+
+	newID := p.swapMessageReaction(msgID, oldID, cardProcessingReactionEmoji(idx))
+	if newID == "" {
+		st.mu.Lock()
+		st.cardReactionID = ""
+		st.mu.Unlock()
+		return
+	}
+	st.mu.Lock()
+	st.cardReactionID = newID
+	st.mu.Unlock()
+}
+
+func (p *Platform) clearCardProcessingReaction(messageID, reactionID string) {
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(reactionID) == "" {
+		return
+	}
+	p.removeReaction(messageID, reactionID)
+}
+
 type turnReactionBatch struct {
 	mu     sync.Mutex
 	active bool
@@ -67,6 +182,13 @@ func (p *Platform) finishTurnReactions(sessionID agentkit.SessionID) []replyCont
 }
 
 func botReplyMessageID(st *streamState) string {
+	if st.unifiedTextFallback {
+		if h, ok := st.textFallbackHandle.(*feishuPreviewHandle); ok && h != nil {
+			if id := strings.TrimSpace(h.messageID); id != "" {
+				return id
+			}
+		}
+	}
 	if h, ok := st.cardHandle.(*feishuPreviewHandle); ok && h != nil {
 		if id := strings.TrimSpace(h.messageID); id != "" {
 			return id
@@ -93,10 +215,13 @@ func botReplyMessageID(st *streamState) string {
 	return ""
 }
 
-func (p *Platform) addBotReplyEndReaction(messageID string, endData session.TurnEndData) {
+func (p *Platform) addBotReplyEndReaction(messageID string, endData session.TurnEndData, clearProcessingReactionID string) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return
+	}
+	if clearProcessingReactionID != "" {
+		p.clearCardProcessingReaction(messageID, clearProcessingReactionID)
 	}
 	switch {
 	case endData.Cancelled:

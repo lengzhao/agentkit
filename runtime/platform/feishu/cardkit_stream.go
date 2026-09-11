@@ -312,6 +312,17 @@ func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHa
 	})
 }
 
+const larkErrCardStreamingClosed = 300309
+
+func isCardStreamingClosedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "streaming mode is closed") ||
+		strings.Contains(msg, fmt.Sprintf("code=%d", larkErrCardStreamingClosed))
+}
+
 func (p *Platform) closeCardStreaming(ctx context.Context, h *feishuPreviewHandle) error {
 	seq := h.nextSequence()
 	settings := map[string]any{
