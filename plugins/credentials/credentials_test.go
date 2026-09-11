@@ -252,6 +252,22 @@ func TestEnvReloadCommand(t *testing.T) {
 	}
 }
 
+func TestEnvCommandSanitizeArgsForLog(t *testing.T) {
+	t.Parallel()
+	cmd := &envSyncCommand{}
+	got := cmd.SanitizeArgsForLog("add FOO=bar BAZ=secret")
+	want := "add FOO=" + agentkit.SlashLogRedacted + " BAZ=" + agentkit.SlashLogRedacted
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if cmd.SanitizeArgsForLog("-u") != "-u" {
+		t.Fatal("expected -u unchanged")
+	}
+	if redactEnvAddArgsForLog("") != "" {
+		t.Fatal("expected empty unchanged")
+	}
+}
+
 func TestEnvAddCommand(t *testing.T) {
 	t.Parallel()
 

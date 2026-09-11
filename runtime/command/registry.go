@@ -138,13 +138,15 @@ func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (s
 		return "", agentkit.ErrCommandNotHandled
 	}
 	if r.requiresAdmin(key, cmd) && !IsAdmin(ctx) {
-		slog.Warn("command forbidden", commandLogAttrs(ctx, cmd.Name(), rawArgs)...)
+		slog.Warn("command forbidden", r.commandLogAttrs(ctx, cmd, rawArgs)...)
 		return "", agentkit.ErrCommandForbidden
 	}
-	slog.Info("command execute", commandLogAttrs(ctx, cmd.Name(), rawArgs)...)
+	logAttrs := r.commandLogAttrs(ctx, cmd, rawArgs)
+	slog.Info("command execute", logAttrs...)
 	out, err := cmd.CommandExec(ctx, rawArgs)
 	if err != nil {
-		slog.Error("command failed", commandLogAttrs(ctx, cmd.Name(), rawArgs, "err", err)...)
+		failAttrs := append(append([]any(nil), logAttrs...), "err", err)
+		slog.Error("command failed", failAttrs...)
 	}
 	return out, err
 }
@@ -220,23 +222,18 @@ func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
-func commandLogAttrs(ctx context.Context, name, rawArgs string, extra ...any) []any {
+func (r *Registry) commandLogAttrs(ctx context.Context, cmd agentkit.Command, rawArgs string, extra ...any) []any {
+	name := ""
+	if cmd != nil {
+		name = cmd.Name()
+	}
 	attrs := []any{
 		"command", strings.TrimSpace(name),
 		"user_id", session.UserIDFromContext(ctx),
 		"platform_id", session.PlatformFromContext(ctx),
 		"session_id", session.ConversationFromContext(ctx),
 		"delivery_session_id", session.DeliveryRouteFromContext(ctx),
-		"args", summarizeCommandArgs(rawArgs),
+		"args", sanitizeArgsForLog(cmd, rawArgs),
 	}
 	return append(attrs, extra...)
-}
-
-func summarizeCommandArgs(args string) string {
-	args = strings.TrimSpace(args)
-	const maxLen = 200
-	if len(args) <= maxLen {
-		return args
-	}
-	return args[:maxLen] + "…"
 }

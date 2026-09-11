@@ -385,6 +385,10 @@ func (c *mcpSyncCommand) Description() string {
 	return "Show MCP tools, add a server from JSON, or reload mcp.json with -u"
 }
 
+func (c *mcpSyncCommand) SanitizeArgsForLog(args string) string {
+	return agentkit.RedactSlashAddNamePayload(args)
+}
+
 func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
 	switch {

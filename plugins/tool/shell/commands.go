@@ -38,6 +38,10 @@ func (shellSlashCommand) Description() string {
 	return "run a shell command locally without invoking the model"
 }
 
+func (shellSlashCommand) SanitizeArgsForLog(args string) string {
+	return agentkit.RedactSlashArgsForLog(args)
+}
+
 func (c shellSlashCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	command := strings.TrimSpace(args)
 	if command == "" {

@@ -20,6 +20,12 @@ type Command interface {
 	CommandExec(ctx context.Context, args string) (string, error)
 }
 
+// CommandLogSanitizer redacts command args before structured dispatch logs.
+// Commands that may carry secrets should implement this on their Command type.
+type CommandLogSanitizer interface {
+	SanitizeArgsForLog(args string) string
+}
+
 // ErrCommandNotHandled means the name is not a registered slash command.
 var ErrCommandNotHandled = errors.New("command not handled")
 

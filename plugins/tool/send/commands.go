@@ -7,6 +7,8 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
+var _ agentkit.CommandLogSanitizer = sendSlashCommand{}
+
 type sendBundle struct {
 	tool agentkit.Tool
 	cfg  SendConfig
@@ -37,6 +39,10 @@ func (sendSlashCommand) Alias() string { return "" }
 
 func (sendSlashCommand) Description() string {
 	return "send a proactive message to another chat/channel on the current platform without invoking the model; use -r/--raw to skip markdown conversion"
+}
+
+func (sendSlashCommand) SanitizeArgsForLog(args string) string {
+	return agentkit.RedactSlashArgsForLog(args)
 }
 
 func (c sendSlashCommand) CommandExec(ctx context.Context, args string) (string, error) {

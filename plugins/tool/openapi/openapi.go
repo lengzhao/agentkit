@@ -359,6 +359,10 @@ func (c *openapiSyncCommand) Description() string {
 	return "Show OpenAPI tools, add an API from JSON, or reload api.json with -u"
 }
 
+func (c *openapiSyncCommand) SanitizeArgsForLog(args string) string {
+	return agentkit.RedactSlashAddNamePayload(args)
+}
+
 func (c *openapiSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
 	switch {

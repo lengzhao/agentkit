@@ -385,6 +385,10 @@ func (c *envSyncCommand) Description() string {
 	return "Show env cache, write KEY=VALUE pairs to .env, or reload with -u"
 }
 
+func (c *envSyncCommand) SanitizeArgsForLog(args string) string {
+	return redactEnvAddArgsForLog(args)
+}
+
 func (c *envSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
 	switch {
@@ -408,6 +412,28 @@ func (c *envSyncCommand) CommandExec(ctx context.Context, args string) (string, 
 	default:
 		return "", fmt.Errorf("usage: /env | /env add KEY=VALUE ... | /env -u")
 	}
+}
+
+func redactEnvAddArgsForLog(args string) string {
+	fields := strings.Fields(args)
+	if len(fields) == 0 || fields[0] != "add" {
+		return args
+	}
+	out := []string{"add"}
+	for _, pair := range fields[1:] {
+		key, _, ok := strings.Cut(pair, "=")
+		if !ok {
+			out = append(out, pair)
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			out = append(out, "="+agentkit.SlashLogRedacted)
+			continue
+		}
+		out = append(out, key+"="+agentkit.SlashLogRedacted)
+	}
+	return strings.Join(out, " ")
 }
 
 func peelUpdateFlag(args []string) (update bool, rest []string) {
@@ -438,7 +464,10 @@ func parseEnvPair(pair string) (string, string, error) {
 	return key, value, nil
 }
 
-var _ agentkit.CommandProvider = (*Store)(nil)
+var (
+	_ agentkit.CommandProvider    = (*Store)(nil)
+	_ agentkit.CommandLogSanitizer = (*envSyncCommand)(nil)
+)
 
 func parseEnvFile(path string, data []byte, values map[string]string) error {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
