@@ -11,13 +11,6 @@ import (
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 )
 
-func (s *Service) writeApprovalEnabled() bool {
-	if s.review.WriteApproval != nil {
-		return *s.review.WriteApproval
-	}
-	return false
-}
-
 func (s *Service) stagedStore(ctx context.Context) (*rtlearning.StagedStore, error) {
 	dir, err := s.workspace.Resolve(ctx, stagedRelPath(s.memoryRoot))
 	if err != nil {

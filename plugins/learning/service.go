@@ -98,11 +98,11 @@ type ReviewServiceConfig struct {
 }
 
 type Config struct {
-	Disabled    bool                `json:"disabled"`
-	CharLimit   int                 `json:"charLimit"`
+	Disabled  bool `json:"disabled"`
+	CharLimit int  `json:"charLimit"`
 	// MemoryRoot is where memory.md, dreaming, and staged review files live.
 	// Default "." resolves under each tenant local root; use "global:." for shared ~/.agentkit (or L1 global root).
-	MemoryRoot string `json:"memoryRoot"`
+	MemoryRoot  string              `json:"memoryRoot"`
 	MemoryFile  string              `json:"memoryFile"`
 	SessionsDir string              `json:"sessionsDir"`
 	Dreaming    dreaming.Config     `json:"dreaming"`
@@ -149,17 +149,6 @@ func (s *Service) dreamingCfg() dreaming.Config {
 
 func (s *Service) workshopCfg() workshop.Config {
 	return s.workshop.Normalized()
-}
-
-func (s *Service) dreamingEnabled() bool {
-	if s.disabled {
-		return false
-	}
-	st, err := s.loadDreamingState(context.Background())
-	if err != nil {
-		return s.dreamingCfg().IsEnabled()
-	}
-	return st.Enabled
 }
 
 func (s *Service) memoryStore(ctx context.Context) (*MemoryStore, error) {

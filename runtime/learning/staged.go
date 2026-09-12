@@ -10,8 +10,6 @@ import (
 	"github.com/lengzhao/agentkit/runtime/configfile"
 )
 
-const stagedSubdir = "memory/.staged"
-
 // StagedMemory is a pending memory write awaiting approval.
 type StagedMemory struct {
 	ID        string    `json:"id"`
