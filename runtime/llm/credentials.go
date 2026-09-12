@@ -16,7 +16,7 @@ func resolveAPIKey(ctx context.Context, apiKey, apiKeyRef string, store credenti
 		if store == nil {
 			return "", fmt.Errorf("apiKeyRef %q requires credentials dependency", apiKeyRef)
 		}
-		secret, err := store.Resolve(ctx, apiKeyRef)
+		secret, err := store.Resolve(ctx, credentials.GlobalScope, apiKeyRef)
 		if err != nil {
 			return "", fmt.Errorf("resolve apiKeyRef %q: %w", apiKeyRef, err)
 		}

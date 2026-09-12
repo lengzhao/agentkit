@@ -3,6 +3,7 @@ package openapitest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/openapi"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -161,15 +164,38 @@ func parseScoped(rel string) (scope, path string, ok bool) {
 	return "", rel, false
 }
 
+type scopedCredentialStore struct {
+	scope string
+	env   map[string]string
+}
+
+func (s scopedCredentialStore) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
+	if scope != s.scope {
+		return credentials.Secret{}, fmt.Errorf("credential scope %q does not match %q", scope, s.scope)
+	}
+	key := rtcredentials.EnvKey(ref)
+	if v, ok := s.env[key]; ok && v != "" {
+		return credentials.Secret{Ref: ref, Value: v}, nil
+	}
+	return credentials.Secret{}, fmt.Errorf("credential %q not found for scope %q", ref, scope)
+}
+
+func credentialsForAPI(apiName string) credentials.Store {
+	return scopedCredentialStore{
+		scope: openapi.CredentialScope(apiName),
+		env:   map[string]string{"OPENAPITEST_TOKEN": DefaultToken},
+	}
+}
+
 // NewProvider builds tool/openapi against a materialized workspace.
 func NewProvider(t *testing.T, root string) agentkit.ToolProvider {
 	t.Helper()
-	t.Setenv("OPENAPITEST_TOKEN", DefaultToken)
 	provider, err := openapi.NewOpenAPI(openapi.OpenAPIConfig{
 		EnableLocal: true,
 		Files:       []string{"api.json", "local:api.json"},
 	}, openapi.OpenAPIDeps{
-		Workspace: Workspace(root),
+		Workspace:   Workspace(root),
+		Credentials: credentialsForAPI("petstore"),
 	})
 	if err != nil {
 		t.Fatalf("new openapi provider: %v", err)

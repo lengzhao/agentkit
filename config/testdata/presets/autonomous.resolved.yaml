@@ -491,6 +491,7 @@ tool.fs-workspace.default:
     config:
         maxBytes: 1048576
         root: .
+        unrestricted: true
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
@@ -504,6 +505,7 @@ tool.fs-workspace.readonly.default:
             - grep
             - find
             - ls
+        unrestricted: true
     deps:
         workspace: workspace.default
     use: tool/fs-workspace

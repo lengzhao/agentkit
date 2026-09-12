@@ -83,7 +83,7 @@ func TestPresetChatAPIOverlayBuilds(t *testing.T) {
 }
 
 func TestPresetCodingSmokeOverlayBuilds(t *testing.T) {
-	t.Parallel()
+	t.Setenv("OPENAI_API_KEY", "sk-test")
 	doc, err := config.LoadDocument(config.DefaultBasePath, "presets/coding-smoke.yaml")
 	if err != nil {
 		t.Fatal(err)

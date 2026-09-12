@@ -22,71 +22,68 @@ import (
 const (
 	defaultEnvFile       = "local:.env"
 	defaultEncryptedFile = "global:secrets.enc.json"
-	// EncryptedFileDisabled turns off encrypted storage (tests or legacy-only .env).
 	EncryptedFileDisabled = "-"
 )
 
 type Config struct {
-	// Prefix is prepended to every lookup key.
-	Prefix string `json:"prefix"`
-	// Env holds in-memory KEY=VALUE pairs from config, used after process environment misses.
-	Env map[string]string `json:"env"`
-	// Files are dotenv-style KEY=VALUE files used after context, process environment, and config env misses.
-	Files []string `json:"files"`
-	// EncryptedFile is the workspace-relative AES-GCM secrets file (default global:secrets.enc.json).
-	// Set to EncryptedFileDisabled ("-") to disable.
-	EncryptedFile string `json:"encryptedFile"`
+	Prefix        string            `json:"prefix"`
+	Env           map[string]string `json:"env"`
+	Files         []string          `json:"files"`
+	EncryptedFile string            `json:"encryptedFile"`
+	// ProcessEnv enables os.Getenv lookup (static default true; integrations default false).
+	ProcessEnv *bool `json:"processEnv,omitempty"`
+	// ManifestFiles lists workspace paths scanned for per-scope env: allowlists (integrations only).
+	ManifestFiles []string `json:"manifestFiles,omitempty"`
 }
 
 type EnvDeps struct {
 	Workspace workspace.Service `json:"workspace,omitempty"`
 }
 
-type Store struct {
+type envStore struct {
 	prefix          string
 	configEnv       map[string]string
 	masterKeyConfig string
 	filePaths       []string
 	encryptedRel    string
 	workspace       workspace.Service
+	processEnv      bool
 	mu              sync.RWMutex
 	files           map[string]string
 	encrypted       map[string]string
 }
 
 func init() {
-	pluginkit.Register("credentials/env", New)
+	pluginkit.Register("credentials/env", NewStatic)
+	pluginkit.Register("credentials/integrations", NewIntegrations)
 	config.RegisterGraphEnvSource(EnvGraphSource)
 }
 
-// New registers credentials/env: Resolve secrets from environment variables.
-//
-// Best practices:
-//   - Reference a secret as env:NAME from the consumer's apiKeyRef rather than inlining it in YAML.
-//   - Use config.env for inline secrets in YAML; process environment still takes precedence.
-//   - Use files for local development .env files; config env takes precedence over files and encrypted storage.
-//   - Set AGENTKIT_SECRETS_KEY in config.env (or process env) to unlock global:secrets.enc.json.
-//   - Dotenv and encrypted files are loaded into memory; run "/env -u" to reload from disk.
-func New(cfg Config, deps EnvDeps) (credentials.Store, error) {
+func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv bool) (*envStore, error) {
 	encRel := strings.TrimSpace(cfg.EncryptedFile)
 	if encRel == "" {
-		encRel = defaultEncryptedFile
+		encRel = defaultEnc
+	}
+	processEnv := defaultProcessEnv
+	if cfg.ProcessEnv != nil {
+		processEnv = *cfg.ProcessEnv
 	}
 	files := cfg.Files
-	if len(files) == 0 && encRel == EncryptedFileDisabled {
+	if len(files) == 0 && encRel == EncryptedFileDisabled && processEnv {
 		files = []string{defaultEnvFile}
 	}
 	masterKeyConfig := ""
 	if cfg.Env != nil {
 		masterKeyConfig = strings.TrimSpace(cfg.Env[rtcredentials.SecretsMasterKeyEnv])
 	}
-	s := &Store{
+	s := &envStore{
 		prefix:          cfg.Prefix,
 		configEnv:       normalizeConfigEnv(cfg.Env, cfg.Prefix),
 		masterKeyConfig: masterKeyConfig,
 		filePaths:       append([]string(nil), files...),
 		encryptedRel:    encRel,
 		workspace:       deps.Workspace,
+		processEnv:      processEnv,
 		files:           make(map[string]string),
 		encrypted:       make(map[string]string),
 	}
@@ -94,15 +91,18 @@ func New(cfg Config, deps EnvDeps) (credentials.Store, error) {
 	return s, nil
 }
 
-func (s *Store) Resolve(ctx context.Context, ref string) (credentials.Secret, error) {
+func (s *envStore) lookupValue(ctx context.Context, ref string) (string, error) {
 	if secret, ok := rtcredentials.SecretFromContext(ctx, ref); ok {
-		return secret, nil
+		return secret.Value, nil
 	}
 	key := rtcredentials.EnvKey(ref)
 	if s.prefix != "" {
 		key = s.prefix + key
 	}
-	value := os.Getenv(key)
+	var value string
+	if s.processEnv {
+		value = os.Getenv(key)
+	}
 	if value == "" {
 		value = s.configEnv[key]
 	}
@@ -115,12 +115,12 @@ func (s *Store) Resolve(ctx context.Context, ref string) (credentials.Secret, er
 		s.mu.RUnlock()
 	}
 	if value == "" {
-		return credentials.Secret{}, fmt.Errorf("credential %q not found in environment, config env, or env files", key)
+		return "", fmt.Errorf("credential %q not found", key)
 	}
-	return credentials.Secret{Ref: ref, Value: value}, nil
+	return value, nil
 }
 
-func (s *Store) resolvePaths(ctx context.Context) ([]string, error) {
+func (s *envStore) resolvePaths(ctx context.Context) ([]string, error) {
 	var out []string
 	for _, rel := range s.filePaths {
 		rel = strings.TrimSpace(rel)
@@ -140,7 +140,7 @@ func (s *Store) resolvePaths(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-func (s *Store) writeTarget(ctx context.Context) (string, error) {
+func (s *envStore) writeTarget(ctx context.Context) (string, error) {
 	if s.encryptedRel != "" && s.encryptedRel != EncryptedFileDisabled {
 		return s.resolveEncryptedPath(ctx)
 	}
@@ -154,7 +154,7 @@ func (s *Store) writeTarget(ctx context.Context) (string, error) {
 	return rel, nil
 }
 
-func (s *Store) resolveEncryptedPath(ctx context.Context) (string, error) {
+func (s *envStore) resolveEncryptedPath(ctx context.Context) (string, error) {
 	rel := strings.TrimSpace(s.encryptedRel)
 	if rel == "" || rel == EncryptedFileDisabled {
 		return "", fmt.Errorf("encrypted secrets file is not configured")
@@ -165,7 +165,7 @@ func (s *Store) resolveEncryptedPath(ctx context.Context) (string, error) {
 	return rel, nil
 }
 
-func (s *Store) masterKey() ([]byte, error) {
+func (s *envStore) masterKey() ([]byte, error) {
 	raw := strings.TrimSpace(os.Getenv(rtcredentials.SecretsMasterKeyEnv))
 	if raw == "" {
 		raw = s.masterKeyConfig
@@ -173,7 +173,7 @@ func (s *Store) masterKey() ([]byte, error) {
 	return rtcredentials.ParseSecretsMasterKey(raw)
 }
 
-func (s *Store) reload(ctx context.Context) (int, error) {
+func (s *envStore) reload(ctx context.Context) (int, error) {
 	encCount, err := s.reloadEncrypted(ctx)
 	if err != nil {
 		return 0, err
@@ -201,7 +201,7 @@ func (s *Store) reload(ctx context.Context) (int, error) {
 	return encCount + len(values), nil
 }
 
-func (s *Store) reloadEncrypted(ctx context.Context) (int, error) {
+func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if s.encryptedRel == "" || s.encryptedRel == EncryptedFileDisabled {
 		s.mu.Lock()
 		s.encrypted = make(map[string]string)
@@ -242,7 +242,7 @@ func (s *Store) reloadEncrypted(ctx context.Context) (int, error) {
 	return len(values), nil
 }
 
-func (s *Store) addPairs(ctx context.Context, pairs []string) (string, int, error) {
+func (s *envStore) addPairs(ctx context.Context, pairs []string) (string, int, error) {
 	updates, refs, err := parseEnvUpdates(pairs, s.prefix)
 	if err != nil {
 		return "", 0, err
@@ -284,13 +284,13 @@ func (s *Store) addPairs(ctx context.Context, pairs []string) (string, int, erro
 		return "", 0, err
 	}
 	for _, ref := range refs {
-		secret, err := s.Resolve(ctx, ref)
+		value, err := s.lookupValue(ctx, ref)
 		if err != nil {
 			_ = configfile.Restore(target, prevBytes, 0o600)
 			_, _ = s.reload(ctx)
 			return "", 0, fmt.Errorf("verify %s: %w", ref, err)
 		}
-		if secret.Value == "" {
+		if value == "" {
 			_ = configfile.Restore(target, prevBytes, 0o600)
 			_, _ = s.reload(ctx)
 			return "", 0, fmt.Errorf("verify %s: value is empty", ref)
@@ -299,30 +299,7 @@ func (s *Store) addPairs(ctx context.Context, pairs []string) (string, int, erro
 	return target, len(refs), nil
 }
 
-func (s *Store) statusWithHelp() string {
-	var b strings.Builder
-	b.WriteString(s.formatStatus())
-	b.WriteString("\n\n")
-	b.WriteString(envHelp())
-	return b.String()
-}
-
-func normalizeConfigEnv(env map[string]string, prefix string) map[string]string {
-	if len(env) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(env))
-	for key, value := range env {
-		storageKey := key
-		if prefix != "" {
-			storageKey = prefix + key
-		}
-		out[storageKey] = value
-	}
-	return out
-}
-
-func (s *Store) formatStatus() string {
+func (s *envStore) formatStatus() string {
 	s.mu.RLock()
 	fileKeys := len(s.files)
 	encKeys := len(s.encrypted)
@@ -358,60 +335,33 @@ func (s *Store) formatStatus() string {
 	return b.String()
 }
 
-func envHelp() string {
-	return `Usage:
-  /env                      show status and help
-  /env add KEY=VALUE [...]  append or update secrets.enc.json, reload, and verify
-  /env -u                   reload secrets and dotenv files from disk into memory
-
-Notes:
-  Lookup priority: context secret > process env > config env > encrypted file > dotenv file
-  config env comes from credentials config.env in YAML (include AGENTKIT_SECRETS_KEY for encryption)
-  add writes to global:secrets.enc.json by default (AES-256-GCM)
-  Reference secrets as env:NAME in apiKeyRef / mcp.json / api.json`
-}
-
-func (s *Store) Commands() []agentkit.Command {
-	return []agentkit.Command{&envSyncCommand{store: s}}
-}
-
-type envSyncCommand struct {
-	store *Store
-}
-
-func (c *envSyncCommand) Name() string  { return "env" }
-func (c *envSyncCommand) Alias() string { return "" }
-func (c *envSyncCommand) Description() string {
-	return "Show env cache, write KEY=VALUE pairs to .env, or reload with -u"
-}
-
-func (c *envSyncCommand) SanitizeArgsForLog(args string) string {
-	return redactEnvAddArgsForLog(args)
-}
-
-func (c *envSyncCommand) CommandExec(ctx context.Context, args string) (string, error) {
-	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
-	switch {
-	case update:
-		count, err := c.store.reload(ctx)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("env: reloaded %d key(s) from disk", count), nil
-	case len(rest) >= 1 && rest[0] == "add":
-		if len(rest) < 2 {
-			return "", fmt.Errorf("usage: /env add KEY=VALUE [KEY=VALUE ...]")
-		}
-		path, count, err := c.store.addPairs(ctx, rest[1:])
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("env: wrote %d key(s) to %s, verified", count, path), nil
-	case len(rest) == 0:
-		return c.store.statusWithHelp(), nil
-	default:
-		return "", fmt.Errorf("usage: /env | /env add KEY=VALUE ... | /env -u")
+func normalizeConfigEnv(env map[string]string, prefix string) map[string]string {
+	if len(env) == 0 {
+		return nil
 	}
+	out := make(map[string]string, len(env))
+	for key, value := range env {
+		storageKey := key
+		if prefix != "" {
+			storageKey = prefix + key
+		}
+		out[storageKey] = value
+	}
+	return out
+}
+
+var _ credentials.Store = (*staticStore)(nil)
+
+func peelUpdateFlag(args []string) (update bool, rest []string) {
+	for _, arg := range args {
+		switch arg {
+		case "-u", "--update":
+			update = true
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return update, rest
 }
 
 func redactEnvAddArgsForLog(args string) string {
@@ -436,18 +386,6 @@ func redactEnvAddArgsForLog(args string) string {
 	return strings.Join(out, " ")
 }
 
-func peelUpdateFlag(args []string) (update bool, rest []string) {
-	for _, arg := range args {
-		switch arg {
-		case "-u", "--update":
-			update = true
-		default:
-			rest = append(rest, arg)
-		}
-	}
-	return update, rest
-}
-
 func parseEnvPair(pair string) (string, string, error) {
 	key, rawValue, ok := strings.Cut(pair, "=")
 	if !ok {
@@ -463,11 +401,6 @@ func parseEnvPair(pair string) (string, string, error) {
 	}
 	return key, value, nil
 }
-
-var (
-	_ agentkit.CommandProvider    = (*Store)(nil)
-	_ agentkit.CommandLogSanitizer = (*envSyncCommand)(nil)
-)
 
 func parseEnvFile(path string, data []byte, values map[string]string) error {
 	scanner := bufio.NewScanner(bytes.NewReader(data))

@@ -32,7 +32,7 @@ type OpenAPIConfig struct {
 }
 
 type OpenAPIDeps struct {
-	Workspace   workspace.Service `json:"workspace"`
+	Workspace   workspace.Service       `json:"workspace"`
 	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 

@@ -17,7 +17,7 @@ func resolveToken(ctx context.Context, inline, ref string, store credentials.Sto
 	if store == nil {
 		return "", fmt.Errorf("platform/slack %s requires credentials dependency", field)
 	}
-	secret, err := store.Resolve(ctx, ref)
+	secret, err := store.Resolve(ctx, credentials.GlobalScope, ref)
 	if err != nil {
 		return "", fmt.Errorf("platform/slack resolve %s %q: %w", field, ref, err)
 	}

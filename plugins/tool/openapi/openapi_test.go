@@ -12,11 +12,36 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
+
+type mapScopedStore struct {
+	scopes map[string]map[string]string
+}
+
+func (m mapScopedStore) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
+	key := rtcredentials.EnvKey(ref)
+	if vals, ok := m.scopes[scope]; ok {
+		if v, ok := vals[key]; ok && v != "" {
+			return credentials.Secret{Ref: ref, Value: v}, nil
+		}
+	}
+	return credentials.Secret{}, fmt.Errorf("credential %q not found for scope %q", ref, scope)
+}
+
+func scopedCredsForAPI(apiName string, env map[string]string) credentials.Store {
+	if len(env) == 0 {
+		return nil
+	}
+	return mapScopedStore{scopes: map[string]map[string]string{
+		CredentialScope(apiName): env,
+	}}
+}
 
 func localOpenAPIConfig() OpenAPIConfig {
 	return OpenAPIConfig{
@@ -26,7 +51,7 @@ func localOpenAPIConfig() OpenAPIConfig {
 }
 
 func TestOpenAPIToolEndToEnd(t *testing.T) {
-	t.Setenv("TESTAPI_TOKEN", "s3cr3t")
+	creds := scopedCredsForAPI("petstore", map[string]string{"TESTAPI_TOKEN": "s3cr3t"})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -95,7 +120,7 @@ func TestOpenAPIToolEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, Credentials: creds})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

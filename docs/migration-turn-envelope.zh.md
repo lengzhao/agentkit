@@ -28,7 +28,7 @@
 | chathistory | `Provider`、`Router` | `RouterFromPlatform` 适配器 |
 | compaction | `Service`、`Request`、`EventData`、`Preparation` 等 | `ApplyAll`、`Prepare`、`PruneToolResults`、`SerializeConversation`… |
 | workspace | `Service`、`ScopeGlobal`/`ScopeLocal` | `ParseScoped`、`Resolve`、`ResolveRel`、`Static`… |
-| credentials | `Store`、`Secret` | `WithSecrets`、`SecretFromContext`、`EnvKey` |
+| credentials | `Store`（`Resolve(ctx, scope, ref)`）、`Secret`、`GlobalScope` | `WithSecrets`、`SecretFromContext`、`EnvKey` |
 | permission | `Broker`、`Request`、`Reply`、DTO | `MatchReply`、`MarshalReply`、`EffectiveTimeout`、`CapabilityFrom`… |
 | schedule | `Registry`、`Runtime`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`、`JobKind`… |
 | skill | `Registry`、`Descriptor`、`Content` | `RenderLoaded`、`SanitizeRelativePath`、`ReadFile`、`RunScript` |

@@ -165,7 +165,7 @@ func resolveCredential(ctx context.Context, store credentials.Store, ref, fallba
 	if ref == "" {
 		ref = "env:" + fallbackEnv
 	}
-	secret, err := store.Resolve(ctx, ref)
+	secret, err := store.Resolve(ctx, credentials.GlobalScope, ref)
 	if err != nil {
 		return "", fmt.Errorf("telemetry/langfuse credential %q: %w", ref, err)
 	}

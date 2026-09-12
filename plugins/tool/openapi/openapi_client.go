@@ -8,12 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 const (
@@ -58,8 +56,13 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 	}
 
 	headers := http.Header{}
+	scope := CredentialScope(api.Name)
 	for k, v := range api.Headers {
-		headers.Set(k, v)
+		resolved, err := resolveSecret(ctx, scope, v, p.credentials)
+		if err != nil {
+			return "", fmt.Errorf("operation %q: header %q: %w", op.OperationID, k, err)
+		}
+		headers.Set(k, resolved)
 	}
 	for _, param := range op.Parameters {
 		if param.In != "header" {
@@ -81,7 +84,7 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 		return "", fmt.Errorf("operation %q: path %q has unresolved placeholders", op.OperationID, op.Path)
 	}
 
-	if err := applyAuth(ctx, api.Auth, p.credentials, headers, query); err != nil {
+	if err := applyAuth(ctx, scope, api.Auth, p.credentials, headers, query); err != nil {
 		return "", fmt.Errorf("operation %q: %w", op.OperationID, err)
 	}
 
@@ -156,13 +159,13 @@ func substitutePathParams(op operationConfig, args map[string]any) (string, erro
 	return path, nil
 }
 
-func applyAuth(ctx context.Context, auth *authConfig, creds credentials.Store, headers http.Header, query url.Values) error {
+func applyAuth(ctx context.Context, scope string, auth *authConfig, creds credentials.Store, headers http.Header, query url.Values) error {
 	if auth == nil {
 		return nil
 	}
 	switch strings.ToLower(auth.Type) {
 	case "bearer":
-		token, err := resolveSecret(ctx, auth.Token, creds)
+		token, err := resolveSecret(ctx, scope, auth.Token, creds)
 		if err != nil {
 			return fmt.Errorf("auth token: %w", err)
 		}
@@ -171,7 +174,7 @@ func applyAuth(ctx context.Context, auth *authConfig, creds credentials.Store, h
 		if auth.Name == "" {
 			return fmt.Errorf("auth type header needs name")
 		}
-		value, err := resolveSecret(ctx, auth.Value, creds)
+		value, err := resolveSecret(ctx, scope, auth.Value, creds)
 		if err != nil {
 			return fmt.Errorf("auth value: %w", err)
 		}
@@ -180,13 +183,13 @@ func applyAuth(ctx context.Context, auth *authConfig, creds credentials.Store, h
 		if auth.Name == "" {
 			return fmt.Errorf("auth type query needs name")
 		}
-		value, err := resolveSecret(ctx, auth.Value, creds)
+		value, err := resolveSecret(ctx, scope, auth.Value, creds)
 		if err != nil {
 			return fmt.Errorf("auth value: %w", err)
 		}
 		query.Set(auth.Name, value)
 	case "basic":
-		password, err := resolveSecret(ctx, auth.Password, creds)
+		password, err := resolveSecret(ctx, scope, auth.Password, creds)
 		if err != nil {
 			return fmt.Errorf("auth password: %w", err)
 		}
@@ -200,24 +203,19 @@ func applyAuth(ctx context.Context, auth *authConfig, creds credentials.Store, h
 	return nil
 }
 
-// resolveSecret mirrors tool/mcp's env resolution: values prefixed "env:" go
-// through credentials first, falling back to the process environment.
-func resolveSecret(ctx context.Context, value string, creds credentials.Store) (string, error) {
+func resolveSecret(ctx context.Context, scope string, value string, creds credentials.Store) (string, error) {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, "env:") {
 		return value, nil
 	}
-	if creds != nil {
-		secret, err := creds.Resolve(ctx, value)
-		if err == nil {
-			return secret.Value, nil
-		}
+	if creds == nil {
+		return "", fmt.Errorf("credential %q requires credentials dependency", value)
 	}
-	key := rtcredentials.EnvKey(value)
-	if v := os.Getenv(key); v != "" {
-		return v, nil
+	secret, err := creds.Resolve(ctx, scope, value)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("credential %q not found", value)
+	return secret.Value, nil
 }
 
 func decodeArguments(input json.RawMessage) (map[string]any, error) {

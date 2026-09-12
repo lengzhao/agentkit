@@ -2,19 +2,38 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+type stubScopedCredentials struct {
+	byScope map[string]map[string]string
+}
+
+func (s stubScopedCredentials) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
+	key := rtcredentials.EnvKey(ref)
+	if vals, ok := s.byScope[scope]; ok {
+		if v, ok := vals[key]; ok {
+			return credentials.Secret{Ref: ref, Value: v}, nil
+		}
+	}
+	return credentials.Secret{}, fmt.Errorf("not found")
+}
+
 func TestResolveEnvValueURL(t *testing.T) {
 	const key = "AGENTKIT_MCP_URL_TEST"
-	t.Setenv(key, "https://mcp.example.com/mcp")
+	creds := stubScopedCredentials{byScope: map[string]map[string]string{
+		"remote": {key: "https://mcp.example.com/mcp"},
+	}}
 
-	got, err := resolveEnvValue(context.Background(), "env:"+key, nil)
+	got, err := resolveEnvValue(context.Background(), "remote", "env:"+key, creds)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -25,12 +44,15 @@ func TestResolveEnvValueURL(t *testing.T) {
 
 func TestResolveStringMapHeaders(t *testing.T) {
 	const key = "AGENTKIT_MCP_API_KEY_TEST"
-	t.Setenv(key, "secret")
 
-	got, err := resolveStringMap(context.Background(), map[string]string{
+	creds := stubScopedCredentials{byScope: map[string]map[string]string{
+		"hub": {key: "secret"},
+	}}
+
+	got, err := resolveStringMap(context.Background(), "hub", map[string]string{
 		"X-agenthub-apikey": "env:" + key,
 		"Accept":            "application/json",
-	}, nil)
+	}, creds)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -126,7 +148,7 @@ func TestResolveEnvValueMissingCredential(t *testing.T) {
 	t.Parallel()
 
 	missing := "AGENTKIT_MCP_MISSING_" + os.Getenv("USER")
-	_, err := resolveEnvValue(context.Background(), "env:"+missing, nil)
+	_, err := resolveEnvValue(context.Background(), "missing", "env:"+missing, nil)
 	if err == nil {
 		t.Fatal("expected error for missing credential")
 	}

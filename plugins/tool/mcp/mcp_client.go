@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/session"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -183,7 +181,8 @@ func (p *clientPool) evictIdleLocked(now time.Time) {
 }
 
 func connectServer(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {
-	env, err := resolveEnv(ctx, server.Env, creds)
+	scope := server.Name
+	env, err := resolveEnv(ctx, scope, server.Env, creds)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", server.Name, err)
 	}
@@ -195,11 +194,11 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	var client *mcpclient.Client
 	switch {
 	case server.URL != "":
-		url, err := resolveEnvValue(ctx, server.URL, creds)
+		url, err := resolveEnvValue(ctx, scope, server.URL, creds)
 		if err != nil {
 			return nil, fmt.Errorf("mcp server %q url: %w", server.Name, err)
 		}
-		headers, err := resolveStringMap(ctx, server.Headers, creds)
+		headers, err := resolveStringMap(ctx, scope, server.Headers, creds)
 		if err != nil {
 			return nil, fmt.Errorf("mcp server %q headers: %w", server.Name, err)
 		}
@@ -252,7 +251,7 @@ func initializeClient(ctx context.Context, client *mcpclient.Client) error {
 	return err
 }
 
-func resolveEnv(ctx context.Context, env map[string]string, creds credentials.Store) ([]string, error) {
+func resolveEnv(ctx context.Context, scope string, env map[string]string, creds credentials.Store) ([]string, error) {
 	if len(env) == 0 {
 		return nil, nil
 	}
@@ -262,7 +261,7 @@ func resolveEnv(ctx context.Context, env map[string]string, creds credentials.St
 		if key == "" {
 			continue
 		}
-		resolved, err := resolveEnvValue(ctx, value, creds)
+		resolved, err := resolveEnvValue(ctx, scope, value, creds)
 		if err != nil {
 			return nil, fmt.Errorf("env %s: %w", key, err)
 		}
@@ -271,25 +270,22 @@ func resolveEnv(ctx context.Context, env map[string]string, creds credentials.St
 	return out, nil
 }
 
-func resolveEnvValue(ctx context.Context, value string, creds credentials.Store) (string, error) {
+func resolveEnvValue(ctx context.Context, scope string, value string, creds credentials.Store) (string, error) {
 	value = strings.TrimSpace(value)
 	if strings.HasPrefix(value, "env:") {
-		if creds != nil {
-			secret, err := creds.Resolve(ctx, value)
-			if err == nil {
-				return secret.Value, nil
-			}
+		if creds == nil {
+			return "", fmt.Errorf("credential %q requires credentials dependency", value)
 		}
-		key := rtcredentials.EnvKey(value)
-		if v := os.Getenv(key); v != "" {
-			return v, nil
+		secret, err := creds.Resolve(ctx, scope, value)
+		if err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf("credential %q not found", value)
+		return secret.Value, nil
 	}
 	return value, nil
 }
 
-func resolveStringMap(ctx context.Context, values map[string]string, creds credentials.Store) (map[string]string, error) {
+func resolveStringMap(ctx context.Context, scope string, values map[string]string, creds credentials.Store) (map[string]string, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -299,7 +295,7 @@ func resolveStringMap(ctx context.Context, values map[string]string, creds crede
 		if key == "" {
 			continue
 		}
-		resolved, err := resolveEnvValue(ctx, value, creds)
+		resolved, err := resolveEnvValue(ctx, scope, value, creds)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", key, err)
 		}

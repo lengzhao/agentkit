@@ -139,7 +139,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 	}
 
 	run := &turnRun{budget: newRunBudget(a.budget, a.now)}
-	if err := a.emitLifecycle(ctx, input.Emit, sessionID, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
+	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
 		return err
 	}
 	if err := session.AppendTurnStart(ctx, sess, a.id); err != nil {
@@ -158,7 +158,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			endData.StopReason = runErr.Error()
 		}
 		_ = session.AppendTurnEnd(endCtx, sess, a.id, run.completed)
-		if err := a.emitLifecycle(endCtx, input.Emit, sessionID, agentkit.EventTurnEnd, endData); err != nil {
+		if err := a.emitLifecycle(endCtx, input.Emit, agentkit.EventTurnEnd, endData); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
 	}()
@@ -286,7 +286,7 @@ func (a *Runtime) runSegment(
 				endStepOnce()
 				return "", err
 			}
-			if err := a.emitLifecycle(ctx, emit, sess.ID(), agentkit.EventToolResult, stored); err != nil {
+			if err := a.emitLifecycle(ctx, emit, agentkit.EventToolResult, stored); err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
@@ -648,7 +648,7 @@ func cancelReasonFromError(err error) (string, bool) {
 	return "", false
 }
 
-func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID, typ agentkit.EventType, data any) error {
+func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, typ agentkit.EventType, data any) error {
 	if emit == nil {
 		return nil
 	}

@@ -27,7 +27,7 @@ func TestOpenAPICredentialWarningOnReload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -51,7 +51,6 @@ func TestOpenAPICredentialWarningOnReload(t *testing.T) {
 func TestOpenAPICredentialWarningAbsentWhenEnvSet(t *testing.T) {
 	dir := t.TempDir()
 	const key = "OPENAPI_WARN_PRESENT_TOKEN"
-	t.Setenv(key, "secret")
 	apiJSON := `{
   "apis": {
     "petstore": {
@@ -65,7 +64,10 @@ func TestOpenAPICredentialWarningAbsentWhenEnvSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{
+		Workspace:   &testWorkspace{root: dir},
+		Credentials: scopedCredsForAPI("petstore", map[string]string{key: "secret"}),
+	})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

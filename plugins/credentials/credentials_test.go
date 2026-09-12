@@ -2,18 +2,20 @@ package credentials
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
-	store, err := New(Config{}, EnvDeps{})
+	store, err := NewStatic(Config{}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +23,7 @@ func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 	ctx := rtcredentials.WithSecrets(context.Background(), map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-ctx",
 	})
-	secret, err := store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(ctx, credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,12 +34,12 @@ func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 
 func TestResolveFallsBackToEnvironment(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
-	store, err := New(Config{}, EnvDeps{})
+	store, err := NewStatic(Config{}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,14 +49,14 @@ func TestResolveFallsBackToEnvironment(t *testing.T) {
 }
 
 func TestResolveFallsBackToConfigEnv(t *testing.T) {
-	store, err := New(Config{Env: map[string]string{
+	store, err := NewStatic(Config{Env: map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-config",
 	}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +66,7 @@ func TestResolveFallsBackToConfigEnv(t *testing.T) {
 }
 
 func TestResolveConfigEnvUsesPrefix(t *testing.T) {
-	store, err := New(Config{
+	store, err := NewStatic(Config{
 		Prefix: "PREFIX_",
 		Env: map[string]string{
 			"AGENTKIT_TEST_SECRET": "from-config",
@@ -74,7 +76,7 @@ func TestResolveConfigEnvUsesPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,14 +87,14 @@ func TestResolveConfigEnvUsesPrefix(t *testing.T) {
 
 func TestResolveEnvironmentOverridesConfigEnv(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
-	store, err := New(Config{Env: map[string]string{
+	store, err := NewStatic(Config{Env: map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-config",
 	}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +109,7 @@ func TestResolveConfigEnvOverridesEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{
+	store, err := NewStatic(Config{
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         []string{path},
 		Env: map[string]string{
@@ -118,7 +120,7 @@ func TestResolveConfigEnvOverridesEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,12 +135,12 @@ func TestResolveFallsBackToEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
+	store, err := NewStatic(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,12 +156,12 @@ func TestResolveEnvironmentOverridesEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
+	store, err := NewStatic(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,12 +172,12 @@ func TestResolveEnvironmentOverridesEnvFile(t *testing.T) {
 
 func TestResolveUsesPrefixAfterContextMiss(t *testing.T) {
 	t.Setenv("PREFIX_AGENTKIT_TEST_SECRET", "prefixed")
-	store, err := New(Config{Prefix: "PREFIX_"}, EnvDeps{})
+	store, err := NewStatic(Config{Prefix: "PREFIX_"}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,14 +189,85 @@ func TestResolveUsesPrefixAfterContextMiss(t *testing.T) {
 func TestResolveMissing(t *testing.T) {
 	t.Parallel()
 
-	store, err := New(Config{}, EnvDeps{})
+	store, err := NewStatic(Config{}, EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = store.Resolve(context.Background(), "env:DOES_NOT_EXIST_"+os.Getenv("USER"))
+	_, err = store.Resolve(context.Background(), credentials.GlobalScope, "env:DOES_NOT_EXIST_"+os.Getenv("USER"))
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func integrationTestStore(t *testing.T, dir string, envFile string, secretKey string) credentials.Store {
+	t.Helper()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	body := fmt.Sprintf(`{"mcpServers":{"tool":{"command":"echo","env":{"K":"env:%s"}}}}`, secretKey)
+	if err := os.WriteFile(manifestPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files := []string(nil)
+	if envFile != "" {
+		files = []string{envFile}
+	}
+	store, err := NewIntegrations(Config{
+		EncryptedFile: EncryptedFileDisabled,
+		Files:         files,
+		ManifestFiles: []string{manifestPath},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+const integrationTestScope = "tool"
+
+func TestIntegrationsManifestLazyRefresh(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	envPath := filepath.Join(dir, ".env")
+	writeManifest := func(secretKey string) {
+		body := fmt.Sprintf(`{"mcpServers":{"tool":{"command":"echo","env":{"K":"env:%s"}}}}`, secretKey)
+		if err := os.WriteFile(manifestPath, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeManifest("AGENTKIT_MANIFEST_A")
+	if err := os.WriteFile(envPath, []byte("AGENTKIT_MANIFEST_A=one\nAGENTKIT_MANIFEST_B=two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewIntegrations(Config{
+		EncryptedFile: EncryptedFileDisabled,
+		Files:         []string{envPath},
+		ManifestFiles: []string{manifestPath},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	secret, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_MANIFEST_A")
+	if err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	if secret.Value != "one" {
+		t.Fatalf("value=%q, want one", secret.Value)
+	}
+	if _, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_MANIFEST_B"); err == nil {
+		t.Fatal("expected undeclared key to be rejected before manifest update")
+	}
+
+	writeManifest("AGENTKIT_MANIFEST_B")
+	secret, err = store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_MANIFEST_B")
+	if err != nil {
+		t.Fatalf("after manifest change: %v", err)
+	}
+	if secret.Value != "two" {
+		t.Fatalf("value=%q, want two", secret.Value)
 	}
 }
 
@@ -206,13 +279,10 @@ func TestEnvReloadCommand(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=before\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := integrationTestStore(t, dir, path, "AGENTKIT_TEST_SECRET")
 	ctx := context.Background()
 
-	secret, err := store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +293,7 @@ func TestEnvReloadCommand(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=after\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	secret, err = store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	secret, err = store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +313,7 @@ func TestEnvReloadCommand(t *testing.T) {
 		t.Fatalf("sync command: %v", err)
 	}
 
-	secret, err = store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	secret, err = store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +324,7 @@ func TestEnvReloadCommand(t *testing.T) {
 
 func TestEnvCommandSanitizeArgsForLog(t *testing.T) {
 	t.Parallel()
-	cmd := &envSyncCommand{}
+	cmd := &integrationEnvCommand{}
 	got := cmd.SanitizeArgsForLog("add FOO=bar BAZ=secret")
 	want := "add FOO=" + agentkit.SlashLogRedacted + " BAZ=" + agentkit.SlashLogRedacted
 	if got != want {
@@ -273,10 +343,7 @@ func TestEnvAddCommand(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := integrationTestStore(t, dir, path, "AGENTKIT_TEST_SECRET")
 	ctx := context.Background()
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
@@ -295,7 +362,7 @@ func TestEnvAddCommand(t *testing.T) {
 	if !strings.Contains(string(data), "AGENTKIT_TEST_SECRET=injected") {
 		t.Fatalf(".env=%q, want injected key", data)
 	}
-	secret, err := store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,20 +382,17 @@ func TestEnvAddCommand(t *testing.T) {
 func TestEnvAddRejectsOnVerifyFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	store, err := New(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := integrationTestStore(t, dir, path, "AGENTKIT_EMPTY_VERIFY_TEST")
 	ctx := context.Background()
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	_, err = cmd.CommandExec(ctx, "add AGENTKIT_EMPTY_VERIFY_TEST=")
+	_, err := cmd.CommandExec(ctx, "add AGENTKIT_EMPTY_VERIFY_TEST=")
 	if err == nil {
 		t.Fatal("expected error for empty value")
 	}
 
-	_, err = store.Resolve(ctx, "env:AGENTKIT_EMPTY_VERIFY_TEST")
+	_, err = store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_EMPTY_VERIFY_TEST")
 	if err == nil {
 		t.Fatal("expected key to be rolled back")
 	}
@@ -346,8 +410,13 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secrets.enc.json")
 	const secretsPass = "agentkit-test-secrets-passphrase"
-	store, err := New(Config{
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{"tool":{"command":"echo","env":{"K":"env:AGENTKIT_TEST_SECRET"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
+		ManifestFiles: []string{manifestPath},
 		Env: map[string]string{
 			rtcredentials.SecretsMasterKeyEnv: secretsPass,
 		},
@@ -373,7 +442,7 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	if strings.Contains(string(data), "injected") {
 		t.Fatalf("secrets file must not contain plaintext: %s", data)
 	}
-	secret, err := store.Resolve(ctx, "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +472,7 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 	if err := os.WriteFile(secretsPath, enc, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Config{
+	store, err := NewStatic(Config{
 		EncryptedFile: secretsPath,
 		Files:         []string{dotenv},
 		Env: map[string]string{
@@ -413,7 +482,7 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	secret, err := store.Resolve(context.Background(), "env:AGENTKIT_TEST_SECRET")
+	secret, err := store.Resolve(context.Background(), credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
 		t.Fatal(err)
 	}

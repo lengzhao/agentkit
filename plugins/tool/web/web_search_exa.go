@@ -242,7 +242,7 @@ func resolveSearchKey(apiKey, apiKeyRef, envVar string, store credentials.Store)
 	if apiKeyRef != "" {
 		if store == nil {
 			slog.Warn("web search apiKeyRef set without credentials dep", "ref", apiKeyRef)
-		} else if secret, err := store.Resolve(context.Background(), apiKeyRef); err != nil {
+		} else if secret, err := store.Resolve(context.Background(), credentials.GlobalScope, apiKeyRef); err != nil {
 			slog.Warn("web search apiKeyRef unresolved", "ref", apiKeyRef, "error", err)
 		} else if secret.Value != "" {
 			return secret.Value

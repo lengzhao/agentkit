@@ -6,15 +6,22 @@ import (
 	"github.com/lengzhao/agentkit/config"
 )
 
-const credentialsEnvUse = "credentials/env"
+const (
+	credentialsEnvUse          = "credentials/env"
+	credentialsIntegrationsUse = "credentials/integrations"
+)
 
-// EnvGraphSource exposes credentials/env config.env entries to ${env:NAME} / ${var:NAME}
+// EnvGraphSource exposes credentials config.env entries to ${env:NAME} / ${var:NAME}
 // gate probes and interpolation. It does not read config.files or build a Store.
 func EnvGraphSource(raw map[string]any) (config.EnvLookup, error) {
 	values := make(map[string]string)
 	for _, node := range raw {
 		nodeMap, ok := node.(map[string]any)
-		if !ok || instanceUse(nodeMap) != credentialsEnvUse {
+		if !ok {
+			continue
+		}
+		use := instanceUse(nodeMap)
+		if !credentialsEnvContributor(use) {
 			continue
 		}
 		configMap, _ := nodeMap["config"].(map[string]any)
@@ -31,4 +38,13 @@ func EnvGraphSource(raw map[string]any) (config.EnvLookup, error) {
 func instanceUse(node map[string]any) string {
 	use, _ := node["use"].(string)
 	return use
+}
+
+func credentialsEnvContributor(use string) bool {
+	switch use {
+	case credentialsEnvUse, credentialsIntegrationsUse:
+		return true
+	default:
+		return false
+	}
 }

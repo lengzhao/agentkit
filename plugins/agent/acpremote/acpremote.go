@@ -130,12 +130,12 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		}
 	}
 
-	if err := a.emitLifecycle(ctx, emit, sessionID, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
+	if err := a.emitLifecycle(ctx, emit, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
 		return err
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
-		_ = a.emitLifecycle(endCtx, emit, sessionID, agentkit.EventTurnEnd, session.TurnEndData{Steps: 1})
+		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, session.TurnEndData{Steps: 1})
 	}()
 
 	acpSessionID, err := a.ensureACPSessionWithAuth(ctx, emit, sessionID)
@@ -197,7 +197,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	}
 }
 
-func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID, typ agentkit.EventType, payload any) error {
+func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, typ agentkit.EventType, payload any) error {
 	return emit(ctx, agentkit.OutboundEvent{
 		AgentID: a.id,
 		Type:    typ,

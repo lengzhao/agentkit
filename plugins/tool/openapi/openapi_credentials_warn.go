@@ -43,7 +43,7 @@ func (p *openapiProvider) credentialWarningSuffix(ctx context.Context, apis []ap
 				continue
 			}
 			seen[key] = struct{}{}
-			if _, err := resolveSecret(ctx, ref, p.credentials); err != nil {
+			if _, err := resolveSecret(ctx, CredentialScope(api.Name), ref, p.credentials); err != nil {
 				missing = append(missing, pair{apiName: api.Name, ref: ref})
 			}
 		}

@@ -35,7 +35,7 @@ type MCPConfig struct {
 }
 
 type MCPDeps struct {
-	Workspace   workspace.Service `json:"workspace"`
+	Workspace   workspace.Service      `json:"workspace"`
 	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 

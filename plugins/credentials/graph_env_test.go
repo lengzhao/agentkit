@@ -10,7 +10,7 @@ func TestEnvGraphSourceReadsConfigEnv(t *testing.T) {
 	t.Parallel()
 
 	lookup, err := credentials.EnvGraphSource(map[string]any{
-		"credentials.default": map[string]any{
+		"credentials.env": map[string]any{
 			"use": "credentials/env",
 			"config": map[string]any{
 				"env": map[string]any{
