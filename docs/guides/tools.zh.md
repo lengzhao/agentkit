@@ -226,6 +226,8 @@ tools.default:
 
 已建立的 MCP 连接在**空闲**超过 `idleTimeoutSeconds`（默认 300 秒）后会被主动关闭；下次调用时自动重连。设为 `0` 可关闭空闲回收。
 
+不带参数的 **`/mcp`** 会列出已加载 server，以及各 `mcp.<server>` 在配置里声明的 `env:` 键和是否已通过 `credentials.integrations` 解析（缺省时提示 `/env add mcp.<server> KEY=<value>`）。
+
 **配置约定与维护流程**见 Skill **`mcp-manager`**（`skills/mcp-manager/SKILL.md`，经 `skill(name="mcp-manager")` 加载）。Agent 用 read/edit 改配置后，需请用户执行 `/mcp -u` 刷新动态工具。
 
 多租户场景：`global:mcp.json` 中的 server 进程内共享一条连接；`local:mcp.json` 按 `(租户键, server 名)` 分槽，见 [multi-tenant.zh.md](multi-tenant.zh.md)。
@@ -366,8 +368,8 @@ tools.default:
 
 | 命令 | 作用 |
 |---|---|
-| `/openapi` | 查看当前已加载 API 与帮助 |
-| `/openapi -u` | 重读 `api.json` 与 OpenAPI 文档，刷新动态 HTTP 工具；未解析的 `env:` 会附带 warning 与 `/env add KEY=<value>` 提示 |
+| `/openapi` | 查看当前已加载 API、各 `openapi.<api>` 下声明的 `env:` 键及是否已配置，与帮助 |
+| `/openapi -u` | 重读 `api.json` 与 OpenAPI 文档，刷新动态 HTTP 工具；未解析的 `env:` 会附带 warning 与 `/env add openapi.<api> KEY=<value>` 提示 |
 | `/openapi add [-g] <name> <json>` | 追加索引条目（`-g` 写全局；校验、写盘、失败回滚） |
 
 推荐流程：`skill(openapi-manager)` → `read`/`edit` 改文件 → 请用户 `/openapi -u`。

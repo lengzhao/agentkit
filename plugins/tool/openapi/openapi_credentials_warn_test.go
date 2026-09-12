@@ -43,8 +43,39 @@ func TestOpenAPICredentialWarningOnReload(t *testing.T) {
 	if !strings.Contains(out, "warning: missing credentials") {
 		t.Fatalf("output=%q, want credential warning", out)
 	}
-	if !strings.Contains(out, "hint: /env add "+missingKey+"=<value>") {
-		t.Fatalf("output=%q, want /env add hint", out)
+	if !strings.Contains(out, "hint: /env add openapi.petstore "+missingKey+"=<value>") {
+		t.Fatalf("output=%q, want scoped /env add hint", out)
+	}
+}
+
+func TestOpenAPIStatusListsCredentialScopes(t *testing.T) {
+	dir := t.TempDir()
+	const key = "OPENAPI_STATUS_LIST_TOKEN"
+	apiJSON := `{
+  "apis": {
+    "petstore": {
+      "baseUrl": "https://example.com",
+      "auth": {"type": "bearer", "token": "env:` + key + `"},
+      "paths": {"/ping": {"get": {"operationId": "ping"}}}
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := provider.(agentkit.CommandProvider).Commands()[0].CommandExec(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "openapi.petstore:") {
+		t.Fatalf("output=%q, want scope listing", out)
+	}
+	if !strings.Contains(out, key) {
+		t.Fatalf("output=%q, want env key", out)
 	}
 }
 

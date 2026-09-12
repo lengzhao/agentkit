@@ -242,10 +242,20 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	return len(values), nil
 }
 
-func (s *envStore) addPairs(ctx context.Context, pairs []string) (string, int, error) {
-	updates, refs, err := parseEnvUpdates(pairs, s.prefix)
-	if err != nil {
-		return "", 0, err
+type verifyRefFunc func(ctx context.Context, ref string) error
+
+func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, refs []string, verify verifyRefFunc) (string, int, error) {
+	if verify == nil {
+		verify = func(ctx context.Context, ref string) error {
+			value, err := s.lookupValue(ctx, ref)
+			if err != nil {
+				return err
+			}
+			if value == "" {
+				return fmt.Errorf("verify %s: value is empty", ref)
+			}
+			return nil
+		}
 	}
 	target, err := s.writeTarget(ctx)
 	if err != nil {
@@ -284,16 +294,10 @@ func (s *envStore) addPairs(ctx context.Context, pairs []string) (string, int, e
 		return "", 0, err
 	}
 	for _, ref := range refs {
-		value, err := s.lookupValue(ctx, ref)
-		if err != nil {
+		if err := verify(ctx, ref); err != nil {
 			_ = configfile.Restore(target, prevBytes, 0o600)
 			_, _ = s.reload(ctx)
 			return "", 0, fmt.Errorf("verify %s: %w", ref, err)
-		}
-		if value == "" {
-			_ = configfile.Restore(target, prevBytes, 0o600)
-			_, _ = s.reload(ctx)
-			return "", 0, fmt.Errorf("verify %s: value is empty", ref)
 		}
 	}
 	return target, len(refs), nil
@@ -370,7 +374,12 @@ func redactEnvAddArgsForLog(args string) string {
 		return args
 	}
 	out := []string{"add"}
-	for _, pair := range fields[1:] {
+	rest := fields[1:]
+	if len(rest) > 0 && !strings.Contains(rest[0], "=") {
+		out = append(out, rest[0])
+		rest = rest[1:]
+	}
+	for _, pair := range rest {
 		key, _, ok := strings.Cut(pair, "=")
 		if !ok {
 			out = append(out, pair)

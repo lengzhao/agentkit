@@ -266,7 +266,7 @@ func (p *openapiProvider) statusWithHelp(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return formatOpenAPIStatus(apis) + "\n\n" + openapiHelp(), nil
+	return formatOpenAPIStatus(apis) + formatOpenAPICredentialStatus(ctx, apis, p.credentials) + "\n\n" + openapiHelp(), nil
 }
 
 func formatOpenAPIStatus(apis []apiConfig) string {
@@ -284,7 +284,7 @@ func formatOpenAPIStatus(apis []apiConfig) string {
 
 func openapiHelp() string {
 	return `Usage:
-  /openapi                         show status and help
+  /openapi                         show status, env scopes/keys, and help
   /openapi add [-g] <name> <json>  write API to api.json, validate, reload, and verify
   /openapi -u                      reload api.json and referenced spec files
                                    (warns when env: auth/header refs are unset)

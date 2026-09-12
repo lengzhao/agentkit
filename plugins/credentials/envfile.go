@@ -1,7 +1,6 @@
 package credentials
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,25 +63,4 @@ func formatEnvLine(key, value string) string {
 		return key + "=" + strconv.Quote(value)
 	}
 	return key + "=" + value
-}
-
-func parseEnvUpdates(pairs []string, prefix string) (map[string]string, []string, error) {
-	updates := make(map[string]string, len(pairs))
-	refs := make([]string, 0, len(pairs))
-	for _, pair := range pairs {
-		key, value, err := parseEnvPair(pair)
-		if err != nil {
-			return nil, nil, err
-		}
-		if value == "" {
-			return nil, nil, fmt.Errorf("%s: value is required", key)
-		}
-		storageKey := key
-		if prefix != "" {
-			storageKey = prefix + key
-		}
-		updates[storageKey] = value
-		refs = append(refs, "env:"+key)
-	}
-	return updates, refs, nil
 }

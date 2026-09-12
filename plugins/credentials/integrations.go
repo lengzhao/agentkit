@@ -61,11 +61,77 @@ func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string
 	if !s.scopeAllows(scope, key) {
 		return credentials.Secret{}, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
 	}
+	if value, ok := s.lookupScopedValue(ctx, scope, ref); ok {
+		return credentials.Secret{Ref: ref, Value: value}, nil
+	}
 	value, err := s.lookupValue(ctx, ref)
 	if err != nil {
 		return credentials.Secret{}, err
 	}
 	return credentials.Secret{Ref: ref, Value: value}, nil
+}
+
+func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, ref string) (string, bool) {
+	if secret, ok := rtcredentials.SecretFromContext(ctx, ref); ok && secret.Value != "" {
+		return secret.Value, true
+	}
+	key := rtcredentials.EnvKey(ref)
+	if key == "" {
+		return "", false
+	}
+	storageKey := key
+	if s.prefix != "" {
+		storageKey = s.prefix + key
+	}
+	scoped := rtcredentials.ScopedStorageKey(scope, storageKey)
+	s.mu.RLock()
+	value := s.encrypted[scoped]
+	if value == "" {
+		value = s.files[scoped]
+	}
+	s.mu.RUnlock()
+	return value, value != ""
+}
+
+func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pairs []string) (string, int, error) {
+	scope = strings.TrimSpace(scope)
+	if err := rtcredentials.ValidateIntegrationScope(scope); err != nil {
+		return "", 0, err
+	}
+	if err := s.ensureManifestFresh(ctx); err != nil {
+		return "", 0, err
+	}
+	updates := make(map[string]string, len(pairs))
+	refs := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		key, value, err := parseEnvPair(pair)
+		if err != nil {
+			return "", 0, err
+		}
+		if value == "" {
+			return "", 0, fmt.Errorf("%s: value is required", key)
+		}
+		if !s.scopeAllows(scope, key) {
+			return "", 0, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
+		}
+		storageKey := key
+		if s.prefix != "" {
+			storageKey = s.prefix + key
+		}
+		updates[rtcredentials.ScopedStorageKey(scope, storageKey)] = value
+		refs = append(refs, "env:"+key)
+	}
+	verify := func(ctx context.Context, ref string) error {
+		secret, err := s.Resolve(ctx, scope, ref)
+		if err != nil {
+			return err
+		}
+		if secret.Value == "" {
+			return fmt.Errorf("value is empty")
+		}
+		return nil
+	}
+	return s.addUpdates(ctx, updates, refs, verify)
 }
 
 func (s *integrationStore) scopeAllows(scope string, key string) bool {
@@ -207,15 +273,16 @@ func (s *integrationStore) statusWithHelp() string {
 
 func integrationEnvHelp() string {
 	return `Usage:
-  /env                      show status and help
-  /env add KEY=VALUE [...]  append or update secrets.enc.json, reload, and verify
-  /env -u                   reload secrets, dotenv, and integration manifests
+  /env                                    show status and help
+  /env add SCOPE KEY=VALUE [KEY=VALUE ...]  write scoped secrets, reload, and verify
+  /env -u                                 reload secrets, dotenv, and integration manifests
 
 Notes:
-  Lookup priority: context secret > config env > encrypted file > dotenv file (no process env)
-  Declare env:NAME in mcp.json / api.json; Resolve(scope, ref) allows only refs listed for that entry (scope mcp.<server> or openapi.<api>)
-  Manifest allowlists refresh automatically when mcp.json / api.json change on disk
-  add writes to global:secrets.enc.json by default (AES-256-GCM)`
+  SCOPE is mcp.<server> or openapi.<api> (must match mcp.json / api.json entry names)
+  Each KEY must be declared as env:KEY in that entry's manifest
+  Scoped values are stored in secrets.enc.json (or dotenv) under SCOPE::KEY
+  Resolve lookup: context override > scoped store > config env > legacy flat keys in store
+  Manifest allowlists refresh automatically when mcp.json / api.json change on disk`
 }
 
 func (s *integrationStore) Commands() []agentkit.Command {
@@ -249,18 +316,22 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 		}
 		return fmt.Sprintf("env: reloaded %d key(s) from disk and refreshed manifests", count), nil
 	case len(rest) >= 1 && rest[0] == "add":
-		if len(rest) < 2 {
-			return "", fmt.Errorf("usage: /env add KEY=VALUE [KEY=VALUE ...]")
+		if len(rest) < 3 {
+			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE [KEY=VALUE ...] (SCOPE: mcp.<server> or openapi.<api>)")
 		}
-		path, count, err := c.store.addPairs(ctx, rest[1:])
+		scope := rest[1]
+		if strings.Contains(scope, "=") {
+			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE ...; SCOPE must be mcp.<server> or openapi.<api>")
+		}
+		path, count, err := c.store.addScopedPairs(ctx, scope, rest[2:])
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("env: wrote %d key(s) to %s, verified", count, path), nil
+		return fmt.Sprintf("env: wrote %d key(s) for scope %s to %s, verified", count, strings.TrimSpace(scope), path), nil
 	case len(rest) == 0:
 		return c.store.statusWithHelp(), nil
 	default:
-		return "", fmt.Errorf("usage: /env | /env add KEY=VALUE ... | /env -u")
+		return "", fmt.Errorf("usage: /env | /env add SCOPE KEY=VALUE ... | /env -u")
 	}
 }
 

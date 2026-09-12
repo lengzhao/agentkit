@@ -325,8 +325,8 @@ func TestEnvReloadCommand(t *testing.T) {
 func TestEnvCommandSanitizeArgsForLog(t *testing.T) {
 	t.Parallel()
 	cmd := &integrationEnvCommand{}
-	got := cmd.SanitizeArgsForLog("add FOO=bar BAZ=secret")
-	want := "add FOO=" + agentkit.SlashLogRedacted + " BAZ=" + agentkit.SlashLogRedacted
+	got := cmd.SanitizeArgsForLog("add mcp.tool FOO=bar BAZ=secret")
+	want := "add mcp.tool FOO=" + agentkit.SlashLogRedacted + " BAZ=" + agentkit.SlashLogRedacted
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -348,7 +348,7 @@ func TestEnvAddCommand(t *testing.T) {
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	out, err := cmd.CommandExec(ctx, "add AGENTKIT_TEST_SECRET=injected")
+	out, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_TEST_SECRET=injected")
 	if err != nil {
 		t.Fatalf("add command: %v", err)
 	}
@@ -359,8 +359,9 @@ func TestEnvAddCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "AGENTKIT_TEST_SECRET=injected") {
-		t.Fatalf(".env=%q, want injected key", data)
+	scopedKey := rtcredentials.ScopedStorageKey(integrationTestScope, "AGENTKIT_TEST_SECRET")
+	if !strings.Contains(string(data), scopedKey+"=injected") {
+		t.Fatalf(".env=%q, want scoped injected key", data)
 	}
 	secret, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_TEST_SECRET")
 	if err != nil {
@@ -387,7 +388,7 @@ func TestEnvAddRejectsOnVerifyFailure(t *testing.T) {
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	_, err := cmd.CommandExec(ctx, "add AGENTKIT_EMPTY_VERIFY_TEST=")
+	_, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_EMPTY_VERIFY_TEST=")
 	if err == nil {
 		t.Fatal("expected error for empty value")
 	}
@@ -401,6 +402,62 @@ func TestEnvAddRejectsOnVerifyFailure(t *testing.T) {
 		if strings.Contains(string(data), "AGENTKIT_EMPTY_VERIFY_TEST") {
 			t.Fatalf(".env should not contain rejected key: %s", data)
 		}
+	}
+}
+
+func TestEnvAddRejectsWithoutScope(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := integrationTestStore(t, dir, filepath.Join(dir, ".env"), "AGENTKIT_TEST_SECRET")
+	cp := store.(agentkit.CommandProvider)
+	_, err := cp.Commands()[0].CommandExec(context.Background(), "add AGENTKIT_TEST_SECRET=x")
+	if err == nil {
+		t.Fatal("expected error without scope")
+	}
+}
+
+func TestEnvAddRejectsUndeclaredKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := integrationTestStore(t, dir, "", "AGENTKIT_TEST_SECRET")
+	cp := store.(agentkit.CommandProvider)
+	_, err := cp.Commands()[0].CommandExec(context.Background(), "add mcp.tool NOT_IN_MANIFEST=secret")
+	if err == nil {
+		t.Fatal("expected error for undeclared key")
+	}
+}
+
+func TestEnvAddScopedIsolation(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	body := `{"mcpServers":{"a":{"command":"echo","env":{"K":"env:SHARED"}},"b":{"command":"echo","env":{"K":"env:SHARED"}}}}`
+	if err := os.WriteFile(manifestPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewIntegrations(Config{
+		EncryptedFile: EncryptedFileDisabled,
+		Files:         []string{filepath.Join(dir, ".env")},
+		ManifestFiles: []string{manifestPath},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cmd := store.(agentkit.CommandProvider).Commands()[0]
+	if _, err := cmd.CommandExec(ctx, "add mcp.a SHARED=one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cmd.CommandExec(ctx, "add mcp.b SHARED=two"); err != nil {
+		t.Fatal(err)
+	}
+	one, err := store.Resolve(ctx, "mcp.a", "env:SHARED")
+	if err != nil || one.Value != "one" {
+		t.Fatalf("mcp.a: %v value=%q", err, one.Value)
+	}
+	two, err := store.Resolve(ctx, "mcp.b", "env:SHARED")
+	if err != nil || two.Value != "two" {
+		t.Fatalf("mcp.b: %v value=%q", err, two.Value)
 	}
 }
 
@@ -428,7 +485,7 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
 
-	out, err := cmd.CommandExec(ctx, "add AGENTKIT_TEST_SECRET=injected")
+	out, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_TEST_SECRET=injected")
 	if err != nil {
 		t.Fatalf("add command: %v", err)
 	}

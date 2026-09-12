@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lengzhao/agentkit/cap/credentials"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
@@ -18,6 +19,7 @@ func envSecretRefsFromAPI(api apiConfig) []string {
 			refs = append(refs, v)
 		}
 	}
+	add(api.BaseURL)
 	if api.Auth != nil {
 		add(api.Auth.Token)
 		add(api.Auth.Value)
@@ -27,6 +29,69 @@ func envSecretRefsFromAPI(api apiConfig) []string {
 		add(v)
 	}
 	return refs
+}
+
+func formatOpenAPICredentialStatus(ctx context.Context, apis []apiConfig, creds credentials.Store) string {
+	if len(apis) == 0 {
+		return ""
+	}
+	type line struct {
+		apiName string
+		key     string
+	}
+	var lines []line
+	for _, api := range apis {
+		seen := make(map[string]struct{})
+		for _, ref := range envSecretRefsFromAPI(api) {
+			k := rtcredentials.EnvKey(ref)
+			if k == "" {
+				continue
+			}
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			lines = append(lines, line{apiName: api.Name, key: k})
+		}
+	}
+	var b strings.Builder
+	b.WriteString("\ncredentials (declare env:KEY in api.json; set with /env add SCOPE KEY=VALUE):")
+	if len(lines) == 0 {
+		b.WriteString("\n  (none declared)")
+		return b.String()
+	}
+	sort.Slice(lines, func(i, j int) bool {
+		if lines[i].apiName != lines[j].apiName {
+			return lines[i].apiName < lines[j].apiName
+		}
+		return lines[i].key < lines[j].key
+	})
+	lastAPI := ""
+	for _, ln := range lines {
+		scope := CredentialScope(ln.apiName)
+		if ln.apiName != lastAPI {
+			b.WriteString("\n  ")
+			b.WriteString(scope)
+			b.WriteString(":")
+			lastAPI = ln.apiName
+		}
+		b.WriteString("\n    ")
+		b.WriteString(ln.key)
+		b.WriteString(" — ")
+		b.WriteString(openapiCredentialKeyStatus(ctx, creds, scope, ln.key))
+	}
+	return b.String()
+}
+
+func openapiCredentialKeyStatus(ctx context.Context, creds credentials.Store, scope, key string) string {
+	if creds == nil {
+		return "credentials store not configured"
+	}
+	ref := "env:" + key
+	if _, err := resolveSecret(ctx, scope, ref, creds); err != nil {
+		return fmt.Sprintf("missing (/env add %s %s=<value>)", scope, key)
+	}
+	return "ok"
 }
 
 func (p *openapiProvider) credentialWarningSuffix(ctx context.Context, apis []apiConfig) string {
@@ -52,20 +117,16 @@ func (p *openapiProvider) credentialWarningSuffix(ctx context.Context, apis []ap
 		return ""
 	}
 	parts := make([]string, 0, len(missing))
-	envKeys := make(map[string]struct{})
+	hintParts := make([]string, 0, len(missing))
 	for _, m := range missing {
 		parts = append(parts, fmt.Sprintf("%s %s", m.apiName, m.ref))
 		if k := rtcredentials.EnvKey(m.ref); k != "" {
-			envKeys[k] = struct{}{}
+			hintParts = append(hintParts, fmt.Sprintf("/env add %s %s=<value>", CredentialScope(m.apiName), k))
 		}
-	}
-	hintParts := make([]string, 0, len(envKeys))
-	for k := range envKeys {
-		hintParts = append(hintParts, k+"=<value>")
 	}
 	sort.Strings(hintParts)
 	return "\nwarning: missing credentials: " + strings.Join(parts, ", ") +
-		"\nhint: /env add " + strings.Join(hintParts, " ")
+		"\nhint: " + strings.Join(hintParts, "; ")
 }
 
 func (p *openapiProvider) summarizeReload(ctx context.Context, apis []apiConfig) string {

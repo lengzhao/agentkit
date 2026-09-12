@@ -266,11 +266,11 @@ func serverToolsPresent(defs []toolDefinition, server string, want int) bool {
 }
 
 func (p *mcpProvider) statusWithHelp(ctx context.Context) (string, error) {
-	_, defs, err := p.cached(ctx)
+	servers, defs, err := p.cached(ctx)
 	if err != nil {
 		return "", err
 	}
-	return formatMCPStatus(defs) + "\n\n" + mcpHelp(), nil
+	return formatMCPStatus(defs) + formatMCPCredentialStatus(ctx, servers, p.credentials) + "\n\n" + mcpHelp(), nil
 }
 
 func formatMCPStatus(defs []toolDefinition) string {
@@ -294,7 +294,7 @@ func formatMCPStatus(defs []toolDefinition) string {
 
 func mcpHelp() string {
 	return `Usage:
-  /mcp                         show status and help
+  /mcp                         show status, env scopes/keys, and help
   /mcp add [-g] <name> <json>  write server to mcp.json, probe, reload, and verify
   /mcp -u                      reload mcp.json and rediscover tools
 
