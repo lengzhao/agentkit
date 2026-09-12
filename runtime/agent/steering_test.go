@@ -28,6 +28,8 @@ func (h *gateTurnStopping) BeforeStep(context.Context, *agentkit.BeforeStep) err
 func (h *gateTurnStopping) BeforeTool(context.Context, *agentkit.ToolCall) error   { return nil }
 func (h *gateTurnStopping) AfterTool(context.Context, *agentkit.ToolResult) error  { return nil }
 
+func (h *gateTurnStopping) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
+
 func (h *gateTurnStopping) TurnStopping(context.Context, *agentkit.TurnStopping) error {
 	h.once.Do(func() { close(h.entered) })
 	<-h.release

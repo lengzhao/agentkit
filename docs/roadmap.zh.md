@@ -13,7 +13,7 @@
 | `StartStop` / `Root.Stop` 空实现 | daemon 退出无法有序 flush |
 | follow-up inbox 纯内存 | 崩溃后排队消息丢失 |
 | `hook/llm-request`、`BeforeStep` 决策类型 | 请求改写与步级 reject |
-| `session/sqlite` + `sessionquery` | 无法跨 session 检索 |
+| ~~`session/sqlite-index` + `tool/session-query`~~ | 已落地（见 learning-dreaming §9.1） |
 | `platform/http`、`platform/rpc` | 通用 HTTP/RPC 接入（`platform/http` 已落地：服务 DefaultServeMux） |
 | `policy/network-deny` | SSRF 仍在 `web/http-fetch` 内 |
 | OS 级沙箱 | 暂缓，靠 policy + approval |
@@ -26,7 +26,12 @@
 
 ## M3 — 可运营（剩余）
 
-`platform/http` / `platform/rpc`、`telemetry/otel`、成本汇总 CLI、`session/sqlite` + `tool/session-query`。
+`platform/http` / `platform/rpc`、`telemetry/otel`、成本汇总 CLI。（跨 session 检索见 `session/sqlite-index` + `tool/session-query`，已默认进 L0。）
+
+## Learning / Review（与 M3 交叉）
+
+- P0 background review、staged memory：见 [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §9。
+- P1 session FTS、多租户 dream-sweep、memory.md prompt 冻结：同文档 §9.1–9.3；任务清单 [guides/todo.md](guides/todo.md)。
 
 ## M4 — 并行与多 Agent（需求驱动）
 

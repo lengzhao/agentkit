@@ -62,9 +62,25 @@ func OnTurnStopping(fn func(context.Context, *TurnStopping) error) TurnStoppingH
 	return &turnStoppingHook{fn: fn}
 }
 
+type turnCompleteHook struct {
+	fn func(context.Context, *TurnComplete) error
+}
+
+func (h *turnCompleteHook) isHook() {}
+
+func (h *turnCompleteHook) TurnComplete(ctx context.Context, in *TurnComplete) error {
+	return h.fn(ctx, in)
+}
+
+// OnTurnComplete wraps a function as a TurnCompleteHook.
+func OnTurnComplete(fn func(context.Context, *TurnComplete) error) TurnCompleteHook {
+	return &turnCompleteHook{fn: fn}
+}
+
 type HookRuntime interface {
 	BeforeStep(context.Context, *BeforeStep) error
 	BeforeTool(context.Context, *ToolCall) error
 	AfterTool(context.Context, *ToolResult) error
 	TurnStopping(context.Context, *TurnStopping) error
+	TurnComplete(context.Context, *TurnComplete) error
 }

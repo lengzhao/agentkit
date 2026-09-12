@@ -28,6 +28,8 @@ func (h *stubTurnStopping) BeforeStep(context.Context, *agentkit.BeforeStep) err
 func (h *stubTurnStopping) BeforeTool(context.Context, *agentkit.ToolCall) error   { return nil }
 func (h *stubTurnStopping) AfterTool(context.Context, *agentkit.ToolResult) error  { return nil }
 
+func (h *stubTurnStopping) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
+
 func (h *stubTurnStopping) TurnStopping(_ context.Context, in *agentkit.TurnStopping) error {
 	h.seen = append(h.seen, *in)
 	if h.forceStop {

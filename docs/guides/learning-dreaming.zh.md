@@ -2,7 +2,7 @@
 
 本文描述 AgentKit 借鉴 [OpenClaw 2.0](https://docs.openclaw.ai/concepts/dreaming) 的记忆巩固与技能治理模型，在 `learning/default` 上的落地方式。
 
-相关文档：[plugin-catalog.zh.md](../plugin-catalog.zh.md)、[roadmap.zh.md](../roadmap.zh.md)。
+相关文档：[plugin-catalog.zh.md](../plugin-catalog.zh.md)、[roadmap.zh.md](../roadmap.zh.md)、[todo.md](todo.md)（后续改进清单）。
 
 ## 1. OpenClaw 对照
 
@@ -15,7 +15,9 @@
 
 ## 2. 文件布局
 
-租户 local 根（如 `.agentkit/chat-api_default_channel/` 或 `tenants/slack_C001/`）：
+`learning.default.config.memoryRoot` 控制 `memory.md`、`memory/dreaming/`、review 暂存等路径（默认 `"."` = 当前租户 **local** 根）。单部署希望全 channel 共用一份记忆时，在 L1 设 `memoryRoot: global:.`（解析到 `workspace` 的 global 根，如 `~/.agentkit` 或 L1 的 `global:` 目录）。
+
+默认（`memoryRoot: "."`）落在租户 local 根（如 `.agentkit/chat-api_default_channel/` 或 `tenants/slack_C001/`）：
 
 ```
 ├── memory.md              # 长期记忆（prompt/section/memory 注入）
@@ -120,8 +122,24 @@ create/update → pending → apply → applied
 
 ## 6. `/learn` 命令
 
+### 6.1 写入策略（租户 `memory/learning/policy.json`）
+
+在 **需授权** 与 **自动** 之间切换，优先级高于 L0 的 `review.writeApproval` / `workshop.mode`（`/learn policy reset` 恢复为配置默认）：
+
+| 命令 | 效果 |
+|---|---|
+| `/learn policy` | 查看当前 memory / skills 策略 |
+| `/learn policy memory approve` | background-review 写入进 `memory/.staged/`，需 `/learn approve` |
+| `/learn policy memory auto` | background-review 直接写 `memory.md` |
+| `/learn policy skills propose` | skill 提案进 workshop，需 apply |
+| `/learn policy skills auto` | scanner 通过后自动写入 `skills/` |
+| `/learn policy skills off` | 关闭自动捕获（显式 `/learn skill` 仍可用，除非 L0 `workshop.mode=off`） |
+
+说明：`/learn memory`、手动 `/learn skill` 不受 memory approve 限制；Dreaming Deep 晋升 `memory.md` 仍为规则驱动、与 review 策略无关。
+
 ```text
-/learn                         查看 memory.md
+/learn                         使用说明（同 /learn help）
+/learn show                    查看 memory.md（不含 staged 待审批）
 /learn memory <text>           立即追加记忆
 /learn remove <text>           删除匹配条目
 /learn session                 从当前会话沉淀（同时记录 dreaming 信号）
@@ -140,23 +158,7 @@ create/update → pending → apply → applied
 
 `learning/dream-sweep` 实现 `schedule.Runtime`，由 runner 与 `schedule/cron` 并列启动。默认 cron `0 3 * * *`（每天 03:00）。
 
-当前后台 sweep 使用启动时的 workspace context，适合单工作区配置；`workspace/tenant` 的全租户枚举需要后续补 tenant registry。多租户入口可先用 `/learn dream run` 在具体会话内手动触发。
-
-L0 [config.base.yaml](../../config.base.yaml) 已装配 `learning.default`（`dreaming.enabled: true`、`workshop.mode: propose`），**默认不启用**后台 sweep 实例——`learning.dreamSweep` 以注释形式保留在 `learning.default` 与 `runner.default` 旁，避免未配置多租户时误跑全局 sweep。需要定时巩固时取消注释并挂到 `runner.deps.schedules`：
-
-```yaml
-# L0 中 learning.default 已存在；仅补充可选 sweep 实例与 runner 挂载
-learning.dreamSweep:
-  use: learning/dream-sweep
-  deps:
-    learning: learning.default
-
-runner.default:
-  deps:
-    schedules:
-      - schedule.cron
-      - learning.dreamSweep   # 可选；也可仅 /learn dream run
-```
+L0 [config.base.yaml](../../config.base.yaml) 默认挂载 `learning.dreamSweep` 到 `runner.deps.schedules`（与 `schedule.cron` 并列）。`workspace/tenant` 下按各租户 local 根独立 sweep；单租户 `workspace/default` 只跑当前根。仍可用 `/learn dream off` 关闭 dreaming，或从 L1 去掉 `learning.dreamSweep` 实例以禁用后台 sweep。
 
 ## 8. 与 prompt/section/memory 的关系
 
@@ -164,10 +166,66 @@ runner.default:
 - `DREAMS.md`：**不注入**模型上下文。
 - Skill 提案在 apply 前对 agent 不可见；apply 后由 `skill/filesystem` 发现。
 
-## 9. 后续（未做）
+## 9. Background Review（Hermes 式激进路径）
+
+每轮 **成功结束** 的 turn（已发出 `turn/end`、未取消）后，`hook/background-review` 在后台 fork 一次 **独立 LLM 工具循环**，不写入主 session 历史、不阻塞用户下一条消息。
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Agent
+  participant Hook as hook/background-review
+  participant Review as RunReview LLM loop
+  participant Cap as tool/learn_capture
+
+  User->>Agent: 本轮对话
+  Agent->>User: 回复 + turn/end
+  Agent->>Hook: TurnComplete(snapshot)
+  Hook-->>Review: goroutine（同 session 新 turn 会 cancel 上一轮 review）
+  Review->>Cap: memory_add / skill_propose
+  Cap->>Cap: memory.md / workshop 提案
+```
+
+| 项 | 行为 |
+|---|---|
+| 触发 | `TurnCompleteHook`（`runtime/agent` 在 turn 成功 defer 中调用） |
+| 工具 | 仅 `learn_capture`（`memory_add`、`memory_remove`、`skill_propose`） |
+| 记忆来源 | `source=background-review`，并记录 dreaming signal（与 `/learn memory` 一致） |
+| 技能 | 走 Workshop：`workshop.mode=propose` 为 pending；`auto` 则 scanner 通过后直接 apply |
+| 跳过 | 无有效用户文本、或近端只有 `/` 命令（`skipSlashOnly: true`） |
+| 关闭 | `hook.background-review` 配置 `enabled: false`，或从 `hooks.default` deps 移除该 provider |
+| 写入审批 | `learning.default.config.review.writeApproval: true` 时，review 的 `memory_add` 进入 `memory/.staged/`，用 `/learn pending`、`/learn approve <id>`；默认 `false`（auto，直接写 `memory.md`） |
+| 节流 | `maxReviewsPerDay`、`minTurnTokens`、`minIdleSeconds`（见 `hook.background-review` config） |
+| LLM | 默认 `llm.review`（如 `gpt-4o-mini`），与主 agent `llm.fallback` 分离 |
+| 关停 | `runner.Stop` 调用 `CancelAllBackgroundReviews()` |
+| 可观测 | OpenTelemetry span `learning.review`；`notify: true` 时额外 slog `learning notification` |
+
+L0 默认已挂载 `tool.learn-capture.default` 与 `hook.background-review.default`（见 [config.base.yaml](../../config.base.yaml)）。
+
+与 **Dreaming sweep** 的关系：review 负责「刚结束这一轮」的 LLM 判断；sweep 仍负责跨会话、无 LLM 的 grounded 晋升。两者可同时开启。
+
+### 9.1 跨 session 检索（P1）
+
+- **`session/sqlite-index`**：按租户 workspace 在 `sessions/.index.sqlite` 维护 FTS5；`hook/session-index` 在每轮成功后异步 sync。
+- **`tool/session-query`**：主 Agent 可搜索本租户全部 `session/store` JSONL 历史。
+- **Background review**：若配置了 `sessionIndex`，会把与本轮最后一条用户消息相关的检索摘要附在 review digest 末尾，便于避免重复记忆。
+
+### 9.2 memory.md 与 prompt 冻结
+
+- **Frozen snapshot**：同一 turn 内 `prompt/section/memory` 在首次组装时快照 `memory.md`；本 turn 内后续 step（含 background review 写入）**下一 turn** 才会进入 system prompt。
+
+### 9.3 多租户 dreaming sweep
+
+`learning/dream-sweep` 在 `workspace/tenant` 下通过 `WalkLocalTenants` 对每个 local 根单独判断 cron 并执行 sweep，各自使用 `memory/dreaming/state.json`。
+
+## 10. 后续（未做）
+
+可执行清单与优先级见 **[todo.md](todo.md)**。摘要：
 
 - LLM 驱动的 Dream Diary 叙事子 agent
 - `memory forget` 与会话准入策略
 - Deep 阶段从 live session 重新 rehydrate source snippet
-- 周度 collection review（skill 去重/合并）
-- SQLite 信号索引与跨 session 全文检索（依赖 roadmap M3 `session/sqlite`）
+- 周度 collection review（skill 去重/合并）——可参考 Hermes Curator
+- review 的 `write_approval` 与 IM 侧 `💾` 通知
+- 独立 auxiliary 模型（`hook.background-review.config.model` 已支持覆盖；未做专用 cheap LLM 实例图）
+- Curator 与更细的 dreaming/review 写入门策略（见 [todo.md](todo.md) P2）

@@ -119,12 +119,14 @@ func TestLearnCommandHelp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := svc.Commands()[0].CommandExec(context.Background(), "help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "/learn dream") {
-		t.Fatalf("help = %q", out)
+	for _, args := range []string{"", "help"} {
+		out, err := svc.Commands()[0].CommandExec(context.Background(), args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "/learn dream") {
+			t.Fatalf("args=%q help = %q", args, out)
+		}
 	}
 }
 

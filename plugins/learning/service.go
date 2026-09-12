@@ -86,18 +86,28 @@ type Service struct {
 	sessionsDir string
 	dreaming    dreaming.Config
 	workshop    workshop.Config
+	review      ReviewServiceConfig
 	workspace   workspace.Service
 	sessions    agentkit.SessionStore
 }
 
+// ReviewServiceConfig controls background-review writes (learning/default).
+type ReviewServiceConfig struct {
+	// WriteApproval when true, background-review memory writes are staged until /learn approve (default false = auto).
+	WriteApproval *bool `json:"writeApproval"`
+}
+
 type Config struct {
-	Disabled    bool            `json:"disabled"`
-	CharLimit   int             `json:"charLimit"`
-	MemoryRoot  string          `json:"memoryRoot"`
-	MemoryFile  string          `json:"memoryFile"`
-	SessionsDir string          `json:"sessionsDir"`
-	Dreaming    dreaming.Config `json:"dreaming"`
-	Workshop    workshop.Config `json:"workshop"`
+	Disabled    bool                `json:"disabled"`
+	CharLimit   int                 `json:"charLimit"`
+	// MemoryRoot is where memory.md, dreaming, and staged review files live.
+	// Default "." resolves under each tenant local root; use "global:." for shared ~/.agentkit (or L1 global root).
+	MemoryRoot string `json:"memoryRoot"`
+	MemoryFile  string              `json:"memoryFile"`
+	SessionsDir string              `json:"sessionsDir"`
+	Dreaming    dreaming.Config     `json:"dreaming"`
+	Workshop    workshop.Config     `json:"workshop"`
+	Review      ReviewServiceConfig `json:"review"`
 }
 
 type Deps struct {
@@ -127,6 +137,7 @@ func New(cfg Config, deps Deps) (*Service, error) {
 		sessionsDir: sessionsDir,
 		dreaming:    dreamCfg,
 		workshop:    wsCfg,
+		review:      cfg.Review,
 		workspace:   deps.Workspace,
 		sessions:    deps.SessionStore,
 	}, nil
@@ -160,7 +171,9 @@ func (s *Service) memoryStore(ctx context.Context) (*MemoryStore, error) {
 	if limit <= 0 {
 		limit = DefaultCharLimit
 	}
-	return NewMemoryStore(path, limit), nil
+	store := NewMemoryStore(path, limit)
+	store.DocName = "memory.md"
+	return store, nil
 }
 
 func (s *Service) dreamingStore(ctx context.Context) (*dreaming.Store, error) {
@@ -234,7 +247,7 @@ func (c learnCommand) CommandExec(ctx context.Context, args string) (string, err
 	}
 	fields := strings.Fields(strings.TrimSpace(args))
 	if len(fields) == 0 {
-		return c.svc.show(ctx)
+		return FormatHelp(), nil
 	}
 	switch strings.ToLower(fields[0]) {
 	case "help", "-h", "--help":
@@ -260,8 +273,16 @@ func (c learnCommand) CommandExec(ctx context.Context, args string) (string, err
 		return c.svc.learnSkill(ctx, focus)
 	case "workshop":
 		return c.svc.handleWorkshop(ctx, fields[1:])
+	case "pending":
+		return c.svc.listPending(ctx)
+	case "approve":
+		return c.svc.approveStaged(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
+	case "reject":
+		return c.svc.rejectStaged(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
 	case "show":
 		return c.svc.show(ctx)
+	case "policy":
+		return c.svc.handlePolicy(ctx, fields[1:])
 	default:
 		text := strings.TrimSpace(args)
 		return c.svc.addMemory(ctx, text, "learn")
@@ -273,7 +294,21 @@ func (s *Service) show(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return FormatMemory(entries, used, limit), nil
+	if len(entries) > 0 {
+		return FormatMemory(entries, used, limit), nil
+	}
+	staged, err := s.stagedStore(ctx)
+	if err != nil {
+		return "", err
+	}
+	pending, err := staged.List()
+	if err != nil {
+		return "", err
+	}
+	if len(pending) > 0 {
+		return fmt.Sprintf("no memory.md entries yet (%d staged awaiting /learn approve)", len(pending)), nil
+	}
+	return "no personal memory yet (memory.md empty; background review may stage — try /learn pending)", nil
 }
 
 func (s *Service) addMemory(ctx context.Context, text, source string) (string, error) {
@@ -330,7 +365,7 @@ func (s *Service) learnSession(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if s.workshopCfg().Enabled() && looksLikeWorkflow(summary) {
+	if s.skillsWorkshopEnabled(ctx) && looksLikeWorkflow(summary) {
 		if proposal, err := s.maybeAutoSkillProposal(ctx, summary, string(sessionID), ""); err == nil && proposal != "" {
 			out += "\n" + proposal
 		}
@@ -450,7 +485,7 @@ func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if s.workshopCfg().AutoApply() {
+	if s.skillsAutoApply(ctx, "learn-skill") {
 		if err := proposal.Apply(skillsDir); err != nil {
 			return fmt.Sprintf("proposal %s created (auto-apply failed: %v)", proposal.Meta.ID, err), nil
 		}
@@ -460,7 +495,7 @@ func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) 
 }
 
 func (s *Service) maybeAutoSkillProposal(ctx context.Context, summary, sessionID, focus string) (string, error) {
-	if !s.workshopCfg().AutoApply() {
+	if !s.skillsAutoApply(ctx, "learn-session-auto") {
 		return "", nil
 	}
 	wsStore, skillsDir, err := s.workshopStore(ctx)

@@ -66,9 +66,22 @@ func (p *memoryMDProvider) Sections() []agentkit.Section {
 }
 
 func (p *memoryMDProvider) build(ctx context.Context, _ agentkit.PromptRequest) (agentkit.PromptSection, error) {
-	root, err := p.workspace.Resolve(ctx, p.relRoot)
+	content, err := loadFrozenMemory(ctx, func() (string, error) {
+		return p.loadMemorySection(ctx)
+	})
 	if err != nil {
 		return agentkit.PromptSection{}, err
+	}
+	return agentkit.PromptSection{
+		Name:    "memory",
+		Content: content,
+	}, nil
+}
+
+func (p *memoryMDProvider) loadMemorySection(ctx context.Context) (string, error) {
+	root, err := p.workspace.Resolve(ctx, p.relRoot)
+	if err != nil {
+		return "", err
 	}
 	var parts []string
 	seen := map[string]bool{}
@@ -94,10 +107,7 @@ func (p *memoryMDProvider) build(ctx context.Context, _ agentkit.PromptRequest) 
 		}
 		dir = parent
 	}
-	return agentkit.PromptSection{
-		Name:    "memory",
-		Content: strings.Join(parts, "\n\n"),
-	}, nil
+	return strings.Join(parts, "\n\n"), nil
 }
 
 func formatMemoryFileContent(data []byte) string {

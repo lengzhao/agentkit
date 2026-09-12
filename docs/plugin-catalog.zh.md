@@ -142,12 +142,14 @@ platform.http:
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
 | `session/store` | `agentkit.SessionStore` | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；LRU 热缓存 + 内存 tail 窗口（`maxLoadedEvents`）；压缩后裁剪内存；完整历史 `Read(0)` 读盘 | cc-connect SessionKey |
 | `session/commands` | `agentkit.CommandProvider` | `/new`、`/session` 会话生命周期 slash；deps 注入 `sessionStore` | — |
-| `session/sqlite` | `agentkit.Session` | SQLite + 索引 | DSH session-query-sqlite |
+| `session/sqlite-index` | `cap/sessionindex.Service` | 租户内 session JSONL 的 SQLite FTS5 索引（`sessions/.index.sqlite`） | DSH session-query-sqlite |
+| `hook/session-index` | `agentkit.HookProvider` | 每轮成功后异步刷新 session FTS | — |
+| `tool/session-query` | `agentkit.Tool` | `session_query`：跨 session 全文检索（同租户） | DSH session-query |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |
 | `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
-| `prompt/section/memory` | `agentkit.SectionProvider` | memory.md 层级加载（同 agents-md）；依赖 `learning/default` 接入 `/learn` | — |
+| `prompt/section/memory` | `agentkit.SectionProvider` | memory.md 层级加载；同 turn 内冻结快照；依赖 `learning/default` 接入 `/learn` | — |
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
@@ -338,6 +340,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `hook/after-tool` | `agentkit.HookProvider` | 工具 result 截断/改写 | DSH `tools/post-execute` |
 | `hook/llm-request` | `agentkit.HookProvider` | LLM 请求改写 | Pi `before_provider_request` |
 | `hook/turn-continue` | `agentkit.HookProvider` | Turn 末裁决续跑/收尾（`TurnStopping` seam）；贡献 `/status` | DSH `agent/turn-stopping` |
+| `hook/background-review` | `agentkit.HookProvider` | Turn 成功后后台 LLM review（`TurnComplete`）；写 memory / workshop | [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §9 |
 | `hook/repeat-tool-reminder` | `agentkit.HookProvider` | 重复工具调用提醒 | DSH repeat-tool-reminder |
 | `hook/timeout` | `agentkit.HookProvider` | Turn/Step 超时 | DSH timeout-policy |
 
@@ -353,6 +356,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `skill/badge` | `skill.Registry` | Badge 元数据 |
 | `learning/default` | `CommandProvider` | 租户个人 memory.md、Grounded Dreaming、Skill Workshop；`/learn` 管理记忆/巩固/技能提案 |
 | `learning/dream-sweep` | `schedule.Runtime` | 后台三阶段 dreaming sweep（默认每天 03:00） |
+| `tool/learn-capture` | `Tool` | background review 专用：`memory_add` / `skill_propose`（不对主 agent 暴露） |
 | `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/loop-agent` | `subagent.Spawner` + `subagent.SubmitBinder` | 委派到 Loop 里已注册的 agent（如 `agent/acp-remote` 的 `cursor`）。可委派名单来自实例 `config.agents`；支持 `async: true`：立即返回 `status=running`，完成后经 runner 向父 session 投递 follow-up turn。deps 可注入 `telemetry`（通常 `telemetry.default`），为每次子 agent 运行导出独立 Langfuse trace |
 | `subagent/composite` | `subagent.Spawner` + `subagent.SubmitBinder` | 合并 `inprocess` 与 `loop-agent` 的可委派名单；L0 `subagent.default` 使用此 kind |

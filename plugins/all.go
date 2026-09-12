@@ -24,6 +24,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/openapi"
 	_ "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/tool/send"
+	_ "github.com/lengzhao/agentkit/plugins/tool/sessionquery"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shell"
 	_ "github.com/lengzhao/agentkit/plugins/tool/skill"
 	_ "github.com/lengzhao/agentkit/plugins/tool/subagent"

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
@@ -60,8 +61,8 @@ func (d *DreamSweep) Start(ctx context.Context, _ capschedule.SubmitFunc) error 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if d.svc != nil && d.svc.dreamingEnabled() && d.sweepDue(ctx) {
-			if _, err := d.svc.runDreamSweep(ctx); err != nil {
+		if d.svc != nil && !d.svc.disabled {
+			if err := d.runDueSweeps(ctx); err != nil {
 				slog.Warn("dream sweep failed", "err", err)
 			}
 		}
@@ -72,6 +73,24 @@ func (d *DreamSweep) Start(ctx context.Context, _ capschedule.SubmitFunc) error 
 }
 
 func (d *DreamSweep) Stop(context.Context) error { return nil }
+
+func (d *DreamSweep) runDueSweeps(ctx context.Context) error {
+	walker, ok := d.svc.workspace.(cw.LocalTenantWalker)
+	if !ok {
+		if !d.sweepDue(ctx) {
+			return nil
+		}
+		_, err := d.svc.runDreamSweep(ctx)
+		return err
+	}
+	return walker.WalkLocalTenants(ctx, func(tctx context.Context) error {
+		if !d.sweepDue(tctx) {
+			return nil
+		}
+		_, err := d.svc.runDreamSweep(tctx)
+		return err
+	})
+}
 
 func (d *DreamSweep) sweepDue(ctx context.Context) bool {
 	store, err := d.svc.dreamingStore(ctx)

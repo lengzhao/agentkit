@@ -125,13 +125,27 @@ credentials.default:
         encryptedFile: global:secrets.enc.json
     deps:
         workspace: workspace.default
-    use: credentials/static
+    use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
         workspace: workspace.default
     use: credentials/integrations
+hook.background-review.default:
+    config:
+        maxDigestMessages: 24
+        maxReviewsPerDay: 500
+        maxSteps: 10
+        minTurnTokens: 0
+        notify: false
+        skipSlashOnly: true
+    deps:
+        captureTool: tool.learn-capture.default
+        learning: learning.default
+        llm: llm.review
+        sessionIndex: sessionIndex.default
+    use: hook/background-review
 hook.before-step.default:
     config:
         contributeCommands: true
@@ -146,6 +160,13 @@ hook.before-step.worker:
             - compaction.pipeline.worker
         sessionStore: sessionStore.default
     use: hook/before-step
+hook.session-index.default:
+    config:
+        sessionsDir: sessions
+    deps:
+        index: sessionIndex.default
+        workspace: workspace.default
+    use: hook/session-index
 hook.turn-continue.default:
     config:
         maxContinuations: 30
@@ -160,6 +181,8 @@ hooks.default:
         providers:
             - hook.before-step.default
             - hook.turn-continue.default
+            - hook.session-index.default
+            - hook.background-review.default
     use: hooks/runtime
 hooks.worker:
     deps:
@@ -171,12 +194,20 @@ learning.default:
     config:
         dreaming:
             enabled: true
+        review:
+            writeApproval: false
         workshop:
             mode: propose
     deps:
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: learning/default
+learning.dreamSweep:
+    config:
+        pollSeconds: 60
+    deps:
+        learning: learning.default
+    use: learning/dream-sweep
 llm.default:
     config:
         api: chat
@@ -193,11 +224,20 @@ llm.default:
 llm.fallback:
     config:
         fallbackModels:
-            - gpt-4o
-            - gpt-4o-mini
+            - gpt-5.4-mini
+            - gpt-5.4-nano
     deps:
         provider: llm.default
     use: llm/fallback
+llm.review:
+    config:
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4-mini
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 loop.default:
     deps:
         agents:
@@ -370,6 +410,7 @@ runner.default:
         platform: platform.default
         schedules:
             - schedule.cron
+            - learning.dreamSweep
         sessionStore: sessionStore.default
         telemetry: telemetry.default
     use: runner
@@ -393,6 +434,12 @@ sessionCommands.default:
     deps:
         sessionStore: sessionStore.default
     use: session/commands
+sessionIndex.default:
+    config:
+        indexRel: sessions/.index.sqlite
+    deps:
+        workspace: workspace.default
+    use: session/sqlite-index
 sessionStore.default:
     config:
         cacheIdleTTL: 30m
@@ -500,6 +547,10 @@ tool.fs-workspace.readonly.default:
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
+tool.learn-capture.default:
+    deps:
+        learning: learning.default
+    use: tool/learn-capture
 tool.schedule.default:
     config:
         maxJobs: 32
@@ -511,6 +562,13 @@ tool.send.default:
         sender: platform.default
         workspace: workspace.default
     use: tool/send
+tool.session-query.default:
+    config:
+        sessionsDir: sessions
+    deps:
+        index: sessionIndex.default
+        workspace: workspace.default
+    use: tool/session-query
 tool.shell-bash.default:
     config:
         timeoutSeconds: 60
@@ -561,6 +619,7 @@ tools.default:
             - tool.ask-user.default
             - tool.send.default
             - tool.chat-history.default
+            - tool.session-query.default
             - tool.schedule.default
     use: tools/runtime
 tools.subagent.default:

@@ -43,11 +43,22 @@ func ParseMemory(raw string) []MemoryEntry {
 
 // RenderMemory serializes entries into a memory.md file body.
 func RenderMemory(entries []MemoryEntry) string {
+	return RenderMemoryDocument(entries, "memory.md")
+}
+
+// RenderMemoryDocument serializes §-delimited entries with a file title header.
+func RenderMemoryDocument(entries []MemoryEntry, docName string) string {
+	docName = strings.TrimSpace(docName)
+	if docName == "" {
+		docName = "memory.md"
+	}
+	header := "# " + docName + "\n"
 	if len(entries) == 0 {
-		return "# memory.md\n"
+		return header
 	}
 	var b strings.Builder
-	b.WriteString("# memory.md\n\n")
+	b.WriteString(header)
+	b.WriteByte('\n')
 	for i, e := range entries {
 		if i > 0 {
 			b.WriteString(entrySep)

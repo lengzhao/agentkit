@@ -13,6 +13,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/session"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
@@ -250,6 +251,7 @@ func attachCommands(result *build.Result) error {
 }
 
 func (r *Root) Stop(ctx context.Context) error {
+	learning.CancelAllBackgroundReviews()
 	if r.telemetry == nil {
 		return nil
 	}

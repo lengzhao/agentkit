@@ -33,6 +33,24 @@ type TurnStoppingHook interface {
 	TurnStopping(context.Context, *TurnStopping) error
 }
 
+// TurnCompleteHook runs after a turn finishes successfully (turn/end recorded, not cancelled).
+// Implementations should return quickly and offload heavy work to a background goroutine.
+type TurnCompleteHook interface {
+	Hook
+	TurnComplete(context.Context, *TurnComplete) error
+}
+
+// TurnComplete is the post-turn snapshot for background learning and review forks.
+type TurnComplete struct {
+	AgentID   AgentID
+	SessionID SessionID
+	Model     string
+	// TurnTokens is total model tokens recorded for this turn (0 when unknown).
+	TurnTokens int
+	// Messages is the derived model-visible history at turn end (read-only).
+	Messages []ModelMessage
+}
+
 // BeforeStep is invoked before a model step. Hooks read routing context from
 // ctx.Value(KeyTurnEnvelope) / SessionIDFromContext; hooks that need durable
 // state should depend on SessionStore via pluginkit Deps.

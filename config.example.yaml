@@ -56,6 +56,20 @@ llm.default:
   deps:
     provider: llm.openai
 
+# L0 的 hook/background-review 使用 llm.review（默认 baseUrl 为 api.openai.com）。
+# 若主 LLM 走自建/代理网关，务必覆盖 review，否则易出现 401（同一 key 不能混用官方 endpoint）。
+llm.review:
+  extends: llm.openai
+  config:
+    model: gpt-5.4-mini
+
+# 学习记忆落盘（learning.default.config.memoryRoot）：
+#   "."（默认）— 每租户 local 根下的 memory.md
+#   "global:." — workspace global 根，跨 channel/租户共用
+# learning.default:
+#   config:
+#     memoryRoot: global:.
+
 # 方式二：直接连单个 provider（无 fallback）
 # llm.default:
 #   use: llm/openai-compatible

@@ -45,6 +45,7 @@ runner.default:
     telemetry: telemetry.default
     schedules:
       - schedule.cron
+      - learning.dreamSweep
     # 启动前一次性初始化（AppInitializer）；示例见 bootstrap.shell.default
     init:
       - bootstrap.shell.default
@@ -273,6 +274,13 @@ sessionStore.default:
   deps:
     workspace: workspace.default
 
+sessionIndex.default:
+  use: session/sqlite-index
+  config:
+    indexRel: sessions/.index.sqlite
+  deps:
+    workspace: workspace.default
+
 sessionCommands.default:
   use: session/commands
   deps:
@@ -390,10 +398,49 @@ llm.fallback:
   use: llm/fallback
   config:
     fallbackModels:
-      - gpt-4o
-      - gpt-4o-mini
+      - gpt-5.4-mini
+      - gpt-5.4-nano
   deps:
     provider: llm.default
+
+# Background review uses a dedicated LLM instance (cheaper model by default).
+llm.review:
+  use: llm/openai-compatible
+  config:
+    model: gpt-5.4-mini
+    baseUrl: https://api.openai.com/v1
+    apiKeyRef: env:OPENAI_API_KEY
+    api: chat
+  deps:
+    credentials: credentials.default
+
+tool.learn-capture.default:
+  use: tool/learn-capture
+  deps:
+    learning: learning.default
+
+hook.background-review.default:
+  use: hook/background-review
+  config:
+    maxSteps: 10
+    maxDigestMessages: 24
+    skipSlashOnly: true
+    maxReviewsPerDay: 500
+    minTurnTokens: 0
+    notify: false
+  deps:
+    learning: learning.default
+    llm: llm.review
+    captureTool: tool.learn-capture.default
+    sessionIndex: sessionIndex.default
+
+hook.session-index.default:
+  use: hook/session-index
+  config:
+    sessionsDir: sessions
+  deps:
+    index: sessionIndex.default
+    workspace: workspace.default
 
 hooks.default:
   use: hooks/runtime
@@ -401,6 +448,8 @@ hooks.default:
     providers:
       - hook.before-step.default
       - hook.turn-continue.default
+      - hook.session-index.default
+      - hook.background-review.default
 
 # worker 长跑：按 token 阈值更早触发压缩（triggerRatio 0.7）。
 hooks.worker:
@@ -588,19 +637,25 @@ prompt.agents-md.default:
 learning.default:
   use: learning/default
   config:
+    # memoryRoot: "."        # 租户 local 根（多租户默认，与 multi-tenant 文档一致）
+    # memoryRoot: global:.   # 可选：global 根共享 memory.md（单用户或多 channel 共用）
     dreaming:
       enabled: true
     workshop:
       mode: propose
-
-# 可选：后台 dreaming sweep（与 schedule/cron 并列由 runner 启动）
-# learning.dreamSweep:
-#   use: learning/dream-sweep
-#   deps:
-#     learning: learning.default
+    review:
+      writeApproval: false
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
+
+# 后台 dreaming sweep（与 schedule/cron 并列由 runner 启动；多租户下按 local 根枚举）
+learning.dreamSweep:
+  use: learning/dream-sweep
+  config:
+    pollSeconds: 60
+  deps:
+    learning: learning.default
 
 prompt.memory.default:
   use: prompt/section/memory
@@ -621,6 +676,14 @@ skills.default:
       - local:skills
       - global:skills
   deps:
+    workspace: workspace.default
+
+tool.session-query.default:
+  use: tool/session-query
+  config:
+    sessionsDir: sessions
+  deps:
+    index: sessionIndex.default
     workspace: workspace.default
 
 tools.default:
@@ -651,6 +714,7 @@ tools.default:
       - tool.ask-user.default
       - tool.send.default
       - tool.chat-history.default
+      - tool.session-query.default
       - tool.schedule.default
     toolPacks:
       - tool.fs-workspace.default

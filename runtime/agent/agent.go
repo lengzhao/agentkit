@@ -149,7 +149,9 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		endCtx := context.WithoutCancel(ctx)
 		telemetry.RecordTurnSteps(ctx, run.completed)
 		endData := session.TurnEndData{Steps: run.completed}
+		cancelled := false
 		if reason, ok := cancelReasonFromError(runErr); ok {
+			cancelled = true
 			endData.Cancelled = true
 			endData.StopReason = reason
 			telemetry.RecordTurnStopReason(ctx, reason)
@@ -160,6 +162,9 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		_ = session.AppendTurnEnd(endCtx, sess, a.id, run.completed)
 		if err := a.emitLifecycle(endCtx, input.Emit, agentkit.EventTurnEnd, endData); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
+		}
+		if a.hooks != nil && runErr == nil && !cancelled {
+			a.invokeTurnComplete(endCtx, sessionID, sess, run.budget.tokensUsed())
 		}
 	}()
 
@@ -610,6 +615,32 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 		return step.Messages, ctx, nil
 	}
 	return history, ctx, nil
+}
+
+func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, turnTokens int) {
+	sess, err := a.sessionStore.Get(ctx, sessionID)
+	if err != nil {
+		slog.Debug("agent: turn complete skipped, session reload failed",
+			"agent_id", a.id, "session_id", sessionID, "err", err)
+		return
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		slog.Debug("agent: turn complete skipped, derive messages failed",
+			"agent_id", a.id, "session_id", sessionID, "err", err)
+		return
+	}
+	tc := &agentkit.TurnComplete{
+		AgentID:    a.id,
+		SessionID:  sessionID,
+		Model:      a.model,
+		TurnTokens: turnTokens,
+		Messages:   messages,
+	}
+	if err := a.hooks.TurnComplete(ctx, tc); err != nil {
+		slog.Warn("agent: turn complete hook failed",
+			"agent_id", a.id, "session_id", sessionID, "err", err)
+	}
 }
 
 func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {

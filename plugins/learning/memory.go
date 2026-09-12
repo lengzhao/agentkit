@@ -14,10 +14,12 @@ import (
 // MemoryEntry is one §-delimited block in memory.md.
 type MemoryEntry = rtlearning.MemoryEntry
 
-// MemoryStore reads and writes a single memory.md file with capacity limits.
+// MemoryStore reads and writes a §-delimited memory.md file with capacity limits.
 type MemoryStore struct {
 	Path      string
 	CharLimit int
+	// DocName is the file title in the on-disk header (default memory.md).
+	DocName string
 }
 
 func NewMemoryStore(path string, charLimit int) *MemoryStore {
@@ -96,7 +98,11 @@ func (s *MemoryStore) Remove(oldText string) error {
 }
 
 func (s *MemoryStore) Save(entries []MemoryEntry) error {
-	body := rtlearning.RenderMemory(entries)
+	doc := strings.TrimSpace(s.DocName)
+	if doc == "" {
+		doc = "memory.md"
+	}
+	body := rtlearning.RenderMemoryDocument(entries, doc)
 	return configfile.WriteAtomic(s.Path, []byte(body), 0o644)
 }
 

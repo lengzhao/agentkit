@@ -121,7 +121,7 @@ credentials.default:
         encryptedFile: global:secrets.enc.json
     deps:
         workspace: workspace.default
-    use: credentials/static
+    use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
@@ -158,12 +158,20 @@ learning.default:
     config:
         dreaming:
             enabled: true
+        review:
+            writeApproval: false
         workshop:
             mode: propose
     deps:
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: learning/default
+learning.dreamSweep:
+    config:
+        pollSeconds: 60
+    deps:
+        learning: learning.default
+    use: learning/dream-sweep
 llm.default:
     config:
         api: chat
@@ -180,8 +188,8 @@ llm.default:
 llm.fallback:
     config:
         fallbackModels:
-            - gpt-4o
-            - gpt-4o-mini
+            - gpt-5.4-mini
+            - gpt-5.4-nano
     deps:
         provider: llm.default
     use: llm/fallback
@@ -396,6 +404,7 @@ runner.default:
         platform: platform.default
         schedules:
             - schedule.cron
+            - learning.dreamSweep
         sessionStore: sessionStore.default
         telemetry: telemetry.default
     use: runner
@@ -419,6 +428,12 @@ session.default:
     config:
         id: cli:default
     use: session/memory
+sessionIndex.default:
+    config:
+        indexRel: sessions/.index.sqlite
+    deps:
+        workspace: workspace.default
+    use: session/sqlite-index
 sessionStore.default:
     deps:
         session: session.default
@@ -520,6 +535,13 @@ tool.send.default:
         sender: platform.default
         workspace: workspace.default
     use: tool/send
+tool.session-query.default:
+    config:
+        sessionsDir: sessions
+    deps:
+        index: sessionIndex.default
+        workspace: workspace.default
+    use: tool/session-query
 tool.shell-bash.default:
     config:
         timeoutSeconds: 60
@@ -570,6 +592,7 @@ tools.default:
             - tool.ask-user.default
             - tool.send.default
             - tool.chat-history.default
+            - tool.session-query.default
             - tool.schedule.default
     use: tools/runtime
 tools.subagent.default:
