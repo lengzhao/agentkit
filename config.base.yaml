@@ -352,7 +352,7 @@ subagent.loop.default:
 
 # Static refs (apiKeyRef, botTokenRef, web search keys): process env + optional encrypted file.
 credentials.default:
-  use: credentials/static
+  use: credentials/env
   config:
     encryptedFile: global:secrets.enc.json
   deps:

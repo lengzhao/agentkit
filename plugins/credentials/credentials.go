@@ -13,15 +13,15 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/config"
 	"github.com/lengzhao/agentkit/runtime/configfile"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/pluginkit"
 )
 
 const (
-	defaultEnvFile       = "local:.env"
-	defaultEncryptedFile = "global:secrets.enc.json"
+	defaultEnvFile        = "local:.env"
+	defaultEncryptedFile  = "global:secrets.enc.json"
 	EncryptedFileDisabled = "-"
 )
 
