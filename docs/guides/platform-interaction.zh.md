@@ -128,7 +128,7 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | **正文** | `text_delta` 正文 | `collapsible_panel` 标题「正文」，**默认展开**（用户可折叠）；CardKit 流式更新 `body_md` |
 | **定稿** | `turn/end` | 关闭 `streaming_mode`；保留流式已上屏内容，不再全量替换卡片 |
 
-`turn/start` 时即创建回复 CardKit 卡（空「处理过程 / 正文」面板），用户无需等待首条流式内容才看到回复。**CardKit 统一卡**（`enableFeishuCard: true` 且 `progressStyle: card|compact`）在回复卡片 IM 消息上**每 5 秒**固定交替 `Typing` 与 `OneSecond` reaction（与是否有流式内容无关）；流式面板内**每 10 秒**追加一行时间戳（`> ⏱ YYYY-MM-DD HH:MM:SS`，有处理过程面板时写入 `progress_md`，否则写入 `body_md`）。`turn/end` 时移除该 reaction 并添加 `doneEmoji`（默认 `CheckMark` ☑️）。分卡模式（`enableFeishuCard: false`）不做卡片 reaction 轮换与时间戳心跳。
+`turn/start` 时即创建回复 CardKit 卡（空「处理过程 / 正文」面板），用户无需等待首条流式内容才看到回复。**CardKit 统一卡**（`enableFeishuCard: true` 且 `progressStyle: card|compact`）在卡片创建后随即挂上 `Typing` reaction 并写入**首条**时间戳；此后**每 10 秒**一轮心跳：IM 消息上交替 `Typing` 与 `OneSecond` reaction，并在流式面板内再追加一行时间戳（`> ⏱ YYYY-MM-DD HH:MM:SS`，有处理过程面板时写入 `progress_md`，否则写入 `body_md`）。`turn/end` 时移除该 reaction 并添加 `doneEmoji`（默认 `CheckMark` ☑️）。分卡模式（`enableFeishuCard: false`）不做卡片 reaction 轮换与时间戳心跳。
 
 ```mermaid
 flowchart TD

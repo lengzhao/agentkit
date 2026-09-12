@@ -94,8 +94,10 @@ type streamState struct {
 	cards              []streamCard // ordered cards for eviction (oldest first)
 	accumulated        string // legacy mode text buffer
 	bodyText           string // rich mode in-flight assistant markdown
-	lastStreamedBody     string // unified card: last body flushed to body_md
-	lastStreamedProgress string // unified card: last progress flushed to progress_md
+	lastStreamedBody       string // unified card: last body flushed to body_md
+	lastStreamedProgress   string // unified card: last progress flushed to progress_md
+	progressHeartbeatLines []string // unified card: liveness timestamps merged into progress_md flushes
+	bodyHeartbeatLines     []string // unified card: timestamps merged into body_md when no progress panel
 	thinking           string
 	steps              []toolStep
 	toolStepIdx        map[int]int // contentIndex -> index in steps
@@ -108,7 +110,7 @@ type streamState struct {
 	unifiedTextFallback bool   // CardKit stream closed; reply via plain text IM messages
 	textFallbackHandle  any    // feishuPreviewHandle for plain text reply
 	cardReactionID     string    // processing reaction on bot reply card (Typing / OneSecond)
-	heartbeatDigitIndex int      // next pulse index for 5s card reaction alternation (0/1)
+	heartbeatDigitIndex int      // next pulse index for 10s card reaction alternation (0/1)
 	heartbeatStop      context.CancelFunc
 	bodyFlushTimer     *time.Timer
 	legacyFlushTimer   *time.Timer

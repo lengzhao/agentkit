@@ -15,11 +15,66 @@ import (
 
 const maxToolSummaryRunes = 180
 const maxRecentProgressSteps = 2
-const progressHeartbeatInterval = 5 * time.Second
-const streamTimestampInterval = 10 * time.Second
+const streamHeartbeatInterval = 10 * time.Second // CardKit 统一卡：reaction 轮换 + 处理过程时间戳
 
 func formatStreamHeartbeatTimestamp(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
+}
+
+func formatProgressHeartbeatLine(t time.Time) string {
+	return "> ⏱ " + formatStreamHeartbeatTimestamp(t)
+}
+
+func joinMarkdownBlocks(blocks ...string) string {
+	var b strings.Builder
+	for _, block := range blocks {
+		block = strings.TrimSpace(block)
+		if block == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(block)
+	}
+	return b.String()
+}
+
+func (p *Platform) unifiedProgressStreamMarkdown(st *streamState, streaming bool) string {
+	core := p.renderProgressMarkdown(st, streaming)
+	return joinMarkdownBlocks(core, strings.Join(st.progressHeartbeatLines, "\n"))
+}
+
+func unifiedBodyStreamMarkdown(st *streamState) string {
+	return joinMarkdownBlocks(st.bodyText, strings.Join(st.bodyHeartbeatLines, "\n"))
+}
+
+func unifiedTurnEndBodyMarkdown(st *streamState) string {
+	body := unifiedBodyStreamMarkdown(st)
+	if strings.TrimSpace(body) == "" {
+		return st.lastStreamedBody
+	}
+	return body
+}
+
+func (p *Platform) unifiedTurnEndProgressMarkdown(st *streamState) string {
+	md := p.renderProgressMarkdown(st, false)
+	return mergeProgressHeartbeatsBeforeFooter(md, st.progressHeartbeatLines)
+}
+
+const progressMarkdownFooterSeparator = "\n\n---\n\n"
+
+func mergeProgressHeartbeatsBeforeFooter(progressMD string, lines []string) string {
+	if len(lines) == 0 {
+		return progressMD
+	}
+	block := strings.Join(lines, "\n")
+	if i := strings.Index(progressMD, progressMarkdownFooterSeparator); i >= 0 {
+		prefix := strings.TrimRight(progressMD[:i], "\n")
+		suffix := progressMD[i+len(progressMarkdownFooterSeparator):]
+		return joinMarkdownBlocks(prefix, block) + progressMarkdownFooterSeparator + suffix
+	}
+	return joinMarkdownBlocks(progressMD, block)
 }
 
 func subagentToolLabel(agent string) string {
@@ -41,23 +96,19 @@ func (p *Platform) startProgressHeartbeat(sessionID agentkit.SessionID) {
 }
 
 func (p *Platform) runProgressHeartbeat(ctx context.Context, sessionID agentkit.SessionID) {
-	reactionTicker := time.NewTicker(progressHeartbeatInterval)
-	timestampTicker := time.NewTicker(streamTimestampInterval)
-	defer reactionTicker.Stop()
-	defer timestampTicker.Stop()
+	ticker := time.NewTicker(streamHeartbeatInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-reactionTicker.C:
-			p.tickProgressHeartbeat(sessionID)
-		case <-timestampTicker.C:
-			p.tickStreamTimestamp(sessionID)
+		case <-ticker.C:
+			p.tickUnifiedStreamHeartbeat(sessionID)
 		}
 	}
 }
 
-func (p *Platform) tickProgressHeartbeat(sessionID agentkit.SessionID) {
+func (p *Platform) tickUnifiedStreamHeartbeat(sessionID agentkit.SessionID) {
 	if !p.useUnifiedStreamCard() {
 		return
 	}
@@ -70,51 +121,34 @@ func (p *Platform) tickProgressHeartbeat(sessionID agentkit.SessionID) {
 		return
 	}
 	p.rotateCardReplyReaction(sessionID)
-}
-
-func (p *Platform) tickStreamTimestamp(sessionID agentkit.SessionID) {
-	if !p.useUnifiedStreamCard() {
-		return
-	}
-	raw, ok := p.streams.Load(sessionID)
-	if !ok {
-		return
-	}
-	st := raw.(*streamState)
-	if !shouldCardReactionHeartbeat(st) {
-		return
-	}
 	if err := p.flushUnifiedStreamTimestamp(context.Background(), sessionID); err != nil {
+		if isCardStreamingClosedError(err) {
+			return
+		}
 		slog.Debug(p.tag()+": stream timestamp heartbeat failed", "session_id", sessionID, "error", err)
 	}
 }
 
 func (p *Platform) flushUnifiedStreamTimestamp(ctx context.Context, sessionID agentkit.SessionID) error {
+	showProgress := p.showStreamProgress()
 	st := p.streamState(sessionID)
 	st.mu.Lock()
-	fallback := st.unifiedTextFallback
-	st.mu.Unlock()
-	if fallback {
+	if st.unifiedTextFallback {
+		st.mu.Unlock()
 		return nil
 	}
+	line := formatProgressHeartbeatLine(time.Now())
+	if showProgress {
+		st.progressHeartbeatLines = append(st.progressHeartbeatLines, line)
+	} else {
+		st.bodyHeartbeatLines = append(st.bodyHeartbeatLines, line)
+	}
+	st.mu.Unlock()
 
-	line := "> ⏱ " + formatStreamHeartbeatTimestamp(time.Now()) + "\n"
-	elementID := bodyStreamElementID
-	if p.showStreamProgress() {
-		elementID = progressStreamElementID
+	if showProgress {
+		return p.flushUnifiedProgress(ctx, sessionID)
 	}
-	h, err := p.ensureUnifiedCard(ctx, sessionID)
-	if err != nil || h == nil {
-		return err
-	}
-	if err := p.streamCardElementByID(ctx, h, elementID, line); err != nil {
-		if isCardStreamingClosedError(err) {
-			slog.Warn(p.tag()+": card streaming closed, skip timestamp heartbeat", "session_id", sessionID, "error", err)
-			return nil
-		}
-		return err
-	}
-	return nil
+	return p.flushUnifiedBody(ctx, sessionID)
 }
 
 func shouldFlushUnifiedProgress(changed bool, lastUpdate time.Time, eventType agentkit.AssistantMessageEventType) bool {
@@ -823,14 +857,11 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 		cardHandle := st.cardHandle
 		botReplyID := botReplyMessageID(st)
 		cardReactionID := st.cardReactionID
-		bodyText := st.bodyText
-		if strings.TrimSpace(bodyText) == "" {
-			bodyText = st.lastStreamedBody
-		}
+		bodyText := unifiedTurnEndBodyMarkdown(st)
 		if endData.Cancelled && strings.TrimSpace(bodyText) == "" {
 			bodyText = cancelledBodyText(endData.StopReason)
 		}
-		progressMD := p.renderProgressMarkdown(st, false)
+		progressMD := p.unifiedTurnEndProgressMarkdown(st)
 		if endData.Cancelled {
 			progressMD = appendCancelledProgressFooter(progressMD, endData.StopReason)
 		}
@@ -991,8 +1022,22 @@ func (p *Platform) ensureUnifiedCard(ctx context.Context, sessionID agentkit.Ses
 	st.mu.Lock()
 	st.cardHandle = handle
 	st.mu.Unlock()
-	go p.attachCardProcessingReaction(sessionID)
+	p.kickoffUnifiedCardLiveness(sessionID)
 	return handle, nil
+}
+
+// kickoffUnifiedCardLiveness runs once when the unified CardKit reply card is first created:
+// attach the processing reaction and write the first timestamp line without waiting for the 10s ticker.
+func (p *Platform) kickoffUnifiedCardLiveness(sessionID agentkit.SessionID) {
+	go p.attachCardProcessingReaction(sessionID)
+	go func() {
+		if !p.useUnifiedStreamCard() {
+			return
+		}
+		if err := p.flushUnifiedStreamTimestamp(context.Background(), sessionID); err != nil && !isCardStreamingClosedError(err) {
+			slog.Debug(p.tag()+": initial stream timestamp failed", "session_id", sessionID, "error", err)
+		}
+	}()
 }
 
 func (p *Platform) flushUnifiedProgress(ctx context.Context, sessionID agentkit.SessionID) error {
@@ -1001,7 +1046,7 @@ func (p *Platform) flushUnifiedProgress(ctx context.Context, sessionID agentkit.
 	}
 	st := p.streamState(sessionID)
 	st.mu.Lock()
-	content := p.renderProgressMarkdown(st, true)
+	content := p.unifiedProgressStreamMarkdown(st, true)
 	last := st.lastStreamedProgress
 	st.mu.Unlock()
 	if strings.TrimSpace(content) == "" {
@@ -1031,7 +1076,7 @@ func (p *Platform) flushUnifiedProgress(ctx context.Context, sessionID agentkit.
 func (p *Platform) flushUnifiedBody(ctx context.Context, sessionID agentkit.SessionID) error {
 	st := p.streamState(sessionID)
 	st.mu.Lock()
-	bodyText := st.bodyText
+	bodyText := unifiedBodyStreamMarkdown(st)
 	last := st.lastStreamedBody
 	st.mu.Unlock()
 	if strings.TrimSpace(bodyText) == "" {
@@ -1108,7 +1153,7 @@ func (p *Platform) renderProgressMarkdown(st *streamState, streaming bool) strin
 		return body
 	}
 	footer := "> " + p.formatProgressStatusLine(countProgressToolInvocations(st.steps), progressElapsed(st), false)
-	return body + "\n\n---\n\n" + footer
+	return body + progressMarkdownFooterSeparator + footer
 }
 
 func (p *Platform) renderProgressBody(st *streamState) string {

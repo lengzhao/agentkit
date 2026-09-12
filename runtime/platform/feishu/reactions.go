@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-// cardProcessingReactionTypes alternate on the unified CardKit reply card every progressHeartbeatInterval.
+// cardProcessingReactionTypes alternate on the unified CardKit reply card every streamHeartbeatInterval.
 var cardProcessingReactionTypes = [2]string{"Typing", "OneSecond"}
 
 func cardProcessingReactionEmoji(pulseIndex int) string {
