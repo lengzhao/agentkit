@@ -222,7 +222,7 @@ func integrationTestStore(t *testing.T, dir string, envFile string, secretKey st
 	return store
 }
 
-const integrationTestScope = "tool"
+const integrationTestScope = "mcp.tool"
 
 func TestIntegrationsManifestLazyRefresh(t *testing.T) {
 	t.Parallel()

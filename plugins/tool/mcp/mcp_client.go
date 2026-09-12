@@ -181,7 +181,7 @@ func (p *clientPool) evictIdleLocked(now time.Time) {
 }
 
 func connectServer(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {
-	scope := server.Name
+	scope := CredentialScope(server.Name)
 	env, err := resolveEnv(ctx, scope, server.Env, creds)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", server.Name, err)

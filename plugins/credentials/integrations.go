@@ -213,7 +213,7 @@ func integrationEnvHelp() string {
 
 Notes:
   Lookup priority: context secret > config env > encrypted file > dotenv file (no process env)
-  Declare env:NAME in mcp.json / api.json; Resolve(scope, ref) allows only refs listed for that server/API
+  Declare env:NAME in mcp.json / api.json; Resolve(scope, ref) allows only refs listed for that entry (scope mcp.<server> or openapi.<api>)
   Manifest allowlists refresh automatically when mcp.json / api.json change on disk
   add writes to global:secrets.enc.json by default (AES-256-GCM)`
 }

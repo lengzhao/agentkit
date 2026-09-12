@@ -20,7 +20,7 @@ func TestManifestFromMCPFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keys := got["github"]
+	keys := got["mcp.github"]
 	if len(keys) != 2 {
 		t.Fatalf("keys=%v, want GITHUB_TOKEN and SHARED_KEY", keys)
 	}

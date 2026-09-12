@@ -29,7 +29,15 @@ func CollectEnvKeys(v any, out map[string]struct{}) {
 	}
 }
 
-// ManifestFromMCPFile maps each mcpServers key (scope) to allowed env keys.
+const mcpCredentialScopePrefix = "mcp."
+
+// mcpCredentialScope maps an mcpServers key to integration credential scope.
+// Must stay aligned with mcp.CredentialScope.
+func mcpCredentialScope(serverName string) string {
+	return mcpCredentialScopePrefix + strings.TrimSpace(serverName)
+}
+
+// ManifestFromMCPFile maps each mcpServers key to allowed env keys under scope mcp.<name>.
 func ManifestFromMCPFile(data []byte) (map[string]map[string]struct{}, error) {
 	var doc struct {
 		MCPServers map[string]json.RawMessage `json:"mcpServers"`
@@ -52,7 +60,7 @@ func ManifestFromMCPFile(data []byte) (map[string]map[string]struct{}, error) {
 		if len(keys) == 0 {
 			continue
 		}
-		out[scope] = keys
+		out[mcpCredentialScope(scope)] = keys
 	}
 	return out, nil
 }

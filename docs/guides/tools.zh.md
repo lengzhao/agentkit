@@ -142,7 +142,7 @@ go run ./cmd/agent -config presets/web.yaml "查一下官方说法并附来源"
 | 字段 | 说明 |
 |---|---|
 | `command` / `args` | stdio 子进程 |
-| `env` | 值可为 `env:NAME`，经 credentials 解析 |
+| `env` | 值可为 `env:NAME`，经 `credentials.integrations` 解析；scope 为 `mcp.<server 名>`（与 `api.json` 的 `openapi.<api>` 对称） |
 | `url` | HTTP/SSE 端点；值可为 `env:NAME` |
 | `type` | `sse`、`http` / `streamable` / `streamable-http`；留空先尝试 streamable 再 SSE |
 | `transport` | `type` 的别名（与部分部署模板兼容） |

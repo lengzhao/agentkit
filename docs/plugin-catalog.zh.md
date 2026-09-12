@@ -383,7 +383,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
 | `credentials/static` | `credentials.Store` | YAML 级 `env:` ref（`apiKeyRef` 等）；`Resolve(ctx, GlobalScope, ref)`；进程 env + `config.env` + 可选 `encryptedFile` / dotenv |
 | `credentials/env` | `credentials.Store` | **已废弃别名**，等同 `credentials/static` |
-| `credentials/integrations` | `credentials.Store` | MCP/OpenAPI 的 `env:` ref；`Resolve(ctx, scope, ref)` + manifest allowlist；默认读 `global:mcp.json` / `global:api.json`；`/env` 写入密文库 |
+| `credentials/integrations` | `credentials.Store` | MCP/OpenAPI 的 `env:` ref；`Resolve(ctx, scope, ref)` + manifest allowlist（scope：`mcp.<server>` / `openapi.<api>`）；默认读 `global:mcp.json` / `global:api.json`；`/env` 写入密文库 |
 | `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
