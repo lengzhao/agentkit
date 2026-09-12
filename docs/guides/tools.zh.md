@@ -211,7 +211,7 @@ mcp.default:
       - global:mcp.json
   deps:
     workspace: workspace.default
-    credentials: credentials.default
+    credentials: credentials.integrations
 
 tools.default:
   use: tools/runtime
@@ -345,7 +345,7 @@ openapi.default:
       - global:api.json
   deps:
     workspace: workspace.default
-    credentials: credentials.default
+    credentials: credentials.integrations
 
 tools.default:
   use: tools/runtime

@@ -139,7 +139,13 @@ credentials.default:
         encryptedFile: global:secrets.enc.json
     deps:
         workspace: workspace.default
-    use: credentials/env
+    use: credentials/static
+credentials.integrations:
+    config:
+        encryptedFile: global:secrets.enc.json
+    deps:
+        workspace: workspace.default
+    use: credentials/integrations
 hook.before-step.default:
     config:
         contributeCommands: true
@@ -220,7 +226,7 @@ mcp.default:
             - global:mcp.json
         idleTimeoutSeconds: 300
     deps:
-        credentials: credentials.default
+        credentials: credentials.integrations
         workspace: workspace.default
     use: tool/mcp
 openapi.default:
@@ -228,7 +234,7 @@ openapi.default:
         files:
             - global:api.json
     deps:
-        credentials: credentials.default
+        credentials: credentials.integrations
         workspace: workspace.default
     use: tool/openapi
 platform.default:

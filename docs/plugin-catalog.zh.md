@@ -381,8 +381,10 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `TurnEnvelope.Workspace`（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
-| `credentials/env` | `credentials.Store` | 环境变量；`config.env` 内联键值、`encryptedFile`（默认 `global:secrets.enc.json`，AES-256-GCM，主密钥 `AGENTKIT_SECRETS_KEY` 放 `config.env`）、可选 `config.files` dotenv；优先级：进程 env > config env > encrypted > files；`/env add` 写入密文库，`/env -u` 重载 |
-| `credentials/file` | `credentials.Store` | 文件存储 |
+| `credentials/static` | `credentials.Store` | YAML 级 `env:` ref（`apiKeyRef` 等）；`Resolve(ctx, GlobalScope, ref)`；进程 env + `config.env` + 可选 `encryptedFile` / dotenv |
+| `credentials/env` | `credentials.Store` | **已废弃别名**，等同 `credentials/static` |
+| `credentials/integrations` | `credentials.Store` | MCP/OpenAPI 的 `env:` ref；`Resolve(ctx, scope, ref)` + manifest allowlist；默认读 `global:mcp.json` / `global:api.json`；`/env` 写入密文库 |
+| `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
 | `telemetry/langfuse` | `telemetry.Exporter` | Langfuse Go SDK（ingestion API）导出 |
@@ -406,7 +408,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `session/commands` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |
 | `hook/turn-continue` | `/status` |
-| `credentials/env` | `/env`（查看缓存；`/env add KEY=VALUE` 写入 `secrets.enc.json` 并校验，失败回滚；`/env -u` 重读密文库与 dotenv） |
+| `credentials/integrations` | `/env`（查看缓存；`/env add KEY=VALUE` 写入 `secrets.enc.json` 并校验，失败回滚；`/env -u` 重读密文库与 dotenv） |
 | `tool/mcp` | `/mcp`（查看工具；`/mcp add <name> <json>` 写入 `mcp.json` 并探活校验；`/mcp -u` 重读配置） |
 | `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
 | `tool/shell-bash` | `/shell`、`/sh`（本地执行 shell 命令，不经过模型） |

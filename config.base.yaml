@@ -350,11 +350,21 @@ subagent.loop.default:
       - agent.cursor.default
       - agent.claude.default
 
+# Static refs (apiKeyRef, botTokenRef, web search keys): process env + optional encrypted file.
 credentials.default:
-  use: credentials/env
+  use: credentials/static
   config:
     encryptedFile: global:secrets.enc.json
-    # Set AGENTKIT_SECRETS_KEY in L1 config.yaml credentials.config.env to unlock /env add.
+  deps:
+    workspace: workspace.default
+
+# MCP / OpenAPI env: refs: scoped manifest allowlist, /env slash, no process env.
+credentials.integrations:
+  use: credentials/integrations
+  config:
+    encryptedFile: global:secrets.enc.json
+    # manifestFiles default: global:mcp.json, global:api.json
+    # Set AGENTKIT_SECRETS_KEY in L1 config.yaml credentials.integrations.config.env for /env add.
   deps:
     workspace: workspace.default
 
@@ -818,7 +828,7 @@ mcp.default:
     idleTimeoutSeconds: 300
   deps:
     workspace: workspace.default
-    credentials: credentials.default
+    credentials: credentials.integrations
 
 openapi.default:
   use: tool/openapi
@@ -827,7 +837,7 @@ openapi.default:
       - global:api.json
   deps:
     workspace: workspace.default
-    credentials: credentials.default
+    credentials: credentials.integrations
 
 policy.dangerous-shell.default:
   use: policy/deny-dangerous-shell
