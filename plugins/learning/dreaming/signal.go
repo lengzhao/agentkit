@@ -30,8 +30,6 @@ type State struct {
 	LastSweep       time.Time            `json:"lastSweep,omitempty"`
 	Signals         []Signal             `json:"signals"`
 	ProcessedEvents map[string]time.Time `json:"processedEvents,omitempty"`
-	PromotedToday   int                  `json:"promotedToday,omitempty"`
-	PromotedDate    string               `json:"promotedDate,omitempty"`
 }
 
 // Store reads and writes dreaming state.json.
@@ -116,8 +114,29 @@ func (st *State) upsertSignal(sig Signal, now time.Time) {
 	st.Signals = append(st.Signals, sig)
 }
 
+// SignalKey normalizes signal text for deduplication.
+func SignalKey(text string) string {
+	return signalKey(text)
+}
+
 func signalKey(text string) string {
 	return strings.ToLower(strings.Join(strings.Fields(text), " "))
+}
+
+// PruneByText removes all signals matching normalized text.
+func (st *State) PruneByText(text string) {
+	key := signalKey(text)
+	if key == "" || len(st.Signals) == 0 {
+		return
+	}
+	kept := make([]Signal, 0, len(st.Signals))
+	for _, sig := range st.Signals {
+		if signalKey(sig.Text) == key {
+			continue
+		}
+		kept = append(kept, sig)
+	}
+	st.Signals = kept
 }
 
 func containsString(ss []string, v string) bool {

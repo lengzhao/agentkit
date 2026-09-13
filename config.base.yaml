@@ -141,6 +141,7 @@ platform.chat-api:
     commands: commands.default
     sessionStore: sessionStore.default
     workspace: workspace.default
+    sessionIndex: sessionIndex.default
 
 platform.http:
   use: platform/http
@@ -414,11 +415,6 @@ llm.review:
   deps:
     credentials: credentials.default
 
-tool.learn-capture.default:
-  use: tool/learn-capture
-  deps:
-    learning: learning.default
-
 hook.background-review.default:
   use: hook/background-review
   config:
@@ -427,12 +423,27 @@ hook.background-review.default:
     skipSlashOnly: true
     maxReviewsPerDay: 500
     minTurnTokens: 0
-    notify: false
+    memoryNudgeInterval: 10
+    memoryNotifications: on
   deps:
     learning: learning.default
+    memory: memory.default
     llm: llm.review
-    captureTool: tool.learn-capture.default
     sessionIndex: sessionIndex.default
+    sender: platform.default
+
+memory.default:
+  use: memory/default
+  config:
+    review:
+      writeApproval: false
+  deps:
+    workspace: workspace.default
+
+tool.memory.default:
+  use: tool/memory
+  deps:
+    memory: memory.default
 
 hook.session-index.default:
   use: hook/session-index
@@ -637,17 +648,16 @@ prompt.agents-md.default:
 learning.default:
   use: learning/default
   config:
-    # memoryRoot: "."        # 租户 local 根（多租户默认，与 multi-tenant 文档一致）
-    # memoryRoot: global:.   # 可选：global 根共享 memory.md（单用户或多 channel 共用）
     dreaming:
       enabled: true
+      feedReview: true
+      feedReviewTopK: 8
     workshop:
       mode: propose
-    review:
-      writeApproval: false
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
+    memory: memory.default
 
 # 后台 dreaming sweep（与 schedule/cron 并列由 runner 启动；多租户下按 local 根枚举）
 learning.dreamSweep:
@@ -660,8 +670,7 @@ learning.dreamSweep:
 prompt.memory.default:
   use: prompt/section/memory
   deps:
-    workspace: workspace.default
-    learning: learning.default
+    memory: memory.default
 
 prompt.skills.default:
   use: prompt/section/skills
@@ -715,6 +724,7 @@ tools.default:
       - tool.send.default
       - tool.chat-history.default
       - tool.session-query.default
+      - tool.memory.default
       - tool.schedule.default
     toolPacks:
       - tool.fs-workspace.default

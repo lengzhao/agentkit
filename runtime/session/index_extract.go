@@ -2,7 +2,6 @@ package session
 
 import (
 	"encoding/json"
-	"strings"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -24,7 +23,7 @@ func ExtractIndexableMessages(events []agentkit.SessionEvent) []indexableMessage
 			if err != nil {
 				continue
 			}
-			text := flattenContentParts(msg.Content)
+			text := FlattenTextParts(msg.Content, "\n")
 			if text == "" {
 				continue
 			}
@@ -47,20 +46,3 @@ func unmarshalModelMessage(raw json.RawMessage) (agentkit.ModelMessage, error) {
 	return msg, err
 }
 
-func flattenContentParts(parts []agentkit.ContentPart) string {
-	var b strings.Builder
-	for _, p := range parts {
-		if p.Type != "" && p.Type != "text" {
-			continue
-		}
-		t := strings.TrimSpace(p.Text)
-		if t == "" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(t)
-	}
-	return b.String()
-}

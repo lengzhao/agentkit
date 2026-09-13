@@ -36,7 +36,6 @@ func DefaultToolBlacklist() []string {
 		"tool/web-search-exa",
 		"tool/todo",
 		"tool/finish",
-		"tool/learn-capture",
 	}
 }
 

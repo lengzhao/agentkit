@@ -36,6 +36,7 @@ func TestScaffoldToolsFragmentDefault(t *testing.T) {
 		"tool.send.default",
 		"tool.chat-history.default",
 		"tool.session-query.default",
+		"tool.memory.default",
 		"tool.schedule.default",
 		"tool.fs-workspace.default",
 		"mcp.default",
@@ -49,8 +50,8 @@ func TestScaffoldToolsFragmentDefault(t *testing.T) {
 	if !ok {
 		t.Fatalf("deps.tools=%T", deps["tools"])
 	}
-	if len(tools) != 9 {
-		t.Fatalf("deps.tools=%v want 9 refs", tools)
+	if len(tools) != 10 {
+		t.Fatalf("deps.tools=%v want 10 refs", tools)
 	}
 	for _, bad := range []string{"tool/fs-memory", "tool/finish", "tool/todo"} {
 		if _, ok := fragment[defaultToolID(bad)]; ok {

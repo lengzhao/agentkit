@@ -11,7 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 )
 
-func TestSweepPromotesHighScoringSignal(t *testing.T) {
+func TestSweepEligibleCandidates(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -44,26 +44,22 @@ func TestSweepPromotesHighScoringSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var promoted []string
 	cfg := dreaming.Defaults()
 	cfg.MinRecallCount = 3
 	cfg.MinUniqueSessions = 2
 	cfg.MinScore = 0.5
-	res, err := dreaming.Run(cfg, store, &dreaming.Diary{Path: diaryPath}, "", func(text, _ string) error {
-		promoted = append(promoted, text)
-		return nil
-	}, "", now)
+	res, err := dreaming.Run(cfg, store, &dreaming.Diary{Path: diaryPath}, "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(promoted) == 0 {
-		t.Fatalf("expected promotion, result=%+v", res)
+	if res.Eligible == 0 {
+		t.Fatalf("expected eligible candidates, result=%+v", res)
 	}
 	data, err := os.ReadFile(diaryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(string(data), "Light Sleep") || !contains(string(data), "Deep Sleep") {
+	if !contains(string(data), "Light Sleep") || !contains(string(data), "background review consolidates") {
 		t.Fatalf("diary missing phases: %s", data)
 	}
 }
@@ -115,7 +111,7 @@ func TestSweepReturnsDiaryWriteError(t *testing.T) {
 	}
 	_, err = dreaming.Run(dreaming.Defaults(), store, &dreaming.Diary{
 		Path: filepath.Join(blockingFile, "DREAMS.md"),
-	}, "", nil, "", time.Now())
+	}, "", "", time.Now())
 	if err == nil {
 		t.Fatal("expected diary write error")
 	}

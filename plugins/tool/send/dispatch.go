@@ -11,7 +11,6 @@ import (
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
-	"github.com/lengzhao/agentkit/runtime/loop"
 )
 
 // Dispatch sends a proactive message through the delivery sender.
@@ -27,35 +26,14 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	if err != nil {
 		return err
 	}
-	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{
-		SessionID: input.SessionID,
-		UserID:    input.UserID,
+	return rtdelivery.SendAssistantMessage(ctx, deps.Sender, parts, rtdelivery.AssistantMessageOptions{
+		Route: capsdelivery.RouteInput{
+			SessionID: input.SessionID,
+			UserID:    input.UserID,
+		},
+		Raw:            input.Raw,
+		UseContextEmit: true,
 	})
-	if err != nil {
-		return err
-	}
-	modelMsg := agentkit.ModelMessage{Role: "assistant", Content: parts}
-	event := agentkit.OutboundEvent{
-		Route:      rtdelivery.OutboundRoute(route.PlatformID, route.SessionID),
-		AgentID:    route.AgentID,
-		PlatformID: route.PlatformID,
-		UserID:     route.UserID,
-		Type:       agentkit.EventAssistantMessage,
-		Data:       loop.MarshalOutboundData(modelMsg),
-	}
-	if err := event.RequirePlatformID(); err != nil {
-		return err
-	}
-	if input.Raw {
-		ctx = context.WithValue(ctx, agentkit.KeyProactiveSendRaw, true)
-	}
-	if useEmit(ctx, input) {
-		if emit := loop.OutboundEmitFromContext(ctx); emit != nil {
-			ctx = context.WithValue(ctx, agentkit.KeyProactiveSendUsed, true)
-			return emit(ctx, event)
-		}
-	}
-	return deps.Sender.Send(ctx, event)
 }
 
 // ParseSlashArgs parses /send arguments: /send [-r|--raw] <chatId> <message>.

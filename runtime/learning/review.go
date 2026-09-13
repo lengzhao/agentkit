@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rtsession "github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -19,6 +20,8 @@ type ReviewConfig struct {
 	MaxDigestMessages int
 	// SessionRecall is optional FTS hits from prior sessions (appended to the digest).
 	SessionRecall string
+	// SignalCandidates is optional grounded dreaming signals for consolidation.
+	SignalCandidates string
 }
 
 func (c ReviewConfig) normalized() ReviewConfig {
@@ -38,8 +41,10 @@ Rules:
 - Save only stable preferences, user-specific facts, environment conventions, or reusable workflows.
 - Skip trivia, one-off debugging, secrets, and anything easy to look up again.
 - Use learn_capture with action memory_add for compact personal memory (one fact per call); all durable facts go to memory.md.
+- Use learn_capture with action memory_replace to update one entry (old_text unique substring, content is the new text).
 - Use learn_capture with action memory_remove only to fix wrong memory (old_text substring).
 - Use learn_capture with action skill_propose only for non-trivial reusable procedures (not single commands).
+- When a "Grounded memory candidates" section is present, promote only facts that are durable and not already covered in memory.md.
 - If nothing is worth saving, reply with a short summary and do not call tools.`
 
 // ReviewResult summarizes one background review run.
@@ -49,6 +54,8 @@ type ReviewResult struct {
 	InputTokens  int
 	OutputTokens int
 	Cancelled    bool
+	// Notices are user-visible lines from successful learn_capture memory/skill actions.
+	Notices []string
 }
 
 // RunReview executes a isolated tool loop against the conversation digest.
@@ -84,6 +91,9 @@ func RunReview(
 	userPrompt := digest
 	if recall := strings.TrimSpace(cfg.SessionRecall); recall != "" {
 		userPrompt += "\n\n---\nPrior session search (same tenant):\n" + recall
+	}
+	if candidates := strings.TrimSpace(cfg.SignalCandidates); candidates != "" {
+		userPrompt += "\n\n---\n" + candidates
 	}
 	messages := []agentkit.ModelMessage{
 		{Role: "system", Content: []agentkit.ContentPart{{Type: "text", Text: reviewSystemPrompt}}},
@@ -134,6 +144,9 @@ func RunReview(
 			result, err := tools.Execute(ctx, call)
 			if err != nil {
 				result = agentkit.ResultFromCall(call, "error: "+err.Error())
+			}
+			if call.Name == "learn_capture" {
+				appendCaptureNotice(res, result.Content)
 			}
 			results = append(results, result)
 		}
@@ -199,7 +212,7 @@ func DigestMessages(messages []agentkit.ModelMessage, limit int) string {
 		if role == "" {
 			continue
 		}
-		text := flattenMessageParts(msg.Content)
+		text := rtsession.FlattenTextParts(msg.Content, "\n")
 		if role == "tool" {
 			for _, tr := range msg.ToolResults {
 				line := strings.TrimSpace(tr.Content)
@@ -212,7 +225,7 @@ func DigestMessages(messages []agentkit.ModelMessage, limit int) string {
 				b.WriteString("tool ")
 				b.WriteString(tr.Name)
 				b.WriteString(": ")
-				b.WriteString(truncateLine(line, 800))
+				b.WriteString(TruncateEllipsis(line, 800))
 			}
 			continue
 		}
@@ -233,110 +246,30 @@ func DigestMessages(messages []agentkit.ModelMessage, limit int) string {
 		}
 		b.WriteString(role)
 		b.WriteString(": ")
-		b.WriteString(truncateLine(text, 1200))
-	}
-	return b.String()
-}
-
-func flattenMessageParts(parts []agentkit.ContentPart) string {
-	var b strings.Builder
-	for _, p := range parts {
-		if p.Type != "text" {
-			continue
-		}
-		t := strings.TrimSpace(p.Text)
-		if t == "" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(t)
+		b.WriteString(TruncateEllipsis(text, 1200))
 	}
 	return b.String()
 }
 
 func flattenAssistantText(msg agentkit.ModelMessage) string {
-	return flattenMessageParts(msg.Content)
+	return rtsession.FlattenTextParts(msg.Content, "\n")
 }
 
-func truncateLine(s string, max int) string {
-	if max <= 0 || len(s) <= max {
-		return s
+func appendCaptureNotice(res *ReviewResult, raw string) {
+	if res == nil {
+		return
 	}
-	return s[:max] + "…"
-}
-
-// CaptureInput is the learn_capture tool schema.
-type CaptureInput struct {
-	Action  string `json:"action" jsonschema:"memory_add | memory_remove | skill_propose"`
-	Content string `json:"content,omitempty" jsonschema:"Text for memory_add or skill body for skill_propose"`
-	OldText string `json:"old_text,omitempty" jsonschema:"Substring for memory_remove"`
-	Name    string `json:"name,omitempty" jsonschema:"Skill name for skill_propose"`
-	Focus   string `json:"focus,omitempty" jsonschema:"Short focus for skill_propose"`
-}
-
-// CaptureOutput is returned to the review model.
-type CaptureOutput struct {
-	OK      bool   `json:"ok"`
-	Message string `json:"message"`
-}
-
-// ApplyCapture applies one learn_capture action via the learning service API.
-type CaptureApplier interface {
-	CaptureMemoryAdd(ctx context.Context, text, source string) (string, error)
-	CaptureMemoryRemove(ctx context.Context, oldText string) (string, error)
-	CaptureSkillPropose(ctx context.Context, name, body, sessionID, focus, source string) (string, error)
-}
-
-func ApplyCapture(ctx context.Context, app CaptureApplier, sessionID string, in CaptureInput) (CaptureOutput, error) {
-	if app == nil {
-		return CaptureOutput{}, fmt.Errorf("capture applier is required")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
 	}
-	action := strings.ToLower(strings.TrimSpace(in.Action))
-	switch action {
-	case "memory_add":
-		text := strings.TrimSpace(in.Content)
-		if text == "" {
-			return CaptureOutput{}, fmt.Errorf("content is required for memory_add")
-		}
-		msg, err := app.CaptureMemoryAdd(ctx, text, "background-review")
-		if err != nil {
-			return CaptureOutput{OK: false, Message: err.Error()}, nil
-		}
-		return CaptureOutput{OK: true, Message: msg}, nil
-	case "memory_remove":
-		old := strings.TrimSpace(in.OldText)
-		if old == "" {
-			return CaptureOutput{}, fmt.Errorf("old_text is required for memory_remove")
-		}
-		msg, err := app.CaptureMemoryRemove(ctx, old)
-		if err != nil {
-			return CaptureOutput{OK: false, Message: err.Error()}, nil
-		}
-		return CaptureOutput{OK: true, Message: msg}, nil
-	case "skill_propose":
-		body := strings.TrimSpace(in.Content)
-		if body == "" {
-			return CaptureOutput{}, fmt.Errorf("content is required for skill_propose")
-		}
-		name := strings.TrimSpace(in.Name)
-		focus := strings.TrimSpace(in.Focus)
-		msg, err := app.CaptureSkillPropose(ctx, name, body, sessionID, focus, "background-review")
-		if err != nil {
-			return CaptureOutput{OK: false, Message: err.Error()}, nil
-		}
-		return CaptureOutput{OK: true, Message: msg}, nil
-	default:
-		return CaptureOutput{}, fmt.Errorf("unknown action %q", in.Action)
+	var out CaptureOutput
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return
 	}
+	if !out.OK || strings.TrimSpace(out.Message) == "" {
+		return
+	}
+	res.Notices = append(res.Notices, out.Message)
 }
 
-// FormatCaptureResult JSON-encodes CaptureOutput for Tool.Call.
-func FormatCaptureResult(out CaptureOutput) (string, error) {
-	data, err := json.Marshal(out)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}

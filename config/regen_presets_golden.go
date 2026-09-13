@@ -3,6 +3,7 @@
 // Regenerate testdata/presets/*.resolved.yaml after config.base.yaml changes:
 //
 //	cd config && OPENAI_API_KEY=test-key LANGFUSE_PUBLIC_KEY=pk-test LANGFUSE_SECRET_KEY=sk-test go run regen_presets_golden.go
+//	Chain-only presets (cron, daemon, …): add --all
 package main
 
 import (
@@ -22,6 +23,7 @@ var chainOnly = map[string]bool{
 }
 
 func main() {
+	regenAll := len(os.Args) > 1 && os.Args[1] == "--all"
 	base := filepath.Join("..", "config.base.yaml")
 	presets, err := filepath.Glob(filepath.Join("..", "presets", "*.yaml"))
 	if err != nil {
@@ -30,7 +32,7 @@ func main() {
 	outDir := filepath.Join("testdata", "presets")
 	for _, overlay := range presets {
 		name := filepath.Base(overlay)
-		if chainOnly[name] {
+		if chainOnly[name] && !regenAll {
 			continue
 		}
 		got, err := config.ResolveFiles(base, overlay)

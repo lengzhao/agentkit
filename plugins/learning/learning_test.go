@@ -19,102 +19,14 @@ func (stubSessionStore) Get(context.Context, agentkit.SessionID) (agentkit.Sessi
 	return nil, nil
 }
 
-func TestMemoryStoreAddAndLoad(t *testing.T) {
-	t.Parallel()
-
-	path := t.TempDir() + "/memory.md"
-	store := NewMemoryStore(path, 200)
-	if err := store.Add("prefers concise answers", "test"); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].Content != "prefers concise answers" {
-		t.Fatalf("entries = %#v", entries)
-	}
-}
-
-func TestMemoryStoreRejectsSecret(t *testing.T) {
-	t.Parallel()
-
-	store := NewMemoryStore(t.TempDir()+"/memory.md", 200)
-	if err := store.Add("api_key=supersecret", "test"); err == nil {
-		t.Fatal("expected secret rejection")
-	}
-}
-
-func TestLearnCommandMemory(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: root, Local: root, Scope: "local"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := svc.Commands()[0]
-	out, err := cmd.CommandExec(context.Background(), "memory likes Go tests")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out == "" {
-		t.Fatal("expected confirmation")
-	}
-	show, err := cmd.CommandExec(context.Background(), "show")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(show, "likes Go tests") {
-		t.Fatalf("show = %q", show)
-	}
-}
-
-func TestLearnCommandMemorySucceedsWhenDreamingSignalCannotBeWritten(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: root, Local: root, Scope: "local"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Blocks memory/dreaming/state.json while leaving memory.md writable.
-	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "memory", "dreaming"), []byte("not a directory"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := svc.Commands()[0].CommandExec(context.Background(), "memory likes Go tests")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "personal memory updated") || !strings.Contains(out, "warning: dreaming signal not recorded") {
-		t.Fatalf("out = %q", out)
-	}
-	show, err := svc.Commands()[0].CommandExec(context.Background(), "show")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(show, "likes Go tests") {
-		t.Fatalf("show = %q", show)
-	}
-}
-
 func TestLearnCommandHelp(t *testing.T) {
 	t.Parallel()
 
+	ws := rtworkspace.Static(t.TempDir())
 	svc, err := New(Config{}, Deps{
-		Workspace:    rtworkspace.Static(t.TempDir()),
+		Workspace:    ws,
 		SessionStore: stubSessionStore{},
+		Memory:       newTestMemoryStub(ws),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +38,9 @@ func TestLearnCommandHelp(t *testing.T) {
 		}
 		if !strings.Contains(out, "/learn dream") {
 			t.Fatalf("args=%q help = %q", args, out)
+		}
+		if strings.Contains(out, "/learn memory") {
+			t.Fatalf("memory commands moved to /memory: %q", out)
 		}
 	}
 }
@@ -178,7 +93,7 @@ func TestLearnCommandSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: store})
+	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: store, Memory: newTestMemoryStub(ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,14 +114,29 @@ func TestLearnCommandSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out == "" {
-		t.Fatal("expected confirmation")
+	if !strings.Contains(out, "dreaming signals") {
+		t.Fatalf("session out = %q", out)
 	}
-	show, err := svc.Commands()[0].CommandExec(ctx, "show")
+}
+
+func TestLearnCommandSessionDreamingBlockedPath(t *testing.T) {
+	dir := t.TempDir()
+	ws, err := workspaceruntime.New(workspaceruntime.Config{Global: dir, Local: dir, Scope: "local"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(show, "remember I prefer YAML configs") {
-		t.Fatalf("show = %q", show)
+	if err := os.MkdirAll(filepath.Join(dir, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "memory", "dreaming"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}, Memory: newTestMemoryStub(ws)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.Commands()[0].CommandExec(context.Background(), "session")
+	if err == nil {
+		t.Fatal("expected dreaming signal write to fail when dreaming path blocked")
 	}
 }

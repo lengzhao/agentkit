@@ -6,6 +6,9 @@ import "time"
 type Config struct {
 	Enabled             *bool   `json:"enabled"`
 	Frequency           string  `json:"frequency"` // cron, default "0 3 * * *"
+	// FeedReview when true, top grounded signals are appended to background-review digest.
+	FeedReview *bool `json:"feedReview"`
+	FeedReviewTopK int `json:"feedReviewTopK"`
 	MinScore            float64 `json:"minScore"`
 	MinRecallCount      int     `json:"minRecallCount"`
 	MinUniqueSessions   int     `json:"minUniqueSessions"`
@@ -32,6 +35,14 @@ func Defaults() Config {
 // IsEnabled reports whether dreaming sweeps are allowed by config.
 func (c Config) IsEnabled() bool {
 	return c.enabledFlag()
+}
+
+// FeedReviewEnabled reports whether scored signals are shown to background review.
+func (c Config) FeedReviewEnabled() bool {
+	if c.FeedReview == nil {
+		return true
+	}
+	return *c.FeedReview
 }
 
 func (c Config) enabledFlag() bool {
@@ -67,6 +78,12 @@ func (c Config) Normalized() Config {
 	}
 	if c.SessionScanLimit > 0 {
 		out.SessionScanLimit = c.SessionScanLimit
+	}
+	if c.FeedReview != nil {
+		out.FeedReview = c.FeedReview
+	}
+	if c.FeedReviewTopK > 0 {
+		out.FeedReviewTopK = c.FeedReviewTopK
 	}
 	return out
 }

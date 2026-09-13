@@ -40,9 +40,14 @@ func TestListConversationsFromPersistedSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	idx, err := session.NewSQLiteIndex(session.SQLiteIndexConfig{}, session.SQLiteIndexDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
 	p, err := New(Config{}, Deps{
 		SessionStore: store,
 		Workspace:    ws,
+		SessionIndex: idx,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -137,13 +137,15 @@ hook.background-review.default:
         maxDigestMessages: 24
         maxReviewsPerDay: 500
         maxSteps: 10
+        memoryNotifications: "on"
+        memoryNudgeInterval: 10
         minTurnTokens: 0
-        notify: false
         skipSlashOnly: true
     deps:
-        captureTool: tool.learn-capture.default
         learning: learning.default
         llm: llm.review
+        memory: memory.default
+        sender: platform.default
         sessionIndex: sessionIndex.default
     use: hook/background-review
 hook.before-step.default:
@@ -194,11 +196,12 @@ learning.default:
     config:
         dreaming:
             enabled: true
-        review:
-            writeApproval: false
+            feedReview: true
+            feedReviewTopK: 8
         workshop:
             mode: propose
     deps:
+        memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: learning/default
@@ -257,6 +260,13 @@ mcp.default:
         credentials: credentials.integrations
         workspace: workspace.default
     use: tool/mcp
+memory.default:
+    config:
+        review:
+            writeApproval: false
+    deps:
+        workspace: workspace.default
+    use: memory/default
 openapi.default:
     config:
         enableLocal: true
@@ -279,6 +289,7 @@ platform.chat-api:
         path: /v1/
     deps:
         commands: commands.default
+        sessionIndex: sessionIndex.default
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: platform/chat-api
@@ -312,8 +323,7 @@ prompt.default:
     use: prompt/assembler/default
 prompt.memory.default:
     deps:
-        learning: learning.default
-        workspace: workspace.default
+        memory: memory.default
     use: prompt/section/memory
 prompt.persona.default:
     config:
@@ -540,10 +550,10 @@ tool.fs-workspace.readonly.default:
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
-tool.learn-capture.default:
+tool.memory.default:
     deps:
-        learning: learning.default
-    use: tool/learn-capture
+        memory: memory.default
+    use: tool/memory
 tool.schedule.default:
     config:
         maxJobs: 32
@@ -613,6 +623,7 @@ tools.default:
             - tool.send.default
             - tool.chat-history.default
             - tool.session-query.default
+            - tool.memory.default
             - tool.schedule.default
     use: tools/runtime
 tools.subagent.default:

@@ -1,4 +1,4 @@
-package learning
+package memory
 
 import (
 	"encoding/json"

@@ -15,14 +15,15 @@
 
 ## 2. 文件布局
 
-`learning.default.config.memoryRoot` 控制 `memory.md`、`memory/dreaming/`、review 暂存等路径（默认 `"."` = 当前租户 **local** 根）。单部署希望全 channel 共用一份记忆时，在 L1 设 `memoryRoot: global:.`（解析到 `workspace` 的 global 根，如 `~/.agentkit` 或 L1 的 `global:` 目录）。
+`memory.default.config.memoryRoot` 控制 `memory.md`、`memory/dreaming/`（dreaming 侧车）、staged 等路径（默认 `"."` = 当前租户 **local** 根）。单部署希望全 channel 共用一份记忆时，在 L1 设 `memoryRoot: global:.`。
 
 默认（`memoryRoot: "."`）落在租户 local 根（如 `.agentkit/chat-api_default_channel/` 或 `tenants/slack_C001/`）：
 
 ```
-├── memory.md              # 长期记忆（prompt/section/memory 注入）
+├── memory.md              # 长期记忆正文（仅 § 分条，无 source 注释；prompt 注入）
 ├── DREAMS.md              # Dream Diary（只读审阅，不注入模型）
 └── memory/
+    ├── ledger.jsonl       # 追加审计：add/remove、source、时间（不注入模型）
     └── dreaming/
         ├── state.json     # 短期信号、召回计数、检查点
         └── deep/
@@ -55,14 +56,14 @@ flowchart LR
 |---|---|---|
 | Light | 否 | `## Light Sleep` 摘要 |
 | REM | 否 | `## REM Sleep` 摘要 |
-| Deep | 是（通过门槛者） | `## Deep Sleep` 摘要 |
+| Deep | 否（不写 memory.md） | `## Deep Sleep` 摘要 |
 
 ### 3.1 Grounded 原则
 
 - 只有带来源引用的片段可进入 Deep 候选（`source=session:<id>` 或 `source=learn-*`）。
 - `DREAMS.md` 与阶段报告**永不**作为晋升来源。
 - session ingestion 会记录已处理事件指纹，重复 sweep 不会把同一条消息重复计数。
-- `/learn memory` 写入长期记忆成功后，dreaming signal 记录失败只返回 warning，不回滚已写入的 `memory.md`。
+- `/memory add` 或 review 写入长期记忆后，learning 通过 commit 钩子记录 dreaming signal（失败不回滚 `memory.md`）。
 
 ### 3.2 Deep 评分门槛（默认）
 
@@ -95,7 +96,8 @@ flowchart LR
 
 ## Deep Sleep — 2026-09-01T03:00:02Z
 
-- promoted 2 entries to memory.md
+- scored 6 grounded candidates (dreaming does not write memory.md)
+- 2 above threshold (eligible for background review / manual /memory)
 - skipped 4 below threshold
 ```
 
@@ -122,36 +124,30 @@ create/update → pending → apply → applied
 
 ## 6. `/learn` 命令
 
-### 6.1 写入策略（租户 `memory/learning/policy.json`）
+### 6.1 写入策略（`memory/policy.json` 与 `learning/policy.json`）
 
-在 **需授权** 与 **自动** 之间切换，优先级高于 L0 的 `review.writeApproval` / `workshop.mode`（`/learn policy reset` 恢复为配置默认）：
+在 **需授权** 与 **自动** 之间切换，优先级高于 L0 的 `memory.default.config.review.writeApproval` / `workshop.mode`（`/memory policy reset` 或 `/learn policy reset` 恢复默认）：
 
 | 命令 | 效果 |
 |---|---|
-| `/learn policy` | 查看当前 memory / skills 策略 |
-| `/learn policy memory approve` | background-review 写入进 `memory/.staged/`，需 `/learn approve` |
-| `/learn policy memory auto` | background-review 直接写 `memory.md` |
+| `/memory policy` | 查看 memory 写入门策略 |
+| `/learn policy` | 查看 skills 策略（memory 见 `/memory policy`） |
+| `/memory policy approve` | background-review 写入进 `memory/.staged/`，需 `/memory approve` |
+| `/memory policy auto` | background-review 直接写 `memory.md` |
 | `/learn policy skills propose` | skill 提案进 workshop，需 apply |
 | `/learn policy skills auto` | scanner 通过后自动写入 `skills/` |
 | `/learn policy skills off` | 关闭自动捕获（显式 `/learn skill` 仍可用，除非 L0 `workshop.mode=off`） |
 
-说明：`/learn memory`、手动 `/learn skill` 不受 memory approve 限制；Dreaming Deep 晋升 `memory.md` 仍为规则驱动、与 review 策略无关。
+说明：手动 `/memory add`、手动 `/learn skill` 不受 memory approve 限制。自动写入 `memory.md` 仅经 **background review**（`learn_capture`）。
 
 ```text
-/learn                         使用说明（同 /learn help）
-/learn show                    查看 memory.md（不含 staged 待审批）
-/learn memory <text>           立即追加记忆
-/learn remove <text>           删除匹配条目
-/learn session                 从当前会话沉淀（同时记录 dreaming 信号）
-/learn dream status            dreaming 状态
-/learn dream run               手动执行一次三阶段 sweep
-/learn dream on|off            开关后台 sweep（learning/dream-sweep）
-/learn skill [focus]           从当前会话生成 skill 提案
-/learn workshop list           列出 pending 提案
-/learn workshop show <id>      查看提案
-/learn workshop apply <id>     应用提案
-/learn workshop reject <id>    拒绝提案
-/learn help                    帮助
+/memory show|add|remove|pending|approve|policy   见 /memory help
+
+/learn session                 会话用户消息 → dreaming 信号（不写 memory.md）
+/learn dream status|run|on|off
+/learn skill [focus] | workshop list|show|apply|reject
+/learn policy skills …
+/learn help
 ```
 
 ## 7. 调度
@@ -162,7 +158,7 @@ L0 [config.base.yaml](../../config.base.yaml) 默认挂载 `learning.dreamSweep`
 
 ## 8. 与 prompt/section/memory 的关系
 
-- `memory.md`：继续由 `prompt/section/memory` 向上搜索并注入。
+- `memory.md`：`prompt/section/memory` 依赖 **`memory.default`**（`PromptBody`：global + local 合并去重）。`memory/default` 与 `learning/default` 在配置图中独立挂载。
 - `DREAMS.md`：**不注入**模型上下文。
 - Skill 提案在 apply 前对 agent 不可见；apply 后由 `skill/filesystem` 发现。
 
@@ -176,7 +172,7 @@ sequenceDiagram
   participant Agent
   participant Hook as hook/background-review
   participant Review as RunReview LLM loop
-  participant Cap as tool/learn_capture
+  participant Cap as learn_capture（hook 内建）
 
   User->>Agent: 本轮对话
   Agent->>User: 回复 + turn/end
@@ -188,27 +184,28 @@ sequenceDiagram
 
 | 项 | 行为 |
 |---|---|
-| 触发 | `TurnCompleteHook`（`runtime/agent` 在 turn 成功 defer 中调用） |
-| 工具 | 仅 `learn_capture`（`memory_add`、`memory_remove`、`skill_propose`） |
+| 触发 | `TurnCompleteHook`；**非每 turn**：`memoryNudgeInterval`（默认 10 个用户 turn，对齐 Hermes `memory.nudge_interval`）；本 turn 已调用主 agent `memory` 工具则跳过并清零计数；`0` 关闭自动 review |
+| 工具 | 仅 `learn_capture`（`memory_add`、`memory_replace`、`memory_remove`、`skill_propose`） |
 | 记忆来源 | `source=background-review`，并记录 dreaming signal（与 `/learn memory` 一致） |
 | 技能 | 走 Workshop：`workshop.mode=propose` 为 pending；`auto` 则 scanner 通过后直接 apply |
 | 跳过 | 无有效用户文本、或近端只有 `/` 命令（`skipSlashOnly: true`） |
 | 关闭 | `hook.background-review` 配置 `enabled: false`，或从 `hooks.default` deps 移除该 provider |
 | 写入审批 | `learning.default.config.review.writeApproval: true` 时，review 的 `memory_add` 进入 `memory/.staged/`，用 `/learn pending`、`/learn approve <id>`；默认 `false`（auto，直接写 `memory.md`） |
-| 节流 | `maxReviewsPerDay`、`minTurnTokens`、`minIdleSeconds`（见 `hook.background-review` config） |
+| 节流 | `memoryNudgeInterval`、`maxReviewsPerDay`、`minTurnTokens`、`minIdleSeconds`（见 `hook.background-review` config）；计数持久化在 `memory/dreaming/review_nudge.json` |
 | LLM | 默认 `llm.review`（如 `gpt-4o-mini`），与主 agent `llm.fallback` 分离 |
 | 关停 | `runner.Stop` 调用 `CancelAllBackgroundReviews()` |
-| 可观测 | OpenTelemetry span `learning.review`；`notify: true` 时额外 slog `learning notification` |
+| 可观测 | OpenTelemetry span `learning.review`；`memoryNotifications: on\|verbose` 时向当前会话推送 `💾 Memory updated`（经 `platform.default` sender）；`off` 仅写盘 |
+| 主 agent 记忆工具 | `tool/memory`：`add` / `replace` / `remove`（满容返回 `current_entries` + `usage`）；工具说明含 **WHEN**（用户纠正、偏好/回复格式、显式「记住」须**当轮**调用，勿只口头确认）、**SKIP**（与 skill 分工）、**per-turn 冻结**（见 §9.2）；文案见 `runtime/memory/tool_schema.go` `MemoryToolDescription` |
 
-L0 默认已挂载 `tool.learn-capture.default` 与 `hook.background-review.default`（见 [config.base.yaml](../../config.base.yaml)）。
+L0 默认已挂载 `hook.background-review.default`（`learn_capture` 由 hook 内建：`memory` 写 memory.md，`learning` 管 skill_propose 与编排，见 [config.base.yaml](../../config.base.yaml)）。
 
-与 **Dreaming sweep** 的关系：review 负责「刚结束这一轮」的 LLM 判断；sweep 仍负责跨会话、无 LLM 的 grounded 晋升。两者可同时开启。
+与 **Dreaming sweep** 的关系：sweep 负责 session 采集、Light/REM、`DREAMS.md` 与短期信号池；**唯一自动晋升 `memory.md` 的路径是 background review**。Review digest 可附带 Top-K 达标信号（`dreaming.feedReview`，默认开启）。
 
 ### 9.1 跨 session 检索（P1）
 
 - **`session/sqlite-index`**：按租户 workspace 在 `sessions/.index.sqlite` 维护 FTS5；`hook/session-index` 在每轮成功后异步 sync。
-- **`tool/session-query`**：主 Agent 可搜索本租户全部 `session/store` JSONL 历史。
-- **Background review**：若配置了 `sessionIndex`，会把与本轮最后一条用户消息相关的检索摘要附在 review digest 末尾，便于避免重复记忆。
+- **`tool/session-search`**（插件 kind `tool/session-query`）：`session_search` 工具，`mode=search`（FTS）、`list`（浏览会话）、`scroll`（按 `session_id`+`seq` 前后翻页）。
+- **Background review**：若配置了 `sessionIndex` 且 `hook.background-review.config.sessionRecall` 不为 `false`（默认开启），会把与本轮最后一条用户消息相关的 FTS 摘要附在 review digest 末尾；与主 agent 的 `session_search` 重叠时可设 `sessionRecall: false` 关闭。
 
 ### 9.2 memory.md 与 prompt 冻结
 

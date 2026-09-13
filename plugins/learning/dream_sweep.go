@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
+	caplearning "github.com/lengzhao/agentkit/cap/learning"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 // DreamSweep runs scheduled dreaming sweeps without agent turns.
 type DreamSweep struct {
-	svc  *Service
+	svc  caplearning.DreamSweepScheduler
 	poll time.Duration
-	now  func() time.Time
 	wait func(context.Context, time.Duration) error
 }
 
@@ -25,7 +23,7 @@ type DreamSweepConfig struct {
 }
 
 type DreamSweepDeps struct {
-	Learning *Service `json:"learning"`
+	Learning caplearning.DreamSweepScheduler `json:"learning"`
 }
 
 // NewDreamSweep registers learning/dream-sweep: background grounded dreaming sweeps.
@@ -40,7 +38,6 @@ func NewDreamSweep(cfg DreamSweepConfig, deps DreamSweepDeps) (capschedule.Runti
 	return &DreamSweep{
 		svc:  deps.Learning,
 		poll: poll,
-		now:  time.Now,
 		wait: sleepContext,
 	}, nil
 }
@@ -61,7 +58,7 @@ func (d *DreamSweep) Start(ctx context.Context, _ capschedule.SubmitFunc) error 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if d.svc != nil && !d.svc.disabled {
+		if d.svc != nil && !d.svc.Disabled() {
 			if err := d.runDueSweeps(ctx); err != nil {
 				slog.Warn("dream sweep failed", "err", err)
 			}
@@ -75,49 +72,17 @@ func (d *DreamSweep) Start(ctx context.Context, _ capschedule.SubmitFunc) error 
 func (d *DreamSweep) Stop(context.Context) error { return nil }
 
 func (d *DreamSweep) runDueSweeps(ctx context.Context) error {
-	walker, ok := d.svc.workspace.(cw.LocalTenantWalker)
+	walker, ok := d.svc.Workspace().(cw.LocalTenantWalker)
 	if !ok {
-		if !d.sweepDue(ctx) {
+		if !d.svc.DreamSweepDue(ctx) {
 			return nil
 		}
-		_, err := d.svc.runDreamSweep(ctx)
-		return err
+		return d.svc.RunScheduledDreamSweep(ctx)
 	}
 	return walker.WalkLocalTenants(ctx, func(tctx context.Context) error {
-		if !d.sweepDue(tctx) {
+		if !d.svc.DreamSweepDue(tctx) {
 			return nil
 		}
-		_, err := d.svc.runDreamSweep(tctx)
-		return err
+		return d.svc.RunScheduledDreamSweep(tctx)
 	})
-}
-
-func (d *DreamSweep) sweepDue(ctx context.Context) bool {
-	store, err := d.svc.dreamingStore(ctx)
-	if err != nil {
-		return false
-	}
-	st, err := store.Load()
-	if err != nil || st == nil || !st.Enabled {
-		return false
-	}
-	cfg := d.svc.dreamingCfg()
-	expr := strings.TrimSpace(cfg.Frequency)
-	if expr == "" {
-		expr = "0 3 * * *"
-	}
-	sched, err := rtschedule.ParseCron(expr)
-	if err != nil {
-		return false
-	}
-	now := d.now()
-	anchor := st.LastSweep
-	if anchor.IsZero() {
-		anchor = now.Add(-24 * time.Hour)
-	}
-	next, ok := sched.Next(anchor)
-	if !ok {
-		return false
-	}
-	return !next.After(now)
 }

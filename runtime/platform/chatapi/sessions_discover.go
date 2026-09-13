@@ -55,6 +55,12 @@ func (p *Platform) syncConversationsFromSessions(ctx context.Context, channelKey
 		return err
 	}
 	for _, dir := range dirs {
+		if p.sessionIndex != nil {
+			if err := p.syncConversationsFromSessionIndex(ctx, channelKey, dir); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := p.scanSessionDir(ctx, channelKey, dir); err != nil {
 			return err
 		}

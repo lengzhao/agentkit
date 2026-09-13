@@ -2,15 +2,12 @@ package prompt
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	"github.com/lengzhao/agentkit/plugins/learning"
+	capmemory "github.com/lengzhao/agentkit/cap/memory"
+	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
 func TestFormatMemoryFileContentStructured(t *testing.T) {
@@ -26,58 +23,37 @@ func TestFormatMemoryFileContentStructured(t *testing.T) {
 		"",
 		"likes Go tests",
 	}, "\n")
-	got := formatMemoryFileContent([]byte(raw))
+	got := rtmem.FormatMemoryPromptBody(rtmem.ParseMemory(raw))
 	want := "prefers concise answers\n\nlikes Go tests"
 	if got != want {
-		t.Fatalf("formatMemoryFileContent() = %q, want %q", got, want)
+		t.Fatalf("FormatMemoryPromptBody() = %q, want %q", got, want)
 	}
 }
 
-func TestMemoryMDBuildStripsMetadata(t *testing.T) {
-	t.Parallel()
+type stubMemoryReader struct {
+	body string
+}
 
-	root := t.TempDir()
-	work := filepath.Join(root, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	body := rtlearning.RenderMemory([]rtlearning.MemoryEntry{{
-		Content: "remember this",
-		Meta:    "source=test",
-	}})
-	if err := os.WriteFile(filepath.Join(work, "memory.md"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func (s stubMemoryReader) LoadEntries(context.Context) ([]capmemory.MemoryEntry, int, int, error) {
+	return nil, 0, 0, nil
+}
 
-	svc, err := learning.New(learning.Config{}, learning.Deps{
-		Workspace:    rtworkspace.Static(root),
-		SessionStore: learningStubSessionStore{},
+func (s stubMemoryReader) PromptBody(context.Context) (string, error) {
+	return s.body, nil
+}
+
+func TestMemoryMDUsesReader(t *testing.T) {
+	provider, err := NewMemoryMD(MemoryMDConfig{}, MemoryMDDeps{
+		Memory: stubMemoryReader{body: "injected fact"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewMemoryMD(MemoryMDConfig{Root: "work"}, MemoryMDDeps{
-		Workspace: rtworkspace.Static(root),
-		Learning:  svc,
-	})
+	section, err := provider.Sections()[0].Build(context.Background(), agentkit.PromptRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	section, err := provider.Sections()[0].Build(t.Context(), agentkit.PromptRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if section.Content != "remember this" {
+	if section.Content != "injected fact" {
 		t.Fatalf("content = %q", section.Content)
 	}
-	if strings.Contains(section.Content, "<!--") || strings.Contains(section.Content, "# memory.md") {
-		t.Fatalf("metadata leaked into prompt: %q", section.Content)
-	}
-}
-
-type learningStubSessionStore struct{}
-
-func (learningStubSessionStore) Get(context.Context, agentkit.SessionID) (agentkit.Session, error) {
-	return nil, nil
 }

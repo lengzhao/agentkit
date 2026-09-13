@@ -3,7 +3,6 @@ package send
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
@@ -37,10 +36,6 @@ type SendInput struct {
 
 type SendOutput struct {
 	Sent bool `json:"sent"`
-}
-
-func useEmit(_ context.Context, input SendInput) bool {
-	return strings.TrimSpace(input.SessionID) == "" && strings.TrimSpace(input.UserID) == ""
 }
 
 // NewSend registers tool/send: Send a proactive user-visible message through the platform.

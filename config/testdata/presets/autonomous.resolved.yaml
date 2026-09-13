@@ -175,11 +175,12 @@ learning.default:
     config:
         dreaming:
             enabled: true
-        review:
-            writeApproval: false
+            feedReview: true
+            feedReviewTopK: 8
         workshop:
             mode: propose
     deps:
+        memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: learning/default
@@ -227,6 +228,13 @@ mcp.default:
         credentials: credentials.integrations
         workspace: workspace.default
     use: tool/mcp
+memory.default:
+    config:
+        review:
+            writeApproval: false
+    deps:
+        workspace: workspace.default
+    use: memory/default
 openapi.default:
     config:
         files:
@@ -303,8 +311,7 @@ prompt.default:
     use: prompt/assembler/default
 prompt.memory.default:
     deps:
-        learning: learning.default
-        workspace: workspace.default
+        memory: memory.default
     use: prompt/section/memory
 prompt.persona.default:
     config:

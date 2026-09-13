@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
@@ -63,6 +64,8 @@ type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
 	Workspace    workspace.Service     `json:"workspace,omitempty"`
+	// SessionIndex optional: list conversations from the same SQLite index as tool/session-query.
+	SessionIndex capsessionindex.Service `json:"sessionIndex,omitempty"`
 	Agents       []agentkit.Agent      `json:"agents,omitempty"`
 }
 
@@ -88,6 +91,7 @@ type Platform struct {
 	publicBaseURL       string
 	debugUI             bool
 	sessionStore        agentkit.SessionStore
+	sessionIndex        capsessionindex.Service
 	workspace           workspace.Service
 	commands            agentkit.Commands
 	sessionScope        session.SessionScope
@@ -194,6 +198,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		activeByConv:       make(map[string]string),
 		debugUI:            cfg.DebugUI,
 		sessionStore:       deps.SessionStore,
+		sessionIndex:       deps.SessionIndex,
 		workspace:          deps.Workspace,
 		commands:           deps.Commands,
 		sessionScope:       session.ParseScope(cfg.SessionScope),

@@ -22,6 +22,7 @@ platform.default:
     # agents: ["assistant"] # 可选：调试页 Agent 下拉
   deps:
     commands: commands.default
+    sessionIndex: sessionIndex.default
     sessionStore: sessionStore.default
     workspace: workspace.default
 

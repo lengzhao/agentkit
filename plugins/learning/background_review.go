@@ -9,7 +9,11 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	caplearning "github.com/lengzhao/agentkit/cap/learning"
+	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
+	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
@@ -25,29 +29,40 @@ type BackgroundReviewConfig struct {
 	SkipSlashOnly     *bool  `json:"skipSlashOnly"`
 	MinTurnTokens     int    `json:"minTurnTokens"`
 	MaxReviewsPerDay  int    `json:"maxReviewsPerDay"`
-	MinIdleSeconds    int    `json:"minIdleSeconds"`
-	Notify            bool   `json:"notify"`
+	MinIdleSeconds      int    `json:"minIdleSeconds"`
+	MemoryNotifications string `json:"memoryNotifications"` // off | on | verbose (Hermes display.memory_notifications)
+	// MemoryNudgeInterval user turns between automatic memory reviews (Hermes memory.nudge_interval). 0 disables; default 10.
+	MemoryNudgeInterval *int `json:"memoryNudgeInterval"`
+	// SessionRecall when false, skip FTS prior-session block in the review digest (use tool/session-search instead).
+	SessionRecall *bool `json:"sessionRecall"`
+}
+
+// reviewLearning is learning/default: review orchestration + skill_propose (memory is a separate dep).
+type reviewLearning interface {
+	caplearning.ReviewHost
+	caplearning.SkillProposer
 }
 
 type backgroundReviewDeps struct {
-	Learning     *Service                `json:"learning"`
-	LLM          agentkit.LLMProvider    `json:"llm"`
-	CaptureTool  agentkit.Tool           `json:"captureTool"`
-	SessionIndex capsessionindex.Service `json:"sessionIndex,omitempty"`
+	Learning     reviewLearning            `json:"learning"`
+	Memory       capmemory.Capture         `json:"memory"`
+	LLM          agentkit.LLMProvider      `json:"llm"`
+	SessionIndex capsessionindex.Service   `json:"sessionIndex,omitempty"`
+	Sender       capsdelivery.Sender       `json:"sender,omitempty"`
 }
 
 type backgroundReviewProvider struct {
 	cfg      BackgroundReviewConfig
-	learning *Service
+	learning reviewLearning
 	llm      agentkit.LLMProvider
 	tools    agentkit.ToolRuntime
 	index    capsessionindex.Service
+	sender   capsdelivery.Sender
 	idle     sync.Map // sessionID -> last turn complete time
 }
 
 func init() {
 	pluginkit.Register("hook/background-review", NewBackgroundReview)
-	pluginkit.Register("tool/learn-capture", NewLearnCapture)
 }
 
 // NewBackgroundReview registers hook/background-review: spawn an LLM review fork after each successful turn.
@@ -55,17 +70,21 @@ func NewBackgroundReview(cfg BackgroundReviewConfig, deps backgroundReviewDeps) 
 	if deps.Learning == nil {
 		return nil, fmt.Errorf("hook/background-review requires learning")
 	}
+	if deps.Memory == nil {
+		return nil, fmt.Errorf("hook/background-review requires memory")
+	}
 	if deps.LLM == nil {
 		return nil, fmt.Errorf("hook/background-review requires llm")
 	}
-	if deps.CaptureTool == nil {
-		return nil, fmt.Errorf("hook/background-review requires captureTool")
+	captureTool, err := NewLearnCaptureTool(deps.Memory, deps.Learning)
+	if err != nil {
+		return nil, err
 	}
 	rt, err := rttools.NewRuntime(rttools.RuntimeConfig{
 		AllowTools:            []string{"learn_capture"},
 		DefaultTimeoutSeconds: 120,
 	}, rttools.RuntimeDeps{
-		Tools: []agentkit.Tool{deps.CaptureTool},
+		Tools: []agentkit.Tool{captureTool},
 	})
 	if err != nil {
 		return nil, err
@@ -76,6 +95,7 @@ func NewBackgroundReview(cfg BackgroundReviewConfig, deps backgroundReviewDeps) 
 		llm:      deps.LLM,
 		tools:    rt,
 		index:    deps.SessionIndex,
+		sender:   deps.Sender,
 	}
 	return p, nil
 }
@@ -85,7 +105,7 @@ func (p *backgroundReviewProvider) Hooks() []agentkit.Hook {
 }
 
 func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agentkit.TurnComplete) error {
-	if tc == nil || p.learning == nil || p.learning.disabled {
+	if tc == nil || p.learning == nil || p.learning.Disabled() {
 		return nil
 	}
 	if !backgroundReviewEnabled(p.cfg) {
@@ -109,6 +129,24 @@ func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agent
 			}
 		}
 	}
+	interval := memoryNudgeInterval(p.cfg)
+	prior, seen, err := p.learning.ReviewNudgeLoad(ctx, string(tc.SessionID))
+	if err != nil {
+		slog.Warn("background review nudge load failed", "err", err)
+		return nil
+	}
+	nudgeDec, nextNudge := rtlearning.DecideMemoryNudge(interval, tc.Messages, prior, !seen)
+	if err := p.learning.ReviewNudgeSave(ctx, string(tc.SessionID), nextNudge); err != nil {
+		slog.Warn("background review nudge save failed", "err", err)
+	}
+	if !nudgeDec.RunReview {
+		slog.Debug("background review skipped",
+			"session_id", tc.SessionID,
+			"reason", nudgeDec.Reason,
+			"turns_since_memory", nudgeDec.TurnsSinceMemory,
+			"interval", interval)
+		return nil
+	}
 	model := strings.TrimSpace(p.cfg.Model)
 	if model == "" {
 		model = strings.TrimSpace(tc.Model)
@@ -125,12 +163,13 @@ func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agent
 	go func() {
 		defer cancel()
 		defer runs.End(string(tc.SessionID))
-		runCtx := session.WithWorkspaceService(reviewCtx, p.learning.workspace)
+		runCtx := session.WithWorkspaceService(reviewCtx, p.learning.Workspace())
+		runCtx = session.ApplyEnvelopeToContext(runCtx, session.EnvelopeFromContext(parent))
 		runCtx = session.WithConversation(runCtx, string(tc.SessionID))
 		runCtx = session.WithAgentID(runCtx, tc.AgentID)
 
 		if p.cfg.MaxReviewsPerDay > 0 {
-			ok, err := p.learning.tryConsumeReviewQuota(runCtx, p.cfg.MaxReviewsPerDay)
+			ok, err := p.learning.TryConsumeReviewQuota(runCtx, p.cfg.MaxReviewsPerDay)
 			if err != nil {
 				slog.Warn("background review quota check failed", "err", err)
 				return
@@ -143,11 +182,13 @@ func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agent
 		}
 
 		recall := p.sessionRecall(runCtx, tc.Messages)
+		candidates := p.learning.ReviewSignalCandidates(runCtx)
 		start := time.Now()
 		result, err := rtlearning.RunReview(runCtx, rtlearning.ReviewConfig{
 			MaxSteps:          p.cfg.MaxSteps,
 			MaxDigestMessages: p.cfg.MaxDigestMessages,
 			SessionRecall:     recall,
+			SignalCandidates:  candidates,
 		}, p.llm, p.tools, model, tc.Messages)
 		if err != nil {
 			if runCtx.Err() != nil {
@@ -175,17 +216,26 @@ func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agent
 			attrs = append(attrs, "input_tokens", result.InputTokens, "output_tokens", result.OutputTokens)
 		}
 		if summary != "" {
-			attrs = append(attrs, "summary", truncateLog(summary, 200))
+			attrs = append(attrs, "summary", rtlearning.TruncateEllipsis(summary, 200))
 		}
 		slog.Info("background review complete", attrs...)
-		if p.cfg.Notify && summary != "" {
-			slog.Info("learning notification", "message", "💾 "+truncateLog(summary, 160))
+		notifyMode := NormalizeMemoryNotifications(p.cfg.MemoryNotifications)
+		notices := []string{}
+		if result != nil {
+			notices = result.Notices
+		}
+		line := FormatBackgroundReviewNotification(notifyMode, notices)
+		if line != "" {
+			slog.Info("learning notification", "message", line)
+			if err := rtdelivery.SendProactiveInboxText(runCtx, p.sender, line); err != nil {
+				slog.Debug("learning notification delivery skipped", "err", err)
+			}
 		}
 	}()
 	return nil
 }
 
-func (s *Service) tryConsumeReviewQuota(ctx context.Context, maxPerDay int) (bool, error) {
+func (s *Service) TryConsumeReviewQuota(ctx context.Context, maxPerDay int) (bool, error) {
 	store, err := s.reviewQuotaStore(ctx)
 	if err != nil {
 		return false, err
@@ -200,33 +250,37 @@ func backgroundReviewEnabled(cfg BackgroundReviewConfig) bool {
 	return *cfg.Enabled
 }
 
-func truncateLog(s string, max int) string {
-	if len(s) <= max {
-		return s
+func memoryNudgeInterval(cfg BackgroundReviewConfig) int {
+	if cfg.MemoryNudgeInterval != nil {
+		return *cfg.MemoryNudgeInterval
 	}
-	return s[:max] + "…"
+	return rtlearning.DefaultMemoryNudgeInterval
+}
+
+func sessionRecallEnabled(cfg BackgroundReviewConfig) bool {
+	if cfg.SessionRecall != nil {
+		return *cfg.SessionRecall
+	}
+	return true
 }
 
 func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages []agentkit.ModelMessage) string {
-	if p.index == nil || p.learning == nil {
+	if !sessionRecallEnabled(p.cfg) || p.index == nil || p.learning == nil {
 		return ""
 	}
 	query := reviewRecallQuery(messages)
 	if query == "" {
 		return ""
 	}
-	dir, err := p.learning.workspace.Resolve(ctx, p.learning.sessionsDir)
+	dir, err := p.learning.Workspace().Resolve(ctx, p.learning.SessionsDir())
 	if err != nil {
 		return ""
 	}
-	if err := p.index.SyncSessions(ctx, dir); err != nil {
-		return ""
-	}
-	hits, err := p.index.Search(ctx, query, 5)
+	hits, err := session.SearchSyncedSessions(ctx, p.index, dir, query, 5)
 	if err != nil {
 		return ""
 	}
-	return rtlearning.FormatSessionRecall(hits)
+	return session.FormatSessionRecall(hits)
 }
 
 func reviewRecallQuery(messages []agentkit.ModelMessage) string {
@@ -234,11 +288,11 @@ func reviewRecallQuery(messages []agentkit.ModelMessage) string {
 		if messages[i].Role != "user" {
 			continue
 		}
-		text := strings.TrimSpace(flattenParts(messages[i].Content))
+		text := strings.TrimSpace(session.FlattenTextParts(messages[i].Content, " "))
 		if text == "" || strings.HasPrefix(text, "/") {
 			continue
 		}
-		return truncateLog(text, 160)
+		return rtlearning.TruncateEllipsis(text, 160)
 	}
 	return ""
 }

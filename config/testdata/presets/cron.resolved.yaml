@@ -9,8 +9,7 @@ agent.assistant.default:
             maxRetries: 3
     deps:
         compaction:
-            - compaction.prune.default
-            - compaction.token-limit.default
+            - compaction.pipeline.default
         hooks: hooks.default
         llm: llm.fallback
         prompt: prompt.default
@@ -18,6 +17,11 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.catalogCommands.default:
+    deps:
+        loop: loop.default
+        sessionStore: sessionStore.default
+    use: agent/catalog-commands
 agent.cursor.default:
     config:
         authMethod: cursor_login
@@ -50,8 +54,7 @@ agent.worker.default:
             maxRetries: 3
     deps:
         compaction:
-            - compaction.prune.default
-            - compaction.token-limit.worker
+            - compaction.pipeline.worker
         hooks: hooks.worker
         llm: llm.fallback
         prompt: prompt.worker.default
@@ -67,6 +70,18 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
+compaction.pipeline.default:
+    deps:
+        services:
+            - compaction.prune.default
+            - compaction.token-limit.default
+    use: compaction/pipeline
+compaction.pipeline.worker:
+    deps:
+        services:
+            - compaction.prune.default
+            - compaction.token-limit.worker
+    use: compaction/pipeline
 compaction.prune.default:
     config:
         maxToolResultBytes: 8192
@@ -107,22 +122,49 @@ credentials.default:
     deps:
         workspace: workspace.default
     use: credentials/env
+credentials.integrations:
+    config:
+        encryptedFile: global:secrets.enc.json
+    deps:
+        workspace: workspace.default
+    use: credentials/integrations
+hook.background-review.default:
+    config:
+        maxDigestMessages: 24
+        maxReviewsPerDay: 500
+        maxSteps: 10
+        memoryNotifications: "on"
+        memoryNudgeInterval: 10
+        minTurnTokens: 0
+        skipSlashOnly: true
+    deps:
+        learning: learning.default
+        llm: llm.review
+        memory: memory.default
+        sender: platform.default
+        sessionIndex: sessionIndex.default
+    use: hook/background-review
 hook.before-step.default:
     config:
         contributeCommands: true
     deps:
         services:
-            - compaction.prune.default
-            - compaction.token-limit.default
+            - compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.before-step.worker:
     deps:
         services:
-            - compaction.prune.default
-            - compaction.token-limit.worker
+            - compaction.pipeline.worker
         sessionStore: sessionStore.default
     use: hook/before-step
+hook.session-index.default:
+    config:
+        sessionsDir: sessions
+    deps:
+        index: sessionIndex.default
+        workspace: workspace.default
+    use: hook/session-index
 hook.turn-continue.default:
     config:
         maxContinuations: 30
@@ -137,6 +179,8 @@ hooks.default:
         providers:
             - hook.before-step.default
             - hook.turn-continue.default
+            - hook.session-index.default
+            - hook.background-review.default
     use: hooks/runtime
 hooks.worker:
     deps:
@@ -148,9 +192,12 @@ learning.default:
     config:
         dreaming:
             enabled: true
+            feedReview: true
+            feedReviewTopK: 8
         workshop:
             mode: propose
     deps:
+        memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: learning/default
@@ -170,11 +217,20 @@ llm.default:
 llm.fallback:
     config:
         fallbackModels:
-            - gpt-4o
-            - gpt-4o-mini
+            - gpt-5.4-mini
+            - gpt-5.4-nano
     deps:
         provider: llm.default
     use: llm/fallback
+llm.review:
+    config:
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4-mini
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 loop.default:
     deps:
         agents:
@@ -189,15 +245,22 @@ mcp.default:
             - global:mcp.json
         idleTimeoutSeconds: 300
     deps:
-        credentials: credentials.default
+        credentials: credentials.integrations
         workspace: workspace.default
     use: tool/mcp
+memory.default:
+    config:
+        review:
+            writeApproval: false
+    deps:
+        workspace: workspace.default
+    use: memory/default
 openapi.default:
     config:
         files:
             - global:api.json
     deps:
-        credentials: credentials.default
+        credentials: credentials.integrations
         workspace: workspace.default
     use: tool/openapi
 platform.default:
@@ -226,8 +289,7 @@ prompt.default:
     use: prompt/assembler/default
 prompt.memory.default:
     deps:
-        learning: learning.default
-        workspace: workspace.default
+        memory: memory.default
     use: prompt/section/memory
 prompt.persona.default:
     config:
@@ -321,6 +383,7 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
+        catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
         loop: loop.default
@@ -352,6 +415,12 @@ schedule.default:
     deps:
         workspace: workspace.default
     use: schedule/multi
+sessionIndex.default:
+    config:
+        indexRel: sessions/.index.sqlite
+    deps:
+        workspace: workspace.default
+    use: session/sqlite-index
 sessionStore.default:
     config:
         cacheIdleTTL: 30m
@@ -385,8 +454,7 @@ subagent.inprocess.default:
         timeoutSeconds: 600
     deps:
         compaction:
-            - compaction.prune.default
-            - compaction.token-limit.default
+            - compaction.pipeline.default
         hooks: hooks.default
         llm: llm.fallback
         prompt: prompt.subagent.default
@@ -412,6 +480,7 @@ subagent.loop.default:
         agents:
             - agent.cursor.default
         sessionStore: sessionStore.default
+        telemetry: telemetry.default
     use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none
@@ -419,7 +488,7 @@ tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
-        platform: platform.default
+        history: platform.default
     use: tool/chat-history
 tool.finish.default:
     deps:
@@ -429,6 +498,7 @@ tool.fs-workspace.default:
     config:
         maxBytes: 1048576
         root: .
+        unrestricted: true
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
@@ -442,6 +512,7 @@ tool.fs-workspace.readonly.default:
             - grep
             - find
             - ls
+        unrestricted: true
     deps:
         workspace: workspace.default
     use: tool/fs-workspace
@@ -453,7 +524,7 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
-        platform: platform.default
+        sender: platform.default
         workspace: workspace.default
     use: tool/send
 tool.shell-bash.default:

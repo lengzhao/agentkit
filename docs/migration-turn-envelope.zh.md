@@ -32,7 +32,7 @@
 | permission | `Broker`、`Request`、`Reply`、DTO | `MatchReply`、`MarshalReply`、`EffectiveTimeout`、`CapabilityFrom`… |
 | schedule | `Registry`、`Runtime`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`、`JobKind`… |
 | skill | `Registry`、`Descriptor`、`Content` | `RenderLoaded`、`SanitizeRelativePath`、`ReadFile`、`RunScript` |
-| learning | `agentkit.CommandProvider`（deps）、`runtime/learning.MemoryEntry` | `ParseMemory`、`RenderMemory` |
+| learning | `cap/learning`（`SkillProposer`、`ReviewHost`、`DreamSweepScheduler`）；`cap/memory`（`Capture`、`Service`）；`runtime/learning.MemoryEntry` | `ParseMemory`、`RenderMemory`、`MemoryStore`、`RunReview`、`ApplyCapture` |
 | media | `ContentTypeAttachmentRef`（`runtime/media` 常量） | `IsImage`、`DataURL`、`LoadWorkspaceImage`、`FormatReadImageResult`… |
 
 插件典型用法：

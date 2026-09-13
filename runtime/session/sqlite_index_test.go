@@ -42,6 +42,14 @@ func TestSQLiteIndexSearch(t *testing.T) {
 	if hits[0].SessionID != "cli_default" {
 		t.Fatalf("session id = %q", hits[0].SessionID)
 	}
+	sessions, err := idx.ListSessions(ctx, 5)
+	if err != nil || len(sessions) == 0 {
+		t.Fatalf("list sessions: %v len=%d", err, len(sessions))
+	}
+	rows, err := idx.ScrollMessages(ctx, "cli_default", hits[0].Seq, 0, 2)
+	if err != nil || len(rows) == 0 {
+		t.Fatalf("scroll: %v len=%d", err, len(rows))
+	}
 }
 
 func TestWorkspaceKeyFromLocalDir(t *testing.T) {

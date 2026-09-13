@@ -11,8 +11,9 @@
 | 通路 | 机制 | 强项 | 短板 |
 |------|------|------|------|
 | Background review | Turn 后 LLM + `learn_capture` | 接近「自己会记」 | 成本、误记、无用户可见反馈 |
-| Dreaming sweep | 规则评分晋升 `memory.md` | 可审计、低成本 | L0 默认挂 `learning.dreamSweep`（可用 `/learn dream off` 关闭） |
-| Workshop + `/learn` | 提案闸门 | 安全 | 主对话无一等 `memory` 工具 |
+| Dreaming sweep | 采集信号 + 日记；晋升由 background review | 可审计、低成本 | L0 默认挂 `learning.dreamSweep`（可用 `/learn dream off` 关闭） |
+| Workshop + `/learn` | 提案闸门 | 安全 | 与 review `skill_propose` 重叠时需控 `workshop.mode` |
+| 主 agent `tool/memory` | 当轮写 `memory.md` | 显式、可控 | 与 review 分工：用户/模型主动 vs 后台巩固 |
 
 ```mermaid
 flowchart TB
@@ -98,7 +99,7 @@ flowchart TB
 
 - [ ] **`/learn` 增强**  
   - 从 URL/路径生成 skill：委派受限 agent（read/web），替代纯 `DraftSkillBody` 模板。  
-  - 可选：主 agent `tool/memory`（与 `learn_capture` 共用 `CaptureApplier`）。  
+  - 可选：主 agent `tool/memory`（与 `learn_capture` 共用 `cap/memory.Capture`）。  
   - 验收：文档与 `plugin-catalog` 更新。
 
 - [ ] **可运维**  
@@ -142,8 +143,42 @@ flowchart TB
 | 6 | session-query | 跨 session 检索 |
 | 7 | 多租户 sweep | 每 tenant state |
 | 8 | Curator 归档 | 长期未用 skill 可恢复归档 |
-| 9 | review↔dreaming 写入门 | 无重复 memory |
+| 9 | review↔dreaming 写入门 | 无重复 memory（review-led，dreaming 不写 memory） |
 | 10 | `/learn` URL + 可选 memory 工具 | 产品体感提升 |
+
+---
+
+## 代码简化 / 通用化（learning · delivery · session，2026-03）
+
+承接近期 memory 工具、通用 outbound、`memory_commit` 收敛后的剩余债务。做完勾选 `[x]`。
+
+### P0 — 小步重构（本迭代）
+
+- [x] **`applyMemoryAdd` + `memoryToolSnapshot`**：`plugins/learning` 统一 store.Add + commit；`memoryTool*` / `addMemory` / capture 共用；工具输出拼装一处。
+- [x] **`SendProactiveInboxText`**：`runtime/delivery` 封装 `Raw` + `UseContextEmit` 默认；background review 等调用点瘦身。
+
+### P1 — 去重与 helper
+
+- [x] **`FormatMemoryPromptBody`**：`runtime/learning` 统一 prompt 注入正文（`\n\n` 拼接）；`prompt/memorymd` 与测试共用。
+- [x] **删薄包装 / 死代码**：`plugins/learning/memory.go` 去掉 `ParseMemory`/`RenderMemory` re-export；`runtime/learning/memory.go` 去掉未用的 `formatMeta`。
+- [x] **`FlattenTextParts`**：`runtime/session` 导出文本 part 拼接（sep 参数）；`capture`、`background_review`、`review`、`index_extract` 对齐语义。
+- [x] **`TruncateEllipsis`**：`runtime/learning` 单一截断 helper；`background_review` 与 review digest 共用。
+- [x] **`SearchSyncedSessions` / `SyncSessionIndex`**：`runtime/session` 封装 FTS sync + search；background review、`session-query`、chat-api 发现共用。
+- [x] **通知文案迁回 plugin**：`FormatBackgroundReviewNotification` / `NormalizeMemoryNotifications` 在 `plugins/learning/background_notify.go`。
+
+### P2 — 架构对齐（后续）
+
+- [x] **`cap/learning` 注入边界**：`SkillProposer` / `ReviewHost` / `DreamSweepScheduler`；`cap/memory` + hook deps `memory`+`learning`；内建 `learn_capture`
+- [x] **Chat API 会话列表与 `sessionindex` 统一**：L0 `platform.chat-api.deps.sessionIndex`；发现走 `ListSessions` + JSONL 元数据；`chat-api/conversations/*.json` 仍保留 API 专有字段；见 [platform-interaction.zh.md](platform-interaction.zh.md)。
+- [x] **`MemoryStore` 在 `runtime/memory`**：插件经 `memoryStore()` 构造；秘密检测 `LooksLikeSecret` 同包。
+- [x] **`memory/default` + `/memory`**：`cap/memory`；`tool/memory` / `prompt/section/memory` deps `memory`；`/learn session` 仅 dreaming 信号。
+- [x] **review `sessionRecall` 可关**：`hook.background-review.config.sessionRecall: false` 跳过 digest FTS 块。
+- [x] **`CommitObserver` 多订阅**：`memory/default` `RegisterCommitObserver` append，commit 时通知全部观察者。
+
+### P2 — runtime/memory 迁移（进行中）
+
+- [x] **`MemoryStore` / ledger / staged → `runtime/memory`**：`AddOutcome` 统一 `cap/memory`；`plugins/memory` 不再依赖 `runtime/learning`。
+- [ ] **Dreaming / Workshop → `runtime/learning/*`**（可选阶段 3）。
 
 ---
 
@@ -152,6 +187,6 @@ flowchart TB
 改插件或配置后：
 
 ```sh
-grep -E 'background-review|learn-capture|learning/' docs/plugin-catalog.zh.md docs/guides/learning-dreaming.zh.md config.base.yaml
-go test ./plugins/learning/... ./runtime/learning/... -count=1
+grep -E 'background-review|learning/' docs/plugin-catalog.zh.md docs/guides/learning-dreaming.zh.md config.base.yaml
+go test ./cap/learning/... ./plugins/learning/... ./runtime/learning/... -count=1
 ```

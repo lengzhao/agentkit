@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -138,6 +139,143 @@ func (s *SQLiteIndex) Search(ctx context.Context, query string, limit int) ([]ca
 		hits = append(hits, h)
 	}
 	return hits, rows.Err()
+}
+
+func (s *SQLiteIndex) ListSessions(ctx context.Context, limit int) ([]capsessionindex.SessionSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	dbPath, err := s.workspace.Resolve(ctx, s.indexRel)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := s.ensureSchema(db); err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`
+		SELECT m.session_id,
+			COUNT(*),
+			MAX(m.seq),
+			COALESCE((
+				SELECT MAX(f.mtime_ns) FROM files f
+				WHERE f.path LIKE '%/' || m.session_id || '.jsonl'
+			), 0)
+		FROM messages m
+		GROUP BY m.session_id
+		ORDER BY MAX(m.seq) DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []capsessionindex.SessionSummary
+	for rows.Next() {
+		var sum capsessionindex.SessionSummary
+		var mtimeNs int64
+		if err := rows.Scan(&sum.SessionID, &sum.MessageCount, &sum.LastSeq, &mtimeNs); err != nil {
+			return nil, err
+		}
+		if mtimeNs > 0 {
+			sum.LastMod = time.Unix(0, mtimeNs).UTC()
+		}
+		out = append(out, sum)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteIndex) ScrollMessages(ctx context.Context, sessionID string, anchorSeq int64, before, after int) ([]capsessionindex.MessageRow, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	if before < 0 {
+		before = 0
+	}
+	if after < 0 {
+		after = 0
+	}
+	if before == 0 && after == 0 {
+		before = 3
+		after = 3
+	}
+	dbPath, err := s.workspace.Resolve(ctx, s.indexRel)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := s.ensureSchema(db); err != nil {
+		return nil, err
+	}
+	if anchorSeq <= 0 {
+		var maxSeq sql.NullInt64
+		if err := db.QueryRow(`SELECT MAX(seq) FROM messages WHERE session_id = ?`, sessionID).Scan(&maxSeq); err != nil {
+			return nil, err
+		}
+		if maxSeq.Valid {
+			anchorSeq = maxSeq.Int64
+		}
+	}
+	var out []capsessionindex.MessageRow
+	if before > 0 {
+		rows, err := db.Query(`
+			SELECT seq, role, body FROM messages
+			WHERE session_id = ? AND seq < ?
+			ORDER BY seq DESC
+			LIMIT ?`, sessionID, anchorSeq, before)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var prior []capsessionindex.MessageRow
+		for rows.Next() {
+			var row capsessionindex.MessageRow
+			if err := rows.Scan(&row.Seq, &row.Role, &row.Text); err != nil {
+				return nil, err
+			}
+			prior = append(prior, row)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		for i := len(prior) - 1; i >= 0; i-- {
+			out = append(out, prior[i])
+		}
+	}
+	rows, err := db.Query(`
+		SELECT seq, role, body FROM messages
+		WHERE session_id = ? AND seq >= ?
+		ORDER BY seq ASC
+		LIMIT ?`, sessionID, anchorSeq, after+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var row capsessionindex.MessageRow
+		if err := rows.Scan(&row.Seq, &row.Role, &row.Text); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLiteIndex) ensureSchema(db *sql.DB) error {

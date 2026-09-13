@@ -1,16 +1,15 @@
-package learning
+package memory
 
 import (
 	"strings"
+
+	capmemory "github.com/lengzhao/agentkit/cap/memory"
 )
 
 const entrySep = "\n§\n"
 
-// MemoryEntry is one §-delimited block in memory.md.
-type MemoryEntry struct {
-	Content string
-	Meta    string
-}
+// MemoryEntry is one §-delimited block in memory.md (same shape as cap/memory).
+type MemoryEntry = capmemory.MemoryEntry
 
 // ParseMemory splits a memory.md body into entries.
 func ParseMemory(raw string) []MemoryEntry {
@@ -64,10 +63,6 @@ func RenderMemoryDocument(entries []MemoryEntry, docName string) string {
 			b.WriteString(entrySep)
 		}
 		b.WriteString(strings.TrimSpace(e.Content))
-		if e.Meta != "" {
-			b.WriteByte('\n')
-			b.WriteString(formatMeta(e.Meta))
-		}
 	}
 	b.WriteByte('\n')
 	return b.String()
@@ -87,6 +82,12 @@ func splitMeta(part string) (content, meta string) {
 	return strings.TrimSpace(strings.Join(kept, "\n")), meta
 }
 
-func formatMeta(meta string) string {
-	return "<!-- " + strings.TrimSpace(meta) + " -->"
+// FormatMemoryPromptBody renders deduped entries for prompt injection (blank lines between facts).
+func FormatMemoryPromptBody(entries []MemoryEntry) string {
+	entries = DedupeMemoryEntries(entries)
+	parts := EntryContents(entries)
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n\n")
 }

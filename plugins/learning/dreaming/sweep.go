@@ -9,21 +9,19 @@ import (
 	"time"
 )
 
-// PromoteFunc writes one promoted memory entry.
-type PromoteFunc func(text, meta string) error
-
 // SweepResult summarizes one dreaming run.
 type SweepResult struct {
 	SessionsIngested int
 	SignalsIngested  int
 	Staged           int
 	Themes           []string
-	Promoted         []string
-	Skipped          int
+	// Eligible is signals above Deep threshold (background review consolidates).
+	Eligible int
+	Skipped  int
 }
 
 // Run executes Light → REM → Deep and appends Dream Diary blocks.
-func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, promote PromoteFunc, sessionsDir string, now time.Time) (*SweepResult, error) {
+func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sessionsDir string, now time.Time) (*SweepResult, error) {
 	cfg = cfg.Normalized()
 	st, err := stateStore.Load()
 	if err != nil {
@@ -79,56 +77,22 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, prom
 		}
 	}
 
-	// Deep
+	// Deep — score only; memory.md is written by background review.
 	scored := scoreSignals(st.Signals, cfg, now)
 	sort.Slice(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
 
-	promoted := []string{}
+	eligible := 0
 	skipped := 0
-	today := now.UTC().Format("2006-01-02")
-	if st.PromotedDate != today {
-		st.PromotedDate = today
-		st.PromotedToday = 0
-	}
 	for _, item := range scored {
 		if !passesThreshold(item, cfg) {
 			skipped++
 			continue
 		}
-		text := strings.TrimSpace(item.Signal.Text)
-		if len([]rune(text)) > cfg.MaxPromotedChars {
-			text = string([]rune(text)[:cfg.MaxPromotedChars]) + "…"
-		}
-		meta := fmt.Sprintf("source=dream-deep score=%.2f %s promoted_at=%s",
-			item.Score, item.Reason, now.UTC().Format(time.RFC3339))
-		if promote != nil {
-			if err := promote(text, meta); err != nil {
-				skipped++
-				continue
-			}
-		}
-		promoted = append(promoted, text)
-		st.PromotedToday++
+		eligible++
 	}
-	res.Promoted = promoted
+	res.Eligible = eligible
 	res.Skipped = skipped
 	res.Staged = staged
-
-	// remove promoted signals from short-term store
-	if len(promoted) > 0 {
-		promotedKeys := map[string]struct{}{}
-		for _, p := range promoted {
-			promotedKeys[signalKey(p)] = struct{}{}
-		}
-		kept := make([]Signal, 0, len(st.Signals))
-		for _, sig := range st.Signals {
-			if _, ok := promotedKeys[signalKey(sig.Text)]; ok {
-				continue
-			}
-			kept = append(kept, sig)
-		}
-		st.Signals = kept
-	}
 
 	st.LastSweep = now
 	if err := stateStore.Save(st); err != nil {
@@ -136,7 +100,7 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, prom
 	}
 
 	deepLines := []string{
-		fmt.Sprintf("promoted %d entries to memory.md", len(promoted)),
+		fmt.Sprintf("%d grounded candidates above threshold (background review consolidates)", eligible),
 		fmt.Sprintf("skipped %d below threshold", skipped),
 	}
 	if diary != nil {
@@ -145,7 +109,7 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, prom
 		}
 	}
 	if deepReportDir != "" {
-		if err := writeDeepReport(deepReportDir, now, promoted, skipped, scored); err != nil {
+		if err := writeDeepReport(deepReportDir, now, eligibleTexts(scored, cfg), skipped); err != nil {
 			return res, err
 		}
 	}
@@ -208,15 +172,33 @@ func extractThemes(text string) []string {
 	return themes
 }
 
-func writeDeepReport(dir string, now time.Time, promoted []string, skipped int, scored []scored) error {
+func eligibleTexts(scored []scored, cfg Config) []string {
+	out := []string{}
+	for _, item := range scored {
+		if !passesThreshold(item, cfg) {
+			continue
+		}
+		text := strings.TrimSpace(item.Signal.Text)
+		if text == "" {
+			continue
+		}
+		if len([]rune(text)) > cfg.MaxPromotedChars {
+			text = string([]rune(text)[:cfg.MaxPromotedChars]) + "…"
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
+func writeDeepReport(dir string, now time.Time, lines []string, skipped int) error {
 	path := filepath.Join(dir, now.UTC().Format("2006-01-02")+".md")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	var b strings.Builder
 	b.WriteString("# Deep Sleep Report\n\n")
-	b.WriteString(fmt.Sprintf("promoted: %d\nskipped: %d\n\n", len(promoted), skipped))
-	for _, p := range promoted {
+	b.WriteString(fmt.Sprintf("eligible for review: %d\nskipped: %d\n\n", len(lines), skipped))
+	for _, p := range lines {
 		b.WriteString("- ")
 		b.WriteString(p)
 		b.WriteByte('\n')
@@ -237,11 +219,11 @@ func FormatStatus(st *State, cfg Config) string {
 	if st != nil && !st.LastSweep.IsZero() {
 		fmt.Fprintf(&b, "last sweep: %s\n", st.LastSweep.UTC().Format(time.RFC3339))
 		fmt.Fprintf(&b, "short-term signals: %d\n", len(st.Signals))
-		fmt.Fprintf(&b, "promoted today: %d\n", st.PromotedToday)
 	} else {
 		b.WriteString("last sweep: never\n")
 	}
 	fmt.Fprintf(&b, "thresholds: score>=%.2f recall>=%d sessions>=%d\n",
 		cfg.MinScore, cfg.MinRecallCount, cfg.MinUniqueSessions)
+	fmt.Fprintf(&b, "memory consolidation: background review (dreaming does not write memory.md)\n")
 	return strings.TrimRight(b.String(), "\n")
 }

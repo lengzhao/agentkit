@@ -161,7 +161,7 @@ tenants/slack_C001/
 └── work/              # shell 默认 cwd 与临时产物（含 upload/download；session/store 首次打开租户 session 时自动创建）
 ```
 
-`presets/multi-tenant.yaml` 把 `tool/fs-workspace` 的 `root` 指到 `.`，`tool/shell-bash` 的 `workDir` 仍指到 `work`；`prompt/section/agents-md`、`prompt/section/memory` 与 `learning.default` 默认从租户 local 根读写 `AGENTS.md`、`memory.md` 等。
+`presets/multi-tenant.yaml` 把 `tool/fs-workspace` 的 `root` 指到 `.`，`tool/shell-bash` 的 `workDir` 仍指到 `work`；`prompt/section/memory` 注入时合并 **global** 与 **租户 local** 的 `memory.md`（不沿目录向上查找）；`learning.default` 写入路径由 `memoryRoot` 决定（默认租户 local 的 `memory.md`）。
 
 ```yaml
 workspace.default:

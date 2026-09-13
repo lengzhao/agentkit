@@ -98,7 +98,7 @@ flowchart TB
 | `platform/slack` | `agentkit.Platform` + `chathistory.Provider` | Slack Socket Mode；生成 cc-connect 风格 SessionID；供 `tool/chat-history` 读取频道/线程历史 | cc-connect `platform/slack` |
 | `platform/feishu` | `agentkit.Platform` + `chathistory.Provider` | 飞书 WebSocket；生成 cc-connect 风格 SessionID；`progressStyle: card/compact` 时按 thinking / tool / 正文分卡，类型切换则新开卡片避免乱序；`showThinking` / `showToolProgress` 控制过程卡展示；供 `tool/chat-history` 读取 IM 群/话题历史 | cc-connect `platform/feishu` |
 | `platform/lark` | `agentkit.Platform` + `chathistory.Provider` | 国际版 Lark（`platform/feishu` 的 domain 预设）；流式卡片配置同 feishu | cc-connect `platform/feishu` |
-| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API；SSE 断线重连（`POST /chat-messages` + `run_id`）；`POST /runs/{id}/cancel`；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | — |
+| `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API（可选 `deps.sessionIndex` 与 `session-query` 共用 SQLite 索引列会话）；SSE 断线重连（`POST /chat-messages` + `run_id`）；`POST /runs/{id}/cancel`；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | `sessionIndex` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 精确回写（`PlatformID` 为空则拒绝，不广播） |
 | `platform/http` | `agentkit.Platform` | 监听并服务 `http.DefaultServeMux`；与 `chat-api.registerOnly` 或其它 `http.Handle` 扩展组合 | DSH Web Host |
 | `platform/acp` | `agentkit.Platform` + `permission.Capable` | stdio ACP Agent；供 Zed 等 ACP 客户端子进程接入；权限经 ACP `request_permission` 回传客户端 | — |
@@ -144,12 +144,13 @@ platform.http:
 | `session/commands` | `agentkit.CommandProvider` | `/new`、`/session` 会话生命周期 slash；deps 注入 `sessionStore` | — |
 | `session/sqlite-index` | `cap/sessionindex.Service` | 租户内 session JSONL 的 SQLite FTS5 索引（`sessions/.index.sqlite`） | DSH session-query-sqlite |
 | `hook/session-index` | `agentkit.HookProvider` | 每轮成功后异步刷新 session FTS | — |
-| `tool/session-query` | `agentkit.Tool` | `session_query`：跨 session 全文检索（同租户） | DSH session-query |
+| `tool/session-query` | `agentkit.Tool` | `session_search`：`mode=search`（FTS）、`list`、`scroll`（同租户） | DSH session-query |
+| `tool/memory` | `agentkit.Tool` | 主 agent `memory`：`add` / `replace` / `remove`（`memory.md`）；Hermes 式 WHEN/HOW/SKIP 说明（`MemoryToolDescription`） | memory.default |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |
 | `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
-| `prompt/section/memory` | `agentkit.SectionProvider` | memory.md 层级加载；同 turn 内冻结快照；依赖 `learning/default` 接入 `/learn` | — |
+| `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
@@ -340,7 +341,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `hook/after-tool` | `agentkit.HookProvider` | 工具 result 截断/改写 | DSH `tools/post-execute` |
 | `hook/llm-request` | `agentkit.HookProvider` | LLM 请求改写 | Pi `before_provider_request` |
 | `hook/turn-continue` | `agentkit.HookProvider` | Turn 末裁决续跑/收尾（`TurnStopping` seam）；贡献 `/status` | DSH `agent/turn-stopping` |
-| `hook/background-review` | `agentkit.HookProvider` | Turn 成功后后台 LLM review（`TurnComplete`）；写 memory / workshop | [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §9 |
+| `hook/background-review` | `agentkit.HookProvider` | Turn 成功后后台 LLM review（`TurnComplete`）；内建 `learn_capture`；deps `learning`（`ReviewHost` + `SkillProposer`）、`memory`（`Capture`）、`llm` | [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §9 |
 | `hook/repeat-tool-reminder` | `agentkit.HookProvider` | 重复工具调用提醒 | DSH repeat-tool-reminder |
 | `hook/timeout` | `agentkit.HookProvider` | Turn/Step 超时 | DSH timeout-policy |
 
@@ -354,9 +355,9 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md |
 | `skill/badge` | `skill.Registry` | Badge 元数据 |
-| `learning/default` | `CommandProvider` | 租户个人 memory.md、Grounded Dreaming、Skill Workshop；`/learn` 管理记忆/巩固/技能提案 |
+| `memory/default` | `CommandProvider` + `cap/memory.Service` | 租户 `memory.md`、ledger、staged、`/memory` 命令；`tool/memory` 与 prompt 注入 |
+| `learning/default` | `CommandProvider` | Grounded Dreaming、Skill Workshop；`/learn` 巩固与技能（记忆见 `/memory`） |
 | `learning/dream-sweep` | `schedule.Runtime` | 后台三阶段 dreaming sweep（默认每天 03:00） |
-| `tool/learn-capture` | `Tool` | background review 专用：`memory_add` / `skill_propose`（不对主 agent 暴露） |
 | `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/loop-agent` | `subagent.Spawner` + `subagent.SubmitBinder` | 委派到 Loop 里已注册的 agent（如 `agent/acp-remote` 的 `cursor`）。可委派名单来自实例 `config.agents`；支持 `async: true`：立即返回 `status=running`，完成后经 runner 向父 session 投递 follow-up turn。deps 可注入 `telemetry`（通常 `telemetry.default`），为每次子 agent 运行导出独立 Langfuse trace |
 | `subagent/composite` | `subagent.Spawner` + `subagent.SubmitBinder` | 合并 `inprocess` 与 `loop-agent` 的可委派名单；L0 `subagent.default` 使用此 kind |
@@ -417,7 +418,8 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
 | `tool/shell-bash` | `/shell`、`/sh`（本地执行 shell 命令，不经过模型） |
 | `tool/send` | `/send`（向同平台 chat/channel id 主动发消息，正文可多行，不经过模型；`-r`/`--raw` 原样发送不做 Markdown 转换） |
-| `learning/default` | `/learn`（memory / dreaming / skill workshop；见 [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md)） |
+| `memory/default` | `/memory`（show / add / pending / approve / policy；见 [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md)） |
+| `learning/default` | `/learn`（dreaming / skill workshop / session 信号） |
 
 示例：
 
@@ -446,7 +448,11 @@ cap/<domain>/
 
 runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、schedule、skill、media、telemetry…）
 runtime/configfile/  # WriteAtomic、Restore；供 tool/mcp、tool/openapi、credentials 写 JSON 配置
-runtime/learning/    # memory.md 解析/渲染（ParseMemory、RenderMemory）；plugins/learning 调用
+cap/memory/          # Service、Tool、Capture、Reader（memory/default 实现）
+cap/learning/        # SkillProposer、ReviewHost、DreamSweepScheduler（learning/default）；memory 见 cap/memory
+runtime/memory/      # MemoryStore、ledger、staged、parse/render memory.md
+runtime/learning/    # review 循环、ApplyCapture、nudge/quota/skills policy
+runtime/session/     # FTS SyncSessionIndex、SearchSyncedSessions、FormatSessionRecall
 
 cap/telemetry/       # Exporter 接口与 DTO；实现见 runtime/telemetry
 
@@ -465,7 +471,8 @@ plugins/
   credentials/       # env
   schedule/          # file、cron
   settings/          # file
-  learning/          # learning/default、learning/dream-sweep
+  memory/            # memory/default、tool/memory
+  learning/          # learning/default、learning/dream-sweep、hook/background-review
 ```
 
 `workspace/default`、`workspace/tenant` 在 **`runtime/workspace`**，不在 `plugins/`。

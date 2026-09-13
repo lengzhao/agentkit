@@ -219,6 +219,18 @@ Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1
 
 `auto-allow` / `auto-deny` 只作用于 allow_deny；`KindQuestion` 始终走 Broker。
 
+## chat-api 会话列表与 session 索引
+
+L0 为 `platform.chat-api` 注入 `sessionIndex.default`（与 `tool/session-query`、background review 共用同一 SQLite FTS 索引）。
+
+| 能力 | 数据源 | 说明 |
+|------|--------|------|
+| `GET /v1/conversations` | `session/sqlite-index` + session JSONL | 按 channel 过滤；列表顺序与索引 `MAX(seq)` 一致（`indexLastSeq`）；`updated_at` 取 JSONL 事件时间与索引 `LastMod`（文件 mtime）的较新者 |
+| `chat-api/conversations/*.json` | 本地 JSON | 保留 `created_by`、`agent_id` 等 Chat API 专有字段；与索引合并展示 |
+| `tool/session-search` | 同一索引 | FTS / list / scroll；租户 workspace 内跨会话 |
+
+未配置 `deps.sessionIndex` 时，chat-api 回退为扫描 `sessions/` 目录（旧行为）。
+
 ## chat-api SSE 重连
 
 SSE 连接与 run 解耦：客户端断开只 **detach** HTTP sink，agent turn 继续在后台执行。
@@ -252,6 +264,8 @@ tool.ask-user.default:
 
 platform.chat-api:
   use: platform/chat-api
+  deps:
+    sessionIndex: sessionIndex.default   # 与会话列表、session_search 共用索引
   config:
   # interactive: false   # 无人值守 BFF：ask_user 降级为 NoHuman，不挂 SSE 提问
 

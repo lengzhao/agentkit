@@ -44,7 +44,7 @@ func TestPresetsResolveGolden(t *testing.T) {
 				t.Fatalf("read golden %q: %v", goldenPath, err)
 			}
 			if !bytes.Equal(got, want) {
-				t.Fatalf("resolved output differs from golden %q (run: go run /tmp/gen_golden.go from repo root to refresh)", goldenPath)
+				t.Fatalf("resolved output differs from golden %q (refresh: cd config && OPENAI_API_KEY=test-key LANGFUSE_PUBLIC_KEY=pk-test LANGFUSE_SECRET_KEY=sk-test go run regen_presets_golden.go)", goldenPath)
 			}
 		})
 	}

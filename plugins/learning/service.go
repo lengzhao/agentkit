@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
@@ -44,7 +45,7 @@ func SummarizeSessionUserMessages(ctx context.Context, store agentkit.SessionSto
 		if err := json.Unmarshal(ev.Data, &msg); err != nil {
 			continue
 		}
-		text := strings.TrimSpace(flattenMessageContent(msg.Content))
+		text := strings.TrimSpace(session.FlattenTextParts(msg.Content, "\n"))
 		if text == "" || strings.HasPrefix(text, "/") {
 			continue
 		}
@@ -59,63 +60,31 @@ func SummarizeSessionUserMessages(ctx context.Context, store agentkit.SessionSto
 	return strings.Join(users, " | "), nil
 }
 
-func flattenMessageContent(parts []agentkit.ContentPart) string {
-	var b strings.Builder
-	for _, part := range parts {
-		if part.Type != "text" {
-			continue
-		}
-		text := strings.TrimSpace(part.Text)
-		if text == "" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(text)
-	}
-	return b.String()
-}
-
-// Service owns tenant personal memory, dreaming, workshop, and /learn commands.
+// Service owns dreaming, workshop, and /learn commands (memory.md is memory/default).
 type Service struct {
 	disabled    bool
-	charLimit   int
-	memoryRoot  string
-	memoryFile  string
 	sessionsDir string
 	dreaming    dreaming.Config
 	workshop    workshop.Config
-	review      ReviewServiceConfig
 	workspace   workspace.Service
 	sessions    agentkit.SessionStore
-}
-
-// ReviewServiceConfig controls background-review writes (learning/default).
-type ReviewServiceConfig struct {
-	// WriteApproval when true, background-review memory writes are staged until /learn approve (default false = auto).
-	WriteApproval *bool `json:"writeApproval"`
+	memory      capmemory.Service
 }
 
 type Config struct {
-	Disabled  bool `json:"disabled"`
-	CharLimit int  `json:"charLimit"`
-	// MemoryRoot is where memory.md, dreaming, and staged review files live.
-	// Default "." resolves under each tenant local root; use "global:." for shared ~/.agentkit (or L1 global root).
-	MemoryRoot  string              `json:"memoryRoot"`
-	MemoryFile  string              `json:"memoryFile"`
-	SessionsDir string              `json:"sessionsDir"`
-	Dreaming    dreaming.Config     `json:"dreaming"`
-	Workshop    workshop.Config     `json:"workshop"`
-	Review      ReviewServiceConfig `json:"review"`
+	Disabled    bool            `json:"disabled"`
+	SessionsDir string          `json:"sessionsDir"`
+	Dreaming    dreaming.Config `json:"dreaming"`
+	Workshop    workshop.Config `json:"workshop"`
 }
 
 type Deps struct {
 	Workspace    workspace.Service     `json:"workspace"`
 	SessionStore agentkit.SessionStore `json:"sessionStore"`
+	Memory       capmemory.Service     `json:"memory"`
 }
 
-// New registers learning/default: personal memory, dreaming, workshop, and /learn.
+// New registers learning/default: dreaming, workshop, and /learn (memory via deps.Memory).
 func New(cfg Config, deps Deps) (*Service, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("learning/default requires workspace")
@@ -123,24 +92,28 @@ func New(cfg Config, deps Deps) (*Service, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("learning/default requires sessionStore")
 	}
+	if deps.Memory == nil {
+		return nil, fmt.Errorf("learning/default requires memory")
+	}
 	dreamCfg := cfg.Dreaming.Normalized()
 	wsCfg := cfg.Workshop.Normalized()
 	sessionsDir := strings.TrimSpace(cfg.SessionsDir)
 	if sessionsDir == "" {
 		sessionsDir = "sessions"
 	}
-	return &Service{
+	svc := &Service{
 		disabled:    cfg.Disabled,
-		charLimit:   cfg.CharLimit,
-		memoryRoot:  cfg.MemoryRoot,
-		memoryFile:  cfg.MemoryFile,
 		sessionsDir: sessionsDir,
 		dreaming:    dreamCfg,
 		workshop:    wsCfg,
-		review:      cfg.Review,
 		workspace:   deps.Workspace,
 		sessions:    deps.SessionStore,
-	}, nil
+		memory:      deps.Memory,
+	}
+	if reg, ok := deps.Memory.(capmemory.CommitObserverRegistrar); ok {
+		reg.RegisterCommitObserver(svc)
+	}
+	return svc, nil
 }
 
 func (s *Service) dreamingCfg() dreaming.Config {
@@ -151,22 +124,8 @@ func (s *Service) workshopCfg() workshop.Config {
 	return s.workshop.Normalized()
 }
 
-func (s *Service) memoryStore(ctx context.Context) (*MemoryStore, error) {
-	path, err := s.workspace.Resolve(ctx, MemoryRelPath(s.memoryRoot, s.memoryFile))
-	if err != nil {
-		return nil, err
-	}
-	limit := s.charLimit
-	if limit <= 0 {
-		limit = DefaultCharLimit
-	}
-	store := NewMemoryStore(path, limit)
-	store.DocName = "memory.md"
-	return store, nil
-}
-
 func (s *Service) dreamingStore(ctx context.Context) (*dreaming.Store, error) {
-	path, err := s.workspace.Resolve(ctx, dreamingStateRelPath(s.memoryRoot))
+	path, err := s.memory.ResolveRel(ctx, "memory", "dreaming", "state.json")
 	if err != nil {
 		return nil, err
 	}
@@ -174,11 +133,11 @@ func (s *Service) dreamingStore(ctx context.Context) (*dreaming.Store, error) {
 }
 
 func (s *Service) diaryPath(ctx context.Context) (string, error) {
-	return s.workspace.Resolve(ctx, dreamsRelPath(s.memoryRoot))
+	return s.memory.ResolveRel(ctx, DefaultDreamsFile)
 }
 
 func (s *Service) deepReportDir(ctx context.Context) (string, error) {
-	return s.workspace.Resolve(ctx, dreamingDeepRelPath(s.memoryRoot))
+	return s.memory.ResolveRel(ctx, DefaultDreamingSubdir, "deep")
 }
 
 func (s *Service) sessionsPath(ctx context.Context) (string, error) {
@@ -202,20 +161,6 @@ func (s *Service) loadDreamingState(ctx context.Context) (*dreaming.State, error
 	return store.Load()
 }
 
-// LoadEntries reads personal memory for the current tenant workspace.
-func (s *Service) LoadEntries(ctx context.Context) ([]MemoryEntry, int, int, error) {
-	store, err := s.memoryStore(ctx)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	entries, err := store.Load()
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	limit := store.CharLimit
-	return entries, store.TotalChars(entries), limit, nil
-}
-
 func (s *Service) Commands() []agentkit.Command {
 	return []agentkit.Command{learnCommand{svc: s}}
 }
@@ -227,7 +172,7 @@ type learnCommand struct {
 func (learnCommand) Name() string  { return "learn" }
 func (learnCommand) Alias() string { return "" }
 func (learnCommand) Description() string {
-	return "manage memory, dreaming, and skill workshop proposals"
+	return "dreaming consolidation and skill workshop (/memory for memory.md)"
 }
 
 func (c learnCommand) CommandExec(ctx context.Context, args string) (string, error) {
@@ -241,18 +186,6 @@ func (c learnCommand) CommandExec(ctx context.Context, args string) (string, err
 	switch strings.ToLower(fields[0]) {
 	case "help", "-h", "--help":
 		return FormatHelp(), nil
-	case "memory":
-		text := strings.TrimSpace(strings.Join(fields[1:], " "))
-		if text == "" {
-			return "", fmt.Errorf("usage: /learn memory <text>")
-		}
-		return c.svc.addMemory(ctx, text, "learn-memory")
-	case "remove", "rm":
-		text := strings.TrimSpace(strings.Join(fields[1:], " "))
-		if text == "" {
-			return "", fmt.Errorf("usage: /learn remove <text>")
-		}
-		return c.svc.removeMemory(ctx, text)
 	case "session":
 		return c.svc.learnSession(ctx)
 	case "dream":
@@ -262,64 +195,18 @@ func (c learnCommand) CommandExec(ctx context.Context, args string) (string, err
 		return c.svc.learnSkill(ctx, focus)
 	case "workshop":
 		return c.svc.handleWorkshop(ctx, fields[1:])
-	case "pending":
-		return c.svc.listPending(ctx)
-	case "approve":
-		return c.svc.approveStaged(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
-	case "reject":
-		return c.svc.rejectStaged(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
-	case "show":
-		return c.svc.show(ctx)
 	case "policy":
 		return c.svc.handlePolicy(ctx, fields[1:])
 	default:
-		text := strings.TrimSpace(args)
-		return c.svc.addMemory(ctx, text, "learn")
+		return "", fmt.Errorf("unknown /learn command %q (try /learn help)", fields[0])
 	}
-}
-
-func (s *Service) show(ctx context.Context) (string, error) {
-	entries, used, limit, err := s.LoadEntries(ctx)
-	if err != nil {
-		return "", err
-	}
-	if len(entries) > 0 {
-		return FormatMemory(entries, used, limit), nil
-	}
-	staged, err := s.stagedStore(ctx)
-	if err != nil {
-		return "", err
-	}
-	pending, err := staged.List()
-	if err != nil {
-		return "", err
-	}
-	if len(pending) > 0 {
-		return fmt.Sprintf("no memory.md entries yet (%d staged awaiting /learn approve)", len(pending)), nil
-	}
-	return "no personal memory yet (memory.md empty; background review may stage — try /learn pending)", nil
-}
-
-func (s *Service) addMemory(ctx context.Context, text, source string) (string, error) {
-	store, err := s.memoryStore(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := store.Add(text, source); err != nil {
-		return "", err
-	}
-	warning := ""
-	if err := s.recordMemorySignal(ctx, text, source); err != nil {
-		warning = fmt.Sprintf("\nwarning: dreaming signal not recorded: %v", err)
-	}
-	entries, err := store.Load()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("personal memory updated [%d/%d chars]%s", store.TotalChars(entries), store.CharLimit, warning), nil
 }
 
 func (s *Service) recordMemorySignal(ctx context.Context, text, source string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
 	stateStore, err := s.dreamingStore(ctx)
 	if err != nil {
 		return err
@@ -328,38 +215,38 @@ func (s *Service) recordMemorySignal(ctx context.Context, text, source string) e
 	if err != nil {
 		return err
 	}
+	if !st.Enabled || !s.dreamingCfg().IsEnabled() {
+		return nil
+	}
 	st.UpsertSignal(dreaming.Signal{Text: text, Source: source}, time.Now().UTC())
 	return stateStore.Save(st)
 }
 
-func (s *Service) removeMemory(ctx context.Context, text string) (string, error) {
-	store, err := s.memoryStore(ctx)
+func (s *Service) learnSession(ctx context.Context) (string, error) {
+	if !s.dreamingCfg().IsEnabled() {
+		return "dreaming is off; use /learn dream on to queue session notes for background review", nil
+	}
+	stateStore, err := s.dreamingStore(ctx)
 	if err != nil {
 		return "", err
 	}
-	if err := store.Remove(text); err != nil {
+	st, err := stateStore.Load()
+	if err != nil {
 		return "", err
 	}
-	return "personal memory entry removed", nil
-}
-
-func (s *Service) learnSession(ctx context.Context) (string, error) {
+	if st != nil && !st.Enabled {
+		return "dreaming is off; use /learn dream on to queue session notes for background review", nil
+	}
 	sessionID := session.SessionIDFromContext(ctx)
 	summary, err := SummarizeSessionUserMessages(ctx, s.sessions, sessionID, 8)
 	if err != nil {
 		return "", err
 	}
-	content := "Session notes: " + summary
-	out, err := s.addMemory(ctx, content, "learn-session")
-	if err != nil {
+	source := "session:" + string(sessionID)
+	if err := s.recordMemorySignal(ctx, summary, source); err != nil {
 		return "", err
 	}
-	if s.skillsWorkshopEnabled(ctx) && looksLikeWorkflow(summary) {
-		if proposal, err := s.maybeAutoSkillProposal(ctx, summary, string(sessionID), ""); err == nil && proposal != "" {
-			out += "\n" + proposal
-		}
-	}
-	return out, nil
+	return "session notes recorded as dreaming signals (memory.md: /memory add or background review)", nil
 }
 
 func (s *Service) handleDream(ctx context.Context, args []string) (string, error) {
@@ -430,14 +317,7 @@ func (s *Service) runDreamSweep(ctx context.Context) (*dreaming.SweepResult, err
 	if err != nil {
 		return nil, err
 	}
-	memStore, err := s.memoryStore(ctx)
-	if err != nil {
-		return nil, err
-	}
-	promote := func(text, meta string) error {
-		return memStore.Add(text, meta)
-	}
-	return dreaming.Run(s.dreamingCfg(), stateStore, &dreaming.Diary{Path: diaryPath}, deepDir, promote, sessionsDir, time.Now().UTC())
+	return dreaming.Run(s.dreamingCfg(), stateStore, &dreaming.Diary{Path: diaryPath}, deepDir, sessionsDir, time.Now().UTC())
 }
 
 func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) {
@@ -481,30 +361,6 @@ func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) 
 		return fmt.Sprintf("skill %q applied from proposal %s", name, proposal.Meta.ID), nil
 	}
 	return fmt.Sprintf("skill proposal %s created for %q (pending apply)", proposal.Meta.ID, name), nil
-}
-
-func (s *Service) maybeAutoSkillProposal(ctx context.Context, summary, sessionID, focus string) (string, error) {
-	if !s.skillsAutoApply(ctx, "learn-session-auto") {
-		return "", nil
-	}
-	wsStore, skillsDir, err := s.workshopStore(ctx)
-	if err != nil {
-		return "", err
-	}
-	pending, err := wsStore.PendingCount()
-	if err != nil || pending >= s.workshopCfg().MaxPending {
-		return "", err
-	}
-	name := workshop.SuggestSkillName(focus, summary)
-	body := workshop.DraftSkillBody(name, "Autonomous capture from session.", summary)
-	proposal, err := wsStore.Create(name, body, "learn-session-auto", sessionID, focus, true)
-	if err != nil {
-		return "", err
-	}
-	if err := proposal.Apply(skillsDir); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("auto-applied skill proposal %s as %q", proposal.Meta.ID, name), nil
 }
 
 func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, error) {
@@ -560,13 +416,3 @@ func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, er
 	}
 }
 
-func looksLikeWorkflow(text string) bool {
-	lower := strings.ToLower(text)
-	needles := []string{"step ", "步骤", "workflow", "流程", "from now on", "每次", "routine"}
-	for _, n := range needles {
-		if strings.Contains(lower, n) {
-			return true
-		}
-	}
-	return strings.Count(text, "|") >= 3
-}

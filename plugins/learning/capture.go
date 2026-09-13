@@ -7,25 +7,14 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	caplearning "github.com/lengzhao/agentkit/cap/learning"
+	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-// CaptureMemoryAdd implements rtlearning.CaptureApplier.
-func (s *Service) CaptureMemoryAdd(ctx context.Context, text, source string) (string, error) {
-	if s.memoryWriteRequiresApproval(ctx, source) {
-		return s.stageMemory(ctx, text, source)
-	}
-	return s.addMemory(ctx, text, source)
-}
-
-// CaptureMemoryRemove implements rtlearning.CaptureApplier.
-func (s *Service) CaptureMemoryRemove(ctx context.Context, oldText string) (string, error) {
-	return s.removeMemory(ctx, oldText)
-}
-
-// CaptureSkillPropose implements rtlearning.CaptureApplier.
+// CaptureSkillPropose implements caplearning.SkillProposer.
 func (s *Service) CaptureSkillPropose(ctx context.Context, name, body, sessionID, focus, source string) (string, error) {
 	if !s.skillsWorkshopEnabled(ctx) {
 		return "", fmt.Errorf("skill workshop is disabled (use /learn policy skills propose|auto)")
@@ -42,16 +31,17 @@ func (s *Service) CaptureSkillPropose(ctx context.Context, name, body, sessionID
 		return "", err
 	}
 	if pending >= s.workshopCfg().MaxPending {
-		return "", fmt.Errorf("workshop has %d pending proposals (max %d)", pending, s.workshopCfg().MaxPending)
+		return "", fmt.Errorf("workshop has %d pending proposals (max %d); apply or reject first",
+			pending, s.workshopCfg().MaxPending)
 	}
+	name = strings.TrimSpace(name)
 	if name == "" {
 		name = workshop.SuggestSkillName(focus, body)
 	}
-	desc := "Background review skill proposal."
-	if focus != "" {
-		desc = "Focus: " + focus
+	fullBody := strings.TrimSpace(body)
+	if fullBody == "" {
+		return "", fmt.Errorf("skill body is empty")
 	}
-	fullBody := workshop.DraftSkillBody(name, desc, body)
 	proposal, err := wsStore.Create(name, fullBody, source, sessionID, focus, true)
 	if err != nil {
 		return "", err
@@ -66,19 +56,19 @@ func (s *Service) CaptureSkillPropose(ctx context.Context, name, body, sessionID
 	return fmt.Sprintf("skill proposal %s created for %q (pending apply)", proposal.Meta.ID, name), nil
 }
 
-// NewLearnCapture registers tool/learn-capture for background review and /learn tooling.
-func NewLearnCapture(_ struct{}, deps struct {
-	Learning *Service `json:"learning"`
-}) (agentkit.Tool, error) {
-	if deps.Learning == nil {
-		return nil, fmt.Errorf("tool/learn-capture requires learning")
+// NewLearnCaptureTool builds the isolated review-fork tool (not registered as a separate plugin kind).
+func NewLearnCaptureTool(mem capmemory.Capture, skills caplearning.SkillProposer) (agentkit.Tool, error) {
+	if mem == nil {
+		return nil, fmt.Errorf("learn_capture requires memory")
 	}
-	svc := deps.Learning
-	return agentkit.NewTool[rtlearning.CaptureInput, rtlearning.CaptureOutput]("learn_capture", func(ctx context.Context, input rtlearning.CaptureInput) (rtlearning.CaptureOutput, error) {
+	if skills == nil {
+		return nil, fmt.Errorf("learn_capture requires learning skill proposer")
+	}
+	return agentkit.NewTool[caplearning.CaptureInput, caplearning.CaptureOutput]("learn_capture", func(ctx context.Context, input caplearning.CaptureInput) (caplearning.CaptureOutput, error) {
 		sid := string(session.SessionIDFromContext(ctx))
-		out, err := rtlearning.ApplyCapture(ctx, svc, sid, input)
+		out, err := rtlearning.ApplyCapture(ctx, mem, skills, sid, input)
 		if err != nil {
-			return rtlearning.CaptureOutput{}, err
+			return caplearning.CaptureOutput{}, err
 		}
 		return out, nil
 	}).Description("Persist memory or propose a skill during background review (not for general use).").Build()
@@ -88,7 +78,6 @@ func shouldRunReview(messages []agentkit.ModelMessage, skipSlashOnly bool) bool 
 	if len(messages) == 0 {
 		return false
 	}
-	// Require at least one non-command user line in the recent tail.
 	limit := 12
 	start := 0
 	if len(messages) > limit {
@@ -99,7 +88,7 @@ func shouldRunReview(messages []agentkit.ModelMessage, skipSlashOnly bool) bool 
 		if msg.Role != "user" {
 			continue
 		}
-		text := strings.TrimSpace(flattenParts(msg.Content))
+		text := strings.TrimSpace(session.FlattenTextParts(msg.Content, " "))
 		if text == "" {
 			continue
 		}
@@ -109,18 +98,4 @@ func shouldRunReview(messages []agentkit.ModelMessage, skipSlashOnly bool) bool 
 		userLines++
 	}
 	return userLines > 0
-}
-
-func flattenParts(parts []agentkit.ContentPart) string {
-	var b strings.Builder
-	for _, p := range parts {
-		if p.Type != "text" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteByte(' ')
-		}
-		b.WriteString(strings.TrimSpace(p.Text))
-	}
-	return b.String()
 }

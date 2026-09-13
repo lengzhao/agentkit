@@ -14,8 +14,9 @@ type conversation struct {
 	CreatedBy  string
 	AgentID    agentkit.AgentID
 	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	TurnCount  int
+	UpdatedAt     time.Time
+	TurnCount     int
+	indexLastSeq  int64 // from session/sqlite-index; drives list order when > 0
 }
 
 type conversationStore struct {
@@ -81,6 +82,9 @@ func (s *conversationStore) register(c *conversation) {
 	if existing.CreatedAt.After(c.CreatedAt) && !c.CreatedAt.IsZero() {
 		existing.CreatedAt = c.CreatedAt
 	}
+	if c.indexLastSeq > existing.indexLastSeq {
+		existing.indexLastSeq = c.indexLastSeq
+	}
 }
 
 func (s *conversationStore) listInChannelSorted(channelKey string, limit int) []*conversation {
@@ -92,21 +96,31 @@ func (s *conversationStore) listInChannelSorted(channelKey string, limit int) []
 		}
 	}
 	s.mu.RUnlock()
-	sortConversationsByUpdated(out)
+	sortConversationsByActivity(out)
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
 	return out
 }
 
-func sortConversationsByUpdated(list []*conversation) {
+func sortConversationsByActivity(list []*conversation) {
 	for i := 0; i < len(list); i++ {
 		for j := i + 1; j < len(list); j++ {
-			if list[j].UpdatedAt.After(list[i].UpdatedAt) {
+			if conversationMoreRecent(list[j], list[i]) {
 				list[i], list[j] = list[j], list[i]
 			}
 		}
 	}
+}
+
+func conversationMoreRecent(a, b *conversation) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.indexLastSeq != b.indexLastSeq {
+		return a.indexLastSeq > b.indexLastSeq
+	}
+	return a.UpdatedAt.After(b.UpdatedAt)
 }
 
 func (s *conversationStore) listInChannel(channelKey string, limit int) []*conversation {
