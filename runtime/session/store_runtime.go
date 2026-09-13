@@ -14,6 +14,14 @@ func (s *Store) SetAgentBind(ctx context.Context, id agentkit.SessionID, agent a
 	return s.sidecar.SetAgentBind(ctx, id, agent)
 }
 
+func (s *Store) ModelBind(ctx context.Context, id agentkit.SessionID) (string, error) {
+	return s.sidecar.ModelBind(ctx, id)
+}
+
+func (s *Store) SetModelBind(ctx context.Context, id agentkit.SessionID, model string) error {
+	return s.sidecar.SetModelBind(ctx, id, model)
+}
+
 func (s *Store) ActiveSession(ctx context.Context, id agentkit.SessionID) (agentkit.SessionID, error) {
 	return s.sidecar.ActiveSession(ctx, id)
 }

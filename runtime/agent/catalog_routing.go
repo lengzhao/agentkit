@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/configfile"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -13,6 +14,13 @@ type catalogRoutingDeps struct {
 	store        agentkit.SessionStore
 	defaultAgent agentkit.AgentID
 	workspace    workspace.Service
+}
+
+func parseCatalogSlashArgs(args string) (global bool, payload string, rest []string) {
+	fields := strings.Fields(strings.TrimSpace(args))
+	global, rest = configfile.PeelGlobalFlag(fields)
+	payload = strings.TrimSpace(strings.Join(rest, " "))
+	return global, payload, rest
 }
 
 func resolveCatalogSessionID(ctx context.Context, store agentkit.SessionStore) (agentkit.SessionID, error) {

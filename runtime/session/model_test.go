@@ -22,21 +22,21 @@ func TestStoreModelBindFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bindStore, ok := store.(agentkit.ModelBindStore)
+	runtimeStore, ok := store.(agentkit.SessionRuntimeStore)
 	if !ok {
-		t.Fatal("expected ModelBindStore")
+		t.Fatal("expected SessionRuntimeStore")
 	}
 
 	ctx := context.Background()
 	sessionID := agentkit.SessionID("model-bind-test")
 
-	if got, err := bindStore.ModelBind(ctx, sessionID); err != nil || got != "" {
+	if got, err := runtimeStore.ModelBind(ctx, sessionID); err != nil || got != "" {
 		t.Fatalf("initial bind = %q err=%v", got, err)
 	}
-	if err := bindStore.SetModelBind(ctx, sessionID, "claude-sonnet-4"); err != nil {
+	if err := runtimeStore.SetModelBind(ctx, sessionID, "claude-sonnet-4"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := bindStore.ModelBind(ctx, sessionID); err != nil || got != "claude-sonnet-4" {
+	if got, err := runtimeStore.ModelBind(ctx, sessionID); err != nil || got != "claude-sonnet-4" {
 		t.Fatalf("bind = %q err=%v", got, err)
 	}
 
@@ -55,18 +55,18 @@ func TestStoreModelBindFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rebind, ok := reopened.(agentkit.ModelBindStore)
+	reopenedRuntime, ok := reopened.(agentkit.SessionRuntimeStore)
 	if !ok {
-		t.Fatal("expected ModelBindStore")
+		t.Fatal("expected SessionRuntimeStore")
 	}
-	if got, err := rebind.ModelBind(ctx, sessionID); err != nil || got != "claude-sonnet-4" {
+	if got, err := reopenedRuntime.ModelBind(ctx, sessionID); err != nil || got != "claude-sonnet-4" {
 		t.Fatalf("reopened bind = %q err=%v", got, err)
 	}
 
-	if err := rebind.SetModelBind(ctx, sessionID, ""); err != nil {
+	if err := reopenedRuntime.SetModelBind(ctx, sessionID, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := rebind.ModelBind(ctx, sessionID); err != nil || got != "" {
+	if got, err := reopenedRuntime.ModelBind(ctx, sessionID); err != nil || got != "" {
 		t.Fatalf("cleared bind = %q err=%v", got, err)
 	}
 }

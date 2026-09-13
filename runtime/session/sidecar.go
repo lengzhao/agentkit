@@ -15,16 +15,14 @@ import (
 // memorySidecar stores per-session agent binds and active-session mappings in memory.
 type memorySidecar struct {
 	mu       sync.RWMutex
-	binds    map[agentkit.SessionID]agentkit.AgentID
-	models   map[agentkit.SessionID]string
+	runtime  map[agentkit.SessionID]SessionRuntimeData
 	active   map[agentkit.SessionID]agentkit.SessionID
 	fallback agentkit.SessionID
 }
 
 func newMemorySidecar(fallback agentkit.SessionID) memorySidecar {
 	return memorySidecar{
-		binds:    make(map[agentkit.SessionID]agentkit.AgentID),
-		models:   make(map[agentkit.SessionID]string),
+		runtime:  make(map[agentkit.SessionID]SessionRuntimeData),
 		active:   make(map[agentkit.SessionID]agentkit.SessionID),
 		fallback: fallback,
 	}
@@ -37,44 +35,50 @@ func (m *memorySidecar) normalize(id agentkit.SessionID) agentkit.SessionID {
 	return id
 }
 
-func (m *memorySidecar) AgentBind(_ context.Context, id agentkit.SessionID) (agentkit.AgentID, error) {
-	id = m.normalize(id)
+func (m *memorySidecar) sessionRuntime(id agentkit.SessionID) SessionRuntimeData {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.binds[id], nil
+	return m.runtime[id]
+}
+
+func (m *memorySidecar) AgentBind(_ context.Context, id agentkit.SessionID) (agentkit.AgentID, error) {
+	return m.sessionRuntime(m.normalize(id)).AgentID, nil
 }
 
 func (m *memorySidecar) SetAgentBind(_ context.Context, id agentkit.SessionID, agent agentkit.AgentID) error {
 	id = m.normalize(id)
 	agent = agentkit.AgentID(strings.TrimSpace(string(agent)))
 	m.mu.Lock()
-	if agent == "" {
-		delete(m.binds, id)
-	} else {
-		m.binds[id] = agent
-	}
+	data := m.runtime[id]
+	data.AgentID = agent
+	m.storeRuntime(id, data)
 	m.mu.Unlock()
 	return nil
 }
 
 func (m *memorySidecar) ModelBind(_ context.Context, id agentkit.SessionID) (string, error) {
-	id = m.normalize(id)
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.models[id], nil
+	return m.sessionRuntime(m.normalize(id)).Model, nil
 }
 
 func (m *memorySidecar) SetModelBind(_ context.Context, id agentkit.SessionID, model string) error {
 	id = m.normalize(id)
 	model = strings.TrimSpace(model)
 	m.mu.Lock()
-	if model == "" {
-		delete(m.models, id)
-	} else {
-		m.models[id] = model
-	}
+	data := m.runtime[id]
+	data.Model = model
+	m.storeRuntime(id, data)
 	m.mu.Unlock()
 	return nil
+}
+
+func (m *memorySidecar) storeRuntime(id agentkit.SessionID, data SessionRuntimeData) {
+	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
+	data.Model = strings.TrimSpace(data.Model)
+	if data.AgentID == "" && data.Model == "" {
+		delete(m.runtime, id)
+		return
+	}
+	m.runtime[id] = data
 }
 
 func (m *memorySidecar) ActiveSession(_ context.Context, id agentkit.SessionID) (agentkit.SessionID, error) {

@@ -25,13 +25,12 @@ func TestStoreRuntimeUnifiedFile(t *testing.T) {
 	ctx := context.Background()
 	sessionID := agentkit.SessionID("runtime-unified")
 
-	agentStore := store.(agentkit.AgentBindStore)
-	modelStore := store.(agentkit.ModelBindStore)
+	runtimeStore := store.(agentkit.SessionRuntimeStore)
 
-	if err := agentStore.SetAgentBind(ctx, sessionID, "reviewer"); err != nil {
+	if err := runtimeStore.SetAgentBind(ctx, sessionID, "reviewer"); err != nil {
 		t.Fatal(err)
 	}
-	if err := modelStore.SetModelBind(ctx, sessionID, "gpt-4o"); err != nil {
+	if err := runtimeStore.SetModelBind(ctx, sessionID, "gpt-4o"); err != nil {
 		t.Fatal(err)
 	}
 

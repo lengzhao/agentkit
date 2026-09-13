@@ -32,6 +32,7 @@ func (l *agentRecordingLoop) SupersedePendingForInbound(agentkit.MessageEvent)  
 type mapSessionStore struct {
 	sessions map[agentkit.SessionID]agentkit.Session
 	binds    map[agentkit.SessionID]agentkit.AgentID
+	models   map[agentkit.SessionID]string
 	active   map[agentkit.SessionID]agentkit.SessionID
 }
 
@@ -48,7 +49,25 @@ func (s mapSessionStore) AgentBind(_ context.Context, id agentkit.SessionID) (ag
 }
 
 func (s mapSessionStore) SetAgentBind(_ context.Context, id agentkit.SessionID, agent agentkit.AgentID) error {
+	if s.binds == nil {
+		s.binds = map[agentkit.SessionID]agentkit.AgentID{}
+	}
 	s.binds[id] = agent
+	return nil
+}
+
+func (s mapSessionStore) ModelBind(_ context.Context, id agentkit.SessionID) (string, error) {
+	if s.models == nil {
+		return "", nil
+	}
+	return s.models[id], nil
+}
+
+func (s mapSessionStore) SetModelBind(_ context.Context, id agentkit.SessionID, model string) error {
+	if s.models == nil {
+		s.models = map[agentkit.SessionID]string{}
+	}
+	s.models[id] = model
 	return nil
 }
 

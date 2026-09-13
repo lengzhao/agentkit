@@ -20,20 +20,20 @@ func TestStoreAgentBindFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bindStore, ok := store.(agentkit.AgentBindStore)
+	runtimeStore, ok := store.(agentkit.SessionRuntimeStore)
 	if !ok {
-		t.Fatal("expected AgentBindStore")
+		t.Fatal("expected SessionRuntimeStore")
 	}
 
 	const sessionID = agentkit.SessionID("cli:test-bind")
 	ctx := context.Background()
-	if got, err := bindStore.AgentBind(ctx, sessionID); err != nil || got != "" {
+	if got, err := runtimeStore.AgentBind(ctx, sessionID); err != nil || got != "" {
 		t.Fatalf("initial bind = %q, err = %v", got, err)
 	}
-	if err := bindStore.SetAgentBind(ctx, sessionID, "reviewer"); err != nil {
+	if err := runtimeStore.SetAgentBind(ctx, sessionID, "reviewer"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := bindStore.AgentBind(ctx, sessionID); err != nil || got != "reviewer" {
+	if got, err := runtimeStore.AgentBind(ctx, sessionID); err != nil || got != "reviewer" {
 		t.Fatalf("bind = %q, err = %v", got, err)
 	}
 
@@ -50,11 +50,11 @@ func TestStoreAgentBindFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rebind, ok := reopened.(agentkit.AgentBindStore)
+	reopenedRuntime, ok := reopened.(agentkit.SessionRuntimeStore)
 	if !ok {
-		t.Fatal("expected AgentBindStore")
+		t.Fatal("expected SessionRuntimeStore")
 	}
-	if got, err := rebind.AgentBind(ctx, sessionID); err != nil || got != "reviewer" {
+	if got, err := reopenedRuntime.AgentBind(ctx, sessionID); err != nil || got != "reviewer" {
 		t.Fatalf("reopened bind = %q, err = %v", got, err)
 	}
 }

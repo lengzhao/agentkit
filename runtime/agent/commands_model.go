@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/configfile"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -28,9 +27,7 @@ func (modelCommand) Alias() string       { return "" }
 func (modelCommand) Description() string { return "show or set the LLM model for this session (-g for global default)" }
 
 func (c modelCommand) CommandExec(ctx context.Context, args string) (string, error) {
-	fields := strings.Fields(strings.TrimSpace(args))
-	global, rest := configfile.PeelGlobalFlag(fields)
-	payload := strings.TrimSpace(strings.Join(rest, " "))
+	global, payload, _ := parseCatalogSlashArgs(args)
 
 	if payload == "" {
 		return c.show(ctx, global)
@@ -141,11 +138,7 @@ func (c modelCommand) set(ctx context.Context, global bool, model string) (strin
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	bindStore, ok := c.store.(agentkit.ModelBindStore)
-	if !ok {
-		return "", fmt.Errorf("session store does not support model binding")
-	}
-	if err := bindStore.SetModelBind(ctx, sessionID, model); err != nil {
+	if err := session.SetSessionModelBind(ctx, c.store, sessionID, model); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("session model: %s", model), nil
@@ -190,11 +183,7 @@ func (c modelCommand) clear(ctx context.Context, global bool) (string, error) {
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	bindStore, ok := c.store.(agentkit.ModelBindStore)
-	if !ok {
-		return "", fmt.Errorf("session store does not support model binding")
-	}
-	if err := bindStore.SetModelBind(ctx, sessionID, ""); err != nil {
+	if err := session.SetSessionModelBind(ctx, c.store, sessionID, ""); err != nil {
 		return "", err
 	}
 	agentID, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())

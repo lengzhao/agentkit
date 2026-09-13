@@ -8,7 +8,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/configfile"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -34,9 +33,7 @@ func (agentCommand) Alias() string       { return "" }
 func (agentCommand) Description() string { return "list agents, switch session or global (-g) default agent" }
 
 func (c agentCommand) CommandExec(ctx context.Context, args string) (string, error) {
-	fields := strings.Fields(strings.TrimSpace(args))
-	global, rest := configfile.PeelGlobalFlag(fields)
-	payload := strings.TrimSpace(strings.Join(rest, " "))
+	global, payload, rest := parseCatalogSlashArgs(args)
 
 	if len(rest) >= 2 && rest[0] == "use" {
 		return c.useAgent(ctx, global, strings.TrimSpace(strings.Join(rest[1:], " ")))
@@ -74,14 +71,7 @@ func (c agentCommand) useAgent(ctx context.Context, global bool, name string) (s
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	if c.store == nil {
-		return "", fmt.Errorf("session store is not configured")
-	}
-	bindStore, ok := c.store.(agentkit.AgentBindStore)
-	if !ok {
-		return "", fmt.Errorf("session store does not support agent binding")
-	}
-	if err := bindStore.SetAgentBind(ctx, sessionID, agentkit.AgentID(name)); err != nil {
+	if err := session.SetSessionAgentBind(ctx, c.store, sessionID, agentkit.AgentID(name)); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("session agent: %s", name), nil
@@ -104,11 +94,7 @@ func (c agentCommand) clearBind(ctx context.Context, global bool) (string, error
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	bindStore, ok := c.store.(agentkit.AgentBindStore)
-	if !ok {
-		return "", fmt.Errorf("session store does not support agent binding")
-	}
-	if err := bindStore.SetAgentBind(ctx, sessionID, ""); err != nil {
+	if err := session.SetSessionAgentBind(ctx, c.store, sessionID, ""); err != nil {
 		return "", err
 	}
 	effective, _, globalBind, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
