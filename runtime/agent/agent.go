@@ -268,6 +268,11 @@ func (a *Runtime) runSegment(
 			toolBaseCtx = stepCtx
 		}
 		for _, call := range assistant.ToolCalls {
+			if reason := ctrl.PopCancelReason(); reason != "" {
+				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				endStepOnce()
+				return "", fmt.Errorf("cancelled: %s", reason)
+			}
 			if err := session.AppendToolCall(ctx, sess, a.id, call); err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()

@@ -117,6 +117,71 @@ func TestStopCommandCancelsBusySession(t *testing.T) {
 	}
 }
 
+func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
+	t.Parallel()
+	delivery := session.BuildDeliverySessionID("lark", "oc_test", "", "ou_user")
+	entry := session.ApplyScope(delivery, session.ScopeChannel, "ou_user")
+	child := agentkit.SessionID(string(entry) + ":new:20260913")
+	loop := &stubStopLoop{busy: map[agentkit.SessionID]bool{child: true}}
+	store := stopActiveStore{active: map[agentkit.SessionID]agentkit.SessionID{entry: child}}
+	root, err := runner.New(runner.Config{}, runner.Deps{
+		Platform:     stubPlatform{},
+		Loop:         loop,
+		SessionStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stopCmd agentkit.Command
+	for _, cmd := range root.(agentkit.CommandProvider).Commands() {
+		if cmd.Name() == "stop" {
+			stopCmd = cmd
+			break
+		}
+	}
+	if stopCmd == nil {
+		t.Fatal("missing /stop command")
+	}
+	env := session.ResolveEnvelope(agentkit.MessageEvent{
+		PlatformID: "lark",
+		UserID:     "ou_user",
+	}, session.RoutePolicyForPlatform("lark", session.DefaultRoutePolicy(session.ScopeChannel)))
+	env.Route = session.SessionRoute("lark", string(delivery))
+	env = session.WithMetadataScope(env, session.ScopeChannel)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+
+	out, err := stopCmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "stopping current turn" {
+		t.Fatalf("out = %q", out)
+	}
+	if len(loop.cancel) != 1 || loop.cancel[0].sessionID != child {
+		t.Fatalf("cancel = %+v, want child %q", loop.cancel, child)
+	}
+}
+
+type stopActiveStore struct {
+	active map[agentkit.SessionID]agentkit.SessionID
+}
+
+func (s stopActiveStore) Get(context.Context, agentkit.SessionID) (agentkit.Session, error) {
+	return nil, nil
+}
+
+func (s stopActiveStore) ActiveSession(_ context.Context, id agentkit.SessionID) (agentkit.SessionID, error) {
+	if active, ok := s.active[id]; ok {
+		return active, nil
+	}
+	return id, nil
+}
+
+func (s stopActiveStore) SetActiveSession(_ context.Context, id, active agentkit.SessionID) error {
+	s.active[id] = active
+	return nil
+}
+
 func TestStopCommandRejectsArgs(t *testing.T) {
 	t.Parallel()
 	loop := &stubStopLoop{busy: map[agentkit.SessionID]bool{}}

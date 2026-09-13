@@ -60,6 +60,13 @@ func TestParseSlashCommand(t *testing.T) {
 	}
 }
 
+func TestParseSlashCommandStripsBotSuffix(t *testing.T) {
+	name, args, ok := ParseSlashCommand("/stop@_user_1")
+	if !ok || name != "stop" || args != "" {
+		t.Fatalf("name=%q args=%q ok=%v", name, args, ok)
+	}
+}
+
 func TestProcessSlashHelp(t *testing.T) {
 	out, err := ProcessSlash(context.Background(), nil, slashCtx("slack", "slack:C:u:U", session.ScopeChannel, ""), "/help")
 	if err != nil {

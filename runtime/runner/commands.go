@@ -28,15 +28,11 @@ func (c stopCommand) CommandExec(ctx context.Context, args string) (string, erro
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /stop")
 	}
-	entryKey := session.SessionIDFromContext(ctx)
-	sessionID, err := session.ResolveActiveSessionID(ctx, c.store, entryKey)
+	sessionID, busy, err := busyStopSession(ctx, c.store, c.loop)
 	if err != nil {
 		return "", err
 	}
-	if sessionID == "" {
-		return "", fmt.Errorf("session id is required")
-	}
-	if !c.loop.IsSessionBusy(sessionID) {
+	if !busy || sessionID == "" {
 		return "no turn in progress", nil
 	}
 	env := session.EnvelopeFromContext(ctx)

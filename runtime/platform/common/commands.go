@@ -56,6 +56,9 @@ func ParseSlashCommand(line string) (name, args string, ok bool) {
 	}
 	fields := strings.Fields(body)
 	name = strings.ToLower(fields[0])
+	if i := strings.Index(name, "@"); i >= 0 {
+		name = name[:i]
+	}
 	if len(fields) > 1 {
 		args = strings.TrimSpace(body[len(fields[0]):])
 	}

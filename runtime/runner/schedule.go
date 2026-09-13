@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -84,6 +86,9 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		return
 	}
 	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) {
+		if r.tryStopBusyInbound(ctx, scoped) {
+			return
+		}
 		steerMsg := r.formatInboundEvent(scoped, env).Message
 		slog.Info("inbound steered to busy session",
 			"platform", event.PlatformID,
@@ -153,4 +158,35 @@ func (r *Root) reportInboundError(ctx context.Context, env agentkit.TurnEnvelope
 
 func (r *Root) reportScheduleError(_ context.Context, err error) {
 	slog.Error("schedule runtime failed", "err", err)
+}
+
+func (r *Root) tryStopBusyInbound(ctx context.Context, event agentkit.MessageEvent) bool {
+	text := inboundPlainText(event.Message)
+	name, args, ok := common.ParseSlashCommand(text)
+	if !ok || name != "stop" || strings.TrimSpace(args) != "" {
+		return false
+	}
+	out, err := stopCommand{loop: r.loop, store: r.sessionStore}.CommandExec(ctx, "")
+	if err != nil {
+		slog.Error("stop command failed",
+			"platform", event.PlatformID,
+			"user_id", event.UserID,
+			"err", err,
+		)
+		return true
+	}
+	if out != "" {
+		slog.Info("stop command", "platform", event.PlatformID, "reply", out)
+	}
+	return true
+}
+
+func inboundPlainText(msg agentkit.ModelMessage) string {
+	var b strings.Builder
+	for _, part := range msg.Content {
+		if part.Type == "text" {
+			b.WriteString(part.Text)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

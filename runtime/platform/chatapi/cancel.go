@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-
-	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 var errUserCanceled = errors.New("canceled by user")
@@ -37,11 +34,6 @@ func (p *Platform) dispatchStop(ctx context.Context, run *runState) {
 	if run == nil {
 		return
 	}
-	event := common.InboundFromContent(run.agentID, session.SessionRouteInput{
-		Platform:    "chat-api",
-		DeliveryID:  run.sessionID,
-		ReplyTo:     run.messageID,
-		ScopeUserID: run.user,
-	}, run.user, "/stop", "", nil, nil, nil, nil, common.InboundOptsFor(p.workspace))
-	_ = p.inbox.Push(ctx, event)
+	conv := p.conversations.findInChannel(run.channelKey, run.conversationID)
+	_, _ = p.processChatSlash(ctx, run.channelKey, conv, run.sessionID, run.user, nil, "/stop")
 }
