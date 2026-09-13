@@ -3004,16 +3004,26 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 
 	var cardJSON string
 	streamElementID := ""
+	sendContent := ""
+	cardEntityID := ""
 	if isCardJSON(content) {
 		cardJSON = content
-	} else if p.useCardKitStream() {
+		if id, err := p.createCardEntity(ctx, cardJSON); err == nil {
+			cardEntityID = id
+			sendContent = buildIMCardEntityContent(id)
+		} else {
+			slog.Debug(p.tag()+": create card entity failed, falling back to inline card JSON", "error", err)
+			sendContent = cardJSON
+		}
+	} else if p.useCardKitElementStream() {
 		cardJSON = buildStreamingBodyCardEntityJSON()
 		streamElementID = bodyStreamElementID
 	} else {
 		cardJSON = buildPreviewCardJSON(content)
+		sendContent = cardJSON
 	}
 
-	if p.useCardKitStream() {
+	if p.useCardKitElementStream() && !isCardJSON(content) {
 		handle, err := p.createAndSendCardEntity(ctx, rc, cardJSON, streamElementID)
 		if err != nil {
 			slog.Debug(p.tag()+": cardkit preview start failed, falling back to patch", "error", err)
@@ -3031,11 +3041,15 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 		}
 	}
 
+	if sendContent == "" {
+		sendContent = cardJSON
+	}
+
 	var msgID string
 	if p.shouldUseThreadOrReplyAPI(rc) {
 		req := larkim.NewReplyMessageReqBuilder().
 			MessageId(rc.messageID).
-			Body(p.buildReplyMessageReqBody(rc, larkim.MsgTypeInteractive, cardJSON)).
+			Body(p.buildReplyMessageReqBody(rc, larkim.MsgTypeInteractive, sendContent)).
 			Build()
 		var resp *larkim.ReplyMessageResp
 		if err := p.withTransientRetry(ctx, "send preview", func() error {
@@ -3062,7 +3076,7 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 			Body(larkim.NewCreateMessageReqBodyBuilder().
 				ReceiveId(chatID).
 				MsgType(larkim.MsgTypeInteractive).
-				Content(cardJSON).
+				Content(sendContent).
 				Build()).
 			Build()
 		var resp *larkim.CreateMessageResp
@@ -3090,7 +3104,7 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 		return nil, fmt.Errorf("%s: send preview: no message ID returned", p.tag())
 	}
 
-	return &feishuPreviewHandle{messageID: msgID, chatID: chatID}, nil
+	return &feishuPreviewHandle{messageID: msgID, chatID: chatID, cardID: cardEntityID}, nil
 }
 
 // UpdateMessage edits an existing card message identified by previewHandle.
@@ -3397,26 +3411,6 @@ var toolIconMap = map[string]string{
 	"LSP":       "code_outlined",
 }
 
-var thinkingVerbs = []string{
-	"Churning", "Clauding", "Coalescing", "Cogitating", "Computing",
-	"Combobulating", "Concocting", "Conjuring", "Considering", "Contemplating",
-	"Cooking", "Crafting", "Creating", "Crunching", "Deciphering",
-	"Deliberating", "Divining", "Effecting", "Elucidating", "Enchanting",
-	"Envisioning", "Finagling", "Forging", "Generating", "Germinating",
-	"Hatching", "Ideating", "Imagining", "Incubating", "Inferring",
-	"Manifesting", "Marinating", "Meandering", "Mulling", "Musing",
-	"Noodling", "Percolating", "Perusing", "Pondering", "Processing",
-	"Puzzling", "Reticulating", "Ruminating", "Scheming", "Simmering",
-	"Spelunking", "Spinning", "Stewing", "Sussing", "Synthesizing",
-	"Thinking", "Tinkering", "Transmuting", "Unfurling", "Unravelling",
-	"Vibing", "Wandering", "Whirring", "Wizarding", "Working", "Wrangling",
-}
-
-func pickThinkingVerb() string {
-	idx := time.Now().Unix() % int64(len(thinkingVerbs))
-	return thinkingVerbs[idx] + "..."
-}
-
 var markdownTablePattern = regexp.MustCompile(`(?m)^\|.+\|\s*\n\|[\s:|-]+\|\s*\n(?:\|.+\|\s*\n?)+`)
 
 func getToolIcon(toolName string) string {
@@ -3545,25 +3539,10 @@ func isCardJSON(content string) bool {
 // buildCardJSONWithStatus builds a Feishu card JSON with a colored header
 // reflecting the given status. Used as a fallback when rich-card assembly fails.
 func buildCardJSONWithStatus(content string, status cardStatus) string {
-	template := "grey"
-	switch status {
-	case cardStatusWorking, cardStatusThinking:
-		template = "blue"
-	case cardStatusDone:
-		template = "green"
-	case cardStatusCancelled:
-		template = "orange"
-	case cardStatusError:
-		template = "red"
-	}
 	card := map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{
 			"wide_screen_mode": true,
-		},
-		"header": map[string]any{
-			"template": template,
-			"title":    map[string]any{"tag": "plain_text", "content": ""},
 		},
 		"body": map[string]any{
 			"elements": []map[string]any{
@@ -3574,8 +3553,33 @@ func buildCardJSONWithStatus(content string, status cardStatus) string {
 			},
 		},
 	}
+	if header := richCardTerminalHeader(status); header != nil {
+		card["header"] = header
+	}
 	b, _ := json.Marshal(card)
 	return string(b)
+}
+
+func richCardTerminalHeader(status cardStatus) map[string]any {
+	switch status {
+	case cardStatusDone:
+		return map[string]any{
+			"template": "green",
+			"title":    map[string]any{"tag": "plain_text", "content": "☑️"},
+		}
+	case cardStatusCancelled:
+		return map[string]any{
+			"template": "orange",
+			"title":    map[string]any{"tag": "plain_text", "content": "已取消"},
+		}
+	case cardStatusError:
+		return map[string]any{
+			"template": "red",
+			"title":    map[string]any{"tag": "plain_text", "content": "出错"},
+		}
+	default:
+		return nil
+	}
 }
 
 // formatElapsedCN renders a human-readable duration in Chinese.
@@ -3599,72 +3603,121 @@ func formatElapsedCN(d time.Duration) string {
 	}
 }
 
-// buildRichCard renders a Card 2.0 "single-card" turn with collapsible
-// tool-step panel, streaming markdown body, status-colored header, and
-// an elapsed-time footer.
-func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown string, streaming bool, elapsed time.Duration) string {
-	panelTitle := "Thinking..."
-	if len(steps) > 0 {
-		if streaming {
-			toolCount := 0
-			for _, step := range steps {
-				if step.Kind == toolStepKindTool {
-					toolCount++
-				}
-			}
-			if toolCount > 0 {
-				panelTitle = fmt.Sprintf("Working on it (%d tools)", toolCount)
-			}
-		} else {
-			toolCounts := make(map[string]int)
-			var toolOrder []string
-			for _, s := range steps {
-				if s.Kind != toolStepKindTool {
-					continue
-				}
-				name := richStepDisplayName(s)
-				if toolCounts[name] == 0 {
-					toolOrder = append(toolOrder, name)
-				}
-				toolCounts[name]++
-			}
-			var toolParts []string
-			for _, name := range toolOrder {
-				if toolCounts[name] > 1 {
-					toolParts = append(toolParts, fmt.Sprintf("%s×%d", name, toolCounts[name]))
-				} else {
-					toolParts = append(toolParts, name)
-				}
-			}
-			toolSummary := strings.Join(toolParts, ", ")
-			preview := strings.TrimSpace(markdown)
-			if idx := strings.IndexByte(preview, '\n'); idx > 0 {
-				preview = preview[:idx]
-			}
-			if runes := []rune(preview); len(runes) > 20 {
-				preview = string(runes[:20]) + "..."
-			}
-			if preview != "" {
-				panelTitle = fmt.Sprintf("%s · %s", toolSummary, preview)
-			} else {
-				panelTitle = toolSummary
-			}
+// richCardMainTextElementID is the markdown element_id for CardKit streaming text updates.
+const richCardMainTextElementID = "main_text"
+
+// richCardStatusLine is the single user-facing status string (time + done emoji).
+func richCardStatusLine(status cardStatus, elapsed time.Duration, streaming bool) string {
+	switch status {
+	case cardStatusDone:
+		if elapsed <= 0 {
+			return "☑️ 已完成"
+		}
+		return "☑️ 用时 " + formatElapsedCN(elapsed)
+	case cardStatusCancelled:
+		if elapsed <= 0 {
+			return "已取消"
+		}
+		return "已取消 · 用时 " + formatElapsedCN(elapsed)
+	case cardStatusError:
+		if elapsed <= 0 {
+			return "出错"
+		}
+		return "出错 · 用时 " + formatElapsedCN(elapsed)
+	default:
+		return ""
+	}
+}
+
+const richCardMinShowElapsed = 500 * time.Millisecond
+
+func richCardShowElapsed(elapsed time.Duration) bool {
+	return elapsed >= richCardMinShowElapsed
+}
+
+func richCardBodyMarkdown(status cardStatus, markdown string, elapsed time.Duration, streaming bool) string {
+	md := strings.TrimSpace(markdown)
+	line := richCardStatusLine(status, elapsed, streaming)
+	if line == "" || !isTerminalCardStatus(status) {
+		return markdown
+	}
+	if md == "" {
+		return line
+	}
+	if strings.HasPrefix(md, line) || strings.HasPrefix(md, "☑️") {
+		return md
+	}
+	return line + "\n\n" + md
+}
+
+func isTerminalCardStatus(status cardStatus) bool {
+	switch status {
+	case cardStatusDone, cardStatusCancelled, cardStatusError:
+		return true
+	default:
+		return false
+	}
+}
+
+func richCardToolCount(steps []toolStep) int {
+	n := 0
+	for _, step := range steps {
+		if step.Kind == toolStepKindTool {
+			n++
 		}
 	}
+	return n
+}
 
-	panelCap := len(steps)
-	if panelCap < 1 {
-		panelCap = 1
+func richCardHasThinking(steps []toolStep) bool {
+	for _, s := range steps {
+		if s.Kind == toolStepKindThinking {
+			return true
+		}
 	}
-	panelElements := make([]map[string]any, 0, panelCap)
-	if len(steps) == 0 {
-		panelElements = append(panelElements, map[string]any{
-			"tag":  "div",
-			"text": map[string]any{"tag": "plain_text", "content": "Thinking..."},
-		})
-	} else {
-		// Keep only the most recent progress rows so the collapsible panel
-		// stays short during long tool-heavy turns.
+	return false
+}
+
+func richCardPanelTitle(steps []toolStep, elapsed time.Duration, streaming bool) string {
+	toolCount := richCardToolCount(steps)
+	hasThinking := richCardHasThinking(steps)
+	if streaming {
+		if toolCount > 0 {
+			if richCardShowElapsed(elapsed) {
+				return fmt.Sprintf("处理中 · %d 个工具 · ⏱ %s...", toolCount, formatElapsedCN(elapsed))
+			}
+			return fmt.Sprintf("处理中 · %d 个工具", toolCount)
+		}
+		if hasThinking {
+			if richCardShowElapsed(elapsed) {
+				return "思考中 · ⏱ " + formatElapsedCN(elapsed) + "..."
+			}
+			return "思考中"
+		}
+		return ""
+	}
+	if toolCount > 0 {
+		return fmt.Sprintf("已调用 %d 个工具", toolCount)
+	}
+	if hasThinking {
+		return "思考记录"
+	}
+	return ""
+}
+
+func richCardStepIcon(step toolStep) string {
+	if step.Kind == toolStepKindThinking {
+		return "idea_outlined"
+	}
+	return getToolIcon(step.Name)
+}
+
+// buildRichCard: 正文 + 可折叠 tool/thinking 区；结束时正文首行 ☑️ 用时。
+func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown string, streaming bool, elapsed time.Duration) string {
+	panelTitle := richCardPanelTitle(steps, elapsed, streaming)
+
+	panelElements := make([]map[string]any, 0, len(steps))
+	if len(steps) > 0 {
 		visible := steps
 		overflow := 0
 		if len(steps) > maxRecentProgressSteps {
@@ -3672,83 +3725,51 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 			overflow = len(steps) - maxRecentProgressSteps
 		}
 		for _, step := range visible {
-			summary := richStepBody(step)
 			panelElements = append(panelElements, map[string]any{
 				"tag":  "div",
-				"icon": map[string]any{"tag": "standard_icon", "token": getToolIcon(step.Name)},
-				"text": map[string]any{"tag": "plain_text", "content": summary},
+				"icon": map[string]any{"tag": "standard_icon", "token": richCardStepIcon(step)},
+				"text": map[string]any{"tag": "plain_text", "content": richStepBody(step)},
 			})
 		}
 		if overflow > 0 {
 			panelElements = append(panelElements, map[string]any{
 				"tag":  "div",
-				"text": map[string]any{"tag": "plain_text", "content": fmt.Sprintf("… and %d more steps", overflow)},
+				"text": map[string]any{"tag": "plain_text", "content": fmt.Sprintf("… 另有 %d 步", overflow)},
 			})
 		}
 	}
 
-	panelMap := map[string]any{
-		"tag":              "collapsible_panel",
-		"expanded":         false,
-		"background_color": "grey",
-		"header": map[string]any{
-			"title": map[string]any{"tag": "plain_text", "content": panelTitle},
-		},
-		"border":           map[string]any{"color": "grey"},
-		"vertical_spacing": "8px",
-		"padding":          "4px 8px",
-		"elements":         panelElements,
-	}
-	markdownMap := map[string]any{
-		"tag":     "markdown",
-		"content": preprocessFeishuMarkdown(markdown),
+	var panelMap map[string]any
+	if len(panelElements) > 0 {
+		if panelTitle == "" {
+			panelTitle = "处理记录"
+		}
+		panelMap = map[string]any{
+			"tag":              "collapsible_panel",
+			"expanded":         false,
+			"background_color": "grey",
+			"header": map[string]any{
+				"title": map[string]any{"tag": "plain_text", "content": panelTitle},
+			},
+			"border":           map[string]any{"color": "grey"},
+			"vertical_spacing": "8px",
+			"padding":          "4px 8px",
+			"elements":         panelElements,
+		}
 	}
 
-	// Footer shows elapsed time: "⏱ 运行中 12.3 秒..." during streaming,
-	// "⏱ 用时 1 分 23 秒" on completion. Skip when elapsed == 0 to avoid noise.
-	var footerMap map[string]any
-	if elapsed > 0 {
-		var footerText string
-		if streaming {
-			footerText = fmt.Sprintf("⏱ 运行中 %s...", formatElapsedCN(elapsed))
-		} else {
-			footerText = fmt.Sprintf("⏱ 用时 %s", formatElapsedCN(elapsed))
-		}
-		footerMap = map[string]any{
-			"tag": "div",
-			"text": map[string]any{
-				"tag":     "plain_text",
-				"content": footerText,
-			},
-		}
+	bodyMD := richCardBodyMarkdown(status, markdown, elapsed, streaming)
+	markdownMap := map[string]any{
+		"tag":        "markdown",
+		"element_id": richCardMainTextElementID,
+		"content":    preprocessFeishuMarkdown(bodyMD),
 	}
 
 	var elements []map[string]any
-	if len(steps) > 0 || streaming {
+	if panelMap != nil {
 		elements = append(elements, panelMap, markdownMap)
 	} else {
 		elements = append(elements, markdownMap)
-	}
-	if footerMap != nil {
-		elements = append(elements, footerMap)
-	}
-
-	// Header template color follows status.
-	headerTemplate := "blue"
-	headerTitle := pickThinkingVerb()
-	switch status {
-	case cardStatusDone:
-		headerTemplate = "green"
-		headerTitle = "Done"
-	case cardStatusCancelled:
-		headerTemplate = "orange"
-		headerTitle = "Cancelled"
-	case cardStatusError:
-		headerTemplate = "red"
-		headerTitle = "Error"
-	case cardStatusThinking, cardStatusWorking:
-		headerTemplate = "blue"
-		headerTitle = pickThinkingVerb()
 	}
 
 	card := map[string]any{
@@ -3757,10 +3778,6 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 			"streaming_mode":             streaming,
 			"update_multi":               true,
 			"enable_forward_interaction": true,
-		},
-		"header": map[string]any{
-			"template": headerTemplate,
-			"title":    map[string]any{"tag": "plain_text", "content": headerTitle},
 		},
 		"body": map[string]any{"elements": elements},
 	}

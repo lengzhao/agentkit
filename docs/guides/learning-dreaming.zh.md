@@ -193,7 +193,7 @@ sequenceDiagram
 | 写入审批 | `memory.default.config.review.writeApproval: true`（或 `/memory policy approve`）时，review 的 memory 类 `learn_capture` 进入 `memory/.staged/`；用 `/memory pending`、`/memory approve <id>`；默认 `false`（auto，直接写 `memory.md`） |
 | 节流 | `memoryNudgeInterval`、`maxReviewsPerDay`、`minTurnTokens`、`minIdleSeconds`（见 `hook.background-review` config）；计数持久化在 `memory/dreaming/review_nudge.json` |
 | LLM | 默认 `llm.review`（如 `gpt-4o-mini`），与主 agent `llm.fallback` 分离 |
-| 关停 | `runner.Stop` 调用 `CancelAllBackgroundReviews()` |
+| 关停 | SIGINT/SIGTERM：`CancelAllBackgroundReviews` + `CancelAllInFlight`，默认 `shutdownGraceSecondsOnSignal: 0`（立即 abandoning，不等 `shutdownTimeoutSeconds`）；`runner.Stop` 再次 `CancelAll` |
 | 可观测 | OpenTelemetry span `learning.review`；`memoryNotifications: on\|verbose` 时推送 `💾 Memory updated`（已写盘）或 `💾 Memory pending approval`（仅 staged）；经 `platform.default` sender；`off` 仅写盘 |
 | 主 agent 记忆工具 | `tool/memory`：`add` / `replace` / `remove`（满容返回 `current_entries` + `usage`）；工具说明含 **WHEN**（用户纠正、偏好/回复格式、显式「记住」须**当轮**调用，勿只口头确认）、**SKIP**（与 skill 分工）、**per-turn 冻结**（见 §9.2）；文案见 `runtime/memory/tool_schema.go` `MemoryToolDescription` |
 

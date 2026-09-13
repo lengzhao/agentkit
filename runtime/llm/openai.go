@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
@@ -28,6 +29,8 @@ type OpenAIConfig struct {
 	Reasoning *OpenAIReasoningConfig `json:"reasoning,omitempty"`
 	// Retry is provider-level retry, separate from the agent's per-step retry.
 	Retry *LLMRetryConfig `json:"retry,omitempty"`
+	// TimeoutSeconds is wall-clock limit per Stream call (connect through end of stream). 0 uses 180s.
+	TimeoutSeconds int `json:"timeoutSeconds"`
 }
 
 type HostedToolConfig struct {
@@ -52,8 +55,9 @@ type OpenAI struct {
 	hostedTools   []HostedToolConfig
 	reasoning     *OpenAIReasoningConfig
 	providerRetry ProviderRetrySettings
-	apiKey        string
-	client        *openai.Client
+	requestTimeout time.Duration
+	apiKey         string
+	client         *openai.Client
 }
 
 // NewOpenAI registers llm/openai-compatible: OpenAI-compatible provider, chat or responses API.
@@ -78,14 +82,16 @@ func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) 
 	if len(cfg.HostedTools) > 0 && api != openAIAPIResponses {
 		return nil, fmt.Errorf("llm/openai-compatible: hostedTools requires api: responses")
 	}
+	requestTimeout := resolveRequestTimeout(cfg.TimeoutSeconds)
 	return &OpenAI{
-		model:         model,
-		api:           api,
-		hostedTools:   cfg.HostedTools,
-		reasoning:     cfg.Reasoning,
-		providerRetry: defaultProviderRetry(retryProviderConfig(cfg.Retry)),
-		apiKey:        apiKey,
-		client:        newOpenAIClient(apiKey, baseURL),
+		model:          model,
+		api:            api,
+		hostedTools:    cfg.HostedTools,
+		reasoning:      cfg.Reasoning,
+		providerRetry:  defaultProviderRetry(retryProviderConfig(cfg.Retry)),
+		requestTimeout: requestTimeout,
+		apiKey:         apiKey,
+		client:         newOpenAIClient(apiKey, baseURL, requestTimeout),
 	}, nil
 }
 
@@ -110,5 +116,9 @@ func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.
 	if err != nil {
 		return nil, err
 	}
-	return backend.stream(ctx, model, req)
+	stream, err := backend.stream(ctx, model, req)
+	if err != nil {
+		return nil, err
+	}
+	return streamWithRequestTimeout(ctx, p.requestTimeout, stream), nil
 }

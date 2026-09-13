@@ -8,10 +8,13 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-func newOpenAIClient(apiKey, baseURL string) *openai.Client {
+func newOpenAIClient(apiKey, baseURL string, requestTimeout time.Duration) *openai.Client {
 	cfg := openai.DefaultConfig(apiKey)
 	cfg.BaseURL = strings.TrimRight(baseURL, "/")
-	cfg.HTTPClient = &http.Client{Timeout: 10 * time.Minute}
+	if requestTimeout <= 0 {
+		requestTimeout = defaultRequestTimeout
+	}
+	cfg.HTTPClient = &http.Client{Timeout: requestTimeout}
 	return openai.NewClientWithConfig(cfg)
 }
 

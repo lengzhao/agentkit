@@ -7,6 +7,17 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
+func TestRichStreamSkipsBotReplyReactionEmojis(t *testing.T) {
+	card := &Platform{progressStyle: "card", useInteractiveCard: true}
+	if card.useBotReplyReactionEmojis() {
+		t.Fatal("card progress should not add emoji on bot reply card")
+	}
+	legacy := &Platform{progressStyle: "legacy", useInteractiveCard: true}
+	if !legacy.useBotReplyReactionEmojis() {
+		t.Fatal("legacy should add emoji on bot reply when applicable")
+	}
+}
+
 func TestTurnEndReactionsIncludeSteeredMessages(t *testing.T) {
 	p := &Platform{}
 	sessionID := agentkit.SessionID("session-steer")
@@ -53,20 +64,19 @@ func TestApplyTurnEndReactionsFallsBackToTurnTrigger(t *testing.T) {
 	}
 }
 
-func TestBotReplyMessageIDPrefersUnifiedCard(t *testing.T) {
+func TestBotReplyMessageIDPrefersProgressCard(t *testing.T) {
 	st := &streamState{
-		cardHandle: &feishuPreviewHandle{messageID: "card-1"},
-		bodyHandle: &feishuPreviewHandle{messageID: "body-1"},
+		bodyHandle:     &feishuPreviewHandle{messageID: "body-1"},
+		progressHandle: &feishuPreviewHandle{messageID: "progress-1"},
 	}
-	if id := botReplyMessageID(st); id != "card-1" {
-		t.Fatalf("messageID = %q, want card-1", id)
+	if id := botReplyMessageID(st); id != "progress-1" {
+		t.Fatalf("messageID = %q, want progress-1", id)
 	}
 }
 
-func TestBotReplyMessageIDPrefersBodyCard(t *testing.T) {
+func TestBotReplyMessageIDFallsBackToBodyCard(t *testing.T) {
 	st := &streamState{
 		bodyHandle: &feishuPreviewHandle{messageID: "body-1"},
-		progressHandle: &feishuPreviewHandle{messageID: "progress-1"},
 	}
 	if id := botReplyMessageID(st); id != "body-1" {
 		t.Fatalf("messageID = %q, want body-1", id)

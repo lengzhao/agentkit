@@ -25,6 +25,7 @@ func (l *stubCatalogLoop) Dispatch(context.Context, agentkit.LoopRequest) error 
 func (l *stubCatalogLoop) Steer(context.Context, agentkit.ModelMessage) error   { return nil }
 func (l *stubCatalogLoop) FollowUp(context.Context, agentkit.ModelMessage) error  { return nil }
 func (l *stubCatalogLoop) Cancel(context.Context, string) error                 { return nil }
+func (l *stubCatalogLoop) CancelAllInFlight(string)                             {}
 func (l *stubCatalogLoop) IsSessionBusy(agentkit.SessionID) bool                { return false }
 func (l *stubCatalogLoop) TryDeliverPermission(agentkit.MessageEvent) bool        { return false }
 func (l *stubCatalogLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}

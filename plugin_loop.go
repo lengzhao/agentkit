@@ -18,6 +18,9 @@ type Loop interface {
 	// Cancel requests the in-flight turn for the session in ctx to stop. The
 	// conversation key is read from TurnEnvelope, same as Steer/FollowUp.
 	Cancel(context.Context, string) error
+	// CancelAllInFlight stops every session that is currently executing a turn
+	// (process shutdown after SIGINT/SIGTERM).
+	CancelAllInFlight(reason string)
 	// IsSessionBusy reports whether a turn is currently executing for the session.
 	IsSessionBusy(SessionID) bool
 	// TryDeliverPermission consumes a typed permission reply. It returns true

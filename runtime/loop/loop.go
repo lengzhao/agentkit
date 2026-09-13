@@ -131,6 +131,17 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 			return err
 		}
 		if len(followUps) == 0 {
+			if steered := control.PopSteering(); len(steered) > 0 {
+				for _, msg := range steered {
+					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+						Message: msg,
+						Emit:    req.Emit,
+					}); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			break
 		}
 		for _, msg := range followUps {
@@ -142,6 +153,17 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 			}
 		}
 		if l.followUpMode == agentkit.FollowUpOneAtATime {
+			if steered := control.PopSteering(); len(steered) > 0 {
+				for _, msg := range steered {
+					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+						Message: msg,
+						Emit:    req.Emit,
+					}); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			break
 		}
 	}
@@ -230,6 +252,20 @@ func (l *Default) Cancel(ctx context.Context, reason string) error {
 		return err
 	}
 	return l.controlFor(sessionID).Cancel(ctx, reason)
+}
+
+func (l *Default) CancelAllInFlight(reason string) {
+	if reason == "" {
+		reason = "shutdown"
+	}
+	l.sessionBusy.Range(func(key, _ any) bool {
+		sessionID, ok := key.(agentkit.SessionID)
+		if !ok || sessionID == "" {
+			return true
+		}
+		_ = l.controlFor(sessionID).Cancel(context.Background(), reason)
+		return true
+	})
 }
 
 // IsSessionBusy reports whether a turn is currently executing for the session.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -22,17 +23,40 @@ func NewInput(in io.Reader) *Input {
 
 // ReadPrompt reads one line from stdin.
 func (t *Input) ReadPrompt() (string, error) {
-	if t.br == nil {
-		t.br = bufio.NewReader(t.in)
-	}
-	line, err := t.br.ReadString('\n')
-	if err != nil {
-		if errors.Is(err, io.EOF) && len(line) > 0 {
-			return trimLine(line), nil
-		}
+	return t.ReadPromptContext(context.Background())
+}
+
+// ReadPromptContext reads one line until newline, EOF, or ctx cancellation.
+func (t *Input) ReadPromptContext(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	return trimLine(line), nil
+	type lineResult struct {
+		line string
+		err  error
+	}
+	ch := make(chan lineResult, 1)
+	go func() {
+		if t.br == nil {
+			t.br = bufio.NewReader(t.in)
+		}
+		line, err := t.br.ReadString('\n')
+		if errors.Is(err, io.EOF) && len(line) > 0 {
+			ch <- lineResult{line: trimLine(line)}
+			return
+		}
+		if err != nil {
+			ch <- lineResult{err: err}
+			return
+		}
+		ch <- lineResult{line: trimLine(line)}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-ch:
+		return res.line, res.err
+	}
 }
 
 func trimLine(line string) string {

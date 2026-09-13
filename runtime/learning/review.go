@@ -178,6 +178,9 @@ func completeOnce(
 	var assistant agentkit.ModelMessage
 	var usage *agentkit.Usage
 	for {
+		if err := ctx.Err(); err != nil {
+			return agentkit.ModelMessage{}, usage, err
+		}
 		ev, err := stream.Recv()
 		if ev.Message != nil {
 			assistant = *ev.Message

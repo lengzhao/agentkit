@@ -135,13 +135,18 @@ func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 // wait blocks until every in-flight turn finishes, so shutdown does not cut a
 // turn off before it records turn/end. A turn that ignores cancellation cannot
 // hold the process forever: after timeout wait gives up and reports it.
+// When timeout is 0, return immediately without waiting (in-flight work is abandoned).
 func (s *scheduler) wait(timeout time.Duration) {
+	if timeout == 0 {
+		slog.Warn("shutdown: abandoning in-flight turns without waiting")
+		return
+	}
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
 		close(done)
 	}()
-	if timeout <= 0 {
+	if timeout < 0 {
 		<-done
 		return
 	}

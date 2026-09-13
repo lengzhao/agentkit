@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/config"
@@ -58,9 +59,19 @@ func main() {
 	logRunnerBuilt(result)
 	slog.Info("runner starting")
 
-	if err := runner.Run(ctx, result); err != nil && ctx.Err() == nil {
-		fatal("run agent", err)
+	runErr := runner.Run(ctx, result)
+	if runErr != nil && ctx.Err() == nil {
+		fatal("run agent", runErr)
 	}
+	if ctx.Err() != nil {
+		slog.Info("agent shutting down", "signal", ctx.Err())
+	}
+	stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := runner.Stop(stopCtx); err != nil {
+		slog.Warn("runner stop", "err", err)
+	}
+	slog.Info("agent stopped")
 }
 
 func runManager(addr, basePath, overlayPath string) {

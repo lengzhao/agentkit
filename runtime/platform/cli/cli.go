@@ -121,7 +121,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 			}
 		}
 		var err error
-		text, err = p.readInput(waitingPermission)
+		text, err = p.readInput(ctx, waitingPermission)
 		if err != nil {
 			return agentkit.MessageEvent{}, err
 		}
@@ -183,6 +183,7 @@ func (p *Platform) handleSlash(ctx context.Context, name, args string) (bool, er
 	switch name {
 	case "exit", "quit", "q":
 		fmt.Fprintln(os.Stderr, "bye")
+		p.done = true
 		return true, io.EOF
 	}
 
@@ -230,7 +231,7 @@ func (p *Platform) notifyActiveSession(ctx context.Context) {
 	fmt.Fprintf(os.Stderr, "new session: %s\n", active)
 }
 
-func (p *Platform) readInput(skipPrompt bool) (string, error) {
+func (p *Platform) readInput(ctx context.Context, skipPrompt bool) (string, error) {
 	if p.initialPrompt != "" {
 		text := p.initialPrompt
 		p.initialPrompt = ""
@@ -242,7 +243,7 @@ func (p *Platform) readInput(skipPrompt bool) (string, error) {
 	if !skipPrompt {
 		fmt.Fprint(os.Stderr, "> ")
 	}
-	line, err := p.input.ReadPrompt()
+	line, err := p.input.ReadPromptContext(ctx)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			fmt.Fprintln(os.Stderr)

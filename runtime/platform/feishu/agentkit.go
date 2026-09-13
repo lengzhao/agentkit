@@ -87,17 +87,14 @@ func (msg inboundMessage) inboundRoute(platform string) session.SessionRouteInpu
 type streamState struct {
 	mu                 sync.Mutex
 	handle             any // legacy mode preview handle
-	cardHandle         any // unified rich mode: single CardKit card for progress + body
-	progressHandle     any // rich mode: current message segment progress card
-	bodyHandle         any // rich mode: current message segment body card
+	progressHandle     any // rich card (patch) or compact progress segment card
+	bodyHandle         any // compact mode body segment card
 	activeSegment      streamSegmentKind
 	cards              []streamCard // ordered cards for eviction (oldest first)
-	accumulated        string // legacy mode text buffer
-	bodyText           string // rich mode in-flight assistant markdown
-	lastStreamedBody       string // unified card: last body flushed to body_md
-	lastStreamedProgress   string // unified card: last progress flushed to progress_md
-	progressHeartbeatLines []string // unified card: liveness timestamps merged into progress_md flushes
-	bodyHeartbeatLines     []string // unified card: timestamps merged into body_md when no progress panel
+	accumulated        string       // legacy mode text buffer
+	bodyText           string       // rich mode in-flight assistant markdown
+	finalizedBodyText  string       // last known assistant body (survives CardKit-only stream)
+	finalizedSteps     []toolStep   // last non-streaming rich card panel (survives turn/end clearStream)
 	thinking           string
 	steps              []toolStep
 	toolStepIdx        map[int]int // contentIndex -> index in steps
@@ -107,13 +104,12 @@ type streamState struct {
 	lastUpdate         time.Time // legacy flush throttle
 	lastProgressUpdate time.Time
 	lastBodyUpdate     time.Time
-	unifiedTextFallback bool   // CardKit stream closed; reply via plain text IM messages
-	textFallbackHandle  any    // feishuPreviewHandle for plain text reply
-	cardReactionID     string    // processing reaction on bot reply card (Typing / OneSecond)
-	heartbeatDigitIndex int      // next pulse index for 10s card reaction alternation (0/1)
-	heartbeatStop      context.CancelFunc
 	bodyFlushTimer     *time.Timer
 	legacyFlushTimer   *time.Timer
+	// Rich card patch: bump when tool/thinking/status panel changes; body-only deltas can use CardKit element stream.
+	richCardPanelVersion        uint64
+	richCardFlushedPanelVersion uint64
+	lastRichCardBodyStreamRunes int
 }
 
 type streamCardKind string
@@ -364,9 +360,6 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		p.clearStream(delivery)
 		if p.useRichStream() {
 			p.richStreamState(delivery)
-			if p.useUnifiedStreamCard() {
-				p.startProgressHeartbeat(delivery)
-			}
 			if err := p.bootstrapReplyCard(ctx, delivery); err != nil {
 				slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", delivery, "error", err)
 			}
@@ -437,9 +430,16 @@ func (p *Platform) run(ctx context.Context) {
 	if p.shouldUseWebhookMode() {
 		_ = p.startWebhookMode()
 	} else {
-		_ = p.startWebSocketMode()
+		_ = p.startWebSocketMode(ctx)
 	}
 	<-ctx.Done()
+	if p.wsClient != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := p.wsClient.CloseAndWait(shutdownCtx); err != nil && shutdownCtx.Err() == nil {
+			slog.Debug(p.tag()+": websocket close", "error", err)
+		}
+	}
 	if p.server != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -645,6 +645,11 @@ func parseTurnEndData(event agentkit.OutboundEvent) session.TurnEndData {
 
 const streamUpdateInterval = 800 * time.Millisecond
 
+// cc-connect style: stream main_text via CardKit when the collapsible panel is unchanged.
+const richCardBodyStreamInterval = 200 * time.Millisecond
+const richCardBodyStreamMinRunes = 20
+const richCardFullPatchInterval = 1500 * time.Millisecond
+
 func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 	if raw, ok := p.streams.Load(sessionID); ok {
 		return raw.(*streamState)
@@ -658,10 +663,6 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 	if raw, ok := p.streams.LoadAndDelete(sessionID); ok {
 		st := raw.(*streamState)
 		st.mu.Lock()
-		if st.heartbeatStop != nil {
-			st.heartbeatStop()
-			st.heartbeatStop = nil
-		}
 		stopStreamTimer(&st.bodyFlushTimer)
 		stopStreamTimer(&st.legacyFlushTimer)
 		st.mu.Unlock()
@@ -787,7 +788,7 @@ func threadIDFromSessionKey(sessionKey string) string {
 	return parts.Thread
 }
 
-func (p *Platform) startWebSocketMode() error {
+func (p *Platform) startWebSocketMode(ctx context.Context) error {
 	wsOpts := []larkws.ClientOption{
 		larkws.WithEventHandler(p.eventHandler),
 		larkws.WithLogLevel(larkcore.LogLevelInfo),
@@ -796,7 +797,7 @@ func (p *Platform) startWebSocketMode() error {
 	}
 	p.wsClient = larkws.NewClient(p.appID, p.appSecret, wsOpts...)
 	go func() {
-		if err := p.wsClient.Start(context.Background()); err != nil {
+		if err := p.wsClient.Start(ctx); err != nil && ctx.Err() == nil {
 			slog.Error(p.tag()+": websocket error", "error", err)
 		}
 	}()

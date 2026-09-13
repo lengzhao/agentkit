@@ -2,11 +2,14 @@ package smoke_test
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -59,6 +62,103 @@ func TestSmokeLoopSameSessionSequentialTurns(t *testing.T) {
 	if agenttest.ContentText(messages[0]) != "第一条" || agenttest.ContentText(messages[2]) != "第二条" {
 		t.Fatalf("derived order = [%q, %q]", agenttest.ContentText(messages[0]), agenttest.ContentText(messages[2]))
 	}
+}
+
+// TestSmokeLoopSteerWhileBusy simulates Lark/chat busy-session steering: a second
+// user message arrives while Dispatch still holds the session lock; Loop must
+// drain steering after the first turn and run a second turn in the same Dispatch.
+func TestSmokeLoopSteerWhileBusy(t *testing.T) {
+	t.Parallel()
+
+	hold := make(chan struct{}, 2)
+	ag := &gateAgent{hold: hold}
+	loopInst, err := loop.New(loop.Config{DefaultAgent: ag.ID()}, loop.Deps{Agents: []agentkit.Agent{ag}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := agentkit.SessionID("lark:smoke:busy-steer")
+	steerCtx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: string(sessionID),
+		Workspace:    string(sessionID),
+	})
+	msg := func(text string) agentkit.ModelMessage {
+		return agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- loopInst.Dispatch(context.Background(), agenttest.LoopRequest(sessionID, agentkit.MessageEvent{
+			AgentID: ag.ID(),
+			Message: msg("第一条"),
+		}))
+	}()
+
+	waitUntilSmoke(t, func() bool { return loopInst.IsSessionBusy(sessionID) })
+
+	if err := loopInst.Steer(steerCtx, msg("第二条")); err != nil {
+		t.Fatalf("steer: %v", err)
+	}
+	hold <- struct{}{} // finish first turn
+	waitUntilSmoke(t, func() bool { return ag.turns() >= 2 })
+	hold <- struct{}{} // finish steered turn
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("dispatch: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch did not finish after steer")
+	}
+	if loopInst.IsSessionBusy(sessionID) {
+		t.Fatal("session still busy after dispatch")
+	}
+	if got := ag.turns(); got != 2 {
+		t.Fatalf("RunTurn calls = %d, want 2 (initial + steered)", got)
+	}
+}
+
+type gateAgent struct {
+	hold chan struct{}
+
+	mu    sync.Mutex
+	calls int
+}
+
+func (a *gateAgent) ID() agentkit.AgentID { return "gate-smoke" }
+
+func (a *gateAgent) turns() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.calls
+}
+
+func (a *gateAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
+	a.mu.Lock()
+	a.calls++
+	a.mu.Unlock()
+	select {
+	case <-a.hold:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func waitUntilSmoke(t *testing.T, fn func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
 }
 
 func TestSmokeLoopDifferentSessionsIsolated(t *testing.T) {

@@ -107,6 +107,7 @@ func (l *permissionCapturingLoop) Dispatch(ctx context.Context, req agentkit.Loo
 
 func (l *permissionCapturingLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *permissionCapturingLoop) Cancel(context.Context, string) error                  { return nil }
+func (l *permissionCapturingLoop) CancelAllInFlight(string)                              {}
 func (l *permissionCapturingLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *permissionCapturingLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 

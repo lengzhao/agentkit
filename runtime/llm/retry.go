@@ -108,13 +108,16 @@ func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	if IsContextOverflowError(err) {
 		return false
 	}
 	msg := err.Error()
+	if strings.Contains(strings.ToLower(msg), "client.timeout exceeded") {
+		return false
+	}
 	if nonRetryableQuotaPattern.MatchString(msg) {
 		return false
 	}

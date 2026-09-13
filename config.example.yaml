@@ -37,6 +37,7 @@ workspace.default:
 #
 # 方式一（推荐）：llm/fallback — 主模型失败时自动切换备用 model。
 # 同 provider 只需一份 llm.openai；主 model 仍由 agent.config.model 决定。
+# timeoutSeconds：单次 Stream 墙钟上限（默认 180）；reasoning 或慢网关可适当加大。
 llm.openai:
   use: llm/openai-compatible
   config:

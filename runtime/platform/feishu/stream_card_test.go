@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
@@ -56,45 +57,28 @@ func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
 	}
 }
 
-func TestUnifiedMessageEndPreservesBodyForTurnFinalize(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: true, showToolProgress: true}
-	sessionID := agentkit.SessionID("session-preserve-body")
-	st := p.streamState(sessionID)
-	st.bodyText = "hello"
-	st.lastStreamedBody = "hello"
-	st.startedAt = time.Now()
-	st.cardHandle = &feishuPreviewHandle{messageID: "card", cardID: "entity"}
-
-	st.mu.Lock()
-	bodyText := st.bodyText
-	if bodyText == "" {
-		bodyText = st.lastStreamedBody
-	}
-	st.mu.Unlock()
-	if bodyText != "hello" {
-		t.Fatalf("body for finalize = %q", bodyText)
+func TestRichCardPatchModeForCardStyle(t *testing.T) {
+	p := &Platform{progressStyle: "card", useInteractiveCard: true}
+	if !p.useRichCardPatch() {
+		t.Fatal("expected cc-connect style rich card patch mode")
 	}
 }
 
-func TestUnifiedStreamKeepsSingleCardAcrossSegments(t *testing.T) {
+func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 	p := &Platform{
 		progressStyle:      "card",
-		showThinking:         true,
-		showToolProgress:     true,
-		useInteractiveCard:   true,
+		showThinking:       true,
+		showToolProgress:   true,
+		useInteractiveCard: true,
 	}
-	if !p.useUnifiedStreamCard() {
-		t.Fatal("expected unified stream card mode")
-	}
-	sessionID := agentkit.SessionID("session-unified")
+	sessionID := agentkit.SessionID("session-rich-patch")
 	st := p.streamState(sessionID)
 	st.mu.Lock()
 	st.thinking = "plan"
 	st.bodyText = "hello"
 	st.toolStepIdx = make(map[int]int)
 	st.startedAt = time.Now()
-	st.lastProgressUpdate = time.Now()
-	st.lastBodyUpdate = time.Now()
+	st.lastProgressUpdate = time.Now().Add(-time.Second)
 	st.mu.Unlock()
 
 	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
@@ -113,14 +97,11 @@ func TestUnifiedStreamKeepsSingleCardAcrossSegments(t *testing.T) {
 
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if st.progressHandle != nil || st.bodyHandle != nil {
-		t.Fatal("legacy split handles should not be used in unified mode")
+	if st.bodyHandle != nil {
+		t.Fatal("compact split body handle should not be used in card patch mode")
 	}
 	if st.thinking != "planmore" {
-		t.Fatalf("thinking should accumulate across events, got %q", st.thinking)
-	}
-	if st.bodyText != "hello" {
-		t.Fatalf("bodyText = %q", st.bodyText)
+		t.Fatalf("thinking should accumulate, got %q", st.thinking)
 	}
 	if len(st.steps) != 1 || st.steps[0].Name != "Read" {
 		t.Fatalf("steps = %#v", st.steps)
@@ -349,7 +330,7 @@ func TestRenderCompactProgressCardOmitsBodyText(t *testing.T) {
 	}
 }
 
-func TestUnifiedMessageStartPreservesToolSteps(t *testing.T) {
+func TestRichCardMessageStartPreservesToolSteps(t *testing.T) {
 	p := &Platform{progressStyle: "card", useInteractiveCard: true, showToolProgress: true}
 	sessionID := agentkit.SessionID("session-unified-steps")
 	st := p.streamState(sessionID)
@@ -377,7 +358,7 @@ func TestUnifiedMessageStartPreservesToolSteps(t *testing.T) {
 }
 
 func TestHandleRichStreamMessageStartResetsMessageState(t *testing.T) {
-	p := &Platform{progressStyle: "card"}
+	p := &Platform{progressStyle: "compact"}
 	sessionID := agentkit.SessionID("session-1")
 	st := p.streamState(sessionID)
 	st.mu.Lock()
@@ -482,7 +463,7 @@ func TestEvictStreamCardsPopsBodyWithoutDelete(t *testing.T) {
 }
 
 func TestHandleRichBodyDeltaDetachesProgressCard(t *testing.T) {
-	p := &Platform{progressStyle: "card", showThinking: true}
+	p := &Platform{progressStyle: "compact", showThinking: true}
 	sessionID := agentkit.SessionID("session-body-delta")
 	st := p.streamState(sessionID)
 	st.mu.Lock()
@@ -514,7 +495,7 @@ func TestHandleRichBodyDeltaDetachesProgressCard(t *testing.T) {
 
 func TestSwitchSegmentOpensNewCardOnTypeChange(t *testing.T) {
 	p := &Platform{
-		progressStyle:    "card",
+		progressStyle:    "compact",
 		showThinking:     true,
 		showToolProgress: true,
 	}
@@ -576,6 +557,24 @@ func TestStreamFlushDelay(t *testing.T) {
 	}
 }
 
+func TestHandleRichTurnEndDoesNotDeadlockWithBodyFlushTimer(t *testing.T) {
+	p := &Platform{progressStyle: "card", useInteractiveCard: true}
+	sessionID := agentkit.SessionID("session-turn-end-deadlock")
+	p.richStreamState(sessionID)
+	p.scheduleBodyFlush(sessionID)
+
+	done := make(chan struct{})
+	go func() {
+		_ = p.handleRichTurnEnd(context.Background(), sessionID, session.TurnEndData{Steps: 1})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleRichTurnEnd deadlocked while holding stream mutex")
+	}
+}
+
 func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 	p := &Platform{progressStyle: "card"}
 	sessionID := agentkit.SessionID("session-body-timer")
@@ -603,32 +602,23 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 	first.Stop()
 }
 
-func TestRenderProgressBodyUnifiedKeepsAllSteps(t *testing.T) {
-	p := &Platform{
-		progressStyle:      "card",
-		useInteractiveCard: true,
-		showToolProgress:   true,
-	}
-	if !p.useUnifiedStreamCard() {
-		t.Fatal("expected unified stream card mode")
-	}
-	st := &streamState{
-		steps: []toolStep{
-			{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"},
-			{Kind: toolStepKindToolResult, Name: "Read", Result: "file-a"},
-			{Kind: toolStepKindTool, Name: "Grep", Summary: "pattern"},
-			{Kind: toolStepKindToolResult, Name: "Grep", Result: "match"},
-		},
-	}
-	body := p.renderProgressBody(st)
-	if !strings.Contains(body, "Read") || !strings.Contains(body, "Grep") {
-		t.Fatalf("unified progress should keep all steps, got %q", body)
-	}
-	if strings.Contains(body, "仅显示最近更新") {
-		t.Fatalf("unified progress should not truncate, got %q", body)
-	}
-}
-
 func boolPtr(v bool) *bool {
 	return &v
+}
+
+func TestBuildRichCardKeepsToolPanelAfterFinalizedSteps(t *testing.T) {
+	steps := []toolStep{{
+		Kind:    toolStepKindTool,
+		Name:    "bash",
+		Summary: "date",
+		Status:  "called",
+		Done:    true,
+	}}
+	card := buildRichCard(cardStatusDone, "", steps, "当前时间", false, 2*time.Second)
+	if !strings.Contains(card, "已调用 1 个工具") {
+		t.Fatalf("card missing tool panel title: %s", card)
+	}
+	if !strings.Contains(card, "collapsible_panel") {
+		t.Fatalf("card missing collapsible panel: %s", card)
+	}
 }

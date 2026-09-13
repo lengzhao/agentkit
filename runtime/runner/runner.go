@@ -25,8 +25,12 @@ const defaultMaxConcurrentTurns = 64
 
 type Config struct {
 	// ShutdownTimeoutSeconds bounds how long shutdown waits for in-flight turns
-	// to finish. 0 waits indefinitely.
+	// to finish on normal exit (e.g. platform EOF). 0 waits indefinitely.
+	// SIGINT/SIGTERM use immediate abandon (see shutdownGraceSecondsOnSignal).
 	ShutdownTimeoutSeconds int `json:"shutdownTimeoutSeconds"`
+	// ShutdownGraceSecondsOnSignal caps wait after SIGINT/SIGTERM once in-flight
+	// turns are cancelled. 0 abandons immediately (default).
+	ShutdownGraceSecondsOnSignal int `json:"shutdownGraceSecondsOnSignal"`
 	// SessionScope collapses platform delivery SessionIDs for Loop locking and
 	// history: "channel" (default), "thread", or "user".
 	SessionScope string `json:"sessionScope"`
@@ -65,6 +69,7 @@ type Root struct {
 	sessionScope    agentkit.SessionScope
 	maxConcurrent   int
 	shutdownTimeout time.Duration
+	shutdownGraceOnSignal time.Duration
 	inject          []string
 	defaultTimezone string
 }
@@ -98,17 +103,22 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if cfg.ShutdownTimeoutSeconds > 0 {
 		shutdownTimeout = time.Duration(cfg.ShutdownTimeoutSeconds) * time.Second
 	}
+	var shutdownGraceOnSignal time.Duration
+	if cfg.ShutdownGraceSecondsOnSignal > 0 {
+		shutdownGraceOnSignal = time.Duration(cfg.ShutdownGraceSecondsOnSignal) * time.Second
+	}
 	return &Root{
-		platform:        deps.Platform,
-		loop:            deps.Loop,
-		sessionStore:    resolveRunnerSessionStore(deps),
-		schedules:       deps.Schedules,
-		telemetry:       exp,
-		sessionScope:    session.ParseScope(cfg.SessionScope),
-		maxConcurrent:   maxConcurrent,
-		shutdownTimeout: shutdownTimeout,
-		inject:          normalizeInjectAllowlist(cfg.Inject),
-		defaultTimezone: strings.TrimSpace(cfg.DefaultTimezone),
+		platform:              deps.Platform,
+		loop:                  deps.Loop,
+		sessionStore:          resolveRunnerSessionStore(deps),
+		schedules:             deps.Schedules,
+		telemetry:             exp,
+		sessionScope:          session.ParseScope(cfg.SessionScope),
+		maxConcurrent:         maxConcurrent,
+		shutdownTimeout:       shutdownTimeout,
+		shutdownGraceOnSignal: shutdownGraceOnSignal,
+		inject:                normalizeInjectAllowlist(cfg.Inject),
+		defaultTimezone:       strings.TrimSpace(cfg.DefaultTimezone),
 	}, nil
 }
 
@@ -146,8 +156,9 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	sched := newScheduler(r.maxConcurrent, r.dispatch, r.reportTurnError)
 	submit := r.inboundSubmit(sched)
 	bindSubagentSubmit(result, submit)
-	// Let in-flight turns record turn/end before the process goes away.
-	defer sched.wait(r.shutdownTimeout)
+	defer func() {
+		r.shutdownDrain(sched, ctx)
+	}()
 
 	runtimes := attachScheduleRuntimes(ctx, r, sched)
 	slog.Info("runner ready",
@@ -170,6 +181,23 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	return err
 }
 
+func (r *Root) shutdownDrain(sched *scheduler, ctx context.Context) {
+	if ctx.Err() != nil {
+		learning.CancelAllBackgroundReviews()
+		r.loop.CancelAllInFlight("shutdown")
+		slog.Info("shutdown: signal received, stopping in-flight work", "grace", r.shutdownGraceOnSignal.String())
+		sched.wait(r.shutdownGraceOnSignal)
+		return
+	}
+	if r.shutdownTimeout > 0 {
+		slog.Info("shutdown: waiting for in-flight turns", "timeout", r.shutdownTimeout.String())
+		sched.wait(r.shutdownTimeout)
+		return
+	}
+	slog.Info("shutdown: waiting for in-flight turns", "timeout", "unlimited")
+	sched.wait(-1)
+}
+
 // receiveLoop reads inbound events without holding concurrency slots. Permission
 // replies are delivered immediately; new turns are queued for the scheduler.
 // When keepAlive is true, platform EOF keeps the process serving schedule runtimes.
@@ -177,7 +205,11 @@ func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- er
 	for {
 		event, err := r.platform.Receive(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				slog.Info("platform receive stopped", "reason", ctx.Err())
+			}
 			if keepAlive && errors.Is(err, io.EOF) {
+				slog.Info("platforms closed; waiting for shutdown signal while schedules run")
 				<-ctx.Done()
 				done <- ctx.Err()
 				return

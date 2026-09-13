@@ -196,7 +196,6 @@ hooks.default:
     deps:
         providers:
             - hook.before-step.default
-            - hook.turn-continue.default
             - hook.session-index.default
             - hook.background-review.default
     use: hooks/runtime
@@ -235,6 +234,7 @@ llm.default:
             provider:
                 maxRetries: 0
                 maxRetryDelayMs: 60000
+        timeoutSeconds: 180
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
@@ -252,6 +252,7 @@ llm.review:
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
         model: gpt-5.4-mini
+        timeoutSeconds: 180
     deps:
         credentials: credentials.default
     use: llm/openai-compatible

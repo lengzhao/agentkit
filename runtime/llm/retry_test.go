@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -20,6 +21,8 @@ func TestIsRetryableError(t *testing.T) {
 		{&openai.APIError{HTTPStatusCode: 429, Message: "insufficient_quota"}, false},
 		{errors.New("context length exceeded"), false},
 		{errors.New("billing issue"), false},
+		{context.DeadlineExceeded, false},
+		{errors.New("Client.Timeout exceeded while awaiting headers"), false},
 	}
 	for _, tc := range cases {
 		if got := IsRetryableError(tc.err); got != tc.want {

@@ -37,6 +37,7 @@ func (l *stubStopLoop) Cancel(ctx context.Context, reason string) error {
 	l.cancel = append(l.cancel, cancelCall{sessionID: sessionID, reason: reason})
 	return l.cancelErr
 }
+func (l *stubStopLoop) CancelAllInFlight(string) {}
 func (l *stubStopLoop) IsSessionBusy(id agentkit.SessionID) bool         { return l.busy[id] }
 func (l *stubStopLoop) TryDeliverPermission(agentkit.MessageEvent) bool  { return false }
 func (l *stubStopLoop) SupersedePendingForInbound(agentkit.MessageEvent) {}

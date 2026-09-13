@@ -7,9 +7,9 @@ import (
 
 // ReviewRunRegistry cancels in-flight background reviews (per session + global shutdown).
 type ReviewRunRegistry struct {
-	mu      sync.Mutex
-	active  map[string]context.CancelFunc
-	onEmpty func()
+	mu     sync.Mutex
+	active map[string]context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 var globalReviewRuns = &ReviewRunRegistry{}
@@ -31,6 +31,44 @@ func RegisterGlobalReviewRuns(r *ReviewRunRegistry) {
 // CancelAllBackgroundReviews stops every in-flight review (runner shutdown).
 func CancelAllBackgroundReviews() {
 	globalReviewRuns.CancelAll()
+}
+
+// Go runs fn in a tracked goroutine (used by hook/background-review).
+func Go(fn func()) {
+	globalReviewRuns.Go(fn)
+}
+
+// WaitBackgroundReviews blocks until tracked review goroutines finish or ctx is done.
+func WaitBackgroundReviews(ctx context.Context) error {
+	return globalReviewRuns.Wait(ctx)
+}
+
+func (r *ReviewRunRegistry) Go(fn func()) {
+	if fn == nil {
+		return
+	}
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		fn()
+	}()
+}
+
+func (r *ReviewRunRegistry) Wait(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan struct{})
+	go func() {
+		r.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (r *ReviewRunRegistry) Begin(parent context.Context, sessionKey string) (context.Context, context.CancelFunc) {

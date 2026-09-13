@@ -116,7 +116,7 @@ func (b *runBudget) stepsForSegment(maxSteps int) int {
 func (b *runBudget) state() agentkit.BudgetState {
 	out := agentkit.BudgetState{
 		RemainingSteps:         remaining(b.settings.maxTotalSteps, b.steps),
-		RemainingContinuations: remaining(b.settings.maxContinuations, b.continuations),
+		RemainingContinuations: remainingContinuations(b.settings.maxContinuations, b.continuations),
 		RemainingTokens:        remaining(b.settings.maxTotalTokens, b.tokens),
 		RemainingSeconds:       -1,
 		Exhausted:              b.hardExhausted(),
@@ -159,6 +159,16 @@ func remaining(limit, used int) int {
 		return 0
 	}
 	return limit - used
+}
+
+// remainingContinuations reports how many segments may still be opened. When
+// maxContinuations is unset (0), no continuations are allowed — unlike steps
+// and tokens, where zero means unlimited.
+func remainingContinuations(limit, used int) int {
+	if limit <= 0 {
+		return 0
+	}
+	return remaining(limit, used)
 }
 
 func crossed(limit, used int, ratio float64) bool {

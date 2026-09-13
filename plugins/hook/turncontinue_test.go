@@ -67,6 +67,27 @@ func stopping() *agentkit.TurnStopping {
 	}
 }
 
+func TestDriverStopsWhenNoContinuationBudget(t *testing.T) {
+	t.Parallel()
+
+	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 5})
+	startRun(t, sess)
+	stop := stopping()
+	stop.Budget.RemainingContinuations = 0
+	if err := h.TurnStopping(driverCtx(sess), stop); err != nil {
+		t.Fatal(err)
+	}
+	if !stop.Stop {
+		t.Fatal("expected stop when continuation budget is zero")
+	}
+	if stop.StopReason != "no continuation budget" {
+		t.Fatalf("stop_reason = %q", stop.StopReason)
+	}
+	if len(stop.Continue) != 0 {
+		t.Fatalf("continue = %d messages, want 0", len(stop.Continue))
+	}
+}
+
 func TestDriverContinuesWhileTodosPending(t *testing.T) {
 	t.Parallel()
 

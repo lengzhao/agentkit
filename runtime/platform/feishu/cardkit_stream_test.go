@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildStreamingBodyCardEntityJSON(t *testing.T) {
@@ -36,49 +37,42 @@ func TestBuildStreamingBodyCardEntityJSON(t *testing.T) {
 	}
 }
 
-func TestBuildUnifiedStreamingCardJSON(t *testing.T) {
-	raw := buildUnifiedStreamingCardJSON(true)
-	var card map[string]any
-	if err := json.Unmarshal([]byte(raw), &card); err != nil {
-		t.Fatalf("unmarshal card: %v", err)
-	}
-	body := card["body"].(map[string]any)
-	elements := body["elements"].([]any)
-	if len(elements) != 2 {
-		t.Fatalf("elements len = %d, want 2", len(elements))
-	}
-	progressPanel := elements[0].(map[string]any)
-	if progressPanel["tag"] != "collapsible_panel" || progressPanel["expanded"] != false {
-		t.Fatalf("progress panel = %#v", progressPanel)
-	}
-	bodyPanel := elements[1].(map[string]any)
-	if bodyPanel["tag"] != "collapsible_panel" || bodyPanel["expanded"] != true {
-		t.Fatalf("body panel = %#v", bodyPanel)
-	}
-}
-
-func TestBuildUnifiedStreamingCardJSONWithoutProgress(t *testing.T) {
-	raw := buildUnifiedStreamingCardJSON(false)
-	var card map[string]any
-	if err := json.Unmarshal([]byte(raw), &card); err != nil {
-		t.Fatalf("unmarshal card: %v", err)
-	}
-	body := card["body"].(map[string]any)
-	elements := body["elements"].([]any)
-	if len(elements) != 1 {
-		t.Fatalf("elements len = %d, want 1", len(elements))
-	}
-}
-
 func TestBuildRichCardProgressPanelCollapsed(t *testing.T) {
 	card := buildRichCard(cardStatusWorking, "", []toolStep{
 		{Kind: toolStepKindTool, Name: "Read", Summary: "README.md"},
-	}, "", true, 0)
+	}, "", true, 5*time.Second)
 	if !strings.Contains(card, `"expanded":false`) {
 		t.Fatalf("expected collapsed progress panel, got %q", card)
 	}
 	if !strings.Contains(card, `"streaming_mode":true`) {
 		t.Fatalf("expected streaming mode during progress updates, got %q", card)
+	}
+	if !strings.Contains(card, "处理中 · 1 个工具") || !strings.Contains(card, "⏱") {
+		t.Fatalf("expected panel title with tools and elapsed time, got %q", card)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(card), &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := parsed["header"]; ok {
+		t.Fatalf("in-progress rich card should omit top header, got %q", card)
+	}
+}
+
+func TestBuildRichCardDoneShowsStatusLine(t *testing.T) {
+	card := buildRichCard(cardStatusDone, "", nil, "hello", false, 3*time.Second)
+	if !strings.Contains(card, "☑️ 用时") || !strings.Contains(card, "hello") {
+		t.Fatalf("expected done status line and body, got %q", card)
+	}
+	if strings.Contains(card, `"header"`) {
+		t.Fatalf("simplified card should not use top header, got %q", card)
+	}
+}
+
+func TestRichCardBodyMarkdownDone(t *testing.T) {
+	got := richCardBodyMarkdown(cardStatusDone, "reply", 2*time.Second, false)
+	if !strings.HasPrefix(got, "☑️ 用时") || !strings.Contains(got, "reply") {
+		t.Fatalf("unexpected body markdown: %q", got)
 	}
 }
 

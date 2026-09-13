@@ -183,6 +183,7 @@ llm.default:
             provider:
                 maxRetries: 0
                 maxRetryDelayMs: 60000
+        timeoutSeconds: 180
     deps:
         credentials: credentials.default
     use: llm/openai-compatible

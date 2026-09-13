@@ -15,154 +15,11 @@ import (
 
 const maxToolSummaryRunes = 180
 const maxRecentProgressSteps = 2
-const streamHeartbeatInterval = 10 * time.Second // CardKit 统一卡：reaction 轮换 + 处理过程时间戳
-
-func formatStreamHeartbeatTimestamp(t time.Time) string {
-	return t.Format("2006-01-02 15:04:05")
-}
-
-func formatProgressHeartbeatLine(t time.Time) string {
-	return "> ⏱ " + formatStreamHeartbeatTimestamp(t)
-}
-
-func joinMarkdownBlocks(blocks ...string) string {
-	var b strings.Builder
-	for _, block := range blocks {
-		block = strings.TrimSpace(block)
-		if block == "" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(block)
-	}
-	return b.String()
-}
-
-func (p *Platform) unifiedProgressStreamMarkdown(st *streamState, streaming bool) string {
-	core := p.renderProgressMarkdown(st, streaming)
-	return joinMarkdownBlocks(core, strings.Join(st.progressHeartbeatLines, "\n"))
-}
-
-func unifiedBodyStreamMarkdown(st *streamState) string {
-	return joinMarkdownBlocks(st.bodyText, strings.Join(st.bodyHeartbeatLines, "\n"))
-}
-
-func unifiedTurnEndBodyMarkdown(st *streamState) string {
-	body := unifiedBodyStreamMarkdown(st)
-	if strings.TrimSpace(body) == "" {
-		return st.lastStreamedBody
-	}
-	return body
-}
-
-func (p *Platform) unifiedTurnEndProgressMarkdown(st *streamState) string {
-	md := p.renderProgressMarkdown(st, false)
-	return mergeProgressHeartbeatsBeforeFooter(md, st.progressHeartbeatLines)
-}
 
 const progressMarkdownFooterSeparator = "\n\n---\n\n"
 
-func mergeProgressHeartbeatsBeforeFooter(progressMD string, lines []string) string {
-	if len(lines) == 0 {
-		return progressMD
-	}
-	block := strings.Join(lines, "\n")
-	if i := strings.Index(progressMD, progressMarkdownFooterSeparator); i >= 0 {
-		prefix := strings.TrimRight(progressMD[:i], "\n")
-		suffix := progressMD[i+len(progressMarkdownFooterSeparator):]
-		return joinMarkdownBlocks(prefix, block) + progressMarkdownFooterSeparator + suffix
-	}
-	return joinMarkdownBlocks(progressMD, block)
-}
-
 func subagentToolLabel(agent string) string {
 	return "子Agent:" + strings.TrimSpace(agent)
-}
-
-func (p *Platform) startProgressHeartbeat(sessionID agentkit.SessionID) {
-	st := p.streamState(sessionID)
-	ctx, cancel := context.WithCancel(context.Background())
-
-	st.mu.Lock()
-	if st.heartbeatStop != nil {
-		st.heartbeatStop()
-	}
-	st.heartbeatStop = cancel
-	st.mu.Unlock()
-
-	go p.runProgressHeartbeat(ctx, sessionID)
-}
-
-func (p *Platform) runProgressHeartbeat(ctx context.Context, sessionID agentkit.SessionID) {
-	ticker := time.NewTicker(streamHeartbeatInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			p.tickUnifiedStreamHeartbeat(sessionID)
-		}
-	}
-}
-
-func (p *Platform) tickUnifiedStreamHeartbeat(sessionID agentkit.SessionID) {
-	if !p.useUnifiedStreamCard() {
-		return
-	}
-	raw, ok := p.streams.Load(sessionID)
-	if !ok {
-		return
-	}
-	st := raw.(*streamState)
-	if !shouldCardReactionHeartbeat(st) {
-		return
-	}
-	p.rotateCardReplyReaction(sessionID)
-	if err := p.flushUnifiedStreamTimestamp(context.Background(), sessionID); err != nil {
-		if isCardStreamingClosedError(err) {
-			return
-		}
-		slog.Debug(p.tag()+": stream timestamp heartbeat failed", "session_id", sessionID, "error", err)
-	}
-}
-
-func (p *Platform) flushUnifiedStreamTimestamp(ctx context.Context, sessionID agentkit.SessionID) error {
-	showProgress := p.showStreamProgress()
-	st := p.streamState(sessionID)
-	st.mu.Lock()
-	if st.unifiedTextFallback {
-		st.mu.Unlock()
-		return nil
-	}
-	line := formatProgressHeartbeatLine(time.Now())
-	if showProgress {
-		st.progressHeartbeatLines = append(st.progressHeartbeatLines, line)
-	} else {
-		st.bodyHeartbeatLines = append(st.bodyHeartbeatLines, line)
-	}
-	st.mu.Unlock()
-
-	if showProgress {
-		return p.flushUnifiedProgress(ctx, sessionID)
-	}
-	return p.flushUnifiedBody(ctx, sessionID)
-}
-
-func shouldFlushUnifiedProgress(changed bool, lastUpdate time.Time, eventType agentkit.AssistantMessageEventType) bool {
-	if !changed {
-		return false
-	}
-	switch eventType {
-	case agentkit.AssistantEventToolCallStart, agentkit.AssistantEventToolCallDelta:
-		return false
-	case agentkit.AssistantEventToolCallEnd:
-		return true
-	default:
-		return lastUpdate.IsZero() || time.Since(lastUpdate) >= streamUpdateInterval
-	}
 }
 
 func (p *Platform) useRichStream() bool {
@@ -174,8 +31,137 @@ func (p *Platform) useRichStream() bool {
 	}
 }
 
-func (p *Platform) useUnifiedStreamCard() bool {
-	return p.useRichStream() && p.useCardKitStream()
+// useRichCardPatch matches cc-connect: one buildRichCard per turn, Patch / Card.Update in place.
+func (p *Platform) useRichCardPatch() bool {
+	return p.useRichStream() && p.progressStyle == "card"
+}
+
+func (p *Platform) bumpRichCardPanel(st *streamState) {
+	st.richCardPanelVersion++
+}
+
+func (p *Platform) canRichCardStreamBody(st *streamState, handle any) bool {
+	if handle == nil {
+		return false
+	}
+	h, ok := handle.(*feishuPreviewHandle)
+	if !ok || strings.TrimSpace(h.cardID) == "" {
+		return false
+	}
+	return st.richCardPanelVersion == st.richCardFlushedPanelVersion
+}
+
+func streamBodyMarkdownForCardKit(body string) string {
+	processed := body
+	if containsMarkdown(body) {
+		processed = preprocessFeishuMarkdown(body)
+	}
+	return sanitizeMarkdownURLs(processed)
+}
+
+func (p *Platform) flushRichCard(ctx context.Context, sessionID agentkit.SessionID, streaming bool) error {
+	rc, ok := p.deliveryFor(sessionID)
+	if !ok {
+		return nil
+	}
+
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	status := st.status
+	if status == "" {
+		status = cardStatusThinking
+	}
+	body := st.bodyText
+	if strings.TrimSpace(body) != "" {
+		st.finalizedBodyText = body
+	}
+	displaySteps := p.renderRichSteps(st)
+	handle := st.progressHandle
+	elapsed := progressElapsed(st)
+	panelVer := st.richCardPanelVersion
+	st.mu.Unlock()
+
+	content := buildRichCard(status, "", displaySteps, body, streaming, elapsed)
+	if strings.TrimSpace(content) == "" || content == " " {
+		return nil
+	}
+
+	if handle == nil {
+		newHandle, err := p.SendPreviewStart(ctx, rc, content)
+		if err != nil {
+			return err
+		}
+		st.mu.Lock()
+		st.progressHandle = newHandle
+		st.enqueueCard(streamCardProgress, newHandle)
+		p.evictStreamCards(ctx, st)
+		st.lastProgressUpdate = time.Now()
+		st.richCardFlushedPanelVersion = panelVer
+		st.lastRichCardBodyStreamRunes = len([]rune(body))
+		st.mu.Unlock()
+		return nil
+	}
+
+	if streaming && p.canRichCardStreamBody(st, handle) {
+		h := handle.(*feishuPreviewHandle)
+		streamText := streamBodyMarkdownForCardKit(body)
+		if strings.TrimSpace(streamText) != "" {
+			streamErr := p.streamCardElementByID(ctx, h, richCardMainTextElementID, streamText)
+			if streamErr == nil {
+				st.mu.Lock()
+				st.lastProgressUpdate = time.Now()
+				st.lastRichCardBodyStreamRunes = len([]rune(body))
+				st.mu.Unlock()
+				return nil
+			}
+			slog.Debug(p.tag()+": rich card body stream failed, falling back to full patch", "session_id", sessionID, "error", streamErr)
+		}
+	}
+
+	var err error
+	if streaming {
+		err = p.UpdateMessage(ctx, handle, content)
+	} else {
+		err = p.patchRichCard(ctx, handle, content)
+	}
+	if err != nil {
+		return err
+	}
+	st.mu.Lock()
+	st.lastProgressUpdate = time.Now()
+	st.richCardFlushedPanelVersion = panelVer
+	st.lastRichCardBodyStreamRunes = len([]rune(body))
+	if !streaming && len(displaySteps) > 0 {
+		st.finalizedSteps = append([]toolStep(nil), displaySteps...)
+	}
+	st.mu.Unlock()
+	return nil
+}
+
+// maybeFlushRichCard applies streamUpdateInterval throttling but always schedules a
+// deferred flush so the latest in-memory steps/body are delivered (see message/turn end).
+func (p *Platform) richCardPatchThrottle(st *streamState) time.Duration {
+	if p.canRichCardStreamBody(st, st.progressHandle) {
+		return richCardBodyStreamInterval
+	}
+	return richCardFullPatchInterval
+}
+
+func (p *Platform) maybeFlushRichCard(ctx context.Context, sessionID agentkit.SessionID, changed bool) error {
+	if !changed {
+		return nil
+	}
+	st := p.streamState(sessionID)
+	st.mu.Lock()
+	interval := p.richCardPatchThrottle(st)
+	shouldNow := st.progressHandle == nil || time.Since(st.lastProgressUpdate) >= interval
+	st.mu.Unlock()
+	if shouldNow {
+		p.cancelBodyFlushTimer(sessionID)
+		return p.flushRichCard(ctx, sessionID, true)
+	}
+	p.scheduleBodyFlush(sessionID)
+	return nil
 }
 
 func (p *Platform) showStreamProgress() bool {
@@ -219,7 +205,7 @@ func (p *Platform) handleRichStreamMessageStart(_ context.Context, sessionID age
 	st := p.richStreamState(sessionID)
 	st.mu.Lock()
 	st.bodyText = ""
-	if p.useUnifiedStreamCard() {
+	if p.useRichCardPatch() {
 		st.toolStepIdx = make(map[int]int)
 		if st.status == "" || st.status == cardStatusThinking {
 			st.status = cardStatusWorking
@@ -306,7 +292,7 @@ func (p *Platform) switchRichSegment(ctx context.Context, sessionID agentkit.Ses
 }
 
 func (p *Platform) handleRichStreamUpdate(ctx context.Context, sessionID agentkit.SessionID, ame agentkit.AssistantMessageEvent) error {
-	if p.useUnifiedStreamCard() {
+	if p.useRichCardPatch() {
 		seg := streamSegmentOfAssistantEvent(p, ame)
 		if seg == streamSegmentBody {
 			return p.handleRichBodyDelta(ctx, sessionID, ame.Delta)
@@ -317,12 +303,8 @@ func (p *Platform) handleRichStreamUpdate(ctx context.Context, sessionID agentki
 		st := p.richStreamState(sessionID)
 		st.mu.Lock()
 		changed := p.applyRichStreamEvent(st, ame)
-		shouldFlush := shouldFlushUnifiedProgress(changed, st.lastProgressUpdate, ame.Type)
 		st.mu.Unlock()
-		if !shouldFlush {
-			return nil
-		}
-		return p.flushUnifiedProgress(ctx, sessionID)
+		return p.maybeFlushRichCard(ctx, sessionID, changed)
 	}
 
 	seg := streamSegmentOfAssistantEvent(p, ame)
@@ -386,15 +368,31 @@ func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
 		st.mu.Unlock()
 		return
 	}
-	delay := streamFlushDelay(st.lastBodyUpdate, p.bodyStreamInterval())
+	lastUpdate := st.lastBodyUpdate
+	interval := p.bodyStreamInterval()
+	if p.useRichCardPatch() {
+		lastUpdate = st.lastProgressUpdate
+		interval = p.richCardPatchThrottle(st)
+	}
+	delay := streamFlushDelay(lastUpdate, interval)
 	sid := sessionID
 	st.bodyFlushTimer = time.AfterFunc(delay, func() {
 		st.mu.Lock()
 		stopStreamTimer(&st.bodyFlushTimer)
 		st.mu.Unlock()
-		if p.useUnifiedStreamCard() {
-			if err := p.flushUnifiedBody(context.Background(), sid); err != nil {
-				slog.Debug(p.tag()+": debounced unified body flush failed", "session_id", sid, "error", err)
+		if p.useRichCardPatch() {
+			cur := p.streamState(sid)
+			cur.mu.Lock()
+			active := cur.progressHandle != nil ||
+				len(cur.steps) > 0 ||
+				strings.TrimSpace(cur.thinking) != "" ||
+				strings.TrimSpace(cur.bodyText) != ""
+			cur.mu.Unlock()
+			if !active {
+				return
+			}
+			if err := p.flushRichCard(context.Background(), sid, true); err != nil {
+				slog.Debug(p.tag()+": debounced patch rich card flush failed", "session_id", sid, "error", err)
 			}
 			return
 		}
@@ -436,7 +434,7 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 	if delta == "" {
 		return nil
 	}
-	if !p.useUnifiedStreamCard() {
+	if !p.useRichCardPatch() {
 		if err := p.switchRichSegment(ctx, sessionID, streamSegmentBody); err != nil {
 			return err
 		}
@@ -444,19 +442,29 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 
 	st := p.richStreamState(sessionID)
 	st.mu.Lock()
+	prevStatus := st.status
 	st.bodyText += delta
+	st.finalizedBodyText = st.bodyText
 	st.status = cardStatusWorking
+	if p.useRichCardPatch() && prevStatus != cardStatusWorking {
+		p.bumpRichCardPanel(st)
+	}
 	var shouldFlushNow bool
-	if p.useUnifiedStreamCard() {
-		shouldFlushNow = st.cardHandle == nil || time.Since(st.lastBodyUpdate) >= p.bodyStreamInterval()
+	if p.useRichCardPatch() {
+		interval := p.richCardPatchThrottle(st)
+		elapsed := time.Since(st.lastProgressUpdate)
+		bodyGrowth := len([]rune(st.bodyText)) - st.lastRichCardBodyStreamRunes
+		shouldFlushNow = st.progressHandle == nil ||
+			elapsed >= interval ||
+			(p.canRichCardStreamBody(st, st.progressHandle) && bodyGrowth >= richCardBodyStreamMinRunes)
 	} else {
 		shouldFlushNow = st.bodyHandle == nil || time.Since(st.lastBodyUpdate) >= p.bodyStreamInterval()
 	}
 	st.mu.Unlock()
 	if shouldFlushNow {
 		p.cancelBodyFlushTimer(sessionID)
-		if p.useUnifiedStreamCard() {
-			return p.flushUnifiedBody(ctx, sessionID)
+		if p.useRichCardPatch() {
+			return p.flushRichCard(ctx, sessionID, true)
 		}
 		return p.flushBodyCard(ctx, sessionID, true)
 	}
@@ -513,6 +521,7 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 		}
 		st.thinking += ame.Delta
 		st.status = cardStatusThinking
+		p.bumpRichCardPanel(st)
 		return true
 	case agentkit.AssistantEventToolCallStart:
 		if !p.showToolProgress {
@@ -541,6 +550,7 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 		idx := len(st.steps) - 1
 		st.toolStepIdx[ame.ContentIndex] = idx
 		st.status = cardStatusWorking
+		p.bumpRichCardPanel(st)
 		return true
 	case agentkit.AssistantEventToolCallDelta:
 		if !p.showToolProgress {
@@ -561,6 +571,7 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 			step.Summary = truncateRunes(step.Summary+delta, maxToolSummaryRunes)
 		}
 		st.steps[idx] = step
+		p.bumpRichCardPanel(st)
 		return true
 	case agentkit.AssistantEventToolCallEnd:
 		if !p.showToolProgress {
@@ -589,6 +600,7 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 		step.Status = "called"
 		step.Done = true
 		st.steps[idx] = step
+		p.bumpRichCardPanel(st)
 		return true
 	default:
 		return false
@@ -624,6 +636,7 @@ func (p *Platform) applyToolResult(st *streamState, result agentkit.ToolResult) 
 		Done:    true,
 	})
 	st.status = cardStatusWorking
+	p.bumpRichCardPanel(st)
 	return true
 }
 
@@ -636,16 +649,12 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 		return nil
 	}
 	sessionID := session.OutboundRouteID(event)
-	if p.useUnifiedStreamCard() {
+	if p.useRichCardPatch() {
 		st := p.richStreamState(sessionID)
 		st.mu.Lock()
 		changed := p.applyToolResult(st, result)
-		shouldFlush := changed
 		st.mu.Unlock()
-		if !shouldFlush {
-			return nil
-		}
-		return p.flushUnifiedProgress(ctx, sessionID)
+		return p.maybeFlushRichCard(ctx, sessionID, changed)
 	}
 	if err := p.switchRichSegment(ctx, sessionID, streamSegmentTool); err != nil {
 		return err
@@ -666,7 +675,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 		return nil
 	}
 	sessionID := session.OutboundRouteID(event)
-	if p.useUnifiedStreamCard() {
+	if p.useRichCardPatch() {
 		st := p.richStreamState(sessionID)
 		st.mu.Lock()
 		changed := false
@@ -677,7 +686,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 				st.mu.Unlock()
 				return err
 			}
-			appendSubagentStartStep(st, data.Agent, data.Task)
+			appendSubagentStartStep(p, st, data.Agent, data.Task)
 			changed = true
 		case agentkit.EventSubagentEnd:
 			var data session.SubagentEndData
@@ -685,15 +694,11 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 				st.mu.Unlock()
 				return err
 			}
-			appendSubagentEndStep(st, data)
+			appendSubagentEndStep(p, st, data)
 			changed = true
 		}
-		shouldFlush := changed
 		st.mu.Unlock()
-		if !shouldFlush {
-			return nil
-		}
-		return p.flushUnifiedProgress(ctx, sessionID)
+		return p.maybeFlushRichCard(ctx, sessionID, changed)
 	}
 	if err := p.switchRichSegment(ctx, sessionID, streamSegmentTool); err != nil {
 		return err
@@ -708,7 +713,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 			st.mu.Unlock()
 			return err
 		}
-		appendSubagentStartStep(st, data.Agent, data.Task)
+		appendSubagentStartStep(p, st, data.Agent, data.Task)
 		changed = true
 	case agentkit.EventSubagentEnd:
 		var data session.SubagentEndData
@@ -716,7 +721,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 			st.mu.Unlock()
 			return err
 		}
-		appendSubagentEndStep(st, data)
+		appendSubagentEndStep(p, st, data)
 		changed = true
 	}
 	shouldFlush := changed && (st.progressHandle == nil || time.Since(st.lastProgressUpdate) >= streamUpdateInterval)
@@ -735,7 +740,7 @@ func subagentDisplayName(agent string) string {
 	return agent
 }
 
-func appendSubagentStartStep(st *streamState, agent, task string) {
+func appendSubagentStartStep(p *Platform, st *streamState, agent, task string) {
 	agent = subagentDisplayName(agent)
 	task = truncateRunes(strings.TrimSpace(task), maxToolSummaryRunes)
 	if task == "" {
@@ -748,9 +753,10 @@ func appendSubagentStartStep(st *streamState, agent, task string) {
 		Status:  "running",
 	})
 	st.status = cardStatusWorking
+	p.bumpRichCardPanel(st)
 }
 
-func appendSubagentEndStep(st *streamState, data session.SubagentEndData) {
+func appendSubagentEndStep(p *Platform, st *streamState, data session.SubagentEndData) {
 	agent := subagentDisplayName(data.Agent)
 	summary := truncateRunes(strings.TrimSpace(data.Summary), maxToolSummaryRunes)
 	if summary == "" && data.Error != "" {
@@ -772,6 +778,7 @@ func appendSubagentEndStep(st *streamState, data session.SubagentEndData) {
 		Done:    true,
 	})
 	st.status = cardStatusWorking
+	p.bumpRichCardPanel(st)
 }
 
 func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentkit.OutboundEvent) error {
@@ -788,18 +795,14 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 	if bodyText == "" {
 		bodyText = fallbackText
 	}
-	if p.useUnifiedStreamCard() {
+	if p.useRichCardPatch() {
 		if bodyText != "" {
 			st.bodyText = bodyText
+			st.finalizedBodyText = bodyText
 		}
 		st.mu.Unlock()
-		if err := p.flushUnifiedBody(ctx, session.OutboundRouteID(event)); err != nil {
-			return err
-		}
-		if err := p.flushUnifiedProgress(ctx, session.OutboundRouteID(event)); err != nil {
-			return err
-		}
-		return nil
+		// 整卡落盘（关闭 streaming、去掉进行中页脚），避免仅流式 main_text 时页脚残留在旧 JSON。
+		return p.flushRichCard(ctx, session.OutboundRouteID(event), false)
 	}
 
 	bodyHandle := st.bodyHandle
@@ -839,10 +842,35 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 	return nil
 }
 
+// finalizeRichTurnEndAsync patches the CardKit entity without blocking turn/end teardown.
+func (p *Platform) finalizeRichTurnEndAsync(
+	ctx context.Context,
+	sessionID agentkit.SessionID,
+	handle any,
+	content string,
+	botReplyID string,
+	endData session.TurnEndData,
+) {
+	parent := context.WithoutCancel(ctx)
+	go func() {
+		if handle != nil {
+			if err := p.patchRichCard(parent, handle, content); err != nil {
+				slog.Warn(p.tag()+": finalize patch rich card on turn end failed", "session_id", sessionID, "error", err)
+			}
+		} else if rc, ok := p.deliveryFor(sessionID); ok {
+			if _, err := p.SendPreviewStart(parent, rc, content); err != nil {
+				slog.Debug(p.tag()+": send final rich card on turn end failed", "session_id", sessionID, "error", err)
+			}
+		}
+		p.addBotReplyEndReaction(botReplyID, endData, "")
+	}()
+}
+
 func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.SessionID, endData session.TurnEndData) error {
 	st := p.streamState(sessionID)
 	st.mu.Lock()
-	if st.startedAt.IsZero() {
+	hasHandle := st.progressHandle != nil || st.bodyHandle != nil
+	if st.startedAt.IsZero() && !hasHandle {
 		st.mu.Unlock()
 		return nil
 	}
@@ -853,39 +881,40 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	case endData.Failed:
 		finalStatus = cardStatusError
 	}
-	if p.useUnifiedStreamCard() {
-		cardHandle := st.cardHandle
+	if p.useRichCardPatch() {
+		stopStreamTimer(&st.bodyFlushTimer)
+		handle := st.progressHandle
 		botReplyID := botReplyMessageID(st)
-		cardReactionID := st.cardReactionID
-		bodyText := unifiedTurnEndBodyMarkdown(st)
-		if endData.Cancelled && strings.TrimSpace(bodyText) == "" {
+		bodyText := strings.TrimSpace(st.bodyText)
+		if bodyText == "" {
+			bodyText = strings.TrimSpace(st.finalizedBodyText)
+		}
+		if endData.Cancelled && bodyText == "" {
 			bodyText = cancelledBodyText(endData.StopReason)
 		}
-		progressMD := p.unifiedTurnEndProgressMarkdown(st)
-		if endData.Cancelled {
-			progressMD = appendCancelledProgressFooter(progressMD, endData.StopReason)
+		displaySteps := p.renderRichSteps(st)
+		if len(displaySteps) == 0 && len(st.finalizedSteps) > 0 {
+			displaySteps = append([]toolStep(nil), st.finalizedSteps...)
 		}
+		elapsed := progressElapsed(st)
 		st.status = finalStatus
 		st.bodyText = ""
-		st.lastStreamedBody = ""
-		st.lastStreamedProgress = ""
-		st.cardReactionID = ""
-		st.cardHandle = nil
+		st.progressHandle = nil
 		st.mu.Unlock()
-		if cardHandle != nil {
-			if err := p.finalizeUnifiedStreamCard(ctx, cardHandle.(*feishuPreviewHandle), bodyText, progressMD, p.showStreamProgress()); err != nil {
-				slog.Debug(p.tag()+": finalize unified card on turn end failed", "session_id", sessionID, "error", err)
-			}
-		}
-		p.addBotReplyEndReaction(botReplyID, endData, cardReactionID)
+
+		content := buildRichCard(finalStatus, "", displaySteps, bodyText, false, elapsed)
 		p.clearStream(sessionID)
+		if strings.TrimSpace(content) != "" && content != " " {
+			p.finalizeRichTurnEndAsync(ctx, sessionID, handle, content, botReplyID, endData)
+		} else {
+			p.addBotReplyEndReaction(botReplyID, endData, "")
+		}
 		return nil
 	}
 
 	progressHandle := st.progressHandle
 	bodyHandle := st.bodyHandle
 	botReplyID := botReplyMessageID(st)
-	cardReactionID := st.cardReactionID
 	bodyText := st.bodyText
 	if endData.Cancelled && strings.TrimSpace(bodyText) == "" {
 		bodyText = cancelledBodyText(endData.StopReason)
@@ -893,7 +922,6 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	st.status = finalStatus
 	st.progressHandle = nil
 	st.bodyHandle = nil
-	st.cardReactionID = ""
 	st.activeSegment = streamSegmentNone
 	st.mu.Unlock()
 
@@ -920,7 +948,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 			slog.Debug(p.tag()+": finalize progress card on turn end failed", "session_id", sessionID, "error", err)
 		}
 	}
-	p.addBotReplyEndReaction(botReplyID, endData, cardReactionID)
+	p.addBotReplyEndReaction(botReplyID, endData, "")
 	p.clearStream(sessionID)
 	return nil
 }
@@ -963,11 +991,8 @@ func (p *Platform) bootstrapReplyCard(ctx context.Context, sessionID agentkit.Se
 	if !p.useRichStream() {
 		return nil
 	}
-	if p.useUnifiedStreamCard() {
-		if _, err := p.ensureUnifiedCard(ctx, sessionID); err != nil {
-			return err
-		}
-		return nil
+	if p.useRichCardPatch() {
+		return p.flushRichCard(ctx, sessionID, true)
 	}
 	if !p.showStreamProgress() {
 		return nil
@@ -997,108 +1022,6 @@ func (p *Platform) bootstrapReplyCard(ctx context.Context, sessionID agentkit.Se
 	st.enqueueCard(streamCardProgress, newHandle)
 	p.evictStreamCards(ctx, st)
 	st.lastProgressUpdate = time.Now()
-	st.mu.Unlock()
-	return nil
-}
-
-func (p *Platform) ensureUnifiedCard(ctx context.Context, sessionID agentkit.SessionID) (*feishuPreviewHandle, error) {
-	st := p.streamState(sessionID)
-	st.mu.Lock()
-	if h, ok := st.cardHandle.(*feishuPreviewHandle); ok && h != nil {
-		st.mu.Unlock()
-		return h, nil
-	}
-	st.mu.Unlock()
-
-	rc, ok := p.deliveryFor(sessionID)
-	if !ok {
-		return nil, nil
-	}
-	handle, err := p.createAndSendCardEntity(ctx, rc, buildUnifiedStreamingCardJSON(p.showStreamProgress()), "")
-	if err != nil {
-		return nil, err
-	}
-	handle.streaming = true
-	st.mu.Lock()
-	st.cardHandle = handle
-	st.mu.Unlock()
-	p.kickoffUnifiedCardLiveness(sessionID)
-	return handle, nil
-}
-
-// kickoffUnifiedCardLiveness runs once when the unified CardKit reply card is first created:
-// attach the processing reaction and write the first timestamp line without waiting for the 10s ticker.
-func (p *Platform) kickoffUnifiedCardLiveness(sessionID agentkit.SessionID) {
-	go p.attachCardProcessingReaction(sessionID)
-	go func() {
-		if !p.useUnifiedStreamCard() {
-			return
-		}
-		if err := p.flushUnifiedStreamTimestamp(context.Background(), sessionID); err != nil && !isCardStreamingClosedError(err) {
-			slog.Debug(p.tag()+": initial stream timestamp failed", "session_id", sessionID, "error", err)
-		}
-	}()
-}
-
-func (p *Platform) flushUnifiedProgress(ctx context.Context, sessionID agentkit.SessionID) error {
-	if !p.showStreamProgress() {
-		return nil
-	}
-	st := p.streamState(sessionID)
-	st.mu.Lock()
-	content := p.unifiedProgressStreamMarkdown(st, true)
-	last := st.lastStreamedProgress
-	st.mu.Unlock()
-	if strings.TrimSpace(content) == "" {
-		return nil
-	}
-	if content == last {
-		return nil
-	}
-	h, err := p.ensureUnifiedCard(ctx, sessionID)
-	if err != nil || h == nil {
-		return err
-	}
-	processed := content
-	if containsMarkdown(content) {
-		processed = preprocessFeishuMarkdown(content)
-	}
-	if err := p.streamCardElementByID(ctx, h, progressStreamElementID, sanitizeMarkdownURLs(processed)); err != nil {
-		return err
-	}
-	st.mu.Lock()
-	st.lastStreamedProgress = content
-	st.lastProgressUpdate = time.Now()
-	st.mu.Unlock()
-	return nil
-}
-
-func (p *Platform) flushUnifiedBody(ctx context.Context, sessionID agentkit.SessionID) error {
-	st := p.streamState(sessionID)
-	st.mu.Lock()
-	bodyText := unifiedBodyStreamMarkdown(st)
-	last := st.lastStreamedBody
-	st.mu.Unlock()
-	if strings.TrimSpace(bodyText) == "" {
-		return nil
-	}
-	if bodyText == last {
-		return nil
-	}
-	h, err := p.ensureUnifiedCard(ctx, sessionID)
-	if err != nil || h == nil {
-		return err
-	}
-	processed := bodyText
-	if containsMarkdown(bodyText) {
-		processed = preprocessFeishuMarkdown(bodyText)
-	}
-	if err := p.streamCardElementByID(ctx, h, bodyStreamElementID, sanitizeMarkdownURLs(processed)); err != nil {
-		return err
-	}
-	st.mu.Lock()
-	st.lastStreamedBody = bodyText
-	st.lastBodyUpdate = time.Now()
 	st.mu.Unlock()
 	return nil
 }
@@ -1170,9 +1093,6 @@ func (p *Platform) renderProgressBody(st *streamState) string {
 	visible := steps
 	truncated := false
 	stepLimit := maxRecentProgressSteps
-	if p.useUnifiedStreamCard() {
-		stepLimit = 0
-	}
 	if stepLimit > 0 && len(steps) > stepLimit {
 		visible = steps[len(steps)-stepLimit:]
 		truncated = true

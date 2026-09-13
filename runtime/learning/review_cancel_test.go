@@ -33,6 +33,30 @@ func TestCancelAllBackgroundReviews(t *testing.T) {
 	waitDone(t, ctx)
 }
 
+func TestWaitBackgroundReviews(t *testing.T) {
+	orig := globalReviewRuns
+	defer func() { globalReviewRuns = orig }()
+
+	reg := &ReviewRunRegistry{}
+	RegisterGlobalReviewRuns(reg)
+
+	done := make(chan struct{})
+	Go(func() {
+		defer close(done)
+		time.Sleep(20 * time.Millisecond)
+	})
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := WaitBackgroundReviews(waitCtx); err != nil {
+		t.Fatalf("WaitBackgroundReviews: %v", err)
+	}
+	select {
+	case <-done:
+	default:
+		t.Fatal("review goroutine did not finish")
+	}
+}
+
 func waitDone(t *testing.T, ctx context.Context) {
 	t.Helper()
 	select {

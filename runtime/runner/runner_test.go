@@ -68,6 +68,7 @@ func (l *panickyLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) erro
 
 func (l *panickyLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *panickyLoop) Cancel(context.Context, string) error                  { return nil }
+func (l *panickyLoop) CancelAllInFlight(string)                              {}
 func (l *panickyLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *panickyLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 func (l *panickyLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }
@@ -158,6 +159,7 @@ type errorLoop struct{ err error }
 func (l errorLoop) Dispatch(context.Context, agentkit.LoopRequest) error  { return l.err }
 func (l errorLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l errorLoop) Cancel(context.Context, string) error                  { return nil }
+func (l errorLoop) CancelAllInFlight(string)                              {}
 func (l errorLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l errorLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 func (l errorLoop) TryDeliverPermission(agentkit.MessageEvent) bool       { return false }
@@ -196,6 +198,7 @@ func (l *permissionLoop) Dispatch(_ context.Context, _ agentkit.LoopRequest) err
 
 func (l *permissionLoop) Steer(context.Context, agentkit.ModelMessage) error    { return nil }
 func (l *permissionLoop) Cancel(context.Context, string) error                  { return nil }
+func (l *permissionLoop) CancelAllInFlight(string)                              {}
 func (l *permissionLoop) FollowUp(context.Context, agentkit.ModelMessage) error { return nil }
 func (l *permissionLoop) IsSessionBusy(agentkit.SessionID) bool                 { return false }
 

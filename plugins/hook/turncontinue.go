@@ -112,6 +112,11 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	if stopping.Budget.Exhausted {
 		return nil
 	}
+	if stopping.Budget.RemainingContinuations == 0 {
+		stopping.Stop = true
+		stopping.StopReason = "no continuation budget"
+		return nil
+	}
 	if stopping.Segments >= p.cfg.MaxContinuations {
 		stopping.Stop = true
 		stopping.StopReason = fmt.Sprintf("continuation limit reached (%d)", p.cfg.MaxContinuations)

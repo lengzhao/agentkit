@@ -105,38 +105,51 @@ func (p *backgroundReviewProvider) Hooks() []agentkit.Hook {
 }
 
 func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agentkit.TurnComplete) error {
-	if tc == nil || p.learning == nil || p.learning.Disabled() {
+	if tc == nil {
 		return nil
 	}
+	// Never block turn teardown: review runs entirely in the background.
+	snap := *tc
+	parent := context.WithoutCancel(ctx)
+	rtlearning.Go(func() {
+		p.runBackgroundReview(parent, &snap)
+	})
+	return nil
+}
+
+func (p *backgroundReviewProvider) runBackgroundReview(parent context.Context, tc *agentkit.TurnComplete) {
+	if tc == nil || p.learning == nil || p.learning.Disabled() {
+		return
+	}
 	if !backgroundReviewEnabled(p.cfg) {
-		return nil
+		return
 	}
 	skipSlash := true
 	if p.cfg.SkipSlashOnly != nil {
 		skipSlash = *p.cfg.SkipSlashOnly
 	}
 	if !shouldRunReview(tc.Messages, skipSlash) {
-		return nil
+		return
 	}
 	if p.cfg.MinTurnTokens > 0 && tc.TurnTokens < p.cfg.MinTurnTokens {
-		return nil
+		return
 	}
 	if p.cfg.MinIdleSeconds > 0 {
 		key := string(tc.SessionID)
 		if last, ok := p.idle.Load(key); ok {
 			if t, ok := last.(time.Time); ok && time.Since(t) < time.Duration(p.cfg.MinIdleSeconds)*time.Second {
-				return nil
+				return
 			}
 		}
 	}
 	interval := memoryNudgeInterval(p.cfg)
-	prior, seen, err := p.learning.ReviewNudgeLoad(ctx, string(tc.SessionID))
+	prior, seen, err := p.learning.ReviewNudgeLoad(parent, string(tc.SessionID))
 	if err != nil {
 		slog.Warn("background review nudge load failed", "err", err)
-		return nil
+		return
 	}
 	nudgeDec, nextNudge := rtlearning.DecideMemoryNudge(interval, tc.Messages, prior, !seen)
-	if err := p.learning.ReviewNudgeSave(ctx, string(tc.SessionID), nextNudge); err != nil {
+	if err := p.learning.ReviewNudgeSave(parent, string(tc.SessionID), nextNudge); err != nil {
 		slog.Warn("background review nudge save failed", "err", err)
 	}
 	if !nudgeDec.RunReview {
@@ -145,22 +158,21 @@ func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agent
 			"reason", nudgeDec.Reason,
 			"turns_since_memory", nudgeDec.TurnsSinceMemory,
 			"interval", interval)
-		return nil
+		return
 	}
 	model := strings.TrimSpace(p.cfg.Model)
 	if model == "" {
 		model = strings.TrimSpace(tc.Model)
 	}
 	if model == "" {
-		return nil
+		return
 	}
 
-	parent := context.WithoutCancel(ctx)
 	p.idle.Store(string(tc.SessionID), time.Now())
 
 	runs := rtlearning.GlobalReviewRuns()
 	reviewCtx, cancel := runs.Begin(parent, string(tc.SessionID))
-	go func() {
+	rtlearning.Go(func() {
 		defer cancel()
 		defer runs.End(string(tc.SessionID))
 		runCtx := session.WithWorkspaceService(reviewCtx, p.learning.Workspace())
@@ -231,8 +243,7 @@ func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agent
 				slog.Debug("learning notification delivery skipped", "err", err)
 			}
 		}
-	}()
-	return nil
+	})
 }
 
 func (s *Service) TryConsumeReviewQuota(ctx context.Context, maxPerDay int) (bool, error) {

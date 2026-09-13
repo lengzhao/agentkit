@@ -159,7 +159,7 @@ platform.http:
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
 
-**`llm/openai-compatible`**：`api` 为 `responses`（L0 默认）或 `chat`；`hostedTools` 仅在 `responses` 下生效，用于 OpenAI 内置工具（如 `web_search`），由 provider 服务端执行，不走 agentkit 工具循环。L0 已默认启用 `hostedTools.web_search`，`tools.default` 不再挂 `tool/web-search-*`。若改回 Tavily/DuckDuckGo 等本地搜索插件，需同时设 `api: chat` 并自行把 `tool/web-search-*` 加回 `tools`。示例：
+**`llm/openai-compatible`**：`api` 为 `responses`（L0 默认）或 `chat`；`hostedTools` 仅在 `responses` 下生效，用于 OpenAI 内置工具（如 `web_search`），由 provider 服务端执行，不走 agentkit 工具循环。L0 已默认启用 `hostedTools.web_search`，`tools.default` 不再挂 `tool/web-search-*`。若改回 Tavily/DuckDuckGo 等本地搜索插件，需同时设 `api: chat` 并自行把 `tool/web-search-*` 加回 `tools`。`timeoutSeconds` 限制单次 `Stream` 墙钟（连接至流结束，默认 180）；与 agent 的 `maxSteps`、工具 `timeoutSeconds` 独立，防止网关长时间无响应拖死 turn。示例：
 
 ```yaml
 llm.default:
