@@ -64,6 +64,8 @@ type StagedEntry struct {
 	ID      string
 	Source  string
 	Content string
+	Action  string
+	OldText string
 }
 
 // CommitObserver is notified after memory.md commits (e.g. learning records dreaming signals).

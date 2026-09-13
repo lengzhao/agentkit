@@ -9,13 +9,9 @@ import (
 	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
-func defaultPromptFilenames() []string {
-	return []string{"memory.md", "MEMORY.md"}
-}
-
 func (s *Service) PromptBody(ctx context.Context) (string, error) {
 	var merged []rtmem.MemoryEntry
-	for _, rel := range promptMemoryPaths(defaultPromptFilenames()) {
+	for _, rel := range s.promptMemoryRelPaths() {
 		path, err := s.workspace.Resolve(ctx, rel)
 		if err != nil {
 			return "", err
@@ -37,21 +33,39 @@ func (s *Service) PromptBody(ctx context.Context) (string, error) {
 	return rtmem.FormatMemoryPromptBody(merged), nil
 }
 
-func promptMemoryPaths(filenames []string) []string {
-	var out []string
-	for _, name := range filenames {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		out = append(out, workspace.ScopeGlobal+":"+name)
+// promptMemoryRelPaths returns workspace-relative files to merge for injection.
+// Primary file follows memoryRoot + memoryFile (same as memoryStore). When primary
+// is tenant-local, global memory.md is merged first (multi-tenant default).
+func (s *Service) promptMemoryRelPaths() []string {
+	file := strings.TrimSpace(s.memoryFile)
+	if file == "" {
+		file = rtmem.DefaultFile
 	}
-	for _, name := range filenames {
-		name = strings.TrimSpace(name)
-		if name == "" {
+	primary := rtmem.MemoryFileRel(s.memoryRoot, file)
+	var rels []string
+	if !strings.HasPrefix(primary, workspace.ScopeGlobal+":") {
+		globalRel := workspace.ScopeGlobal + ":" + file
+		if globalRel != primary {
+			rels = append(rels, globalRel)
+		}
+	}
+	rels = append(rels, primary)
+	return dedupeRelPaths(rels)
+}
+
+func dedupeRelPaths(rels []string) []string {
+	seen := make(map[string]struct{}, len(rels))
+	var out []string
+	for _, rel := range rels {
+		rel = strings.TrimSpace(rel)
+		if rel == "" {
 			continue
 		}
-		out = append(out, name)
+		if _, ok := seen[rel]; ok {
+			continue
+		}
+		seen[rel] = struct{}{}
+		out = append(out, rel)
 	}
 	return out
 }

@@ -11,13 +11,7 @@ import (
 	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
-// Staged payload markers for background-review approve (plain text is memory_add).
-const (
-	stagedRemovePrefix = "remove:"
-	stagedReplaceSep   = " => "
-)
-
-func (s *Service) stageMemory(ctx context.Context, text, source string) (string, error) {
+func (s *Service) stageMemory(ctx context.Context, action, oldText, content, source string) (string, error) {
 	store, err := s.stagedStore(ctx)
 	if err != nil {
 		return "", err
@@ -25,9 +19,14 @@ func (s *Service) stageMemory(ctx context.Context, text, source string) (string,
 	id := uuid.NewString()
 	entry := rtmem.StagedMemory{
 		ID:        id,
-		Content:   text,
+		Action:    strings.TrimSpace(action),
+		OldText:   strings.TrimSpace(oldText),
+		Content:   strings.TrimSpace(content),
 		Source:    source,
 		CreatedAt: time.Now().UTC(),
+	}
+	if entry.Action == "" {
+		return "", fmt.Errorf("staged action is required")
 	}
 	if err := store.Add(entry); err != nil {
 		return "", err
@@ -46,7 +45,13 @@ func (s *Service) ListStaged(ctx context.Context) ([]capmemory.StagedEntry, erro
 	}
 	out := make([]capmemory.StagedEntry, len(entries))
 	for i, e := range entries {
-		out[i] = capmemory.StagedEntry{ID: e.ID, Source: e.Source, Content: e.Content}
+		out[i] = capmemory.StagedEntry{
+			ID:      e.ID,
+			Source:  e.Source,
+			Content: e.Content,
+			Action:  e.Action,
+			OldText: e.OldText,
+		}
 	}
 	return out, nil
 }
@@ -67,7 +72,7 @@ func (s *Service) ApproveStaged(ctx context.Context, id string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return s.applyStagedContent(ctx, entry.Content, entry.Source+"-approved")
+	return s.applyStagedEntry(ctx, entry, entry.Source+"-approved")
 }
 
 func (s *Service) RejectStaged(ctx context.Context, id string) (string, error) {
@@ -112,7 +117,7 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 	}
 	n := 0
 	for _, e := range entries {
-		if _, err := s.applyStagedContent(ctx, e.Content, e.Source+"-approved"); err != nil {
+		if _, err := s.applyStagedEntry(ctx, e, e.Source+"-approved"); err != nil {
 			return fmt.Sprintf("approved %d, then failed: %v", n, err), nil
 		}
 		n++
@@ -123,21 +128,20 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 	return fmt.Sprintf("approved %d staged memory entries", n), nil
 }
 
-func (s *Service) applyStagedContent(ctx context.Context, content, source string) (string, error) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return "", fmt.Errorf("staged content is empty")
+func (s *Service) applyStagedEntry(ctx context.Context, entry rtmem.StagedMemory, source string) (string, error) {
+	action := strings.TrimSpace(entry.Action)
+	if action == "" {
+		return s.applyStagedLegacyContent(ctx, entry.Content, source)
 	}
-	if strings.HasPrefix(content, stagedRemovePrefix) {
-		old := strings.TrimSpace(strings.TrimPrefix(content, stagedRemovePrefix))
-		if old == "" {
-			return "", fmt.Errorf("staged remove missing old_text")
+	switch action {
+	case rtmem.StagedActionAdd:
+		if strings.TrimSpace(entry.Content) == "" {
+			return "", fmt.Errorf("staged add content is empty")
 		}
-		return s.removeMemory(ctx, old, source)
-	}
-	if i := strings.Index(content, stagedReplaceSep); i >= 0 {
-		old := strings.TrimSpace(content[:i])
-		newText := strings.TrimSpace(content[i+len(stagedReplaceSep):])
+		return s.addMemory(ctx, entry.Content, source)
+	case rtmem.StagedActionReplace:
+		old := strings.TrimSpace(entry.OldText)
+		newText := strings.TrimSpace(entry.Content)
 		if old == "" || newText == "" {
 			return "", fmt.Errorf("staged replace requires old_text and content")
 		}
@@ -147,14 +151,40 @@ func (s *Service) applyStagedContent(ctx context.Context, content, source string
 			return "", err
 		}
 		return msg, nil
+	case rtmem.StagedActionRemove:
+		old := strings.TrimSpace(entry.OldText)
+		if old == "" {
+			return "", fmt.Errorf("staged remove missing old_text")
+		}
+		return s.removeMemory(ctx, old, source)
+	default:
+		return "", fmt.Errorf("unknown staged action %q", action)
 	}
-	return s.addMemory(ctx, content, source)
 }
 
-func truncateDisplay(s string, max int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= max {
-		return s
+func (s *Service) applyStagedLegacyContent(ctx context.Context, content, source string) (string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", fmt.Errorf("staged content is empty")
 	}
-	return s[:max] + "…"
+	action, old, newText := rtmem.LegacyStagedKind(content)
+	switch action {
+	case rtmem.StagedActionRemove:
+		if old == "" {
+			return "", fmt.Errorf("staged remove missing old_text")
+		}
+		return s.removeMemory(ctx, old, source)
+	case rtmem.StagedActionReplace:
+		if old == "" || newText == "" {
+			return "", fmt.Errorf("staged replace requires old_text and content")
+		}
+		baseSource := strings.TrimSuffix(source, "-approved")
+		msg, err := s.CaptureMemoryReplace(ctx, old, newText, baseSource)
+		if err != nil {
+			return "", err
+		}
+		return msg, nil
+	default:
+		return s.addMemory(ctx, content, source)
+	}
 }

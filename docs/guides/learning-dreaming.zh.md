@@ -194,7 +194,7 @@ sequenceDiagram
 | 节流 | `memoryNudgeInterval`、`maxReviewsPerDay`、`minTurnTokens`、`minIdleSeconds`（见 `hook.background-review` config）；计数持久化在 `memory/dreaming/review_nudge.json` |
 | LLM | 默认 `llm.review`（如 `gpt-4o-mini`），与主 agent `llm.fallback` 分离 |
 | 关停 | `runner.Stop` 调用 `CancelAllBackgroundReviews()` |
-| 可观测 | OpenTelemetry span `learning.review`；`memoryNotifications: on\|verbose` 时向当前会话推送 `💾 Memory updated`（经 `platform.default` sender）；`off` 仅写盘 |
+| 可观测 | OpenTelemetry span `learning.review`；`memoryNotifications: on\|verbose` 时推送 `💾 Memory updated`（已写盘）或 `💾 Memory pending approval`（仅 staged）；经 `platform.default` sender；`off` 仅写盘 |
 | 主 agent 记忆工具 | `tool/memory`：`add` / `replace` / `remove`（满容返回 `current_entries` + `usage`）；工具说明含 **WHEN**（用户纠正、偏好/回复格式、显式「记住」须**当轮**调用，勿只口头确认）、**SKIP**（与 skill 分工）、**per-turn 冻结**（见 §9.2）；文案见 `runtime/memory/tool_schema.go` `MemoryToolDescription` |
 
 L0 默认已挂载 `hook.background-review.default`（`learn_capture` 由 hook 内建：`memory` 写 memory.md，`learning` 管 skill_propose 与编排，见 [config.base.yaml](../../config.base.yaml)）。

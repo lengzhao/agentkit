@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capmemory "github.com/lengzhao/agentkit/cap/memory"
+	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
 func (s *Service) Commands() []agentkit.Command {
@@ -87,7 +89,15 @@ func (s *Service) listPending(ctx context.Context) (string, error) {
 	var b strings.Builder
 	b.WriteString("staged memory:\n")
 	for _, e := range entries {
-		fmt.Fprintf(&b, "  %s [%s] %s\n", e.ID, e.Source, truncateDisplay(e.Content, 120))
+		fmt.Fprintf(&b, "  %s [%s] %s\n", e.ID, e.Source, formatStagedEntryLine(e))
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func formatStagedEntryLine(e capmemory.StagedEntry) string {
+	return rtmem.StagedPendingSummary(rtmem.StagedMemory{
+		Action:  e.Action,
+		OldText: e.OldText,
+		Content: e.Content,
+	})
 }

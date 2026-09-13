@@ -46,7 +46,7 @@ flowchart TB
 ## P0 — 上线 review 前（建议下一迭代）
 
 - [x] **write_approval + 暂存队列**  
-  - `learning.review.writeApproval`（或 `hook.background-review` 同级配置）：`memory_add` / `skill_propose` 先入 staged，不立刻进 prompt 注入链。  
+  - `memory.default.config.review.writeApproval`（或 `/memory policy approve`）：review 的 memory 类 `learn_capture` 先入 `memory/.staged/`，不立刻进 prompt 注入链。  
   - 用户面：`/learn pending`、`approve` / `reject`（或复用 `workshop list/apply` + memory staged 文件）。  
   - 验收：后台误记可拒绝，且从未写入 `memory.md`。
 

@@ -13,7 +13,9 @@ import (
 // StagedMemory is a pending memory write awaiting approval.
 type StagedMemory struct {
 	ID        string    `json:"id"`
-	Content   string    `json:"content"`
+	Action    string    `json:"action,omitempty"`  // add | replace | remove; empty = legacy Content encoding
+	OldText   string    `json:"oldText,omitempty"` // replace/remove match substring
+	Content   string    `json:"content"`           // add body or replace new text
 	Source    string    `json:"source"`
 	CreatedAt time.Time `json:"createdAt"`
 }
