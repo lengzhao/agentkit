@@ -384,7 +384,7 @@ llm.default:
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
     api: chat
-    # 单次 LLM 请求墙钟上限（连接 + 流式读完）；reasoning 模型可适当加大。
+    # 首 token 上限（连接 + TTFB）；流式后续 token 不受此限制。reasoning 冷启动慢时可加大。
     timeoutSeconds: 180
     # hostedTools:
     #   - type: web_search

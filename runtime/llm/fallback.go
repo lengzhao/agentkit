@@ -271,8 +271,12 @@ func shouldFallback(err error, mode fallbackMode) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) {
 		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		// TTFB / request timeout: try the next model or provider.
+		return mode == fallbackOnRetryable || mode == fallbackOnAny
 	}
 	switch mode {
 	case fallbackOnQuota:

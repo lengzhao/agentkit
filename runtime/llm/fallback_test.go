@@ -228,6 +228,35 @@ func TestFallbackQuotaMode(t *testing.T) {
 	}
 }
 
+func TestFallbackSwitchesOnDeadlineExceededBeforeOutput(t *testing.T) {
+	t.Parallel()
+	primary := &deadlineOnRecvProvider{}
+	secondary := &stubProvider{replyText: "backup"}
+	fallback, err := NewFallback(FallbackConfig{
+		FallbackModels: []string{"gpt-4o"},
+	}, FallbackDeps{Provider: primary, Fallbacks: []agentkit.LLMProvider{secondary}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := fallback.Stream(context.Background(), agentkit.LLMRequest{Model: "gpt-5.4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	ev, err := stream.Recv()
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+	if messageText(ev.Message.Content) != "backup" {
+		t.Fatalf("reply = %q", messageText(ev.Message.Content))
+	}
+	if primary.openCalls != 1 || secondary.openCalls != 1 {
+		t.Fatalf("open calls primary=%d secondary=%d", primary.openCalls, secondary.openCalls)
+	}
+}
+
 func TestFallbackRecvFailureBeforeOutput(t *testing.T) {
 	t.Parallel()
 	primary := &stubProvider{failRecv: []bool{true}}
@@ -284,6 +313,25 @@ func TestFallbackBuildViaPluginkit(t *testing.T) {
 		t.Fatalf("name = %q", provider.Name())
 	}
 }
+
+type deadlineOnRecvProvider struct {
+	openCalls int
+}
+
+func (p *deadlineOnRecvProvider) Name() string { return "deadline" }
+
+func (p *deadlineOnRecvProvider) Stream(context.Context, agentkit.LLMRequest) (agentkit.LLMStream, error) {
+	p.openCalls++
+	return &deadlineRecvStream{}, nil
+}
+
+type deadlineRecvStream struct{}
+
+func (d *deadlineRecvStream) Recv() (agentkit.LLMEvent, error) {
+	return agentkit.LLMEvent{}, context.DeadlineExceeded
+}
+
+func (d *deadlineRecvStream) Close() error { return nil }
 
 type errorProvider struct {
 	err error

@@ -29,7 +29,7 @@ type OpenAIConfig struct {
 	Reasoning *OpenAIReasoningConfig `json:"reasoning,omitempty"`
 	// Retry is provider-level retry, separate from the agent's per-step retry.
 	Retry *LLMRetryConfig `json:"retry,omitempty"`
-	// TimeoutSeconds is wall-clock limit per Stream call (connect through end of stream). 0 uses 180s.
+	// TimeoutSeconds is max wait for first model output (connect + TTFB). 0 uses 180s. Later tokens are uncapped.
 	TimeoutSeconds int `json:"timeoutSeconds"`
 }
 
@@ -116,9 +116,11 @@ func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.
 	if err != nil {
 		return nil, err
 	}
-	stream, err := backend.stream(ctx, model, req)
+	ttfbCtx, ttfbCancel := mergeRequestTimeout(ctx, p.requestTimeout)
+	stream, err := backend.stream(ttfbCtx, model, req)
 	if err != nil {
+		ttfbCancel()
 		return nil, err
 	}
-	return streamWithRequestTimeout(ctx, p.requestTimeout, stream), nil
+	return streamWithRequestTimeout(ctx, ttfbCtx, ttfbCancel, stream), nil
 }

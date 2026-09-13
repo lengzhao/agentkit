@@ -14,7 +14,14 @@ func newOpenAIClient(apiKey, baseURL string, requestTimeout time.Duration) *open
 	if requestTimeout <= 0 {
 		requestTimeout = defaultRequestTimeout
 	}
-	cfg.HTTPClient = &http.Client{Timeout: requestTimeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Bound time to response headers (connect / HTTP handshake). Stream body length
+	// is not capped here; TTFB for first model chunk is enforced in streamWithRequestTimeout.
+	transport.ResponseHeaderTimeout = requestTimeout
+	cfg.HTTPClient = &http.Client{
+		Timeout:   0,
+		Transport: transport,
+	}
 	return openai.NewClientWithConfig(cfg)
 }
 

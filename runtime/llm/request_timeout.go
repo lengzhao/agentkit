@@ -32,27 +32,53 @@ func mergeRequestTimeout(ctx context.Context, timeout time.Duration) (context.Co
 	return context.WithTimeout(ctx, timeout)
 }
 
+// streamOutputStarted is true when the model has begun producing output (text,
+// thinking, tool call, or a one-shot message). Used to end the TTFB timer.
+func streamOutputStarted(ev agentkit.LLMEvent, err error) bool {
+	if err != nil {
+		return true
+	}
+	switch ev.Type {
+	case agentkit.AssistantEventTextDelta,
+		agentkit.AssistantEventThinkingDelta,
+		agentkit.AssistantEventToolCallStart,
+		agentkit.AssistantEventToolCallDelta,
+		agentkit.LLMEventMessage:
+		return true
+	default:
+		return false
+	}
+}
+
 type contextBoundStream struct {
-	ctx    context.Context
+	parent context.Context
+	ttfb   context.Context
 	cancel context.CancelFunc
 	inner  agentkit.LLMStream
 }
 
-func streamWithRequestTimeout(ctx context.Context, timeout time.Duration, inner agentkit.LLMStream) agentkit.LLMStream {
-	ctx, cancel := mergeRequestTimeout(ctx, timeout)
+func streamWithRequestTimeout(parent context.Context, ttfb context.Context, cancel context.CancelFunc, inner agentkit.LLMStream) agentkit.LLMStream {
 	if inner == nil {
 		cancel()
-		return &contextBoundStream{ctx: ctx, cancel: cancel, inner: nil}
+		return &contextBoundStream{parent: parent, cancel: cancel, inner: nil}
 	}
-	return &contextBoundStream{ctx: ctx, cancel: cancel, inner: inner}
+	return &contextBoundStream{
+		parent: parent,
+		ttfb:   ttfb,
+		cancel: cancel,
+		inner:  inner,
+	}
 }
 
 func (s *contextBoundStream) Recv() (agentkit.LLMEvent, error) {
-	if err := s.ctx.Err(); err != nil {
+	if err := s.parent.Err(); err != nil {
 		return agentkit.LLMEvent{}, err
 	}
 	if s.inner == nil {
-		return agentkit.LLMEvent{}, s.ctx.Err()
+		return agentkit.LLMEvent{}, s.parent.Err()
+	}
+	if s.ttfb == nil {
+		return s.inner.Recv()
 	}
 	type result struct {
 		ev  agentkit.LLMEvent
@@ -64,10 +90,14 @@ func (s *contextBoundStream) Recv() (agentkit.LLMEvent, error) {
 		ch <- result{ev: ev, err: err}
 	}()
 	select {
-	case <-s.ctx.Done():
+	case <-s.ttfb.Done():
 		_ = s.inner.Close()
-		return agentkit.LLMEvent{}, s.ctx.Err()
+		return agentkit.LLMEvent{}, s.ttfb.Err()
 	case r := <-ch:
+		if streamOutputStarted(r.ev, r.err) {
+			s.cancel()
+			s.ttfb = nil
+		}
 		return r.ev, r.err
 	}
 }
