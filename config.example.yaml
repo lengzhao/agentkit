@@ -63,12 +63,21 @@ llm.review:
   config:
     model: gpt-5.4-mini
 
-# 学习记忆落盘（learning.default.config.memoryRoot）：
-#   "."（默认）— 每租户 local 根下的 memory.md
-#   "global:." — workspace global 根，跨 channel/租户共用
-# learning.default:
+# 个人记忆（memory.md）与后台 review 写入门（L0 已挂 memory.default、hook.background-review、tool/memory）：
+# memory.default:
 #   config:
-#     memoryRoot: global:.
+#     # memoryRoot: "."        # 默认：当前租户 local 根下的 memory.md
+#     # memoryRoot: global:.   # 全 channel / 多租户共用一份 memory.md
+#     review:
+#       writeApproval: true    # background-review 的 memory 类 learn_capture 进 staged，用 /memory approve
+#
+# hook.background-review.default:
+#   config:
+#     memoryNotifications: off # on | verbose：会话内 💾 通知（需 platform sender）
+#     # sessionRecall: false   # 关闭 review digest 里的跨会话 FTS 摘要
+#     # memoryNudgeInterval: 0 # 0 = 关闭按轮次自动 review（仍可用主 agent memory 工具）
+#
+# learning.default 管 dreaming、workshop、/learn；记忆文件路径见 memory.default.config.memoryRoot。
 
 # 方式二：直接连单个 provider（无 fallback）
 # llm.default:
@@ -180,6 +189,7 @@ prompt.custom.default:
 #     commands: commands.default
 #     sessionStore: sessionStore.default
 #     workspace: workspace.default
+#     sessionIndex: sessionIndex.default   # 会话列表/发现 + background-review sessionRecall
 #
 # platform.http:
 #   use: platform/http

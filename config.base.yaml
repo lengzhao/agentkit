@@ -415,6 +415,7 @@ llm.review:
   deps:
     credentials: credentials.default
 
+# Post-turn learn_capture（内建）；memory 写 memory.md，learning 管 skill_propose / 编排。
 hook.background-review.default:
   use: hook/background-review
   config:
@@ -425,6 +426,7 @@ hook.background-review.default:
     minTurnTokens: 0
     memoryNudgeInterval: 10
     memoryNotifications: on
+    # sessionRecall: false
   deps:
     learning: learning.default
     memory: memory.default
@@ -435,6 +437,8 @@ hook.background-review.default:
 memory.default:
   use: memory/default
   config:
+    # memoryRoot: "."
+    # memoryRoot: global:.
     review:
       writeApproval: false
   deps:

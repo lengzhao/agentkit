@@ -125,7 +125,7 @@ flowchart TB
 ## 文档与配置同步（随功能勾选）
 
 - [ ] [roadmap.zh.md](../roadmap.zh.md) 增加「Learning / Review」小节，标明 session-query 为 P1 依赖  
-- [ ] [config.example.yaml](../../config.example.yaml) 示例：`hook.background-review`、`writeApproval`、`llm.review`  
+- [x] [config.example.yaml](../../config.example.yaml) 示例：`hook.background-review`、`memory.default` `writeApproval`、`llm.review`  
 - [ ] [learning-dreaming.zh.md](learning-dreaming.zh.md) §10 与本文档互链；大项完成后从 §10 迁入「已做」  
 - [ ] 默认策略决策：L0 `hook.background-review` **默认 enabled** 是否对多租户/高流量改为 preset 开启  
 
