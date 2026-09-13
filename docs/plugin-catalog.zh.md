@@ -136,7 +136,7 @@ platform.http:
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；从 `session.SessionIDFromContext` 取 conversation 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
-| `agent/catalog-commands` | `agentkit.CommandProvider` | `/agent`、`/acp` slash；deps 注入 `loop`、`sessionStore` | — |
+| `agent/catalog-commands` | `agentkit.CommandProvider` | `/agent`、`/model`、`/acp` slash；deps 注入 `loop`、`sessionStore`、`workspace` | — |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
@@ -220,7 +220,7 @@ sequenceDiagram
 - **登录**：`agent login`（配置注入 `NO_OPEN_BROWSER=1`），由 Cursor CLI 阻塞等待浏览器授权；stdout/stderr 原样透传到对话。
 - **不要混用**：`authenticate` 返回的链接与 `agent login` 的 challenge 不是同一次 OAuth；登录只走 `agent login`。
 - **API Key 路径**（可选）：`agent -p` 用 `CURSOR_API_KEY`；ACP 用 `CURSOR_AUTH_TOKEN`（`--auth-token`），与 `cursor_login` 互斥。
-- **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 写入 `sessions/<session>/acp-session.<agentId>.json`（与 `agent.json` 同级；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
+- **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 写入 `sessions/<session>/acp-session.<agentId>.json`（与 `runtime.json` 同级；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
 - **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 `session/resume` 均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
 
 ```yaml

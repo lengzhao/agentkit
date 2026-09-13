@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"strings"
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -10,15 +9,8 @@ import (
 )
 
 func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, conversation agentkit.SessionID) (agentkit.AgentID, error) {
-	if bound, err := r.boundAgent(ctx, conversation); err != nil {
-		return "", err
-	} else if bound != "" {
-		return bound, nil
-	}
-	if id := strings.TrimSpace(string(event.AgentID)); id != "" {
-		return agentkit.AgentID(id), nil
-	}
-	return "", nil
+	effective, _, _, err := session.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, event.AgentID)
+	return effective, err
 }
 
 func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEvent, env agentkit.TurnEnvelope, policy session.RoutePolicy) (string, error) {
@@ -44,13 +36,3 @@ func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEv
 	return defaultConversation, nil
 }
 
-func (r *Root) boundAgent(ctx context.Context, conversation agentkit.SessionID) (agentkit.AgentID, error) {
-	if r.sessionStore == nil || conversation == "" {
-		return "", nil
-	}
-	bindStore, ok := r.sessionStore.(agentkit.AgentBindStore)
-	if !ok {
-		return "", nil
-	}
-	return bindStore.AgentBind(ctx, conversation)
-}

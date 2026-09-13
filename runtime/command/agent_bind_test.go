@@ -28,7 +28,7 @@ func TestDispatchAgentUsePersistsBind(t *testing.T) {
 	store := session.NewStaticStore(mem)
 	reg, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
 		stubProvider{commands: []agentkit.Command{
-			agent.Command([]agentkit.Agent{stubAgent{id: "reviewer"}}, store, "reviewer"),
+			agent.Command([]agentkit.Agent{stubAgent{id: "reviewer"}}, store, "reviewer", nil),
 		}},
 	})
 	if err != nil {

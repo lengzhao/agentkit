@@ -2,8 +2,10 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 type memorySidecar struct {
 	mu       sync.RWMutex
 	binds    map[agentkit.SessionID]agentkit.AgentID
+	models   map[agentkit.SessionID]string
 	active   map[agentkit.SessionID]agentkit.SessionID
 	fallback agentkit.SessionID
 }
@@ -21,6 +24,7 @@ type memorySidecar struct {
 func newMemorySidecar(fallback agentkit.SessionID) memorySidecar {
 	return memorySidecar{
 		binds:    make(map[agentkit.SessionID]agentkit.AgentID),
+		models:   make(map[agentkit.SessionID]string),
 		active:   make(map[agentkit.SessionID]agentkit.SessionID),
 		fallback: fallback,
 	}
@@ -42,8 +46,33 @@ func (m *memorySidecar) AgentBind(_ context.Context, id agentkit.SessionID) (age
 
 func (m *memorySidecar) SetAgentBind(_ context.Context, id agentkit.SessionID, agent agentkit.AgentID) error {
 	id = m.normalize(id)
+	agent = agentkit.AgentID(strings.TrimSpace(string(agent)))
 	m.mu.Lock()
-	m.binds[id] = agent
+	if agent == "" {
+		delete(m.binds, id)
+	} else {
+		m.binds[id] = agent
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *memorySidecar) ModelBind(_ context.Context, id agentkit.SessionID) (string, error) {
+	id = m.normalize(id)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.models[id], nil
+}
+
+func (m *memorySidecar) SetModelBind(_ context.Context, id agentkit.SessionID, model string) error {
+	id = m.normalize(id)
+	model = strings.TrimSpace(model)
+	m.mu.Lock()
+	if model == "" {
+		delete(m.models, id)
+	} else {
+		m.models[id] = model
+	}
 	m.mu.Unlock()
 	return nil
 }
@@ -70,9 +99,10 @@ func (m *memorySidecar) SetActiveSession(_ context.Context, id, active agentkit.
 	return nil
 }
 
-type bindCacheEntry struct {
-	agentID agentkit.AgentID
+type runtimeCacheEntry struct {
+	data    SessionRuntimeData
 	modTime time.Time
+	missing bool
 }
 
 type activeCacheEntry struct {
@@ -82,45 +112,60 @@ type activeCacheEntry struct {
 
 // fileSidecar persists agent binds and active-session mappings beside session logs.
 type fileSidecar struct {
-	dir         func(ctx context.Context) (string, error)
-	bindCache   sync.Map
-	activeCache sync.Map
+	dir           func(ctx context.Context) (string, error)
+	runtimeCache  sync.Map
+	activeCache   sync.Map
+}
+
+func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.SessionID) (SessionRuntimeData, error) {
+	dir, err := f.dir(ctx)
+	if err != nil {
+		return SessionRuntimeData{}, err
+	}
+	path, err := sessionRuntimeFilePath(dir, id)
+	if err != nil {
+		return SessionRuntimeData{}, err
+	}
+	info, statErr := os.Stat(path)
+	if statErr == nil {
+		if v, ok := f.runtimeCache.Load(id); ok {
+			entry := v.(runtimeCacheEntry)
+			if !entry.missing && entry.modTime.Equal(info.ModTime()) {
+				return entry.data, nil
+			}
+		}
+	} else if errors.Is(statErr, os.ErrNotExist) {
+		if v, ok := f.runtimeCache.Load(id); ok {
+			entry := v.(runtimeCacheEntry)
+			if entry.missing {
+				return entry.data, nil
+			}
+		}
+	} else {
+		return SessionRuntimeData{}, statErr
+	}
+	data, err := loadSessionRuntime(dir, id)
+	if err != nil {
+		return SessionRuntimeData{}, err
+	}
+	modTime := time.Time{}
+	missing := errors.Is(statErr, os.ErrNotExist)
+	if statErr == nil {
+		modTime = info.ModTime()
+	}
+	f.runtimeCache.Store(id, runtimeCacheEntry{data: data, modTime: modTime, missing: missing})
+	return data, nil
 }
 
 func (f *fileSidecar) AgentBind(ctx context.Context, id agentkit.SessionID) (agentkit.AgentID, error) {
 	if id == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	dir, err := f.dir(ctx)
+	data, err := f.loadSessionRuntimeCached(ctx, id)
 	if err != nil {
 		return "", err
 	}
-	path, err := agentBindFilePath(dir, id)
-	if err != nil {
-		return "", err
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", err
-	}
-
-	if v, ok := f.bindCache.Load(id); ok {
-		entry := v.(bindCacheEntry)
-		if entry.modTime.Equal(info.ModTime()) {
-			return entry.agentID, nil
-		}
-	}
-
-	agentID, err := readAgentBindFile(path)
-	if err != nil {
-		return "", err
-	}
-	f.bindCache.Store(id, bindCacheEntry{agentID: agentID, modTime: info.ModTime()})
-	return agentID, nil
+	return data.AgentID, nil
 }
 
 func (f *fileSidecar) SetAgentBind(ctx context.Context, id agentkit.SessionID, agent agentkit.AgentID) error {
@@ -131,18 +176,36 @@ func (f *fileSidecar) SetAgentBind(ctx context.Context, id agentkit.SessionID, a
 	if err != nil {
 		return err
 	}
-	path, err := agentBindFilePath(dir, id)
+	if err := setSessionRuntimeAgent(dir, id, agent); err != nil {
+		return err
+	}
+	f.runtimeCache.Delete(id)
+	return nil
+}
+
+func (f *fileSidecar) ModelBind(ctx context.Context, id agentkit.SessionID) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	data, err := f.loadSessionRuntimeCached(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return data.Model, nil
+}
+
+func (f *fileSidecar) SetModelBind(ctx context.Context, id agentkit.SessionID, model string) error {
+	if id == "" {
+		return fmt.Errorf("session id is required")
+	}
+	dir, err := f.dir(ctx)
 	if err != nil {
 		return err
 	}
-	if err := writeAgentBindFile(path, agent); err != nil {
+	if err := setSessionRuntimeModel(dir, id, model); err != nil {
 		return err
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	f.bindCache.Store(id, bindCacheEntry{agentID: agent, modTime: info.ModTime()})
+	f.runtimeCache.Delete(id)
 	return nil
 }
 

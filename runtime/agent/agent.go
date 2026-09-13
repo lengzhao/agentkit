@@ -111,11 +111,26 @@ func (a *Runtime) SessionStore() agentkit.SessionStore { return a.sessionStore }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
 
+// ConfiguredModel returns the model from agent config (before session override).
+func (a *Runtime) ConfiguredModel() string { return a.model }
+
+func (a *Runtime) effectiveModel(ctx context.Context, sess agentkit.Session) string {
+	if sess == nil {
+		return a.model
+	}
+	effective, _, _, err := session.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, sess.ID(), a.id, a.model)
+	if err != nil || effective == "" {
+		return a.model
+	}
+	return effective
+}
+
 // turnRun holds mutable state for one turn, spanning every segment the
 // TurnStopping hooks extend it with.
 type turnRun struct {
 	budget    *runBudget
 	completed int
+	llmModel  string
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr error) {
@@ -138,7 +153,10 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		return err
 	}
 
-	run := &turnRun{budget: newRunBudget(a.budget, a.now)}
+	run := &turnRun{
+		budget:   newRunBudget(a.budget, a.now),
+		llmModel: a.effectiveModel(ctx, sess),
+	}
 	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
 		return err
 	}
@@ -164,7 +182,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
 		if a.hooks != nil && runErr == nil && !cancelled {
-			a.invokeTurnComplete(endCtx, sessionID, sess, run.budget.tokensUsed())
+			a.invokeTurnComplete(endCtx, sessionID, sess, run.llmModel, run.budget.tokensUsed())
 		}
 	}()
 
@@ -250,7 +268,7 @@ func (a *Runtime) runSegment(
 
 		stepRetry := newStepRetry(a.retry)
 
-		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, stepRetry, &overflowRecoveryAttempted)
+		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted)
 		if err != nil {
 			_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 			endStepOnce()
@@ -446,7 +464,7 @@ type stepOutcome struct {
 	ctx context.Context
 }
 
-func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit) (stepOutcome, error) {
+func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, model string) (stepOutcome, error) {
 	stepStarted := time.Now()
 	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name: "agent.step.prep",
@@ -488,7 +506,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name:               "llm.generation",
 		Kind:               captelemetry.KindGeneration,
-		Model:              a.model,
+		Model:              model,
 		Input:              telemetry.ExportMessages(messages),
 		GenerationMessages: messages,
 		ToolNames:          telemetry.ToolNamesFromSpecs(specs),
@@ -499,7 +517,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	}()
 
 	stream, err := a.llm.Stream(ctx, agentkit.LLMRequest{
-		Model:    a.model,
+		Model:    model,
 		Messages: messages,
 		Tools:    specs,
 	})
@@ -566,7 +584,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	attrs := []any{
 		"agent_id", a.id,
 		"session_id", sess.ID(),
-		"model", a.model,
+		"model", model,
 		"tool_calls", len(assistant.ToolCalls),
 		"duration", time.Since(stepStarted),
 	}
@@ -622,7 +640,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 	return history, ctx, nil
 }
 
-func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, turnTokens int) {
+func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, model string, turnTokens int) {
 	sess, err := a.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		slog.Debug("agent: turn complete skipped, session reload failed",
@@ -638,7 +656,7 @@ func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.Ses
 	tc := &agentkit.TurnComplete{
 		AgentID:    a.id,
 		SessionID:  sessionID,
-		Model:      a.model,
+		Model:      model,
 		TurnTokens: turnTokens,
 		Messages:   messages,
 	}

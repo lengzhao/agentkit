@@ -13,6 +13,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/session"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -52,6 +53,7 @@ type Deps struct {
 	Platform     agentkit.Platform         `json:"platform"`
 	Loop         agentkit.Loop             `json:"loop"`
 	SessionStore agentkit.SessionStore     `json:"sessionStore,omitempty"`
+	Workspace    workspace.Service         `json:"workspace,omitempty"`
 	Schedules    []capschedule.Runtime     `json:"schedules,omitempty"`
 	Init         []agentkit.AppInitializer `json:"init,omitempty"`
 	Telemetry    captelemetry.Exporter        `json:"telemetry,omitempty"`
@@ -64,6 +66,7 @@ type Root struct {
 	platform        agentkit.Platform
 	loop            agentkit.Loop
 	sessionStore    agentkit.SessionStore
+	workspace       workspace.Service
 	schedules       []capschedule.Runtime
 	telemetry       captelemetry.Exporter
 	sessionScope    agentkit.SessionScope
@@ -111,6 +114,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 		platform:              deps.Platform,
 		loop:                  deps.Loop,
 		sessionStore:          resolveRunnerSessionStore(deps),
+		workspace:             deps.Workspace,
 		schedules:             deps.Schedules,
 		telemetry:             exp,
 		sessionScope:          session.ParseScope(cfg.SessionScope),

@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -81,14 +82,14 @@ func TestAgentListShowsSessionAgent(t *testing.T) {
 		stubAgent{id: "assistant"},
 		stubAgent{id: "reviewer"},
 	}
-	cmd := agent.Command(agents, store, "assistant")
+	cmd := agent.Command(agents, store, "assistant", nil)
 	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
 
 	out, err := cmd.CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Session agent: assistant (default)", "assistant *", "reviewer"} {
+	for _, want := range []string{"Active agent: assistant", "Loop default: assistant", "assistant *", "reviewer"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output:\n%s", want, out)
 		}
@@ -101,12 +102,45 @@ func TestAgentListShowsSessionAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Session agent: reviewer", "Default agent: assistant"} {
+	for _, want := range []string{"Active agent: reviewer", "Session override: reviewer", "Loop default: assistant"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output:\n%s", want, out)
 		}
 	}
 	if !strings.Contains(out, "reviewer  *") && !strings.Contains(out, "reviewer *") {
 		t.Errorf("expected current agent marker on reviewer in output:\n%s", out)
+	}
+}
+
+func TestAgentGlobalUse(t *testing.T) {
+	t.Parallel()
+
+	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := session.NewStaticStore(mem)
+	agents := []agentkit.Agent{stubAgent{id: "assistant"}, stubAgent{id: "worker"}}
+	ws := rtworkspace.Static(t.TempDir())
+	cmd := agent.Command(agents, store, "assistant", ws)
+	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: "cli:test",
+		Workspace:    "cli:test",
+	})
+
+	out, err := cmd.CommandExec(ctx, "-g use worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "global agent: worker") {
+		t.Fatalf("out = %q", out)
+	}
+
+	out, err = cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Global override: worker") {
+		t.Fatalf("list = %q", out)
 	}
 }

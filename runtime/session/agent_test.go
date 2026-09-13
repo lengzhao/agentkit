@@ -37,7 +37,7 @@ func TestStoreAgentBindFile(t *testing.T) {
 		t.Fatalf("bind = %q, err = %v", got, err)
 	}
 
-	path := filepath.Join(dir, "cli_test-bind", "agent.json")
+	path := filepath.Join(dir, "cli_test-bind", "runtime.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

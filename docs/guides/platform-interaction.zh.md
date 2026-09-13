@@ -209,6 +209,24 @@ multiplex（CLI + IM 等）下，`/exit` 只关闭 CLI  stdin，**不会**结束
 
 无进行中的 turn 时返回 `no turn in progress`。
 
+## 切换会话模型
+
+`/model` 由 `agent/catalog-commands` 贡献，作用于 **coding agent**（`agent/coding`）的 LLM 请求，与会话 agent 覆盖一并写入会话目录下的 `runtime.json`。
+
+| 命令 | 行为 |
+|---|---|
+| `/model` | 显示当前生效模型、会话/全局覆盖与 agent 默认 |
+| `/model <name>` | 将会话模型设为任意 provider 支持的模型名（用户自行输入，无内置列表） |
+| `/model -g <name>` | 为**当前 agent** 设置全局默认（写入 `global:runtime.json` 的 `models`，所有未单独覆盖的会话生效） |
+| `/model reset` | 清除本会话的模型覆盖 |
+| `/model -g reset` | 清除当前 agent 的全局覆盖 |
+
+与 `/agent use` 相同，会话模型绑定写在当前 active conversation（`/new` 子会话各自独立）。ACP 远程 agent 不使用模型覆盖。
+
+**Agent 全局默认**：`/agent -g use <id>` 写入 `global:runtime.json` 的 `agentId`，对所有未设会话覆盖的会话生效；`/agent -g reset` 清除。优先级：会话 `runtime.json` → 全局 → 请求里的 `agent_id` → `loop.defaultAgent`。会话/全局 agent 绑定优先于 chat-api 请求体中的 `agent_id`。
+
+`/model -g` 的全局条目按**当前路由到的 agent id**（含 `/agent -g use`）写入 `global:runtime.json`，与 runner 入站解析一致。
+
 `platform/lark`（及 `platform/feishu`）的 `config.sessionScope` 应与 `runner.config.sessionScope` 一致；不一致时 turn 可能锁在一种 session id 上，而 `/stop` 在另一种 id 上查 `IsSessionBusy`，会误判为无进行中的 turn。`/stop` 会按 delivery、scope 与 `/new` 子 session 等多种候选 id 匹配 busy session。群聊里若命令被解析成 `/stop@_user_x`，也会按 `stop` 处理。
 
 被取消的 turn 在 `turn/end` 时会携带 `cancelled: true`：飞书 / Lark 在**触发该 turn 的原消息**上移除处理中 reaction 并加上 `cancelledEmoji`（默认 `HEARTBROKEN` 💔），流式卡的处理过程/正文区追加「已取消」说明。异常结束的 turn 使用 `errorEmoji`（默认 `CrossMark`）。不会误把 reaction 打到 `/stop` 命令消息上。同一 turn 内被 steer 合并处理的多条用户消息，会在 `turn/end` 时一并更新 reaction。

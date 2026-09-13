@@ -7,49 +7,70 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/configfile"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
-// Command exposes the agent catalog and session agent switching.
-func Command(agents []agentkit.Agent, store agentkit.SessionStore, defaultAgent agentkit.AgentID) agentkit.Command {
-	return agentCommand{agents: agents, store: store, defaultAgent: defaultAgent}
+// Command exposes the agent catalog and session or global agent switching.
+func Command(agents []agentkit.Agent, store agentkit.SessionStore, defaultAgent agentkit.AgentID, ws workspace.Service) agentkit.Command {
+	return agentCommand{agents: agents, store: store, defaultAgent: defaultAgent, workspace: ws}
 }
 
 // HelpCommand exposes the agent catalog help slash command for built agent instances.
 func HelpCommand(agents []agentkit.Agent) agentkit.Command {
-	return Command(agents, nil, "")
+	return Command(agents, nil, "", nil)
 }
 
 type agentCommand struct {
 	agents       []agentkit.Agent
 	store        agentkit.SessionStore
 	defaultAgent agentkit.AgentID
+	workspace    workspace.Service
 }
 
 func (agentCommand) Name() string        { return "agent" }
 func (agentCommand) Alias() string       { return "" }
-func (agentCommand) Description() string { return "list agents, show details, or switch session agent" }
+func (agentCommand) Description() string { return "list agents, switch session or global (-g) default agent" }
 
 func (c agentCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	fields := strings.Fields(strings.TrimSpace(args))
-	if len(fields) >= 2 && fields[0] == "use" {
-		return c.useAgent(ctx, strings.TrimSpace(strings.Join(fields[1:], " ")))
+	global, rest := configfile.PeelGlobalFlag(fields)
+	payload := strings.TrimSpace(strings.Join(rest, " "))
+
+	if len(rest) >= 2 && rest[0] == "use" {
+		return c.useAgent(ctx, global, strings.TrimSpace(strings.Join(rest[1:], " ")))
 	}
-	if len(fields) == 0 || fields[0] == "-l" || fields[0] == "--list" {
+	if strings.EqualFold(payload, "reset") || strings.EqualFold(payload, "default") {
+		return c.clearBind(ctx, global)
+	}
+	if len(rest) == 0 || rest[0] == "-l" || rest[0] == "--list" {
 		return c.formatAgentList(ctx), nil
 	}
-	return agentDoc(c.agents, strings.TrimSpace(args))
+	return agentDoc(c.agents, payload)
 }
 
-func (c agentCommand) useAgent(ctx context.Context, name string) (string, error) {
+func (c agentCommand) useAgent(ctx context.Context, global bool, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
+		if global {
+			return "", fmt.Errorf("usage: /agent -g use <id>")
+		}
 		return "", fmt.Errorf("usage: /agent use <id>")
 	}
 	if _, err := agentDoc(c.agents, name); err != nil {
 		return "", err
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	if global {
+		if err := session.SetGlobalAgentBind(ctx, c.workspace, agentkit.AgentID(name)); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("global agent: %s", name), nil
+	}
+	sessionID, err := resolveCatalogSessionID(ctx, c.store)
+	if err != nil {
+		return "", err
+	}
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
@@ -60,28 +81,58 @@ func (c agentCommand) useAgent(ctx context.Context, name string) (string, error)
 	if !ok {
 		return "", fmt.Errorf("session store does not support agent binding")
 	}
-	if activeStore, ok := c.store.(agentkit.ActiveSessionStore); ok {
-		active, err := activeStore.ActiveSession(ctx, sessionID)
-		if err != nil {
-			return "", err
-		}
-		sessionID = active
-	}
 	if err := bindStore.SetAgentBind(ctx, sessionID, agentkit.AgentID(name)); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("session agent: %s", name), nil
 }
 
+func (c agentCommand) clearBind(ctx context.Context, global bool) (string, error) {
+	if global {
+		if err := session.SetGlobalAgentBind(ctx, c.workspace, ""); err != nil {
+			return "", err
+		}
+		if c.defaultAgent != "" {
+			return fmt.Sprintf("global agent reset; loop default: %s", c.defaultAgent), nil
+		}
+		return "global agent reset", nil
+	}
+	sessionID, err := resolveCatalogSessionID(ctx, c.store)
+	if err != nil {
+		return "", err
+	}
+	if sessionID == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	bindStore, ok := c.store.(agentkit.AgentBindStore)
+	if !ok {
+		return "", fmt.Errorf("session store does not support agent binding")
+	}
+	if err := bindStore.SetAgentBind(ctx, sessionID, ""); err != nil {
+		return "", err
+	}
+	effective, _, globalBind, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
+	if err != nil {
+		return "", err
+	}
+	if globalBind != "" {
+		return fmt.Sprintf("session agent reset; using global: %s", globalBind), nil
+	}
+	if effective != "" {
+		return fmt.Sprintf("session agent reset; using: %s", effective), nil
+	}
+	return "session agent reset", nil
+}
+
 func (c agentCommand) formatAgentList(ctx context.Context) string {
 	ids := collectAgentIDs(c.agents)
-	effective, bound, err := c.resolveEffectiveAgent(ctx)
+	effective, sessionBind, globalBind, loopDefault, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
 	if err != nil {
 		return fmt.Sprintf("agent list failed: %v", err)
 	}
 
 	var b strings.Builder
-	writeAgentRoutingHeader(&b, effective, bound, c.defaultAgent)
+	writeAgentRoutingHeader(&b, effective, sessionBind, globalBind, loopDefault)
 
 	if len(ids) == 0 {
 		b.WriteString("Registered agents:\n  (none)\n\nUse /agent <id> for details.")
@@ -101,72 +152,44 @@ func (c agentCommand) formatAgentList(ctx context.Context) string {
 		fmt.Fprintf(&b, "  %-*s%s\n", width, id, marker)
 	}
 	b.WriteString("\nUse /agent <id> for details.")
-	b.WriteString("\nUse /agent use <id> to switch this session.")
+	b.WriteString("\nUse /agent use <id> for this session.")
+	b.WriteString("\nUse /agent -g use <id> for all sessions (until session override).")
 	return b.String()
 }
 
-func writeAgentRoutingHeader(b *strings.Builder, effective, bound, defaultAgent agentkit.AgentID) {
+func writeAgentRoutingHeader(b *strings.Builder, effective, sessionBind, globalBind, loopDefault agentkit.AgentID) {
 	effective = agentkit.AgentID(strings.TrimSpace(string(effective)))
-	bound = agentkit.AgentID(strings.TrimSpace(string(bound)))
-	defaultAgent = agentkit.AgentID(strings.TrimSpace(string(defaultAgent)))
+	sessionBind = agentkit.AgentID(strings.TrimSpace(string(sessionBind)))
+	globalBind = agentkit.AgentID(strings.TrimSpace(string(globalBind)))
+	loopDefault = agentkit.AgentID(strings.TrimSpace(string(loopDefault)))
 
-	switch {
-	case effective != "" && bound != "":
-		fmt.Fprintf(b, "Session agent: %s\n", effective)
-		if defaultAgent != "" && defaultAgent != effective {
-			fmt.Fprintf(b, "Default agent: %s\n", defaultAgent)
-		}
-	case effective != "":
-		if bound == "" && defaultAgent != "" && effective == defaultAgent {
-			fmt.Fprintf(b, "Session agent: %s (default)\n", effective)
-		} else {
-			fmt.Fprintf(b, "Session agent: %s\n", effective)
-		}
-	case defaultAgent != "":
-		fmt.Fprintf(b, "Default agent: %s\n", defaultAgent)
+	if effective != "" {
+		fmt.Fprintf(b, "Active agent: %s\n", effective)
+	}
+	if sessionBind != "" {
+		fmt.Fprintf(b, "Session override: %s\n", sessionBind)
+	} else {
+		b.WriteString("Session override: (none)\n")
+	}
+	if globalBind != "" {
+		fmt.Fprintf(b, "Global override: %s\n", globalBind)
+	} else {
+		b.WriteString("Global override: (none)\n")
+	}
+	if loopDefault != "" {
+		fmt.Fprintf(b, "Loop default: %s\n", loopDefault)
 	}
 	if b.Len() > 0 {
 		b.WriteByte('\n')
 	}
 }
 
-func (c agentCommand) resolveSessionID(ctx context.Context) (agentkit.SessionID, error) {
-	sessionID := session.SessionIDFromContext(ctx)
-	if sessionID == "" {
-		return "", nil
+func (c agentCommand) catalogRoutingDeps() catalogRoutingDeps {
+	return catalogRoutingDeps{
+		store:        c.store,
+		defaultAgent: c.defaultAgent,
+		workspace:    c.workspace,
 	}
-	if c.store == nil {
-		return sessionID, nil
-	}
-	if activeStore, ok := c.store.(agentkit.ActiveSessionStore); ok {
-		active, err := activeStore.ActiveSession(ctx, sessionID)
-		if err != nil {
-			return "", err
-		}
-		if active != "" {
-			sessionID = active
-		}
-	}
-	return sessionID, nil
-}
-
-func (c agentCommand) resolveEffectiveAgent(ctx context.Context) (effective, bound agentkit.AgentID, err error) {
-	sessionID, err := c.resolveSessionID(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	if sessionID != "" && c.store != nil {
-		if bindStore, ok := c.store.(agentkit.AgentBindStore); ok {
-			bound, err = bindStore.AgentBind(ctx, sessionID)
-			if err != nil {
-				return "", "", err
-			}
-		}
-	}
-	if bound != "" {
-		return bound, bound, nil
-	}
-	return c.defaultAgent, "", nil
 }
 
 func collectAgentIDs(agents []agentkit.Agent) []string {

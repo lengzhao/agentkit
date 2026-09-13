@@ -982,7 +982,8 @@ type Agent interface {
 
 - **context key**：Loop 在 `Dispatch` 时把 `TurnEnvelope`（含 conversation、delivery route、workspace、actor）、`AgentID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件从 envelope 推导租户目录，Agent 读写历史使用 `SessionIDFromContext`。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
 - **Active Session**：Slack / 飞书等 IM 以及 chat-api 的 delivery key 是固定投递地址，`/new` 不改变它，而是在 `session/store` 里记录 `sessions/<stable>/current.json`，把 stable delivery/effective key 指向新的 SessionID；没有映射时 SessionID 默认等于 runner 折叠后的 effective id，chat-api 的 stable key 由 `conversation_id` 组成。
-- **Agent 路由**：Runner 在解析 SessionID 后统一解析 agent，再交给 Loop。优先级为 session 工作目录下的 `agent.json`（`/agent use`）→ `MessageEvent.AgentID`（Platform 仅在请求显式指定 agent 时填入）→ `loop.defaultAgent`。
+- **Agent 路由**：Runner 在解析 SessionID 后统一解析 agent，再交给 Loop。优先级为 session `runtime.json` 的 `agentId`（`/agent use`）→ `global:runtime.json`（`/agent -g use`）→ `MessageEvent.AgentID`（请求显式指定）→ `loop.defaultAgent`。
+- **会话模型**：`agent/coding` 发起 LLM 前按 **会话 `runtime.json` 的 `model` → 全局 `global:runtime.json` 的 `models[<agentId>]` → agent 配置 `model`** 解析；`/model`、 `/model -g` 写入同一 overlay 文件。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
 - **Loop.Steer/FollowUp**：从 `TurnEnvelope.Conversation`（`session.SessionIDFromContext`）路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；有待处理的 steering 时重置 segment 内 `maxSteps` 计数，避免 steer 刚入队就因步数耗尽而结束 turn；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。若 steering 在 segment 已决定结束、turn 尚未完全退出时到达，Agent 会再跑一个 segment 消化；`Dispatch` 在 follow-up 循环里也会 drain 残留的 steering，避免消息丢失。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。

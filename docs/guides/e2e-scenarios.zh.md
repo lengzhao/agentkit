@@ -124,7 +124,7 @@ mindmap
 |---|---|---|---|---|
 | E2E-100 | REPL 多轮对话 | 同一 session 串行 | 🔶 | loop_test 覆盖锁 |
 | E2E-101 | `/new` 切换 logical session | 新 logical id；投递不变 | ✅ | `runtime/platform/cli/session_new_e2e_test.go` |
-| E2E-102 | `/agent use` 绑定 | `agent.json` 写入；derive 过滤 | ⬜ | INT |
+| E2E-102 | `/agent use` 绑定 | `runtime.json` 写入；derive 过滤 | ⬜ | INT |
 | E2E-103 | `/status` 输出运行态 | 含 budget / todo | ⬜ | CLI 单测 🔶 |
 
 ### 4.2 Chat API

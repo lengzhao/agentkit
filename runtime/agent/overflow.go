@@ -17,11 +17,12 @@ func (a *Runtime) runStepWithOverflowRecovery(
 	ctx context.Context,
 	sess agentkit.Session,
 	emit agentkit.OutboundEmit,
+	model string,
 	retry *stepRetry,
 	overflowRecoveryAttempted *bool,
 ) (stepOutcome, error) {
 	for {
-		msg, err := a.runStepWithRetry(ctx, sess, emit, retry)
+		msg, err := a.runStepWithRetry(ctx, sess, emit, model, retry)
 		if err == nil {
 			*overflowRecoveryAttempted = false
 			return msg, nil
