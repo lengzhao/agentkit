@@ -47,7 +47,7 @@ flowchart TB
 
 - [x] **write_approval + 暂存队列**  
   - `memory.default.config.review.writeApproval`（或 `/memory policy approve`）：review 的 memory 类 `learn_capture` 先入 `memory/.staged/`，不立刻进 prompt 注入链。  
-  - 用户面：`/learn pending`、`approve` / `reject`（或复用 `workshop list/apply` + memory staged 文件）。  
+  - 用户面：memory 用 `/memory pending`、`approve` / `reject`；skill 用 `/learn workshop list|apply|reject`。  
   - 验收：后台误记可拒绝，且从未写入 `memory.md`。
 
 - [x] **独立 review 用 LLM + 节流**  

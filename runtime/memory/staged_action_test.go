@@ -21,3 +21,10 @@ func TestLegacyStagedContentSummary(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+func TestNormalizeStagedEntryLegacyAdd(t *testing.T) {
+	e := NormalizeStagedEntry(StagedMemory{Content: "legacy fact"})
+	if e.Action != StagedActionAdd || e.Content != "legacy fact" {
+		t.Fatalf("got %+v", e)
+	}
+}

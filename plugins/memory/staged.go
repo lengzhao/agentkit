@@ -129,9 +129,10 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 }
 
 func (s *Service) applyStagedEntry(ctx context.Context, entry rtmem.StagedMemory, source string) (string, error) {
+	entry = rtmem.NormalizeStagedEntry(entry)
 	action := strings.TrimSpace(entry.Action)
 	if action == "" {
-		return s.applyStagedLegacyContent(ctx, entry.Content, source)
+		return "", fmt.Errorf("staged content is empty")
 	}
 	switch action {
 	case rtmem.StagedActionAdd:
@@ -159,32 +160,5 @@ func (s *Service) applyStagedEntry(ctx context.Context, entry rtmem.StagedMemory
 		return s.removeMemory(ctx, old, source)
 	default:
 		return "", fmt.Errorf("unknown staged action %q", action)
-	}
-}
-
-func (s *Service) applyStagedLegacyContent(ctx context.Context, content, source string) (string, error) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return "", fmt.Errorf("staged content is empty")
-	}
-	action, old, newText := rtmem.LegacyStagedKind(content)
-	switch action {
-	case rtmem.StagedActionRemove:
-		if old == "" {
-			return "", fmt.Errorf("staged remove missing old_text")
-		}
-		return s.removeMemory(ctx, old, source)
-	case rtmem.StagedActionReplace:
-		if old == "" || newText == "" {
-			return "", fmt.Errorf("staged replace requires old_text and content")
-		}
-		baseSource := strings.TrimSuffix(source, "-approved")
-		msg, err := s.CaptureMemoryReplace(ctx, old, newText, baseSource)
-		if err != nil {
-			return "", err
-		}
-		return msg, nil
-	default:
-		return s.addMemory(ctx, content, source)
 	}
 }

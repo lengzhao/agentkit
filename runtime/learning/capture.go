@@ -2,7 +2,6 @@ package learning
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -78,13 +77,4 @@ func ApplyCapture(ctx context.Context, mem capmemory.Capture, skills caplearning
 	default:
 		return CaptureOutput{}, fmt.Errorf("unknown action %q", in.Action)
 	}
-}
-
-// FormatCaptureResult JSON-encodes CaptureOutput for Tool.Call.
-func FormatCaptureResult(out CaptureOutput) (string, error) {
-	data, err := json.Marshal(out)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
 }

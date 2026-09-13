@@ -50,24 +50,13 @@ func (s *Service) memoryToolAdd(ctx context.Context, text, source string) (capme
 }
 
 func (s *Service) memoryToolReplace(ctx context.Context, oldText, content, source string) (capmemory.MemoryToolOutput, error) {
-	if oldText == "" {
-		return capmemory.MemoryToolOutput{Success: false, Error: "old_text is required for replace"}, nil
-	}
-	if content == "" {
-		return capmemory.MemoryToolOutput{Success: false, Error: "content is required for replace"}, nil
-	}
-	store, err := s.memoryStore(ctx)
-	if err != nil {
-		return capmemory.MemoryToolOutput{}, err
-	}
-	_, err = store.Replace(oldText, content)
+	store, err := s.replaceMemory(ctx, oldText, content, source)
 	if capErr := memoryCapacityOutput(store, err); capErr != nil {
 		return *capErr, nil
 	}
 	if err != nil {
 		return capmemory.MemoryToolOutput{Success: false, Error: err.Error()}, nil
 	}
-	s.commitAfterMemoryReplace(ctx, content, source)
 	usage, _ := memoryToolSnapshot(store)
 	return memoryToolOKf(store, "memory entry replaced [%s]", usage), nil
 }
@@ -85,6 +74,26 @@ func (s *Service) memoryToolRemove(ctx context.Context, oldText string) (capmemo
 		return capmemory.MemoryToolOutput{}, err
 	}
 	return memoryToolOK(store, msg), nil
+}
+
+func (s *Service) replaceMemory(ctx context.Context, oldText, content, source string) (*rtmem.MemoryStore, error) {
+	oldText = strings.TrimSpace(oldText)
+	content = strings.TrimSpace(content)
+	if oldText == "" {
+		return nil, fmt.Errorf("old_text is required")
+	}
+	if content == "" {
+		return nil, fmt.Errorf("memory content is empty")
+	}
+	store, err := s.memoryStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = store.Replace(oldText, content); err != nil {
+		return store, err
+	}
+	s.commitAfterMemoryReplace(ctx, content, source)
+	return store, nil
 }
 
 func (s *Service) removeMemory(ctx context.Context, text, source string) (string, error) {

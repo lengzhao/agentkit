@@ -24,11 +24,11 @@ func (s *Service) ReviewSignalCandidates(ctx context.Context) string {
 	if err != nil || st == nil || len(st.Signals) == 0 {
 		return ""
 	}
-	entries, err := s.loadMemoryEntries(ctx)
+	capEntries, _, _, err := s.memory.LoadEntries(ctx)
 	if err != nil {
 		return ""
 	}
-	filtered := filterSignalsNotInMemory(st.Signals, entries)
+	filtered := filterSignalsNotInMemory(st.Signals, capEntries)
 	if len(filtered) == 0 {
 		return ""
 	}
@@ -42,21 +42,13 @@ func (s *Service) ReviewSignalCandidates(ctx context.Context) string {
 	return dreaming.FormatReviewCandidateBlock(top)
 }
 
-func (s *Service) loadMemoryEntries(ctx context.Context) ([]rtmem.MemoryEntry, error) {
-	capEntries, _, _, err := s.memory.LoadEntries(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]rtmem.MemoryEntry, len(capEntries))
-	for i, e := range capEntries {
-		out[i] = rtmem.MemoryEntry{Content: e.Content, Meta: e.Meta}
-	}
-	return out, nil
-}
-
-func filterSignalsNotInMemory(signals []dreaming.Signal, entries []rtmem.MemoryEntry) []dreaming.Signal {
+func filterSignalsNotInMemory(signals []dreaming.Signal, capEntries []capmemory.MemoryEntry) []dreaming.Signal {
 	if len(signals) == 0 {
 		return nil
+	}
+	entries := make([]rtmem.MemoryEntry, len(capEntries))
+	for i, e := range capEntries {
+		entries[i] = rtmem.MemoryEntry{Content: e.Content}
 	}
 	out := make([]dreaming.Signal, 0, len(signals))
 	for _, sig := range signals {

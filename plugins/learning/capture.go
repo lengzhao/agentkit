@@ -3,14 +3,12 @@ package learning
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
 	caplearning "github.com/lengzhao/agentkit/cap/learning"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
-	"github.com/lengzhao/agentkit/plugins/learning/workshop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -19,41 +17,14 @@ func (s *Service) CaptureSkillPropose(ctx context.Context, name, body, sessionID
 	if !s.skillsWorkshopEnabled(ctx) {
 		return "", fmt.Errorf("skill workshop is disabled (use /learn policy skills propose|auto)")
 	}
-	wsStore, skillsDir, err := s.workshopStore(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(wsStore.Root, 0o755); err != nil {
-		return "", err
-	}
-	pending, err := wsStore.PendingCount()
-	if err != nil {
-		return "", err
-	}
-	if pending >= s.workshopCfg().MaxPending {
-		return "", fmt.Errorf("workshop has %d pending proposals (max %d); apply or reject first",
-			pending, s.workshopCfg().MaxPending)
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = workshop.SuggestSkillName(focus, body)
-	}
-	fullBody := strings.TrimSpace(body)
-	if fullBody == "" {
-		return "", fmt.Errorf("skill body is empty")
-	}
-	proposal, err := wsStore.Create(name, fullBody, source, sessionID, focus, true)
-	if err != nil {
-		return "", err
-	}
-	auto := s.skillsAutoApply(ctx, source)
-	if auto {
-		if err := proposal.Apply(skillsDir); err != nil {
-			return fmt.Sprintf("proposal %s created (auto-apply failed: %v)", proposal.Meta.ID, err), nil
-		}
-		return fmt.Sprintf("skill %q applied from proposal %s", name, proposal.Meta.ID), nil
-	}
-	return fmt.Sprintf("skill proposal %s created for %q (pending apply)", proposal.Meta.ID, name), nil
+	return s.createSkillProposal(ctx, skillProposeParams{
+		Name:       name,
+		Body:       body,
+		Source:     source,
+		SessionID:  sessionID,
+		Focus:      focus,
+		Autonomous: true,
+	})
 }
 
 // NewLearnCaptureTool builds the isolated review-fork tool (not registered as a separate plugin kind).

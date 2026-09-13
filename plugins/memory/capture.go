@@ -19,14 +19,12 @@ func (s *Service) CaptureMemoryReplace(ctx context.Context, oldText, content, so
 	if s.memoryWriteRequiresApproval(ctx, source) {
 		return s.stageMemory(ctx, rtmem.StagedActionReplace, oldText, content, source)
 	}
-	out, err := s.memoryToolReplace(ctx, oldText, content, source)
+	store, err := s.replaceMemory(ctx, oldText, content, source)
 	if err != nil {
 		return "", err
 	}
-	if !out.Success {
-		return "", fmt.Errorf("%s", out.Error)
-	}
-	return out.Message, nil
+	usage, _ := memoryToolSnapshot(store)
+	return fmt.Sprintf("memory entry replaced [%s]", usage), nil
 }
 
 func (s *Service) CaptureMemoryRemove(ctx context.Context, oldText string) (string, error) {

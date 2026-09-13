@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -321,28 +320,13 @@ func (s *Service) runDreamSweep(ctx context.Context) (*dreaming.SweepResult, err
 }
 
 func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) {
-	if !s.workshopCfg().Enabled() {
-		return "", fmt.Errorf("skill workshop is disabled (workshop.mode=off)")
+	if !s.skillsWorkshopEnabled(ctx) {
+		return "", fmt.Errorf("skill workshop is disabled (use /learn policy skills propose|auto)")
 	}
 	sessionID := session.SessionIDFromContext(ctx)
 	summary, err := SummarizeSessionUserMessages(ctx, s.sessions, sessionID, 12)
 	if err != nil {
 		return "", err
-	}
-	wsStore, skillsDir, err := s.workshopStore(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(wsStore.Root, 0o755); err != nil {
-		return "", err
-	}
-	pending, err := wsStore.PendingCount()
-	if err != nil {
-		return "", err
-	}
-	if pending >= s.workshopCfg().MaxPending {
-		return "", fmt.Errorf("workshop has %d pending proposals (max %d); apply or reject first",
-			pending, s.workshopCfg().MaxPending)
 	}
 	name := workshop.SuggestSkillName(focus, summary)
 	desc := "Learned workflow from session."
@@ -350,17 +334,14 @@ func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) 
 		desc = "Focus: " + focus
 	}
 	body := workshop.DraftSkillBody(name, desc, summary)
-	proposal, err := wsStore.Create(name, body, "learn-skill", string(sessionID), focus, false)
-	if err != nil {
-		return "", err
-	}
-	if s.skillsAutoApply(ctx, "learn-skill") {
-		if err := proposal.Apply(skillsDir); err != nil {
-			return fmt.Sprintf("proposal %s created (auto-apply failed: %v)", proposal.Meta.ID, err), nil
-		}
-		return fmt.Sprintf("skill %q applied from proposal %s", name, proposal.Meta.ID), nil
-	}
-	return fmt.Sprintf("skill proposal %s created for %q (pending apply)", proposal.Meta.ID, name), nil
+	return s.createSkillProposal(ctx, skillProposeParams{
+		Name:       name,
+		Body:       body,
+		Source:     "learn-skill",
+		SessionID:  string(sessionID),
+		Focus:      focus,
+		Autonomous: false,
+	})
 }
 
 func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, error) {
