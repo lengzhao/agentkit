@@ -132,7 +132,7 @@ create/update → pending → apply → applied
 |---|---|
 | `/memory policy` | 查看 memory 写入门策略 |
 | `/learn policy` | 查看 skills 策略（memory 见 `/memory policy`） |
-| `/memory policy approve` | background-review 写入进 `memory/.staged/`，需 `/memory approve` |
+| `/memory policy approve` | background-review 的 `memory_add` / `memory_replace` / `memory_remove` 进 `memory/.staged/`，需 `/memory approve` |
 | `/memory policy auto` | background-review 直接写 `memory.md` |
 | `/learn policy skills propose` | skill 提案进 workshop，需 apply |
 | `/learn policy skills auto` | scanner 通过后自动写入 `skills/` |
@@ -190,7 +190,7 @@ sequenceDiagram
 | 技能 | 走 Workshop：`workshop.mode=propose` 为 pending；`auto` 则 scanner 通过后直接 apply |
 | 跳过 | 无有效用户文本、或近端只有 `/` 命令（`skipSlashOnly: true`） |
 | 关闭 | `hook.background-review` 配置 `enabled: false`，或从 `hooks.default` deps 移除该 provider |
-| 写入审批 | `learning.default.config.review.writeApproval: true` 时，review 的 `memory_add` 进入 `memory/.staged/`，用 `/learn pending`、`/learn approve <id>`；默认 `false`（auto，直接写 `memory.md`） |
+| 写入审批 | `memory.default.config.review.writeApproval: true`（或 `/memory policy approve`）时，review 的 memory 类 `learn_capture` 进入 `memory/.staged/`；用 `/memory pending`、`/memory approve <id>`；默认 `false`（auto，直接写 `memory.md`） |
 | 节流 | `memoryNudgeInterval`、`maxReviewsPerDay`、`minTurnTokens`、`minIdleSeconds`（见 `hook.background-review` config）；计数持久化在 `memory/dreaming/review_nudge.json` |
 | LLM | 默认 `llm.review`（如 `gpt-4o-mini`），与主 agent `llm.fallback` 分离 |
 | 关停 | `runner.Stop` 调用 `CancelAllBackgroundReviews()` |

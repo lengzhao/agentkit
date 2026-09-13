@@ -265,19 +265,31 @@ func sessionRecallEnabled(cfg BackgroundReviewConfig) bool {
 }
 
 func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages []agentkit.ModelMessage) string {
-	if !sessionRecallEnabled(p.cfg) || p.index == nil || p.learning == nil {
+	if !sessionRecallEnabled(p.cfg) {
+		slog.Debug("session recall skipped", "reason", "disabled in config")
+		return ""
+	}
+	if p.index == nil {
+		slog.Debug("session recall skipped", "reason", "no session index dep")
+		return ""
+	}
+	if p.learning == nil {
+		slog.Debug("session recall skipped", "reason", "no learning dep")
 		return ""
 	}
 	query := reviewRecallQuery(messages)
 	if query == "" {
+		slog.Debug("session recall skipped", "reason", "no recall query from messages")
 		return ""
 	}
 	dir, err := p.learning.Workspace().Resolve(ctx, p.learning.SessionsDir())
 	if err != nil {
+		slog.Debug("session recall skipped", "reason", "resolve sessions dir", "err", err)
 		return ""
 	}
 	hits, err := session.SearchSyncedSessions(ctx, p.index, dir, query, 5)
 	if err != nil {
+		slog.Debug("session recall skipped", "reason", "fts search", "err", err)
 		return ""
 	}
 	return session.FormatSessionRecall(hits)

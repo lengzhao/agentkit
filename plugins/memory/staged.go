@@ -11,6 +11,12 @@ import (
 	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
+// Staged payload markers for background-review approve (plain text is memory_add).
+const (
+	stagedRemovePrefix = "remove:"
+	stagedReplaceSep   = " => "
+)
+
 func (s *Service) stageMemory(ctx context.Context, text, source string) (string, error) {
 	store, err := s.stagedStore(ctx)
 	if err != nil {
@@ -61,7 +67,7 @@ func (s *Service) ApproveStaged(ctx context.Context, id string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return s.addMemory(ctx, entry.Content, entry.Source+"-approved")
+	return s.applyStagedContent(ctx, entry.Content, entry.Source+"-approved")
 }
 
 func (s *Service) RejectStaged(ctx context.Context, id string) (string, error) {
@@ -106,7 +112,7 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 	}
 	n := 0
 	for _, e := range entries {
-		if _, err := s.addMemory(ctx, e.Content, e.Source+"-approved"); err != nil {
+		if _, err := s.applyStagedContent(ctx, e.Content, e.Source+"-approved"); err != nil {
 			return fmt.Sprintf("approved %d, then failed: %v", n, err), nil
 		}
 		n++
@@ -115,6 +121,34 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 		return fmt.Sprintf("approved %d entries but failed to clear staged file: %v", n, err), nil
 	}
 	return fmt.Sprintf("approved %d staged memory entries", n), nil
+}
+
+func (s *Service) applyStagedContent(ctx context.Context, content, source string) (string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", fmt.Errorf("staged content is empty")
+	}
+	if strings.HasPrefix(content, stagedRemovePrefix) {
+		old := strings.TrimSpace(strings.TrimPrefix(content, stagedRemovePrefix))
+		if old == "" {
+			return "", fmt.Errorf("staged remove missing old_text")
+		}
+		return s.removeMemory(ctx, old, source)
+	}
+	if i := strings.Index(content, stagedReplaceSep); i >= 0 {
+		old := strings.TrimSpace(content[:i])
+		newText := strings.TrimSpace(content[i+len(stagedReplaceSep):])
+		if old == "" || newText == "" {
+			return "", fmt.Errorf("staged replace requires old_text and content")
+		}
+		baseSource := strings.TrimSuffix(source, "-approved")
+		msg, err := s.CaptureMemoryReplace(ctx, old, newText, baseSource)
+		if err != nil {
+			return "", err
+		}
+		return msg, nil
+	}
+	return s.addMemory(ctx, content, source)
 }
 
 func truncateDisplay(s string, max int) string {

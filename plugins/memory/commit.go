@@ -40,6 +40,7 @@ func (s *Service) commitAfterMemoryRemove(ctx context.Context, removed, match, s
 		Match:   match,
 		Source:  source,
 	})
+	s.notifyCommitted(ctx, removed, source, capmemory.AddOutcomeRemoved)
 }
 
 func (s *Service) notifyCommitted(ctx context.Context, text, source string, outcome capmemory.AddOutcome) {

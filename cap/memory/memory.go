@@ -31,6 +31,7 @@ const (
 	AddOutcomeAdded     AddOutcome = "added"
 	AddOutcomeDuplicate AddOutcome = "duplicate"
 	AddOutcomeReplaced  AddOutcome = "replaced"
+	AddOutcomeRemoved   AddOutcome = "removed"
 )
 
 // Tool is the main-agent personal memory tool.

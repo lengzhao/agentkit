@@ -10,6 +10,8 @@ func (s *Service) OnMemoryCommitted(ctx context.Context, text, source string, ou
 	if outcome == capmemory.AddOutcomeDuplicate {
 		return
 	}
-	_ = s.recordMemorySignal(ctx, text, source)
+	if outcome != capmemory.AddOutcomeRemoved {
+		_ = s.recordMemorySignal(ctx, text, source)
+	}
 	s.pruneDreamingSignals(ctx, text)
 }
