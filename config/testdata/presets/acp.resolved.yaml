@@ -152,6 +152,7 @@ llm.default:
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
         model: gpt-5.4
+        responseHeaderTimeoutSeconds: 60
         retry:
             provider:
                 maxRetries: 0
@@ -174,6 +175,7 @@ llm.review:
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
         model: gpt-5.4-mini
+        responseHeaderTimeoutSeconds: 60
         timeoutSeconds: 180
     deps:
         credentials: credentials.default

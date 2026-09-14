@@ -7,13 +7,25 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-const defaultRequestTimeout = 180 * time.Second
+const (
+	defaultRequestTimeout        = 180 * time.Second
+	defaultResponseHeaderTimeout = 60 * time.Second
+)
 
+// resolveRequestTimeout is max wait for the first model event (TTFB) on a stream.
 func resolveRequestTimeout(timeoutSeconds int) time.Duration {
 	if timeoutSeconds > 0 {
 		return time.Duration(timeoutSeconds) * time.Second
 	}
 	return defaultRequestTimeout
+}
+
+// resolveResponseHeaderTimeout bounds connect + TLS + HTTP response headers (not first SSE token).
+func resolveResponseHeaderTimeout(timeoutSeconds int) time.Duration {
+	if timeoutSeconds > 0 {
+		return time.Duration(timeoutSeconds) * time.Second
+	}
+	return defaultResponseHeaderTimeout
 }
 
 func mergeRequestTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -57,6 +69,13 @@ type contextBoundStream struct {
 	inner  agentkit.LLMStream
 }
 
+// wrapStreamTTFB enforces a first-token deadline on inner without binding inner's HTTP
+// context to the TTFB timer (see OpenAI.Stream).
+func wrapStreamTTFB(parent context.Context, timeout time.Duration, inner agentkit.LLMStream) agentkit.LLMStream {
+	ttfbCtx, cancel := mergeRequestTimeout(parent, timeout)
+	return streamWithRequestTimeout(parent, ttfbCtx, cancel, inner)
+}
+
 func streamWithRequestTimeout(parent context.Context, ttfb context.Context, cancel context.CancelFunc, inner agentkit.LLMStream) agentkit.LLMStream {
 	if inner == nil {
 		cancel()
@@ -90,6 +109,9 @@ func (s *contextBoundStream) Recv() (agentkit.LLMEvent, error) {
 		ch <- result{ev: ev, err: err}
 	}()
 	select {
+	case <-s.parent.Done():
+		_ = s.inner.Close()
+		return agentkit.LLMEvent{}, s.parent.Err()
 	case <-s.ttfb.Done():
 		_ = s.inner.Close()
 		return agentkit.LLMEvent{}, s.ttfb.Err()

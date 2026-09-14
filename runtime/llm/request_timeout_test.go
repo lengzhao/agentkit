@@ -37,6 +37,21 @@ func (s *slowTailStream) Recv() (agentkit.LLMEvent, error) {
 
 func (s *slowTailStream) Close() error { return nil }
 
+func TestStreamWithRequestTimeoutRespectsParentCancelDuringTTFB(t *testing.T) {
+	parent, stop := context.WithCancel(context.Background())
+	ttfbCtx, cancel := mergeRequestTimeout(parent, time.Minute)
+	inner := &blockingRecvStream{delay: 5 * time.Second}
+	wrapped := streamWithRequestTimeout(parent, ttfbCtx, cancel, inner)
+	stop()
+	ev, err := wrapped.Recv()
+	if err == nil {
+		t.Fatalf("expected cancel, got event %+v", ev)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
 func TestStreamWithRequestTimeoutCancelsSlowFirstRecv(t *testing.T) {
 	ctx := context.Background()
 	ttfbCtx, cancel := mergeRequestTimeout(ctx, 50*time.Millisecond)
@@ -108,5 +123,14 @@ func TestResolveRequestTimeoutDefault(t *testing.T) {
 	}
 	if resolveRequestTimeout(120) != 120*time.Second {
 		t.Fatal("expected 120s")
+	}
+}
+
+func TestResolveResponseHeaderTimeoutDefault(t *testing.T) {
+	if resolveResponseHeaderTimeout(0) != defaultResponseHeaderTimeout {
+		t.Fatalf("expected default %v", defaultResponseHeaderTimeout)
+	}
+	if resolveResponseHeaderTimeout(30) != 30*time.Second {
+		t.Fatal("expected 30s")
 	}
 }

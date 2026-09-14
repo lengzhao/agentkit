@@ -8,16 +8,16 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-func newOpenAIClient(apiKey, baseURL string, requestTimeout time.Duration) *openai.Client {
+func newOpenAIClient(apiKey, baseURL string, responseHeaderTimeout time.Duration) *openai.Client {
 	cfg := openai.DefaultConfig(apiKey)
 	cfg.BaseURL = strings.TrimRight(baseURL, "/")
-	if requestTimeout <= 0 {
-		requestTimeout = defaultRequestTimeout
+	if responseHeaderTimeout <= 0 {
+		responseHeaderTimeout = defaultResponseHeaderTimeout
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// Bound time to response headers (connect / HTTP handshake). Stream body length
-	// is not capped here; TTFB for first model chunk is enforced in streamWithRequestTimeout.
-	transport.ResponseHeaderTimeout = requestTimeout
+	// Bound time until HTTP response headers (connect / TLS / gateway). Streaming body
+	// and first model token are not capped here; see streamWithRequestTimeout (TTFB).
+	transport.ResponseHeaderTimeout = responseHeaderTimeout
 	cfg.HTTPClient = &http.Client{
 		Timeout:   0,
 		Transport: transport,

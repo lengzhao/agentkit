@@ -29,8 +29,12 @@ type OpenAIConfig struct {
 	Reasoning *OpenAIReasoningConfig `json:"reasoning,omitempty"`
 	// Retry is provider-level retry, separate from the agent's per-step retry.
 	Retry *LLMRetryConfig `json:"retry,omitempty"`
-	// TimeoutSeconds is max wait for first model output (connect + TTFB). 0 uses 180s. Later tokens are uncapped.
+	// TimeoutSeconds is max wait for the first model event on a stream (TTFB). 0 uses 180s.
+	// Later stream tokens are uncapped. HTTP connect/headers use ResponseHeaderTimeoutSeconds.
 	TimeoutSeconds int `json:"timeoutSeconds"`
+	// ResponseHeaderTimeoutSeconds caps connect + TLS + HTTP response headers. 0 uses 60s.
+	// Independent of timeoutSeconds (headers often return before the first model token).
+	ResponseHeaderTimeoutSeconds int `json:"responseHeaderTimeoutSeconds"`
 }
 
 type HostedToolConfig struct {
@@ -83,6 +87,7 @@ func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) 
 		return nil, fmt.Errorf("llm/openai-compatible: hostedTools requires api: responses")
 	}
 	requestTimeout := resolveRequestTimeout(cfg.TimeoutSeconds)
+	headerTimeout := resolveResponseHeaderTimeout(cfg.ResponseHeaderTimeoutSeconds)
 	return &OpenAI{
 		model:          model,
 		api:            api,
@@ -91,7 +96,7 @@ func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) 
 		providerRetry:  defaultProviderRetry(retryProviderConfig(cfg.Retry)),
 		requestTimeout: requestTimeout,
 		apiKey:         apiKey,
-		client:         newOpenAIClient(apiKey, baseURL, requestTimeout),
+		client:         newOpenAIClient(apiKey, baseURL, headerTimeout),
 	}, nil
 }
 
@@ -116,14 +121,9 @@ func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.
 	if err != nil {
 		return nil, err
 	}
-	// HTTP streams must use the turn context for their full lifetime. TTFB timeout
-	// is enforced only in streamWithRequestTimeout; cancelling ttfbCtx after the
-	// first token must not abort the provider stream (that surfaces as context canceled).
-	ttfbCtx, ttfbCancel := mergeRequestTimeout(ctx, p.requestTimeout)
 	stream, err := backend.stream(ctx, model, req)
 	if err != nil {
-		ttfbCancel()
 		return nil, err
 	}
-	return streamWithRequestTimeout(ctx, ttfbCtx, ttfbCancel, stream), nil
+	return wrapStreamTTFB(ctx, p.requestTimeout, stream), nil
 }

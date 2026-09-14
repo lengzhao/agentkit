@@ -386,8 +386,10 @@ llm.default:
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
     api: chat
-    # 首 token 上限（连接 + TTFB）；流式后续 token 不受此限制。reasoning 冷启动慢时可加大。
+    # 首 token（TTFB）上限；流式后续 token 不受此限制。reasoning 冷启动慢时可加大。
     timeoutSeconds: 180
+    # 连接 + TLS + HTTP 响应头；与首 token 独立（流式常先 200 再等模型输出）。
+    responseHeaderTimeoutSeconds: 60
     # hostedTools:
     #   - type: web_search
     #     parameters:
@@ -417,6 +419,7 @@ llm.review:
     apiKeyRef: env:OPENAI_API_KEY
     api: chat
     timeoutSeconds: 180
+    responseHeaderTimeoutSeconds: 60
   deps:
     credentials: credentials.default
 
