@@ -50,6 +50,41 @@ func TestStreamWithRequestTimeoutCancelsSlowFirstRecv(t *testing.T) {
 	}
 }
 
+// ctxBoundStream simulates OpenAI HTTP streams tied to the context passed at create time.
+type ctxBoundStream struct {
+	lifetime context.Context
+	calls    int
+}
+
+func (s *ctxBoundStream) Recv() (agentkit.LLMEvent, error) {
+	s.calls++
+	if s.calls == 1 {
+		return agentkit.LLMEvent{Type: agentkit.AssistantEventTextDelta, Delta: "hi"}, nil
+	}
+	if err := s.lifetime.Err(); err != nil {
+		return agentkit.LLMEvent{}, err
+	}
+	return agentkit.LLMEvent{}, io.EOF
+}
+
+func (s *ctxBoundStream) Close() error { return nil }
+
+func TestStreamWithRequestTimeoutAllowsTailWhenInnerUsesParentContext(t *testing.T) {
+	parent := context.Background()
+	ttfbCtx, ttfbCancel := mergeRequestTimeout(parent, time.Minute)
+	inner := &ctxBoundStream{lifetime: parent}
+	wrapped := streamWithRequestTimeout(parent, ttfbCtx, ttfbCancel, inner)
+
+	ev, err := wrapped.Recv()
+	if err != nil || ev.Delta != "hi" {
+		t.Fatalf("first recv: ev=%+v err=%v", ev, err)
+	}
+	_, err = wrapped.Recv()
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("tail recv: %v", err)
+	}
+}
+
 func TestStreamWithRequestTimeoutAllowsSlowTailAfterFirstToken(t *testing.T) {
 	ctx := context.Background()
 	ttfbCtx, cancel := mergeRequestTimeout(ctx, 50*time.Millisecond)

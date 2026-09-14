@@ -116,8 +116,11 @@ func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.
 	if err != nil {
 		return nil, err
 	}
+	// HTTP streams must use the turn context for their full lifetime. TTFB timeout
+	// is enforced only in streamWithRequestTimeout; cancelling ttfbCtx after the
+	// first token must not abort the provider stream (that surfaces as context canceled).
 	ttfbCtx, ttfbCancel := mergeRequestTimeout(ctx, p.requestTimeout)
-	stream, err := backend.stream(ttfbCtx, model, req)
+	stream, err := backend.stream(ctx, model, req)
 	if err != nil {
 		ttfbCancel()
 		return nil, err
