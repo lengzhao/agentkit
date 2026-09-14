@@ -355,6 +355,35 @@ func TestRichCardMessageStartPreservesToolSteps(t *testing.T) {
 	if st.bodyText != "" {
 		t.Fatalf("bodyText should reset for new message, got %q", st.bodyText)
 	}
+	if st.committedBodyText != "partial answer" {
+		t.Fatalf("committedBodyText = %q, want partial answer preserved", st.committedBodyText)
+	}
+}
+
+func TestRichCardDisplayBodyJoinsCommittedAndInflight(t *testing.T) {
+	t.Parallel()
+	st := &streamState{committedBodyText: "first", bodyText: "second"}
+	got := st.richCardDisplayBody()
+	want := "first" + richCardBodySegmentSeparator + "second"
+	if got != want {
+		t.Fatalf("display body = %q, want %q", got, want)
+	}
+}
+
+func TestOutboundStreamKeyUsesReplyTo(t *testing.T) {
+	t.Parallel()
+	event := agentkit.OutboundEvent{
+		Route: session.BuildSessionRoute(session.SessionRouteInput{
+			Platform:   "feishu",
+			DeliveryID: agentkit.SessionID("feishu:oc_chat:u:U1"),
+			ReplyTo:    "om_msg_1",
+		}),
+	}
+	got := outboundStreamKey(event)
+	want := agentkit.SessionID("feishu:oc_chat:u:U1:reply:om_msg_1")
+	if got != want {
+		t.Fatalf("stream key = %q, want %q", got, want)
+	}
 }
 
 func TestHandleRichStreamMessageStartResetsMessageState(t *testing.T) {

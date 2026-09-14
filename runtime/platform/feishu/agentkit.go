@@ -92,7 +92,8 @@ type streamState struct {
 	activeSegment      streamSegmentKind
 	cards              []streamCard // ordered cards for eviction (oldest first)
 	accumulated        string       // legacy mode text buffer
-	bodyText           string       // rich mode in-flight assistant markdown
+	bodyText           string       // rich mode in-flight assistant markdown (current segment)
+	committedBodyText  string       // card mode: earlier assistant segments in the same turn
 	finalizedBodyText  string       // last known assistant body (survives CardKit-only stream)
 	finalizedSteps     []toolStep   // last non-streaming rich card panel (survives turn/end clearStream)
 	thinking           string
@@ -338,6 +339,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
 	delivery := session.OutboundRouteID(event)
+	streamKey := outboundStreamKey(event)
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
@@ -345,7 +347,7 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		endData := parseTurnEndData(event)
 		p.applyTurnEndReactions(delivery, endData)
 		if p.useInteractiveCard && p.useRichStream() {
-			return p.handleRichTurnEnd(ctx, delivery, endData)
+			return p.handleRichTurnEnd(ctx, streamKey, endData)
 		}
 		return nil
 	}
@@ -357,19 +359,19 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	}
 	switch event.Type {
 	case agentkit.EventTurnStart:
-		p.clearStream(delivery)
+		p.clearStream(streamKey)
 		if p.useRichStream() {
-			p.richStreamState(delivery)
-			if err := p.bootstrapReplyCard(ctx, delivery); err != nil {
-				slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", delivery, "error", err)
+			p.richStreamState(streamKey)
+			if err := p.bootstrapReplyCard(ctx, streamKey); err != nil {
+				slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", streamKey, "error", err)
 			}
 		}
 		return nil
 	case agentkit.EventMessageStart:
 		if p.useRichStream() {
-			return p.handleRichStreamMessageStart(ctx, delivery)
+			return p.handleRichStreamMessageStart(ctx, streamKey)
 		}
-		p.clearStream(delivery)
+		p.clearStream(streamKey)
 		return nil
 	case agentkit.EventMessageUpdate:
 		return p.handleStreamUpdate(ctx, event)
@@ -670,13 +672,13 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 }
 
 func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.OutboundEvent) error {
-	delivery := session.OutboundRouteID(event)
+	streamKey := outboundStreamKey(event)
 	var payload agentkit.MessageUpdatePayload
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
 	if p.useRichStream() {
-		return p.handleRichStreamUpdate(ctx, delivery, payload.AssistantMessageEvent)
+		return p.handleRichStreamUpdate(ctx, streamKey, payload.AssistantMessageEvent)
 	}
 	delta := ""
 	switch payload.AssistantMessageEvent.Type {
@@ -691,7 +693,7 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 		return nil
 	}
 
-	st := p.streamState(delivery)
+	st := p.streamState(streamKey)
 	st.mu.Lock()
 	st.accumulated += delta
 	accumulated := st.accumulated
@@ -699,16 +701,17 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	st.mu.Unlock()
 
 	if shouldFlushNow {
-		p.cancelLegacyFlushTimer(delivery)
-		return p.flushStream(ctx, delivery, accumulated)
+		p.cancelLegacyFlushTimer(streamKey)
+		return p.flushStream(ctx, streamKey, accumulated)
 	}
-	p.scheduleLegacyFlush(delivery)
+	p.scheduleLegacyFlush(streamKey)
 	return nil
 }
 
 func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundEvent) error {
+	streamKey := outboundStreamKey(event)
 	delivery := session.OutboundRouteID(event)
-	st := p.streamState(delivery)
+	st := p.streamState(streamKey)
 	st.mu.Lock()
 	text := st.accumulated
 	handle := st.handle
@@ -729,12 +732,12 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 			}
 		}
 	}
-	p.clearStream(delivery)
+	p.clearStream(streamKey)
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 
-	rc, ok := p.deliveryFor(delivery)
+	rc, ok := p.replyContextForStreamKey(streamKey)
 	if !ok {
 		return fmt.Errorf("%s: unknown session %s", p.tag(), delivery)
 	}
@@ -745,12 +748,12 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 	return p.sendIMContent(ctx, rc, text)
 }
 
-func (p *Platform) flushStream(ctx context.Context, sessionID agentkit.SessionID, text string) error {
-	rc, ok := p.deliveryFor(sessionID)
+func (p *Platform) flushStream(ctx context.Context, streamKey agentkit.SessionID, text string) error {
+	rc, ok := p.replyContextForStreamKey(streamKey)
 	if !ok {
 		return nil
 	}
-	st := p.streamState(sessionID)
+	st := p.streamState(streamKey)
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
