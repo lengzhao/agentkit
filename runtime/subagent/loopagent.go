@@ -126,8 +126,9 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
 	parentAgent := session.AgentIDFromContext(ctx)
-	parent, err := s.store.Get(ctx, parentID)
+	parent, err := session.ParentSessionForDelegate(ctx, s.store, parentID)
 	if err != nil {
+		slog.Warn("subagent loop: resolve parent failed", "parent", parentID, "agent", def.Name, "err", err)
 		return subagent.Result{}, err
 	}
 	parentEvents, err := session.ReadAllEvents(ctx, parent)
@@ -141,6 +142,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if req.Async != nil {
 		async = *req.Async
 	}
+	slog.Info("subagent loop delegate", "agent", def.Name, "parent", parentID, "child", childID, "async", async)
 
 	if async {
 		if s.submit == nil {
@@ -159,11 +161,13 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		JobID:   jobID,
 	}
 	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
+		slog.Warn("subagent loop: append start failed", "parent", parentID, "child", childID, "err", err)
 		if async {
 			s.untrackRunning(parentID)
 		}
 		return subagent.Result{}, err
 	}
+	slog.Info("subagent loop: started", "agent", def.Name, "parent", parentID, "child", childID, "async", async)
 	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData); err != nil {
 		if async {
 			s.untrackRunning(parentID)
@@ -172,8 +176,9 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	}
 
 	if async {
-		parentCtx := captureParentContext(ctx)
+		parentCtx := captureParentContext(ctx, parent)
 		go s.runAsync(parentCtx, def, ag, task, childID, jobID, parentID, parentAgent)
+		slog.Info("subagent loop: async returned", "agent", def.Name, "job", jobID)
 		return subagent.Result{
 			Agent:   def.Name,
 			Session: string(childID),
@@ -228,13 +233,14 @@ func (s *LoopAgentSpawner) untrackRunning(parentID agentkit.SessionID) {
 }
 
 type parentContext struct {
-	conversation agentkit.SessionID
-	agentID      agentkit.AgentID
-	envelope     agentkit.TurnEnvelope
-	emit         agentkit.OutboundEmit
+	conversation  agentkit.SessionID
+	agentID       agentkit.AgentID
+	envelope      agentkit.TurnEnvelope
+	emit          agentkit.OutboundEmit
+	parentSession agentkit.Session
 }
 
-func captureParentContext(ctx context.Context) parentContext {
+func captureParentContext(ctx context.Context, parent agentkit.Session) parentContext {
 	env := session.EnvelopeFromContext(ctx)
 	if env.Conversation == "" {
 		if id := session.SessionIDFromContext(ctx); id != "" {
@@ -243,10 +249,11 @@ func captureParentContext(ctx context.Context) parentContext {
 	}
 	agentID := session.AgentIDFromContext(ctx)
 	return parentContext{
-		conversation: agentkit.SessionID(env.Conversation),
-		agentID:      agentID,
-		envelope:     env,
-		emit:         emitFromContext(ctx),
+		conversation:  agentkit.SessionID(env.Conversation),
+		agentID:       agentID,
+		envelope:      env,
+		emit:          emitFromContext(ctx),
+		parentSession: parent,
 	}
 }
 
@@ -295,9 +302,19 @@ func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Defini
 	if runErr != nil {
 		end.Error = runErr.Error()
 	}
-	if parentSess, err := s.store.Get(bg, parentID); err != nil {
-		slog.Error("async subagent: load parent session", "job_id", jobID, "err", err)
+	parentSess := parent.parentSession
+	if parentSess == nil || parentSess.ID() != parentID {
+		slog.Warn("async subagent: parent session not retained, store get", "job_id", jobID, "parent", parentID)
+		var err error
+		parentSess, err = s.store.Get(bg, parentID)
+		if err != nil {
+			slog.Error("async subagent: load parent session", "job_id", jobID, "err", err)
+			parentSess = nil
+		}
 	} else {
+		slog.Debug("async subagent: append end on retained parent session", "job_id", jobID, "parent", parentID)
+	}
+	if parentSess != nil {
 		if err := session.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
 			slog.Error("async subagent: append end", "job_id", jobID, "err", err)
 		} else if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
@@ -416,8 +433,9 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		Emit: emit,
 	})
 
-	sess, err := s.store.Get(ctx, childID)
+	sess, err := session.LoadSession(ctx, s.store, childID)
 	if err != nil {
+		slog.Warn("subagent loop: load child session failed", "child", childID, "err", err)
 		if runErr != nil {
 			return out, runErr
 		}

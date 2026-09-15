@@ -142,7 +142,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
 	parentAgent := session.AgentIDFromContext(ctx)
-	parent, err := s.store.Get(ctx, parentID)
+	parent, err := session.ParentSessionForDelegate(ctx, s.store, parentID)
 	if err != nil {
 		return subagent.Result{}, err
 	}
@@ -254,7 +254,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	// Read the outcome even when the turn failed: a child that worked for ten
 	// steps and then hit a provider error still has a partial answer worth
 	// carrying back.
-	sess, err := s.store.Get(ctx, childID)
+	sess, err := session.LoadSession(ctx, s.store, childID)
 	if err != nil {
 		if runErr != nil {
 			return out, runErr

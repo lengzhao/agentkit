@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -115,15 +116,30 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 	if err := emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentEnd, end); err != nil {
 		t.Fatal(err)
 	}
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for len(got) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	if len(got) != 2 {
 		t.Fatalf("events = %d, want 2", len(got))
 	}
-	if got[0].Type != agentkit.EventSubagentStart || got[1].Type != agentkit.EventSubagentEnd {
-		t.Fatalf("event types = %q, %q", got[0].Type, got[1].Type)
+	var sawStart, sawEnd bool
+	for _, ev := range got {
+		switch ev.Type {
+		case agentkit.EventSubagentStart:
+			sawStart = true
+			if session.OutboundRouteID(ev) != parentSession {
+				t.Fatalf("route = %q, want parent delivery %q", session.OutboundRouteID(ev), parentSession)
+			}
+		case agentkit.EventSubagentEnd:
+			sawEnd = true
+		default:
+			t.Fatalf("unexpected event type %q", ev.Type)
+		}
 	}
-	if session.OutboundRouteID(got[0]) != parentSession {
-		t.Fatalf("route = %q, want parent delivery %q", session.OutboundRouteID(got[0]), parentSession)
+	if !sawStart || !sawEnd {
+		t.Fatalf("saw start=%v end=%v", sawStart, sawEnd)
 	}
 }
 

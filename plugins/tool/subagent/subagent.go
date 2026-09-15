@@ -3,7 +3,9 @@ package subagent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
@@ -56,10 +58,16 @@ func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
 		if depth := delegationDepth(ctx); depth >= maxDelegateDepth {
 			return SubagentOutput{}, fmt.Errorf("delegation depth limit reached (%d); at most %d delegate calls allowed", depth, maxDelegateDepth)
 		}
+		parent := session.SessionIDFromContext(ctx)
+		slog.Info("delegate: start", "agent", input.Agent, "parent", parent, "async", input.Async)
+		started := time.Now()
 		result, err := spawner.Run(ctx, subagent.Request{Agent: input.Agent, Task: input.Task, Async: input.Async})
+		elapsed := time.Since(started)
 		if err != nil {
+			slog.Warn("delegate: failed", "agent", input.Agent, "parent", parent, "duration", elapsed, "err", err)
 			return SubagentOutput{}, err
 		}
+		slog.Info("delegate: done", "agent", input.Agent, "parent", parent, "status", result.Status, "child", result.Session, "duration", elapsed)
 		return SubagentOutput{
 			Agent:   result.Agent,
 			Status:  result.Status,

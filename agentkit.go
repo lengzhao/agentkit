@@ -27,6 +27,10 @@ const (
 	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
 	// KeyInSubagent marks a context running inside a delegated child agent.
 	KeyInSubagent contextKey = "agentkit.subagent.active"
+	// KeySession is the open Session for the current turn, when the agent is
+	// executing tools. Delegate uses it to append subagent audit events without
+	// re-opening the session (avoids deadlocks in guarded stores).
+	KeySession contextKey = "agentkit.session"
 	// KeyProactiveSendUsed is set when tool/send delivers through the turn emit
 	// channel during the current turn.
 	KeyProactiveSendUsed contextKey = "agentkit.proactive_send_used"

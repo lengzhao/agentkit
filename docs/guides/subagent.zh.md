@@ -199,7 +199,7 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 
 启用 `platform/chat-api` 的 `debugUi` 时，子 Agent 内部的 tool call 会通过 SSE `tool_call`（参数完整后）与 `tool_result`（结果限长 1k）事件转发到 `/debug/` 页面（标签为 `subagent · <name>`），主 Agent 的文本流仍不会与子 Agent 交错。
 
-同步委派时，runtime 还会把 `subagent/start`、`subagent/end` 经父 delivery session 的 outbound 发给平台（如飞书过程卡展示「子 Agent · {agentID}」）；子 Agent 内部的 text/thinking delta 仍不转发。`subagent/loop-agent` 子 turn **继承父 turn 的 `KeySessionControl`**，同步委派时 Cursor/Claude ACP 的权限卡仍走同一飞书 broker；`subagent/inprocess` 仍会清空 control，避免 steering 串进子 LLM。outbound 过程卡失败不会阻断 `delegate`（session 里已有 `subagent/start` 审计）。
+同步委派时，runtime 还会把 `subagent/start`、`subagent/end` 经父 delivery session 的 outbound 发给平台（如飞书过程卡展示「子 Agent · {agentID}」）；子 Agent 内部的 text/thinking delta 仍不转发。`subagent/loop-agent` 子 turn **继承父 turn 的 `KeySessionControl`**，同步委派时 Cursor/Claude ACP 的权限卡仍走同一飞书 broker；`subagent/inprocess` 仍会清空 control，避免 steering 串进子 LLM。outbound 过程卡失败不会阻断 `delegate`（session 里已有 `subagent/start` 审计）；过程卡 outbound 异步发送，不阻塞工具返回。`delegate` 复用当前 turn 已打开的 session 写父 session 审计，避免在 `session/agent-guard` 等包装 store 上重入 `Get` 死锁。
 
 **异步委派**（`async: true` 或工具参数 `async`）：父 turn 可先结束；若平台开启 `asyncSubagentProgressCard`（L0 默认 `true`），会在 `subagent/start` 时另发一张独立过程卡，展示子 Agent 工具进度直至 `subagent/end` 定稿。结论仍由 `[subagent-complete …]` follow-up 消息送达，不在此卡内展开全文。同步与异步均可通过 `delegate` 的 `async` 字段覆盖实例默认值。
 
@@ -215,6 +215,49 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
   ```
 
 - **`timeoutSeconds` 是墙钟兜底**，防止子 Agent 卡住把主 Agent 一起拖死。它和上面的工具超时是两层，都要留够。
+
+## 6.1 委派与 Session：避免锁竞争（架构约定）
+
+**约定（Harness 侧必须遵守）：**
+
+1. **父 conversation 在 turn 已打开时**，任何路径（`delegate`、异步 `subagent/end`、审计 `Append`）都 **不得** 对同一 `SessionID` 再调 `SessionStore.Get`；应使用 `agentkit.KeySession` 上已打开的 `Session` 对象（`ParentSessionForDelegate` / `LoadSession`）。
+2. **子 session**（`sub:<parent>:<agent>:<seq>`）是新 id，可在子 turn 里 `LoadSession` → `store_get`；与父 guard 无竞争。
+3. **Loop** 仍按 `TurnEnvelope.Conversation` 串行 turn；这是 **调度序**，不是 SessionStore 互斥。委派不应再引入第二层「同 id 重入 Get」。
+4. **平台 outbound**（`subagent/start|end`）与 session 审计解耦：审计先 `Append`，outbound **异步**发送，不阻塞 `delegate` 返回。
+
+`agent/coding` 在执行工具前注入 `KeySession`；`tool/subagent` 打 `delegate: start/done`；`subagent/loop-agent` 打 `subagent loop delegate|started|async returned`；`session` 在 Debug 打 `source=open_turn|store_get`。
+
+SIT 等环境常在 `sessionStore.default` 外包 `session/agent-guard`（**非可重入** `Get`）。违反约定时日志表现为 `tool execute delegate` 后无 `delegate: done`、无 `acp-remote`。
+
+## 6.2 委派卡住：现象对照
+
+```mermaid
+flowchart TB
+  subgraph turn [父 turn 持有 conversation 锁]
+    A[LLM 调用 delegate]
+    B[ParentSessionForDelegate]
+    C[Append subagent/start]
+    D[outbound 过程卡 异步]
+    E{async?}
+    F[runChild → acp-remote]
+    G[立即 tool done]
+  end
+  B -->|KeySession 命中| C
+  B -->|误走 Get| X[(agent-guard 阻塞)]
+  C --> D --> E
+  E -->|否| F
+  E -->|是| G
+  G --> F
+```
+
+| 现象 | 较可能原因 | 验证 |
+|------|------------|------|
+| 无 `delegate: done`、无 `acp-remote` | guard 重入 `Get`（查 Debug 是否出现 `source=store_get` 解析父 session） | `context_session_test.go`、`delegate_guard_test.go` |
+| `recovered interrupted turn` + `orphan_results` | 上次 delegate 未结束，进程重启或超时 | 查父 session 是否缺 `tool/result` |
+| 有 `acp-remote: connected` 后挂住 | Cursor ACP `Prompt`、权限或 MCP 回调 | pod 内 `agent --trust acp`；`autoApprove` / broker |
+| 仅同步委派久等 | 父 turn 占锁至子 agent 结束（预期） | 非死锁；可显式 `async` 缩短占锁时间 |
+
+回归测试：`go test ./runtime/session/... ./runtime/subagent/... -run 'ParentSession|Delegate|EmitSubagent'`
 
 ## 7. 本期不做
 

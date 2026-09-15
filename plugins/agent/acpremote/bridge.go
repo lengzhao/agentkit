@@ -78,7 +78,8 @@ func newBridge(cfg Config, ws workspace.Service, sessionMCP capacp.SessionMCPPro
 
 func (b *bridge) resolveSessionMCP(ctx context.Context) ([]acp.McpServer, error) {
 	if b.sessionMCP == nil {
-		return nil, nil
+		// Cursor ACP rejects JSON null for mcpServers; must be an array.
+		return acpclient.ToMCPServers(nil), nil
 	}
 	specs, err := b.sessionMCP.SessionMCPServers(ctx)
 	if err != nil {

@@ -296,7 +296,7 @@ func (a *Runtime) runSegment(
 				endStepOnce()
 				return "", err
 			}
-			toolCtx := withToolContext(toolBaseCtx, sess.ID(), a.id)
+			toolCtx := withToolContext(toolBaseCtx, sess, a.id)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
@@ -666,15 +666,16 @@ func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.Ses
 	}
 }
 
-func withToolContext(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {
+func withToolContext(ctx context.Context, sess agentkit.Session, agentID agentkit.AgentID) context.Context {
 	env := session.EnvelopeFromContext(ctx)
-	if sessionID != "" {
-		env = env.WithConversation(string(sessionID))
+	if sess != nil && sess.ID() != "" {
+		env = env.WithConversation(string(sess.ID()))
 	}
 	ctx = session.ApplyEnvelopeToContext(ctx, env)
 	if agentID != "" {
 		ctx = session.WithAgentID(ctx, agentID)
 	}
+	ctx = session.WithSession(ctx, sess)
 	return ctx
 }
 

@@ -63,14 +63,18 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 	if agentID == "" {
 		agentID = session.AgentIDFromContext(ctx)
 	}
-	err := emit(ctx, agentkit.OutboundEvent{
+	event := agentkit.OutboundEvent{
 		Route:   parentRoute,
 		AgentID: agentID,
 		Type:    typ,
 		Data:    loop.MarshalOutboundData(data),
-	})
-	if err != nil {
-		slog.Warn("subagent lifecycle outbound failed (session audit already recorded)", "event", typ, "err", err)
 	}
+	go func() {
+		emitCtx := context.WithoutCancel(ctx)
+		slog.Debug("subagent lifecycle outbound", "event", typ, "route", parentRoute)
+		if err := emit(emitCtx, event); err != nil {
+			slog.Warn("subagent lifecycle outbound failed (session audit already recorded)", "event", typ, "err", err)
+		}
+	}()
 	return nil
 }

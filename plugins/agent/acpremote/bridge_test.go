@@ -9,6 +9,22 @@ import (
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
+func TestResolveSessionMCPWithoutProviderIsEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	b := newBridge(Config{}, nil, nil)
+	got, err := b.resolveSessionMCP(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil empty slice for session/new mcpServers")
+	}
+	if len(got) != 0 {
+		t.Fatalf("len = %d, want 0", len(got))
+	}
+}
+
 func TestResolveCwdDefaultsToWork(t *testing.T) {
 	t.Parallel()
 
