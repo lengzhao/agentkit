@@ -28,6 +28,12 @@ type updateEmitter struct {
 	endGeneration func(captelemetry.ObservationEnd)
 	firstTextAt   time.Time
 	tools         map[acp.ToolCallId]func(captelemetry.ObservationEnd)
+	toolMeta      map[acp.ToolCallId]acpToolMeta
+}
+
+type acpToolMeta struct {
+	name  string
+	input string
 }
 
 func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit) *updateEmitter {
@@ -37,6 +43,7 @@ func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID
 		agentID:   agentID,
 		emit:      emit,
 		tools:     make(map[acp.ToolCallId]func(captelemetry.ObservationEnd)),
+		toolMeta:  make(map[acp.ToolCallId]acpToolMeta),
 	}
 }
 
@@ -81,13 +88,33 @@ func (e *updateEmitter) consume(n acp.SessionNotification) error {
 		if err := e.ensureStarted(); err != nil {
 			return err
 		}
-		e.endTool(u.ToolCallUpdate)
+		meta := e.toolMeta[u.ToolCallUpdate.ToolCallId]
+		name, output, failed, terminal := e.completeToolUpdate(u.ToolCallUpdate)
+		if !terminal {
+			return nil
+		}
 		ame := agentkit.AssistantMessageEvent{
 			Type:         agentkit.AssistantEventToolCallEnd,
 			ContentIndex: 2,
 			ID:           string(u.ToolCallUpdate.ToolCallId),
 		}
-		return e.emitUpdate(ame)
+		if meta.input != "" {
+			toolName := meta.name
+			if toolName == "" {
+				toolName = name
+			}
+			ame.ToolCall = &agentkit.ToolCall{
+				ID:    agentkit.ToolCallID(u.ToolCallUpdate.ToolCallId),
+				Name:  toolName,
+				Input: json.RawMessage(meta.input),
+			}
+		} else if name != "" {
+			ame.ToolName = name
+		}
+		if err := e.emitUpdate(ame); err != nil {
+			return err
+		}
+		return e.emitToolResult(u.ToolCallUpdate.ToolCallId, name, output, failed)
 	}
 	return nil
 }
@@ -106,6 +133,7 @@ func (e *updateEmitter) finalize() error {
 			Err: fmt.Errorf("acp tool call %s ended before completion", id),
 		})
 		delete(e.tools, id)
+		delete(e.toolMeta, id)
 	}
 	if e.endGeneration != nil {
 		e.endGeneration(captelemetry.ObservationEnd{
@@ -174,6 +202,10 @@ func (e *updateEmitter) beginTool(call *acp.SessionUpdateToolCall) {
 		return
 	}
 	input := marshalObservationValue(call.RawInput)
+	e.toolMeta[call.ToolCallId] = acpToolMeta{
+		name:  toolName(call),
+		input: input,
+	}
 	_, end := rttelemetry.BeginObservation(e.generationCtx,
 		rttelemetry.ObservationMetaFromContext(e.generationCtx, captelemetry.ObservationMeta{
 			Name:  "tool." + toolName(call),
@@ -183,31 +215,56 @@ func (e *updateEmitter) beginTool(call *acp.SessionUpdateToolCall) {
 	e.tools[call.ToolCallId] = end
 }
 
+func (e *updateEmitter) completeToolUpdate(update *acp.SessionToolCallUpdate) (name, output string, failed, terminal bool) {
+	end, ok := e.tools[update.ToolCallId]
+	if !ok {
+		return "", "", false, false
+	}
+	if update.Status != nil &&
+		*update.Status != acp.ToolCallStatusCompleted &&
+		*update.Status != acp.ToolCallStatusFailed {
+		return "", "", false, false
+	}
+	meta := e.toolMeta[update.ToolCallId]
+	delete(e.tools, update.ToolCallId)
+	delete(e.toolMeta, update.ToolCallId)
+
+	name = meta.name
+	if name == "" {
+		name = string(update.ToolCallId)
+	}
+	output = marshalObservationOutput(update.RawOutput, update.Content)
+	failed = update.Status != nil && *update.Status == acp.ToolCallStatusFailed
+	terminal = true
+
+	observationEnd := captelemetry.ObservationEnd{Output: output}
+	if failed {
+		observationEnd.Err = fmt.Errorf("acp tool call failed: %s", update.ToolCallId)
+	}
+	end(observationEnd)
+	return name, output, failed, terminal
+}
+
+func (e *updateEmitter) emitToolResult(id acp.ToolCallId, name, content string, failed bool) error {
+	if name == "" {
+		name = string(id)
+	}
+	result := agentkit.ToolResult{
+		ID:      agentkit.ToolCallID(id),
+		Name:    name,
+		Content: content,
+	}
+	if failed {
+		result.Audit = map[string]string{"status": "failed"}
+	}
+	return e.sendOutbound(agentkit.EventToolResult, result)
+}
+
 func toolName(call *acp.SessionUpdateToolCall) string {
 	if strings.TrimSpace(call.Title) != "" {
 		return strings.TrimSpace(call.Title)
 	}
 	return string(call.ToolCallId)
-}
-
-func (e *updateEmitter) endTool(update *acp.SessionToolCallUpdate) {
-	end, ok := e.tools[update.ToolCallId]
-	if !ok {
-		return
-	}
-	if update.Status != nil &&
-		*update.Status != acp.ToolCallStatusCompleted &&
-		*update.Status != acp.ToolCallStatusFailed {
-		return
-	}
-	delete(e.tools, update.ToolCallId)
-	observationEnd := captelemetry.ObservationEnd{
-		Output: marshalObservationOutput(update.RawOutput, update.Content),
-	}
-	if update.Status != nil && *update.Status == acp.ToolCallStatusFailed {
-		observationEnd.Err = fmt.Errorf("acp tool call failed: %s", update.ToolCallId)
-	}
-	end(observationEnd)
 }
 
 func marshalObservationOutput(raw any, content []acp.ToolCallContent) string {

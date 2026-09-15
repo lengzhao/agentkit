@@ -2,6 +2,7 @@ package acpremote
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -179,6 +180,68 @@ func TestUpdateEmitterRecordsGenerationAndToolObservations(t *testing.T) {
 	}
 	if tool.Meta.Kind != captelemetry.KindTool {
 		t.Fatalf("tool kind = %q", tool.Meta.Kind)
+	}
+}
+
+func TestUpdateEmitterEmitsToolResultOnCompletion(t *testing.T) {
+	var events []agentkit.OutboundEvent
+	emit := func(_ context.Context, ev agentkit.OutboundEvent) error {
+		events = append(events, ev)
+		return nil
+	}
+	e := newUpdateEmitter(t.Context(), "sess-1", "cursor", emit)
+
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			ToolCall: &acp.SessionUpdateToolCall{
+				ToolCallId: "call-1",
+				Title:      "Shell",
+				RawInput:   map[string]any{"command": "ls"},
+				Status:     acp.ToolCallStatusInProgress,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			ToolCallUpdate: &acp.SessionToolCallUpdate{
+				ToolCallId: "call-1",
+				RawOutput:  "README.md",
+				Status:     acp.Ptr(acp.ToolCallStatusCompleted),
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var sawEnd, sawResult bool
+	for _, ev := range events {
+		switch ev.Type {
+		case agentkit.EventMessageUpdate:
+			var payload agentkit.MessageUpdatePayload
+			if err := json.Unmarshal(ev.Data, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.AssistantMessageEvent.Type == agentkit.AssistantEventToolCallEnd {
+				sawEnd = true
+			}
+		case agentkit.EventToolResult:
+			sawResult = true
+			var result agentkit.ToolResult
+			if err := json.Unmarshal(ev.Data, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Name != "Shell" {
+				t.Fatalf("result name = %q", result.Name)
+			}
+			if result.Content != `"README.md"` {
+				t.Fatalf("result content = %q", result.Content)
+			}
+		}
+	}
+	if !sawEnd || !sawResult {
+		t.Fatalf("saw toolcall_end=%v tool/result=%v", sawEnd, sawResult)
 	}
 }
 

@@ -596,6 +596,29 @@ func (p *Platform) evictStreamCards(ctx context.Context, st *streamState) {
 	}
 }
 
+func toolCallID(ame agentkit.AssistantMessageEvent) string {
+	callID := strings.TrimSpace(ame.ID)
+	if callID == "" && ame.ToolCall != nil {
+		callID = string(ame.ToolCall.ID)
+	}
+	return callID
+}
+
+// toolStepIndexForCall resolves a tool step for toolcall_end. ACP agents reuse
+// the same ContentIndex for every tool call, so CallID takes precedence.
+func (p *Platform) toolStepIndexForCall(st *streamState, ame agentkit.AssistantMessageEvent) (int, bool) {
+	if callID := toolCallID(ame); callID != "" {
+		for i := range st.steps {
+			step := st.steps[i]
+			if step.Kind == toolStepKindTool && step.CallID == callID {
+				return i, true
+			}
+		}
+	}
+	idx, ok := st.toolStepIdx[ame.ContentIndex]
+	return idx, ok
+}
+
 func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantMessageEvent) bool {
 	switch ame.Type {
 	case agentkit.AssistantEventThinkingDelta:
@@ -660,7 +683,7 @@ func (p *Platform) applyRichStreamEvent(st *streamState, ame agentkit.AssistantM
 		if !p.showToolProgress {
 			return false
 		}
-		idx, ok := st.toolStepIdx[ame.ContentIndex]
+		idx, ok := p.toolStepIndexForCall(st, ame)
 		if !ok || idx < 0 || idx >= len(st.steps) {
 			return false
 		}
@@ -703,6 +726,10 @@ func (p *Platform) applyToolResult(st *streamState, result agentkit.ToolResult) 
 	status := "completed"
 	if result.Audit != nil {
 		if decision := strings.TrimSpace(result.Audit["decision"]); decision == "deny" {
+			success = false
+			status = "failed"
+		}
+		if strings.TrimSpace(result.Audit["status"]) == "failed" {
 			success = false
 			status = "failed"
 		}

@@ -73,3 +73,43 @@ func TestHandleRichSubagentAsyncStartRegistersCard(t *testing.T) {
 		t.Fatal("expected async subagent card registered for stream")
 	}
 }
+
+func TestAsyncSubagentCardAppliesToolStart(t *testing.T) {
+	p := &Platform{
+		progressStyle:             "card",
+		showToolProgress:          true,
+		showThinking:              true,
+		useInteractiveCard:        true,
+		asyncSubagentProgressCard: true,
+	}
+	streamKey := agentkit.SessionID("feishu:oc_test:reply:om_parent")
+	card := &asyncSubagentCard{
+		jobID:         "sub:job:3",
+		streamKey:     streamKey,
+		parentAgentID: agentkit.AgentID("assistant"),
+		agent:         "cursor",
+		task:          "analyze",
+		toolStepIdx:   make(map[int]int),
+	}
+	p.registerAsyncSubagentCard(card)
+
+	handled, err := p.handleAsyncSubagentStreamUpdate(context.Background(), streamKey, agentkit.OutboundEvent{
+		AgentID: agentkit.AgentID("cursor"),
+		Type:    agentkit.EventMessageUpdate,
+	}, agentkit.AssistantMessageEvent{
+		Type:         agentkit.AssistantEventToolCallStart,
+		ContentIndex: 2,
+		ID:           "call_1",
+		ToolName:     "Shell",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected tool start to be handled by async card")
+	}
+	st := card.panelState()
+	if len(st.steps) != 1 || st.steps[0].Status != "running" {
+		t.Fatalf("steps = %+v, want one running tool step", st.steps)
+	}
+}

@@ -632,6 +632,39 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 	first.Stop()
 }
 
+func TestToolCallEndMatchesByCallIDWithSharedContentIndex(t *testing.T) {
+	p := &Platform{showToolProgress: true}
+	st := &streamState{toolStepIdx: make(map[int]int)}
+
+	const sharedIdx = 2
+	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
+		Type:         agentkit.AssistantEventToolCallStart,
+		ContentIndex: sharedIdx,
+		ID:           "call_a",
+		ToolName:     "Shell",
+	}) {
+		t.Fatal("tool a start")
+	}
+	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
+		Type:         agentkit.AssistantEventToolCallStart,
+		ContentIndex: sharedIdx,
+		ID:           "call_b",
+		ToolName:     "Grep",
+	}) {
+		t.Fatal("tool b start")
+	}
+	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
+		Type:         agentkit.AssistantEventToolCallEnd,
+		ContentIndex: sharedIdx,
+		ID:           "call_a",
+	}) {
+		t.Fatal("tool a end")
+	}
+	if !st.steps[0].Done || st.steps[1].Done {
+		t.Fatalf("expected only first tool done, steps=%#v", st.steps)
+	}
+}
+
 func boolPtr(v bool) *bool {
 	return &v
 }
