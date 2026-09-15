@@ -199,9 +199,9 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 
 启用 `platform/chat-api` 的 `debugUi` 时，子 Agent 内部的 tool call 会通过 SSE `tool_call`（参数完整后）与 `tool_result`（结果限长 1k）事件转发到 `/debug/` 页面（标签为 `subagent · <name>`），主 Agent 的文本流仍不会与子 Agent 交错。
 
-同步委派时，runtime 还会把 `subagent/start`、`subagent/end` 经父 delivery session 的 outbound 发给平台（如飞书过程卡展示「子 Agent · {agentID}」）；子 Agent 内部的 text/thinking delta 仍不转发。
+同步委派时，runtime 还会把 `subagent/start`、`subagent/end` 经父 delivery session 的 outbound 发给平台（如飞书过程卡展示「子 Agent · {agentID}」）；子 Agent 内部的 text/thinking delta 仍不转发。`subagent/loop-agent` 子 turn **继承父 turn 的 `KeySessionControl`**，同步委派时 Cursor/Claude ACP 的权限卡仍走同一飞书 broker；`subagent/inprocess` 仍会清空 control，避免 steering 串进子 LLM。outbound 过程卡失败不会阻断 `delegate`（session 里已有 `subagent/start` 审计）。
 
-**异步委派**（`async: true`）：父 turn 的飞书回复卡照常结束；若平台开启 `asyncSubagentProgressCard`（L0 默认 `true`），会在 `subagent/start` 时另发一张独立过程卡，展示子 Agent 工具进度直至 `subagent/end` 定稿。结论仍由 `[subagent-complete …]` follow-up 消息送达，不在此卡内展开全文。
+**异步委派**（`async: true` 或工具参数 `async`）：父 turn 可先结束；若平台开启 `asyncSubagentProgressCard`（L0 默认 `true`），会在 `subagent/start` 时另发一张独立过程卡，展示子 Agent 工具进度直至 `subagent/end` 定稿。结论仍由 `[subagent-complete …]` follow-up 消息送达，不在此卡内展开全文。同步与异步均可通过 `delegate` 的 `async` 字段覆盖实例默认值。
 
 两个容易踩的配置点：
 

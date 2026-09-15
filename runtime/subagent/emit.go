@@ -3,6 +3,7 @@ package subagent
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/loop"
@@ -62,10 +63,14 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 	if agentID == "" {
 		agentID = session.AgentIDFromContext(ctx)
 	}
-	return emit(ctx, agentkit.OutboundEvent{
+	err := emit(ctx, agentkit.OutboundEvent{
 		Route:   parentRoute,
 		AgentID: agentID,
 		Type:    typ,
 		Data:    loop.MarshalOutboundData(data),
 	})
+	if err != nil {
+		slog.Warn("subagent lifecycle outbound failed (session audit already recorded)", "event", typ, "err", err)
+	}
+	return nil
 }

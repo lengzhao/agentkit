@@ -378,7 +378,8 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 	childEnv := parentEnv.WithConversation(string(childID))
 	childCtx = session.ApplyEnvelopeToContext(childCtx, childEnv)
 	childCtx = session.WithAgentID(childCtx, ag.ID())
-	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
+	// Keep parent KeySessionControl so ACP agents (cursor/claude) can use the same
+	// permission broker while the parent turn is in delegate (sync or async child).
 	childCtx = rttelemetry.WithExporter(childCtx, s.telemetry)
 
 	turnMeta := s.childTurnMeta(childCtx, ag, task, childID)
