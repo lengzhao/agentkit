@@ -15,6 +15,7 @@ import (
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 type FSWorkspaceConfig struct {
@@ -299,6 +300,7 @@ func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) 
 	if filepath.IsAbs(clean) {
 		clean = strings.TrimPrefix(clean, string(filepath.Separator))
 	}
+	clean = workpath.TrimRedundantFSRootPrefix(s.relRoot, clean)
 	root, err := s.rootDir(ctx)
 	if err != nil {
 		return "", err
@@ -318,7 +320,11 @@ func (s *workspaceFS) readImage(ctx context.Context, path string) (string, error
 	if err != nil {
 		return "", err
 	}
-	return readImageToolResult(full, path)
+	display := rtmedia.CanonicalWorkPath(s.workspace, path)
+	if display == "" {
+		display = path
+	}
+	return readImageToolResult(full, display)
 }
 
 func (s *workspaceFS) pathMayBeImage(ctx context.Context, path string) bool {
@@ -606,3 +612,4 @@ func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (fil
 	result.Hint = hint
 	return result, nil
 }
+

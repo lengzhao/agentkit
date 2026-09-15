@@ -33,6 +33,10 @@ type TenantConfig struct {
 	// slack:C123 -> C123 instead of slack_C123; chat-api:slack_x -> slack_x.
 	// Tenant map keys are unchanged; only the default localBase/<dir> layout moves.
 	OmitPlatformPrefix bool `json:"omitPlatformPrefix,omitempty"`
+	// WorkDir is the tenant-local agent work subtree (align with tool/fs-workspace root and shell workDir).
+	WorkDir string `json:"workDir,omitempty"`
+	// UploadSubdir is the inbound upload folder under WorkDir (default upload).
+	UploadSubdir string `json:"uploadSubdir,omitempty"`
 }
 
 // TenantEntry is one tenant's pinned workspace root.
@@ -53,6 +57,8 @@ type TenantService struct {
 	localBase          string
 	scope              string
 	omitPlatformPrefix bool
+	workDir            string
+	uploadSub          string
 	roots              map[string]string
 }
 
@@ -123,8 +129,18 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 		localBase:          localBaseAbs,
 		scope:              scope,
 		omitPlatformPrefix: cfg.OmitPlatformPrefix,
+		workDir:            normalizeWorkDir(cfg.WorkDir),
+		uploadSub:          normalizeUploadSub(cfg.UploadSubdir),
 		roots:              roots,
 	}, nil
+}
+
+func (s *TenantService) WorkDirRel() string {
+	return s.workDir
+}
+
+func (s *TenantService) UploadDirRel() string {
+	return joinWorkUpload(s.workDir, s.uploadSub)
 }
 
 func (s *TenantService) Resolve(ctx context.Context, rel string) (string, error) {
@@ -170,3 +186,4 @@ func (s *TenantService) LocalBaseDir() string {
 }
 
 var _ cw.Service = (*TenantService)(nil)
+var _ cw.Layout = (*TenantService)(nil)

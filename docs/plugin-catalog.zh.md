@@ -307,7 +307,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `root` | `.` | 相对 workspace 根的读写根 |
+| `root` | `work` | 相对 workspace 根的读写根（L0 `config.base.yaml`） |
 | `unrestricted` | `false` | 为 `true` 时关闭路径权限控制，不将路径限制在 `root` 内（含 `../`、绝对路径等） |
 | `readOnly` | `false` | 拒绝 `write` / `edit` |
 | `tools` | 全部 | 限制注册的模型工具子集 |

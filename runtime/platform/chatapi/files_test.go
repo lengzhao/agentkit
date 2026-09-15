@@ -80,9 +80,9 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 	if len(images) != 0 || len(files) != 0 || audio != nil || len(paths) != 1 {
 		t.Fatalf("inputsToCore = images=%d files=%d audio=%v paths=%v", len(images), len(files), audio, paths)
 	}
-	if paths[0] != "work/upload/"+uploadResp.Data.ID+".note.txt" {
+	if paths[0] != "local:work/upload/"+uploadResp.Data.ID+".note.txt" {
 		// filename is embedded in managed name
-		if !strings.HasPrefix(paths[0], "work/upload/") || !strings.HasSuffix(paths[0], ".note.txt") {
+		if !strings.HasPrefix(paths[0], "local:work/upload/") || !strings.HasSuffix(paths[0], ".note.txt") {
 			t.Fatalf("path = %q", paths[0])
 		}
 	}
@@ -105,7 +105,7 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 		t.Fatalf("prompt missing upload ref: %q", text)
 	}
 
-	uploadDir, err := ws.Resolve(context.Background(), common.UploadWorkRel())
+	uploadDir, err := ws.Resolve(context.Background(), common.UploadWorkRel(ws))
 	if err != nil {
 		t.Fatal(err)
 	}

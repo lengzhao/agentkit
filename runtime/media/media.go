@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"path/filepath"
 	"strings"
+
 )
 
 // ContentTypeAttachmentRef is persisted in session history for stripped attachments.
@@ -60,13 +61,6 @@ func DetectMIME(path string, data []byte) string {
 		return "image/webp"
 	}
 	return "image/png"
-}
-
-// NormalizeWorkRel strips leading slashes and an optional work/ prefix.
-func NormalizeWorkRel(rel string) string {
-	rel = filepath.ToSlash(strings.TrimSpace(rel))
-	rel = strings.TrimPrefix(rel, "/")
-	return strings.TrimPrefix(rel, "work/")
 }
 
 func mimeByExt(ext string) string {

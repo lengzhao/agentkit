@@ -20,6 +20,7 @@ import (
 
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 const (
@@ -70,7 +71,7 @@ func (p *Platform) uploadDir(ctx context.Context, channelKey string) (string, er
 	if p.workspace == nil {
 		return "", errWorkspaceRequired
 	}
-	dir, err := p.workspace.Resolve(p.channelCtx(ctx, channelKey), common.UploadWorkRel())
+	dir, err := workpath.ResolveFile(p.channelCtx(ctx, channelKey), p.workspace, common.UploadWorkRel(p.workspace))
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +107,8 @@ func (p *Platform) workRelPath(ctx context.Context, channelKey, absPath string) 
 	if strings.HasPrefix(rel, "..") {
 		return "", fmt.Errorf("path outside workspace")
 	}
-	return filepath.ToSlash(rel), nil
+	workDir, _ := workpath.WorkLayout(p.workspace)
+	return workpath.LocalPath(workpath.CanonicalWorkPath(workDir, filepath.ToSlash(rel))), nil
 }
 
 func (p *Platform) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -604,7 +606,7 @@ type workspaceFileInfo struct {
 	CreatedAt int64
 }
 
-func normalizeWorkspaceFilePath(raw string) (string, error) {
+func (p *Platform) normalizeWorkspaceFilePath(raw string) (string, error) {
 	workRel := strings.TrimSpace(raw)
 	if workRel == "" {
 		return "", errInvalidPath
@@ -614,16 +616,18 @@ func normalizeWorkspaceFilePath(raw string) (string, error) {
 	if strings.Contains(workRel, "..") {
 		return "", errInvalidPath
 	}
+	workDir, _ := workpath.WorkLayout(p.workspace)
 	if workRel == "upload" || strings.HasPrefix(workRel, "upload/") ||
 		workRel == "download" || strings.HasPrefix(workRel, "download/") {
-		workRel = "work/" + workRel
+		workRel = workpath.JoinWork(workDir, workRel)
 	}
 	return workRel, nil
 }
 
-func validateWorkspaceFileAPIPath(workRel string) error {
+func (p *Platform) validateWorkspaceFileAPIPath(workRel string) error {
 	workRel = filepath.ToSlash(workRel)
-	if !strings.HasPrefix(workRel, "work/") {
+	workDir, _ := workpath.WorkLayout(p.workspace)
+	if workRel != workDir && !strings.HasPrefix(workRel, workDir+"/") {
 		return errPathOutsideWork
 	}
 	return nil
@@ -648,11 +652,11 @@ func (p *Platform) resolveFileAPIPath(ctx context.Context, channelKey, userID, r
 		}
 		resolvePath = rawPath
 	default:
-		resolvePath, err = normalizeWorkspaceFilePath(rawPath)
+		resolvePath, err = p.normalizeWorkspaceFilePath(rawPath)
 		if err != nil {
 			return "", "", err
 		}
-		if err := validateWorkspaceFileAPIPath(resolvePath); err != nil && !p.isAdminUser(userID) {
+		if err := p.validateWorkspaceFileAPIPath(resolvePath); err != nil && !p.isAdminUser(userID) {
 			return "", "", errForbidden
 		}
 	}

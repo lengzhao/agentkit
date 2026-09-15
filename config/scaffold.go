@@ -157,7 +157,7 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 		"tool/fs-workspace": {
 			ID: "tool.fs-workspace.default",
 			Config: map[string]any{
-				"root":     ".",
+				"root":     "work",
 				"maxBytes": 1048576,
 			},
 			Deps: map[string]any{"workspace": "workspace.default"},

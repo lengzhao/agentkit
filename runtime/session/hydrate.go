@@ -178,7 +178,11 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 			if result.Name != "read" {
 				continue
 			}
-			path := rtmedia.ParseReadImagePath(result.Content)
+			rawPath := rtmedia.ParseReadImagePath(result.Content)
+			if rawPath == "" {
+				continue
+			}
+			path := rtmedia.CanonicalWorkPath(ws, rawPath)
 			if path == "" {
 				continue
 			}

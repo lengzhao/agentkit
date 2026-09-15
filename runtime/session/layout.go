@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lengzhao/agentkit/cap/workspace"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
-// TenantToolWorkDir is the workspace-relative directory for shell cwd and temp artifacts.
+// TenantToolWorkDir is the L0 default work subtree name; runtime code should use workspace.Layout.
 const TenantToolWorkDir = "work"
 
-func ensureTenantLayout(ctx context.Context, ws workspace.Service, relSessionsDir string) (string, error) {
+func ensureTenantLayout(ctx context.Context, ws cw.Service, relSessionsDir string) (string, error) {
 	sessionsDir, err := ws.Resolve(ctx, relSessionsDir)
 	if err != nil {
 		return "", err
@@ -19,12 +20,15 @@ func ensureTenantLayout(ctx context.Context, ws workspace.Service, relSessionsDi
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		return "", err
 	}
-	workDir, err := ws.Resolve(ctx, TenantToolWorkDir)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir work dir: %w", err)
+	workRel, _ := workpath.WorkLayout(ws)
+	if workRel != "" {
+		workDir, err := ws.Resolve(ctx, workRel)
+		if err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(workDir, 0o755); err != nil {
+			return "", fmt.Errorf("mkdir work dir: %w", err)
+		}
 	}
 	return sessionsDir, nil
 }

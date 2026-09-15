@@ -45,7 +45,7 @@ bootstrap.shell.default:
     config:
         commands:
             - echo "init"
-        workDir: local:.
+        workDir: local:work
     deps:
         workspace: workspace.default
     use: bootstrap/shell
@@ -411,7 +411,7 @@ tool.finish.default:
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: .
+        root: work
         unrestricted: true
     deps:
         workspace: workspace.default
@@ -420,7 +420,7 @@ tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: .
+        root: work
         tools:
             - read
             - grep
@@ -521,4 +521,6 @@ workspace.default:
         global: ~/.agentkit
         local: .agentkit
         scope: local
+        uploadSubdir: upload
+        workDir: work
     use: workspace/default

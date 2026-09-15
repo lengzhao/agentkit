@@ -70,7 +70,7 @@ bootstrap.shell.default:
     config:
         commands:
             - echo "init"
-        workDir: local:.
+        workDir: local:work
     deps:
         workspace: workspace.default
     use: bootstrap/shell
@@ -548,7 +548,7 @@ tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: .
+        root: work
         tools:
             - read
             - grep

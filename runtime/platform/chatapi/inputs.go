@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 type chatInput struct {
@@ -61,7 +62,7 @@ func (p *Platform) inputsToCore(ctx context.Context, channelKey string, inputs [
 			if rawPath == "" {
 				return nil, nil, nil, nil, fmt.Errorf("path required for local_path")
 			}
-			workRel, err = normalizeWorkspaceFilePath(rawPath)
+			workRel, err = p.normalizeWorkspaceFilePath(rawPath)
 			if err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("invalid path")
 			}
@@ -165,10 +166,11 @@ func (p *Platform) readWorkFile(ctx context.Context, channelKey, workRel string)
 	if err == nil {
 		return data, nil
 	}
-	if strings.HasPrefix(rel, "work/") {
+	workDir, _ := workpath.WorkLayout(p.workspace)
+	if strings.HasPrefix(rel, workDir+"/") || rel == workDir {
 		return nil, err
 	}
-	abs, err2 := p.workspace.Resolve(p.channelCtx(ctx, channelKey), "work/"+rel)
+	abs, err2 := p.workspace.Resolve(p.channelCtx(ctx, channelKey), workpath.JoinWork(workDir, rel))
 	if err2 != nil {
 		return nil, err
 	}

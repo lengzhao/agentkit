@@ -9,7 +9,23 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
+
+func TestTrimRedundantWorkPrefix(t *testing.T) {
+	if got := workpath.TrimRedundantFSRootPrefix("work", "work/upload/a.png"); got != "upload/a.png" {
+		t.Fatalf("work/upload = %q", got)
+	}
+	if got := workpath.TrimRedundantFSRootPrefix("work", "upload/a.png"); got != "upload/a.png" {
+		t.Fatalf("upload = %q", got)
+	}
+	if got := workpath.TrimRedundantFSRootPrefix(".", "work/upload/a.png"); got != "work/upload/a.png" {
+		t.Fatalf("root . = %q", got)
+	}
+	if got := workpath.TrimRedundantFSRootPrefix("work", "work/work/upload/a.png"); got != "upload/a.png" {
+		t.Fatalf("double work/ = %q", got)
+	}
+}
 
 func TestSliceReadContentOffsetLimit(t *testing.T) {
 	t.Parallel()

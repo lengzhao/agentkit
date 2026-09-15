@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 // ImageAttachment is an inbound image from an IM platform.
@@ -20,7 +21,7 @@ type ImageAttachment struct {
 	MimeType string
 	Data     []byte
 	FileName string
-	// WorkPath is tenant-root-relative (e.g. work/upload/foo.png).
+	// WorkPath is a scoped workspace path (e.g. local:work/upload/foo.png).
 	WorkPath string
 }
 
@@ -39,32 +40,26 @@ type AudioAttachment struct {
 	Duration int
 }
 
-const (
-	// inboundAttachWorkRoot is the shell/temp directory relative to tenant local root.
-	inboundAttachWorkRoot = "work"
-	// inboundUploadDir is where user-uploaded files land under work/.
-	inboundUploadDir = "upload"
-)
-
-// UploadWorkRel is the tenant-root-relative upload directory.
-func UploadWorkRel() string {
-	return filepath.Join(inboundAttachWorkRoot, inboundUploadDir)
+// UploadWorkRel is the scoped path to the tenant upload directory (e.g. local:work/upload).
+func UploadWorkRel(ws cw.Service) string {
+	_, upload := workpath.WorkLayout(ws)
+	return workpath.LocalPath(upload)
 }
 
-// AttachFSRel is the path the model should pass to fs tools for an inbound file.
-func AttachFSRel(name string) string {
-	return filepath.ToSlash(filepath.Join(inboundAttachWorkRoot, inboundUploadDir, name))
+// AttachFSRel is the scoped path for an inbound file under the upload directory.
+func AttachFSRel(ws cw.Service, name string) string {
+	return workpath.LocalPath(workpath.AttachRel(ws, name))
 }
 
 // InboundOpts configures optional inbound media handling.
 type InboundOpts struct {
 	// Workspace resolves upload paths; when set, inbound files land under the
 	// same tenant root as session/store and tool/fs-workspace.
-	Workspace workspace.Service
+	Workspace cw.Service
 }
 
 // InboundOptsFor builds inbound media options from an optional workspace.
-func InboundOptsFor(ws workspace.Service) *InboundOpts {
+func InboundOptsFor(ws cw.Service) *InboundOpts {
 	if ws == nil {
 		return nil
 	}
@@ -184,7 +179,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 		Conversation: string(deliveryID),
 		Workspace:    session.WorkspaceKey(string(deliveryID)),
 	})
-	attachDir, err := opts.Workspace.Resolve(ctx, UploadWorkRel())
+	attachDir, err := workpath.ResolveFile(ctx, opts.Workspace, UploadWorkRel(opts.Workspace))
 	if err != nil {
 		slog.Warn("common: resolve inbound upload dir failed", "error", err)
 		return nil
@@ -210,7 +205,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 			continue
 		}
 		// Paths are relative to the tenant local root so read can open them with root: .
-		paths = append(paths, AttachFSRel(fname))
+		paths = append(paths, AttachFSRel(opts.Workspace, fname))
 		slog.Debug("common: inbound upload saved", "path", fpath, "name", f.FileName, "size", len(f.Data))
 	}
 	return paths

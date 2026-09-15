@@ -91,7 +91,7 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 | `local:../skills` | `<cwd>/skills`（随仓库提交） |
 | `work` | scope 根下的 `work/` 子目录 |
 
-文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（L0 默认 fs 为租户 local 根 `.`，shell cwd 为 `work/`）。`AGENTS.md`、`memory.md`、`skills/` 等落在 local 根，可用文件工具直接读写。默认将路径限制在 `root` 内；设 `unrestricted: true` 可关闭路径权限控制。更强隔离后续走 sandbox。
+文件工具与 shell 的读写根由 `tool.fs-workspace.default.config.root` / `tool.shell-bash.default.config.workDir` 决定（L0 默认均为 `work/`）。`AGENTS.md`、`memory.md`、`skills/` 等落在 local 根时，可用 `local:…` 前缀或 `../`（`unrestricted: true` 时）读写。默认将路径限制在 `root` 内；设 `unrestricted: true` 可关闭路径权限控制。更强隔离后续走 sandbox。
 
 Skills 目录叠加：`dirs: [local:../skills, local:skills, global:skills]`，先命中者优先。
 
@@ -135,7 +135,7 @@ workspace.default:
   config:
     scope: local
 
-# fs / shell 默认 root: .、workDir: work，通常无需覆盖。
+# fs / shell 默认 root 与 workDir 均为 work，通常无需覆盖。
 ```
 
 ### 自定义 system prompt

@@ -1192,9 +1192,9 @@ Policy Plane 判定已可见调用以及能力操作：
 
 | 场景 | fs 根 / shell cwd | 说明 |
 |---|---|---|
-| L0 默认 | `.` / `work` | fs 默认 `unrestricted: true`：可读 `global:` / `local:`、绝对路径与 `..`；相对路径仍以 local 根为默认拼接基准 |
-| `presets/coding.yaml` | `.` / `work` | 与 L0 相同；local 根为 `<cwd>/.agentkit/` |
-| `presets/multi-tenant.yaml` | `.` / `work` | 与 L0 相同；租户隔离靠 local 根分目录，fs 默认可跨根读 global skill 等资源 |
+| L0 默认 | `work` / `work` | fs 默认 `unrestricted: true`：可读 `global:` / `local:`、绝对路径与 `..`；相对路径以 `work/` 为默认拼接基准 |
+| `presets/coding.yaml` | `work` / `work` | 与 L0 相同；local 根为 `<cwd>/.agentkit/` |
+| `presets/multi-tenant.yaml` | `work` / `work` | 与 L0 相同；租户隔离靠 local 根分目录，fs 默认可跨根读 global skill 等资源 |
 
 ```yaml
 # 典型绑定（L0 默认，多数 preset 无需覆盖）
@@ -1206,7 +1206,7 @@ workspace.default:
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
-    root: .
+    root: work
     unrestricted: true
   deps:
     workspace: workspace.default
@@ -1215,7 +1215,7 @@ tool.fs-workspace.default:
 tool.fs-workspace.restricted:
   use: tool/fs-workspace
   config:
-    root: .
+    root: work
     unrestricted: false
   deps:
     workspace: workspace.default

@@ -102,15 +102,34 @@ func resolveRel(base, rel string, allowParent bool) (string, error) {
 	return abs, nil
 }
 
-// Static returns a fixed-root Service for tests.
+// Static returns a fixed-root Service for tests (default work/upload layout).
 func Static(root string) cw.Service {
-	return &staticService{root: filepath.Clean(root)}
+	return &staticService{
+		root:      filepath.Clean(root),
+		workDir:   defaultWorkDir,
+		uploadSub: defaultUploadSubdir,
+	}
 }
 
 type staticService struct {
-	root string
+	root      string
+	workDir   string
+	uploadSub string
 }
 
 func (s *staticService) Resolve(_ context.Context, rel string) (string, error) {
+	if _, path, ok := ParseScoped(rel); ok {
+		return ResolveRel(s.root, path)
+	}
 	return ResolveRel(s.root, rel)
 }
+
+func (s *staticService) WorkDirRel() string {
+	return normalizeWorkDir(s.workDir)
+}
+
+func (s *staticService) UploadDirRel() string {
+	return joinWorkUpload(s.workDir, s.uploadSub)
+}
+
+var _ cw.Layout = (*staticService)(nil)

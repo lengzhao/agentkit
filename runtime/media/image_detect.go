@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -99,7 +98,7 @@ func ReadFileHead(path string, n int) ([]byte, error) {
 
 // WorkspaceFileMayBeImage reports whether a work-relative path should be hydrated as vision.
 func WorkspaceFileMayBeImage(ctx context.Context, ws workspace.Service, workRel string) (bool, error) {
-	workRel = NormalizeWorkRel(workRel)
+	workRel = NormalizeWorkRel(ws, workRel)
 	if workRel == "" {
 		return false, nil
 	}
@@ -109,7 +108,7 @@ func WorkspaceFileMayBeImage(ctx context.Context, ws workspace.Service, workRel 
 	if ws == nil {
 		return false, nil
 	}
-	abs, err := ws.Resolve(ctx, filepath.Join("work", workRel))
+	abs, err := resolveFileAbs(ctx, ws, workRel)
 	if err != nil {
 		return false, err
 	}

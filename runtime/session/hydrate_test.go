@@ -112,7 +112,7 @@ func TestHydrateLocalAttachmentsInjectsReadToolVision(t *testing.T) {
 	if out[3].Role != "user" || len(out[3].Content) != 1 {
 		t.Fatalf("vision message = %#v", out[3])
 	}
-	if out[3].Content[0].Type != "image_url" || out[3].Content[0].Source != "upload/shot.png" {
+	if out[3].Content[0].Type != "image_url" || out[3].Content[0].Source != "local:work/upload/shot.png" {
 		t.Fatalf("image part = %#v", out[3].Content[0])
 	}
 }

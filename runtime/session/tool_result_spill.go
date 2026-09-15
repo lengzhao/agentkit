@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 // AuditSpillPath records the workspace-relative spill file for a truncated tool result.
@@ -34,7 +35,7 @@ func PrepareToolResultForStorage(ctx context.Context, sessionID agentkit.Session
 		return TruncateToolResult(result, maxViewBytes), nil
 	}
 
-	rel := toolSpillRelPath(sessionID, result.ID)
+	rel := toolSpillRelPath(ws, sessionID, result.ID)
 	abs, err := ws.Resolve(ctx, rel)
 	if err != nil {
 		slog.WarnContext(ctx, "tool result spill resolve failed", "path", rel, "error", err)
@@ -71,17 +72,18 @@ func toolResultViewWithSpillHint(full string, spillRel string, maxViewBytes int)
 	return body + hint
 }
 
-func toolSpillRelPath(sessionID agentkit.SessionID, callID agentkit.ToolCallID) string {
+func toolSpillRelPath(ws cw.Service, sessionID agentkit.SessionID, callID agentkit.ToolCallID) string {
 	sess := sanitizeWorkspaceDirSegment(string(sessionID))
 	call := sanitizeWorkspaceDirSegment(string(callID))
 	if call == "" || call == "_" {
 		call = "call"
 	}
-	return TenantToolWorkDir + "/tool-spill/" + sess + "/" + call + ".txt"
+	workRel, _ := workpath.WorkLayout(ws)
+	return workpath.JoinWork(workRel, "tool-spill/"+sess+"/"+call+".txt")
 }
 
 // SpillPathAbs resolves a stored spill_path audit entry to an absolute path.
-func SpillPathAbs(ctx context.Context, ws workspace.Service, rel string) (string, error) {
+func SpillPathAbs(ctx context.Context, ws cw.Service, rel string) (string, error) {
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
 		return "", fmt.Errorf("empty spill path")

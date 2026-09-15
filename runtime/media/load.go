@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
@@ -15,8 +14,7 @@ func LoadWorkspaceImage(ctx context.Context, ws workspace.Service, workRel strin
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxWorkspaceImageBytes
 	}
-	workRel = NormalizeWorkRel(workRel)
-	abs, err := ws.Resolve(ctx, filepath.Join("work", workRel))
+	abs, err := resolveFileAbs(ctx, ws, workRel)
 	if err != nil {
 		return nil, "", err
 	}

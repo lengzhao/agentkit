@@ -17,12 +17,18 @@ type Config struct {
 	Local string `json:"local"`
 	// Scope is which root an unprefixed path resolves against: global or local.
 	Scope string `json:"scope"` // global | local
+	// WorkDir is the tenant-local agent work subtree (align with tool/fs-workspace root and shell workDir).
+	WorkDir string `json:"workDir,omitempty"`
+	// UploadSubdir is the inbound upload folder under WorkDir (default upload).
+	UploadSubdir string `json:"uploadSubdir,omitempty"`
 }
 
 type Service struct {
-	globalRoot string
-	localRoot  string
-	scope      string
+	globalRoot  string
+	localRoot   string
+	scope       string
+	workDir     string
+	uploadSub   string
 }
 
 func init() {
@@ -61,7 +67,23 @@ func New(cfg Config) (cw.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{globalRoot: globalAbs, localRoot: localAbs, scope: scope}, nil
+	workDir := normalizeWorkDir(cfg.WorkDir)
+	uploadSub := normalizeUploadSub(cfg.UploadSubdir)
+	return &Service{
+		globalRoot: globalAbs,
+		localRoot:  localAbs,
+		scope:      scope,
+		workDir:    workDir,
+		uploadSub:  uploadSub,
+	}, nil
+}
+
+func (s *Service) WorkDirRel() string {
+	return s.workDir
+}
+
+func (s *Service) UploadDirRel() string {
+	return joinWorkUpload(s.workDir, s.uploadSub)
 }
 
 func (s *Service) Resolve(_ context.Context, rel string) (string, error) {
@@ -89,3 +111,4 @@ func (s *Service) rootFor(scope string) (string, error) {
 }
 
 var _ cw.Service = (*Service)(nil)
+var _ cw.Layout = (*Service)(nil)

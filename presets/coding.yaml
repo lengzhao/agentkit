@@ -12,7 +12,7 @@ sessionStore.default:
   deps:
     workspace: workspace.default
 
-# local 根为 .agentkit；fs/shell 默认读写该根（root: .）与 work/ 子目录。
+# local 根为 .agentkit；fs/shell 默认读写 work/（root 与 shell cwd 均为 work）。
 mcp.default:
   config:
     enableLocal: true

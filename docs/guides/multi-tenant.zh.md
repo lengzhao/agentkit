@@ -162,7 +162,7 @@ tenants/slack_C001/
 └── work/              # shell 默认 cwd 与临时产物（含 upload/download；session/store 首次打开租户 session 时自动创建）
 ```
 
-`presets/multi-tenant.yaml` 把 `tool/fs-workspace` 的 `root` 指到 `.`，`tool/shell-bash` 的 `workDir` 仍指到 `work`；`prompt/section/memory` 注入时合并 **global** 与 **租户 local** 的 `memory.md`（主文件路径与 `memory.default.config.memoryRoot` 一致，默认租户 local 的 `memory.md`）。
+`presets/multi-tenant.yaml` 把 `tool/fs-workspace` 的 `root` 指到 `work`，`tool/shell-bash` 的 `workDir` 仍指到 `work`；`prompt/section/memory` 注入时合并 **global** 与 **租户 local** 的 `memory.md`（主文件路径与 `memory.default.config.memoryRoot` 一致，默认租户 local 的 `memory.md`）。
 
 ```yaml
 workspace.default:
@@ -177,7 +177,7 @@ workspace.default:
 
 tool.fs-workspace.default:
   config:
-    root: .                          # 租户 local 根
+    root: work                       # 租户 work/（与 shell cwd 一致）
 ```
 
 - **默认就是隔离的。** 没在 `tenants` 里列出的群走 `localBase/<租户键>`，新群接进来零配置。
