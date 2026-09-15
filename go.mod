@@ -28,7 +28,8 @@ require (
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/image v0.46.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	modernc.org/libc v1.61.13 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.8.2 // indirect
@@ -41,5 +42,5 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )

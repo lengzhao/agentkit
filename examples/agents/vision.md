@@ -1,6 +1,7 @@
 ---
 name: vision
 description: 识别用户图片（截图、界面、图表、照片），OCR 与内容描述，只返回文字结论
+model: gpt-5.4-mini
 modalities: [image]
 tools: [read, finish]
 maxSteps: 10

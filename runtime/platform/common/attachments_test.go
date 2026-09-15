@@ -56,6 +56,36 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	}
 }
 
+func TestInboundFromContentSavesImageWithoutExtension(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}
+	event := InboundFromContent(
+		"assistant",
+		session.SessionRouteInput{
+			Platform:    "lark",
+			DeliveryID:  agentkit.SessionID("lark:C001"),
+			ScopeUserID: "U1",
+		},
+		"U1",
+		"",
+		"",
+		[]ImageAttachment{{MimeType: "image/jpeg", Data: jpeg}},
+		nil,
+		nil,
+		nil,
+		InboundOptsFor(ws),
+	)
+	if len(event.Message.Content) < 1 {
+		t.Fatalf("content = %#v", event.Message.Content)
+	}
+	src := event.Message.Content[len(event.Message.Content)-1].Source
+	if !strings.HasSuffix(src, ".jpg") {
+		t.Fatalf("expected .jpg suffix, source=%q", src)
+	}
+}
+
 func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -116,7 +117,11 @@ func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws work
 		return []agentkit.ContentPart{{Type: "text", Text: attachmentHint(part)}}, nil
 	}
 	src := strings.TrimSpace(part.Source)
-	if src != "" && rtmedia.IsImagePath(src) {
+	mayImage, err := rtmedia.WorkspaceFileMayBeImage(ctx, ws, src)
+	if err != nil {
+		return nil, err
+	}
+	if src != "" && mayImage {
 		data, mime, err := rtmedia.LoadWorkspaceImage(ctx, ws, src, maxImageBytes)
 		if err != nil {
 			return nil, err
@@ -174,7 +179,14 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 				continue
 			}
 			path := rtmedia.ParseReadImagePath(result.Content)
-			if path == "" || !rtmedia.IsImagePath(path) {
+			if path == "" {
+				continue
+			}
+			mayImage, err := rtmedia.WorkspaceFileMayBeImage(ctx, ws, path)
+			if err != nil {
+				return nil, err
+			}
+			if !mayImage {
 				continue
 			}
 			if _, ok := seen[path]; ok {
@@ -186,6 +198,11 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 				return nil, err
 			}
 			if len(data) == 0 {
+				slog.Warn("vision hydrate skipped empty image payload",
+					"path", path,
+					"session_id", SessionIDFromContext(ctx),
+					"agent_id", AgentIDFromContext(ctx),
+				)
 				continue
 			}
 			if mime == "" {

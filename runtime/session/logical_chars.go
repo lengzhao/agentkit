@@ -9,6 +9,15 @@ import (
 
 const visionPlaceholderChars = 256
 
+// EstimateMessagesChars sums logical character counts for a message list (e.g. pre-step history including hydrated vision).
+func EstimateMessagesChars(messages []agentkit.ModelMessage) int {
+	total := 0
+	for _, msg := range messages {
+		total += EstimateLogicalChars(msg)
+	}
+	return total
+}
+
 // EstimateLogicalChars approximates model-visible size before session storage.
 func EstimateLogicalChars(msg agentkit.ModelMessage) int {
 	chars := len(msg.Role)
@@ -25,16 +34,20 @@ func EstimateLogicalChars(msg agentkit.ModelMessage) int {
 func partsLogicalChars(parts []agentkit.ContentPart) int {
 	chars := 0
 	for _, part := range parts {
-		chars += len(part.Text) + len(part.Source) + len(part.URL)
+		chars += len(part.Text) + len(part.Source)
 		switch part.Type {
 		case "image", "image_url":
 			if isDataURL(part.URL) {
 				chars += visionPlaceholderChars
+			} else {
+				chars += len(part.URL)
 			}
 		case rtmedia.ContentTypeAttachmentRef:
 			if part.URL != "" && !isDataURL(part.URL) {
 				chars += len(part.URL)
 			}
+		default:
+			chars += len(part.URL)
 		}
 	}
 	return chars

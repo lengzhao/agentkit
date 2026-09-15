@@ -87,6 +87,7 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 type workspaceFSOps interface {
 	readText(ctx context.Context, path string, maxBytes int) (string, error)
 	readImage(ctx context.Context, path string) (string, error)
+	pathMayBeImage(ctx context.Context, path string) bool
 	writeText(ctx context.Context, path, content string) error
 	listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error)
 	grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error)
@@ -95,7 +96,7 @@ type workspaceFSOps interface {
 
 func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, maxListEntries int, only []string) (agentkit.ToolPack, error) {
 	read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
-		if rtmedia.IsImagePath(input.Path) {
+		if fs.pathMayBeImage(ctx, input.Path) {
 			return fs.readImage(ctx, input.Path)
 		}
 		raw, err := fs.readText(ctx, input.Path, 0)
@@ -318,6 +319,18 @@ func (s *workspaceFS) readImage(ctx context.Context, path string) (string, error
 		return "", err
 	}
 	return readImageToolResult(full, path)
+}
+
+func (s *workspaceFS) pathMayBeImage(ctx context.Context, path string) bool {
+	if rtmedia.IsImagePath(path) {
+		return true
+	}
+	full, err := s.resolve(ctx, path)
+	if err != nil {
+		return false
+	}
+	head, err := rtmedia.ReadFileHead(full, 512)
+	return err == nil && rtmedia.LooksLikeImageData(head)
 }
 
 func (s *workspaceFS) readText(ctx context.Context, path string, maxBytes int) (string, error) {

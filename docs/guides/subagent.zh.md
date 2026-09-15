@@ -143,7 +143,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 
 子 Agent 可在 `agents/*.md` 写 **`modalities: [image]`**（示例见 `examples/agents/vision.md`）。`prompt/section/subagents` 会把 modalities 写进主 Agent system prompt；当主 LLM 为 text-only 且存在**在 frontmatter 里显式声明** `modalities` 含 `image` 的子 Agent 时，会追加「请 delegate 并在 task 里带上路径」的说明（未写 `modalities` 的子 Agent 不参与该判断）。
 
-典型分工：主 Agent `modalities: [text]` + `delegate` → `vision` 子 Agent（`read` 图片 + vision 模型 + `finish`）→ 主 Agent 只消费 summary 继续对话。Audio 尚未有 hydrate 管道；`modalities` 可预留 `audio`，需配合落盘或 ASR 工具后才有端到端能力。
+典型分工：主 Agent `modalities: [text]` + `delegate` → `vision` 子 Agent（`read` 图片 + vision 模型 + `finish`）→ 主 Agent 只消费 summary 继续对话。vision 子 Agent 通过 `read` 声明路径后，运行时 hydrate 会从 workspace 载入原图再发给模型；子 Agent frontmatter 的 `modalities: [image]` 会强制开启 hydrate（即使 LLM 实例声明为 text-only）。`vision.md` 需包含 `finish` 工具以便 `delegate` 返回 `completed`。Audio 尚未有 hydrate 管道；`modalities` 可预留 `audio`，需配合落盘或 ASR 工具后才有端到端能力。
 
 ## 5. 委派与结论读回
 

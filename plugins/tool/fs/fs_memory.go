@@ -78,6 +78,19 @@ func (s *memoryWorkspaceFS) readText(_ context.Context, path string, maxBytes in
 	return content, nil
 }
 
+func (s *memoryWorkspaceFS) pathMayBeImage(_ context.Context, path string) bool {
+	if rtmedia.IsImagePath(path) {
+		return true
+	}
+	s.inner.mu.RLock()
+	defer s.inner.mu.RUnlock()
+	content, ok := s.inner.files[normalizeMemPath(path)]
+	if !ok {
+		return false
+	}
+	return rtmedia.LooksLikeImageData([]byte(content))
+}
+
 func (s *memoryWorkspaceFS) readImage(_ context.Context, path string) (string, error) {
 	s.inner.mu.RLock()
 	defer s.inner.mu.RUnlock()
@@ -86,8 +99,8 @@ func (s *memoryWorkspaceFS) readImage(_ context.Context, path string) (string, e
 		return "", fmt.Errorf("file not found: %s", path)
 	}
 	data := []byte(content)
-	if len(data) > rtmedia.DefaultMaxWorkspaceImageBytes {
-		return rtmedia.FormatReadImageTooLarge(path, int64(len(data)), rtmedia.DefaultMaxWorkspaceImageBytes), nil
+	if len(data) > rtmedia.DefaultMaxWorkspaceImageReadBytes {
+		return rtmedia.FormatReadImageTooLarge(path, int64(len(data)), rtmedia.DefaultMaxWorkspaceImageReadBytes), nil
 	}
 	return rtmedia.FormatReadImageResult(path, rtmedia.DetectMIME(path, data), int64(len(data))), nil
 }

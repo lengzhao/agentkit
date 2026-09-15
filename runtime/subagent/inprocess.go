@@ -198,10 +198,15 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	if maxSteps <= 0 {
 		maxSteps = s.maxSteps
 	}
+	childModalities := def.Modalities
+	if agentkit.SupportsModality(childModalities, agentkit.ModalityImage) {
+		childModalities = agentkit.NormalizeModalities(append([]string{agentkit.ModalityText}, childModalities...))
+	}
 	child, err := agent.New(agent.Config{
-		ID:       agentkit.AgentID("sub:" + def.Name),
-		Model:    def.Model,
-		MaxSteps: maxSteps,
+		ID:         agentkit.AgentID("sub:" + def.Name),
+		Model:      def.Model,
+		MaxSteps:   maxSteps,
+		Modalities: childModalities,
 	}, agent.Deps{
 		SessionStore: s.store,
 		LLM:          s.llm,

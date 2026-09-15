@@ -203,6 +203,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 		if fname == "" {
 			fname = fmt.Sprintf("file_%d_%d", time.Now().UnixMilli(), i)
 		}
+		fname = rtmedia.EnsureInboundFileName(fname, f.MimeType, f.Data)
 		fpath := filepath.Join(attachDir, fname)
 		if err := os.WriteFile(fpath, f.Data, 0o644); err != nil {
 			slog.Error("common: write inbound attachment failed", "path", fpath, "error", err)

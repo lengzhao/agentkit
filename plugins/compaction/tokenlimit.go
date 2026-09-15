@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -103,7 +102,7 @@ func (s *tokenLimitService) Compact(ctx context.Context, req compaction.Request)
 // covers the current history but misjudges dense or non-Latin content. Taking
 // the max errs toward compacting slightly early, which is the cheap mistake.
 func (s *tokenLimitService) estimate(ctx context.Context, req compaction.Request) int {
-	heuristic := charEstimate(req.Messages, s.charsPerToken)
+	heuristic := session.EstimateMessagesChars(req.Messages) / s.charsPerToken
 	if req.Session != nil {
 		if events, err := session.ReadAllEvents(ctx, req.Session); err == nil {
 			logical := session.SumLogicalCharsFromEvents(events, req.AgentID) / s.charsPerToken
@@ -133,25 +132,3 @@ func (s *tokenLimitService) reportedTokens(ctx context.Context, req compaction.R
 	return usage.InputTokens + usage.OutputTokens
 }
 
-func charEstimate(messages []agentkit.ModelMessage, charsPerToken int) int {
-	chars := 0
-	for _, msg := range messages {
-		chars += len(msg.Role)
-		chars += partsChars(msg.Content)
-		for _, call := range msg.ToolCalls {
-			chars += len(call.Name) + len(call.Input)
-		}
-		for _, result := range msg.ToolResults {
-			chars += len(result.Name) + len(result.Content)
-		}
-	}
-	return chars / charsPerToken
-}
-
-func partsChars(parts []agentkit.ContentPart) int {
-	chars := 0
-	for _, part := range parts {
-		chars += len(part.Text) + len(part.Source) + len(part.URL)
-	}
-	return chars
-}

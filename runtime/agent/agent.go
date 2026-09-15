@@ -25,6 +25,8 @@ type Config struct {
 	ID agentkit.AgentID `json:"id"`
 	// Model is model name passed to the LLM provider.
 	Model string `json:"model"`
+	// Modalities overrides provider input modalities when set (e.g. vision subagent with modalities: [image]).
+	Modalities []string `json:"modalities,omitempty"`
 	// MaxSteps is steps allowed in one segment.
 	MaxSteps int `json:"maxSteps"`
 	// Retry is per-step retry for transient provider failures.
@@ -47,6 +49,7 @@ type Deps struct {
 type Runtime struct {
 	id           agentkit.AgentID
 	model        string
+	modalities   []string
 	maxSteps     int
 	retry        retrySettings
 	budget       budgetSettings
@@ -93,6 +96,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	return &Runtime{
 		id:           id,
 		model:        cfg.Model,
+		modalities:   agentkit.NormalizeModalities(cfg.Modalities),
 		maxSteps:     maxSteps,
 		retry:        resolveRetrySettings(cfg.Retry),
 		budget:       resolveBudgetSettings(cfg.Budget),
@@ -624,7 +628,11 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 	if err != nil {
 		return nil, ctx, err
 	}
-	history, err = session.PrepareMessagesForLLM(ctx, history, a.workspace, 0, rtllm.ProviderModalities(a.llm))
+	mods := a.modalities
+	if len(mods) == 0 {
+		mods = rtllm.ProviderModalities(a.llm)
+	}
+	history, err = session.PrepareMessagesForLLM(ctx, history, a.workspace, 0, mods)
 	if err != nil {
 		return nil, ctx, err
 	}

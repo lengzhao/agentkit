@@ -15,8 +15,9 @@ func readImageToolResult(abs, path string) (string, error) {
 	if info.IsDir() {
 		return "", fmt.Errorf("not a file: %s", path)
 	}
-	if info.Size() > rtmedia.DefaultMaxWorkspaceImageBytes {
-		return rtmedia.FormatReadImageTooLarge(path, info.Size(), rtmedia.DefaultMaxWorkspaceImageBytes), nil
+	if info.Size() > rtmedia.DefaultMaxWorkspaceImageReadBytes {
+		return rtmedia.FormatReadImageTooLarge(path, info.Size(), rtmedia.DefaultMaxWorkspaceImageReadBytes), nil
 	}
-	return rtmedia.FormatReadImageResult(path, rtmedia.DetectMIME(path, nil), info.Size()), nil
+	head, _ := rtmedia.ReadFileHead(abs, 512)
+	return rtmedia.FormatReadImageResult(path, rtmedia.DetectMIME(path, head), info.Size()), nil
 }

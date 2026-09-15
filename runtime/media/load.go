@@ -9,10 +9,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// DefaultMaxWorkspaceImageBytes caps workspace images loaded for vision.
-const DefaultMaxWorkspaceImageBytes = 10 << 20
-
-// LoadWorkspaceImage reads an image from the tenant work tree.
+// LoadWorkspaceImage reads an image from the tenant work tree for vision models.
 // workRel is relative to work/ (e.g. upload/foo.png or work/upload/foo.png).
 func LoadWorkspaceImage(ctx context.Context, ws workspace.Service, workRel string, maxBytes int) ([]byte, string, error) {
 	if maxBytes <= 0 {
@@ -30,15 +27,22 @@ func LoadWorkspaceImage(ctx context.Context, ws workspace.Service, workRel strin
 	if info.IsDir() {
 		return nil, "", fmt.Errorf("not a file: %s", workRel)
 	}
-	if info.Size() > int64(maxBytes) {
+	if info.Size() > int64(DefaultMaxWorkspaceImageReadBytes) {
 		return nil, "", nil
 	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, "", err
 	}
+	if len(data) > DefaultMaxWorkspaceImageReadBytes {
+		return nil, "", nil
+	}
+	if !IsImagePath(workRel) && !LooksLikeImageData(data) {
+		return nil, "", nil
+	}
 	if len(data) > maxBytes {
 		return nil, "", nil
 	}
-	return data, DetectMIME(workRel, data), nil
+	mime := DetectMIME(workRel, data)
+	return data, mime, nil
 }

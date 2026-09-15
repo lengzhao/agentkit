@@ -249,7 +249,7 @@ messages API / 调试页直接读取 agent 写入的 per-conversation session JS
 
 ### 文件上传
 
-chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根），agent 在 prompt 里看到的是 `work/upload/<filename>`。图片附件会走 vision；非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。
+chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根），agent 在 prompt 里看到的是 `work/upload/<filename>`。图片附件会走 vision；非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。hydrate 从 workspace 读取原图（默认单张 ≤10MB）注入 vision；原图保留在 `work/upload/`。IM 入站图片若无原始文件名，会按 MIME/内容保存为 `file_<ts>_<n>.jpg`（等）；历史上无扩展名的 `file_*` 仍可通过文件头魔数识别。`hook/before-step` 的 token 估算对 `data:` 图片使用占位长度，避免 hydrate 后误触发压缩。
 
 历史 session 落盘时图片存为 `attachment_ref`（`Source` 指向 `work/upload/...`），不含 base64；Agent 在调用 LLM 前会对**最近一条 user 消息**的 `attachment_ref`，以及**当前轮次 read 工具读到的图片路径**，从 workspace 重载并注入 vision。
 

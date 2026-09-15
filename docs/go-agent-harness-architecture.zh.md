@@ -1084,7 +1084,7 @@ type LLMProvider interface {
 LLM Runtime 负责：
 
 - Provider 选择。
-- **`modalities` 声明**（`llm/openai-compatible` 的 `config.modalities`；未配置时默认 text+image）。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片。
+- **`modalities` 声明**（`llm/openai-compatible` 的 `config.modalities`；未配置时默认 text+image）。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片；hydrate 从 workspace 载入原图（有大小上限）注入 `image_url`。token-limit 估算对 inline `data:` 视觉载荷使用占位字符数，与落盘 `logical_chars` 一致。
 - 请求构造和 hook。
 - 流式 chunk 归一化。
 - 使用量统计。
