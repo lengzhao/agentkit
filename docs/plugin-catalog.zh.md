@@ -215,7 +215,8 @@ sequenceDiagram
 
 要点：
 
-- **工作目录**：`config.cwd`（未设则用 workspace 默认根）同时作为 ACP 子进程的 `cmd.Dir` 与 `session/new` 的 `Cwd`；需项目根时可设 `cwd: local:..`。
+- **工作目录**：`config.cwd`（未设则默认 `work/`，与 `tool/shell-bash` 一致）同时作为 ACP 子进程的 `cmd.Dir` 与 `session/new` 的 `Cwd`。代码仓库在 `work/agent-harness` 等子目录时设 `cwd: work/agent-harness`（或 `local:work/agent-harness`）。bind 文件会记录 cwd；变更 cwd 后会新建 ACP session 而非 resume 旧 cwd。
+- **子进程清理**：L0 对 `agent.cursor` / `agent.claude` 启用 `releaseSubprocessAfterTurn: true`——每个 RunTurn 结束后按进程组 SIGTERM/SIGKILL 回收 `agent acp` 及其子进程（language server、worker-server 等），避免多次委派后内存上涨。Unix 上使用进程组；子进程异常退出时会取消进行中的 `Prompt`，让 async 委派尽快失败并触发 `subagent/end` + follow-up，而不是挂到 `timeoutSeconds`。
 - **先连 ACP**：不调用 `agent status` 预检；直接启动 `agent acp`，认证失败再登录。
 - **登录**：`agent login`（配置注入 `NO_OPEN_BROWSER=1`），由 Cursor CLI 阻塞等待浏览器授权；stdout/stderr 原样透传到对话。
 - **不要混用**：`authenticate` 返回的链接与 `agent login` 的 challenge 不是同一次 OAuth；登录只走 `agent login`。
@@ -228,7 +229,9 @@ agent.cursor.default:
   use: agent/acp-remote
   config:
     id: cursor
-    command: [agent, acp]
+    command: [agent, --trust, acp]
+    cwd: work
+    releaseSubprocessAfterTurn: true
     authMethod: cursor_login
     env:
       NO_OPEN_BROWSER: "1"

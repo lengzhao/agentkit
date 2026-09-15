@@ -2,6 +2,8 @@ package subagent
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,12 +19,16 @@ import (
 type storeRecordingAgent struct {
 	id      agentkit.AgentID
 	summary string
+	err     error
 	store   agentkit.SessionStore
 }
 
 func (a *storeRecordingAgent) ID() agentkit.AgentID { return a.id }
 
 func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
+	if a.err != nil {
+		return a.err
+	}
 	sessionID := session.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
@@ -189,6 +195,58 @@ func TestLoopAgentAsyncSubmitsFollowUp(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected async follow-up submit")
+	}
+}
+
+func TestLoopAgentAsyncSubmitsFollowUpOnError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErr := fmt.Errorf("workspace trust required")
+	agent := &storeRecordingAgent{id: "cursor", err: wantErr, store: store}
+	spawner, err := NewLoopAgent(LoopAgentConfig{
+		Agents: []LoopAgentEntry{{
+			Name:        "cursor",
+			Description: "coding helper",
+			Agent:       "cursor",
+			Async:       true,
+		}},
+	}, LoopAgentDeps{
+		SessionStore: store,
+		Agents:       []agentkit.Agent{agent},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop := spawner.(*LoopAgentSpawner)
+	ch := make(chan agentkit.MessageEvent, 1)
+	loop.BindSubmit(func(_ context.Context, event agentkit.MessageEvent) error {
+		ch <- event
+		return nil
+	})
+
+	if _, err := loop.Run(loopParentCtx(), capsubagent.Request{Agent: "cursor", Task: "fail fast"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-ch:
+		text := event.Message.Content[0].Text
+		if !strings.Contains(text, "status=failed") {
+			t.Fatalf("follow-up = %q", text)
+		}
+		if !strings.Contains(text, wantErr.Error()) {
+			t.Fatalf("follow-up = %q", text)
+		}
+		if event.Metadata["subagent_status"] != "failed" {
+			t.Fatalf("metadata status = %v", event.Metadata["subagent_status"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected async follow-up submit on error")
 	}
 }
 

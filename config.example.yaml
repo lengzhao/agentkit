@@ -237,6 +237,7 @@ prompt.custom.default:
 #     progressStyle: card
 #     showThinking: false
 #     showToolProgress: true
+#     asyncSubagentProgressCard: true    # async delegate 时单独后台过程卡
 #     replyInThread: true              # 群聊默认在话题内回复；false 则平铺；私聊始终平铺
 #     replyToTrigger: true             # false：出站不引用触发消息（Im.Message.Create）
 #     threadIsolation: false           # true：群话题在 delivery SessionID 中带 :t:<rootID>
@@ -260,6 +261,7 @@ prompt.custom.default:
 #     progressStyle: card
 #     showThinking: false
 #     showToolProgress: true
+#     asyncSubagentProgressCard: true
 #     replyInThread: true              # 群聊默认在话题内回复；false 则平铺；私聊始终平铺
 #     replyToTrigger: true             # false：出站不引用触发消息（Im.Message.Create）
 #     threadIsolation: false           # true：群话题在 delivery SessionID 中带 :t:<rootID>

@@ -114,6 +114,7 @@ type Platform struct {
 	progressStyle              string
 	showThinking               bool
 	showToolProgress           bool
+	asyncSubagentProgressCard  bool
 	useInteractiveCard         bool
 	reactionEmoji              string
 	doneEmoji                  string
@@ -140,6 +141,8 @@ type Platform struct {
 	turnTriggers               sync.Map
 	turnReactions              sync.Map
 	streams                    sync.Map
+	asyncSubagentByJob         sync.Map // jobID -> *asyncSubagentCard
+	asyncSubagentByStream      sync.Map // streamKey -> jobID
 	client                     *lark.Client
 	replayClient               *lark.Client
 	replayClientMu             sync.Mutex

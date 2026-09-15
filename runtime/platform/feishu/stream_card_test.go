@@ -81,13 +81,14 @@ func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 	st.lastProgressUpdate = time.Now().Add(-time.Second)
 	st.mu.Unlock()
 
-	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
+	ev := agentkit.OutboundEvent{AgentID: "parent"}
+	if err := p.handleRichStreamUpdate(context.Background(), sessionID, ev, agentkit.AssistantMessageEvent{
 		Type:  agentkit.AssistantEventThinkingDelta,
 		Delta: "more",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
+	if err := p.handleRichStreamUpdate(context.Background(), sessionID, ev, agentkit.AssistantMessageEvent{
 		Type:         agentkit.AssistantEventToolCallStart,
 		ContentIndex: 1,
 		ToolName:     "Read",
@@ -544,7 +545,7 @@ func TestSwitchSegmentOpensNewCardOnTypeChange(t *testing.T) {
 	if err := p.handleRichBodyDelta(context.Background(), sessionID, "hello"); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.AssistantMessageEvent{
+	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.OutboundEvent{AgentID: "parent"}, agentkit.AssistantMessageEvent{
 		Type:         agentkit.AssistantEventToolCallStart,
 		ContentIndex: 1,
 		ToolName:     "Read",

@@ -151,11 +151,14 @@ flowchart TD
 | `progressStyle` | `legacy` | `card`：cc-connect 单卡 Patch；`compact`：分卡进度；`legacy`：仅流式正文 |
 | `showThinking` | `false` | `card`/`compact` 下是否在进度区展示 thinking |
 | `showToolProgress` | `card`/`compact` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
+| `asyncSubagentProgressCard` | `true` | `async` 委派子 Agent 时另发一张后台过程卡（生命周期独立于父 turn 回复卡） |
 | `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
 | `replyInThread` | `true` | 仅群聊出站时 `Im.Message.Reply` 带 `reply_in_thread`；私聊（p2p）始终平铺回复 |
 | `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
 `progressStyle: card` 时，**整轮 turn** 的 thinking / tool / 正文都在同一张 rich 卡内刷新；同一 turn 内多条 assistant 消息的正文会在每条 `message/start` 时**定稿到累积区**（段间空行拼接），不会互相覆盖。出站流式状态按 `Route.ReplyTo`（触发消息 id）与 delivery 组合隔离，连发多条用户消息时各用各的卡片句柄。`compact` 按片段分卡。平台监听 `tool/result` 与 `subagent/start|end` 更新过程区。`renderProgressBody` 在面板 JSON 中默认仅保留最近 **2** 条 tool 行（超出显示「仅显示最近更新」），与 cc-connect 一致。
+
+**异步子 Agent**（`delegate` + `async: true`）：父 turn 回复卡仍在 `turn/end` 定稿；子 Agent 在 `subagent/start`（`async`）时另发一张「后台子 Agent」过程卡，按 `OutboundEvent.AgentID` 与子 Agent 区分，只刷新子 Agent 转发的 `toolcall_end` / `tool/result`，在 `subagent/end` 定稿。完整结论仍由 follow-up turn 以新消息送达。可通过 `asyncSubagentProgressCard: false` 关闭。
 
 ```yaml
 platform.default:

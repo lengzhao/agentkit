@@ -164,7 +164,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 {"agent":"cursor","status":"running","jobId":"sub:cli:default:cursor:7","session":"sub:cli:default:cursor:7","summary":"subagent started in the background; results will arrive in a follow-up turn"}
 ```
 
-完成后 runner 向父 session 投递一条带 `[subagent-complete ...]` 前缀的 user 消息，主 agent 自动开新 turn 汇总。
+完成后 runner 向父 session 投递一条带 `[subagent-complete ...]` 前缀的 user 消息，主 agent 自动开新 turn 汇总。若父 session 仍在执行当前 turn（常见于子 Agent 很快失败），该消息进入 **FollowUp** 队列，在当前 turn 结束后再开 turn，而不是当作普通入站 **Steer**（避免结论被吞或无法单独回复用户）。
 
 `status` 取值：
 
@@ -173,6 +173,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 | `completed` | 子 Agent 调了 `tool/finish` 且报告完成 |
 | `blocked` | 子 Agent 调了 `tool/finish` 但报告无法继续 |
 | `stopped` | 没调 finish（步数用完 / 只回了文本），`summary` 退回最后一条 assistant 文本 |
+| `failed` | 子 Agent turn 返回 error（如 ACP 认证失败、外部 CLI 退出）；follow-up 正文含 error 文本 |
 | `running` | 异步委派已启动，结论尚未返回 |
 
 `Agent.RunTurn` 只返回 `error`，答案必须从子 session 里读回来，所以**给子 Agent 挂上 `tool/finish` 很值**：调了就有结构化的 status + summary，没调就只能拿"它最后说的那段话"。即使子 Agent 中途出错，已经跑出来的部分结论也会带回。
@@ -199,6 +200,8 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 启用 `platform/chat-api` 的 `debugUi` 时，子 Agent 内部的 tool call 会通过 SSE `tool_call`（参数完整后）与 `tool_result`（结果限长 1k）事件转发到 `/debug/` 页面（标签为 `subagent · <name>`），主 Agent 的文本流仍不会与子 Agent 交错。
 
 同步委派时，runtime 还会把 `subagent/start`、`subagent/end` 经父 delivery session 的 outbound 发给平台（如飞书过程卡展示「子 Agent · {agentID}」）；子 Agent 内部的 text/thinking delta 仍不转发。
+
+**异步委派**（`async: true`）：父 turn 的飞书回复卡照常结束；若平台开启 `asyncSubagentProgressCard`（L0 默认 `true`），会在 `subagent/start` 时另发一张独立过程卡，展示子 Agent 工具进度直至 `subagent/end` 定稿。结论仍由 `[subagent-complete …]` follow-up 消息送达，不在此卡内展开全文。
 
 两个容易踩的配置点：
 

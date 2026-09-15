@@ -98,6 +98,7 @@ platform.feishu:
     progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch；compact=分卡进度
     showToolProgress: true
     showThinking: true
+    asyncSubagentProgressCard: true  # async delegate 时单独一张后台过程卡
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
@@ -115,6 +116,7 @@ platform.lark:
     progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch；compact=分卡进度
     showToolProgress: true
     showThinking: true
+    asyncSubagentProgressCard: true
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
@@ -240,7 +242,10 @@ agent.cursor.default:
     id: cursor
     command:
       - agent
+      - --trust
       - acp
+    cwd: work
+    releaseSubprocessAfterTurn: true
     authMethod: cursor_login
     env:
       NO_OPEN_BROWSER: "1"
@@ -259,6 +264,8 @@ agent.claude.default:
       - npx
       - -y
       - "@agentclientprotocol/claude-agent-acp"
+    cwd: work
+    releaseSubprocessAfterTurn: true
     env:
       ANTHROPIC_API_KEY: ${var:ANTHROPIC_API_KEY}
       ANTHROPIC_BASE_URL: ${var:ANTHROPIC_BASE_URL:-}

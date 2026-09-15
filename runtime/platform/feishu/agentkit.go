@@ -48,6 +48,7 @@ type Config struct {
 	ProgressStyle              string            `json:"progressStyle"`
 	ShowThinking               *bool             `json:"showThinking"`
 	ShowToolProgress           *bool             `json:"showToolProgress"`
+	AsyncSubagentProgressCard  *bool             `json:"asyncSubagentProgressCard"`
 	EnableFeishuCard           *bool             `json:"enableFeishuCard"`
 	EncryptKey                 string            `json:"encryptKey"`
 	Port                       string            `json:"port"`
@@ -238,6 +239,10 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	if cfg.ShowToolProgress != nil {
 		showToolProgress = *cfg.ShowToolProgress
 	}
+	asyncSubagentProgressCard := true
+	if cfg.AsyncSubagentProgressCard != nil {
+		asyncSubagentProgressCard = *cfg.AsyncSubagentProgressCard
+	}
 
 	noReplyToTrigger := false
 	if cfg.ReplyToTrigger != nil && !*cfg.ReplyToTrigger {
@@ -277,6 +282,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		progressStyle:              progressStyle,
 		showThinking:               showThinking,
 		showToolProgress:           showToolProgress,
+		asyncSubagentProgressCard:  asyncSubagentProgressCard,
 		useInteractiveCard:         useInteractiveCard,
 		reactionEmoji:              reactionEmoji,
 		doneEmoji:                  doneEmoji,
@@ -678,7 +684,7 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 		return err
 	}
 	if p.useRichStream() {
-		return p.handleRichStreamUpdate(ctx, streamKey, payload.AssistantMessageEvent)
+		return p.handleRichStreamUpdate(ctx, streamKey, event, payload.AssistantMessageEvent)
 	}
 	delta := ""
 	switch payload.AssistantMessageEvent.Type {

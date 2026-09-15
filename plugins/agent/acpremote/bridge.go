@@ -15,6 +15,7 @@ import (
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type sessionUpdateConsumer interface {
@@ -38,10 +39,12 @@ type bridge struct {
 	workspace  workspace.Service
 	sessionMCP capacp.SessionMCPProvider
 
-	mu     sync.Mutex
-	proc   *subprocess
-	turn   *turnState
-	turnMu sync.Mutex
+	mu           sync.Mutex
+	proc         *subprocess
+	promptCancel context.CancelFunc
+	promptGen    uint64
+	turn         *turnState
+	turnMu       sync.Mutex
 }
 
 type subprocess struct {
@@ -49,9 +52,22 @@ type subprocess struct {
 	conn          *acp.ClientSideConnection
 	client        *bridgeClient
 	authenticated bool
-	sessions      sync.Map // agentkit.SessionID -> acp.SessionId
-	acpSessions   sync.Map // acp.SessionId -> agentkit.SessionID
-	states        sync.Map // agentkit.SessionID -> *sessionState
+	done          chan struct{} // closed after cmd.Wait returns
+	sessions      sync.Map      // agentkit.SessionID -> acp.SessionId
+	acpSessions   sync.Map      // acp.SessionId -> agentkit.SessionID
+	states        sync.Map      // agentkit.SessionID -> *sessionState
+}
+
+func (proc *subprocess) alive() bool {
+	if proc == nil || proc.done == nil {
+		return false
+	}
+	select {
+	case <-proc.done:
+		return false
+	default:
+		return true
+	}
 }
 
 func newBridge(cfg Config, ws workspace.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
@@ -101,34 +117,42 @@ func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID 
 
 func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if b.proc != nil {
-		if b.proc.authenticated || b.cfg.AuthMethod == "" {
-			return b.proc, nil
+	for b.proc != nil {
+		if b.proc.alive() && (b.proc.authenticated || b.cfg.AuthMethod == "") {
+			proc := b.proc
+			b.mu.Unlock()
+			return proc, nil
 		}
-		b.killProcLocked()
+		old, cancel := b.detachSubprocessLocked()
+		b.mu.Unlock()
+		terminateAndWaitSubprocess(old, cancel)
+		b.mu.Lock()
 	}
 
 	cwd, err := b.resolveCwd(ctx)
 	if err != nil {
+		b.mu.Unlock()
 		return nil, err
 	}
 
 	cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
 	cmd.Dir = cwd
+	configureCmdProcessGroup(cmd)
 	cmd.Env = commandEnv(b.cfg.Env)
 	cmd.Stderr = os.Stderr
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		b.mu.Unlock()
 		return nil, fmt.Errorf("acp stdin pipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		b.mu.Unlock()
 		return nil, fmt.Errorf("acp stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		b.mu.Unlock()
 		return nil, fmt.Errorf("acp start %v: %w", b.cfg.Command, err)
 	}
 
@@ -150,16 +174,25 @@ func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 		},
 	})
 	if err != nil {
-		_ = cmd.Process.Kill()
+		terminateProcessGroup(cmd)
+		_ = cmd.Wait()
+		b.mu.Unlock()
 		return nil, fmt.Errorf("acp initialize: %w", err)
 	}
 	slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
 
-	b.proc = &subprocess{cmd: cmd, conn: conn, client: client}
+	done := make(chan struct{})
+	b.proc = &subprocess{cmd: cmd, conn: conn, client: client, done: done}
+	go b.waitSubprocess(b.proc)
 	if err := b.authenticateLocked(ctx, b.proc); err != nil {
+		old, cancel := b.detachSubprocessLocked()
+		b.mu.Unlock()
+		terminateAndWaitSubprocess(old, cancel)
 		return nil, err
 	}
-	return b.proc, nil
+	proc := b.proc
+	b.mu.Unlock()
+	return proc, nil
 }
 
 func (b *bridge) authenticateLocked(ctx context.Context, proc *subprocess) error {
@@ -170,28 +203,95 @@ func (b *bridge) authenticateLocked(ctx context.Context, proc *subprocess) error
 	if _, err := proc.conn.Authenticate(ctx, acp.AuthenticateRequest{
 		MethodId: b.cfg.AuthMethod,
 	}); err != nil {
-		b.killProcLocked()
 		return fmt.Errorf("acp authenticate: %w (ensure cursor cli is logged in via agent login)", err)
 	}
 	proc.authenticated = true
 	return nil
 }
 
-func (b *bridge) killProcLocked() {
+func (b *bridge) detachSubprocessLocked() (*subprocess, context.CancelFunc) {
 	if b.proc == nil {
+		return nil, nil
+	}
+	proc := b.proc
+	b.proc = nil
+	var cancel context.CancelFunc
+	if b.promptCancel != nil {
+		cancel = b.promptCancel
+		b.promptCancel = nil
+	}
+	return proc, cancel
+}
+
+func terminateAndWaitSubprocess(proc *subprocess, cancel context.CancelFunc) {
+	if cancel != nil {
+		cancel()
+	}
+	if proc == nil {
 		return
 	}
-	if b.proc.cmd.Process != nil {
-		_ = b.proc.cmd.Process.Kill()
+	if proc.cmd != nil {
+		terminateProcessGroup(proc.cmd)
 	}
-	b.proc = nil
+	if proc.done != nil {
+		<-proc.done
+	}
+}
+
+func (b *bridge) releaseSubprocess() {
+	b.mu.Lock()
+	proc, cancel := b.detachSubprocessLocked()
+	b.mu.Unlock()
+	terminateAndWaitSubprocess(proc, cancel)
+}
+
+func (b *bridge) waitSubprocess(proc *subprocess) {
+	err := proc.cmd.Wait()
+	if proc.done != nil {
+		close(proc.done)
+	}
+	b.mu.Lock()
+	if b.proc == proc {
+		b.proc = nil
+		cancel := b.promptCancel
+		b.promptCancel = nil
+		b.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		if err != nil {
+			slog.Warn("acp-remote: subprocess exited", "err", err)
+		}
+		return
+	}
+	b.mu.Unlock()
+}
+
+func (b *bridge) beginPromptContext(ctx context.Context) (context.Context, func()) {
+	b.mu.Lock()
+	if b.promptCancel != nil {
+		b.promptCancel()
+	}
+	b.promptGen++
+	gen := b.promptGen
+	pctx, cancel := context.WithCancel(ctx)
+	b.promptCancel = cancel
+	b.mu.Unlock()
+	return pctx, func() {
+		b.mu.Lock()
+		if b.promptGen == gen {
+			b.promptCancel = nil
+		}
+		b.mu.Unlock()
+		cancel()
+	}
 }
 
 func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
 	if b.cfg.Cwd != "" {
 		return b.workspace.Resolve(ctx, b.cfg.Cwd)
 	}
-	return b.workspace.Resolve(ctx, ".")
+	return b.workspace.Resolve(ctx, session.TenantToolWorkDir)
 }
 
 func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, sessionStore agentkit.SessionStore) (acp.SessionId, error) {
@@ -354,8 +454,9 @@ func (b *bridge) cancel(ctx context.Context, acpSessionID acp.SessionId) error {
 // Close terminates the subprocess. Safe to call when not started.
 func (b *bridge) Close() error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.killProcLocked()
+	proc, cancel := b.detachSubprocessLocked()
+	b.mu.Unlock()
+	terminateAndWaitSubprocess(proc, cancel)
 	return nil
 }
 

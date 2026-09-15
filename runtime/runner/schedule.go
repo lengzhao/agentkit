@@ -85,6 +85,22 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	if event.Message.Role == "" {
 		return
 	}
+	if inboundIsSubagentComplete(scoped) && r.loop.IsSessionBusy(agentkit.SessionID(conversation)) {
+		scoped = r.formatInboundEvent(scoped, env)
+		slog.Info("async subagent follow-up queued",
+			"platform", event.PlatformID,
+			"user_id", env.Actor.UserID,
+			"route", routeLogID(env.Route),
+			"conversation", conversation,
+			"workspace", env.Workspace,
+			"agent_id", scoped.AgentID,
+			"preview", telemetry.SummarizeMessage(scoped.Message),
+		)
+		if err := r.loop.FollowUp(ctx, scoped.Message); err != nil {
+			r.reportInboundError(ctx, env, scoped, err)
+		}
+		return
+	}
 	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) {
 		if r.tryStopBusyInbound(ctx, scoped) {
 			return
@@ -189,4 +205,12 @@ func inboundPlainText(msg agentkit.ModelMessage) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func inboundIsSubagentComplete(event agentkit.MessageEvent) bool {
+	if event.Metadata == nil {
+		return false
+	}
+	v, ok := event.Metadata["subagent_complete"].(bool)
+	return ok && v
 }

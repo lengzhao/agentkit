@@ -24,8 +24,11 @@ type Config struct {
 	// Env adds environment variables for the subprocess.
 	Env map[string]string `json:"env,omitempty"`
 	// Cwd is the working directory for the ACP subprocess (cmd.Dir) and session/new.
-	// Empty uses workspace default root.
+	// Empty uses workspace work/ (same default as tool/shell-bash).
 	Cwd string `json:"cwd,omitempty"`
+	// ReleaseSubprocessAfterTurn kills the ACP process group after each RunTurn so
+	// Cursor child processes (language servers, worker-server) do not accumulate.
+	ReleaseSubprocessAfterTurn bool `json:"releaseSubprocessAfterTurn,omitempty"`
 	// AutoApprove automatically grants tool permission requests without prompting.
 	AutoApprove bool `json:"autoApprove"`
 	// AuthMethod is passed to authenticate when non-empty (e.g. "cursor_login").
@@ -136,6 +139,9 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
 		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, session.TurnEndData{Steps: 1})
+		if a.cfg.ReleaseSubprocessAfterTurn {
+			a.bridge.releaseSubprocess()
+		}
 	}()
 
 	acpSessionID, err := a.ensureACPSessionWithAuth(ctx, emit, sessionID)
@@ -161,9 +167,12 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		resp acpPromptResponse
 		err  error
 	}
+	promptCtx, endPrompt := a.bridge.beginPromptContext(ctx)
+	defer endPrompt()
+
 	done := make(chan promptResult, 1)
 	go func() {
-		resp, err := a.bridge.prompt(ctx, acpSessionID, prompt)
+		resp, err := a.bridge.prompt(promptCtx, acpSessionID, prompt)
 		done <- promptResult{resp: resp, err: err}
 	}()
 

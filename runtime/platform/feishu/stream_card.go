@@ -367,7 +367,10 @@ func (p *Platform) switchRichSegment(ctx context.Context, sessionID agentkit.Ses
 	return nil
 }
 
-func (p *Platform) handleRichStreamUpdate(ctx context.Context, sessionID agentkit.SessionID, ame agentkit.AssistantMessageEvent) error {
+func (p *Platform) handleRichStreamUpdate(ctx context.Context, sessionID agentkit.SessionID, event agentkit.OutboundEvent, ame agentkit.AssistantMessageEvent) error {
+	if handled, err := p.handleAsyncSubagentStreamUpdate(ctx, sessionID, event, ame); handled {
+		return err
+	}
 	if p.useRichCardPatch() {
 		seg := streamSegmentOfAssistantEvent(p, ame)
 		if seg == streamSegmentBody {
@@ -729,6 +732,9 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 		return nil
 	}
 	streamKey := outboundStreamKey(event)
+	if handled, err := p.handleAsyncSubagentToolResult(ctx, streamKey, event, result); handled {
+		return err
+	}
 	if p.useRichCardPatch() {
 		st := p.richStreamState(streamKey)
 		st.mu.Lock()
@@ -755,6 +761,32 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 		return nil
 	}
 	streamKey := outboundStreamKey(event)
+	if event.Type == agentkit.EventSubagentStart {
+		var data session.SubagentStartData
+		if err := json.Unmarshal(event.Data, &data); err != nil {
+			return err
+		}
+		if data.Async && p.asyncSubagentCardEnabled() {
+			return p.handleAsyncSubagentStart(ctx, streamKey, event.AgentID, data)
+		}
+	}
+	if event.Type == agentkit.EventSubagentEnd {
+		var data session.SubagentEndData
+		if err := json.Unmarshal(event.Data, &data); err != nil {
+			return err
+		}
+		if p.asyncSubagentCardEnabled() {
+			jobID := strings.TrimSpace(data.JobID)
+			if jobID == "" {
+				jobID = strings.TrimSpace(data.Session)
+			}
+			if jobID != "" {
+				if _, ok := p.asyncSubagentByJob.Load(jobID); ok {
+					return p.handleAsyncSubagentEnd(ctx, data)
+				}
+			}
+		}
+	}
 	if p.useRichCardPatch() {
 		st := p.richStreamState(streamKey)
 		st.mu.Lock()

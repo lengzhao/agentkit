@@ -184,6 +184,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	}
 
 	result, runErr := s.runChild(ctx, def, ag, task, childID)
+	result = finalizeSubagentResult(result, runErr)
 	end := session.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
@@ -251,17 +252,38 @@ func captureParentContext(ctx context.Context) parentContext {
 
 func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID) {
 	defer s.untrackRunning(parentID)
+
+	var result subagent.Result
+	var runErr error
+	defer func() {
+		if r := recover(); r != nil {
+			runErr = fmt.Errorf("async subagent panic: %v", r)
+			result = subagent.Result{
+				Agent:   def.Name,
+				Session: string(childID),
+				Status:  "failed",
+				Summary: runErr.Error(),
+			}
+			slog.Error("async subagent: panic", "job_id", jobID, "agent", def.Name, "panic", r)
+		}
+		s.finishAsync(parent, def, childID, jobID, parentID, parentAgent, result, runErr)
+	}()
+
 	bg := context.Background()
 	ctx := session.ApplyEnvelopeToContext(bg, parent.envelope)
 	ctx = session.WithAgentID(ctx, parentAgent)
 	ctx = loop.ContextWithOutboundEmit(ctx, parent.emit)
 
-	result, runErr := s.runChild(ctx, def, ag, task, childID)
-	parentSess, err := s.store.Get(bg, parentID)
-	if err != nil {
-		slog.Error("async subagent: load parent session", "job_id", jobID, "err", err)
-		return
-	}
+	result, runErr = s.runChild(ctx, def, ag, task, childID)
+	result = finalizeSubagentResult(result, runErr)
+}
+
+func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Definition, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID, result subagent.Result, runErr error) {
+	bg := context.Background()
+	ctx := session.ApplyEnvelopeToContext(bg, parent.envelope)
+	ctx = session.WithAgentID(ctx, parentAgent)
+	ctx = loop.ContextWithOutboundEmit(ctx, parent.emit)
+
 	end := session.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
@@ -273,17 +295,36 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 	if runErr != nil {
 		end.Error = runErr.Error()
 	}
-	if err := session.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
-		slog.Error("async subagent: append end", "job_id", jobID, "err", err)
-		return
+	if parentSess, err := s.store.Get(bg, parentID); err != nil {
+		slog.Error("async subagent: load parent session", "job_id", jobID, "err", err)
+	} else {
+		if err := session.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
+			slog.Error("async subagent: append end", "job_id", jobID, "err", err)
+		} else if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
+			slog.Error("async subagent: emit end", "job_id", jobID, "err", err)
+		}
 	}
-	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
-		slog.Error("async subagent: emit end", "job_id", jobID, "err", err)
+	s.submitSubagentComplete(bg, parent, parentAgent, def.Name, jobID, result, runErr)
+}
+
+func finalizeSubagentResult(result subagent.Result, runErr error) subagent.Result {
+	if runErr == nil {
+		return result
 	}
+	if strings.TrimSpace(result.Summary) == "" {
+		result.Summary = runErr.Error()
+	}
+	if result.Status == "" || result.Status == subagent.StatusStopped {
+		result.Status = "failed"
+	}
+	return result
+}
+
+func (s *LoopAgentSpawner) submitSubagentComplete(ctx context.Context, parent parentContext, parentAgent agentkit.AgentID, agentName, jobID string, result subagent.Result, runErr error) {
 	if s.submit == nil {
 		return
 	}
-	text := formatSubagentComplete(def.Name, jobID, result)
+	text := formatSubagentComplete(agentName, jobID, result, runErr)
 	parentEnv := parent.envelope
 	if parentEnv.Conversation == "" {
 		parentEnv = parentEnv.WithConversation(string(parent.conversation))
@@ -297,24 +338,34 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 		Metadata: map[string]any{
 			"subagent_complete": true,
 			"subagent_job_id":   jobID,
-			"subagent_agent":    def.Name,
+			"subagent_agent":    agentName,
 			"subagent_status":   result.Status,
 		},
 	}, parentEnv)
-	if err := s.submit(bg, event); err != nil {
+	if err := s.submit(ctx, event); err != nil {
 		slog.Error("async subagent: submit follow-up", "job_id", jobID, "err", err)
 	}
 }
 
-func formatSubagentComplete(agentName, jobID string, result subagent.Result) string {
+func formatSubagentComplete(agentName, jobID string, result subagent.Result, runErr error) string {
+	status := result.Status
+	if runErr != nil && status != subagent.StatusCompleted && status != subagent.StatusBlocked {
+		if status == "" || status == subagent.StatusStopped {
+			status = "failed"
+		}
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "[subagent-complete agent=%s job=%s status=%s", agentName, jobID, result.Status)
+	fmt.Fprintf(&b, "[subagent-complete agent=%s job=%s status=%s", agentName, jobID, status)
 	if result.Session != "" {
 		fmt.Fprintf(&b, " session=%s", result.Session)
 	}
 	b.WriteString("]\n")
-	if strings.TrimSpace(result.Summary) != "" {
-		b.WriteString(result.Summary)
+	body := strings.TrimSpace(result.Summary)
+	if body == "" && runErr != nil {
+		body = runErr.Error()
+	}
+	if body != "" {
+		b.WriteString(body)
 	}
 	return b.String()
 }
