@@ -77,6 +77,9 @@ func formatDefinition(def capsubagent.Definition) string {
 	if def.MaxSteps > 0 {
 		fmt.Fprintf(&b, "maxSteps: %d\n", def.MaxSteps)
 	}
+	if len(def.Modalities) > 0 {
+		fmt.Fprintf(&b, "modalities: %s\n", strings.Join(def.Modalities, ", "))
+	}
 	if def.Prompt != "" {
 		b.WriteString("\nprompt:\n")
 		b.WriteString(def.Prompt)

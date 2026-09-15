@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/markdown"
@@ -52,6 +53,7 @@ type frontmatter struct {
 	Skills      []string `yaml:"skills"`
 	Model       string   `yaml:"model"`
 	MaxSteps    int      `yaml:"maxSteps"`
+	Modalities  []string `yaml:"modalities"`
 }
 
 // loadDefinitions scans dirs in order and returns the definitions found, sorted
@@ -135,6 +137,10 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 	if prompt == "" {
 		return subagent.Definition{}, errNoPrompt
 	}
+	var modalities []string
+	if len(fm.Modalities) > 0 {
+		modalities = agentkit.NormalizeModalities(fm.Modalities)
+	}
 	return subagent.Definition{
 		Name:        name,
 		Description: description,
@@ -144,6 +150,7 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 		Skills:      trimAll(fm.Skills),
 		Model:       strings.TrimSpace(fm.Model),
 		MaxSteps:    fm.MaxSteps,
+		Modalities:  modalities,
 	}, nil
 }
 

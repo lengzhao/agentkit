@@ -23,9 +23,14 @@ func (s stubSpawner) Run(context.Context, subagent.Request) (subagent.Result, er
 }
 
 func buildSection(t *testing.T, spawner subagent.Spawner) agentkit.PromptSection {
+	return buildSectionWithLLM(t, spawner, nil)
+}
+
+func buildSectionWithLLM(t *testing.T, spawner subagent.Spawner, llm agentkit.LLMProvider) agentkit.PromptSection {
 	t.Helper()
 	provider, err := prompt.NewSubagentsSection(prompt.SubagentsSectionConfig{}, prompt.SubagentsSectionDeps{
 		Subagent: spawner,
+		LLM:      llm,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -71,5 +76,42 @@ func TestSubagentsSectionRequiresSpawner(t *testing.T) {
 
 	if _, err := prompt.NewSubagentsSection(prompt.SubagentsSectionConfig{}, prompt.SubagentsSectionDeps{}); err == nil {
 		t.Fatal("expected an error without a subagent dependency")
+	}
+}
+
+type textOnlyLLM struct{}
+
+func (textOnlyLLM) Name() string { return "text-only" }
+
+func (textOnlyLLM) Stream(context.Context, agentkit.LLMRequest) (agentkit.LLMStream, error) {
+	return nil, nil
+}
+
+func (textOnlyLLM) Modalities() []string { return []string{agentkit.ModalityText} }
+
+func TestSubagentsSectionTextOnlyParentHintsDelegation(t *testing.T) {
+	t.Parallel()
+
+	section := buildSectionWithLLM(t, stubSpawner{defs: []subagent.Definition{
+		{Name: "vision", Description: "see images", Modalities: []string{agentkit.ModalityImage}},
+	}}, textOnlyLLM{})
+
+	if !strings.Contains(section.Content, "[modalities: image]") {
+		t.Fatalf("missing modalities label:\n%s", section.Content)
+	}
+	if !strings.Contains(section.Content, "delegate to a subagent whose modalities include image") {
+		t.Fatalf("missing delegation hint:\n%s", section.Content)
+	}
+}
+
+func TestSubagentsSectionTextOnlyParentNoHintWithoutExplicitImageSubagent(t *testing.T) {
+	t.Parallel()
+
+	section := buildSectionWithLLM(t, stubSpawner{defs: []subagent.Definition{
+		{Name: "researcher", Description: "read-only research"},
+	}}, textOnlyLLM{})
+
+	if strings.Contains(section.Content, "delegate to a subagent whose modalities include image") {
+		t.Fatalf("unexpected delegation hint for subagent without modalities:\n%s", section.Content)
 	}
 }

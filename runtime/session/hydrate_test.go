@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -80,6 +81,29 @@ func TestHydrateLocalAttachmentsInjectsReadToolVision(t *testing.T) {
 	}
 	if out[3].Content[0].Type != "image_url" || out[3].Content[0].Source != "upload/shot.png" {
 		t.Fatalf("image part = %#v", out[3].Content[0])
+	}
+}
+
+func TestPrepareMessagesForLLMDemotesAttachmentsWhenTextOnly(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	msgs := []agentkit.ModelMessage{{
+		Role: "user",
+		Content: []agentkit.ContentPart{{
+			Type:   rtmedia.ContentTypeAttachmentRef,
+			Source: "upload/shot.png",
+		}},
+	}}
+	out, err := session.PrepareMessagesForLLM(ctx, msgs, nil, 0, []string{agentkit.ModalityText})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || len(out[0].Content) != 1 {
+		t.Fatalf("content = %#v", out[0].Content)
+	}
+	if out[0].Content[0].Type != "text" || !strings.Contains(out[0].Content[0].Text, "upload/shot.png") {
+		t.Fatalf("demoted part = %#v", out[0].Content[0])
 	}
 }
 

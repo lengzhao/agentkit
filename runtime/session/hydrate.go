@@ -5,14 +5,32 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
-// HydrateLocalAttachments reloads workspace images for LLM vision:
-// attachment_ref on the latest user message, and read-tool image paths from the
-// current tool batch since that user turn.
+// PrepareMessagesForLLM applies modality policy and optional vision hydration before an LLM call.
+func PrepareMessagesForLLM(ctx context.Context, msgs []agentkit.ModelMessage, ws workspace.Service, maxImageBytes int, modalities []string) ([]agentkit.ModelMessage, error) {
+	if len(msgs) == 0 {
+		return msgs, nil
+	}
+	hydrateImages := agentkit.SupportsModality(modalities, agentkit.ModalityImage)
+	if !hydrateImages {
+		out := make([]agentkit.ModelMessage, len(msgs))
+		for i, msg := range msgs {
+			out[i] = demoteVisualParts(msg)
+		}
+		return out, nil
+	}
+	return hydrateLocalAttachments(ctx, msgs, ws, maxImageBytes)
+}
+
+// HydrateLocalAttachments reloads workspace images for LLM vision (text + image modalities).
 func HydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, ws workspace.Service, maxImageBytes int) ([]agentkit.ModelMessage, error) {
+	return PrepareMessagesForLLM(ctx, msgs, ws, maxImageBytes, agentkit.DefaultLLMModalities)
+}
+
+func hydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, ws workspace.Service, maxImageBytes int) ([]agentkit.ModelMessage, error) {
 	if ws == nil || len(msgs) == 0 {
 		return msgs, nil
 	}
@@ -33,7 +51,7 @@ func HydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, 
 	out := make([]agentkit.ModelMessage, len(msgs))
 	copy(out, msgs)
 
-	hydrated, err := hydrateMessageAttachments(ctx, msgs[lastUser], ws, maxImageBytes)
+	hydrated, err := hydrateMessageAttachments(ctx, msgs[lastUser], ws, maxImageBytes, true)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +60,37 @@ func HydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, 
 	return injectReadToolVision(ctx, out, lastUser, ws, maxImageBytes)
 }
 
-func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, ws workspace.Service, maxImageBytes int) (agentkit.ModelMessage, error) {
+func demoteVisualParts(msg agentkit.ModelMessage) agentkit.ModelMessage {
+	if len(msg.Content) == 0 {
+		return msg
+	}
+	out := make([]agentkit.ContentPart, 0, len(msg.Content))
+	for _, part := range msg.Content {
+		switch part.Type {
+		case rtmedia.ContentTypeAttachmentRef, "image", "image_url":
+			out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(part)})
+		case "audio", "video":
+			out = append(out, agentkit.ContentPart{Type: "text", Text: mediaHint(part)})
+		default:
+			if part.Type != "text" && part.Type != "" && strings.TrimSpace(part.Text) == "" && strings.TrimSpace(part.URL) != "" {
+				out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(part)})
+				continue
+			}
+			out = append(out, part)
+		}
+	}
+	msg.Content = out
+	return msg
+}
+
+func mediaHint(part agentkit.ContentPart) string {
+	if t := strings.TrimSpace(part.Type); t != "" {
+		return "[" + t + " attachment omitted for text-only model]"
+	}
+	return attachmentHint(part)
+}
+
+func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, ws workspace.Service, maxImageBytes int, hydrateImages bool) (agentkit.ModelMessage, error) {
 	if msg.Role != "user" || len(msg.Content) == 0 {
 		return msg, nil
 	}
@@ -50,7 +98,7 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 	for _, part := range msg.Content {
 		switch part.Type {
 		case rtmedia.ContentTypeAttachmentRef:
-			expanded, err := expandAttachmentRef(ctx, part, ws, maxImageBytes)
+			expanded, err := expandAttachmentRef(ctx, part, ws, maxImageBytes, hydrateImages)
 			if err != nil {
 				return msg, err
 			}
@@ -63,7 +111,10 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 	return msg, nil
 }
 
-func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws workspace.Service, maxImageBytes int) ([]agentkit.ContentPart, error) {
+func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws workspace.Service, maxImageBytes int, hydrateImages bool) ([]agentkit.ContentPart, error) {
+	if !hydrateImages {
+		return []agentkit.ContentPart{{Type: "text", Text: attachmentHint(part)}}, nil
+	}
 	src := strings.TrimSpace(part.Source)
 	if src != "" && rtmedia.IsImagePath(src) {
 		data, mime, err := rtmedia.LoadWorkspaceImage(ctx, ws, src, maxImageBytes)

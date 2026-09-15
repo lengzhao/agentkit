@@ -48,6 +48,7 @@ maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxStep
 | `skills` | 否 | Skill 名白名单，空 = 该 runtime 的全部 skill。同时收窄 prompt 里的 skill 目录与 `skill` 工具的加载范围；名字写错会告警。需在 `tools` 里包含 `skill` 才能加载 |
 | `model` | 否 | 覆盖模型，用于"便宜模型跑调研" |
 | `maxSteps` | 否 | 该子 Agent 单次委派的步数上限 |
+| `modalities` | 否 | 声明该子 Agent 处理的输入类型：`text`、`image`、`audio`（可写别名 `vision`）。会出现在主 Agent 的 subagents prompt；空表示不额外标注 |
 
 `agents/*.md` 只用于进程内（`inprocess`）子 Agent。委派到 Loop 里已注册的 agent（如 `cursor`）在 `subagent/loop-agent` 实例的 `config.agents` 里声明，见 [§3](#3-目录查找)。
 
@@ -135,6 +136,14 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 第二层是白名单包装器：`Visible` 只返回名单内的工具，名单外的调用返回一条模型可读的 deny 结果（不是 error，所以子 Agent 的 turn 不会因此崩掉）。`skills` 白名单同理：收窄 prompt 里的 skill 目录，并在 `skill` 工具执行时拒绝名单外的加载。policy / approval / hook / 超时 / 结果截断全部沿用被包装的那条执行路径，不另建一条。定义里写了不存在的工具名会被丢弃并告警；**全部写错**则委派直接报错，而不是放一个空手的子 Agent 上场。
 
 `prompt` 侧同理需要一份兄弟实例：`prompt.default` 挂了 `prompt/section/subagents`，而该 section 依赖 Spawner，接同一个又是环。语义上也正确——子 Agent 不能委派，给它看可委派名单毫无意义。
+
+### 4.1 多模态（modalities）
+
+主 Agent 与 LLM 实例可声明 **`config.modalities`**（`llm/openai-compatible`）：默认 `[text, image]`；纯文本模型设为 `[text]` 时，调用 LLM 前不会 hydrate 图片，用户消息里的附件变为 `[attachment: work/upload/…]` 文本提示。
+
+子 Agent 可在 `agents/*.md` 写 **`modalities: [image]`**（示例见 `examples/agents/vision.md`）。`prompt/section/subagents` 会把 modalities 写进主 Agent system prompt；当主 LLM 为 text-only 且存在**在 frontmatter 里显式声明** `modalities` 含 `image` 的子 Agent 时，会追加「请 delegate 并在 task 里带上路径」的说明（未写 `modalities` 的子 Agent 不参与该判断）。
+
+典型分工：主 Agent `modalities: [text]` + `delegate` → `vision` 子 Agent（`read` 图片 + vision 模型 + `finish`）→ 主 Agent 只消费 summary 继续对话。Audio 尚未有 hydrate 管道；`modalities` 可预留 `audio`，需配合落盘或 ASR 工具后才有端到端能力。
 
 ## 5. 委派与结论读回
 

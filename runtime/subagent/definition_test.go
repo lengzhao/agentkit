@@ -61,6 +61,17 @@ You are the research subagent.
 		}
 	})
 
+	t.Run("modalities", func(t *testing.T) {
+		t.Parallel()
+		def, err := parseDefinition("vision.md", "---\ndescription: sees images\nmodalities: [image, text]\n---\nbody\n")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if len(def.Modalities) != 2 || def.Modalities[0] != "image" || def.Modalities[1] != "text" {
+			t.Errorf("modalities = %#v", def.Modalities)
+		}
+	})
+
 	t.Run("name falls back to file name", func(t *testing.T) {
 		t.Parallel()
 		def, err := parseDefinition("reviewer.md", "---\ndescription: reviews code\n---\nbody\n")

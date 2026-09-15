@@ -41,6 +41,9 @@ type Definition struct {
 	Skills   []string `json:"skills,omitempty"`
 	Model    string   `json:"model,omitempty"`
 	MaxSteps int      `json:"maxSteps,omitempty"`
+	// Modalities declares what this subagent can process (text, image, audio).
+	// Shown in the parent system prompt; use with a vision-capable model for image.
+	Modalities []string `json:"modalities,omitempty"`
 	// Path is the file this definition came from, for error messages.
 	Path string `json:"path,omitempty"`
 }

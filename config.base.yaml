@@ -401,6 +401,7 @@ llm.default:
     #   - type: web_search
     #     parameters:
     #       search_context_size: low
+    # modalities: [text]  # 纯文本模型；默认省略时为 [text, image]。纯文本时图片会变为 [attachment: path] 提示，可委派 vision 子 agent。
     retry:
       provider:
         maxRetries: 0
@@ -649,6 +650,7 @@ prompt.subagents.default:
   use: prompt/section/subagents
   deps:
     subagent: subagent.default
+    llm: llm.fallback
 
 # 子 agent 的 prompt：共享 AGENTS.md 与 skills，不含可委派名单。
 prompt.subagent.default:

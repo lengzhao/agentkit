@@ -101,6 +101,13 @@ func parseFallbackMode(raw string) (fallbackMode, error) {
 
 func (f *Fallback) Name() string { return "fallback" }
 
+func (f *Fallback) Modalities() []string {
+	if len(f.providers) > 0 {
+		return ProviderModalities(f.providers[0])
+	}
+	return agentkit.NormalizeModalities(nil)
+}
+
 func (f *Fallback) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
 	targets := f.buildTargets(req.Model)
 	if len(targets) == 0 {

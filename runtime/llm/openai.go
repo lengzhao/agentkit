@@ -35,6 +35,9 @@ type OpenAIConfig struct {
 	// ResponseHeaderTimeoutSeconds caps connect + TLS + HTTP response headers. 0 uses 60s.
 	// Independent of timeoutSeconds (headers often return before the first model token).
 	ResponseHeaderTimeoutSeconds int `json:"responseHeaderTimeoutSeconds"`
+	// Modalities lists supported user input modalities: text, image, audio.
+	// Empty defaults to text and image. Use [text] for models that reject vision input.
+	Modalities []string `json:"modalities,omitempty"`
 }
 
 type HostedToolConfig struct {
@@ -54,12 +57,13 @@ type OpenAIDeps struct {
 }
 
 type OpenAI struct {
-	model         string
-	api           string
-	hostedTools   []HostedToolConfig
-	reasoning     *OpenAIReasoningConfig
-	providerRetry ProviderRetrySettings
+	model          string
+	api            string
+	hostedTools    []HostedToolConfig
+	reasoning      *OpenAIReasoningConfig
+	providerRetry  ProviderRetrySettings
 	requestTimeout time.Duration
+	modalities     []string
 	apiKey         string
 	client         *openai.Client
 }
@@ -95,6 +99,7 @@ func NewOpenAI(cfg OpenAIConfig, deps OpenAIDeps) (agentkit.LLMProvider, error) 
 		reasoning:      cfg.Reasoning,
 		providerRetry:  defaultProviderRetry(retryProviderConfig(cfg.Retry)),
 		requestTimeout: requestTimeout,
+		modalities:     agentkit.NormalizeModalities(cfg.Modalities),
 		apiKey:         apiKey,
 		client:         newOpenAIClient(apiKey, baseURL, headerTimeout),
 	}, nil
@@ -108,6 +113,8 @@ func retryProviderConfig(cfg *LLMRetryConfig) *ProviderRetrySettings {
 }
 
 func (p *OpenAI) Name() string { return "openai-compatible" }
+
+func (p *OpenAI) Modalities() []string { return append([]string(nil), p.modalities...) }
 
 func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
 	if p.apiKey == "" {

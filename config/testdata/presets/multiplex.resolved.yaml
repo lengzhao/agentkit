@@ -29,11 +29,14 @@ agent.cursor.default:
         autoApprove: false
         command:
             - agent
+            - --trust
             - acp
+        cwd: work
         env:
             CURSOR_ENABLE: "1"
             NO_OPEN_BROWSER: "1"
         id: cursor
+        releaseSubprocessAfterTurn: true
     deps:
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -305,6 +308,7 @@ platform.feishu:
         allowFrom: ""
         appId: cli_REPLACE_ME
         appSecret: REPLACE_ME
+        asyncSubagentProgressCard: true
         groupReplyAll: false
         progressStyle: card
         showThinking: true
@@ -402,6 +406,7 @@ prompt.subagent.default:
     use: prompt/assembler/default
 prompt.subagents.default:
     deps:
+        llm: llm.fallback
         subagent: subagent.default
     use: prompt/section/subagents
 prompt.worker.default:

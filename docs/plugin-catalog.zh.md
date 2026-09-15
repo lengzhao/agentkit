@@ -151,7 +151,7 @@ platform.http:
 | `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
 | `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
-| `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description | — |
+| `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description。可选 `deps.llm`：主模型为 text-only 且存在**显式**声明 `modalities` 含 image 的子 Agent 时，追加委派看图提示 | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
 | `llm/fallback` | `agentkit.LLMProvider` | 主模型/主 provider 失败时按序切换备用 model 或 provider；同 endpoint 只需一份底层 provider | — |
@@ -159,7 +159,7 @@ platform.http:
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
 
-**`llm/openai-compatible`**：`api` 为 `responses`（L0 默认）或 `chat`；`hostedTools` 仅在 `responses` 下生效，用于 OpenAI 内置工具（如 `web_search`），由 provider 服务端执行，不走 agentkit 工具循环。L0 已默认启用 `hostedTools.web_search`，`tools.default` 不再挂 `tool/web-search-*`。若改回 Tavily/DuckDuckGo 等本地搜索插件，需同时设 `api: chat` 并自行把 `tool/web-search-*` 加回 `tools`。超时分两档：`responseHeaderTimeoutSeconds` 限制 **连接 + TLS + HTTP 响应头**（默认 60，对应 `net/http` `ResponseHeaderTimeout`）；`timeoutSeconds` 限制 **首 token / TTFB**（默认 180，应用层 `streamWithRequestTimeout`，流式常先返回 200 再等模型）。后续流式 token 不受 `timeoutSeconds` 限制。与 agent 的 `maxSteps`、工具 `timeoutSeconds` 独立。示例：
+**`llm/openai-compatible`**：`config.modalities` 声明输入能力（`text` / `image` / `audio`，默认可看图）；纯文本模型设 `[text]`，运行时会把附件降为 `[attachment: …]` 文本。`api` 为 `responses`（L0 默认）或 `chat`；`hostedTools` 仅在 `responses` 下生效，用于 OpenAI 内置工具（如 `web_search`），由 provider 服务端执行，不走 agentkit 工具循环。L0 已默认启用 `hostedTools.web_search`，`tools.default` 不再挂 `tool/web-search-*`。若改回 Tavily/DuckDuckGo 等本地搜索插件，需同时设 `api: chat` 并自行把 `tool/web-search-*` 加回 `tools`。超时分两档：`responseHeaderTimeoutSeconds` 限制 **连接 + TLS + HTTP 响应头**（默认 60，对应 `net/http` `ResponseHeaderTimeout`）；`timeoutSeconds` 限制 **首 token / TTFB**（默认 180，应用层 `streamWithRequestTimeout`，流式常先返回 200 再等模型）。后续流式 token 不受 `timeoutSeconds` 限制。与 agent 的 `maxSteps`、工具 `timeoutSeconds` 独立。示例：
 
 ```yaml
 llm.default:
@@ -172,7 +172,7 @@ llm.default:
 ```
 
 
-**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。同 provider 换 model 时只配一份 `llm/openai-compatible`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。
+**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。同 provider 换 model 时只配一份 `llm/openai-compatible`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。实现 `ModalityAwareLLM` 时 **`Modalities()` 仅反映链上第一个 provider**（与 LLM 调用前 `PrepareMessagesForLLM` 的 hydrate/demote 一致）；若主候选 text-only、备用为多模态，不会为备用自动 hydrate 图片。
 
 ```yaml
 llm.default:

@@ -15,6 +15,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	rtllm "github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -623,7 +624,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 	if err != nil {
 		return nil, ctx, err
 	}
-	history, err = session.HydrateLocalAttachments(ctx, history, a.workspace, 0)
+	history, err = session.PrepareMessagesForLLM(ctx, history, a.workspace, 0, rtllm.ProviderModalities(a.llm))
 	if err != nil {
 		return nil, ctx, err
 	}

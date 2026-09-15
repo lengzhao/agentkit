@@ -826,7 +826,7 @@ Session backend 必须守住两条不变量，否则依赖 seq 的一切（compa
 |---|---|
 | **seq 单调递增** | 重新打开已有 session 后，编号必须从既有最大值之上继续，不能从 1 重新开始 |
 | **派生历史始终可回放** | `DeriveMessages` 不得输出没有对应结果的 tool call —— provider 会直接拒收这种历史。中断留下的 orphan call 由 derive 补一条"被中断"的 stand-in 结果 |
-| **落盘消息瘦身** | 与 pi `SessionManager.appendMessage` 一致：**user/assistant 正文**完整落盘；`SanitizeModelMessageForStorage` 仅去掉 inline `data:` 媒体并改为 `attachment_ref`（`Source`/`URL`），若瘦身导致体积变小则记录 `logical_chars`。`tool/call` 参数完整落盘（仅空 input 规范为 `{}`、流式残缺 JSON 换占位对象）。**tool 结果**：在工具执行侧限长（对齐 pi 工具 truncate + spill）；`PrepareToolResultForStorage` 将超长正文写入 workspace `work/tool-spill/<session>/<call>.txt`，事件内保留截断视图与 `audit.spill_path`（文案 `[Output truncated. Full output: …]` 同 pi）；无 workspace 时仅截断。`DeriveMessages` / compaction 仍对模型可见历史做二次裁剪。LLM 调用前由 `HydrateLocalAttachments` 从 workspace 重载本地图片为 vision：最近一条 user 消息的 `attachment_ref`，以及当前轮次 `read` 工具返回的图片路径 |
+| **落盘消息瘦身** | 与 pi `SessionManager.appendMessage` 一致：**user/assistant 正文**完整落盘；`SanitizeModelMessageForStorage` 仅去掉 inline `data:` 媒体并改为 `attachment_ref`（`Source`/`URL`），若瘦身导致体积变小则记录 `logical_chars`。`tool/call` 参数完整落盘（仅空 input 规范为 `{}`、流式残缺 JSON 换占位对象）。**tool 结果**：在工具执行侧限长（对齐 pi 工具 truncate + spill）；`PrepareToolResultForStorage` 将超长正文写入 workspace `work/tool-spill/<session>/<call>.txt`，事件内保留截断视图与 `audit.spill_path`（文案 `[Output truncated. Full output: …]` 同 pi）；无 workspace 时仅截断。`DeriveMessages` / compaction 仍对模型可见历史做二次裁剪。LLM 调用前由 `PrepareMessagesForLLM` 按 provider `modalities` 处理附件：支持 `image` 时等同 `HydrateLocalAttachments`（最近 user 的 `attachment_ref` + 当前轮 `read` 图片）；仅 `text` 时将图片/attachment 降为 `[attachment: …]` 文本，避免纯文本模型收到 vision 载荷 |
 
 崩溃（SIGKILL / panic / 断电）会留下 `turn/start` 无 `turn/end`、tool call 无结果的日志。Agent 在每个 turn 开始前扫描并修复它，写 `session/recovery` 事件留痕；详见 [guides/autonomous-run.zh.md §6](guides/autonomous-run.zh.md#6-崩溃恢复)。
 
@@ -1084,6 +1084,7 @@ type LLMProvider interface {
 LLM Runtime 负责：
 
 - Provider 选择。
+- **`modalities` 声明**（`llm/openai-compatible` 的 `config.modalities`；未配置时默认 text+image）。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片。
 - 请求构造和 hook。
 - 流式 chunk 归一化。
 - 使用量统计。
