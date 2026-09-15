@@ -1318,11 +1318,12 @@ go run ./cmd/agent --preset coding "inspect this repo"
 
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|
-| RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；output 为用户可见文本；metadata 含 `usage_*_tokens`、`steps`、`stop_reason`） | `loop.Dispatch` |
+| RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；metadata 含 `turn_id`、`workspace_key`、`attachment_sources`（逗号分隔 workspace 路径，无 base64）、`usage_*_tokens`、`steps`、`stop_reason`） | `loop.Dispatch` |
 | Loop 子 agent 委派 | 独立 Trace `agent.turn`（`sessionId` 为子 session；`agent_id` 为实际 Loop agent，如 `cursor`；async 委派同样在后台 goroutine 导出） | `subagent/loop-agent.runChild` |
 | LLM 准备 | Span `agent.step.prep`（history hydrate、tools.Visible、prompt.Assemble） | `agent.runStep` |
-| LLM 调用 | Generation（agent 传入完整 `GenerationMessages`；Langfuse exporter 记录时做逐字段截断与同 trace 前缀去重，格式 `{"sharedPrefixMessages":N,"messages":[...]}`；不影响实际 LLM 请求） | `agent.runStep` + `telemetry/langfuse` |
-| Tool 执行 | Tool observation | `tools.Execute` |
+| LLM 调用 | Generation（metadata 含 `agent_id`、`session_id`、`turn_id`、`tools`；agent 传入完整 `GenerationMessages`；Langfuse exporter 记录时做逐字段截断与同 trace 前缀去重，格式 `{"sharedPrefixMessages":N,"messages":[...]}`；不影响实际 LLM 请求） | `agent.runStep` + `telemetry/langfuse` |
+| Tool 执行 | Span（metadata 含 `tool_name`、`tool_call_id`；`read` 额外 `read_path`；`delegate` 额外 `delegate_agent`、`delegate_task`） | `tools.Execute` |
+| 进程内子 Agent | Span `subagent.<name>`（metadata 含 `subagent`、`child_session`、`delegate_task`） | `subagent/inprocess` |
 | Compaction | Span `compaction.apply`（input 为 `automatic` 或 `force`；无 service 或未实际 apply 时不导出） | `runtime/compaction.ApplyAll` |
 | MCP 初始化 | Span `mcp.init`（读 mcp.json、连接并 initialize 各 server、ListTools 发现工具；无 server 时不导出） | `tool/mcp.reload` |
 | OpenAPI 初始化 | Span `openapi.init`（读 api.json 与引用 spec、解析 operation；无 API 时不导出） | `tool/openapi.reload` |

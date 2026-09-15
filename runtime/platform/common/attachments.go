@@ -67,8 +67,9 @@ func InboundOptsFor(ws cw.Service) *InboundOpts {
 }
 
 // InboundFromContent builds a MessageEvent from text and optional rtmedia.
-// extraContent is prepended (e.g. quoted reply context). Non-image files are
-// saved under the tenant work dir and referenced in the prompt for the read tool.
+// extraContent is prepended (e.g. quoted reply context). Attachments are saved
+// under work/upload/ and described in the user text (path, mime, size) so
+// text-only models can read or delegate without vision.
 func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
 	if route.ScopeUserID == "" {
 		route.ScopeUserID = strings.TrimSpace(userID)
@@ -78,10 +79,50 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 		deliveryID = session.BuildDeliverySessionID(route.Platform, route.ChannelID, route.ThreadID, route.ScopeUserID)
 		route.DeliveryID = deliveryID
 	}
-	if len(files) > 0 {
-		saved := saveInboundFiles(deliveryID, files, opts)
-		filePaths = append(filePaths, saved...)
+
+	var attachmentNotes []inboundSavedAttachment
+	for _, img := range images {
+		if len(img.Data) == 0 {
+			continue
+		}
+		if p := strings.TrimSpace(img.WorkPath); p != "" {
+			attachmentNotes = append(attachmentNotes, inboundSavedAttachment{
+				path:     p,
+				mime:     strings.TrimSpace(img.MimeType),
+				size:     len(img.Data),
+				origName: strings.TrimSpace(img.FileName),
+				image:    true,
+			})
+		}
 	}
+	if len(files) > 0 {
+		attachmentNotes = append(attachmentNotes, saveInboundFiles(deliveryID, files, opts)...)
+	}
+	for i := range images {
+		if strings.TrimSpace(images[i].WorkPath) != "" || len(images[i].Data) == 0 {
+			continue
+		}
+		if opts == nil || opts.Workspace == nil {
+			continue
+		}
+		saved := saveInboundFiles(deliveryID, []FileAttachment{{
+			MimeType: images[i].MimeType,
+			Data:     images[i].Data,
+			FileName: images[i].FileName,
+		}}, opts)
+		if len(saved) == 0 {
+			continue
+		}
+		saved[0].image = true
+		images[i].WorkPath = saved[0].path
+		attachmentNotes = append(attachmentNotes, saved[0])
+	}
+	if len(filePaths) > 0 && len(files) == 0 {
+		for _, p := range filePaths {
+			attachmentNotes = append(attachmentNotes, inboundSavedAttachment{path: p})
+		}
+	}
+
 	text := strings.TrimSpace(content)
 	if extraContent != "" {
 		if text != "" {
@@ -102,25 +143,10 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 			text = hint
 		}
 	}
-	if len(filePaths) > 0 {
-		text = appendFileRefs(text, filePaths)
+	if len(attachmentNotes) > 0 {
+		text = appendInboundAttachmentBlock(text, attachmentNotes)
 	}
-	for i := range images {
-		if strings.TrimSpace(images[i].WorkPath) != "" || len(images[i].Data) == 0 {
-			continue
-		}
-		if opts == nil || opts.Workspace == nil {
-			continue
-		}
-		saved := saveInboundFiles(deliveryID, []FileAttachment{{
-			MimeType: images[i].MimeType,
-			Data:     images[i].Data,
-			FileName: images[i].FileName,
-		}}, opts)
-		if len(saved) > 0 {
-			images[i].WorkPath = saved[0]
-		}
-	}
+
 	var parts []agentkit.ContentPart
 	if text != "" {
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: text})
@@ -154,6 +180,60 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 	}, route)
 }
 
+type inboundSavedAttachment struct {
+	path     string
+	mime     string
+	size     int
+	origName string
+	image    bool
+}
+
+func appendInboundAttachmentBlock(prompt string, saved []inboundSavedAttachment) string {
+	if len(saved) == 0 {
+		return prompt
+	}
+	if prompt == "" {
+		prompt = "Please analyze the attached file(s)."
+	}
+	var lines []string
+	for _, a := range saved {
+		lines = append(lines, formatInboundAttachmentLine(a))
+	}
+	return prompt + "\n\n(Attachments saved to workspace — use read for files; for images on a text-only model, delegate to a vision subagent with the path:\n" +
+		strings.Join(lines, "\n") + ")"
+}
+
+func formatInboundAttachmentLine(a inboundSavedAttachment) string {
+	var b strings.Builder
+	b.WriteString("- ")
+	b.WriteString(strings.TrimSpace(a.path))
+	if m := strings.TrimSpace(a.mime); m != "" {
+		b.WriteString(" mime=")
+		b.WriteString(m)
+	}
+	if a.size > 0 {
+		b.WriteString(fmt.Sprintf(" size=%d", a.size))
+	}
+	if n := strings.TrimSpace(a.origName); n != "" {
+		b.WriteString(" name=")
+		b.WriteString(n)
+	}
+	if a.image {
+		b.WriteString(" type=image")
+	}
+	return b.String()
+}
+
+func pathsFromSaved(saved []inboundSavedAttachment) []string {
+	out := make([]string, 0, len(saved))
+	for _, s := range saved {
+		if s.path != "" {
+			out = append(out, s.path)
+		}
+	}
+	return out
+}
+
 // IsImageAttachment reports whether an inbound attachment should be sent to the
 // model as vision input instead of a read-tool file path.
 func IsImageAttachment(mimeType, filename string) bool {
@@ -164,13 +244,14 @@ func appendFileRefs(prompt string, filePaths []string) string {
 	if len(filePaths) == 0 {
 		return prompt
 	}
-	if prompt == "" {
-		prompt = "Please analyze the attached file(s)."
+	notes := make([]inboundSavedAttachment, len(filePaths))
+	for i, p := range filePaths {
+		notes[i] = inboundSavedAttachment{path: p}
 	}
-	return prompt + "\n\n(Files saved locally, please read them: " + strings.Join(filePaths, ", ") + ")"
+	return appendInboundAttachmentBlock(prompt, notes)
 }
 
-func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []string {
+func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []inboundSavedAttachment {
 	if opts == nil || opts.Workspace == nil {
 		slog.Warn("common: inbound attachments require workspace")
 		return nil
@@ -189,7 +270,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 		return nil
 	}
 
-	var paths []string
+	var out []inboundSavedAttachment
 	for i, f := range files {
 		if len(f.Data) == 0 {
 			continue
@@ -204,11 +285,17 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 			slog.Error("common: write inbound attachment failed", "path", fpath, "error", err)
 			continue
 		}
-		// Paths are relative to the tenant local root so read can open them with root: .
-		paths = append(paths, AttachFSRel(opts.Workspace, fname))
+		workPath := AttachFSRel(opts.Workspace, fname)
+		out = append(out, inboundSavedAttachment{
+			path:     workPath,
+			mime:     strings.TrimSpace(f.MimeType),
+			size:     len(f.Data),
+			origName: strings.TrimSpace(f.FileName),
+			image:    rtmedia.IsImage(f.MimeType, f.FileName),
+		})
 		slog.Debug("common: inbound upload saved", "path", fpath, "name", f.FileName, "size", len(f.Data))
 	}
-	return paths
+	return out
 }
 
 func sanitizeAttachmentFileName(name string) string {

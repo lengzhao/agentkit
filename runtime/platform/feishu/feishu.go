@@ -2099,11 +2099,11 @@ func detectMimeType(data []byte) string {
 		if string(data[:4]) == "GIF8" {
 			return "image/gif"
 		}
-		if string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
+		if string(data[:4]) == "RIFF" && len(data) >= 12 && string(data[8:12]) == "WEBP" {
 			return "image/webp"
 		}
 	}
-	return "image/png"
+	return http.DetectContentType(data)
 }
 
 // predictMsgType returns the message type that buildReplyContent will choose,

@@ -143,7 +143,11 @@ func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws work
 
 func attachmentHint(part agentkit.ContentPart) string {
 	if src := strings.TrimSpace(part.Source); src != "" {
-		return "[attachment: " + src + "]"
+		hint := "[attachment: " + src
+		if mime := strings.TrimSpace(part.MIME); mime != "" {
+			hint += " mime=" + mime
+		}
+		return hint + "]"
 	}
 	if url := strings.TrimSpace(part.URL); url != "" {
 		return "[attachment: " + url + "]"

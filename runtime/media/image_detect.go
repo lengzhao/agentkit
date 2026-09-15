@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -59,6 +60,10 @@ func EnsureInboundFileName(name, mime string, data []byte) string {
 		return name
 	}
 	if IsImagePath(name) {
+		return name
+	}
+	if ext := strings.ToLower(filepath.Ext(name)); ext != "" && !IsImagePath(name) {
+		// Keep declared non-image extensions even when platform MIME sniffing is wrong.
 		return name
 	}
 	if !IsImageMIME(mime) && !LooksLikeImageData(data) {

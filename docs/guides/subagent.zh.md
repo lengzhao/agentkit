@@ -74,7 +74,11 @@ subagent.inprocess.default:
       - global:agents
     maxSteps: 20
     timeoutSeconds: 600
+  deps:
+    llm: llm.openai
 ```
+
+`llm.openai`（或等价的多模态实例）是默认值：进程内子 agent 在 `read` 图片后依赖 `PrepareMessagesForLLM` 注入 `image_url`；若误接 `llm.fallback` → `llm.text`，modalities 仅为 `[text]`，vision 会只看到 read 返回的元数据。
 
 `loop-agent` 在配置里声明可委派的 Loop agent，不扫描 `agents/*.md`：
 

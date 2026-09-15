@@ -239,6 +239,11 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		Kind:  captelemetry.KindSpan,
 		Input: task,
 		Scope: true,
+		Attributes: map[string]string{
+			"subagent":      def.Name,
+			"child_session": string(childID),
+			"delegate_task": telemetry.TruncateMeta(task),
+		},
 	}))
 	defer func() {
 		end := captelemetry.ObservationEnd{Output: out.Summary}

@@ -275,7 +275,7 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	for _, want := range []string{"trace-create", "generation-create", "generation-update", "span-create", "span-update", `"tools":"read,grep"`, `"tools":["read","grep"]`, `"input":12`, `"output":4`} {
+	for _, want := range []string{"trace-create", "generation-create", "generation-update", "span-create", "span-update", `"tools":"read,grep"`, `"tools":["read","grep"]`, `"input":12`, `"output":4`, `"observation_kind":"generation"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("batch missing %q in %s", want, text)
 		}

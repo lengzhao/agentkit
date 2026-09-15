@@ -341,7 +341,8 @@ subagent.inprocess.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
-    llm: llm.fallback
+    # 多模态 provider（默认 [text, image]）；勿用 llm.fallback→llm.text，否则 vision 子 agent read 后无法 hydrate 图片
+    llm: llm.openai
     tools: tools.subagent.default
     prompt: prompt.subagent.default
     hooks: hooks.default
@@ -411,6 +412,10 @@ llm.default:
         maxRetryDelayMs: 60000
   deps:
     credentials: credentials.default
+
+# 与 L1 常见实例名对齐；默认多模态（省略 modalities 时为 [text, image]），供 inprocess 子 agent（vision）hydrate 图片。
+llm.openai:
+  extends: llm.default
 
 llm.fallback:
   use: llm/fallback

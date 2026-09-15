@@ -45,6 +45,9 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	if !strings.Contains(text, "local:work/upload/note.txt") {
 		t.Fatalf("missing file ref in text: %q", text)
 	}
+	if !strings.Contains(text, "mime=text/plain") || !strings.Contains(text, "size=16") {
+		t.Fatalf("expected attachment metadata in text: %q", text)
+	}
 
 	saved := filepath.Join(root, "work", "upload", "note.txt")
 	data, err := os.ReadFile(saved)
@@ -113,6 +116,10 @@ func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 	)
 	if len(event.Message.Content) < 2 {
 		t.Fatalf("content = %#v", event.Message.Content)
+	}
+	text := event.Message.Content[0].Text
+	if !strings.Contains(text, "type=image") || !strings.Contains(text, "local:work/upload/") {
+		t.Fatalf("expected image attachment note in text: %q", text)
 	}
 	if event.Message.Content[1].Source == "" {
 		t.Fatal("expected workspace source path on image")

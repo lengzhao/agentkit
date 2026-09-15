@@ -18,6 +18,16 @@ func TestEnsureInboundFileNameAddsJPEGExtension(t *testing.T) {
 	}
 }
 
+func TestEnsureInboundFileNameKeepsJSONDespiteWrongImageMIME(t *testing.T) {
+	t.Parallel()
+	name := "trace-6debb561.json"
+	data := []byte(`{"trace":{"id":"6debb561"}}`)
+	got := rtmedia.EnsureInboundFileName(name, "image/png", data)
+	if got != name {
+		t.Fatalf("name = %q, want %q", got, name)
+	}
+}
+
 func TestWorkspaceFileMayBeImageExtensionlessJPEG(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

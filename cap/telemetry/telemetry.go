@@ -27,6 +27,10 @@ type TurnMeta struct {
 	AgentID           string
 	PlatformID        string
 	UserID            string
+	// WorkspaceKey is the tenant workspace routing key (TurnEnvelope.Workspace).
+	WorkspaceKey string
+	// AttachmentSources lists inbound attachment paths (comma-separated, no base64).
+	AttachmentSources string
 	Input             string
 }
 
@@ -65,6 +69,8 @@ type ObservationMeta struct {
 	SessionID string
 	// Scope marks a span that should parent nested generations (e.g. subagent.turn).
 	Scope bool
+	// Attributes are merged into exporter metadata (tool paths, delegate task, etc.).
+	Attributes map[string]string
 }
 
 // ObservationEnd closes an observation.

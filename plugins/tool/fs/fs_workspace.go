@@ -117,7 +117,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 			startLine = input.Offset
 		}
 		return formatReadText(input.Path, startLine, sliced), nil
-	}).Description("Read a text file from the workspace. Image files return metadata and are loaded for vision before the next model step. Large text files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
+	}).Description("Read a text file. path accepts global:..., local:..., absolute /..., relative ./..., or paths relative to the workspace root. Image files return metadata and are loaded for vision before the next model step. Large text files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 			return "", err
 		}
 		return formatWriteResult(input.Path), nil
-	}).Description("Write content to a file in the workspace.").Build()
+	}).Description("Write content to a file. path accepts global:..., local:..., absolute /..., relative ./..., or paths relative to the workspace root.").Build()
 	if err != nil {
 		return nil, err
 	}
@@ -216,13 +216,13 @@ func filterToolPack(pack agentkit.ToolPack, only []string) agentkit.ToolPack {
 }
 
 type ReadInput struct {
-	Path   string `json:"path" jsonschema:"File path relative to the workspace"`
+	Path   string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Line number to start reading from (1-indexed)"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of lines to read"`
 }
 
 type WriteInput struct {
-	Path    string `json:"path" jsonschema:"File path relative to the workspace"`
+	Path    string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
 	Content string `json:"content" jsonschema:"Full file content to write"`
 }
 

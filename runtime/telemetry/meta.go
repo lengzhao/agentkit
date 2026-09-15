@@ -5,21 +5,48 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // ObservationMetaFromContext fills agent and session ids from ctx when unset.
 func ObservationMetaFromContext(ctx context.Context, meta captelemetry.ObservationMeta) captelemetry.ObservationMeta {
 	if meta.AgentID == "" {
-		if id := agentIDFromEnvelope(ctx); id != "" {
+		if id := string(session.AgentIDFromContext(ctx)); id != "" {
+			meta.AgentID = id
+		} else if id := agentIDFromEnvelope(ctx); id != "" {
 			meta.AgentID = id
 		}
 	}
 	if meta.SessionID == "" {
-		if id := conversationFromEnvelope(ctx); id != "" {
+		if id := string(session.SessionIDFromContext(ctx)); id != "" {
+			meta.SessionID = id
+		} else if id := conversationFromEnvelope(ctx); id != "" {
 			meta.SessionID = id
 		}
 	}
 	return meta
+}
+
+// ContextObservationAttrs returns turn-scoped metadata for Langfuse observations.
+func ContextObservationAttrs(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	if id := TurnIDFrom(ctx); id != "" {
+		out["turn_id"] = id
+	}
+	env := session.EnvelopeFromContext(ctx)
+	if env.Route.Platform != "" {
+		out["platform_id"] = env.Route.Platform
+	}
+	if env.Actor.UserID != "" {
+		out["user_id"] = env.Actor.UserID
+	}
+	if env.Workspace != "" {
+		out["workspace_key"] = env.Workspace
+	}
+	if env.Conversation != "" {
+		out["conversation_id"] = env.Conversation
+	}
+	return out
 }
 
 // EnrichEventAttrs adds agent_id and session_id from ctx when missing.

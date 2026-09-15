@@ -180,6 +180,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		AgentID:           string(agentID),
 		PlatformID:        req.Event.PlatformID,
 		UserID:            req.Event.UserID,
+		WorkspaceKey:      req.Event.Envelope.Workspace,
+		AttachmentSources: rttelemetry.JoinAttachmentSources(rttelemetry.AttachmentSources(input.Message)),
 		Input:             rttelemetry.FormatMessage(input.Message),
 	}
 	slog.Info("turn start",

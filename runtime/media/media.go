@@ -60,7 +60,7 @@ func DetectMIME(path string, data []byte) string {
 	if len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
 		return "image/webp"
 	}
-	return "image/png"
+	return ""
 }
 
 func mimeByExt(ext string) string {

@@ -59,6 +59,7 @@ type Langfuse struct {
 	maxFieldBytes          int
 	dedupeGenerationPrefix bool
 	genMessages            map[string][]agentkit.ModelMessage
+	obsMetadata            map[string]map[string]map[string]string
 	redactInputs           bool
 	redactOutputs          bool
 	sampleRate             float64
@@ -194,7 +195,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 		UserID:    meta.UserID,
 		Input:     l.preparePayload(meta.Input, l.redactInputs),
 		Release:   l.release,
-		Metadata:  l.traceMetadata(meta),
+		Metadata:  stringMapToM(l.traceMetadata(meta)),
 	}
 	if _, err := l.client.Trace(trace); err != nil {
 		slog.Warn("telemetry/langfuse trace create failed", "trace_id", traceID, "err", err)
@@ -209,7 +210,11 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 			Output: l.preparePayload(end.Output, l.redactOutputs),
 		}
 		if md := l.turnEndMetadata(end); len(md) > 0 {
-			update.Metadata = md
+			merged := l.traceMetadata(meta)
+			for k, v := range md {
+				merged[k] = v
+			}
+			update.Metadata = stringMapToM(merged)
 		}
 		if _, err := l.client.Trace(update); err != nil {
 			slog.Warn("telemetry/langfuse trace update failed", "trace_id", traceID, "err", err)
@@ -231,7 +236,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 		name = string(meta.Kind)
 	}
 	now := time.Now().UTC()
-	obsMetadata := l.observationMetadata(meta)
+	obsMetadata := l.buildObservationMetadata(ctx, meta)
 
 	switch meta.Kind {
 	case captelemetry.KindGeneration:
@@ -241,7 +246,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			Model:     meta.Model,
 			Input:     l.prepareGenerationInput(traceID, meta),
 			StartTime: &now,
-			Metadata:  obsMetadata,
+			Metadata:  stringMapToM(obsMetadata),
 		}
 		if params := l.generationModelParameters(meta); params != nil {
 			gen.ModelParameters = params
@@ -251,14 +256,16 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			slog.Warn("telemetry/langfuse generation create failed", "trace_id", traceID, "name", name, "err", err)
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
+		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
 		ctx = rttelemetry.WithToolParent(ctx, created.ID)
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
 			update := &model.Generation{
-				ID:      created.ID,
-				TraceID: traceID,
-				Output:  l.preparePayload(end.Output, l.redactOutputs),
-				EndTime: &endTime,
+				ID:       created.ID,
+				TraceID:  traceID,
+				Output:   l.preparePayload(end.Output, l.redactOutputs),
+				EndTime:  &endTime,
+				Metadata: stringMapToM(l.observationMetadataByID(traceID, created.ID, obsMetadata)),
 			}
 			if !end.CompletionStartTime.IsZero() {
 				completionStart := end.CompletionStartTime.UTC()
@@ -284,13 +291,14 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			Name:      name,
 			Input:     l.preparePayload(meta.Input, l.redactInputs),
 			StartTime: &now,
-			Metadata:  obsMetadata,
+			Metadata:  stringMapToM(obsMetadata),
 		}
 		created, err := l.client.Span(span, l.toolParentPtr(ctx))
 		if err != nil {
 			slog.Warn("telemetry/langfuse span create failed", "trace_id", traceID, "name", name, "err", err)
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
+		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
 		ctx = rttelemetry.WithToolParent(ctx, created.ID)
 		if meta.Scope {
 			ctx = rttelemetry.WithScopeParent(ctx, created.ID)
@@ -298,10 +306,11 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
 			update := &model.Span{
-				ID:      created.ID,
-				TraceID: traceID,
-				Output:  l.preparePayload(end.Output, l.redactOutputs),
-				EndTime: &endTime,
+				ID:       created.ID,
+				TraceID:  traceID,
+				Output:   l.preparePayload(end.Output, l.redactOutputs),
+				EndTime:  &endTime,
+				Metadata: stringMapToM(l.observationMetadataByID(traceID, created.ID, obsMetadata)),
 			}
 			if end.Err != nil {
 				update.Level = model.ObservationLevelError
@@ -327,7 +336,7 @@ func (l *Langfuse) RecordEvent(ctx context.Context, name string, attrs map[strin
 		TraceID:   traceID,
 		Name:      name,
 		StartTime: &now,
-		Metadata:  rttelemetry.EnrichEventAttrs(ctx, attrs),
+		Metadata:  stringMapToM(rttelemetry.EnrichEventAttrs(ctx, attrs)),
 	}
 	if _, err := l.client.Event(event, l.scopeParentPtr(ctx)); err != nil {
 		slog.Warn("telemetry/langfuse event failed", "trace_id", traceID, "name", name, "err", err)
@@ -387,6 +396,7 @@ func (l *Langfuse) prepareGenerationInput(traceID string, meta captelemetry.Obse
 func (l *Langfuse) clearGenerationState(traceID string) {
 	l.mu.Lock()
 	delete(l.genMessages, traceID)
+	delete(l.obsMetadata, traceID)
 	l.mu.Unlock()
 }
 
@@ -414,6 +424,9 @@ func (l *Langfuse) traceMetadata(meta captelemetry.TurnMeta) map[string]string {
 	out := map[string]string{
 		"environment": l.environment,
 	}
+	if meta.TurnID != "" {
+		out["turn_id"] = meta.TurnID
+	}
 	if meta.DeliverySessionID != "" {
 		out["delivery_session_id"] = meta.DeliverySessionID
 	}
@@ -423,27 +436,91 @@ func (l *Langfuse) traceMetadata(meta captelemetry.TurnMeta) map[string]string {
 	if meta.PlatformID != "" {
 		out["platform_id"] = meta.PlatformID
 	}
-	if meta.TurnID != "" {
-		out["turn_id"] = meta.TurnID
+	if meta.UserID != "" {
+		out["user_id"] = meta.UserID
+	}
+	if meta.WorkspaceKey != "" {
+		out["workspace_key"] = meta.WorkspaceKey
+	}
+	if meta.AttachmentSources != "" {
+		out["attachment_sources"] = meta.AttachmentSources
 	}
 	return out
 }
 
-func (l *Langfuse) observationMetadata(meta captelemetry.ObservationMeta) map[string]string {
-	out := map[string]string{}
+func (l *Langfuse) buildObservationMetadata(ctx context.Context, meta captelemetry.ObservationMeta) map[string]string {
+	out := rttelemetry.ContextObservationAttrs(ctx)
 	if meta.AgentID != "" {
 		out["agent_id"] = meta.AgentID
 	}
 	if meta.SessionID != "" {
 		out["session_id"] = meta.SessionID
 	}
+	if meta.Model != "" {
+		out["model"] = meta.Model
+	}
+	if meta.Kind != "" {
+		out["observation_kind"] = string(meta.Kind)
+	}
+	if meta.Name != "" {
+		out["observation_name"] = meta.Name
+	}
 	if len(meta.ToolNames) > 0 {
 		out["tools"] = strings.Join(meta.ToolNames, ",")
 	}
+	for k, v := range meta.Attributes {
+		if strings.TrimSpace(v) != "" {
+			out[k] = v
+		}
+	}
 	if len(out) == 0 {
-		return nil
+		out["observation_name"] = meta.Name
 	}
 	return out
+}
+
+func stringMapToM(m map[string]string) model.M {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(model.M, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func (l *Langfuse) storeObservationMetadata(traceID, obsID string, md map[string]string) {
+	if traceID == "" || obsID == "" || len(md) == 0 {
+		return
+	}
+	copied := make(map[string]string, len(md))
+	for k, v := range md {
+		copied[k] = v
+	}
+	l.mu.Lock()
+	if l.obsMetadata == nil {
+		l.obsMetadata = map[string]map[string]map[string]string{}
+	}
+	if l.obsMetadata[traceID] == nil {
+		l.obsMetadata[traceID] = map[string]map[string]string{}
+	}
+	l.obsMetadata[traceID][obsID] = copied
+	l.mu.Unlock()
+}
+
+func (l *Langfuse) observationMetadataByID(traceID, obsID string, fallback map[string]string) map[string]string {
+	l.mu.Lock()
+	traceMD := l.obsMetadata[traceID]
+	var stored map[string]string
+	if traceMD != nil {
+		stored = traceMD[obsID]
+	}
+	l.mu.Unlock()
+	if len(stored) > 0 {
+		return stored
+	}
+	return fallback
 }
 
 func (l *Langfuse) generationModelParameters(meta captelemetry.ObservationMeta) map[string]any {

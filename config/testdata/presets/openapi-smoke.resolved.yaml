@@ -233,6 +233,21 @@ llm.fallback:
     deps:
         provider: llm.default
     use: llm/fallback
+llm.openai:
+    config:
+        steps:
+            - text: 先通过 OpenAPI 工具查询宠物。
+              toolCalls:
+                - id: call-get
+                  input: '{"id":"42","verbose":true}'
+                  name: petstore__getPet
+            - text: 再创建一只宠物。
+              toolCalls:
+                - id: call-create
+                  input: '{"body":{"name":"Fido"}}'
+                  name: petstore__createPet
+            - text: OpenAPI 工具调用完成。
+    use: llm/scripted
 llm.review:
     config:
         api: chat
@@ -461,7 +476,7 @@ subagent.inprocess.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.fallback
+        llm: llm.openai
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default

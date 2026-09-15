@@ -185,6 +185,10 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 		Name:  "tool." + call.Name,
 		Kind:  captelemetry.KindTool,
 		Input: string(call.Input),
+		Attributes: telemetry.MergeStringMaps(
+			telemetry.ToolObservationAttrs(call),
+			map[string]string{"tool_name": call.Name},
+		),
 	}))
 	var observationEnd captelemetry.ObservationEnd
 	defer func() {

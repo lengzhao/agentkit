@@ -237,6 +237,21 @@ llm.fallback:
     deps:
         provider: llm.default
     use: llm/fallback
+llm.openai:
+    config:
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 llm.review:
     config:
         api: chat
@@ -503,7 +518,7 @@ subagent.inprocess.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.fallback
+        llm: llm.openai
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default

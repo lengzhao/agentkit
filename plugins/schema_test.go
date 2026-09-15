@@ -85,7 +85,7 @@ func TestToolInputSchemas(t *testing.T) {
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
-					"path":   pathProp("File path relative to the workspace"),
+					"path":   pathProp("File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"),
 					"offset": {Type: "integer", Description: "Line number to start reading from (1-indexed)"},
 					"limit":  {Type: "integer", Description: "Maximum number of lines to read"},
 				},
@@ -98,7 +98,7 @@ func TestToolInputSchemas(t *testing.T) {
 			want: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
-					"path":    pathProp("File path relative to the workspace"),
+					"path":    pathProp("File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"),
 					"content": pathProp("Full file content to write"),
 				},
 				Required: []string{"path", "content"},
