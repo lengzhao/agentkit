@@ -224,31 +224,10 @@ func formatInboundAttachmentLine(a inboundSavedAttachment) string {
 	return b.String()
 }
 
-func pathsFromSaved(saved []inboundSavedAttachment) []string {
-	out := make([]string, 0, len(saved))
-	for _, s := range saved {
-		if s.path != "" {
-			out = append(out, s.path)
-		}
-	}
-	return out
-}
-
 // IsImageAttachment reports whether an inbound attachment should be sent to the
 // model as vision input instead of a read-tool file path.
 func IsImageAttachment(mimeType, filename string) bool {
 	return rtmedia.IsImage(mimeType, filename)
-}
-
-func appendFileRefs(prompt string, filePaths []string) string {
-	if len(filePaths) == 0 {
-		return prompt
-	}
-	notes := make([]inboundSavedAttachment, len(filePaths))
-	for i, p := range filePaths {
-		notes[i] = inboundSavedAttachment{path: p}
-	}
-	return appendInboundAttachmentBlock(prompt, notes)
 }
 
 func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []inboundSavedAttachment {

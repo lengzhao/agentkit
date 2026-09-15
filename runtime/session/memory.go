@@ -100,7 +100,7 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 	switch typ {
 	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
 		logicalChars = EstimateLogicalChars(msg)
-		msg = SanitizeModelMessageForStorage(msg, 0)
+		msg = SanitizeModelMessageForStorageWS(msg, 0, WorkspaceServiceFromContext(ctx))
 	}
 	raw, err := json.Marshal(msg)
 	if err != nil {

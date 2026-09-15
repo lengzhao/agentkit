@@ -143,15 +143,19 @@ func TestPrepareMessagesForLLMDemotesAttachmentsWhenTextOnly(t *testing.T) {
 func TestSanitizeStoresWorkspaceImagePath(t *testing.T) {
 	t.Parallel()
 
-	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+	ws := rtworkspace.Static(t.TempDir())
+	msg := session.SanitizeModelMessageForStorageWS(agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
 			Type:   "image_url",
 			URL:    "data:image/png;base64,abc",
 			Source: "upload/shot.png",
 		}},
-	}, 0)
+	}, 0, ws)
 	if len(msg.Content) != 1 || msg.Content[0].Type != rtmedia.ContentTypeAttachmentRef {
 		t.Fatalf("content = %#v", msg.Content)
+	}
+	if msg.Content[0].Source != "local:work/upload/shot.png" {
+		t.Fatalf("Source = %q", msg.Content[0].Source)
 	}
 }

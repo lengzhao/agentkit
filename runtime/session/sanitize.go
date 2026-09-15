@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
@@ -16,6 +17,12 @@ const DefaultMaxStoredTextBytes = 8192
 // User and assistant message text is persisted in full (aligned with pi session JSONL).
 // When maxTextBytes > 0, only tests or explicit callers may cap message body text.
 func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int) agentkit.ModelMessage {
+	return SanitizeModelMessageForStorageWS(msg, maxTextBytes, nil)
+}
+
+// SanitizeModelMessageForStorageWS is like SanitizeModelMessageForStorage but normalizes
+// attachment Source paths to local:work/... when ws implements workspace layout.
+func SanitizeModelMessageForStorageWS(msg agentkit.ModelMessage, maxTextBytes int, ws workspace.Service) agentkit.ModelMessage {
 	contentMaxBytes := maxTextBytes
 	if contentMaxBytes < 0 {
 		contentMaxBytes = 0
@@ -25,7 +32,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 		toolResultMax = DefaultMaxStoredTextBytes
 	}
 	out := msg
-	out.Content = sanitizeContentParts(msg.Content, contentMaxBytes)
+	out.Content = sanitizeContentParts(msg.Content, contentMaxBytes, ws)
 	if len(msg.ToolCalls) > 0 {
 		out.ToolCalls = make([]agentkit.ToolCall, len(msg.ToolCalls))
 		for i, call := range msg.ToolCalls {
@@ -42,7 +49,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 	return out
 }
 
-func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int) []agentkit.ContentPart {
+func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int, ws workspace.Service) []agentkit.ContentPart {
 	if len(parts) == 0 {
 		return parts
 	}
@@ -52,9 +59,9 @@ func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int) []agen
 		case "thinking":
 			continue
 		case rtmedia.ContentTypeAttachmentRef:
-			out = append(out, part)
+			out = append(out, canonicalizeStoredAttachmentPart(part, ws))
 		case "image", "image_url", "document", "file", "audio", "video":
-			if ref := sanitizeAttachmentRef(part); ref != nil {
+			if ref := sanitizeAttachmentRef(part, ws); ref != nil {
 				out = append(out, *ref)
 			}
 		case "text", "":
@@ -71,7 +78,7 @@ func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int) []agen
 				continue
 			}
 			if isAttachmentType(part.Type) || part.URL != "" {
-				if ref := sanitizeAttachmentRef(part); ref != nil {
+				if ref := sanitizeAttachmentRef(part, ws); ref != nil {
 					out = append(out, *ref)
 				}
 				continue
@@ -86,12 +93,25 @@ func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int) []agen
 	return out
 }
 
-func sanitizeAttachmentRef(part agentkit.ContentPart) *agentkit.ContentPart {
+func canonicalizeStoredAttachmentPart(part agentkit.ContentPart, ws workspace.Service) agentkit.ContentPart {
+	if ws == nil {
+		return part
+	}
+	if src := strings.TrimSpace(part.Source); src != "" {
+		part.Source = rtmedia.CanonicalStoredPath(ws, src)
+	}
+	return part
+}
+
+func sanitizeAttachmentRef(part agentkit.ContentPart, ws workspace.Service) *agentkit.ContentPart {
 	ref := agentkit.ContentPart{
 		Type: rtmedia.ContentTypeAttachmentRef,
 		MIME: strings.TrimSpace(part.MIME),
 	}
 	if src := strings.TrimSpace(part.Source); src != "" {
+		if ws != nil {
+			src = rtmedia.CanonicalStoredPath(ws, src)
+		}
 		ref.Source = src
 		return &ref
 	}

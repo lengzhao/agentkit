@@ -473,7 +473,7 @@ func (l *Langfuse) buildObservationMetadata(ctx context.Context, meta captelemet
 			out[k] = v
 		}
 	}
-	if len(out) == 0 {
+	if len(out) == 0 && meta.Name != "" {
 		out["observation_name"] = meta.Name
 	}
 	return out

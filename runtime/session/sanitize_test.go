@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -44,6 +45,28 @@ func TestSanitizeModelMessageForStorageKeepsAttachmentRef(t *testing.T) {
 	}
 	if msg.Content[0].Type != rtmedia.ContentTypeAttachmentRef || msg.Content[0].Source != "upload/shot.png" {
 		t.Fatalf("content = %#v", msg.Content[0])
+	}
+}
+
+func TestSanitizeModelMessageForStorageCanonicalizesAttachmentSource(t *testing.T) {
+	t.Parallel()
+
+	ws := rtworkspace.Static(t.TempDir())
+	msg := session.SanitizeModelMessageForStorageWS(agentkit.ModelMessage{
+		Role: "user",
+		Content: []agentkit.ContentPart{{
+			Type:   "image_url",
+			URL:    "data:image/png;base64,abc",
+			Source: "upload/shot.png",
+			MIME:   "image/png",
+		}},
+	}, 0, ws)
+	if len(msg.Content) != 1 {
+		t.Fatalf("content = %#v", msg.Content)
+	}
+	want := "local:work/upload/shot.png"
+	if msg.Content[0].Source != want {
+		t.Fatalf("Source = %q, want %q", msg.Content[0].Source, want)
 	}
 }
 
