@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,5 +152,17 @@ func TestResolveEnvValueMissingCredential(t *testing.T) {
 	_, err := resolveEnvValue(context.Background(), "missing", "env:"+missing, nil)
 	if err == nil {
 		t.Fatal("expected error for missing credential")
+	}
+}
+
+func TestInitializeClientNilClient(t *testing.T) {
+	t.Parallel()
+
+	err := initializeClient(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil client")
+	}
+	if !strings.Contains(err.Error(), "nil") {
+		t.Fatalf("error = %v", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -65,17 +66,20 @@ func (p *clientPool) reapLoop(idleTTL time.Duration) {
 	}
 }
 
-func (p *clientPool) tools(ctx context.Context, server serverConfig, creds credentials.Store) ([]toolDefinition, error) {
+func (p *clientPool) tools(ctx context.Context, server serverConfig, creds credentials.Store) (out []toolDefinition, err error) {
+	defer p.recoverServer(server, ctx, &err)
 	client, err := p.ensure(ctx, server, creds)
 	if err != nil {
 		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("mcp server %q: nil client", server.Name)
 	}
 	result, err := client.ListTools(ctx, mcplib.ListToolsRequest{})
 	if err != nil {
 		p.evict(p.poolKey(ctx, server))
 		return nil, err
 	}
-	var out []toolDefinition
 	prefix := server.toolPrefix()
 	for _, tool := range result.Tools {
 		if !server.allowsTool(tool.Name) {
@@ -92,10 +96,14 @@ func (p *clientPool) tools(ctx context.Context, server serverConfig, creds crede
 	return out, nil
 }
 
-func (p *clientPool) call(ctx context.Context, server serverConfig, toolName string, input json.RawMessage, creds credentials.Store) (mcpCallOutcome, error) {
+func (p *clientPool) call(ctx context.Context, server serverConfig, toolName string, input json.RawMessage, creds credentials.Store) (outcome mcpCallOutcome, err error) {
+	defer p.recoverServer(server, ctx, &err)
 	client, err := p.ensure(ctx, server, creds)
 	if err != nil {
 		return mcpCallOutcome{}, err
+	}
+	if client == nil {
+		return mcpCallOutcome{}, fmt.Errorf("mcp server %q: nil client", server.Name)
 	}
 	if server.TimeoutSeconds > 0 {
 		var cancel context.CancelFunc
@@ -117,7 +125,25 @@ func (p *clientPool) call(ctx context.Context, server serverConfig, toolName str
 		p.evict(p.poolKey(ctx, server))
 		return mcpCallOutcome{}, err
 	}
+	if result == nil {
+		p.evict(p.poolKey(ctx, server))
+		return mcpCallOutcome{}, fmt.Errorf("mcp server %q: nil CallTool result", server.Name)
+	}
 	return convertCallResult(result), nil
+}
+
+func (p *clientPool) recoverServer(server serverConfig, ctx context.Context, err *error) {
+	if r := recover(); r != nil {
+		p.evict(p.poolKey(ctx, server))
+		if *err == nil {
+			*err = fmt.Errorf("panic: %v", r)
+		}
+		slog.Error("mcp server panicked",
+			"server", server.Name,
+			"panic", r,
+			"stack", string(debug.Stack()),
+		)
+	}
 }
 
 func (p *clientPool) poolKey(ctx context.Context, server serverConfig) string {
@@ -223,6 +249,10 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 		if err != nil {
 			return nil, fmt.Errorf("mcp server %q headers: %w", server.Name, err)
 		}
+		url = strings.TrimSpace(url)
+		if url == "" {
+			return nil, fmt.Errorf("mcp server %q url is empty after resolving credentials", server.Name)
+		}
 		client, err = connectURL(url, server.Type, headers, server.Binds)
 	case server.Command != "":
 		client, err = mcpclient.NewStdioMCPClient(server.Command, env, server.Args...)
@@ -231,6 +261,9 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q connect: %w", server.Name, err)
+	}
+	if client == nil {
+		return nil, fmt.Errorf("mcp server %q connect: nil client", server.Name)
 	}
 	if err := initializeClient(ctx, client); err != nil {
 		client.Close()
@@ -247,16 +280,26 @@ func connectURL(url, typ string, staticHeaders map[string]string, binds []bindCo
 	case "http", "streamable", "streamable-http", "streamable_http":
 		return mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn))
 	case "":
-		if client, err := mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn)); err == nil {
+		if client, err := mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn)); err == nil && client != nil {
 			return client, nil
 		}
-		return mcpclient.NewSSEMCPClient(url, mcpclient.WithHeaderFunc(headerFn))
+		client, err := mcpclient.NewSSEMCPClient(url, mcpclient.WithHeaderFunc(headerFn))
+		if err != nil {
+			return nil, err
+		}
+		if client == nil {
+			return nil, fmt.Errorf("mcp SSE client is nil")
+		}
+		return client, nil
 	default:
 		return nil, fmt.Errorf("unsupported mcp transport type %q", typ)
 	}
 }
 
 func initializeClient(ctx context.Context, client *mcpclient.Client) error {
+	if client == nil {
+		return fmt.Errorf("mcp client is nil")
+	}
 	if err := client.Start(ctx); err != nil {
 		return err
 	}
@@ -376,6 +419,9 @@ func toolInputSchema(tool mcplib.Tool) json.RawMessage {
 }
 
 func convertCallResult(result *mcplib.CallToolResult) mcpCallOutcome {
+	if result == nil {
+		return mcpCallOutcome{Content: "mcp tool returned no result", IsError: true}
+	}
 	out := mcpCallOutcome{IsError: result.IsError}
 	var b strings.Builder
 	appendMCPText := func(text string) {

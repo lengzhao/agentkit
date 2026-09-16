@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -26,7 +28,21 @@ type callResult struct {
 	Truncated bool                `json:"truncated,omitempty"`
 }
 
-func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationConfig, input json.RawMessage) (string, error) {
+func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationConfig, input json.RawMessage) (out string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("operation %q: panic: %v", op.OperationID, r)
+			slog.Error("openapi call panicked",
+				"api", api.Name,
+				"operation", op.OperationID,
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
+		}
+	}()
+	if p.client == nil {
+		return "", fmt.Errorf("operation %q: http client is nil", op.OperationID)
+	}
 	args, err := decodeArguments(input)
 	if err != nil {
 		return "", err
@@ -119,6 +135,9 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("operation %q: %w", op.OperationID, err)
+	}
+	if resp == nil {
+		return "", fmt.Errorf("operation %q: nil HTTP response", op.OperationID)
 	}
 	defer resp.Body.Close()
 

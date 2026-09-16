@@ -336,6 +336,31 @@ func TestParseIndexFileSpecFileBaseURLOverride(t *testing.T) {
 	}
 }
 
+func TestParseIndexFileSkipsBadAPIKeepsGood(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{
+  "apis": {
+    "good": {
+      "baseUrl": "https://api.example.com",
+      "paths": {"/ping": {"get": {"operationId": "ping"}}}
+    },
+    "bad": {
+      "baseUrl": "https://api.example.com",
+      "bind": {"uid": {"from": "ctx:user_id", "in": "cookie"}},
+      "paths": {"/p": {"get": {}}}
+    }
+  }
+}`)
+	apis, err := parseIndexFile("/tmp/api.json", raw, noSpecLoader)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(apis) != 1 || apis[0].Name != "good" {
+		t.Fatalf("apis = %+v, want only good", apis)
+	}
+}
+
 func TestParseIndexFilePathAndInlinePathsConflict(t *testing.T) {
 	t.Parallel()
 

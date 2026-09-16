@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"path"
+	"runtime/debug"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -145,16 +147,32 @@ func parseIndexFile(path string, raw []byte, loadSpec specLoader) ([]apiConfig, 
 		if name == "" {
 			continue
 		}
-		cfg, err := buildAPIConfig(name, path, entry, loadSpec)
+		cfg, err := buildAPIConfigSafe(name, path, entry, loadSpec)
 		if err != nil {
-			return nil, err
+			slog.Warn("openapi api ignored", "api", name, "file", path, "error", err)
+			continue
 		}
 		out = append(out, cfg)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%s declares no apis", path)
+		return nil, fmt.Errorf("%s declares no loadable apis", path)
 	}
 	return out, nil
+}
+
+func buildAPIConfigSafe(name, path string, entry rawAPIEntry, loadSpec specLoader) (cfg apiConfig, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+			slog.Error("openapi api parse panicked",
+				"api", name,
+				"file", path,
+				"panic", r,
+				"stack", string(debug.Stack()),
+			)
+		}
+	}()
+	return buildAPIConfig(name, path, entry, loadSpec)
 }
 
 func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service, raw []byte) ([]byte, error) {
@@ -299,6 +317,9 @@ func loadOpenAPIDocument(name, docPath string, entry rawAPIEntry, loadSpec specL
 	}
 
 	if docPath != "" {
+		if loadSpec == nil {
+			return nil, fmt.Errorf("load path %q: spec loader is nil", docPath)
+		}
 		specRaw, err := loadSpec(docPath)
 		if err != nil {
 			return nil, fmt.Errorf("load path %q: %w", docPath, err)
