@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -59,7 +60,10 @@ func TestUpdateEmitterStreamsText(t *testing.T) {
 		events = append(events, ev)
 		return nil
 	}
-	e := newUpdateEmitter(t.Context(), "sess-1", "acp", emit)
+	e := newUpdateEmitter(t.Context(), "sess-1", "acp", emit, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
+	})
 	if err := e.consume(acp.SessionNotification{
 		Update: acp.SessionUpdate{
 			AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
@@ -101,6 +105,9 @@ func TestUpdateEmitterRecordsGenerationAndToolObservations(t *testing.T) {
 	ctx := rttelemetry.WithExporter(t.Context(), rec)
 	e := newUpdateEmitter(ctx, "sess-1", "acp", func(context.Context, agentkit.OutboundEvent) error {
 		return nil
+	}, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "check files"}},
 	})
 
 	if err := e.consume(acp.SessionNotification{
@@ -181,6 +188,51 @@ func TestUpdateEmitterRecordsGenerationAndToolObservations(t *testing.T) {
 	if tool.Meta.Kind != captelemetry.KindTool {
 		t.Fatalf("tool kind = %q", tool.Meta.Kind)
 	}
+	if generation.Meta.Input == "" {
+		t.Fatal("generation input is empty")
+	}
+}
+
+func TestUpdateEmitterIncludesThoughtInGenerationOutput(t *testing.T) {
+	rec := &rttelemetry.RecordingExporter{}
+	ctx := rttelemetry.WithExporter(t.Context(), rec)
+	e := newUpdateEmitter(ctx, "sess-1", "cursor", func(context.Context, agentkit.OutboundEvent) error {
+		return nil
+	}, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "question"}},
+	})
+
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			AgentThoughtChunk: &acp.SessionUpdateAgentThoughtChunk{
+				Content: acp.TextBlock("planning tools"),
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.consume(acp.SessionNotification{
+		Update: acp.SessionUpdate{
+			AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+				Content: acp.TextBlock("answer"),
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.finalize(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 1 {
+		t.Fatalf("observations = %d, want 1", len(observations))
+	}
+	out := observations[0].End.Output
+	if !strings.Contains(out, "planning tools") || !strings.Contains(out, "answer") {
+		t.Fatalf("generation output = %q", out)
+	}
 }
 
 func TestUpdateEmitterEmitsToolResultOnCompletion(t *testing.T) {
@@ -189,7 +241,7 @@ func TestUpdateEmitterEmitsToolResultOnCompletion(t *testing.T) {
 		events = append(events, ev)
 		return nil
 	}
-	e := newUpdateEmitter(t.Context(), "sess-1", "cursor", emit)
+	e := newUpdateEmitter(t.Context(), "sess-1", "cursor", emit, agentkit.ModelMessage{})
 
 	if err := e.consume(acp.SessionNotification{
 		Update: acp.SessionUpdate{

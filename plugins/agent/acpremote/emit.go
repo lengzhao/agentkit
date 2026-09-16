@@ -19,6 +19,7 @@ type updateEmitter struct {
 	sessionID agentkit.SessionID
 	agentID   agentkit.AgentID
 	emit      agentkit.OutboundEmit
+	userMsg   agentkit.ModelMessage
 
 	started bool
 	textBuf strings.Builder
@@ -36,12 +37,13 @@ type acpToolMeta struct {
 	input string
 }
 
-func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit) *updateEmitter {
+func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit, userMsg agentkit.ModelMessage) *updateEmitter {
 	return &updateEmitter{
 		ctx:       ctx,
 		sessionID: sessionID,
 		agentID:   agentID,
 		emit:      emit,
+		userMsg:   userMsg,
 		tools:     make(map[acp.ToolCallId]func(captelemetry.ObservationEnd)),
 		toolMeta:  make(map[acp.ToolCallId]acpToolMeta),
 	}
@@ -148,9 +150,14 @@ func (e *updateEmitter) finalize() error {
 
 func (e *updateEmitter) assistantMessage() agentkit.ModelMessage {
 	msg := agentkit.ModelMessage{Role: "assistant"}
-	if e.textBuf.Len() > 0 {
-		msg.Content = []agentkit.ContentPart{{Type: "text", Text: e.textBuf.String()}}
+	var parts []agentkit.ContentPart
+	if e.thought.Len() > 0 {
+		parts = append(parts, agentkit.ContentPart{Type: "thinking", Text: e.thought.String()})
 	}
+	if e.textBuf.Len() > 0 {
+		parts = append(parts, agentkit.ContentPart{Type: "text", Text: e.textBuf.String()})
+	}
+	msg.Content = parts
 	return msg
 }
 
@@ -159,11 +166,20 @@ func (e *updateEmitter) ensureStarted() error {
 		return nil
 	}
 	e.started = true
+	genMeta := captelemetry.ObservationMeta{
+		Name: "acp.generation",
+		Kind: captelemetry.KindGeneration,
+		Attributes: map[string]string{
+			"observation_kind": "generation",
+			"acp_agent":        string(e.agentID),
+		},
+	}
+	if e.userMsg.Role != "" || len(e.userMsg.Content) > 0 || len(e.userMsg.ToolCalls) > 0 {
+		genMeta.GenerationMessages = []agentkit.ModelMessage{e.userMsg}
+		genMeta.Input = rttelemetry.FormatMessage(e.userMsg)
+	}
 	e.generationCtx, e.endGeneration = rttelemetry.BeginObservation(e.ctx,
-		rttelemetry.ObservationMetaFromContext(e.ctx, captelemetry.ObservationMeta{
-			Name: "acp.generation",
-			Kind: captelemetry.KindGeneration,
-		}))
+		rttelemetry.ObservationMetaFromContext(e.ctx, genMeta))
 	return e.sendOutbound(agentkit.EventMessageStart, agentkit.MessageStartPayload{
 		Message: agentkit.ModelMessage{Role: "assistant"},
 	})

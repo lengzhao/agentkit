@@ -149,7 +149,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		return err
 	}
 
-	emitter := newUpdateEmitter(ctx, sessionID, a.id, emit)
+	emitter := newUpdateEmitter(ctx, sessionID, a.id, emit, input.Message)
 	a.bridge.setTurn(turnState{
 		ctx:       ctx,
 		emitter:   emitter,

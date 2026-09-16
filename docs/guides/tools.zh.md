@@ -228,7 +228,7 @@ tools.default:
 
 已建立的 MCP 连接在**空闲**超过 `idleTimeoutSeconds`（默认 300 秒）后会被主动关闭；下次调用时自动重连。设为 `0` 可关闭空闲回收。
 
-不带参数的 **`/mcp`** 会列出已加载 server，以及各 `mcp.<server>` 在配置里声明的 `env:` 键和是否已通过 `credentials.integrations` 解析（缺省时提示 `/env add mcp.<server> KEY=<value>`）。
+不带参数的 **`/mcp`** 会列出已加载 server、**各 server 下模型可见的工具名**（`prefix__tool`），以及各 `mcp.<server>` 在配置里声明的 `env:` 键和是否已通过 `credentials.integrations` 解析（缺省时提示 `/env add mcp.<server> KEY=<value>`）。仅需工具清单时可用 **`/mcp list`**；改配置后 **`/mcp -u`** 会重载并在输出末尾附带同样清单。
 
 **配置约定与维护流程**见 Skill **`mcp-manager`**（`skills/mcp-manager/SKILL.md`，经 `skill(name="mcp-manager")` 加载）。Agent 用 read/edit 改配置后，需请用户执行 `/mcp -u` 刷新动态工具。
 

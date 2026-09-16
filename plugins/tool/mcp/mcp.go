@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -276,7 +277,8 @@ func (p *mcpProvider) statusWithHelp(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return formatMCPStatus(defs) + formatMCPCredentialStatus(ctx, servers, p.credentials) + "\n\n" + mcpHelp(), nil
+	body := formatMCPStatus(defs) + formatMCPToolCatalog(defs) + formatMCPCredentialStatus(ctx, servers, p.credentials) + "\n\n" + mcpHelp()
+	return body, nil
 }
 
 func formatMCPStatus(defs []toolDefinition) string {
@@ -298,9 +300,37 @@ func formatMCPStatus(defs []toolDefinition) string {
 	return fmt.Sprintf("mcp: %d tool(s) from %d server(s): %s", len(defs), len(order), strings.Join(parts, ", "))
 }
 
+func formatMCPToolCatalog(defs []toolDefinition) string {
+	if len(defs) == 0 {
+		return ""
+	}
+	byServer := make(map[string][]string)
+	var order []string
+	for _, def := range defs {
+		if _, ok := byServer[def.Server]; !ok {
+			order = append(order, def.Server)
+		}
+		byServer[def.Server] = append(byServer[def.Server], def.ExposedName)
+	}
+	var b strings.Builder
+	b.WriteString("\n\nTools (model-visible names):\n")
+	for _, server := range order {
+		names := byServer[server]
+		sort.Strings(names)
+		fmt.Fprintf(&b, "\n%s (%d):\n", server, len(names))
+		for _, name := range names {
+			b.WriteString("  ")
+			b.WriteString(name)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
 func mcpHelp() string {
 	return `Usage:
-  /mcp                         show status, env scopes/keys, and help
+  /mcp                         show status, tool names, env scopes/keys, and help
+  /mcp list                    same tool name listing as /mcp (no credential block)
   /mcp add [-g] <name> <json>  write server to mcp.json, probe, reload, and verify
   /mcp -u                      reload mcp.json and rediscover tools
 
@@ -403,7 +433,13 @@ func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, 
 		if err != nil {
 			return "", err
 		}
-		return summarizeMCPTools(defs), nil
+		return summarizeMCPTools(defs) + formatMCPToolCatalog(defs), nil
+	case len(rest) >= 1 && rest[0] == "list":
+		_, defs, err := c.provider.cached(ctx)
+		if err != nil {
+			return "", err
+		}
+		return formatMCPStatus(defs) + formatMCPToolCatalog(defs), nil
 	case len(rest) >= 1 && rest[0] == "add":
 		global, addRest := configfile.PeelGlobalFlag(rest[1:])
 		if len(addRest) < 2 {
@@ -417,7 +453,7 @@ func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, 
 	case len(rest) == 0:
 		return c.provider.statusWithHelp(ctx)
 	default:
-		return "", fmt.Errorf("usage: /mcp | /mcp add [-g] <name> <json> | /mcp -u")
+		return "", fmt.Errorf("usage: /mcp | /mcp list | /mcp add [-g] <name> <json> | /mcp -u")
 	}
 }
 

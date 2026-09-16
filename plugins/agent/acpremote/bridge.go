@@ -15,6 +15,7 @@ import (
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -86,6 +87,18 @@ func (b *bridge) resolveSessionMCP(ctx context.Context) ([]acp.McpServer, error)
 		return nil, err
 	}
 	return acpclient.ToMCPServers(specs), nil
+}
+
+func (b *bridge) recordSessionMCP(ctx context.Context, servers []acp.McpServer) {
+	names := acpclient.MCPServerNames(servers)
+	if len(names) == 0 {
+		return
+	}
+	slog.Info("acp-remote: session mcp servers", "count", len(names), "servers", names)
+	rttelemetry.RecordEvent(ctx, "acp.session_mcp", map[string]string{
+		"count":   fmt.Sprintf("%d", len(names)),
+		"servers": strings.Join(names, ","),
+	})
 }
 
 func (b *bridge) setTurn(state turnState) {
@@ -321,6 +334,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if err != nil {
 		return "", err
 	}
+	b.recordSessionMCP(ctx, mcpServers)
 
 	if bind, ok, err := loadACPSessionBind(bindPath); err != nil {
 		return "", err

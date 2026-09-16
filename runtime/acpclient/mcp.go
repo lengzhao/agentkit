@@ -2,6 +2,7 @@ package acpclient
 
 import (
 	"sort"
+	"strings"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
@@ -69,6 +70,26 @@ func envVariables(env map[string]string) []acpsdk.EnvVariable {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// MCPServerNames returns non-empty server names from ACP session/new payloads.
+func MCPServerNames(servers []acpsdk.McpServer) []string {
+	if len(servers) == 0 {
+		return nil
+	}
+	var names []string
+	for _, srv := range servers {
+		switch {
+		case srv.Stdio != nil && strings.TrimSpace(srv.Stdio.Name) != "":
+			names = append(names, strings.TrimSpace(srv.Stdio.Name))
+		case srv.Http != nil && strings.TrimSpace(srv.Http.Name) != "":
+			names = append(names, strings.TrimSpace(srv.Http.Name))
+		case srv.Sse != nil && strings.TrimSpace(srv.Sse.Name) != "":
+			names = append(names, strings.TrimSpace(srv.Sse.Name))
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func httpHeaders(headers map[string]string) []acpsdk.HttpHeader {
