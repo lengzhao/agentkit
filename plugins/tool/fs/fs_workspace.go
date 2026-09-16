@@ -217,13 +217,13 @@ func filterToolPack(pack agentkit.ToolPack, only []string) agentkit.ToolPack {
 }
 
 type ReadInput struct {
-	Path   string `json:"path" jsonschema:"File path: absolute /..., relative ./..., or relative to the configured fs root"`
+	Path   string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Line number to start reading from (1-indexed)"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of lines to read"`
 }
 
 type WriteInput struct {
-	Path    string `json:"path" jsonschema:"File path: absolute /..., relative ./..., or relative to the configured fs root"`
+	Path    string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
 	Content string `json:"content" jsonschema:"Full file content to write"`
 }
 

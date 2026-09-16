@@ -69,6 +69,7 @@ type Cron struct {
 	mu       sync.Mutex
 	runCount int
 	dueQueue []capschedule.Job
+	loopHook func() // test-only via SetLoopHookForTest
 }
 
 // NewCron registers schedule/cron: Resident calendar scheduler over a shared job registry.
@@ -181,6 +182,9 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		return fmt.Errorf("schedule/cron: sync jobs: %w", err)
 	}
 	for {
+		if c.loopHook != nil {
+			c.loopHook()
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -378,6 +382,11 @@ func scheduleInboundPrompt(job capschedule.Job) string {
 	return header + "\n\n" +
 		"这是一次定时任务触发。请用 send 把提醒发给用户（只发一次）。\n\n" +
 		strings.TrimSpace(job.Prompt)
+}
+
+// SetLoopHookForTest runs hook at the top of each Start loop iteration. Test-only.
+func (c *Cron) SetLoopHookForTest(hook func()) {
+	c.loopHook = hook
 }
 
 // SetClockForTest replaces the clock and wait so cron behaviour can be asserted

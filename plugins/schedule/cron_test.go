@@ -67,6 +67,33 @@ func textOfMessage(msg agentkit.ModelMessage) string {
 	return b.String()
 }
 
+func cronImpl(t *testing.T, rt capschedule.Runtime) *pluginschedule.Cron {
+	t.Helper()
+	cron, ok := rt.(*pluginschedule.Cron)
+	if !ok {
+		t.Fatalf("NewCron returned %T", rt)
+	}
+	return cron
+}
+
+func waitCronLoop(t *testing.T, cron *pluginschedule.Cron) {
+	t.Helper()
+	ready := make(chan struct{})
+	cron.SetLoopHookForTest(func() {
+		select {
+		case <-ready:
+		default:
+			close(ready)
+		}
+	})
+	select {
+	case <-ready:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cron loop")
+	}
+	cron.SetLoopHookForTest(nil)
+}
+
 func startAsync(ctx context.Context, rt capschedule.Runtime, fn func(context.Context, agentkit.MessageEvent) error) {
 	go func() {
 		_ = rt.Start(ctx, func(ctx context.Context, event agentkit.MessageEvent) error {
@@ -128,9 +155,8 @@ func TestCronJobFiresOnItsSchedule(t *testing.T) {
 }
 
 func TestAgentAddedJobIsPickedUpWithoutRestart(t *testing.T) {
-	t.Parallel()
-
-	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 60})
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 1})
+	cron := cronImpl(t, rt)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -140,12 +166,13 @@ func TestAgentAddedJobIsPickedUpWithoutRestart(t *testing.T) {
 		cancel()
 		return nil
 	})
+	waitCronLoop(t, cron)
 
 	if _, err := registry.Add(ctx, capschedule.Job{
 		Kind:    capschedule.KindCron,
 		Cron:    "*/5 * * * *",
 		Prompt:  "the agent's own follow-up",
-		LastRun: clock.Now(),
+		LastRun: clock.Now().Add(-15 * time.Minute),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -161,24 +188,15 @@ func TestAgentAddedJobIsPickedUpWithoutRestart(t *testing.T) {
 }
 
 func TestCronFiresWithStoredDeliverySession(t *testing.T) {
-	t.Parallel()
-
-	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 60})
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 1})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	got := make(chan agentkit.MessageEvent, 1)
-	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
-		got <- event
-		cancel()
-		return nil
-	})
 
 	if _, err := registry.Add(ctx, capschedule.Job{
 		Kind:              capschedule.KindCron,
 		Cron:              "*/5 * * * *",
 		Prompt:            "remind",
-		LastRun:           clock.Now(),
+		LastRun:           clock.Now().Add(-15 * time.Minute),
 		DeliverySessionID: "chat-api:default:t:conv_1",
 		PlatformID:        "chat-api",
 		UserID:            "user-1",
@@ -186,6 +204,13 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+
+	got := make(chan agentkit.MessageEvent, 1)
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- event
+		cancel()
+		return nil
+	})
 
 	select {
 	case event := <-got:
@@ -210,14 +235,23 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 }
 
 func TestCronReuseModeUsesDeliverySession(t *testing.T) {
-	t.Parallel()
-
 	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{
 		SessionMode: "reuse",
-		PollSeconds: 60,
+		PollSeconds: 1,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		Kind:              capschedule.KindCron,
+		Cron:              "*/5 * * * *",
+		Prompt:            "remind",
+		LastRun:           clock.Now().Add(-15 * time.Minute),
+		DeliverySessionID: "chat-api:default:t:conv_reuse",
+		PlatformID:        "chat-api",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	got := make(chan agentkit.MessageEvent, 1)
 	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
@@ -225,17 +259,6 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 		cancel()
 		return nil
 	})
-
-	if _, err := registry.Add(ctx, capschedule.Job{
-		Kind:              capschedule.KindCron,
-		Cron:              "*/5 * * * *",
-		Prompt:            "remind",
-		LastRun:           clock.Now(),
-		DeliverySessionID: "chat-api:default:t:conv_reuse",
-		PlatformID:        "chat-api",
-	}); err != nil {
-		t.Fatal(err)
-	}
 
 	select {
 	case event := <-got:
@@ -255,14 +278,23 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 }
 
 func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
-	t.Parallel()
-
 	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{
 		SessionMode: "stateless",
-		PollSeconds: 60,
+		PollSeconds: 1,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		ID:                "agent-9",
+		Kind:              capschedule.KindCron,
+		Cron:              "*/5 * * * *",
+		Prompt:            "remind",
+		LastRun:           clock.Now().Add(-15 * time.Minute),
+		DeliverySessionID: "chat-api:default:t:conv_1",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	got := make(chan agentkit.MessageEvent, 1)
 	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
@@ -270,17 +302,6 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 		cancel()
 		return nil
 	})
-
-	if _, err := registry.Add(ctx, capschedule.Job{
-		ID:                "agent-9",
-		Kind:              capschedule.KindCron,
-		Cron:              "*/5 * * * *",
-		Prompt:            "remind",
-		LastRun:           clock.Now(),
-		DeliverySessionID: "chat-api:default:t:conv_1",
-	}); err != nil {
-		t.Fatal(err)
-	}
 
 	select {
 	case event := <-got:

@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -90,7 +91,8 @@ func TestRunTurnSpillsLargeToolResultToWorkspace(t *testing.T) {
 		if len(result.Content) >= len(full) {
 			t.Fatalf("expected truncated session view, content len=%d", len(result.Content))
 		}
-		if !strings.Contains(result.Content, "Full output: "+spillRel) {
+		display := rtmedia.AgentLLMPath(ctx, ws, spillRel)
+		if !strings.Contains(result.Content, "Full output: "+display) {
 			t.Fatalf("content missing spill hint: %q", result.Content)
 		}
 	}
