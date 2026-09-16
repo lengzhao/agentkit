@@ -21,7 +21,7 @@ func SanitizeModelMessageForStorage(msg agentkit.ModelMessage, maxTextBytes int)
 }
 
 // SanitizeModelMessageForStorageWS is like SanitizeModelMessageForStorage but normalizes
-// attachment Source paths to local:work/... when ws implements workspace layout.
+// attachment Source paths relative to work dir (no local:/global:/work/ prefixes) when ws implements layout.
 func SanitizeModelMessageForStorageWS(msg agentkit.ModelMessage, maxTextBytes int, ws workspace.Service) agentkit.ModelMessage {
 	contentMaxBytes := maxTextBytes
 	if contentMaxBytes < 0 {

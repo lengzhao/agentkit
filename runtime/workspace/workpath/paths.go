@@ -114,7 +114,8 @@ func ScopedPath(scope, rel string) string {
 	return scope + ":" + rel
 }
 
-// LocalPath prefixes a path under the tenant local root (e.g. local:work/upload/foo.jpg).
+// LocalPath adds the local: scope prefix for configuration (e.g. shell cwd, bootstrap workDir).
+// Runtime code should use tenant-root-relative work/… paths and workpath.ResolveFile instead.
 func LocalPath(rel string) string {
 	return ScopedPath(cw.ScopeLocal, rel)
 }

@@ -15,15 +15,20 @@ func PrepareMessagesForLLM(ctx context.Context, msgs []agentkit.ModelMessage, ws
 	if len(msgs) == 0 {
 		return msgs, nil
 	}
+	msgs = sanitizeMessagesForLLM(ctx, ws, msgs)
 	hydrateImages := agentkit.SupportsModality(modalities, agentkit.ModalityImage)
 	if !hydrateImages {
 		out := make([]agentkit.ModelMessage, len(msgs))
 		for i, msg := range msgs {
-			out[i] = demoteVisualParts(msg)
+			out[i] = demoteVisualParts(ctx, msg, ws)
 		}
-		return out, nil
+		return sanitizeMessagesForLLM(ctx, ws, out), nil
 	}
-	return hydrateLocalAttachments(ctx, msgs, ws, maxImageBytes)
+	out, err := hydrateLocalAttachments(ctx, msgs, ws, maxImageBytes)
+	if err != nil {
+		return nil, err
+	}
+	return sanitizeMessagesForLLM(ctx, ws, out), nil
 }
 
 // HydrateLocalAttachments reloads workspace images for LLM vision (text + image modalities).
@@ -35,10 +40,6 @@ func hydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, 
 	if ws == nil || len(msgs) == 0 {
 		return msgs, nil
 	}
-	if maxImageBytes <= 0 {
-		maxImageBytes = rtmedia.DefaultMaxWorkspaceImageBytes
-	}
-
 	lastUser := -1
 	for i, msg := range msgs {
 		if msg.Role == "user" {
@@ -61,7 +62,7 @@ func hydrateLocalAttachments(ctx context.Context, msgs []agentkit.ModelMessage, 
 	return injectReadToolVision(ctx, out, lastUser, ws, maxImageBytes)
 }
 
-func demoteVisualParts(msg agentkit.ModelMessage) agentkit.ModelMessage {
+func demoteVisualParts(ctx context.Context, msg agentkit.ModelMessage, ws workspace.Service) agentkit.ModelMessage {
 	if len(msg.Content) == 0 {
 		return msg
 	}
@@ -69,12 +70,12 @@ func demoteVisualParts(msg agentkit.ModelMessage) agentkit.ModelMessage {
 	for _, part := range msg.Content {
 		switch part.Type {
 		case rtmedia.ContentTypeAttachmentRef, "image", "image_url":
-			out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(part)})
+			out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(ctx, part, ws)})
 		case "audio", "video":
-			out = append(out, agentkit.ContentPart{Type: "text", Text: mediaHint(part)})
+			out = append(out, agentkit.ContentPart{Type: "text", Text: mediaHint(ctx, part, ws)})
 		default:
 			if part.Type != "text" && part.Type != "" && strings.TrimSpace(part.Text) == "" && strings.TrimSpace(part.URL) != "" {
-				out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(part)})
+				out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(ctx, part, ws)})
 				continue
 			}
 			out = append(out, part)
@@ -84,11 +85,11 @@ func demoteVisualParts(msg agentkit.ModelMessage) agentkit.ModelMessage {
 	return msg
 }
 
-func mediaHint(part agentkit.ContentPart) string {
+func mediaHint(ctx context.Context, part agentkit.ContentPart, ws workspace.Service) string {
 	if t := strings.TrimSpace(part.Type); t != "" {
 		return "[" + t + " attachment omitted for text-only model]"
 	}
-	return attachmentHint(part)
+	return attachmentHint(ctx, part, ws)
 }
 
 func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, ws workspace.Service, maxImageBytes int, hydrateImages bool) (agentkit.ModelMessage, error) {
@@ -114,7 +115,7 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 
 func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws workspace.Service, maxImageBytes int, hydrateImages bool) ([]agentkit.ContentPart, error) {
 	if !hydrateImages {
-		return []agentkit.ContentPart{{Type: "text", Text: attachmentHint(part)}}, nil
+		return []agentkit.ContentPart{{Type: "text", Text: attachmentHint(ctx, part, ws)}}, nil
 	}
 	src := strings.TrimSpace(part.Source)
 	mayImage, err := rtmedia.WorkspaceFileMayBeImage(ctx, ws, src)
@@ -138,11 +139,14 @@ func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws work
 			}}, nil
 		}
 	}
-	return []agentkit.ContentPart{{Type: "text", Text: attachmentHint(part)}}, nil
+	return []agentkit.ContentPart{{Type: "text", Text: attachmentHint(ctx, part, ws)}}, nil
 }
 
-func attachmentHint(part agentkit.ContentPart) string {
+func attachmentHint(ctx context.Context, part agentkit.ContentPart, ws workspace.Service) string {
 	if src := strings.TrimSpace(part.Source); src != "" {
+		if ws != nil {
+			src = rtmedia.AgentLLMPath(ctx, ws, src)
+		}
 		hint := "[attachment: " + src
 		if mime := strings.TrimSpace(part.MIME); mime != "" {
 			hint += " mime=" + mime
@@ -186,7 +190,7 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 			if rawPath == "" {
 				continue
 			}
-			path := rtmedia.CanonicalWorkPath(ws, rawPath)
+			path := rtmedia.AgentLLMPath(ctx, ws, rawPath)
 			if path == "" {
 				continue
 			}
@@ -228,12 +232,12 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 		return msgs, nil
 	}
 
-	out := make([]agentkit.ModelMessage, 0, len(msgs)+1)
-	for i, msg := range msgs {
-		out = append(out, msg)
-		if i == injectIdx {
-			out = append(out, agentkit.ModelMessage{Role: "user", Content: parts})
-		}
-	}
+	// Merge vision parts into the turn's user message. A user message after tool
+	// results is invalid for OpenAI-style tool flows and is often ignored by providers.
+	out := make([]agentkit.ModelMessage, len(msgs))
+	copy(out, msgs)
+	user := out[lastUser]
+	user.Content = append(user.Content, parts...)
+	out[lastUser] = user
 	return out, nil
 }

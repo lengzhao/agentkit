@@ -107,42 +107,65 @@ func (s *JSONL) trimCompacted(agentID agentkit.AgentID, beforeSeq agentkit.Event
 
 func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentkit.EventSeq, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	seq, err := s.mem.appendLocked(ctx, event)
 	if err != nil {
+		s.mu.Unlock()
 		return 0, err
 	}
 	ev := event
 	ev.Seq = seq
 	raw, err := json.Marshal(ev)
 	if err != nil {
+		s.mem.rollbackAppendLocked(seq)
+		s.mu.Unlock()
 		return 0, err
 	}
-	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
+	path := s.path
+	compact := ev.Type == agentkit.EventCompaction
+	var compactData compaction.EventData
+	if compact {
+		_ = json.Unmarshal(ev.Data, &compactData)
+	}
+	s.mu.Unlock()
+
+	if err := appendJSONLLine(path, raw); err != nil {
+		s.mu.Lock()
+		s.mem.rollbackAppendLocked(seq)
+		s.mu.Unlock()
 		return 0, err
 	}
-	defer f.Close()
-	if _, err := f.Write(append(raw, '\n')); err != nil {
-		return 0, err
-	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.seq = seq
-	if ev.Type == agentkit.EventCompaction {
-		var data compaction.EventData
-		if err := json.Unmarshal(ev.Data, &data); err == nil {
-			s.mem.trimCompacted(ev.AgentID, data.MemoryCutoffSeq())
-		}
+	if compact {
+		s.mem.trimCompacted(ev.AgentID, compactData.MemoryCutoffSeq())
 	}
 	return seq, nil
 }
 
+func appendJSONLLine(path string, raw []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(raw, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *JSONL) Read(ctx context.Context, from agentkit.EventSeq) ([]agentkit.SessionEvent, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if from == 0 && s.mem.isTrimmed() {
-		return readSessionFile(s.path, from)
+		path := s.path
+		s.mu.Unlock()
+		return readSessionFile(path, from)
 	}
-	return s.mem.readUnlocked(from), nil
+	out := s.mem.readUnlocked(from)
+	s.mu.Unlock()
+	return out, nil
 }
 
 func (s *JSONL) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {
@@ -159,4 +182,17 @@ func (m *Memory) appendLocked(_ context.Context, event agentkit.SessionEvent) (a
 	}
 	m.events = append(m.events, event)
 	return event.Seq, nil
+}
+
+// rollbackAppendLocked drops the last append when durable write failed; JSONL.mu must be held.
+func (m *Memory) rollbackAppendLocked(seq agentkit.EventSeq) {
+	if len(m.events) == 0 || m.events[len(m.events)-1].Seq != seq {
+		return
+	}
+	m.events = m.events[:len(m.events)-1]
+	if len(m.events) == 0 {
+		m.seq = 0
+		return
+	}
+	m.seq = m.events[len(m.events)-1].Seq
 }

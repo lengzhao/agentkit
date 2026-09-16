@@ -75,6 +75,24 @@ func startAsync(ctx context.Context, rt capschedule.Runtime, fn func(context.Con
 	}()
 }
 
+func waitJobFired(t *testing.T, registry capschedule.Registry, ctx context.Context) capschedule.Job {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs, err := registry.List(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(jobs) == 1 && jobs[0].Fired && !jobs[0].FiredAt.IsZero() {
+			return jobs[0]
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	jobs, _ := registry.List(ctx)
+	t.Fatalf("jobs after one-shot fire = %+v, want fired history retained", jobs)
+	return capschedule.Job{}
+}
+
 func TestCronJobFiresOnItsSchedule(t *testing.T) {
 	t.Parallel()
 
@@ -312,16 +330,7 @@ func TestCronMarksDelayJobFiredAfterFire(t *testing.T) {
 		t.Fatal("timed out waiting for one-shot cron fire")
 	}
 
-	jobs, err := registry.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(jobs) != 1 {
-		t.Fatalf("jobs after one-shot fire = %+v, want fired history retained", jobs)
-	}
-	if !jobs[0].Fired || jobs[0].FiredAt.IsZero() {
-		t.Fatalf("fired state = %+v", jobs[0])
-	}
+	_ = waitJobFired(t, registry, ctx)
 }
 
 func TestCronStopsOnCancellation(t *testing.T) {

@@ -160,11 +160,12 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.mu.Lock()
 		st.progressHandle = newHandle
 		st.enqueueCard(streamCardProgress, newHandle)
-		p.evictStreamCards(ctx, st)
+		evicted := p.evictStreamCardsLocked(st)
 		st.lastProgressUpdate = time.Now()
 		st.richCardFlushedPanelVersion = panelVer
 		st.lastRichCardBodyStreamRunes = len([]rune(body))
 		st.mu.Unlock()
+		p.deleteEvictedProgressCards(ctx, evicted)
 		return nil
 	}
 
@@ -570,29 +571,45 @@ func (st *streamState) clearCardRef(handle any) {
 
 func (p *Platform) removePriorProgressCards(ctx context.Context, st *streamState, keep any) {
 	remaining := make([]streamCard, 0, len(st.cards))
+	var toDelete []any
 	for _, card := range st.cards {
 		if card.Kind != streamCardProgress || card.Handle == keep {
 			remaining = append(remaining, card)
 			continue
 		}
-		if err := p.DeletePreviewMessage(ctx, card.Handle); err != nil {
-			slog.Debug(p.tag()+": remove prior progress card failed", "error", err)
-		}
+		toDelete = append(toDelete, card.Handle)
 		st.clearCardRef(card.Handle)
 	}
 	st.cards = remaining
+	p.deleteEvictedProgressCards(ctx, toDelete)
 }
 
 func (p *Platform) evictStreamCards(ctx context.Context, st *streamState) {
+	evicted := p.evictStreamCardsLocked(st)
+	p.deleteEvictedProgressCards(ctx, evicted)
+}
+
+func (p *Platform) evictStreamCardsLocked(st *streamState) []any {
+	var toDelete []any
 	for len(st.cards) > maxStreamCards {
 		oldest := st.cards[0]
 		if oldest.Kind == streamCardProgress {
-			if err := p.DeletePreviewMessage(ctx, oldest.Handle); err != nil {
-				slog.Debug(p.tag()+": evict progress card failed", "error", err)
-			}
+			toDelete = append(toDelete, oldest.Handle)
 		}
 		st.clearCardRef(oldest.Handle)
 		st.cards = st.cards[1:]
+	}
+	return toDelete
+}
+
+func (p *Platform) deleteEvictedProgressCards(ctx context.Context, handles []any) {
+	for _, handle := range handles {
+		if handle == nil {
+			continue
+		}
+		if err := p.DeletePreviewMessage(ctx, handle); err != nil {
+			slog.Debug(p.tag()+": evict progress card failed", "error", err)
+		}
 	}
 }
 
@@ -975,8 +992,9 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 		}
 		st.mu.Lock()
 		st.enqueueCard(streamCardBody, newHandle)
-		p.evictStreamCards(ctx, st)
+		evicted := p.evictStreamCardsLocked(st)
 		st.mu.Unlock()
+		p.deleteEvictedProgressCards(ctx, evicted)
 		return nil
 	}
 	return nil
@@ -1160,9 +1178,10 @@ func (p *Platform) bootstrapReplyCard(ctx context.Context, streamKey agentkit.Se
 	st.mu.Lock()
 	st.progressHandle = newHandle
 	st.enqueueCard(streamCardProgress, newHandle)
-	p.evictStreamCards(ctx, st)
+	evicted := p.evictStreamCardsLocked(st)
 	st.lastProgressUpdate = time.Now()
 	st.mu.Unlock()
+	p.deleteEvictedProgressCards(ctx, evicted)
 	return nil
 }
 
@@ -1308,9 +1327,10 @@ func (p *Platform) flushProgressCard(ctx context.Context, streamKey agentkit.Ses
 		st.mu.Lock()
 		st.progressHandle = newHandle
 		st.enqueueCard(streamCardProgress, newHandle)
-		p.evictStreamCards(ctx, st)
+		evicted := p.evictStreamCardsLocked(st)
 		st.lastProgressUpdate = time.Now()
 		st.mu.Unlock()
+		p.deleteEvictedProgressCards(ctx, evicted)
 		return nil
 	}
 	if err := p.UpdateMessage(ctx, handle, content); err != nil {
@@ -1351,9 +1371,10 @@ func (p *Platform) flushBodyCard(ctx context.Context, streamKey agentkit.Session
 		st.mu.Lock()
 		st.bodyHandle = newHandle
 		st.enqueueCard(streamCardBody, newHandle)
-		p.evictStreamCards(ctx, st)
+		evicted := p.evictStreamCardsLocked(st)
 		st.lastBodyUpdate = time.Now()
 		st.mu.Unlock()
+		p.deleteEvictedProgressCards(ctx, evicted)
 		return nil
 	}
 	if err := p.UpdateMessage(ctx, handle, content); err != nil {

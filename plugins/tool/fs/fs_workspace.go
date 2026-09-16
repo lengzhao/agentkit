@@ -13,7 +13,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
@@ -93,6 +92,8 @@ type workspaceFSOps interface {
 	listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error)
 	grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error)
 	find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error)
+	llmPath(ctx context.Context, path string) string
+	rewritePathsInText(ctx context.Context, text string) string
 }
 
 func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, maxListEntries int, only []string) (agentkit.ToolPack, error) {
@@ -116,8 +117,8 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 		if input.Offset > 0 {
 			startLine = input.Offset
 		}
-		return formatReadText(input.Path, startLine, sliced), nil
-	}).Description("Read a text file. path accepts global:..., local:..., absolute /..., relative ./..., or paths relative to the workspace root. Image files return metadata and are loaded for vision before the next model step. Large text files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
+		return formatReadText(fs.llmPath(ctx, input.Path), startLine, sliced), nil
+	}).Description("Read a text file. path accepts absolute paths, relative ./..., or paths relative to the workspace root (e.g. under work/). Image files return metadata and are loaded for vision before the next model step. Large text files are truncated to 2000 lines or 50KB; use offset/limit to page through the rest.").Build()
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +127,8 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 		if err := fs.writeText(ctx, input.Path, input.Content); err != nil {
 			return "", err
 		}
-		return formatWriteResult(input.Path), nil
-	}).Description("Write content to a file. path accepts global:..., local:..., absolute /..., relative ./..., or paths relative to the workspace root.").Build()
+		return formatWriteResult(fs.llmPath(ctx, input.Path)), nil
+	}).Description("Write content to a file. path accepts absolute paths, relative ./..., or paths relative to the workspace root (e.g. under work/).").Build()
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +153,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 		if err != nil {
 			return "", err
 		}
-		return formatGrepResult(result), nil
+		return fs.rewritePathsInText(ctx, formatGrepResult(result)), nil
 	}).Description("Search file contents in the workspace using a regular expression or literal string. Respects .gitignore.").Build()
 	if err != nil {
 		return nil, err
@@ -168,7 +169,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 		if err != nil {
 			return "", err
 		}
-		return formatFindResult(result), nil
+		return fs.rewritePathsInText(ctx, formatFindResult(result)), nil
 	}).Description("Find files by glob pattern (e.g. *.go, **/*.json). Paths are relative to the search directory. Respects .gitignore.").Build()
 	if err != nil {
 		return nil, err
@@ -189,7 +190,7 @@ func buildWorkspaceTools(fs workspaceFSOps, maxBytes, maxMatches, maxResults, ma
 		if truncated {
 			hint = fmt.Sprintf("%d entries limit reached. Use limit=%d for more", limit, limit*2)
 		}
-		return formatListResult(text, hint), nil
+		return fs.rewritePathsInText(ctx, formatListResult(text, hint)), nil
 	}).Description("List files and directories in a workspace path. Output includes dotfiles and marks directories with a trailing slash.").Build()
 	if err != nil {
 		return nil, err
@@ -216,13 +217,13 @@ func filterToolPack(pack agentkit.ToolPack, only []string) agentkit.ToolPack {
 }
 
 type ReadInput struct {
-	Path   string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
+	Path   string `json:"path" jsonschema:"File path: absolute /..., relative ./..., or relative to the configured fs root"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Line number to start reading from (1-indexed)"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of lines to read"`
 }
 
 type WriteInput struct {
-	Path    string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
+	Path    string `json:"path" jsonschema:"File path: absolute /..., relative ./..., or relative to the configured fs root"`
 	Content string `json:"content" jsonschema:"Full file content to write"`
 }
 
@@ -274,12 +275,12 @@ func applyWorkspaceEdits(fs workspaceFSOps) func(context.Context, EditInput) (st
 			return "", err
 		}
 		if updated == content {
-			return formatEditResult(input.Path, false), nil
+			return formatEditResult(fs.llmPath(ctx, input.Path), false), nil
 		}
 		if err := fs.writeText(ctx, input.Path, updated); err != nil {
 			return "", err
 		}
-		return formatEditResult(input.Path, true), nil
+		return formatEditResult(fs.llmPath(ctx, input.Path), true), nil
 	}
 }
 
@@ -288,13 +289,8 @@ func (s *workspaceFS) rootDir(ctx context.Context) (string, error) {
 }
 
 func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) {
-	if s.unrestricted {
-		if _, _, scoped := rtworkspace.ParseScoped(path); scoped {
-			return s.workspace.Resolve(ctx, path)
-		}
-		if filepath.IsAbs(path) {
-			return filepath.Clean(path), nil
-		}
+	if s.unrestricted && filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
 	}
 	clean := filepath.Clean(path)
 	if filepath.IsAbs(clean) {
@@ -315,12 +311,20 @@ func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) 
 	return full, nil
 }
 
+func (s *workspaceFS) llmPath(ctx context.Context, path string) string {
+	return rtmedia.AgentLLMPath(ctx, s.workspace, path)
+}
+
+func (s *workspaceFS) rewritePathsInText(ctx context.Context, text string) string {
+	return rtmedia.RewritePathsInText(ctx, s.workspace, text)
+}
+
 func (s *workspaceFS) readImage(ctx context.Context, path string) (string, error) {
 	full, err := s.resolve(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	display := rtmedia.CanonicalWorkPath(s.workspace, path)
+	display := s.llmPath(ctx, path)
 	if display == "" {
 		display = path
 	}

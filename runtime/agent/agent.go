@@ -650,11 +650,14 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 }
 
 func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, model string, turnTokens int) {
-	sess, err := a.sessionStore.Get(ctx, sessionID)
-	if err != nil {
-		slog.Debug("agent: turn complete skipped, session reload failed",
-			"agent_id", a.id, "session_id", sessionID, "err", err)
-		return
+	if sess == nil || sess.ID() != sessionID {
+		loaded, err := session.LoadSession(ctx, a.sessionStore, sessionID)
+		if err != nil {
+			slog.Debug("agent: turn complete skipped, session reload failed",
+				"agent_id", a.id, "session_id", sessionID, "err", err)
+			return
+		}
+		sess = loaded
 	}
 	messages, err := sess.DeriveMessages(ctx)
 	if err != nil {

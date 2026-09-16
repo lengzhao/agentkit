@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -27,13 +26,13 @@ type FileDeps struct {
 
 // fileRegistry keeps jobs in a JSON file so an agent-created schedule survives a
 // restart. Writes go through a temp file and rename: a daemon killed mid-write
-// must not come back to a truncated capschedule.
+// must not come back to a truncated capschedule. Concurrent readers and writers
+// rely on atomic replace (rename), not an in-process mutex.
 type fileRegistry struct {
 	relPath   string
 	workspace workspace.Service
 	absPath   string
 
-	mu  sync.Mutex
 	now func() time.Time
 }
 
@@ -59,9 +58,11 @@ func NewFile(cfg FileConfig, deps FileDeps) (capschedule.Registry, error) {
 }
 
 func (r *fileRegistry) List(ctx context.Context) ([]capschedule.Job, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state, err := r.load(ctx)
+	path, err := r.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	state, err := loadStateAt(path)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +78,11 @@ func (r *fileRegistry) Add(ctx context.Context, job capschedule.Job) (capschedul
 	}
 	job.Kind = rtschedule.JobKind(job)
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state, err := r.load(ctx)
+	path, err := r.resolve(ctx)
+	if err != nil {
+		return capschedule.Job{}, err
+	}
+	state, err := loadStateAt(path)
 	if err != nil {
 		return capschedule.Job{}, err
 	}
@@ -106,16 +109,18 @@ func (r *fileRegistry) Add(ctx context.Context, job capschedule.Job) (capschedul
 	if !replaced {
 		state.Jobs = append(state.Jobs, job)
 	}
-	if err := r.save(ctx, state); err != nil {
+	if err := saveStateAt(path, state); err != nil {
 		return capschedule.Job{}, err
 	}
 	return job, nil
 }
 
 func (r *fileRegistry) Remove(ctx context.Context, id string) (bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state, err := r.load(ctx)
+	path, err := r.resolve(ctx)
+	if err != nil {
+		return false, err
+	}
+	state, err := loadStateAt(path)
 	if err != nil {
 		return false, err
 	}
@@ -132,7 +137,7 @@ func (r *fileRegistry) Remove(ctx context.Context, id string) (bool, error) {
 		return false, nil
 	}
 	state.Jobs = kept
-	if err := r.save(ctx, state); err != nil {
+	if err := saveStateAt(path, state); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -170,9 +175,11 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []cap
 		jobs[i].Source = source
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state, err := r.load(ctx)
+	path, err := r.resolve(ctx)
+	if err != nil {
+		return err
+	}
+	state, err := loadStateAt(path)
 	if err != nil {
 		return err
 	}
@@ -199,16 +206,18 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []cap
 		kept = append(kept, job)
 	}
 	state.Jobs = kept
-	return r.save(ctx, state)
+	return saveStateAt(path, state)
 }
 
 // Due returns the jobs whose next boundary has arrived and stamps them as run.
 // Missed boundaries are skipped rather than backfilled, matching the timer
 // platform: replaying a backlog of stale schedules is never what was meant.
 func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Job, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state, err := r.load(ctx)
+	path, err := r.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	state, err := loadStateAt(path)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +251,7 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Jo
 		}
 	}
 	if changed {
-		if err := r.save(ctx, state); err != nil {
+		if err := saveStateAt(path, state); err != nil {
 			return nil, err
 		}
 	}
@@ -252,9 +261,11 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Jo
 }
 
 func (r *fileRegistry) MarkFired(ctx context.Context, id string, firedAt time.Time, fireErr error) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state, err := r.load(ctx)
+	path, err := r.resolve(ctx)
+	if err != nil {
+		return err
+	}
+	state, err := loadStateAt(path)
 	if err != nil {
 		return err
 	}
@@ -274,7 +285,7 @@ func (r *fileRegistry) MarkFired(ctx context.Context, id string, firedAt time.Ti
 		} else {
 			state.Jobs[i].LastError = ""
 		}
-		return r.save(ctx, state)
+		return saveStateAt(path, state)
 	}
 	return fmt.Errorf("%w: %q", capschedule.ErrJobNotFound, id)
 }
@@ -284,14 +295,6 @@ func (r *fileRegistry) resolve(ctx context.Context) (string, error) {
 		return r.absPath, nil
 	}
 	return r.workspace.Resolve(ctx, r.relPath)
-}
-
-func (r *fileRegistry) load(ctx context.Context) (fileState, error) {
-	path, err := r.resolve(ctx)
-	if err != nil {
-		return fileState{}, err
-	}
-	return loadStateAt(path)
 }
 
 func loadStateAt(path string) (fileState, error) {
@@ -312,11 +315,7 @@ func loadStateAt(path string) (fileState, error) {
 	return state, nil
 }
 
-func (r *fileRegistry) save(ctx context.Context, state fileState) error {
-	path, err := r.resolve(ctx)
-	if err != nil {
-		return err
-	}
+func saveStateAt(path string, state fileState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

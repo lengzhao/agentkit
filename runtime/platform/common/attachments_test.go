@@ -42,7 +42,7 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	if !strings.Contains(text, "附件里面的内容是什么") {
 		t.Fatalf("text = %q", text)
 	}
-	if !strings.Contains(text, "local:work/upload/note.txt") {
+	if !strings.Contains(text, "upload/note.txt") {
 		t.Fatalf("missing file ref in text: %q", text)
 	}
 	if !strings.Contains(text, "mime=text/plain") || !strings.Contains(text, "size=16") {
@@ -118,11 +118,17 @@ func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 		t.Fatalf("content = %#v", event.Message.Content)
 	}
 	text := event.Message.Content[0].Text
-	if !strings.Contains(text, "type=image") || !strings.Contains(text, "local:work/upload/") {
+	if !strings.Contains(text, "type=image") || !strings.Contains(text, "upload/") {
 		t.Fatalf("expected image attachment note in text: %q", text)
 	}
 	if event.Message.Content[1].Source == "" {
 		t.Fatal("expected workspace source path on image")
+	}
+	if strings.Contains(event.Message.Content[1].Source, "local:") || strings.Contains(event.Message.Content[1].Source, "global:") {
+		t.Fatalf("image source should not use scope prefixes, got %q", event.Message.Content[1].Source)
+	}
+	if !strings.HasPrefix(event.Message.Content[1].Source, "upload/") {
+		t.Fatalf("image source = %q", event.Message.Content[1].Source)
 	}
 }
 

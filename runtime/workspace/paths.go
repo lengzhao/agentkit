@@ -14,6 +14,10 @@ const defaultUploadSubdir = "upload"
 func normalizeWorkDir(workDir string) string {
 	workDir = filepath.ToSlash(strings.TrimSpace(workDir))
 	workDir = strings.TrimPrefix(workDir, "./")
+	lower := strings.ToLower(workDir)
+	if strings.HasPrefix(lower, "local:") {
+		workDir = workDir[len("local:"):]
+	}
 	if workDir == "" {
 		return defaultWorkDir
 	}

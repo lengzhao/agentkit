@@ -102,14 +102,16 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 	if id == "" {
 		return nil, fmt.Errorf("session id is required")
 	}
+	s.mu.Lock()
+	if sess, ok := s.cache.get(id); ok {
+		s.mu.Unlock()
+		return sess, nil
+	}
+	s.mu.Unlock()
+
 	dir, err := s.storeDir(ctx)
 	if err != nil {
 		return nil, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if sess, ok := s.cache.get(id); ok {
-		return sess, nil
 	}
 	path, err := sessionFilePath(dir, id)
 	if err != nil {
@@ -122,6 +124,12 @@ func (s *Store) Get(ctx context.Context, id agentkit.SessionID) (agentkit.Sessio
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.cache.get(id); ok {
+		return existing, nil
 	}
 	s.cache.put(id, sess)
 	return sess, nil

@@ -21,7 +21,7 @@ type ImageAttachment struct {
 	MimeType string
 	Data     []byte
 	FileName string
-	// WorkPath is a scoped workspace path (e.g. local:work/upload/foo.png).
+	// WorkPath is relative to the agent work dir (e.g. upload/foo.png).
 	WorkPath string
 }
 
@@ -40,15 +40,16 @@ type AudioAttachment struct {
 	Duration int
 }
 
-// UploadWorkRel is the scoped path to the tenant upload directory (e.g. local:work/upload).
+// UploadWorkRel is the upload directory relative to the agent work dir (e.g. upload).
 func UploadWorkRel(ws cw.Service) string {
-	_, upload := workpath.WorkLayout(ws)
-	return workpath.LocalPath(upload)
+	workDir, upload := workpath.WorkLayout(ws)
+	return workpath.StripWorkPrefix(workDir, upload)
 }
 
-// AttachFSRel is the scoped path for an inbound file under the upload directory.
+// AttachFSRel is the agent-facing path for an inbound file under upload (e.g. upload/foo).
 func AttachFSRel(ws cw.Service, name string) string {
-	return workpath.LocalPath(workpath.AttachRel(ws, name))
+	workDir, _ := workpath.WorkLayout(ws)
+	return workpath.StripWorkPrefix(workDir, workpath.AttachRel(ws, name))
 }
 
 // InboundOpts configures optional inbound media handling.
@@ -69,7 +70,7 @@ func InboundOptsFor(ws cw.Service) *InboundOpts {
 // InboundFromContent builds a MessageEvent from text and optional rtmedia.
 // extraContent is prepended (e.g. quoted reply context). Attachments are saved
 // under work/upload/ and described in the user text (path, mime, size) so
-// text-only models can read or delegate without vision.
+// Paths are relative to the agent work dir (e.g. upload/…); vision paths are also in image_url parts when present.
 func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
 	if route.ScopeUserID == "" {
 		route.ScopeUserID = strings.TrimSpace(userID)
@@ -123,6 +124,13 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 		}
 	}
 
+	var inboundCtx context.Context
+	if opts != nil && opts.Workspace != nil {
+		inboundCtx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+			Workspace: session.WorkspaceKey(string(deliveryID)),
+		})
+	}
+
 	text := strings.TrimSpace(content)
 	if extraContent != "" {
 		if text != "" {
@@ -144,7 +152,7 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 		}
 	}
 	if len(attachmentNotes) > 0 {
-		text = appendInboundAttachmentBlock(text, attachmentNotes)
+		text = appendInboundAttachmentBlock(inboundCtx, text, attachmentNotes, opts)
 	}
 
 	var parts []agentkit.ContentPart
@@ -162,6 +170,9 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 		url := rtmedia.DataURL(mime, img.Data)
 		part := agentkit.ContentPart{Type: "image_url", URL: url, MIME: mime}
 		if path := strings.TrimSpace(img.WorkPath); path != "" {
+			if opts != nil && opts.Workspace != nil {
+				path = rtmedia.AgentLLMPath(inboundCtx, opts.Workspace, path)
+			}
 			part.Source = path
 		}
 		parts = append(parts, part)
@@ -188,25 +199,33 @@ type inboundSavedAttachment struct {
 	image    bool
 }
 
-func appendInboundAttachmentBlock(prompt string, saved []inboundSavedAttachment) string {
+func appendInboundAttachmentBlock(ctx context.Context, prompt string, saved []inboundSavedAttachment, opts *InboundOpts) string {
 	if len(saved) == 0 {
 		return prompt
 	}
 	if prompt == "" {
 		prompt = "Please analyze the attached file(s)."
 	}
+	var ws cw.Service
+	if opts != nil {
+		ws = opts.Workspace
+	}
 	var lines []string
 	for _, a := range saved {
-		lines = append(lines, formatInboundAttachmentLine(a))
+		lines = append(lines, formatInboundAttachmentLine(ctx, ws, a))
 	}
-	return prompt + "\n\n(Attachments saved to workspace — use read for files; for images on a text-only model, delegate to a vision subagent with the path:\n" +
+	return prompt + "\n\n(Files the user uploaded with this message. workspace paths:\n" +
 		strings.Join(lines, "\n") + ")"
 }
 
-func formatInboundAttachmentLine(a inboundSavedAttachment) string {
+func formatInboundAttachmentLine(ctx context.Context, ws cw.Service, a inboundSavedAttachment) string {
+	display := strings.TrimSpace(a.path)
+	if ws != nil {
+		display = rtmedia.AgentLLMPath(ctx, ws, display)
+	}
 	var b strings.Builder
 	b.WriteString("- ")
-	b.WriteString(strings.TrimSpace(a.path))
+	b.WriteString(display)
 	if m := strings.TrimSpace(a.mime); m != "" {
 		b.WriteString(" mime=")
 		b.WriteString(m)

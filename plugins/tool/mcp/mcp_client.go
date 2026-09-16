@@ -130,21 +130,42 @@ func (p *clientPool) poolKey(ctx context.Context, server serverConfig) string {
 func (p *clientPool) ensure(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {
 	fp := server.fingerprint()
 	key := p.poolKey(ctx, server)
+
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.evictIdleLocked(p.now())
 	if sess, ok := p.sessions[key]; ok && sess.fingerprint == fp && sess.client != nil {
 		sess.lastUsed = p.now()
-		return sess.client, nil
+		client := sess.client
+		p.mu.Unlock()
+		return client, nil
 	}
+	var stale *mcpclient.Client
 	if sess, ok := p.sessions[key]; ok && sess.client != nil {
-		sess.client.Close()
+		stale = sess.client
+		delete(p.sessions, key)
 	}
+	p.mu.Unlock()
+	if stale != nil {
+		stale.Close()
+	}
+
 	client, err := connectServer(ctx, server, creds)
 	if err != nil {
 		return nil, err
 	}
 	now := p.now()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.evictIdleLocked(now)
+	if sess, ok := p.sessions[key]; ok && sess.fingerprint == fp && sess.client != nil {
+		client.Close()
+		sess.lastUsed = now
+		return sess.client, nil
+	}
+	if sess, ok := p.sessions[key]; ok && sess.client != nil {
+		sess.client.Close()
+	}
 	p.sessions[key] = &serverSession{fingerprint: fp, client: client, lastUsed: now}
 	return client, nil
 }

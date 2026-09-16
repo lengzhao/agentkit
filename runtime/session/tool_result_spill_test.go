@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -35,7 +36,8 @@ func TestPrepareToolResultForStorageSpillsLargeOutput(t *testing.T) {
 	if spill == "" {
 		t.Fatal("missing spill_path audit")
 	}
-	if !strings.Contains(stored.Content, "Full output: "+spill) {
+	display := rtmedia.AgentLLMPath(ctx, ws, spill)
+	if !strings.Contains(stored.Content, "Full output: "+display) {
 		t.Fatalf("content = %q", stored.Content)
 	}
 	if len(stored.Content) > 200 {

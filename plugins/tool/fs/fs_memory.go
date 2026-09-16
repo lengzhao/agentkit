@@ -202,6 +202,14 @@ func (s *memoryWorkspaceFS) grep(_ context.Context, req filesystem.GrepRequest) 
 	return collector.Result(), nil
 }
 
+func (s *memoryWorkspaceFS) llmPath(_ context.Context, path string) string {
+	return path
+}
+
+func (s *memoryWorkspaceFS) rewritePathsInText(_ context.Context, text string) string {
+	return text
+}
+
 func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
 	if req.Pattern == "" {
 		return filesystem.FindResult{}, fmt.Errorf("pattern is required")

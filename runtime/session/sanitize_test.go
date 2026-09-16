@@ -64,7 +64,7 @@ func TestSanitizeModelMessageForStorageCanonicalizesAttachmentSource(t *testing.
 	if len(msg.Content) != 1 {
 		t.Fatalf("content = %#v", msg.Content)
 	}
-	want := "local:work/upload/shot.png"
+	want := "upload/shot.png"
 	if msg.Content[0].Source != want {
 		t.Fatalf("Source = %q, want %q", msg.Content[0].Source, want)
 	}

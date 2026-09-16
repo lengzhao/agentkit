@@ -1084,7 +1084,7 @@ type LLMProvider interface {
 LLM Runtime 负责：
 
 - Provider 选择。
-- **`modalities` 声明**（`llm/openai-compatible` 的 `config.modalities`；未配置时默认 text+image）。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片；hydrate 从 workspace 载入原图（有大小上限）注入 `image_url`。token-limit 估算对 inline `data:` 视觉载荷使用占位字符数，与落盘 `logical_chars` 一致。
+- **`modalities` 声明**（`llm/openai-compatible` 的 `config.modalities`；未配置时默认 text+image）。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片；hydrate 从 workspace 读取图片（读取上限 10MB），优先经 `runtime/media.FitForVision` 压到默认 ≤1MB / 长边 2048px 后注入 `image_url`；失败则原样转发。token-limit 估算对 inline `data:` 视觉载荷使用占位字符数，与落盘 `logical_chars` 一致。
 - 请求构造和 hook。
 - 流式 chunk 归一化。
 - 使用量统计。
@@ -1190,9 +1190,15 @@ Policy Plane 判定已可见调用以及能力操作：
 | `..` | 项目根（`workspace/default`）；`workspace/tenant` 禁止 `..` |
 | `~/foo` | 绝对路径 |
 
+**配置层 vs 运行时 / 模型面**
+
+- `local:` / `global:` **只出现在配置**（如 `skill` 的 `dirs`、`bootstrap/shell` 的 `workDir: local:work`、fs `root` 的作用域前缀）。`workspace` 的 `workDir` 字段本身用裸路径 `work`（加载时也会剥掉误写的 `local:` 前缀）。
+- **Session、入站附件、工具回显、LLM 历史**统一为运行时路径：相对 **work 目录**（与 shell cwd、fs `root` 一致），如 `upload/…`（`runtime/media.AgentLLMPath` / `CanonicalStoredPath`）；**global 或 work 外**资源对模型展示为 **绝对路径**。
+- `tool/fs-workspace` 的 `root` 仍为 `work`；模型与工具回显使用相对该根的 `upload/foo` 等形式（`work/` 前缀仅存在于租户磁盘布局，不出现在模型可见文本中）。
+
 | 场景 | fs 根 / shell cwd | 说明 |
 |---|---|---|
-| L0 默认 | `work` / `work` | fs 默认 `unrestricted: true`：可读 `global:` / `local:`、绝对路径与 `..`；相对路径以 `work/` 为默认拼接基准 |
+| L0 默认 | `work` / `work` | fs 默认 `unrestricted: true`：工具路径不解析 `global:`/`local:`，用绝对或相对 fs `root`（含 `..`）；插件 `config.root` 仍可用作用域前缀 |
 | `presets/coding.yaml` | `work` / `work` | 与 L0 相同；local 根为 `<cwd>/.agentkit/` |
 | `presets/multi-tenant.yaml` | `work` / `work` | 与 L0 相同；租户隔离靠 local 根分目录，fs 默认可跨根读 global skill 等资源 |
 

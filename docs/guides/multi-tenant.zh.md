@@ -194,7 +194,7 @@ tool.fs-workspace.default:
 
 但租户根是**并列**的（`tenants/slack_C001` 与 `tenants/slack_C002` 互为兄弟），同一个豁免就成了越权通道：A 群一个 `../slack_C002` 就读写到 B 群。所以 `workspace/tenant` 全部走 `cap/workspace.ResolveRelStrict`，`..` 一律不解析，`global:` 也一样。
 
-`tool/fs-workspace` 默认 **`unrestricted: true`**（与 L0 `config.base.yaml` 一致）：模型可用 `global:` / `local:`、绝对路径与相对 `..` 读取 global skill reference 等共享资源；`readOnly` 子实例同样放开读路径，但仍禁止 write/edit。租户数据隔离仍靠 **local 根分目录**；`workspace/tenant` 下 `..` 不能用于在租户根之间跳转。若要把 fs 限制在租户 `root` 内，单独建实例并设 `unrestricted: false`。更强隔离后续走 sandbox。
+`tool/fs-workspace` 默认 **`unrestricted: true`**（与 L0 `config.base.yaml` 一致）：模型工具路径**不解析** `local:`/`global:` 作用域前缀（与发给 LLM 的路径一致，用绝对路径或相对 fs `root` 的路径）；`unrestricted` 下仍可用绝对路径与相对 `..` 读取 fs 根外的 global skill 等。`readOnly` 子实例同样放开读路径，但仍禁止 write/edit。租户数据隔离仍靠 **local 根分目录**；`workspace/tenant` 下 `..` 不能用于在租户根之间跳转。若要把 fs 限制在租户 `root` 内，单独建实例并设 `unrestricted: false`。更强隔离后续走 sandbox。
 
 要让某个群在已有项目里干活：把 `tenants` 的 `root` 指到 `<项目>/.agentkit`。若必须直接改项目源码树，把租户 `root` 指到项目目录本身，或单独设 `tool.fs-workspace` 的 `root` / `unrestricted`。
 
@@ -249,7 +249,7 @@ messages API / 调试页直接读取 agent 写入的 per-conversation session JS
 
 ### 文件上传
 
-chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根），agent 在 prompt 里看到的是 `work/upload/<filename>`。图片附件会走 vision；**主 LLM 为 text-only 时**入站 user 文本会附带结构化附件说明（`local:…` 路径、`mime`、`size`、原名、`type=image`），并提示对图片用 `delegate` 到 vision 子 agent；非图片用 `read`。多模态主 LLM 仍保留 `image_url`/`attachment_ref` 供 hydrate。非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。hydrate 从 workspace 读取原图（默认单张 ≤10MB）注入 vision；原图保留在 `work/upload/`。IM 入站图片若无原始文件名，会按 MIME/内容保存为 `file_<ts>_<n>.jpg`（等）；历史上无扩展名的 `file_*` 仍可通过文件头魔数识别。带 `.json`、`.txt` 等明确扩展名的文件会保留原名，不会因平台 MIME 误判追加 `.png`。`hook/before-step` 的 token 估算对 `data:` 图片使用占位长度，避免 hydrate 后误触发压缩。
+chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根）。**发给 LLM 的路径与 fs 工具入参一致，不含 `local:`/`global:` 前缀**：落在 `work/` 下的为相对 work 的路径（如 `upload/<filename>`，与 `tool/shell-bash` cwd 一致）；其余 workspace 位置展示为解析后的**绝对路径**。入站 user 文本会标明**用户在本条消息中上传的文件**及 workspace 路径列表（`upload/…`、`mime`、`size`、原名、图片为 `type=image`）；是否 `read` / `delegate` vision 由主 Agent system prompt（如 `prompt/section/subagents`）决定，不在入站正文重复说明。多模态主 LLM 另保留 `image_url`/`attachment_ref` 供 hydrate；text-only 主 LLM 落盘后多为 `attachment_ref`。非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。hydrate 从 workspace 读取原图（单文件读取上限 10MB），优先经 `FitForVision` 缩放/重编码（默认载荷 ≤1MB、长边 ≤2048px）后注入 vision；解码或压缩失败则原样转发；磁盘上的原图仍保留在 `work/upload/`。IM 入站图片若无原始文件名，会按 MIME/内容保存为 `file_<ts>_<n>.jpg`（等）；历史上无扩展名的 `file_*` 仍可通过文件头魔数识别。带 `.json`、`.txt` 等明确扩展名的文件会保留原名，不会因平台 MIME 误判追加 `.png`。`hook/before-step` 的 token 估算对 `data:` 图片使用占位长度，避免 hydrate 后误触发压缩。
 
 历史 session 落盘时图片存为 `attachment_ref`（`Source` 指向 `work/upload/...`），不含 base64；Agent 在调用 LLM 前会对**最近一条 user 消息**的 `attachment_ref`，以及**当前轮次 read 工具读到的图片路径**，从 workspace 重载并注入 vision。
 

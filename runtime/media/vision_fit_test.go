@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"testing"
 
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
@@ -20,6 +21,47 @@ func TestFitForVisionLeavesSmallImageUnchanged(t *testing.T) {
 	}
 	if !bytes.Equal(out, data) || mime != "image/png" {
 		t.Fatalf("got mime=%q len=%d", mime, len(out))
+	}
+}
+
+func TestFitForVisionFallbackToOriginalWhenDecodeFails(t *testing.T) {
+	t.Parallel()
+
+	// Invalid image body larger than vision cap; must not error.
+	data := append([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, bytes.Repeat([]byte{0x00}, 2<<20)...)
+	out, mime, err := rtmedia.FitForVision(data, "image/png", rtmedia.DefaultVisionFitOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out, data) || mime != "image/png" {
+		t.Fatalf("got mime=%q len=%d", mime, len(out))
+	}
+}
+
+func TestFitForVisionDownscalesPNG(t *testing.T) {
+	t.Parallel()
+
+	// Long edge exceeds DefaultMaxVisionEdgePixels; requires PNG decoder registration.
+	img := image.NewRGBA(image.Rect(0, 0, 3000, 2000))
+	for y := 0; y < 2000; y++ {
+		for x := 0; x < 3000; x++ {
+			img.Set(x, y, color.RGBA{uint8(x % 256), uint8(y % 256), 128, 255})
+		}
+	}
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, img); err != nil {
+		t.Fatal(err)
+	}
+
+	out, mime, err := rtmedia.FitForVision(raw.Bytes(), "image/png", rtmedia.DefaultVisionFitOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mime != "image/jpeg" {
+		t.Fatalf("mime = %q", mime)
+	}
+	if len(out) > rtmedia.DefaultMaxVisionPayloadBytes {
+		t.Fatalf("payload %d exceeds %d", len(out), rtmedia.DefaultMaxVisionPayloadBytes)
 	}
 }
 

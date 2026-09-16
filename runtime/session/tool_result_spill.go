@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
@@ -51,7 +52,7 @@ func PrepareToolResultForStorage(ctx context.Context, sessionID agentkit.Session
 	}
 
 	out := result
-	out.Content = toolResultViewWithSpillHint(result.Content, rel, maxViewBytes)
+	out.Content = toolResultViewWithSpillHint(ctx, ws, result.Content, rel, maxViewBytes)
 	if out.Audit == nil {
 		out.Audit = make(map[string]string, 1)
 	}
@@ -59,8 +60,12 @@ func PrepareToolResultForStorage(ctx context.Context, sessionID agentkit.Session
 	return out, nil
 }
 
-func toolResultViewWithSpillHint(full string, spillRel string, maxViewBytes int) string {
-	hint := fmt.Sprintf("\n\n[Output truncated. Full output: %s]", spillRel)
+func toolResultViewWithSpillHint(ctx context.Context, ws cw.Service, full string, spillRel string, maxViewBytes int) string {
+	display := spillRel
+	if ws != nil {
+		display = rtmedia.AgentLLMPath(ctx, ws, spillRel)
+	}
+	hint := fmt.Sprintf("\n\n[Output truncated. Full output: %s]", display)
 	if len(hint) >= maxViewBytes {
 		return pruneToolText(full, maxViewBytes)
 	}

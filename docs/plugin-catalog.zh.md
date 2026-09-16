@@ -316,7 +316,8 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | 工具 | 关键参数 | 行为要点 |
 |---|---|---|
-| `read` | `offset`, `limit` | 返回带行号的纯文本；大文件截断并在末尾附续读 hint |
+| `read` | `path`, `offset`, `limit` | `path` 相对 fs `root` 或绝对路径（不解析 `local:`/`global:`）；返回带行号的纯文本；大文件截断并在末尾附续读 hint |
+| `write` | `path`, `content` | 同 `read` 的 `path` 规则 |
 | `edit` | `edits[]` | 每条 `oldText` 均对**原文**匹配后再一次性应用；返回 `Edited path` / `No changes applied` |
 | `grep` | `pattern`, `path`, `limit`, `literal`, `context` | 返回 `path:line:` 纯文本；无匹配时 `No matches found` |
 | `find` | `pattern`, `path`, `limit` | 返回路径列表纯文本；无结果时 `No files found` |
@@ -371,7 +372,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表；临时文件 + rename 写入，agent 排的 job 跨重启存活 |
+| `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表；临时文件 + rename 原子替换，无进程内互斥锁，并发靠读完整快照 + 原子写 |
 | `schedule/cron` | `schedule.Runtime` | 常驻日历调度：轮询 registry、到期后 submit inbound turn；由 runner 启动，与 `tool/schedule` 共用 registry |
 
 #### Compaction & Context

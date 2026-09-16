@@ -108,7 +108,8 @@ func (p *Platform) workRelPath(ctx context.Context, channelKey, absPath string) 
 		return "", fmt.Errorf("path outside workspace")
 	}
 	workDir, _ := workpath.WorkLayout(p.workspace)
-	return workpath.LocalPath(workpath.CanonicalWorkPath(workDir, filepath.ToSlash(rel))), nil
+	canon := workpath.CanonicalWorkPath(workDir, filepath.ToSlash(rel))
+	return workpath.StripWorkPrefix(workDir, canon), nil
 }
 
 func (p *Platform) handleFiles(w http.ResponseWriter, r *http.Request) {

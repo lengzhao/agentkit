@@ -252,7 +252,7 @@ func TestWorkspaceFSUnrestrictedPaths(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFSUnrestrictedScopedPaths(t *testing.T) {
+func TestWorkspaceFSScopedPrefixTreatedAsLiteralPath(t *testing.T) {
 	t.Parallel()
 
 	global := t.TempDir()
@@ -262,13 +262,6 @@ func TestWorkspaceFSUnrestrictedScopedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "reference.md"), []byte("global-ref"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	localSkill := filepath.Join(local, "skills", "demo")
-	if err := os.MkdirAll(localSkill, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(localSkill, "reference.md"), []byte("local-ref"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -283,20 +276,17 @@ func TestWorkspaceFSUnrestrictedScopedPaths(t *testing.T) {
 	fs := &workspaceFS{relRoot: ".", workspace: svc, unrestricted: true}
 	ctx := context.Background()
 
-	got, err := fs.readText(ctx, "global:skills/demo/reference.md", 0)
+	if _, err := fs.readText(ctx, "global:skills/demo/reference.md", 0); err == nil {
+		t.Fatal("expected scoped-looking path to resolve under fs root, not workspace.Resolve")
+	}
+
+	absSkill := filepath.Join(skillDir, "reference.md")
+	got, err := fs.readText(ctx, absSkill, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "global-ref" {
-		t.Fatalf("global ref = %q", got)
-	}
-
-	got, err = fs.readText(ctx, "local:skills/demo/reference.md", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "local-ref" {
-		t.Fatalf("local ref = %q", got)
+		t.Fatalf("absolute skill path = %q", got)
 	}
 }
 

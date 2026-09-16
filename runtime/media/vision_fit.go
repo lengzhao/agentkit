@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/gif"
 	"image/jpeg"
+	_ "image/png"
 	"strings"
 
 	_ "golang.org/x/image/bmp"
@@ -41,11 +42,12 @@ func DefaultVisionFitOptions() VisionFitOptions {
 
 // FitForVision downscales and re-encodes images that exceed vision limits.
 // When the input is already within limits, it is returned unchanged.
-// If decoding fails but the payload is within MaxBytes, the original bytes are returned.
+// If decoding or re-encoding fails, the original bytes are returned unchanged.
 func FitForVision(data []byte, mime string, opt VisionFitOptions) ([]byte, string, error) {
 	if len(data) == 0 {
 		return data, mime, nil
 	}
+	origMIME := mime
 	if opt.MaxBytes <= 0 {
 		opt.MaxBytes = DefaultMaxVisionPayloadBytes
 	}
@@ -55,13 +57,7 @@ func FitForVision(data []byte, mime string, opt VisionFitOptions) ([]byte, strin
 
 	img, _, err := decodeImage(data, mime)
 	if err != nil {
-		if len(data) <= opt.MaxBytes {
-			if mime == "" {
-				mime = DetectMIME("", data)
-			}
-			return data, mime, nil
-		}
-		return nil, "", fmt.Errorf("decode image for vision: %w", err)
+		return visionOriginalFallback(data, origMIME)
 	}
 
 	bounds := img.Bounds()
@@ -91,9 +87,16 @@ func FitForVision(data []byte, mime string, opt VisionFitOptions) ([]byte, strin
 
 	out, outMIME, err := encodeUnderByteLimit(scaled, opt.MaxBytes)
 	if err != nil {
-		return nil, "", err
+		return visionOriginalFallback(data, origMIME)
 	}
 	return out, outMIME, nil
+}
+
+func visionOriginalFallback(data []byte, mime string) ([]byte, string, error) {
+	if mime == "" {
+		mime = DetectMIME("", data)
+	}
+	return data, mime, nil
 }
 
 func decodeImage(data []byte, mime string) (image.Image, string, error) {
