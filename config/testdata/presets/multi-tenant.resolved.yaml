@@ -632,6 +632,12 @@ tool.web-fetch-http.default:
 tools.default:
     config:
         defaultTimeoutSeconds: 120
+        enabled: auto
+        listing: auto
+        listingMaxTokens: 4000
+        maxSearchLimit: 25
+        searchDefaultLimit: 5
+        thresholdPct: 5
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -656,7 +662,7 @@ tools.default:
             - tool.session-query.default
             - tool.memory.default
             - tool.schedule.default
-    use: tools/runtime
+    use: tools/deferred
 tools.subagent.default:
     config:
         defaultTimeoutSeconds: 120
@@ -674,6 +680,7 @@ tools.subagent.default:
 tools.worker.default:
     config:
         defaultTimeoutSeconds: 120
+        enabled: auto
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -698,7 +705,7 @@ tools.worker.default:
             - tool.schedule.default
             - tool.todo.default
             - tool.finish.default
-    use: tools/runtime
+    use: tools/deferred
 workspace.default:
     config:
         global: ~/.agentkit

@@ -41,7 +41,7 @@ flowchart TB
   end
 
   A --> outer
-  outer -->|deps.inner| inner
+  outer -->|New 时构造| inner
   E -->|Execute 真实 ToolCall| inner
   V -->|Visible 全量 specs| inner
 ```
@@ -52,48 +52,31 @@ flowchart TB
 |------|------|
 | 内层不变 | `tools/runtime` 不拆 catalog/visible 双 map；MCP reload、`mcp -u` 语义不变 |
 | 装饰器模式 | 与 `runtime/subagent/filter.go` 相同：`inner agentkit.ToolRuntime`，只改边界行为 |
-| 逻辑在 runtime | 组装、检索、unwrap 放在 `runtime/tools/deferred/` 纯包，可单测 |
-| 注册在 runtime | `pluginkit.Register("tools/deferred", …)` 与 `tools/runtime` 同目录族 |
+| 独立插件 | 实现与注册在 `plugins/tools/deferred/`（kind `tools/deferred`） |
+| 内层辅助 | `tools/runtime` 提供 `StaticToolNames()` 供分类 eager 工具 |
 
 ## 3. 配置拓扑
 
-### 3.1 推荐实例划分
+### 3.1 实例与无缝替换
 
-| 实例 id | kind | 角色 |
-|---------|------|------|
-| `tools.catalog.default` | `tools/runtime` | 真实工具图：静态 + dynamicTools + policy |
-| `tools.default` | `tools/deferred` | Agent 挂载入口；`deps.inner` → catalog |
-| `tools.worker.default` | 同上或仅 catalog | worker 若需 MCP，可 `tools/deferred` + 独立 inner |
-| `tools.subagent.default` | `tools/runtime` | 通常无 dynamicTools，**不包 deferred** |
+`tools/deferred` 与 `tools/runtime` **共用同一套 `config` / `deps` 槽位**（`defaultTimeoutSeconds`、`toolTimeouts`、`allowTools`、`hooks`、`tools`、`toolPacks`、`dynamicTools`、`policies` 等）。插件内部构造 `tools/runtime` 再包装披露逻辑；无需单独的 `tools.catalog.*` 或 `deps.inner`。
 
-示例：
+| 实例 id | 典型 kind | 说明 |
+|---------|-----------|------|
+| `tools.default` | `tools/deferred` 或 `tools/runtime` | Agent 挂载入口；base 默认 `tools/deferred` + `enabled: false` |
+| `tools.worker.default` | 同上 | worker 独立工具图时可单独配置 |
+| `tools.subagent.default` | `tools/runtime` | 通常无 dynamicTools，**不必**用 deferred |
+
+示例（在原有 `tools/runtime` 块上只改 `use` 并加披露字段）：
 
 ```yaml
-tools.catalog.default:
-  use: tools/runtime
+tools.default:
+  use: tools/deferred   # 原为 tools/runtime 时仅改此行 + 下列披露项
   config:
     defaultTimeoutSeconds: 120
     toolTimeouts:
       delegate: 900
       ask_user: 900
-    # allowTools / denyTools 配在内层，对 unwrap 后的真实名生效
-  deps:
-    hooks: hooks.default
-    tools:
-      - tool.shell-bash.default
-      - tool.skill.default
-      # ...
-    toolPacks:
-      - tool.fs-workspace.default
-    dynamicTools:
-      - mcp.default
-      - openapi.default
-    policies:
-      - policy.dangerous-shell.default
-
-tools.default:
-  use: tools/deferred
-  config:
     enabled: true
     thresholdPct: 5
     listingMaxTokens: 4000
@@ -101,14 +84,24 @@ tools.default:
     maxSearchLimit: 25
     listing: auto   # auto | on | off
   deps:
-    inner: tools.catalog.default
+    hooks: hooks.default
+    tools:
+      - tool.shell-bash.default
+      - tool.skill.default
+    toolPacks:
+      - tool.fs-workspace.default
+    dynamicTools:
+      - mcp.default
+      - openapi.default
+    policies:
+      - policy.dangerous-shell.default
 ```
 
-Agent 仍写 `deps.tools: tools.default`，仅将 `tools.default` 的 `use` 从 `tools/runtime` 改为 `tools/deferred`。
+Agent 仍写 `deps.tools: tools.default`。灰度时保持 `enabled: false`，行为与 `use: tools/runtime` 等价。
 
 ### 3.2 关闭披露
 
-`tools/deferred.config.enabled: false` 时，外层 **透传**：`Visible` / `Execute` 直接委托 `inner`，行为与直接挂 catalog 等价。便于灰度与对比测试。
+`enabled: off` 时外层 **透传**；`auto` 在 defer 体量较小时同样透传。便于灰度与对比测试。
 
 ## 4. 运行时行为
 
@@ -196,7 +189,13 @@ sequenceDiagram
 - `deferTools`：强制 defer 的 eager 名（如大型可选核心工具）。
 - `deferSources`：按工具名前缀 / 标签（`mcp__`、`petstore__`）过滤。
 
-**激活条件**：`enabled: true` 且 deferrable 非空（或 listing 仅连接器场景，首版不做）。与 Hermes 一致：「有没有 deferrable」决定是否出现桥，listing 预算只影响 description 丰富度。
+**激活条件**：
+
+- `enabled: off`（或 `false`）→ 始终透传，与 `tools/runtime` 一致。
+- `enabled: on`（或 `true`）→ 存在 deferrable 即注入三桥。
+- `enabled: auto`（默认）→ 仅当 deferrable 工具 schema 估算 token ≥ `thresholdPct` × 上下文窗口（未传入窗口时按 200K 估算）才注入三桥；少量 MCP 时保持全量可见。
+
+`eagerTools` 列出的工具名**永不 defer**（可含动态 MCP 名），优先于 `deferTools`。
 
 ## 6. 配置字段
 
@@ -204,22 +203,16 @@ sequenceDiagram
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `enabled` | bool | `false`（首版建议，稳定后改 `true`） | `false` 时透传 inner |
+| `enabled` | `auto` \| `on` \| `off`（兼容布尔） | `auto` | `off` 透传；`on` 有 deferrable 即出桥；`auto` 按 defer 体量与 `thresholdPct` 决定是否出桥 |
 | `thresholdPct` | number | `5` | listing 预算占模型上下文百分比上限（与 `listingMaxTokens` 取 min） |
 | `listingMaxTokens` | int | `4000` | listing 绝对 token 上限 |
 | `listing` | string | `auto` | `auto` / `on` / `off`：是否嵌入 catalog 清单到 `tool_search` description |
 | `searchDefaultLimit` | int | `5` | 单次 query 默认命中数 |
 | `maxSearchLimit` | int | `25` | query 的 `limit` 硬顶 |
-| `eagerTools` | []string | 空 | 额外永不 defer 的工具名 |
-| `deferTools` | []string | 空 | 额外强制 defer 的工具名（覆盖默认 eager） |
+| `eagerTools` | []string | 空 | 永不 defer 的工具名（静态 + 动态均可）；优先于 `deferTools` |
+| `deferTools` | []string | 空 | 强制 defer 的工具名（在非 `eagerTools` 时生效） |
 
-`deps`：
-
-| 字段 | 类型 | 必填 |
-|------|------|------|
-| `inner` | `agentkit.ToolRuntime` | 是 |
-
-内层 `tools/runtime` 的 `allowTools` / `denyTools` / `toolTimeouts` 仍在 catalog 实例上配置。
+`deps`：与 `tools/runtime` 相同（`hooks`、`tools`、`toolPacks`、`dynamicTools`、`policies`、`approval`）。`allowTools` / `denyTools` / `toolTimeouts` 与 runtime 写在同一 `config` 块。
 
 ## 7. 与其它能力的关系
 
@@ -253,21 +246,21 @@ Policy 仅评估 **unwrap 后的** `call.Name`。`tool_search` / `tool_describe`
 ## 8. 代码布局
 
 ```
-runtime/tools/
-  runtime.go          # 现有 tools/runtime，不修改语义
-  register.go         # 增加 Register("tools/deferred", NewDeferred)
-  deferred/
-    deferred.go       # ToolRuntime 包装：Visible / Execute 入口
-    config.go         # 配置解析与默认值
-    classify.go       # eager vs deferrable
-    assemble.go       # 三桥 schema + listing
-    catalog.go        # 从 []ToolSpec 建检索索引
-    search.go         # tool_search / tool_describe 实现（首版可用简单 token 匹配，再换 BM25）
-    bridge.go         # tool_call 解析与参数校验
-    deferred_test.go
-```
+plugins/tools/deferred/
+  register.go         # pluginkit.Register("tools/deferred", New)
+  deferred.go         # ToolRuntime 包装：Visible / Execute
+  handlers.go         # tool_search / tool_describe / tool_call
+  config.go           # 配置解析与默认值
+  classify.go         # eager vs deferrable
+  assemble.go         # 三桥 schema + listing
+  catalog.go          # 检索索引与 listing 文本
+  bridge.go           # JSON 参数解析
+  deferred_test.go
 
-不在 `plugins/` 新增包：与 `tools/runtime` 同属运行时执行平面。
+runtime/tools/
+  runtime.go          # StaticToolNames()；执行平面语义不变
+  register.go         # 仅 tools/runtime
+```
 
 **Eager 集合来源（实现二选一，推荐 A）**：
 
@@ -278,15 +271,14 @@ runtime/tools/
 
 | 阶段 | 行为 |
 |------|------|
-| **P1** | 子串 / token 重叠排序，满足基本可用 |
-| **P2** | BM25 + 英文 stem（对齐 Hermes `tool_search_catalog.py`） |
+| **已实现** | `tool_search` 组合三路信号并加权排序：**token 重叠**、**BM25**（轻量英文 stem）、**名称/全文子串**；任一路命中即可入榜，避免单一路径漏召回 |
 | **P3** | 按 MCP server / OpenAPI api 分组 listing 与 `available_sources` 提示 |
 
 ## 10. 实施计划
 
 | PR | 内容 | 验收 |
 |----|------|------|
-| **1** | `tools/deferred` 透传模式 + 配置 + `config.base.yaml` 拆 `tools.catalog` / `tools.default`；`enabled: false` | 全量测试通过，行为与改前一致 |
+| **1** | `tools/deferred` 透传模式 + 与 runtime 同形 config/deps + `config.base.yaml` 默认 `enabled: false` | 全量测试通过，行为与改前一致 |
 | **2** | Classify + Assemble + 三桥 Visible；Execute 仅 eager 直通 | 集成测试：mock dynamic 工具多时不进 Visible |
 | **3** | `tool_search` / `tool_describe` / `tool_call` + unwrap 委托 inner | 冒烟：桥调用真实 MCP mock |
 | **4** | Listing 预算与降级 | 大 catalog 下单测 tier |
@@ -309,7 +301,7 @@ runtime/tools/
 
 待产品确认：
 
-- worker / 多 tenant 是否共用同一 `tools.catalog` 实例。
+- worker / 多 tenant 是否共用同一 `tools.default` 工具图实例。
 - 管理端列出「全部工具」是否新增命令（读 inner.Visible），或复用现有调试接口。
 
 ---

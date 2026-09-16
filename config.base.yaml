@@ -724,7 +724,7 @@ tool.session-query.default:
     workspace: workspace.default
 
 tools.default:
-  use: tools/runtime
+  use: tools/deferred
   config:
     defaultTimeoutSeconds: 120
     # 跨来源统一过滤模型可见工具名（静态 + MCP/OpenAPI 动态工具，用模型侧名称）。
@@ -736,11 +736,18 @@ tools.default:
     # denyTools:
     #   - write
     #   - bash
-    # 子 agent 要跑多步，delegate 单独放宽墙钟上限。
     toolTimeouts:
       delegate: 900
-      # 人不是 120s 内一定会回话的。
       ask_user: 900
+    # 渐进披露：enabled 为 auto | on | off（兼容布尔 false/true）。auto=defer 体量超 thresholdPct 上下文才出三桥；on=有 deferrable 即出桥。
+    enabled: auto
+    # eagerTools:  # 永不 defer 的工具名（含 MCP 动态名），优先于 deferTools
+    #   - some_mcp__tool
+    thresholdPct: 5
+    listingMaxTokens: 4000
+    searchDefaultLimit: 5
+    maxSearchLimit: 25
+    listing: auto
   deps:
     hooks: hooks.default
     tools:
@@ -764,12 +771,13 @@ tools.default:
       - policy.dangerous-shell.default
 
 tools.worker.default:
-  use: tools/runtime
+  use: tools/deferred
   config:
     defaultTimeoutSeconds: 120
     toolTimeouts:
       delegate: 900
       ask_user: 900
+    enabled: auto
   deps:
     hooks: hooks.worker
     tools:

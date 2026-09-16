@@ -32,6 +32,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/subagent"
 	_ "github.com/lengzhao/agentkit/plugins/tool/todo"
 	_ "github.com/lengzhao/agentkit/plugins/tool/web"
+	_ "github.com/lengzhao/agentkit/plugins/tools/deferred"
 	_ "github.com/lengzhao/agentkit/runtime/agent"
 	_ "github.com/lengzhao/agentkit/runtime/command"
 	_ "github.com/lengzhao/agentkit/runtime/hooks"

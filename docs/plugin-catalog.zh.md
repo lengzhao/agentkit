@@ -17,7 +17,7 @@
 | variant 表示实现 | `workspace/tenant` | 可选 |
 | 同一 kind 进程内唯一 | — | 重复 Register panic |
 
-**返回值类型决定运行时角色和挂载槽位**。例如单工具插件返回 `agentkit.Tool`，`tool/fs-workspace` 返回 `agentkit.ToolPack`，`tool/mcp` 返回 `agentkit.ToolProvider`，`tools/runtime` 返回 `agentkit.ToolRuntime`。
+**返回值类型决定运行时角色和挂载槽位**。例如单工具插件返回 `agentkit.Tool`，`tool/fs-workspace` 返回 `agentkit.ToolPack`，`tool/mcp` 返回 `agentkit.ToolProvider`，`tools/runtime` 与 `tools/deferred` 返回 `agentkit.ToolRuntime`（后者包装内层 catalog，渐进披露 MCP/OpenAPI，见 [deferred-tools.zh.md](guides/deferred-tools.zh.md)）。
 
 ## 2. 插件分类总览
 
@@ -279,7 +279,11 @@ agent.claude.default:
 
 ### 3.3 Tool 插件（模型可见工具）
 
-Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.Tool`，多工具插件返回 `agentkit.ToolPack`，动态工具插件返回 `agentkit.ToolProvider`。它们分别经 `tools/runtime` 的 `deps.tools`、`deps.toolPacks`、`deps.dynamicTools` 聚合后暴露给模型。
+Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.Tool`，多工具插件返回 `agentkit.ToolPack`，动态工具插件返回 `agentkit.ToolProvider`。它们经 `tools/runtime` 或 `tools/deferred`（deps 槽位相同）的 `deps.tools`、`deps.toolPacks`、`deps.dynamicTools` 聚合后暴露给模型。
+
+| Kind | 依赖 | 职责 |
+|---|---|---|
+| `tools/deferred` | 与 `tools/runtime` 相同（`hooks`、`tools`、`toolPacks`、`dynamicTools`、`policies`、`approval`） | 内部构造 runtime；`enabled: true` 时将动态工具换为 `tool_search` / `tool_describe` / `tool_call`，unwrap 后走同一执行平面 |
 
 | Kind | 依赖 | 模型工具名 | 职责 |
 |---|---|---|---|

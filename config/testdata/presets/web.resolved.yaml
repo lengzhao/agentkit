@@ -664,6 +664,7 @@ tools.subagent.default:
 tools.worker.default:
     config:
         defaultTimeoutSeconds: 120
+        enabled: auto
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -688,7 +689,7 @@ tools.worker.default:
             - tool.schedule.default
             - tool.todo.default
             - tool.finish.default
-    use: tools/runtime
+    use: tools/deferred
 workspace.default:
     config:
         global: ~/.agentkit

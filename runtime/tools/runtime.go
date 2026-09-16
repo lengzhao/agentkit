@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -95,6 +96,17 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		toolTimeouts:   toolTimeouts,
 		filter:           newToolNameFilter(cfg.AllowTools, cfg.DenyTools),
 	}, nil
+}
+
+// StaticToolNames returns tool names from deps.tools and deps.toolPacks only (not dynamic providers).
+// tools/deferred uses this to decide which specs stay eager in the model-visible list.
+func (r *Runtime) StaticToolNames() []string {
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func addTool(tools map[string]agentkit.Tool, tool agentkit.Tool) error {

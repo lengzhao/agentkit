@@ -602,9 +602,6 @@ tool.web-fetch-http.default:
 tools.default:
     config:
         defaultTimeoutSeconds: 120
-        toolTimeouts:
-            ask_user: 900
-            delegate: 900
     deps:
         approval: approval.auto-allow.default
         dynamicTools:
@@ -639,6 +636,7 @@ tools.subagent.default:
 tools.worker.default:
     config:
         defaultTimeoutSeconds: 120
+        enabled: auto
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -663,7 +661,7 @@ tools.worker.default:
             - tool.schedule.default
             - tool.todo.default
             - tool.finish.default
-    use: tools/runtime
+    use: tools/deferred
 workspace.default:
     config:
         global: ~/.agentkit
