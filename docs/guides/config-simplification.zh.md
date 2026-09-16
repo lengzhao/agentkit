@@ -138,7 +138,7 @@ L0（`config.base.yaml`）可以保留完整插件图。用户侧只需为要启
 1. **探测禁用与缺值**：overlay 中的顶层 `instance.id: null` 标记该已有实例 unavailable；必填 `${env:VAR}`、`${var:VAR}` 或 `${file:path}` 缺失（且无 `:-` 默认值）时，也标记该实例 unavailable。`${env:VAR:-}` / `${var:VAR:-}` / `${file:path:-}` 视为可选字段，缺失展开为 `""`，不禁用实例。L0/base 中的顶层 `instance.id: null` 不是禁用语义，直接视为无效配置。
 2. **级联删 dep**：从仍存活的实例中删除指向 unavailable 实例的依赖边（单值 dep 删键；列表 dep 过滤）。
 3. **空 deps 屏蔽**：若实例原本有 deps，清理后 deps 全空，则该实例也 unavailable，继续向上游传播，直到图稳定。
-4. **移除并运行**：删除所有 unavailable 实例，对剩余实例做插值，再 `pruneToReachable` 构建。
+4. **移除并运行**：删除所有 unavailable 实例，对剩余实例做插值，然后 `pruneToReachable` 构建。
 5. **根链路失败**：若 `runner.default` 或必需运行链最终不可用，报错并汇总被清理原因。
 
 日志（`slog.Warn`）完整记录：

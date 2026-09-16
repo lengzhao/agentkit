@@ -8,9 +8,8 @@ import (
 )
 
 type disableReason struct {
-	instanceID string
 	use        string
-	reason     string // "missing_value" | "empty_deps"
+	reason     string // "explicit_null" | "missing_value" | "empty_deps"
 	field      string
 	missingRef string
 	depKeys    []string
@@ -21,7 +20,6 @@ type disableReason struct {
 // repeats until the graph stabilizes.
 func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDisabled map[string]disableReason, envCtx EnvContext) (map[string]any, error) {
 	disabled := cloneDisableReasons(explicitDisabled)
-	prunedDepCount := 0
 
 	for id, reason := range explicitDisabled {
 		slog.Warn("config plugin disabled",
@@ -38,7 +36,6 @@ func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDis
 		}
 		if missing, ok := probeInterpolationMissing(id, nodeMap, interpDir, envCtx); ok {
 			disabled[id] = disableReason{
-				instanceID: id,
 				use:        instanceUse(nodeMap),
 				reason:     "missing_value",
 				field:      missing.field,
@@ -54,6 +51,15 @@ func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDis
 		}
 	}
 
+	out, err := propagateDisabledPrune(raw, disabled)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func propagateDisabledPrune(raw map[string]any, disabled map[string]disableReason) (map[string]any, error) {
+	prunedDepCount := 0
 	for {
 		changed := false
 		for id, node := range raw {
@@ -76,20 +82,17 @@ func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDis
 			}
 			if len(newDeps) == 0 {
 				nodeMap["deps"] = map[string]any{}
-				if _, already := disabled[id]; !already {
-					disabled[id] = disableReason{
-						instanceID: id,
-						use:        instanceUse(nodeMap),
-						reason:     "empty_deps",
-						depKeys:    originalKeys,
-					}
-					slog.Warn("config plugin disabled by empty deps",
-						"instance_id", id,
-						"use", instanceUse(nodeMap),
-						"dep_keys", originalKeys,
-					)
-					changed = true
+				disabled[id] = disableReason{
+					use:     instanceUse(nodeMap),
+					reason:  "empty_deps",
+					depKeys: originalKeys,
 				}
+				slog.Warn("config plugin disabled by empty deps",
+					"instance_id", id,
+					"use", instanceUse(nodeMap),
+					"dep_keys", originalKeys,
+				)
+				changed = true
 				continue
 			}
 			nodeMap["deps"] = newDeps
@@ -266,6 +269,8 @@ func formatPruneFailure(disabled map[string]disableReason) error {
 	for _, id := range ids {
 		reason := disabled[id]
 		switch reason.reason {
+		case "explicit_null":
+			b.WriteString(fmt.Sprintf("; %s (%s): disabled by overlay null", id, reason.use))
 		case "missing_value":
 			b.WriteString(fmt.Sprintf("; %s (%s): missing %s at %s", id, reason.use, reason.missingRef, reason.field))
 		case "empty_deps":

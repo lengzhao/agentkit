@@ -48,15 +48,14 @@ func NewRecognize(cfg RecognizeConfig, deps RecognizeDeps) (agentkit.ToolPack, e
 		sysPrompt = defaultImageSystemPrompt
 	}
 	svc := &service{
-		cfg:       cfg,
+		model:     strings.TrimSpace(cfg.Model),
 		llm:       deps.LLM,
 		ws:        deps.Workspace,
 		sysPrompt: sysPrompt,
 	}
 
 	imageTool, err := agentkit.NewTool[RecognizeImageInput, string]("recognize_image", svc.recognizeImage).
-		Description("Run vision on a workspace image and return a text description (OCR, UI, charts). " +
-			"Use when the main model cannot see images directly; path is under work/ (e.g. upload/…).").
+		Description("Run vision on a workspace image and return a text description (OCR, UI, charts).").
 		Build()
 	if err != nil {
 		return nil, err
@@ -65,7 +64,7 @@ func NewRecognize(cfg RecognizeConfig, deps RecognizeDeps) (agentkit.ToolPack, e
 }
 
 type service struct {
-	cfg       RecognizeConfig
+	model     string
 	llm       agentkit.LLMProvider
 	ws        workspace.Service
 	sysPrompt string
@@ -89,7 +88,7 @@ func (s *service) recognizeImage(ctx context.Context, input RecognizeImageInput)
 	}
 	slog.Info("recognize_image", "path", path, "mime", mime, "bytes", len(data))
 	return rtllm.CompleteText(ctx, s.llm, agentkit.LLMRequest{
-		Model: strings.TrimSpace(s.cfg.Model),
+		Model: s.model,
 		Messages: []agentkit.ModelMessage{
 			{Role: "system", Content: []agentkit.ContentPart{{Type: "text", Text: s.sysPrompt}}},
 			{Role: "user", Content: []agentkit.ContentPart{

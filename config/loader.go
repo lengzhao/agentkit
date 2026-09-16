@@ -98,7 +98,6 @@ func resolveYAML(interpDir string, base []byte, overlays [][]byte, opts []Resolv
 					return nil, fmt.Errorf("overlay disables unknown instance %q", id)
 				} else {
 					explicitDisabled[id] = disableReason{
-						instanceID: id,
 						use:        instanceUseFromAny(existing),
 						reason:     "explicit_null",
 					}
