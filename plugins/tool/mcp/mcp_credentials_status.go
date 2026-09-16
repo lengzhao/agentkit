@@ -83,3 +83,25 @@ func credentialKeyStatus(ctx context.Context, creds credentials.Store, scope, ke
 	}
 	return "ok"
 }
+
+// formatEnvAddHintsForServer lists /env add lines for env: keys that are not resolved yet.
+func formatEnvAddHintsForServer(ctx context.Context, server serverConfig, creds credentials.Store) string {
+	if creds == nil {
+		return ""
+	}
+	keys := envKeysFromServer(server)
+	if len(keys) == 0 {
+		return ""
+	}
+	scope := CredentialScope(server.Name)
+	var lines []string
+	for _, key := range keys {
+		if _, err := creds.Resolve(ctx, scope, "env:"+key); err != nil {
+			lines = append(lines, fmt.Sprintf("  /env add %s %s=<value>", scope, key))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "Set credentials, then run /mcp -u:\n" + strings.Join(lines, "\n")
+}

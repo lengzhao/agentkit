@@ -58,11 +58,14 @@ func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string
 	if key == "" {
 		return credentials.Secret{}, fmt.Errorf("credential ref %q is invalid", ref)
 	}
-	if !s.scopeAllows(scope, key) {
-		return credentials.Secret{}, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
-	}
 	if value, ok := s.lookupScopedValue(ctx, scope, ref); ok {
 		return credentials.Secret{Ref: ref, Value: value}, nil
+	}
+	if !s.scopeAllows(scope, key) {
+		if rtcredentials.IsIntegrationScope(scope) {
+			return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q (/env add %s %s=<value>)", key, scope, scope, key)
+		}
+		return credentials.Secret{}, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
 	}
 	value, err := s.lookupValue(ctx, ref)
 	if err != nil {
@@ -110,9 +113,6 @@ func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pai
 		}
 		if value == "" {
 			return "", 0, fmt.Errorf("%s: value is required", key)
-		}
-		if !s.scopeAllows(scope, key) {
-			return "", 0, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
 		}
 		storageKey := key
 		if s.prefix != "" {
@@ -278,8 +278,8 @@ func integrationEnvHelp() string {
   /env -u                                 reload secrets, dotenv, and integration manifests
 
 Notes:
-  SCOPE is mcp.<server> or openapi.<api> (must match mcp.json / api.json entry names)
-  Each KEY must be declared as env:KEY in that entry's manifest
+  SCOPE is mcp.<server> or openapi.<api> (server/api name after the dot)
+  /env add does not require a manifest entry; mcp.json / api.json env: refs declare keys for lookup after values are set
   Scoped values are stored in secrets.enc.json (or dotenv) under SCOPE::KEY
   Resolve lookup: context override > scoped store > config env > legacy flat keys in store
   Manifest allowlists refresh automatically when mcp.json / api.json change on disk`

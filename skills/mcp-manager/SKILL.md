@@ -7,7 +7,9 @@ description: 维护 AgentKit 的 MCP 动态工具配置（mcp.json）。在添�
 
 ## 运行态约定
 
-MCP 配置在**进程启动时**由 `mcp.default` 读取并缓存在内存。改完 `mcp.json` 后请用户执行 **`/mcp -u`** 重读配置并重新发现工具；也可用 **`/mcp add [-g] <name> <json>`** 写入并探活（失败回滚）。不要声称工具已刷新，直到用户确认已执行 `/mcp -u` 或 `/mcp add`。
+MCP 配置在**进程启动时**由 `mcp.default` 读取并缓存在内存。改完 `mcp.json` 后请用户执行 **`/mcp -u`** 重读配置并重新发现工具；也可用 **`/mcp add [-g] <name> <json>`** 写入并探活（缺 `env:` 时会保留配置并提示 `/env add`，配好后 `/mcp -u`；其它失败回滚）。不要声称工具已刷新，直到用户确认已执行 `/mcp -u` 或 `/mcp add` 成功。
+
+**凭证顺序**：可先用 **`/env add mcp.<server> KEY=VALUE`** 写入 scoped 密文（不依赖 manifest）；也可先 **`/mcp add`** 写入 server 配置再按提示补 `/env add`，最后 **`/mcp -u`**。
 
 ## 文件布局
 

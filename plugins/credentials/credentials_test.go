@@ -416,14 +416,36 @@ func TestEnvAddRejectsWithoutScope(t *testing.T) {
 	}
 }
 
-func TestEnvAddRejectsUndeclaredKey(t *testing.T) {
+func TestEnvAddBeforeManifest(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	store := integrationTestStore(t, dir, "", "AGENTKIT_TEST_SECRET")
-	cp := store.(agentkit.CommandProvider)
-	_, err := cp.Commands()[0].CommandExec(context.Background(), "add mcp.tool NOT_IN_MANIFEST=secret")
-	if err == nil {
-		t.Fatal("expected error for undeclared key")
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{"tool":{"command":"echo","env":{"K":"env:AGENTKIT_TEST_SECRET"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const secretsPass = "agentkit-test-secrets-passphrase"
+	store, err := NewIntegrations(Config{
+		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
+		ManifestFiles: []string{manifestPath},
+		Env: map[string]string{
+			rtcredentials.SecretsMasterKeyEnv: secretsPass,
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cmd := store.(agentkit.CommandProvider).Commands()[0]
+	out, err := cmd.CommandExec(ctx, "add mcp.tool NOT_IN_MANIFEST=secret")
+	if err != nil {
+		t.Fatalf("add before manifest declares key: %v", err)
+	}
+	if !strings.Contains(out, "verified") {
+		t.Fatalf("output=%q", out)
+	}
+	secret, err := store.Resolve(ctx, "mcp.tool", "env:NOT_IN_MANIFEST")
+	if err != nil || secret.Value != "secret" {
+		t.Fatalf("resolve: %v value=%q", err, secret.Value)
 	}
 }
 

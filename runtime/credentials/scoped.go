@@ -7,6 +7,11 @@ import (
 
 const scopedStorageSep = "::"
 
+// IsIntegrationScope reports whether scope is mcp.<server> or openapi.<api>.
+func IsIntegrationScope(scope string) bool {
+	return ValidateIntegrationScope(scope) == nil
+}
+
 // ValidateIntegrationScope reports whether scope is a non-empty mcp.* or openapi.* credential scope.
 func ValidateIntegrationScope(scope string) error {
 	scope = strings.TrimSpace(scope)

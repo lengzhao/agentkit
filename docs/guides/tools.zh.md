@@ -224,7 +224,7 @@ tools.default:
       - mcp.default
 ```
 
-先命中的文件赢。默认只加载 `global:mcp.json`；需要租户/项目级 `local:mcp.json` 时设置 `enableLocal: true`。`/mcp add` 默认写 local，加 `-g` 写全局；`enableLocal` 关闭时只能用 `/mcp add -g`。server 配置和每个 server 的工具列表**只加载一次并缓存在内存里**；`ListTools`/调用工具都读缓存，不会每次都重读 `mcp.json` 或重新对每个 server 发一次 `ListTools` RPC。编辑 `mcp.json`、或重启了某个 server 之后，运行 `/mcp -u` 强制重新读取配置并重新发现工具；也可用 `/mcp add [-g] <name> <json>` 写入配置（先探活校验，失败则回滚文件）。`tool/mcp` 通过 `agentkit.CommandProvider` 贡献这些 command，与模型可见的 Tool 是两套机制，命令本身不会出现在模型的工具列表里。单个 server 连不上只跳过该 server 并 `slog.Warn`。
+先命中的文件赢。默认只加载 `global:mcp.json`；需要租户/项目级 `local:mcp.json` 时设置 `enableLocal: true`。`/mcp add` 默认写 local，加 `-g` 写全局；`enableLocal` 关闭时只能用 `/mcp add -g`。server 配置和每个 server 的工具列表**只加载一次并缓存在内存里**；`ListTools`/调用工具都读缓存，不会每次都重读 `mcp.json` 或重新对每个 server 发一次 `ListTools` RPC。编辑 `mcp.json`、或重启了某个 server 之后，运行 `/mcp -u` 强制重新读取配置并重新发现工具；也可用 `/mcp add [-g] <name> <json>` 写入配置（写入 `mcp.json` 后探活；缺 `env:` 凭证时会保留配置并提示 `/env add`，配好后执行 `/mcp -u`；其它探活失败会回滚文件）。`tool/mcp` 通过 `agentkit.CommandProvider` 贡献这些 command，与模型可见的 Tool 是两套机制，命令本身不会出现在模型的工具列表里。单个 server 连不上只跳过该 server 并 `slog.Warn`。
 
 已建立的 MCP 连接在**空闲**超过 `idleTimeoutSeconds`（默认 300 秒）后会被主动关闭；下次调用时自动重连。设为 `0` 可关闭空闲回收。
 

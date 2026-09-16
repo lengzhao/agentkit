@@ -219,10 +219,6 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, gl
 	if err != nil {
 		return "", err
 	}
-	tools, err := p.pool.tools(ctx, cfg, p.credentials)
-	if err != nil {
-		return "", fmt.Errorf("mcp server %q probe failed: %w", name, err)
-	}
 
 	target, err := p.writeTarget(ctx, global)
 	if err != nil {
@@ -242,6 +238,16 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, gl
 	}
 	if err := configfile.WriteAtomic(target, merged, 0o644); err != nil {
 		return "", fmt.Errorf("write %s: %w", target, err)
+	}
+
+	tools, err := p.pool.tools(ctx, cfg, p.credentials)
+	if err != nil {
+		if hints := formatEnvAddHintsForServer(ctx, cfg, p.credentials); hints != "" {
+			return "", fmt.Errorf("mcp server %q probe failed: %w\n\n%s", name, err, hints)
+		}
+		_ = configfile.Restore(target, prevBytes, 0o644)
+		_, _, _ = p.reload(ctx)
+		return "", fmt.Errorf("mcp server %q probe failed: %w", name, err)
 	}
 	if _, defs, err := p.reload(ctx); err != nil {
 		_ = configfile.Restore(target, prevBytes, 0o644)

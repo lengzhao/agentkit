@@ -2,15 +2,24 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
+
+type hintCredentials struct{}
+
+func (hintCredentials) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
+	key := strings.TrimPrefix(ref, "env:")
+	return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q (/env add %s %s=<value>)", key, scope, scope, key)
+}
 
 // countingWorkspace wraps testWorkspace to count Resolve calls, so tests can
 // tell whether a config file was actually re-read from disk or served from
@@ -141,6 +150,37 @@ func TestMCPAddCommand(t *testing.T) {
 	}
 	if !strings.Contains(status, "Usage:") {
 		t.Fatalf("status=%q, want usage help", status)
+	}
+}
+
+func TestMCPAddKeepsConfigWhenCredentialsMissing(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp.json")
+	provider := &mcpProvider{
+		files:       []string{configPath},
+		enableLocal: true,
+		workspace:   &testWorkspace{root: dir},
+		pool:        newClientPool(0),
+		credentials: hintCredentials{},
+	}
+	ctx := context.Background()
+	cmd := agentkit.ToolProvider(provider).(agentkit.CommandProvider).Commands()[0]
+
+	_, err := cmd.CommandExec(ctx, `add knowledge {"transport":"streamable-http","url":"env:KNOWLEDGE_MCP_URL"}`)
+	if err == nil {
+		t.Fatal("expected probe failure")
+	}
+	if !strings.Contains(err.Error(), "/env add mcp.knowledge KNOWLEDGE_MCP_URL=") {
+		t.Fatalf("error=%v, want /env add hint", err)
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"knowledge"`) {
+		t.Fatalf("config should be kept on missing credentials: %s", raw)
 	}
 }
 
