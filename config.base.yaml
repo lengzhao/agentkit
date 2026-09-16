@@ -756,6 +756,7 @@ tools.default:
       - tool.schedule.default
     toolPacks:
       - tool.fs-workspace.default
+      - tool.recognize.default
     dynamicTools:
       - mcp.default
       - openapi.default
@@ -784,6 +785,7 @@ tools.worker.default:
       - tool.finish.default
     toolPacks:
       - tool.fs-workspace.default
+      - tool.recognize.default
     dynamicTools:
       - mcp.default
       - openapi.default
@@ -815,6 +817,14 @@ tool.fs-workspace.default:
     unrestricted: true
     maxBytes: 1048576
   deps:
+    workspace: workspace.default
+
+tool.recognize.default:
+  use: tool/recognize
+  config:
+    model: gpt-5.4-mini
+  deps:
+    llm: llm.openai
     workspace: workspace.default
 
 tool.fs-workspace.readonly.default:

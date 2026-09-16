@@ -540,6 +540,13 @@ tool.memory.default:
     deps:
         memory: memory.default
     use: tool/memory
+tool.recognize.default:
+    config:
+        model: gpt-5.4-mini
+    deps:
+        llm: llm.openai
+        workspace: workspace.default
+    use: tool/recognize
 tool.schedule.default:
     config:
         maxJobs: 32
@@ -600,6 +607,7 @@ tools.default:
             - policy.dangerous-shell.default
         toolPacks:
             - tool.fs-workspace.default
+            - tool.recognize.default
         tools:
             - tool.shell-bash.default
             - tool.skill.default
@@ -641,6 +649,7 @@ tools.worker.default:
             - policy.dangerous-shell.default
         toolPacks:
             - tool.fs-workspace.default
+            - tool.recognize.default
         tools:
             - tool.shell-bash.default
             - tool.skill.default

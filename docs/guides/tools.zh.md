@@ -110,6 +110,40 @@ export TAVILY_API_KEY=...
 go run ./cmd/agent -config presets/web.yaml "查一下官方说法并附来源"
 ```
 
+## 图片识别（`tool/recognize`）
+
+当主 Agent 使用 **text-only** LLM（`modalities: [text]`）时，入站图片只会变成 `[attachment: …]` 文本。除 `delegate` 到带 `modalities: [image]` 的子 Agent 外，可挂载 `tool/recognize`：由工具侧调用多模态 LLM，把结论以**纯文本**还给主模型。
+
+| 插件 kind | 模型工具名 | 凭据 |
+|---|---|---|
+| `tool/recognize` | `recognize_image` | `deps.llm`（provider 凭据与路由） |
+
+| config | 默认 | 说明 |
+|---|---|---|
+| `model` | `gpt-5.4-mini`（L0） | `recognize_image` 使用的视觉模型，与主 Agent `llm` 实例解耦 |
+| `imageSystemPrompt` | 内置 | 视觉系统指令 |
+
+路径与 fs 工具一致：相对 `work/`（如 `upload/foo.png`）。图片经 `runtime/media.LoadWorkspaceImage` 缩放后注入 vision。
+
+```yaml
+tool.recognize.default:
+  use: tool/recognize
+  config:
+    model: gpt-5.4-mini
+  deps:
+    llm: llm.openai
+    workspace: workspace.default
+
+tools.default:
+  use: tools/runtime
+  deps:
+    toolPacks:
+      - tool.fs-workspace.default
+      - tool.recognize.default
+```
+
+与 `delegate` + `agents/vision.md` 的关系：`recognize_image` 是**单轮工具**，适合快速 OCR/截图描述；子 Agent 适合需要多步 `read`/搜索的复杂看图任务。
+
 ## MCP 动态工具
 
 ### 配置格式

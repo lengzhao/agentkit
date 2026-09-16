@@ -244,6 +244,16 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 				"credentials": "credentials.default",
 			},
 		},
+		"tool/recognize": {
+			ID: "tool.recognize.default",
+			Config: map[string]any{
+				"model": "gpt-5.4-mini",
+			},
+			Deps: map[string]any{
+				"llm":       "llm.openai",
+				"workspace": "workspace.default",
+			},
+		},
 	}
 }
 
