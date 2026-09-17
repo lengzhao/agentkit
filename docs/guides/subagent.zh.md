@@ -30,7 +30,6 @@ description: 只读调研：读代码、搜索、定位实现，返回结论与�
 tools: [read, grep, find, ls, web_search, web_fetch, skill, finish]
 skills: [context7-mcp]  # 可省，空 = 子 agent runtime 的全部 skill
 model: ""                 # 可省，默认用 Spawner 的 llm dep 的默认模型
-maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxSteps
 ---
 你是调研子 agent。你的唯一产出是一段结论，交回给主 agent。
 
@@ -47,7 +46,6 @@ maxSteps: 20              # 可省，默认取 subagent 实例的 config.maxStep
 | `tools` | 否 | 工具名白名单，空 = 该 runtime 的全部工具。写的是**模型可见的工具名**而不是 kind 名（`tool/read-file` → `read`，`tool/list-dir` → `ls`）；名字写错会被丢弃并告警。见 [§4](#4-子-agent-的能力边界) |
 | `skills` | 否 | Skill 名白名单，空 = 该 runtime 的全部 skill。同时收窄 prompt 里的 skill 目录与 `skill` 工具的加载范围；名字写错会告警。需在 `tools` 里包含 `skill` 才能加载 |
 | `model` | 否 | 覆盖模型，用于"便宜模型跑调研" |
-| `maxSteps` | 否 | 该子 Agent 单次委派的步数上限 |
 | `modalities` | 否 | 声明该子 Agent 处理的输入类型：`text`、`image`、`audio`（可写别名 `vision`）。会出现在主 Agent 的 subagents prompt；空表示不额外标注 |
 
 `agents/*.md` 只用于进程内（`inprocess`）子 Agent。委派到 Loop 里已注册的 agent（如 `cursor`）在 `subagent/loop-agent` 实例的 `config.agents` 里声明，见 [§3](#3-目录查找)。
@@ -72,7 +70,6 @@ subagent.inprocess.default:
       - local:agents
       - local:../examples/agents
       - global:agents
-    maxSteps: 20
     timeoutSeconds: 600
   deps:
     llm: llm.openai
@@ -185,7 +182,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 |---|---|
 | `completed` | 子 Agent 调了 `tool/finish` 且报告完成 |
 | `blocked` | 子 Agent 调了 `tool/finish` 但报告无法继续 |
-| `stopped` | 没调 finish（步数用完 / 只回了文本），`summary` 退回最后一条 assistant 文本 |
+| `stopped` | 没调 finish（例如只回了文本就停手），`summary` 退回最后一条 assistant 文本 |
 | `failed` | 子 Agent turn 返回 error（如 ACP 认证失败、外部 CLI 退出）；follow-up 正文含 error 文本 |
 | `running` | 异步委派已启动，结论尚未返回 |
 

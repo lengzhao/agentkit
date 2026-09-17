@@ -34,8 +34,6 @@ import (
 type Config struct {
 	// Dirs are definition directories in precedence order; defaults to local:agents then global:agents.
 	Dirs []string `json:"dirs,omitempty"`
-	// MaxSteps is step cap for definitions that do not set their own; defaults to 20.
-	MaxSteps int `json:"maxSteps,omitempty"`
 	// TimeoutSeconds is wall clock for one delegation; 0 leaves the delegate tool's own timeout as the only bound.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
@@ -50,11 +48,8 @@ type Deps struct {
 	Compaction   []compaction.Service     `json:"compaction,omitempty"`
 }
 
-const defaultMaxSteps = 20
-
 type Spawner struct {
 	dirs      []string
-	maxSteps  int
 	timeout   time.Duration
 	workspace workspace.Service
 	store     agentkit.SessionStore
@@ -92,17 +87,12 @@ func New(cfg Config, deps Deps) (subagent.Spawner, error) {
 	if len(dirs) == 0 {
 		dirs = defaultDirs
 	}
-	maxSteps := cfg.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = defaultMaxSteps
-	}
 	var timeout time.Duration
 	if cfg.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
 	return &Spawner{
 		dirs:      dirs,
-		maxSteps:  maxSteps,
 		timeout:   timeout,
 		workspace: deps.Workspace,
 		store:     deps.SessionStore,
@@ -190,10 +180,6 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	if err != nil {
 		return out, fmt.Errorf("subagent %q: %w", def.Name, err)
 	}
-	maxSteps := def.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = s.maxSteps
-	}
 	childModalities := def.Modalities
 	if agentkit.SupportsModality(childModalities, agentkit.ModalityImage) {
 		childModalities = agentkit.NormalizeModalities(append([]string{agentkit.ModalityText}, childModalities...))
@@ -201,7 +187,6 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	child, err := agent.New(agent.Config{
 		ID:         agentkit.AgentID("sub:" + def.Name),
 		Model:      def.Model,
-		MaxSteps:   maxSteps,
 		Modalities: childModalities,
 	}, agent.Deps{
 		SessionStore: s.store,

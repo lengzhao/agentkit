@@ -31,7 +31,6 @@ description: read-only research
 tools: [read, " grep ", ""]
 skills: [foo, " bar "]
 model: gpt-test
-maxSteps: 7
 ---
 You are the research subagent.
 `)
@@ -55,9 +54,6 @@ You are the research subagent.
 		}
 		if def.Model != "gpt-test" {
 			t.Errorf("model = %q", def.Model)
-		}
-		if def.MaxSteps != 7 {
-			t.Errorf("maxSteps = %d", def.MaxSteps)
 		}
 	})
 

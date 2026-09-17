@@ -50,7 +50,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 			"use": "agent/coding",
 			"config": map[string]any{
 				"id":       "test",
-				"maxSteps": 5,
+				
 			},
 			"deps": map[string]any{
 				"sessionStore": map[string]any{

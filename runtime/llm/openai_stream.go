@@ -142,7 +142,7 @@ func (a *streamAccumulator) finalize() {
 }
 
 // setUsage records the token accounting a provider reports, so the final message
-// event can carry it to the agent's run budget.
+// event can carry usage for session accounting.
 func (a *streamAccumulator) setUsage(input, output, total int) {
 	if input == 0 && output == 0 && total == 0 {
 		return

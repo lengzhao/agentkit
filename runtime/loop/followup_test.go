@@ -27,7 +27,7 @@ func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, storeDir st
 						"use": "agent/coding",
 						"config": map[string]any{
 							"id":       "test",
-							"maxSteps": 1,
+							
 						},
 						"deps": map[string]any{
 							"sessionStore": map[string]any{

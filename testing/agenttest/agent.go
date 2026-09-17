@@ -37,7 +37,6 @@ func DefaultAssembler(t *testing.T) agentkit.PromptAssembler {
 // ScriptedAgentConfig wires a minimal agent for smoke scenarios.
 type ScriptedAgentConfig struct {
 	AgentID  agentkit.AgentID
-	MaxSteps int
 	Steps    []llm.ScriptedStep
 	Tools    agentkit.ToolRuntime
 	Store    agentkit.SessionStore
@@ -60,9 +59,6 @@ func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, ag
 	if cfg.AgentID == "" {
 		cfg.AgentID = "smoke"
 	}
-	if cfg.MaxSteps == 0 {
-		cfg.MaxSteps = 5
-	}
 	store := cfg.Store
 	var wsRoot string
 	if store == nil {
@@ -75,7 +71,7 @@ func NewScriptedAgent(t *testing.T, cfg ScriptedAgentConfig) (agentkit.Agent, ag
 	if cfg.Tools == nil {
 		cfg.Tools = EmptyToolsRuntime(t)
 	}
-	ag, err := agent.New(agent.Config{ID: cfg.AgentID, MaxSteps: cfg.MaxSteps}, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: cfg.AgentID}, agent.Deps{
 		SessionStore: store,
 		LLM:          MustScripted(t, cfg.Steps...),
 		Tools:        cfg.Tools,

@@ -8,7 +8,7 @@
 
 - **插件化装配** — 79 个已注册 Plugin Kind，L0 默认配置 + L1 overlay 按需覆盖
 - **Coding Agent 闭环** — 文件读写、Shell、策略审批、Session 持久化（jsonl）
-- **自主运行** — turn 续跑、预算分层、todo/finish 收尾、token 阈值压缩、崩溃恢复
+- **自主运行** — `hook/turn-continue` 续跑、todo/finish 收尾、token 阈值压缩、崩溃恢复
 - **子 Agent 委派** — `agents/*.md` 定义子 agent，主 agent 只读回结论
 - **自我学习** — `/learn` 管理 `memory.md`，Grounded Dreaming 巩固短期信号，Skill Workshop 生成可审阅技能提案
 - **网络能力** — HTTP 抓取、Exa 搜索、向用户提问（HIL）

@@ -6,33 +6,33 @@
 
 ## 1. Turn / Segment 模型
 
-引入 `TurnStopping` 之前，turn 在 assistant 不再调用工具时立即结束，`maxSteps` 是无法延展的硬上限。现在一个 turn 由若干 **segment** 组成：
+L0 默认的交互主 agent（`agent.assistant.default`）的 `hooks.default` **不含** `hook/turn-continue`：segment 内工具循环在模型不再调用工具时结束，与 Pi 类似。需要自主续跑与完成判定时，换用 `agent.worker.default`（`hooks.worker` 已挂 `hook/turn-continue`），或在自定义 agent 的 `deps.hooks` 里挂上该 hook。`agent/coding` **没有** `budget` / `maxSteps` 配置；步数、token 等上限若需要，在 `OnTurnStopping` 里根据 `TurnStopping.Steps` / `Tokens` 自行裁决。
+
+引入 `TurnStopping` 之后，自主运行的 turn 可由若干 **segment** 组成：
 
 ```mermaid
 flowchart TD
-  U["user 消息"] --> S1["segment 1<br/>最多 maxSteps 步"]
+  U["user 消息"] --> S1["segment 1<br/>工具循环至模型停手"]
   S1 --> TS1{"TurnStopping"}
   TS1 -->|"Continue"| C1["turn/continue 事件"] --> S2["segment 2"]
   S2 --> TS2{"TurnStopping"}
-  TS2 -->|"Stop / 预算耗尽"| E["turn/end"]
+  TS2 -->|"Stop"| E["turn/end"]
 ```
 
-段末进入 `TurnStopping` 的三种原因：
+段末进入 `TurnStopping` 的原因目前只有：
 
 | `Reason` | 触发条件 |
 |---|---|
 | `no-tool-calls` | assistant 只回文本，没有工具调用 |
-| `step-limit` | 本 segment 的 `maxSteps` 用完，任务还没做完 |
-| `budget` | 硬预算已耗尽（此时 `Continue` 被忽略） |
 
 ## 2. 停/续契约
 
 ```go
 type TurnStopping struct {
     Reason   TurnStopReason
-    Steps    int             // 本 turn 累计步数
+    Steps    int             // 本 turn 累计步数（观测）
     Segments int             // 已续跑次数
-    Budget   BudgetState
+    Tokens   int             // 本 turn 累计 token（观测，来自 usage）
     Messages []ModelMessage  // 派生历史，只读
     Continue []ModelMessage  // 追加即续跑
     Stop     bool            // 强制收尾
@@ -40,64 +40,28 @@ type TurnStopping struct {
 }
 ```
 
-三条不变量：
+两条不变量：
 
 1. **`Stop` 优先于 `Continue`** —— 任一 hook 说停就停。
-2. **硬预算优先于 hook** —— `Budget.Exhausted` 时 `Continue` 被忽略。预算耗尽仍会调用 hook，让驱动有机会记录状态。
-3. **续跑消息必须落盘** —— Agent 把注入内容写成 `turn/continue` 事件，`DeriveMessages` 再回放成 user 消息。因此续跑既是审计记录也是模型可见来源，满足 "Model-visible ⟺ Logged"。
+2. **续跑消息必须落盘** —— Agent 把注入内容写成 `turn/continue` 事件，`DeriveMessages` 再回放成 user 消息。因此续跑既是审计记录也是模型可见来源，满足 "Model-visible ⟺ Logged"。
 
-`BudgetState` 里未设限的维度报 `-1`，与"额度为 0"区分开：
+Agent 在 turn 内累计 `steps` / `continuations` / `tokens`，写入 `TurnStopping` 供 hook 观测；**不在** runtime 内按配置截断 segment。
 
-```go
-type BudgetState struct {
-    RemainingSteps, RemainingContinuations int
-    RemainingSeconds, RemainingTokens      int
-    SoftExhausted bool  // 越过 softRatio，该收尾了
-    Exhausted     bool  // 硬上限到顶
-}
-```
+## 3. `hook/turn-continue` 配置
 
-## 3. 预算分层
-
-`agent/coding` 的 `config.budget`：
+续跑次数与 stall 检测在插件侧配置。L0 `config.base.yaml` 与 `presets/autonomous.yaml` 示例：
 
 ```yaml
-budget:
-  maxContinuations: 30      # 单 turn 内最多续跑次数；0（默认）= 不自主
-  maxTotalSteps: 300        # 跨 segment 的总步数
-  wallClockSeconds: 7200    # 墙钟
-  maxTotalTokens: 2000000   # 累计 token（来自 usage 事件）
-  softRatio: 0.8            # 消耗到 80% 时置 SoftExhausted
+hook.turn-continue.default:
+  use: hook/turn-continue
+  config:
+    maxContinuations: 30   # 0 = 不续跑（即使挂了 hook 也不注入 Continue）
+    stallLimit: 3
+    requireFinish: true
+    requireTodosDone: true
 ```
 
-两级刹车：**软阈值**让驱动改注入"收尾"提示，模型自己把工作收口；**硬上限**直接停，不给模型商量的机会。
-
-`maxContinuations` 默认为 0，所以没配 budget 的 agent 行为与引入本机制之前完全一致，即使挂了 turn-stopping hook 也不会自主续跑。
-
-token 计量来自 LLM provider 的 usage：`llm/openai-compatible` 两种 API 模式都会带出 usage（chat 走 `stream_options.include_usage`，responses 走 `response.usage`），Agent 每步写一条 `usage` 事件并累加进预算。provider 不报 usage 时 token 维度自然失效，其余三个维度照常生效。
-
-### 3.1 上限收尾：summaryOnLimit
-
-硬上限保住了成本，但留下一个 UX 缺口：turn 断在工具调用中，用户看不到任何结果。`agent/coding` 默认开启上限收尾——当 turn 因 `step-limit` 或 `budget` 结束、且没有 hook 主动叫停时，Agent 自己再跑**一步** LLM 让模型总结：
-
-```yaml
-agent:
-  disableSummaryOnLimit: false  # 默认 false（开启）；true 关闭
-  summaryPrompt: ""             # 留空用默认提示，可覆盖
-```
-
-这一步的性质和约束：
-
-| 维度 | 说明 |
-|---|---|
-| 触发 | `StopStepLimit` 或 `StopBudget`，且 hook 未续跑且未主动 `Stop`、turn 未取消、本 turn 未总结过 |
-| 不触发 | `StopNoToolCalls`（模型已回文本，用户看得到）；hook 主动 `Stop`（finished/stalled/no-work，hook 已决定如何收尾） |
-| 工具 | 不可见——传入空 tool 列表，模型只能出文本；即便它仍返回 tool_calls 也被丢弃、不执行 |
-| 预算 | **不计入** `run.budget`。硬预算已花光，这一步是 turn 收尾而非续跑，所以不受硬上限拦截 |
-| 落盘 | 注入的总结提示以 `turn/continue` 事件记录（`reason = "summary:<stop>"`），`DeriveMessages` 回放成 user 消息；模型的总结作为普通 `assistant/message` 落盘并流式发给用户 |
-| 架构位置 | 在 `runtime/agent`，不在插件。续跑策略属于插件，但"硬上限到了给用户一个收尾"是 Agent 的兜底职责，与崩溃恢复同性质——hook 无法在 `Budget.Exhausted` 时再驱动 LLM，所以只能由 Agent 自己做 |
-
-不依赖 `tool/finish` / `tool/todo` / `hook/turn-continue`：即便只配了 `agent.budget`（或仅 `maxSteps`），上限收尾照常工作。
+`maxContinuations` 为 0 时行为与未挂自主 hook 一致：段末 `no-tool-calls` 直接 `turn/end`。
 
 ## 4. 完成判定：todo + finish
 
@@ -113,8 +77,7 @@ agent:
 ```
 已 run/finish            -> Stop
 同一工具同参连续 N 次    -> Stop（stalled，默认 N=3）
-Budget.Exhausted         -> 交给 Agent 停
-Segments >= 上限         -> Stop
+Segments >= maxContinuations -> Stop
 还有 pending todo        -> Continue（正文带未完成清单）
 requireFinish 且未 finish -> Continue
 否则                     -> Stop
@@ -386,7 +349,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
 go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
 ```
 
-`presets/autonomous.yaml` 是 L1 overlay，改动集中在六处：`platform` once、`agent` budget、`hooks` 加 turn-continue、`tools` 加 todo/finish 与两个 policy、`approval` 换 auto-allow、压缩改按 token 阈值触发。
+`presets/autonomous.yaml` 是 L1 overlay，改动集中在：`platform` once、`hooks` 加 turn-continue、`tools` 加 todo/finish 与两个 policy、`approval` 换 auto-allow、压缩改按 token 阈值触发。
 
 事后检查一次自主运行：
 

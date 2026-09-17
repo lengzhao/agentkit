@@ -226,8 +226,5 @@ func (a *Runtime) AgentCatalogEntry() string {
 	if a.model != "" {
 		fmt.Fprintf(&b, "model: %s\n", a.model)
 	}
-	if a.maxSteps > 0 {
-		fmt.Fprintf(&b, "maxSteps: %d\n", a.maxSteps)
-	}
 	return strings.TrimRight(b.String(), "\n")
 }

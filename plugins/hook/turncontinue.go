@@ -10,12 +10,10 @@ import (
 )
 
 type TurnContinueConfig struct {
-	// MaxContinuations is segments this hook will ask for. The agent's budget.maxContinuations is the hard ceiling and always wins.
+	// MaxContinuations is the most segments this hook will ask for after the first.
 	MaxContinuations int `json:"maxContinuations"`
 	// ContinuePrompt is text injected to start another segment.
 	ContinuePrompt string `json:"continuePrompt"`
-	// WrapUpPrompt is injected instead of ContinuePrompt once the budget is softly exhausted.
-	WrapUpPrompt string `json:"wrapUpPrompt"`
 	// RequireFinish keeps going until tool/finish is called, even with no pending todos.
 	RequireFinish *bool `json:"requireFinish"`
 	// RequireTodosDone keeps going while todos are still pending.
@@ -30,7 +28,6 @@ type TurnContinueDeps struct {
 
 const (
 	defaultContinuePrompt = "Keep going on the task. Review the remaining work, do the next concrete step, and call finish when everything is done or you are blocked."
-	defaultWrapUpPrompt   = "The run budget is nearly spent. Wrap up now: finish what can be completed safely, then call finish with a summary of what is done and what remains."
 	defaultStallLimit     = 3
 )
 
@@ -44,8 +41,8 @@ type turnContinueProvider struct {
 // NewTurnContinue registers hook/turn-continue: Decide whether an autonomous turn continues or stops; contributes /status.
 //
 // Best practices:
-//   - Useless without tool/todo and tool/finish: with no completion signal it can only stop on budget or stall.
-//   - Decision order is finish, then stall, then budget, then segment limit, then pending work.
+//   - Useless without tool/todo and tool/finish: with no completion signal it can only stop on stall or continuation limit.
+//   - Decision order is finish, then stall, then continuation limit, then pending work.
 func NewTurnContinue(cfg TurnContinueConfig, deps TurnContinueDeps) (agentkit.HookProvider, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/turn-continue requires sessionStore dependency")
@@ -55,9 +52,6 @@ func NewTurnContinue(cfg TurnContinueConfig, deps TurnContinueDeps) (agentkit.Ho
 	}
 	if cfg.ContinuePrompt == "" {
 		cfg.ContinuePrompt = defaultContinuePrompt
-	}
-	if cfg.WrapUpPrompt == "" {
-		cfg.WrapUpPrompt = defaultWrapUpPrompt
 	}
 	if cfg.StallLimit <= 0 {
 		cfg.StallLimit = defaultStallLimit
@@ -109,14 +103,6 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 		stopping.StopReason = fmt.Sprintf("stalled: same tool call repeated %d times", state.Repeats)
 		return nil
 	}
-	if stopping.Budget.Exhausted {
-		return nil
-	}
-	if stopping.Budget.RemainingContinuations == 0 {
-		stopping.Stop = true
-		stopping.StopReason = "no continuation budget"
-		return nil
-	}
 	if stopping.Segments >= p.cfg.MaxContinuations {
 		stopping.Stop = true
 		stopping.StopReason = fmt.Sprintf("continuation limit reached (%d)", p.cfg.MaxContinuations)
@@ -142,16 +128,9 @@ func (p *turnContinueProvider) wantsMoreWork(state session.RunState) bool {
 	return p.requireFinish
 }
 
-func (p *turnContinueProvider) continueText(stopping *agentkit.TurnStopping, state session.RunState) string {
+func (p *turnContinueProvider) continueText(_ *agentkit.TurnStopping, state session.RunState) string {
 	var b strings.Builder
-	if stopping.Budget.SoftExhausted {
-		b.WriteString(p.cfg.WrapUpPrompt)
-	} else {
-		b.WriteString(p.cfg.ContinuePrompt)
-	}
-	if stopping.Reason == agentkit.StopStepLimit {
-		b.WriteString("\n\nThe previous segment hit its step limit mid-task.")
-	}
+	b.WriteString(p.cfg.ContinuePrompt)
 	if len(state.Pending) > 0 {
 		b.WriteString("\n\nOutstanding tasks:")
 		for _, item := range state.Pending {
@@ -160,28 +139,7 @@ func (p *turnContinueProvider) continueText(stopping *agentkit.TurnStopping, sta
 	} else if len(state.Todos) > 0 {
 		b.WriteString("\n\nAll recorded tasks are done. If nothing remains, call finish.")
 	}
-	b.WriteString(fmt.Sprintf("\n\nBudget at this checkpoint: %s.", describeBudget(stopping.Budget)))
 	return b.String()
-}
-
-func describeBudget(state agentkit.BudgetState) string {
-	parts := make([]string, 0, 4)
-	if state.RemainingContinuations >= 0 {
-		parts = append(parts, fmt.Sprintf("%d continuation(s) left", state.RemainingContinuations))
-	}
-	if state.RemainingSteps >= 0 {
-		parts = append(parts, fmt.Sprintf("%d step(s) left", state.RemainingSteps))
-	}
-	if state.RemainingSeconds >= 0 {
-		parts = append(parts, fmt.Sprintf("%ds left", state.RemainingSeconds))
-	}
-	if state.RemainingTokens >= 0 {
-		parts = append(parts, fmt.Sprintf("%d token(s) left", state.RemainingTokens))
-	}
-	if len(parts) == 0 {
-		return "no configured limits"
-	}
-	return strings.Join(parts, ", ")
 }
 
 // statusCommand exposes run state for a long unattended run, where stdout has

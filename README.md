@@ -8,7 +8,7 @@ Go Agent Harness runtime built on [pluginkit](https://github.com/lengzhao/plugin
 
 - **Plugin assembly** — 79 registered plugin kinds; L0 defaults plus L1 overlays
 - **Coding agent loop** — file I/O, shell, policy approval, JSONL session persistence
-- **Autonomous runs** — turn continuation, layered budgets, todo/finish, token compaction, crash recovery
+- **Autonomous runs** — turn continuation (`hook/turn-continue`), todo/finish, token compaction, crash recovery
 - **Sub-agent delegation** — define sub-agents in `agents/*.md`; the main agent only sees summarized results
 - **Self-learning** — `/learn` for `memory.md`, Grounded Dreaming, Skill Workshop proposals
 - **Network tools** — HTTP fetch, Exa search, human-in-the-loop prompts

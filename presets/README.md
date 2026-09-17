@@ -18,7 +18,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "one-shot
 |---|---|---|
 | [coding.yaml](coding.yaml) | Project coding | `scope: local`; sessions under `.agentkit/sessions` |
 | [coding-smoke.yaml](coding-smoke.yaml) | Smoke without API key | Scripted LLM; validates assembly and tools |
-| [autonomous.yaml](autonomous.yaml) | Autonomous run | Budgets, todo/finish, auto-allow + policy allowlist |
+| [autonomous.yaml](autonomous.yaml) | Autonomous run | turn-continue, todo/finish, auto-allow + policy allowlist |
 | [autonomous-smoke.yaml](autonomous-smoke.yaml) | Autonomous smoke | Scripted LLM; turn-continue / todo / finish |
 | [worker.yaml](worker.yaml) | Headless one-shot | No stdin; CI / cron friendly; **chain with autonomous** |
 | [daemon.yaml](daemon.yaml) | Fixed-interval daemon | `platform/timer`; **chain with autonomous** |

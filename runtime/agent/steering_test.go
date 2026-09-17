@@ -64,7 +64,7 @@ func TestLateSteerAfterSegmentEnds(t *testing.T) {
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	ag, err := agent.New(agent.Config{ID: "test", Model: "scripted", MaxSteps: 5}, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: "test", Model: "scripted"}, agent.Deps{
 		SessionStore: store,
 		LLM:          provider,
 		Tools:        toolRuntime,
@@ -147,7 +147,7 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 			"use": "agent/coding",
 			"config": map[string]any{
 				"id":       "test",
-				"maxSteps": 5,
+				
 			},
 			"deps": map[string]any{
 				"sessionStore": map[string]any{
@@ -238,7 +238,7 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 	}
 }
 
-func TestSteerResetsSegmentMaxSteps(t *testing.T) {
+func TestSteerRunsAnotherLLMStepAfterInjected(t *testing.T) {
 	t.Parallel()
 
 	block := &blockingLLM{
@@ -257,7 +257,7 @@ func TestSteerResetsSegmentMaxSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt, err := agent.New(agent.Config{ID: "test", Model: "blocking", MaxSteps: 1}, agent.Deps{
+	rt, err := agent.New(agent.Config{ID: "test", Model: "blocking"}, agent.Deps{
 		SessionStore: session.NewStaticStore(mem),
 		LLM:          block,
 		Tools:        toolRuntime,
@@ -289,7 +289,7 @@ func TestSteerResetsSegmentMaxSteps(t *testing.T) {
 
 	if err := ctrl.Steer(ctx, agentkit.ModelMessage{
 		Role:    "user",
-		Content: []agentkit.ContentPart{{Type: "text", Text: "steered after budget"}},
+		Content: []agentkit.ContentPart{{Type: "text", Text: "steered mid-turn"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestSteerResetsSegmentMaxSteps(t *testing.T) {
 			texts = append(texts, msg.Content[0].Text)
 		}
 	}
-	if len(texts) < 2 || texts[1] != "steered after budget" {
+	if len(texts) < 2 || texts[1] != "steered mid-turn" {
 		t.Fatalf("user messages = %v", texts)
 	}
 }

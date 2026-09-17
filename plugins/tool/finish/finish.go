@@ -28,7 +28,7 @@ type FinishOutput struct {
 // NewFinish registers tool/finish: End an autonomous run, with status=completed or status=blocked.
 //
 // Best practices:
-//   - This is the only signal that stops a run early; otherwise it runs to budget.
+//   - This is the primary signal that a worker run completed cleanly; hook/turn-continue also stops on stall or continuation limit.
 func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/finish requires sessionStore dependency")

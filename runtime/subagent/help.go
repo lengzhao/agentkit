@@ -74,9 +74,6 @@ func formatDefinition(def capsubagent.Definition) string {
 	if def.Model != "" {
 		fmt.Fprintf(&b, "model: %s\n", def.Model)
 	}
-	if def.MaxSteps > 0 {
-		fmt.Fprintf(&b, "maxSteps: %d\n", def.MaxSteps)
-	}
 	if len(def.Modalities) > 0 {
 		fmt.Fprintf(&b, "modalities: %s\n", strings.Join(def.Modalities, ", "))
 	}

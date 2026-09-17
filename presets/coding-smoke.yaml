@@ -14,7 +14,6 @@ runner.default:
           - use: agent/coding
             config:
               id: smoke
-              maxSteps: 5
             deps:
               sessionStore: sessionStore.default
               workspace: workspace.default

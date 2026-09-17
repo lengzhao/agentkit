@@ -84,7 +84,7 @@ func TestSteerDoesNotInterruptInFlightStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt, err := agent.New(agent.Config{ID: "test", Model: "blocking", MaxSteps: 5}, agent.Deps{
+	rt, err := agent.New(agent.Config{ID: "test", Model: "blocking"}, agent.Deps{
 		SessionStore: session.NewStaticStore(mem),
 		LLM:          block,
 		Tools:        toolRuntime,
@@ -176,7 +176,7 @@ func TestRunTurnLeavesFollowUpsForLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt, err := agent.New(agent.Config{ID: "test", Model: "scripted", MaxSteps: 1}, agent.Deps{
+	rt, err := agent.New(agent.Config{ID: "test", Model: "scripted"}, agent.Deps{
 		SessionStore: session.NewStaticStore(mem),
 		LLM:          scripted,
 		Tools:        toolRuntime,

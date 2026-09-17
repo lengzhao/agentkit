@@ -1,7 +1,6 @@
 agent.assistant.default:
     config:
         id: assistant
-        maxSteps: 20
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -43,14 +42,7 @@ agent.cursor.default:
     use: agent/acp-remote
 agent.worker.default:
     config:
-        budget:
-            maxContinuations: 30
-            maxTotalSteps: 300
-            maxTotalTokens: 2000000
-            softRatio: 0.8
-            wallClockSeconds: 7200
         id: worker
-        maxSteps: 20
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -370,12 +362,7 @@ runner.default:
             deps:
                 agents:
                     - config:
-                        budget:
-                            maxContinuations: 3
-                            maxTotalSteps: 12
-                            wallClockSeconds: 120
                         id: smoke
-                        maxSteps: 3
                       deps:
                         hooks: hooks.default
                         llm:
@@ -488,7 +475,6 @@ subagent.inprocess.default:
             - local:agents
             - local:../examples/agents
             - global:agents
-        maxSteps: 20
         timeoutSeconds: 600
     deps:
         compaction:

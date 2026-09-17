@@ -30,7 +30,7 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 						"use": "agent/coding",
 						"config": map[string]any{
 							"id":       "test",
-							"maxSteps": 2,
+							
 						},
 						"deps": map[string]any{
 							"sessionStore": map[string]any{

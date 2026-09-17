@@ -68,7 +68,7 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	spawner, err := New(Config{Dirs: []string{"local:agents"}, MaxSteps: 5}, Deps{
+	spawner, err := New(Config{Dirs: []string{"local:agents"}}, Deps{
 		Workspace:    ws,
 		SessionStore: store,
 		LLM:          provider,

@@ -27,22 +27,8 @@ type Config struct {
 	Model string `json:"model"`
 	// Modalities overrides provider input modalities when set (e.g. vision subagent with modalities: [image]).
 	Modalities []string `json:"modalities,omitempty"`
-	// MaxSteps is steps allowed in one segment.
-	MaxSteps int `json:"maxSteps"`
 	// Retry is per-step retry for transient provider failures.
 	Retry *RetryConfig `json:"retry,omitempty"`
-	// Budget is hard bounds for a whole turn including its continuations. No hook can extend a turn past these.
-	Budget *BudgetConfig `json:"budget,omitempty"`
-	// DisableSummaryOnLimit turns off the final LLM summary step that
-	// otherwise runs when a turn ends on StopBudget or StopStepLimit, so the
-	// user is not left with a truncated transcript. Defaults to false (on).
-	// The summary step runs with no tools visible and does not charge the
-	// run budget; it is turn teardown, not a continuation a hook could have
-	// requested.
-	DisableSummaryOnLimit bool `json:"disableSummaryOnLimit,omitempty"`
-	// SummaryPrompt overrides the prompt injected for the limit summary step.
-	// When empty a sensible default is used.
-	SummaryPrompt string `json:"summaryPrompt,omitempty"`
 }
 
 type Deps struct {
@@ -60,11 +46,7 @@ type Runtime struct {
 	id             agentkit.AgentID
 	model          string
 	modalities     []string
-	maxSteps       int
 	retry          retrySettings
-	budget         budgetSettings
-	summaryOnLimit bool
-	summaryPrompt  string
 	now            func() time.Time
 	sessionStore   agentkit.SessionStore
 	llm            agentkit.LLMProvider
@@ -78,22 +60,12 @@ type Runtime struct {
 // New registers agent/coding: Default coding agent: runs one turn against session, LLM, tools and prompt.
 //
 // Best practices:
-//   - budget.maxContinuations defaults to 0, i.e. one segment: an agent stays request/response until you raise it.
-//   - budget.softRatio (default 0.8) marks the point where a turn-stopping hook should wrap up rather than start new work.
 //   - An interrupted turn is repaired on the next turn, so a crash mid-tool-call does not leave the session unusable.
+//   - Turn limits and autonomous continuation belong in TurnStopping hooks (e.g. hook/turn-continue), not agent config.
 func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	id := cfg.ID
 	if id == "" {
 		id = "coding"
-	}
-	maxSteps := cfg.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = 20
-	}
-	summaryOnLimit := !cfg.DisableSummaryOnLimit
-	summaryPrompt := cfg.SummaryPrompt
-	if summaryPrompt == "" {
-		summaryPrompt = defaultSummaryPrompt
 	}
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("agent requires sessionStore")
@@ -114,11 +86,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		id:             id,
 		model:          cfg.Model,
 		modalities:     agentkit.NormalizeModalities(cfg.Modalities),
-		maxSteps:       maxSteps,
 		retry:          resolveRetrySettings(cfg.Retry),
-		budget:         resolveBudgetSettings(cfg.Budget),
-		summaryOnLimit: summaryOnLimit,
-		summaryPrompt:  summaryPrompt,
 		now:            time.Now,
 		sessionStore:   deps.SessionStore,
 		llm:            deps.LLM,
@@ -152,10 +120,9 @@ func (a *Runtime) effectiveModel(ctx context.Context, sess agentkit.Session) str
 // turnRun holds mutable state for one turn, spanning every segment the
 // TurnStopping hooks extend it with.
 type turnRun struct {
-	budget     *runBudget
-	completed  int
-	llmModel   string
-	summarized bool
+	meter     *turnMeter
+	completed int
+	llmModel  string
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr error) {
@@ -179,7 +146,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 	}
 
 	run := &turnRun{
-		budget:   newRunBudget(a.budget, a.now),
+		meter:    newTurnMeter(),
 		llmModel: a.effectiveModel(ctx, sess),
 	}
 	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
@@ -207,7 +174,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
 		if a.hooks != nil && runErr == nil && !cancelled {
-			a.invokeTurnComplete(endCtx, sessionID, sess, run.llmModel, run.budget.tokensUsed())
+			a.invokeTurnComplete(endCtx, sessionID, sess, run.llmModel, run.meter.tokensUsed())
 		}
 	}()
 
@@ -220,7 +187,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		if err != nil {
 			return err
 		}
-		extended, forcedStop, effectiveReason, err := a.extendTurn(ctx, sess, input.Emit, run, reason)
+		extended, err := a.extendTurn(ctx, sess, input.Emit, run, reason)
 		if err != nil {
 			return err
 		}
@@ -229,38 +196,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			// unwinds (e.g. outbound delivery). Keep the turn alive for it.
 			if ctrl.HasSteering() {
 				continue
-			}
-			// A turn that ends on a step/budget limit leaves the user with a
-			// truncated transcript (the last step had tool calls in flight).
-			// Run one final, tool-less LLM step to summarize what was done so
-			// the user sees a result. This is turn teardown, not a continuation
-			// a hook could have requested: the hard budget is already spent.
-			// Skip it when a hook deliberately stopped the turn (finished,
-			// stalled, no outstanding work): the hook already decided how the
-			// turn ends and the user has its result.
-			//
-			// The trigger uses the original segment reason: StopNoToolCalls means
-			// the model already answered, so there is nothing to summarize even
-			// if the hard budget is spent. The summary's audit reason uses
-			// effectiveReason so a step-limit truncation that exhausted the
-			// budget is labeled summary:budget (the binding constraint).
-			if !forcedStop && a.shouldSummarize(reason, run) {
-				// The summary is best-effort teardown: the turn's work already
-				// completed successfully. A failure here (provider hiccup, context
-				// overflow on the summary call itself) must not retroactively mark
-				// the turn as failed — log it and let the turn complete with its
-				// original stop reason. A cancelled ctx is re-raised so the deferred
-				// cancelReasonFromError check still marks the turn as cancelled.
-				if err := a.runSummaryStep(ctx, sess, input.Emit, run, effectiveReason); err != nil {
-					if _, cancelled := cancelReasonFromError(err); cancelled {
-						return err
-					}
-					slog.Warn("agent: limit summary failed, turn still completes",
-						"agent_id", a.id,
-						"session_id", sess.ID(),
-						"stop_reason", string(effectiveReason),
-						"err", err)
-				}
 			}
 			stopReason := string(reason)
 			telemetry.RecordTurnStopReason(ctx, stopReason)
@@ -273,8 +208,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 	}
 }
 
-// runSegment drives model steps until the assistant stops requesting tools or
-// the segment's step allowance runs out, and reports why it stopped.
+// runSegment drives model steps until the assistant stops requesting tools.
 func (a *Runtime) runSegment(
 	ctx context.Context,
 	sess agentkit.Session,
@@ -282,16 +216,11 @@ func (a *Runtime) runSegment(
 	ctrl turnControl,
 	run *turnRun,
 ) (agentkit.TurnStopReason, error) {
-	maxSteps := run.budget.stepsForSegment(a.maxSteps)
-	if maxSteps <= 0 {
-		return agentkit.StopBudget, nil
-	}
-
 	// Overflow recovery is per segment: a long autonomous run must be able to
 	// compact again after the first recovery.
 	overflowRecoveryAttempted := false
 
-	for step := 0; step < maxSteps; step++ {
+	for {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
@@ -305,8 +234,8 @@ func (a *Runtime) runSegment(
 			}
 		}
 
-		run.budget.recordStep()
-		stepIndex := run.budget.stepsUsed() - 1
+		run.meter.recordStep()
+		stepIndex := run.meter.stepsUsed() - 1
 
 		stepCtx, endStep := ctrl.BeginStep(ctx)
 		stepDone := false
@@ -385,61 +314,38 @@ func (a *Runtime) runSegment(
 		run.completed++
 		endStepOnce()
 
-		// Pending steering gets a fresh segment step budget so a late steer is not
-		// cut off by maxSteps exhausted on the work that was already in flight.
-		if ctrl.HasSteering() {
-			step = -1
-			continue
-		}
-
 		if len(assistant.ToolCalls) == 0 {
 			return agentkit.StopNoToolCalls, nil
 		}
 	}
-
-	return agentkit.StopStepLimit, nil
 }
 
-// extendTurn consults TurnStopping hooks. When they ask to keep going and the
-// hard budget still allows it, the continuation is recorded as a turn/continue
-// event, which derive replays as a user message for the next segment.
-//
-// Returns:
-//   - extended: whether a continuation was recorded (the turn loops for another segment)
-//   - forcedStop: whether a hook explicitly set Stop (a deliberate stop decision);
-//     RunTurn uses it to suppress the limit summary when the turn ended by policy
-//     rather than by a raw limit
-//   - effectiveReason: the stop reason after budget override — when the hard budget
-//     is exhausted a segment that returned StopStepLimit is reported as StopBudget,
-//     so the limit summary's audit trail reflects the real cause
-//   - err
+// extendTurn consults TurnStopping hooks. When they ask to keep going, the
+// continuation is recorded as a turn/continue event, which derive replays as a
+// user message for the next segment.
 func (a *Runtime) extendTurn(
 	ctx context.Context,
 	sess agentkit.Session,
 	emit agentkit.OutboundEmit,
 	run *turnRun,
 	reason agentkit.TurnStopReason,
-) (bool, bool, agentkit.TurnStopReason, error) {
+) (bool, error) {
 	if a.hooks == nil {
-		return false, false, reason, nil
-	}
-	state := run.budget.state()
-	if state.Exhausted {
-		reason = agentkit.StopBudget
+		return false, nil
 	}
 	messages, err := sess.DeriveMessages(ctx)
 	if err != nil {
-		return false, false, reason, err
+		return false, err
 	}
 	stopping := &agentkit.TurnStopping{
 		Reason:   reason,
-		Steps:    run.budget.stepsUsed(),
-		Segments: run.budget.continuationsUsed(),
-		Budget:   state,
+		Steps:    run.meter.stepsUsed(),
+		Segments: run.meter.continuationsUsed(),
+		Tokens:   run.meter.tokensUsed(),
 		Messages: messages,
 	}
 	if err := a.hooks.TurnStopping(ctx, stopping); err != nil {
-		return false, false, reason, err
+		return false, err
 	}
 
 	if stopping.Stop || len(stopping.Continue) == 0 {
@@ -449,34 +355,22 @@ func (a *Runtime) extendTurn(
 				"session_id", sess.ID(),
 				"reason", string(reason),
 				"stop_reason", stopping.StopReason,
-				"steps", run.budget.stepsUsed(),
-				"continuations", run.budget.continuationsUsed(),
+				"steps", run.meter.stepsUsed(),
+				"continuations", run.meter.continuationsUsed(),
 			)
 		}
-		return false, stopping.Stop, reason, nil
+		return false, nil
 	}
 
-	// The hard budget wins: no hook can extend a turn past it.
-	if !run.budget.allowsContinuation() {
-		slog.Info("turn continuation denied by budget",
-			"agent_id", a.id,
-			"session_id", sess.ID(),
-			"steps", run.budget.stepsUsed(),
-			"continuations", run.budget.continuationsUsed(),
-			"tokens", run.budget.tokensUsed(),
-		)
-		return false, false, reason, nil
-	}
-
-	run.budget.recordContinuation()
+	run.meter.recordContinuation()
 	data := session.TurnContinueData{
-		Segment:  run.budget.continuationsUsed(),
+		Segment:  run.meter.continuationsUsed(),
 		Reason:   string(reason),
-		Steps:    run.budget.stepsUsed(),
+		Steps:    run.meter.stepsUsed(),
 		Messages: stopping.Continue,
 	}
 	if err := session.AppendTurnContinue(ctx, sess, a.id, data); err != nil {
-		return false, false, reason, err
+		return false, err
 	}
 	slog.Info("turn continued",
 		"agent_id", a.id,
@@ -491,223 +385,13 @@ func (a *Runtime) extendTurn(
 			Type:    agentkit.EventTurnContinue,
 			Data:    loop.MarshalOutboundData(data),
 		}); err != nil {
-			return false, false, reason, err
+			return false, err
 		}
 	}
-	return true, false, reason, nil
+	return true, nil
 }
 
-// defaultSummaryPrompt is injected when a turn ends on a step/budget limit so
-// the model produces a user-visible wrap-up instead of leaving a truncated
-// transcript. It forbids tool calls: the summary is teardown, not more work.
-const defaultSummaryPrompt = "The run reached its step or budget limit before finishing. Summarize concisely what has been accomplished so far, the current state, and what remains to do. Do not call any tools — reply with text only."
-
-// shouldSummarize reports whether a final summary step should run before the
-// turn unwinds. It fires only on the two limit reasons that leave the user with
-// nothing to read (the last step had tool calls in flight), not on natural
-// StopNoToolCalls completion, and at most once per turn.
-func (a *Runtime) shouldSummarize(reason agentkit.TurnStopReason, run *turnRun) bool {
-	if !a.summaryOnLimit || run.summarized {
-		return false
-	}
-	return reason == agentkit.StopStepLimit || reason == agentkit.StopBudget
-}
-
-// runSummaryStep injects the summary prompt as a turn/continue (so it is both
-// model-visible and auditable, matching the continuation invariant) and then
-// runs one tool-less LLM step. The step does not charge the run budget — the
-// hard budget is already spent and this is teardown.
-//
-// The injected turn/continue uses Segment = continuationsUsed()+1 so it never
-// collides with a real continuation's segment number (real continuations are
-// 1-indexed after recordContinuation; the summary is the notional next segment
-// that never gets a step budget).
-func (a *Runtime) runSummaryStep(
-	ctx context.Context,
-	sess agentkit.Session,
-	emit agentkit.OutboundEmit,
-	run *turnRun,
-	reason agentkit.TurnStopReason,
-) error {
-	run.summarized = true
-
-	data := session.TurnContinueData{
-		Segment: run.budget.continuationsUsed() + 1,
-		Reason:  "summary:" + string(reason),
-		Steps:   run.budget.stepsUsed(),
-		Messages: []agentkit.ModelMessage{{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: a.summaryPrompt}},
-		}},
-	}
-	if err := session.AppendTurnContinue(ctx, sess, a.id, data); err != nil {
-		return err
-	}
-	if emit != nil {
-		if err := emit(ctx, agentkit.OutboundEvent{
-			AgentID: a.id,
-			Type:    agentkit.EventTurnContinue,
-			Data:    loop.MarshalOutboundData(data),
-		}); err != nil {
-			return err
-		}
-	}
-	slog.Info("turn limit summary",
-		"agent_id", a.id,
-		"session_id", sess.ID(),
-		"reason", string(reason),
-		"steps", run.budget.stepsUsed(),
-		"continuations", run.budget.continuationsUsed(),
-	)
-	return a.runSummaryLLMStep(ctx, sess, emit, run.llmModel)
-}
-
-// runSummaryLLMStep streams one assistant message with no tools visible. Any
-// tool calls the model emits anyway are ignored (not executed, not recorded);
-// only the text reaches the user.
-//
-// The call is wrapped in an llm.generation telemetry observation so it shows up
-// in traces (Langfuse/otel) like any other model step, and its usage is
-// recorded to the session for observability. It is NOT charged to run.budget:
-// the hard budget is already spent and this is teardown, not more work.
-func (a *Runtime) runSummaryLLMStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, model string) error {
-	stepStarted := time.Now()
-	history, ctx, err := a.prepareStepHistory(ctx, sess)
-	if err != nil {
-		return err
-	}
-	messages, err := a.prompt.Assemble(ctx, agentkit.PromptRequest{Messages: history})
-	if err != nil {
-		return err
-	}
-
-	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
-		Name:               "llm.generation",
-		Kind:               captelemetry.KindGeneration,
-		Model:              model,
-		Input:              telemetry.ExportMessages(messages),
-		GenerationMessages: messages,
-		// no ToolNames: the summary step exposes no tools
-	}))
-	var observationEnd captelemetry.ObservationEnd
-	defer func() {
-		endObservation(observationEnd)
-	}()
-
-	stream, err := a.llm.Stream(ctx, agentkit.LLMRequest{
-		Model:    model,
-		Messages: messages,
-		Tools:    nil, // no tools: the summary is text-only
-	})
-	if err != nil {
-		observationEnd.Err = err
-		return err
-	}
-	defer stream.Close()
-
-	streamOut := newStreamEmitter(ctx, sess.ID(), a.id, emit)
-	var assistant agentkit.ModelMessage
-	var usage *agentkit.Usage
-	gotFirstCompletion := false
-	gotFirstText := false
-	for {
-		if err := ctx.Err(); err != nil {
-			observationEnd.Err = err
-			return err
-		}
-		ev, recvErr := stream.Recv()
-		if !gotFirstCompletion && telemetry.LLMCompletionStarted(ev) {
-			observationEnd.CompletionStartTime = time.Now().UTC()
-			gotFirstCompletion = true
-		}
-		if !gotFirstText && telemetry.LLMTextStarted(ev) {
-			observationEnd.FirstTextTime = time.Now().UTC()
-			gotFirstText = true
-		}
-		if ev.Message != nil {
-			assistant = *ev.Message
-		}
-		if ev.Usage != nil {
-			usage = ev.Usage
-		}
-		if consumeErr := streamOut.consume(ev); consumeErr != nil {
-			observationEnd.Err = consumeErr
-			return consumeErr
-		}
-		if errors.Is(recvErr, io.EOF) {
-			break
-		}
-		if recvErr != nil {
-			observationEnd.Err = recvErr
-			return recvErr
-		}
-	}
-	// Drop any tool calls a model may emit despite an empty tool list: the
-	// summary must not spawn work after the budget is spent.
-	assistant.ToolCalls = nil
-	if assistant.Role == "" {
-		assistant.Role = "assistant"
-	}
-	if err := streamOut.finalize(assistant); err != nil {
-		observationEnd.Err = err
-		return err
-	}
-	if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
-		observationEnd.Err = err
-		return err
-	}
-
-	// Record usage to the session for observability, but do not charge
-	// run.budget: the summary is teardown, not billable work.
-	var usageOut *captelemetry.Usage
-	if usage != nil {
-		total := usage.TotalTokens
-		if total == 0 {
-			total = usage.InputTokens + usage.OutputTokens
-		}
-		if total > 0 {
-			if err := session.AppendUsage(ctx, sess, a.id, session.UsageData{
-				InputTokens:  usage.InputTokens,
-				OutputTokens: usage.OutputTokens,
-				TotalTokens: total,
-			}); err != nil {
-				observationEnd.Err = err
-				return err
-			}
-			telemetry.RecordTurnUsage(ctx, captelemetry.Usage{
-				InputTokens:  usage.InputTokens,
-				OutputTokens: usage.OutputTokens,
-				TotalTokens:  total,
-			})
-		}
-		usageOut = &captelemetry.Usage{
-			InputTokens:  usage.InputTokens,
-			OutputTokens: usage.OutputTokens,
-			TotalTokens:  total,
-		}
-	}
-	observationEnd.Output = telemetry.FormatMessage(assistant)
-	observationEnd.Usage = usageOut
-
-	attrs := []any{
-		"agent_id", a.id,
-		"session_id", sess.ID(),
-		"model", model,
-		"tool_calls", 0,
-		"duration", time.Since(stepStarted),
-	}
-	if usage != nil {
-		attrs = append(attrs,
-			"input_tokens", usage.InputTokens,
-			"output_tokens", usage.OutputTokens,
-			"total_tokens", usage.TotalTokens,
-		)
-	}
-	slog.Info("assistant summary step", attrs...)
-	return nil
-}
-
-// recordUsage charges the run budget and logs token accounting for one step.
+// recordUsage logs token accounting for one step.
 func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *turnRun, usage *agentkit.Usage) error {
 	if usage == nil {
 		return nil
@@ -719,7 +403,7 @@ func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *t
 	if total == 0 {
 		return nil
 	}
-	run.budget.recordTokens(total)
+	run.meter.recordTokens(total)
 	telemetry.RecordTurnUsage(ctx, captelemetry.Usage{
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,

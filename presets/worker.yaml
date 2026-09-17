@@ -1,6 +1,6 @@
 # L1 preset：一次性任务 worker（headless，从不读 stdin）。
 #
-# 这是一个**薄 overlay**，只换传输层。能力栈（预算、todo/finish、白名单 policy、
+# 这是一个**薄 overlay**，只换传输层。能力栈（turn-continue、todo/finish、白名单 policy、
 # token 压缩）从 autonomous.yaml 叠加，overlay 按顺序合并，后面的覆盖前面的：
 #
 #   go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "把 docs/ 里的死链列出来"

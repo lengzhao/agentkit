@@ -132,7 +132,7 @@ func TestSmokeSessionRecoveryAfterCrash(t *testing.T) {
 	}
 
 	provider := agenttest.MustScripted(t, llm.ScriptedStep{Text: "已恢复并继续。"})
-	ag, err := agent.New(agent.Config{ID: "nex", MaxSteps: 3}, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: "nex", }, agent.Deps{
 		SessionStore: store,
 		LLM:          provider,
 		Tools:        agenttest.EmptyToolsRuntime(t),

@@ -1,7 +1,6 @@
 agent.assistant.default:
     config:
         id: assistant
-        maxSteps: 20
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -379,7 +378,6 @@ subagent.inprocess.default:
             - local:agents
             - local:../examples/agents
             - global:agents
-        maxSteps: 20
         timeoutSeconds: 600
     deps:
         compaction:

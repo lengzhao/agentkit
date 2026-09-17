@@ -4,7 +4,6 @@ description: 识别用户图片（截图、界面、图表、照片），OCR 与
 model: gpt-5.4-mini
 modalities: [image]
 tools: [read, finish]
-maxSteps: 10
 ---
 你是视觉理解子 agent，供主 agent 在无法直接看图时委派。
 

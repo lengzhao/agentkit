@@ -64,38 +64,20 @@ type TurnStopReason string
 const (
 	// StopNoToolCalls means the assistant answered without requesting tools.
 	StopNoToolCalls TurnStopReason = "no-tool-calls"
-	// StopStepLimit means the per-segment step allowance ran out.
-	StopStepLimit TurnStopReason = "step-limit"
-	// StopBudget means a hard run budget is exhausted; Continue is ignored.
-	StopBudget TurnStopReason = "budget"
 )
 
-// TurnStopping is invoked when the agent is about to end a turn. Hooks may
-// append Continue messages to extend the turn with another segment, or set Stop
-// to force the turn to end. Stop wins over Continue, and the agent ignores
-// Continue when Budget.Exhausted is true: no hook can outrun a hard budget.
+// TurnStopping is invoked when the agent is about to end a turn segment. Hooks
+// may append Continue messages to extend the turn with another segment, or set
+// Stop to force the turn to end. Stop wins over Continue.
 type TurnStopping struct {
 	Reason   TurnStopReason
 	Steps    int
 	Segments int
-	Budget   BudgetState
+	Tokens   int
 	// Messages is the derived history at the stopping point. Read-only for hooks.
 	Messages []ModelMessage
 	// Continue holds messages that extend the turn. Hooks append to it.
 	Continue   []ModelMessage
 	Stop       bool
 	StopReason string
-}
-
-// BudgetState reports what is left of the run budget. Unlimited dimensions
-// report -1 so hooks can distinguish "no limit" from "nothing left".
-type BudgetState struct {
-	RemainingSteps         int
-	RemainingContinuations int
-	RemainingSeconds       int
-	RemainingTokens        int
-	// SoftExhausted is true once any limited dimension crosses softRatio.
-	SoftExhausted bool
-	// Exhausted is true when a hard limit is reached; Continue is then ignored.
-	Exhausted bool
 }

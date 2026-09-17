@@ -83,7 +83,7 @@ func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLM
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag, err := agent.New(agent.Config{ID: "test", MaxSteps: 3}, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: "test", }, agent.Deps{
 		SessionStore: store,
 		LLM:          provider,
 		Tools:        toolRT,
@@ -170,7 +170,7 @@ func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreign, err := agent.New(agent.Config{ID: "sub:meetingbot", MaxSteps: 1}, agent.Deps{
+	foreign, err := agent.New(agent.Config{ID: "sub:meetingbot"}, agent.Deps{
 		SessionStore: store,
 		LLM:          scripted,
 		Tools:        toolRT,

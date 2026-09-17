@@ -21,7 +21,7 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 			"use": "agent/coding",
 			"config": map[string]any{
 				"id":       "test",
-				"maxSteps": 5,
+				
 			},
 			"deps": map[string]any{
 				"sessionStore": map[string]any{

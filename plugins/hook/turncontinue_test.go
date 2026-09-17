@@ -58,33 +58,6 @@ func stopping() *agentkit.TurnStopping {
 	return &agentkit.TurnStopping{
 		Reason: agentkit.StopNoToolCalls,
 		Steps:  3,
-		Budget: agentkit.BudgetState{
-			RemainingSteps:         -1,
-			RemainingContinuations: 4,
-			RemainingSeconds:       -1,
-			RemainingTokens:        -1,
-		},
-	}
-}
-
-func TestDriverStopsWhenNoContinuationBudget(t *testing.T) {
-	t.Parallel()
-
-	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 5})
-	startRun(t, sess)
-	stop := stopping()
-	stop.Budget.RemainingContinuations = 0
-	if err := h.TurnStopping(driverCtx(sess), stop); err != nil {
-		t.Fatal(err)
-	}
-	if !stop.Stop {
-		t.Fatal("expected stop when continuation budget is zero")
-	}
-	if stop.StopReason != "no continuation budget" {
-		t.Fatalf("stop_reason = %q", stop.StopReason)
-	}
-	if len(stop.Continue) != 0 {
-		t.Fatalf("continue = %d messages, want 0", len(stop.Continue))
 	}
 }
 
@@ -111,7 +84,7 @@ func TestDriverContinuesWhileTodosPending(t *testing.T) {
 		t.Fatalf("continue messages = %d, want 1", len(in.Continue))
 	}
 	text := in.Continue[0].Content[0].Text
-	for _, want := range []string{"write the parser", "add tests", "4 continuation(s) left"} {
+	for _, want := range []string{"write the parser", "add tests"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("continuation text missing %q:\n%s", want, text)
 		}
@@ -225,57 +198,6 @@ func TestDriverIsInertWithoutMaxContinuations(t *testing.T) {
 	}
 	if in.Stop || len(in.Continue) != 0 {
 		t.Fatalf("driver should be inert: stop=%v continue=%d", in.Stop, len(in.Continue))
-	}
-}
-
-func TestDriverDefersToExhaustedBudget(t *testing.T) {
-	t.Parallel()
-
-	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 5})
-	startRun(t, sess)
-	if err := session.AppendTodoUpdate(context.Background(), sess, "a", []session.Todo{
-		{ID: "1", Title: "still pending", Status: session.TodoPending},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	in := stopping()
-	in.Reason = agentkit.StopBudget
-	in.Budget.Exhausted = true
-	if err := h.TurnStopping(driverCtx(sess), in); err != nil {
-		t.Fatalf("turn stopping: %v", err)
-	}
-	if len(in.Continue) != 0 {
-		t.Fatalf("continue messages = %d, want 0 once the budget is spent", len(in.Continue))
-	}
-}
-
-func TestDriverInjectsWrapUpWhenSoftExhausted(t *testing.T) {
-	t.Parallel()
-
-	h, sess := newDriver(t, hook.TurnContinueConfig{
-		MaxContinuations: 5,
-		ContinuePrompt:   "CONTINUE-MARKER",
-		WrapUpPrompt:     "WRAPUP-MARKER",
-	})
-	startRun(t, sess)
-	if err := session.AppendTodoUpdate(context.Background(), sess, "a", []session.Todo{
-		{ID: "1", Title: "still pending", Status: session.TodoPending},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	in := stopping()
-	in.Budget.SoftExhausted = true
-	if err := h.TurnStopping(driverCtx(sess), in); err != nil {
-		t.Fatalf("turn stopping: %v", err)
-	}
-	if len(in.Continue) != 1 {
-		t.Fatalf("continue messages = %d, want 1", len(in.Continue))
-	}
-	text := in.Continue[0].Content[0].Text
-	if !strings.Contains(text, "WRAPUP-MARKER") || strings.Contains(text, "CONTINUE-MARKER") {
-		t.Fatalf("expected the wrap-up prompt, got:\n%s", text)
 	}
 }
 

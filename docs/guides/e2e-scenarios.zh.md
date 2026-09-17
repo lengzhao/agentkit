@@ -46,7 +46,7 @@ mindmap
 | **基本功能** | 配好 preset 能否完成 coding / 自主 / 委派任务？ | `runtime/agent`、`runtime/loop`、`plugins/tool/*` |
 | **平台接入** | 不同 ingress 能否收发消息、审批、/new？ | `runtime/platform/*` |
 | **安全与策略** | 危险工具是否被 policy / approval 拦住？ | `plugins/policy`、`cap/permission` |
-| **可靠性** | 崩溃、中断、预算耗尽后状态是否可恢复？ | `runtime/session`、`runtime/agent/recovery` |
+| **可靠性** | 崩溃、中断、turn 半途后状态是否可恢复？ | `runtime/session`、`runtime/agent/recovery` |
 | **可观测性** | 行为能否从 session 事件与 telemetry 复原？ | `events.go`、`plugins/telemetry/*` |
 | **扩展性** | 新工具 / MCP / preset 能否无改 spine 接入？ | `pluginkit.Register`、`presets/` |
 
@@ -88,8 +88,7 @@ mindmap
 | ID | 场景 | 输入 | 断言 | 状态 | 层级 |
 |---|---|---|---|---|---|
 | INT-002 | autonomous-smoke once-run | `"读取 README 并汇报"` | 无 `session/recovery`；`run/finish` ≥1；`todo/update` ≥2；`turn/continue` ≥1 | ✅ | integration |
-| E2E-020 | step-limit 触发续跑 | scripted 多步 | `turn/continue`；segments > 1 | ✅ | `testing/smoke/autonomous_test.go` |
-| E2E-021 | 预算耗尽强制停止 | 极低 step 预算 | `turn/end`；无无限续跑 | ✅ | `testing/smoke/autonomous_test.go` |
+| E2E-020 | todo 未完成触发续跑 | scripted todo→read→finish | `turn/continue`；多 segment | ✅ | `testing/smoke/autonomous_test.go` |
 | E2E-022 | stalled 检测（同参重复调用） | scripted 重复 tool | `turn/end` + stop reason | ✅ | `testing/smoke/autonomous_test.go` |
 | E2E-023 | token-limit 触发压缩 | 大上下文 seed | `session/compaction` 事件 | ⬜ | smoke |
 
@@ -125,7 +124,7 @@ mindmap
 | E2E-100 | REPL 多轮对话 | 同一 session 串行 | 🔶 | loop_test 覆盖锁 |
 | E2E-101 | `/new` 切换 logical session | 新 logical id；投递不变 | ✅ | `runtime/platform/cli/session_new_e2e_test.go` |
 | E2E-102 | `/agent use` 绑定 | `runtime.json` 写入；derive 过滤 | ⬜ | INT |
-| E2E-103 | `/status` 输出运行态 | 含 budget / todo | ⬜ | CLI 单测 🔶 |
+| E2E-103 | `/status` 输出运行态 | 含续跑上限 / token / todo | ⬜ | CLI 单测 🔶 |
 
 ### 4.2 Chat API
 
@@ -178,7 +177,7 @@ mindmap
 | E2E-402 | Langfuse preset 端到端 | langfuse-smoke once-run | exporter 在 turn 后 flush | ✅ | `integration/langfuse_test.go` |
 | E2E-403 | telemetry 层级 trace | parent/subagent turn | 子 span 挂父 trace | 🔶 | hierarchy 单测 |
 | E2E-404 | 日志 redact 敏感字段 | api key 不出现在 slog | ✅ | `runtime/telemetry/redact_test` |
-| E2E-405 | `/status` 与 session 事件一致 | budget 数字匹配 usage 累加 | ✅ | `integration/status_test.go` |
+| E2E-405 | `/status` 与 session 事件一致 | token 数字匹配 usage 累加 | ✅ | `integration/status_test.go` |
 
 ### 可观测性最小断言模板（INT/SMK 通用）
 
@@ -293,7 +292,7 @@ func TestE2E040WorkerOnceRun(t *testing.T) {
 |---|---|---|---|
 | 装配 build | 18 preset + 6 chain | manager UI | ~85% |
 | Coding / 工具 | read、deny、openapi | write+bash INT | ~70% |
-| 自主运行 | autonomous-smoke + step-limit/预算/stalled | 压缩 | ~75% |
+| 自主运行 | autonomous-smoke + 续跑/stalled | 压缩 | ~75% |
 | 子 Agent | 6 smoke + 1 INT | 白名单/超时 | ~75% |
 | Headless | build + INT once-run | cron/script | ~60% |
 | Platform | chat-api HTTP E2E、CLI /new、单测分散 | IM E2E | ~50% |

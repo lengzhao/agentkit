@@ -66,7 +66,7 @@ func TestE2ECLINewSwitchesSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag, err := agent.New(agent.Config{ID: "coder", MaxSteps: 5}, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: "coder"}, agent.Deps{
 		SessionStore: store,
 		LLM:          llmProvider,
 		Tools:        toolRT,

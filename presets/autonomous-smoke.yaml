@@ -23,11 +23,6 @@ runner.default:
           - use: agent/coding
             config:
               id: smoke
-              maxSteps: 3
-              budget:
-                maxTotalSteps: 12
-                maxContinuations: 3
-                wallClockSeconds: 120
             deps:
               sessionStore: sessionStore.default
               workspace: workspace.default

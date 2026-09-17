@@ -81,7 +81,7 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 		t.Fatal(err)
 	}
 
-	spawner, err := rtsubagent.New(rtsubagent.Config{Dirs: []string{"local:agents"}, MaxSteps: 5}, rtsubagent.Deps{
+	spawner, err := rtsubagent.New(rtsubagent.Config{Dirs: []string{"local:agents"}}, rtsubagent.Deps{
 		Workspace:    DirWorkspace{"local:agents": agentsDir},
 		SessionStore: store,
 		LLM:          provider,
@@ -110,7 +110,7 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 		logicalID = parentID
 	}
 
-	ag, err := agent.New(agent.Config{ID: cfg.ParentAgentID, MaxSteps: 5}, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: cfg.ParentAgentID}, agent.Deps{
 		SessionStore: store,
 		LLM:          provider,
 		Tools:        parentTools,

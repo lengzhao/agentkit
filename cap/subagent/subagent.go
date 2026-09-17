@@ -39,8 +39,7 @@ type Definition struct {
 	// Skills narrows the skill catalog and skill tool by name. Empty means every
 	// skill the provider was given.
 	Skills   []string `json:"skills,omitempty"`
-	Model    string   `json:"model,omitempty"`
-	MaxSteps int      `json:"maxSteps,omitempty"`
+	Model string `json:"model,omitempty"`
 	// Modalities declares what this subagent can process (text, image, audio).
 	// Shown in the parent system prompt; use with a vision-capable model for image.
 	Modalities []string `json:"modalities,omitempty"`
@@ -58,7 +57,7 @@ type Request struct {
 }
 
 // Result statuses. Completed and Blocked mirror the child's explicit finish;
-// Stopped means it ran out of steps or simply stopped calling tools.
+// Stopped means the child ended without an explicit finish (e.g. no tool calls).
 const (
 	StatusCompleted = "completed"
 	StatusBlocked   = "blocked"

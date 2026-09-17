@@ -63,7 +63,8 @@ Preset（`-config presets/...`）在**启动参数**里指定，改 preset 同�
 |---|---|---|
 | `workspace.default` | global/local 根与 scope | `scope: local` |
 | `llm.default` | 模型与 API 端点 | `model`、`baseUrl`、`apiKeyRef` |
-| `agent.assistant.default` | 主 agent | `model`、`maxSteps`、`retry` |
+| `agent.assistant.default` | 主 agent（交互 coding，无 turn-continue） | `model`、`retry` |
+| `agent.worker.default` | 自主 worker agent | 同 assistant，但 `hooks.worker` 含 `hook/turn-continue` |
 | `tools.default` | 工具集与策略 | 增删 `deps.tools`、挂 `dynamicTools` |
 | `prompt.default` | system prompt 拼装 | 调整 `deps.sections` |
 | `skills.default` | skill 目录 | `dirs` 叠加路径 |
@@ -195,7 +196,7 @@ YAML 实例 `openapi.default` 在启动时读取 `api.json` 并注册 HTTP 动�
 | preset | 场景 |
 |---|---|
 | `coding.yaml` | 项目目录交互 coding |
-| `autonomous.yaml` | 自主长跑（预算、todo/finish） |
+| `autonomous.yaml` | 自主长跑（turn-continue、todo/finish） |
 | `worker.yaml` | headless 一次性（需链 `autonomous`） |
 | `daemon.yaml` | 固定间隔守护（需链 `autonomous`） |
 | `cron.yaml` | 日历 cron + 自主排期（需链 `autonomous`） |

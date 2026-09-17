@@ -439,15 +439,14 @@ func OnTurnComplete(h func(context.Context, *TurnComplete) error) Hook
 
 `OnBeforeTool` / `OnAfterTool` 不是拒绝通道。允许、拒绝、询问只由 Policy Plane 产生 `Decision`，见 [5.5](#55-工具执行路径)。hook 返回的 `error` 表示插件执行失败，运行时中止该阶段并写入失败事件，它不是 Policy `deny`。
 
-`OnTurnStopping` 是自主运行的唯一 seam：Agent 准备结束 turn 时调用它，hook 往 `Continue` 追加消息即延展一个 segment，置 `Stop` 即强制收尾。三条不变量：
+`OnTurnStopping` 是自主运行的唯一 seam：Agent 准备结束 turn 时调用它，hook 往 `Continue` 追加消息即延展一个 segment，置 `Stop` 即强制收尾。两条不变量：
 
 | 规则 | 含义 |
 |---|---|
 | `Stop` 优先于 `Continue` | 任何 hook 说停就停，不看其它 hook 是否想继续 |
-| 硬预算优先于 hook | `Budget.Exhausted` 时 `Continue` 被忽略；hook 仍会被调用以便记录/收尾 |
 | 续跑消息必须落盘 | Agent 以 `turn/continue` 事件记录注入内容，derive 再把它回放成 user 消息 |
 
-续跑策略（判断"做完没有"）属于插件，不属于 Agent；Agent 只负责执行与硬预算。一个例外是**上限收尾**：当 turn 因 `step-limit` / `budget` 结束且 hook 未主动叫停时，Agent 默认再跑一步无工具的 LLM 让模型总结（`disableSummaryOnLimit`，默认开），避免用户看到截断的 transcript。这是 turn 收尾而非续跑——不占硬预算、不执行工具——所以由 Agent 自己负责，hook 无法在 `Budget.Exhausted` 时再驱动 LLM。详见 [guides/autonomous-run.zh.md §3.1](guides/autonomous-run.zh.md#31-上限收尾summaryonlimit)。
+续跑策略（判断"做完没有"、续跑次数、stall）属于插件（如 `hook/turn-continue`），不属于 Agent；Agent 只负责 segment 执行并把 `Steps` / `Segments` / `Tokens` 等观测值交给 hook。步数或 token 上限如需 enforcement，由 hook 或业务在 `OnTurnStopping` 里置 `Stop` 或拒绝追加 `Continue`。
 
 ### 5.5 工具执行路径
 
@@ -1031,7 +1030,7 @@ type Agent interface {
 - **Agent 路由**：Runner 在解析 SessionID 后统一解析 agent，再交给 Loop。优先级为 session `runtime.json` 的 `agentId`（`/agent use`）→ `global:runtime.json`（`/agent -g use`）→ `MessageEvent.AgentID`（请求显式指定）→ `loop.defaultAgent`。
 - **会话模型**：`agent/coding` 发起 LLM 前按 **会话 `runtime.json` 的 `model` → 全局 `global:runtime.json` 的 `models[<agentId>]` → agent 配置 `model`** 解析；`/model`、 `/model -g` 写入同一 overlay 文件。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
-- **Loop.Steer/FollowUp**：从 `TurnEnvelope.Conversation`（`session.SessionIDFromContext`）路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；有待处理的 steering 时重置 segment 内 `maxSteps` 计数，避免 steer 刚入队就因步数耗尽而结束 turn；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。若 steering 在 segment 已决定结束、turn 尚未完全退出时到达，Agent 会再跑一个 segment 消化；`Dispatch` 在 follow-up 循环里也会 drain 残留的 steering，避免消息丢失。
+- **Loop.Steer/FollowUp**：从 `TurnEnvelope.Conversation`（`session.SessionIDFromContext`）路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。若 steering 在 segment 已决定结束、turn 尚未完全退出时到达，Agent 会再跑一个 segment 消化；`Dispatch` 在 follow-up 循环里也会 drain 残留的 steering，避免消息丢失。
 - **FollowUp**：写入 followUps 队列；由 `Loop.Dispatch` 在 turn 结束后按 `followUpMode`（`one-at-a-time` / `all`）继续调度。
 - **Cancel**：设置取消原因并打断当前 step；与 steer 不同，会终止整个 turn。
 
@@ -1075,7 +1074,7 @@ sequenceDiagram
 
 Loop 不直接依赖具体工具、模型、压缩器、审批器或沙箱。它只调用 Agent 接口、调度策略和已装配的 loop-level hooks。
 
-一个 turn 由一个或多个 **segment** 组成：每个 segment 最多跑 `maxSteps` 步，段末由 `OnTurnStopping` 决定收尾还是续跑。`config.budget` 给出跨 segment 的硬上限（续跑次数 / 总步数 / 墙钟 / token），不配则 `maxContinuations=0`，turn 退化为单 segment——与引入该 seam 之前行为一致。
+一个 turn 由一个或多个 **segment** 组成：segment 内工具循环默认不设步数上限，直到模型停调工具。段末由 `OnTurnStopping` 决定收尾还是续跑；默认主 agent 不挂 turn-stopping 续跑 hook。`hook/turn-continue` 的 `maxContinuations` 控制单 turn 最多续跑几次；为 0 时不注入 `Continue`。
 
 ### 6.6 Prompt
 

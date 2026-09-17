@@ -39,7 +39,6 @@ func TestRunTurnSpillsLargeToolResultToWorkspace(t *testing.T) {
 
 	ag, _ := agenttest.NewScriptedAgent(t, agenttest.ScriptedAgentConfig{
 		AgentID:   "spill",
-		MaxSteps:  3,
 		Store:     store,
 		Workspace: ws,
 		Steps: []llm.ScriptedStep{

@@ -196,7 +196,6 @@ agent.assistant.default:
   config:
     id: assistant
     model: gpt-5.4
-    maxSteps: 20
     retry:
       enabled: true
       maxRetries: 3
@@ -217,15 +216,6 @@ agent.worker.default:
   config:
     id: worker
     model: gpt-5.4
-    maxSteps: 20
-    budget:
-      maxContinuations: 30
-      maxTotalSteps: 300
-      wallClockSeconds: 7200
-      maxTotalTokens: 2000000
-      softRatio: 0.8
-    # 上限收尾默认开启：硬上限/步数上限到顶且 hook 未主动叫停时，再跑一步无工具 LLM 做总结，
-    # 避免用户看到截断的 transcript。disableSummaryOnLimit: true 可关闭；可覆盖 summaryPrompt。
     retry:
       enabled: true
       maxRetries: 3
@@ -338,7 +328,6 @@ subagent.inprocess.default:
       - local:agents
       - local:../examples/agents
       - global:agents
-    maxSteps: 20
     timeoutSeconds: 600
   deps:
     workspace: workspace.default

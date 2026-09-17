@@ -51,9 +51,8 @@ type frontmatter struct {
 	Async       bool     `yaml:"async"`
 	Tools       []string `yaml:"tools"`
 	Skills      []string `yaml:"skills"`
-	Model       string   `yaml:"model"`
-	MaxSteps    int      `yaml:"maxSteps"`
-	Modalities  []string `yaml:"modalities"`
+	Model      string   `yaml:"model"`
+	Modalities []string `yaml:"modalities"`
 }
 
 // loadDefinitions scans dirs in order and returns the definitions found, sorted
@@ -148,9 +147,8 @@ func parseDefinition(fileName, raw string) (subagent.Definition, error) {
 		Backend:     backend,
 		Tools:       trimAll(fm.Tools),
 		Skills:      trimAll(fm.Skills),
-		Model:       strings.TrimSpace(fm.Model),
-		MaxSteps:    fm.MaxSteps,
-		Modalities:  modalities,
+		Model:      strings.TrimSpace(fm.Model),
+		Modalities: modalities,
 	}, nil
 }
 

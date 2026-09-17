@@ -21,7 +21,7 @@ func (b *chatBackend) stream(ctx context.Context, model string, req agentkit.LLM
 			Messages: toChatCompletionMessages(req.Messages),
 			Tools:    toOpenAITools(req.Tools),
 			Stream:   true,
-			// Token accounting feeds the agent's run budget, which is what stops
+			// Token accounting is recorded on session usage events for hooks and /status.
 			// an autonomous run from going forever.
 			StreamOptions: &openai.StreamOptions{IncludeUsage: true},
 		})

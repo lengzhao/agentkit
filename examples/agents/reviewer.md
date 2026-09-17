@@ -2,7 +2,6 @@
 name: reviewer
 description: 只读代码审查：针对指定改动或文件找出真实缺陷，按严重度排序返回
 tools: [read, grep, find, ls, finish]
-maxSteps: 15
 ---
 你是代码审查子 agent。审查指定的文件或改动，只报真实缺陷。
 
