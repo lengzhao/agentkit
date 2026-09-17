@@ -102,7 +102,7 @@ flowchart TB
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 精确回写（`PlatformID` 为空则拒绝，不广播） |
 | `platform/http` | `agentkit.Platform` | 监听并服务 `http.DefaultServeMux`；与 `chat-api.registerOnly` 或其它 `http.Handle` 扩展组合 | DSH Web Host |
 | `platform/acp` | `agentkit.Platform` + `permission.Capable` | stdio ACP Agent；供 Zed 等 ACP 客户端子进程接入；权限经 ACP `request_permission` 回传客户端 | — |
-| `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio | Pi RPC 模式 |
+| `platform/rpc` | `agentkit.Platform` | JSON-RPC / JSONL stdio（roadmap） | Pi RPC 模式 |
 | `platform/worker` | `agentkit.Platform` | headless 一次性任务 runner（从不读 stdin，`output` 支持 text / json）。task 为 `prompt`（agent turn）或 `script`（bash 脚本，需 `deps.workspace` + `deps.shell`）；日历 cron 用 `schedule/cron` | DSH headless |
 | `platform/timer` | `agentkit.Platform` | 进程内定时器：按固定间隔自己发起 turn，tick 锚定启动时间、跳过错过的 boundary | — |
 
@@ -133,11 +133,11 @@ platform.http:
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
 | `loop/default` | `agentkit.Loop` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key | DSH `agent-loop` / Pi `agentLoop` |
-| `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation | Pi AgentHarness |
+| `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation（roadmap） | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；从 `session.SessionIDFromContext` 取 conversation 并通过 `deps.sessionStore` 加载 Session | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
 | `agent/catalog-commands` | `agentkit.CommandProvider` | `/agent`、`/model`、`/acp` slash；deps 注入 `loop`、`sessionStore`、`workspace` | — |
-| `agent/readonly` | `agentkit.Agent` | 只读审查 Agent | DSH permission preset |
+| `agent/readonly` | `agentkit.Agent` | 只读审查 Agent（roadmap） | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
 | `session/store` | `agentkit.SessionStore` | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；LRU 热缓存 + 内存 tail 窗口（`maxLoadedEvents`）；压缩后裁剪内存；完整历史 `Read(0)` 读盘 | cc-connect SessionKey |
@@ -152,12 +152,12 @@ platform.http:
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
 | `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description。可选 `deps.llm`：主模型为 text-only 且存在**显式**声明 `modalities` 含 image 的子 Agent 时，追加委派看图提示 | — |
-| `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文 | DSH `time-context` |
+| `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文（roadmap） | DSH `time-context` |
 | `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
 | `llm/fallback` | `agentkit.LLMProvider` | 主模型/主 provider 失败时按序切换备用 model 或 provider；同 endpoint 只需一份底层 provider | — |
-| `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API | Pi anthropic-messages |
-| `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API | DSH llm-deepseek |
-| `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试） | DSH llm-replay |
+| `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API（roadmap） | Pi anthropic-messages |
+| `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API（roadmap） | DSH llm-deepseek |
+| `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试，roadmap） | DSH llm-replay |
 
 **`llm/openai-compatible`**：`config.modalities` 声明输入能力（`text` / `image` / `audio`，默认可看图）；纯文本模型设 `[text]`，运行时会把附件降为 `[attachment: …]` 文本。`api` 为 `responses`（L0 默认）或 `chat`；`hostedTools` 仅在 `responses` 下生效，用于 OpenAI 内置工具（如 `web_search`），由 provider 服务端执行，不走 agentkit 工具循环。L0 已默认启用 `hostedTools.web_search`，`tools.default` 不再挂 `tool/web-search-*`。若改回 Tavily/DuckDuckGo 等本地搜索插件，需同时设 `api: chat` 并自行把 `tool/web-search-*` 加回 `tools`。超时分两档：`responseHeaderTimeoutSeconds` 限制 **连接 + TLS + HTTP 响应头**（默认 60，对应 `net/http` `ResponseHeaderTimeout`）；`timeoutSeconds` 限制 **首 token / TTFB**（默认 180，应用层 `streamWithRequestTimeout`，流式常先返回 200 再等模型）。后续流式 token 不受 `timeoutSeconds` 限制。与 agent 的 `maxSteps`、工具 `timeoutSeconds` 独立。示例：
 
@@ -337,9 +337,9 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `policy/path-denylist` | `agentkit.Policy` | 路径黑名单（glob，默认拒 `.git/**`、`**/.env*`、`**/.ssh/**`、`**/*.pem`） | Pi path protection 示例 |
 | `policy/shell-allowlist` | `agentkit.Policy` | shell 命令前缀白名单；`strict` 时白名单外一律 deny，链式命令每段都要命中 | — |
 | `policy/network-deny` | `agentkit.Policy` | 禁止网络类工具（未做；`web/http-fetch` 自带的 scheme / host / 私网约束是它的雏形） | DSH sandbox policy |
-| `policy/plan-mode` | `agentkit.Policy` | Plan 模式下限制写操作 | DSH plan-mode |
-| `approval/auto-deny` | `approval.Service` | 自动拒绝 ask | 测试 / CI |
-| `approval/auto-allow` | `approval.Service` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
+| `policy/plan-mode` | `agentkit.Policy` | Plan 模式下限制写操作（roadmap） | DSH plan-mode |
+| `approval/auto-deny` | `agentkit.Approval` | 自动拒绝 ask | 测试 / CI |
+| `approval/auto-allow` | `agentkit.Approval` | 自动允许 ask（无人值守）；**不做任何过滤**，必须与 `policy/shell-allowlist` + `policy/path-denylist` 同时挂载 | 开发模式 |
 
 > **说明**：交互式终端审批走 platform `permission.Capable`（见 [guides/platform-interaction.zh.md](guides/platform-interaction.zh.md)）。
 
@@ -348,13 +348,19 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | Kind | 返回类型 | Hook 点 | 参考 |
 |---|---|---|---|
 | `hook/before-step` | `agentkit.HookProvider` | Turn 开始前注入/检查 | DSH `agent/pre-step` |
-| `hook/before-tool` | `agentkit.HookProvider` | 工具 input 改写 | DSH post-policy / Pi beforeToolCall |
-| `hook/after-tool` | `agentkit.HookProvider` | 工具 result 截断/改写 | DSH `tools/post-execute` |
-| `hook/llm-request` | `agentkit.HookProvider` | LLM 请求改写 | Pi `before_provider_request` |
 | `hook/turn-continue` | `agentkit.HookProvider` | Turn 末裁决续跑/收尾（`TurnStopping` seam）；贡献 `/status` | DSH `agent/turn-stopping` |
+| `hook/session-index` | `agentkit.HookProvider` | 每轮成功后异步刷新 session FTS | — |
 | `hook/background-review` | `agentkit.HookProvider` | Turn 成功后后台 LLM review（`TurnComplete`）；内建 `learn_capture`；deps `learning`（`ReviewHost` + `SkillProposer`）、`memory`（`Capture`）、`llm` | [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §9 |
-| `hook/repeat-tool-reminder` | `agentkit.HookProvider` | 重复工具调用提醒 | DSH repeat-tool-reminder |
-| `hook/timeout` | `agentkit.HookProvider` | Turn/Step 超时 | DSH timeout-policy |
+
+**已就绪的 hook 点接口**（`agentkit.HookRuntime` 支持，任何 `HookProvider` 插件均可贡献，尚无独立 kind）：
+
+| Hook 点 | 接口 | 说明 |
+|---|---|---|
+| BeforeStep | `OnBeforeStep` | model step 前注入/检查 |
+| BeforeTool | `OnBeforeTool` | 工具 input 改写（policy allow 之后） |
+| AfterTool | `OnAfterTool` | 工具 result 截断/改写 |
+| TurnStopping | `OnTurnStopping` | Turn 末续跑/收尾裁决 |
+| TurnComplete | `OnTurnComplete` | Turn 成功后后台任务（FTS 刷新、review fork 等） |
 
 ### 3.6 共享运行时插件
 
@@ -365,14 +371,14 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | Kind | 返回类型 | 说明 |
 |---|---|---|
 | `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md |
-| `skill/badge` | `skill.Registry` | Badge 元数据 |
+| `skill/badge` | `skill.Registry` | Badge 元数据（roadmap） |
 | `memory/default` | `CommandProvider` + `cap/memory.Service` | 租户 `memory.md`、ledger、staged、`/memory` 命令；`tool/memory` 与 prompt 注入 |
 | `learning/default` | `CommandProvider` | Grounded Dreaming、Skill Workshop；`/learn` 巩固与技能（记忆见 `/memory`） |
 | `learning/dream-sweep` | `schedule.Runtime` | 后台三阶段 dreaming sweep（默认每天 03:00） |
 | `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/loop-agent` | `subagent.Spawner` + `subagent.SubmitBinder` | 委派到 Loop 里已注册的 agent（如 `agent/acp-remote` 的 `cursor`）。可委派名单来自实例 `config.agents`；支持 `async: true`：立即返回 `status=running`，完成后经 runner 向父 session 投递 follow-up turn。deps 可注入 `telemetry`（通常 `telemetry.default`），为每次子 agent 运行导出独立 Langfuse trace |
 | `subagent/composite` | `subagent.Spawner` + `subagent.SubmitBinder` | 合并 `inprocess` 与 `loop-agent` 的可委派名单；L0 `subagent.default` 使用此 kind |
-| `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent |
+| `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent（roadmap） |
 
 #### Schedule
 
@@ -397,12 +403,11 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `TurnEnvelope.Workspace`（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
-| `credentials/static` | `credentials.Store` | YAML 级 `env:` ref；`Resolve(ctx, GlobalScope, ref)`。详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
-| `credentials/env` | `credentials.Store` | **已废弃别名**，等同 `credentials/static` |
+| `credentials/env` | `credentials.Store` | YAML 级 `env:` ref；dotenv / 加密 secrets / 进程 env；`Resolve(ctx, GlobalScope, ref)`。详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`、`EnvPairs`（shell env）、manifest allowlist、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
-| `storage/json` | `storage.Store` | 通用 KV 存储 |
+| `storage/json` | `storage.Store` | 通用 KV 存储（roadmap） |
 | `telemetry/langfuse` | `telemetry.Exporter` | Langfuse Go SDK（ingestion API）导出 |
 | `telemetry/none` | `telemetry.Exporter` | 无遥测 |
 | `telemetry/otel` | `telemetry.Exporter` | 通用 OpenTelemetry（未做） |
@@ -564,7 +569,7 @@ graph:
 
 **接下来做什么以 [roadmap.zh.md](roadmap.zh.md) 为准。** 本节 §3 的 Kind 目录是完整清单；roadmap 标注各能力的落地状态与优先级。
 
-未做项速查：`session/sqlite`、`platform/http`、`platform/rpc`、`telemetry/otel`、`policy/network-deny`、`policy/plan-mode`、`loop/harness`、OS 级沙箱。
+未做项速查：`session/sqlite`、`platform/rpc`、`telemetry/otel`、`policy/network-deny`、`policy/plan-mode`、`loop/harness`、`agent/readonly`、`llm/anthropic`、`llm/deepseek`、`llm/replay`、`subagent/rpc`、`skill/badge`、`prompt/section/time`、`credentials/file`、`storage/json`、OS 级沙箱。
 
 ## 7. 新增插件 Checklist
 

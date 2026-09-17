@@ -31,7 +31,7 @@
 
 | 术语 | 含义 |
 |---|---|
-| **Plugin Kind** | Go 包在 `init()` 中通过 `pluginkit.Register(kind, New)` 注册的插件类型，例如 `runner`、`platform/cli`、`loop/default`、`agent/coding`、`llm/openai`、`tool/read-file`。 |
+| **Plugin Kind** | Go 包在 `init()` 中通过 `pluginkit.Register(kind, New)` 注册的插件类型，例如 `runner`、`platform/cli`、`loop/default`、`agent/coding`、`llm/openai-compatible`、`tool/fs-workspace`。 |
 | **Plugin Use** | 配置中的一次插件使用，包含 `use`、可选 `id`、`config` 和 `deps`。 |
 | **Plugin Instance** | `build.Build` 成功构造出的实例，拥有稳定 `id`、`use` 和 Go 值。 |
 | **Root Plugin** | 实例图入口。AgentKit 进程的 root id 通常是 `runner`，返回值实现 `agentkit.Runner`。 |
@@ -142,14 +142,14 @@ func New() (agentkit.Policy, error) {
     return agentkit.PolicyFunc(evaluateShell), nil
 }
 
-func evaluateShell(ctx context.Context, in agentkit.PolicyInput) agentkit.Decision {
-    if in.Name != "shell" {
+func evaluateShell(_ context.Context, in agentkit.PolicyInput) agentkit.Decision {
+    if in.ToolCall == nil || in.ToolCall.Name != "bash" {
         return agentkit.Allow()
     }
     var args struct {
         Command string `json:"command"`
     }
-    if err := in.Decode(&args); err != nil {
+    if err := json.Unmarshal(in.ToolCall.Input, &args); err != nil {
         return agentkit.Deny("invalid shell arguments")
     }
     if args.Command == "rm -rf /" {
@@ -266,15 +266,15 @@ func init() {
     pluginkit.Register("platform/cli", NewCLIPlatform)
     pluginkit.Register("loop/default", NewLoop)
     pluginkit.Register("agent/coding", NewAgent)
-    pluginkit.Register("llm/openai", NewOpenAI)
-    pluginkit.Register("tool/shell", NewShellTool)
+    pluginkit.Register("llm/openai-compatible", NewOpenAI)
+    pluginkit.Register("tool/shell-bash", NewShellBash)
 }
 ```
 
 注册规则：
 
 - `init()` 只调用 `pluginkit.Register`，不读取配置、不连接外部系统、不启动 goroutine。
-- `kind` 使用稳定命名，例如 `runner`、`platform/cli`、`loop/default`、`agent/coding`、`llm/openai`、`tool/read-file`、`policy/deny-shell`。
+- `kind` 使用稳定命名，例如 `runner`、`platform/cli`、`loop/default`、`agent/coding`、`llm/openai-compatible`、`tool/fs-workspace`、`policy/deny-dangerous-shell`。
 - 同一个 kind 在一个进程内只能注册一次；新增源码插件通过 import 生成器进入依赖图。
 - 测试可以直接导入插件包或调用包内导出的 `RegisterForTest` 辅助，但不得绕过 `pluginkit` 另建 registry。
 
@@ -301,10 +301,11 @@ func NewLoop(cfg LoopConfig, deps LoopDeps) (agentkit.Loop, error) {
 }
 
 type AgentDeps struct {
-    SessionStore agentkit.SessionStore `json:"sessionStore"`
-    LLM          agentkit.LLMProvider  `json:"llm"`
-    Tools        []agentkit.Tool       `json:"tools"`
-    Policies     []agentkit.Policy     `json:"policies"`
+    SessionStore agentkit.SessionStore    `json:"sessionStore"`
+    LLM          agentkit.LLMProvider     `json:"llm"`
+    Tools        agentkit.ToolRuntime     `json:"tools"`
+    Prompt       agentkit.PromptAssembler `json:"prompt"`
+    Policies     []agentkit.Policy        `json:"policies,omitempty"`
 }
 
 func NewAgent(cfg AgentConfig, deps AgentDeps) (agentkit.Agent, error) {
@@ -325,33 +326,52 @@ runner:
     loop:
       use: loop/default
       config:
-        maxTurns: 20
+        defaultAgent: agent.coder
       deps:
-        session:
-          use: session/jsonl
-          config:
-            path: .agent/sessions
         agents:
-          - use: agent/coding
+          - agent.coder
+
+agent.coder:
+  use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.5
+  deps:
+    sessionStore:
+      use: session/store
+      config:
+        dir: .agent/sessions
+    llm:
+      use: llm/openai-compatible
+      config:
+        model: gpt-5.5
+    tools:
+      use: tools/runtime
+      deps:
+        tools:
+          - use: tool/shell-bash
             deps:
-              llm:
-                use: llm/openai
-                config:
-                  model: gpt-5.5
-              tools:
-                - use: tool/read-file
-                  deps:
-                    fs:
-                      use: fs/local
-                      config:
-                        root: .
-                - use: tool/shell
-                  deps:
-                    executor:
-                      use: shell/bash
-                    # 交互式 ask 由 platform Permission 承载；无人值守时配 approval/auto-allow
-              policies:
-                - use: policy/deny-dangerous-shell
+              workspace: workspace.default
+              # 交互式 ask 由 platform Permission 承载；无人值守时配 approval/auto-allow
+        toolPacks:
+          - use: tool/fs-workspace
+            deps:
+              workspace: workspace.default
+        policies:
+          - use: policy/deny-dangerous-shell
+    prompt:
+      use: prompt/assembler/default
+      deps:
+        sections:
+          - use: prompt/section/agents-md
+            deps:
+              workspace: workspace.default
+    workspace: workspace.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
 ```
 
 注入规则：
@@ -409,11 +429,10 @@ type HookProvider interface {
 }
 
 func OnBeforeStep(h func(context.Context, *BeforeStep) error) Hook
-func OnBuildPrompt(h func(context.Context, *PromptBuilder) error) Hook
 func OnBeforeTool(h func(context.Context, *ToolCall) error) Hook
 func OnAfterTool(h func(context.Context, *ToolResult) error) Hook
-func OnLLMRequest(h func(context.Context, *LLMRequest) error) Hook
 func OnTurnStopping(h func(context.Context, *TurnStopping) error) Hook
+func OnTurnComplete(h func(context.Context, *TurnComplete) error) Hook
 ```
 
 内部 Hook Runtime 可以支持 chain、serial、parallel 三种模式；插件作者只看到稳定 payload 类型和返回约定，不调用 `next()`。hook 实例只有在 root graph 中被依赖后才会进入运行时；未配置的 hook 即使被 import 也不会运行。
@@ -428,7 +447,7 @@ func OnTurnStopping(h func(context.Context, *TurnStopping) error) Hook
 | 硬预算优先于 hook | `Budget.Exhausted` 时 `Continue` 被忽略；hook 仍会被调用以便记录/收尾 |
 | 续跑消息必须落盘 | Agent 以 `turn/continue` 事件记录注入内容，derive 再把它回放成 user 消息 |
 
-续跑策略（判断"做完没有"）属于插件，不属于 Agent；Agent 只负责执行与硬预算。详见 [guides/autonomous-run.zh.md](guides/autonomous-run.zh.md)。
+续跑策略（判断"做完没有"）属于插件，不属于 Agent；Agent 只负责执行与硬预算。一个例外是**上限收尾**：当 turn 因 `step-limit` / `budget` 结束且 hook 未主动叫停时，Agent 默认再跑一步无工具的 LLM 让模型总结（`disableSummaryOnLimit`，默认开），避免用户看到截断的 transcript。这是 turn 收尾而非续跑——不占硬预算、不执行工具——所以由 Agent 自己负责，hook 无法在 `Budget.Exhausted` 时再驱动 LLM。详见 [guides/autonomous-run.zh.md §3.1](guides/autonomous-run.zh.md#31-上限收尾summaryonlimit)。
 
 ### 5.5 工具执行路径
 
@@ -537,38 +556,50 @@ platform.default:
 loop.default:
   use: loop/default
   config:
-    maxTurns: 20
+    defaultAgent: agent.coder.default
   deps:
     agents:
       - agent.coder.default
 
 agent.coder.default:
   use: agent/coding
+  config:
+    id: coder
+    model: gpt-5.5
   deps:
     sessionStore: sessionStore.default
-    llm:
-      use: llm/openai
-      config:
-        model: gpt-5.5
-    tools:
-      - use: tool/read-file
-        config:
-          maxBytes: 1048576
-        deps:
-          fs:
-            use: fs/local
-            config:
-              root: .
-      - id: shell-tool
-        use: tool/shell
-        deps:
-          executor: shell.default
-          # 交互式 ask 由 platform Permission 承载
+    llm: llm.default
+    tools: tools.default
+    prompt: prompt.default
+    workspace: workspace.default
 
-shell.default:
-  use: shell/bash
+llm.default:
+  use: llm/openai-compatible
   config:
-    timeout: 30s
+    model: gpt-5.5
+
+tools.default:
+  use: tools/runtime
+  deps:
+    tools:
+      - tool.shell-bash.default
+    toolPacks:
+      - tool.fs-workspace.default
+    policies:
+      - policy.deny-dangerous-shell.default
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
+    root: work
+  deps:
+    workspace: workspace.default
+
+tool.shell-bash.default:
+  use: tool/shell-bash
+  deps:
+    workspace: workspace.default
+    # 交互式 ask 由 platform Permission 承载
 ```
 
 配置规则：
@@ -593,19 +624,24 @@ metadata:
   name: coding-shell
 
 graph:
-  shell.default:
-    use: shell/bash
+  tool.shell-bash.default:
+    use: tool/shell-bash
     config:
-      timeout: 30s
+      timeoutSeconds: 30
+    deps:
+      workspace: workspace.default
 
   approval.default:
     use: approval/auto-deny
 
-  tool.shell:
-    use: tool/shell
+  tools.default:
+    use: tools/runtime
     deps:
-      executor: shell.default
+      tools:
+        - tool.shell-bash.default
       approval: approval.default
+      policies:
+        - use: policy/deny-dangerous-shell
 ```
 
 Preset 选择 Feature 并声明 root Runner：
@@ -636,21 +672,22 @@ graph:
     use: agent/coding
     deps:
       llm:
-        use: llm/openai
+        use: llm/openai-compatible
         config:
           model: gpt-5.5
-      session:
-        use: session/jsonl
+      sessionStore:
+        use: session/store
         config:
-          path: .agent/sessions
+          dir: .agent/sessions
       tools:
-        - use: tool/read-file
-          deps:
-            fs:
-              use: fs/local
-              config:
-                root: .
-        - tool.shell
+        use: tools/runtime
+        deps:
+          tools:
+            - tool.shell
+          toolPacks:
+            - use: tool/fs-workspace
+              deps:
+                workspace: workspace.default
       policies:
         - use: policy/deny-dangerous-shell
 ```
@@ -688,38 +725,47 @@ agent.coder:
   use: agent/coding
   deps:
     llm: llm.default
-    session: session.default
-    tools:
-      - tool.read-file
-      - tool.shell
+    sessionStore: session.default
+    tools: tools.default
+    prompt: prompt.default
+    workspace: workspace.default
     policies:
       - policy.deny-dangerous-shell
 
 llm.default:
-  use: llm/openai
+  use: llm/openai-compatible
   config:
     model: gpt-5.5
 
 session.default:
-  use: session/jsonl
+  use: session/store
   config:
-    path: .agent/sessions
+    dir: .agent/sessions
 
-fs.workspace:
-  use: fs/local
+workspace.default:
+  use: workspace/default
   config:
-    root: .
+    scope: local
 
-tool.read-file:
-  use: tool/read-file
+tools.default:
+  use: tools/runtime
   deps:
-    fs: fs.workspace
+    tools:
+      - tool.shell
+    toolPacks:
+      - tool.fs-workspace
+    policies:
+      - policy.deny-dangerous-shell
+
+tool.fs-workspace:
+  use: tool/fs-workspace
+  deps:
+    workspace: workspace.default
 
 tool.shell:
-  use: tool/shell
+  use: tool/shell-bash
   deps:
-    executor: shell.default
-    approval: approval.default
+    workspace: workspace.default
 ```
 
 启动流程：
@@ -754,7 +800,7 @@ agents:
     session:
       mode: persistent
     overrides:
-      shell.default.use: shell/bash
+      tool.shell-bash.use: tool/shell-bash
 
   reviewer:
     preset: readonly-review
@@ -1349,21 +1395,18 @@ go run ./cmd/agent -config presets/langfuse.yaml "hello"
 func TestReadFileTool(t *testing.T) {
     graph := map[string]any{
         "tool": map[string]any{
-            "use": "tool/read-file",
-            "deps": map[string]any{
-                "fs": map[string]any{
-                    "use": "fs/memory",
-                    "config": map[string]any{
-                        "files": map[string]string{"README.md": "hello"},
-                    },
-                },
+            "use": "tool/fs-memory",
+            "config": map[string]any{
+                "files": map[string]string{"README.md": "hello"},
+                "tools": []string{"read"},
             },
         },
     }
 
-    tool := agenttest.Build[agentkit.Tool](t, graph, "tool")
+    pack := agenttest.Build[agentkit.ToolPack](t, graph, "tool")
+    tool := agentkit.First(pack)
     result := agenttest.CallTool(t, context.Background(), tool, `{"path":"README.md"}`)
-    // assert on result JSON...
+    // assert on result text...
 }
 ```
 

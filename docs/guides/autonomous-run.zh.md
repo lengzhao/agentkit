@@ -76,6 +76,29 @@ budget:
 
 token 计量来自 LLM provider 的 usage：`llm/openai-compatible` 两种 API 模式都会带出 usage（chat 走 `stream_options.include_usage`，responses 走 `response.usage`），Agent 每步写一条 `usage` 事件并累加进预算。provider 不报 usage 时 token 维度自然失效，其余三个维度照常生效。
 
+### 3.1 上限收尾：summaryOnLimit
+
+硬上限保住了成本，但留下一个 UX 缺口：turn 断在工具调用中，用户看不到任何结果。`agent/coding` 默认开启上限收尾——当 turn 因 `step-limit` 或 `budget` 结束、且没有 hook 主动叫停时，Agent 自己再跑**一步** LLM 让模型总结：
+
+```yaml
+agent:
+  disableSummaryOnLimit: false  # 默认 false（开启）；true 关闭
+  summaryPrompt: ""             # 留空用默认提示，可覆盖
+```
+
+这一步的性质和约束：
+
+| 维度 | 说明 |
+|---|---|
+| 触发 | `StopStepLimit` 或 `StopBudget`，且 hook 未续跑且未主动 `Stop`、turn 未取消、本 turn 未总结过 |
+| 不触发 | `StopNoToolCalls`（模型已回文本，用户看得到）；hook 主动 `Stop`（finished/stalled/no-work，hook 已决定如何收尾） |
+| 工具 | 不可见——传入空 tool 列表，模型只能出文本；即便它仍返回 tool_calls 也被丢弃、不执行 |
+| 预算 | **不计入** `run.budget`。硬预算已花光，这一步是 turn 收尾而非续跑，所以不受硬上限拦截 |
+| 落盘 | 注入的总结提示以 `turn/continue` 事件记录（`reason = "summary:<stop>"`），`DeriveMessages` 回放成 user 消息；模型的总结作为普通 `assistant/message` 落盘并流式发给用户 |
+| 架构位置 | 在 `runtime/agent`，不在插件。续跑策略属于插件，但"硬上限到了给用户一个收尾"是 Agent 的兜底职责，与崩溃恢复同性质——hook 无法在 `Budget.Exhausted` 时再驱动 LLM，所以只能由 Agent 自己做 |
+
+不依赖 `tool/finish` / `tool/todo` / `hook/turn-continue`：即便只配了 `agent.budget`（或仅 `maxSteps`），上限收尾照常工作。
+
 ## 4. 完成判定：todo + finish
 
 停止信号不靠模型自述，而是两个可审计的事件：

@@ -224,6 +224,8 @@ agent.worker.default:
       wallClockSeconds: 7200
       maxTotalTokens: 2000000
       softRatio: 0.8
+    # 上限收尾默认开启：硬上限/步数上限到顶且 hook 未主动叫停时，再跑一步无工具 LLM 做总结，
+    # 避免用户看到截断的 transcript。disableSummaryOnLimit: true 可关闭；可覆盖 summaryPrompt。
     retry:
       enabled: true
       maxRetries: 3
