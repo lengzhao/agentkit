@@ -4,7 +4,7 @@ import "testing"
 
 func TestValidateIntegrationScope(t *testing.T) {
 	t.Parallel()
-	for _, scope := range []string{"mcp.github", "openapi.petstore", "mcp.x", "openapi.a"} {
+	for _, scope := range []string{"mcp.github", "openapi.petstore", "mcp.x", "openapi.a", "shell-bash.gh"} {
 		if err := ValidateIntegrationScope(scope); err != nil {
 			t.Fatalf("scope %q: %v", scope, err)
 		}

@@ -385,7 +385,7 @@ credentials.integrations:
   use: credentials/integrations
   config:
     encryptedFile: global:secrets.enc.json
-    # manifestFiles default: global:mcp.json, global:api.json
+    # MCP/OpenAPI allowlist：实现内默认读 workspace mcp.json/api.json（勿在 L1 配 manifestFiles）
     # Set AGENTKIT_SECRETS_KEY in L1 config.yaml credentials.integrations.config.env for /env add.
   deps:
     workspace: workspace.default
@@ -857,6 +857,8 @@ tool.shell-bash.default:
     timeoutSeconds: 60
   deps:
     workspace: workspace.default
+    # Scoped gh/npm tokens via L1 scopedEnv or /env add; trims subprocess env only when injecting.
+    credentials: credentials.integrations
 
 tool.skill.default:
   use: tool/skill

@@ -1,10 +1,8 @@
 package mcp
 
-import "strings"
-
-const credentialScopePrefix = "mcp."
+import rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 
 // CredentialScope returns the scopedStore scope for an mcpServers entry name.
 func CredentialScope(serverName string) string {
-	return credentialScopePrefix + strings.TrimSpace(serverName)
+	return rtcredentials.MCPCredentialScope(serverName)
 }

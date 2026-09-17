@@ -120,7 +120,7 @@ flowchart LR
 | `${var:VAR}` | 加载期 | gate + 展开为明文值（适合 URL、token 等普通字符串字段） |
 | `env:VAR`（如 `apiKeyRef`） | 运行期 | 由 `credentials.Store` 解析；加载期原样保留 |
 
-loader **不读取** `credentials/env` 的 `config.files`（`.env`），**不实例化** `credentials.Store`。`credentials/env` 通过 `plugins/credentials` 的 `EnvGraphSource` 适配器，把 YAML 内联的 `config.env` 注册为可选 gate 来源；应用导入 `plugins` 包后自动生效。
+loader **不读取** `credentials/env` 的 `config.files`（`.env`），**不实例化** `credentials.Store`。运行期解析链、scope、manifest、`/env` 见 **[credentials.zh.md](credentials.zh.md)**。`credentials/env` 通过 `plugins/credentials` 的 `EnvGraphSource` 适配器，把 YAML 内联的 `config.env` 注册为可选 gate 来源；应用导入 `plugins` 包后自动生效。
 
 自定义 credentials 若需参与 `${env:}` gate，应提供自己的 `GraphEnvSource` 或 `WithEnvLookup`，而不是在 loader 里实例化 Store。
 

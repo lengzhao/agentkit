@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -35,6 +36,11 @@ func NewIntegrations(cfg Config, deps EnvDeps) (credentials.Store, error) {
 	if len(manifestPaths) == 0 {
 		manifestPaths = []string{defaultMCPManifestFile, defaultOpenAPIManifestFile}
 	}
+	scoped, err := buildConfigScoped(cfg.Prefix, cfg.ScopedEnv)
+	if err != nil {
+		return nil, err
+	}
+	backend.setConfigScoped(scoped)
 	s := &integrationStore{
 		envStore:      backend,
 		manifestPaths: manifestPaths,
@@ -87,13 +93,8 @@ func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, 
 		storageKey = s.prefix + key
 	}
 	scoped := rtcredentials.ScopedStorageKey(scope, storageKey)
-	s.mu.RLock()
-	value := s.encrypted[scoped]
-	if value == "" {
-		value = s.files[scoped]
-	}
-	s.mu.RUnlock()
-	return value, value != ""
+	value, ok := s.lookupStorageValue(scoped)
+	return value, ok
 }
 
 func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pairs []string) (string, int, error) {
@@ -143,6 +144,43 @@ func (s *integrationStore) scopeAllows(scope string, key string) bool {
 	}
 	_, ok = keys[key]
 	return ok
+}
+
+func (s *integrationStore) allowlistedEnvKeys(scope string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys, ok := s.allow[scope]
+	if !ok || len(keys) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(keys))
+	for key := range keys {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// EnvPairs implements credentials.EnvPairResolver.
+func (s *integrationStore) EnvPairs(ctx context.Context, scope string, opts credentials.EnvPairsOptions) ([]string, error) {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return nil, fmt.Errorf("credential scope is required")
+	}
+	if err := s.ensureManifestFresh(ctx); err != nil {
+		return nil, err
+	}
+	keys := append([]string(nil), opts.Keys...)
+	if len(keys) == 0 {
+		keys = s.allowlistedEnvKeys(scope)
+	}
+	if len(keys) == 0 {
+		keys = s.listEnvKeysForScope(scope)
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	return rtcredentials.InjectScopedEnv(ctx, nil, scope, keys, s), nil
 }
 
 func (s *integrationStore) ensureManifestFresh(ctx context.Context) error {
@@ -245,6 +283,9 @@ func manifestFromFile(data []byte) (map[string]map[string]struct{}, error) {
 	if strings.Contains(trimmed, `"apis"`) {
 		return rtcredentials.ManifestFromAPIIndex(data)
 	}
+	if strings.Contains(trimmed, `"commands"`) {
+		return rtcredentials.ManifestFromShellBashFile(data)
+	}
 	return nil, fmt.Errorf("unsupported manifest shape")
 }
 
@@ -278,10 +319,11 @@ func integrationEnvHelp() string {
   /env -u                                 reload secrets, dotenv, and integration manifests
 
 Notes:
-  SCOPE is mcp.<server> or openapi.<api> (server/api name after the dot)
-  /env add does not require a manifest entry; mcp.json / api.json env: refs declare keys for lookup after values are set
-  Scoped values are stored in secrets.enc.json (or dotenv) under SCOPE::KEY
-  Resolve lookup: context override > scoped store > config env > legacy flat keys in store
+  SCOPE is mcp.<server>, openapi.<api>, or shell-bash.<cmd> (command basename after the dot)
+  /env add does not require a manifest entry; mcp.json / api.json / shell-bash.json env entries declare keys for lookup after values are set
+  Scoped values live in secrets.enc.json (or dotenv) as SCOPE::KEY
+  L1 credentials.integrations.config.scopedEnv preloads values at startup; same SCOPE::KEY in secrets.enc.json wins over scopedEnv
+  Resolve: context > scoped store (encrypted/file, then L1 scopedEnv) > manifest allowlist > flat fallback
   Manifest allowlists refresh automatically when mcp.json / api.json change on disk`
 }
 
@@ -317,11 +359,11 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 		return fmt.Sprintf("env: reloaded %d key(s) from disk and refreshed manifests", count), nil
 	case len(rest) >= 1 && rest[0] == "add":
 		if len(rest) < 3 {
-			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE [KEY=VALUE ...] (SCOPE: mcp.<server> or openapi.<api>)")
+			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE [KEY=VALUE ...] (SCOPE: mcp.<server>, openapi.<api>, or shell-bash.<cmd>)")
 		}
 		scope := rest[1]
 		if strings.Contains(scope, "=") {
-			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE ...; SCOPE must be mcp.<server> or openapi.<api>")
+			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE ...; SCOPE must be mcp.<server>, openapi.<api>, or shell-bash.<cmd>")
 		}
 		path, count, err := c.store.addScopedPairs(ctx, scope, rest[2:])
 		if err != nil {
@@ -336,7 +378,8 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 }
 
 var (
-	_ credentials.Store            = (*integrationStore)(nil)
-	_ agentkit.CommandProvider     = (*integrationStore)(nil)
-	_ agentkit.CommandLogSanitizer = (*integrationEnvCommand)(nil)
+	_ credentials.Store         = (*integrationStore)(nil)
+	_ credentials.EnvPairResolver = (*integrationStore)(nil)
+	_ agentkit.CommandProvider         = (*integrationStore)(nil)
+	_ agentkit.CommandLogSanitizer     = (*integrationEnvCommand)(nil)
 )

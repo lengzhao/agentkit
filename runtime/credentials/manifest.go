@@ -101,6 +101,38 @@ func ManifestFromAPIIndex(data []byte) (map[string]map[string]struct{}, error) {
 	return out, nil
 }
 
+// ManifestFromShellBashFile maps each commands key to allowed env keys under scope shell-bash.<name>.
+func ManifestFromShellBashFile(data []byte) (map[string]map[string]struct{}, error) {
+	var doc struct {
+		Commands map[string]struct {
+			Env []string `json:"env"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]struct{})
+	for name, entry := range doc.Commands {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		keys := make(map[string]struct{})
+		for _, key := range entry.Env {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			keys[key] = struct{}{}
+		}
+		if len(keys) == 0 {
+			continue
+		}
+		out[ShellBashCredentialScope(name)] = keys
+	}
+	return out, nil
+}
+
 // MergeManifests unions scope maps; later maps overwrite key sets for the same scope.
 func MergeManifests(parts ...map[string]map[string]struct{}) map[string]map[string]struct{} {
 	out := make(map[string]map[string]struct{})

@@ -289,7 +289,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|---|
 | `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` / `config.unrestricted` 可限制能力 |
 | `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
-| `tool/shell-bash` | `workspace` | `bash` | Shell 命令执行 |
+| `tool/shell-bash` | `workspace`, `credentials`（L0 默认 `integrations`） | `bash` | Shell；L1 `scopedEnv` 或 `/env add` 注入 gh/npm 等 token，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/web-search-auto` | `credentials?` | `web_search` | 可选：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
 | `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索 |
 | `tool/web-search-duckduckgo` | — | `web_search` | DuckDuckGo HTML 抓取，无需 key |
@@ -397,9 +397,9 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `TurnEnvelope.Workspace`（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
-| `credentials/static` | `credentials.Store` | YAML 级 `env:` ref（`apiKeyRef` 等）；`Resolve(ctx, GlobalScope, ref)`；进程 env + `config.env` + 可选 `encryptedFile` / dotenv |
+| `credentials/static` | `credentials.Store` | YAML 级 `env:` ref；`Resolve(ctx, GlobalScope, ref)`。详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/env` | `credentials.Store` | **已废弃别名**，等同 `credentials/static` |
-| `credentials/integrations` | `credentials.Store` | MCP/OpenAPI 的 `env:` ref；`Resolve(ctx, scope, ref)` + manifest allowlist（scope：`mcp.<server>` / `openapi.<api>`）；默认读 `global:mcp.json` / `global:api.json`；`/env` 写入密文库 |
+| `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`、`EnvPairs`（shell env）、manifest allowlist、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
 | `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储 |
@@ -424,7 +424,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | `session/commands` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |
 | `hook/turn-continue` | `/status` |
-| `credentials/integrations` | `/env`（查看缓存；`/env add mcp.<server> KEY=VALUE` 或 `openapi.<api> KEY=VALUE` 写入 scoped 密文并校验；`/env -u` 重读密文库与 manifest） |
+| `credentials/integrations` | `/env` | scoped 密文；SCOPE 含 `mcp.*`、`openapi.*`、`shell-bash.*`，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/mcp` | `/mcp`（查看工具；`/mcp add <name> <json>` 写入 `mcp.json` 并探活校验；`/mcp -u` 重读配置） |
 | `tool/openapi` | `/openapi`（查看工具；`/openapi add <name> <json>` 写入 `api.json` 并校验；`/openapi -u` 重读配置） |
 | `tool/shell-bash` | `/shell`、`/sh`（本地执行 shell 命令，不经过模型） |

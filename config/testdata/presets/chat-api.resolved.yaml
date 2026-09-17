@@ -591,6 +591,7 @@ tool.shell-bash.default:
         timeoutSeconds: 60
         workDir: work
     deps:
+        credentials: credentials.integrations
         workspace: workspace.default
     use: tool/shell-bash
 tool.skill.default:

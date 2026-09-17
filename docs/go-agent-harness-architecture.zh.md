@@ -493,7 +493,7 @@ MVP 配置使用两层 YAML 合并后得到 `pluginkit` root graph：
 2. **字段级**（深合并时）：标量覆盖；列表整体覆盖；`key+: [...]` 追加到 base 列表尾部；`key-: [...]` 按值从 base 列表删减（精确匹配元素）；`key: null` 删除 map 键。同一 overlay 内按「覆盖 → `+` 追加 → `-` 删减」顺序应用。
 3. **实例禁用**：overlay 顶层 `instance.id: null` 表示禁用一个已有实例，loader 会自动从其他 `deps` 中清理指向它的引用，并沿用空 deps 级联裁剪。L0/base 中的顶层空实例仍是无效配置。
 4. **`extends:`**（仅 YAML 层）：节点可 `extends: other.instance.id` 继承另一实例，在 `ResolveYAML` 展开后剥掉该键；需环检测。与深合并共用同一套 merge 函数。
-5. **插值**（解析后的树上）：`${env:VAR}` gate 后展开为 `env:VAR`；`${var:VAR}` gate 后展开为明文；`env:VAR` 加载期不处理、运行期由 `credentials.Store` 解析。另支持 `${file:相对路径}`（路径相对当前 overlay 文件所在目录）。loader 不读 `.env` 文件；`config.env` 经可注入的 `GraphEnvSource` 参与 gate。dump / 日志须脱敏 `${var:}` 展开的敏感值。
+5. **插值**（解析后的树上）：`${env:VAR}` gate 后展开为 `env:VAR`；`${var:VAR}` gate 后展开为明文；`env:VAR` 加载期不处理、运行期由 `credentials.Store` 解析（设计见 [guides/credentials.zh.md](guides/credentials.zh.md)）。另支持 `${file:相对路径}`（路径相对当前 overlay 文件所在目录）。loader 不读 `.env` 文件；`config.env` 经可注入的 `GraphEnvSource` 参与 gate。dump / 日志须脱敏 `${var:}` 展开的敏感值。
 6. 以 `runner.default` 为 root，裁剪从 root 可达的顶层实例（含 inline deps 中对共享实例的引用）。
 7. 输出 merged graph 后调用 `build.Build`。
 
@@ -1123,7 +1123,7 @@ plugins/tool/
 |---|---|---|
 | `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`read` 分页、`grep`/`find`/`ls` 可调 `limit`，`grep` 支持 `literal`/`context`，`find` 支持 `**`，`grep`/`find` 尊重 `.gitignore`；`edit` 对原文批量匹配；详见 [plugin-catalog.zh.md](plugin-catalog.zh.md) |
 | `tool/fs-memory` | 同上 | 内存 FS，测试与冒烟 |
-| `tool/shell-bash` | `bash` | bash 执行，依赖 `workspace` |
+| `tool/shell-bash` | `bash` | bash 执行；L0 默认 `deps.credentials.integrations`，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/web-fetch-http` | `web_fetch` | HTTP 抓取，无需凭据 |
 | `tool/web-search-tavily` | `web_search` | Tavily 搜索（L0 默认），缺 key 不阻断构造 |
 | `tool/web-search-exa` | `web_search` | Exa 搜索（可选替代） |

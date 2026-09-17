@@ -271,6 +271,102 @@ func TestIntegrationsManifestLazyRefresh(t *testing.T) {
 	}
 }
 
+func TestScopedEnvShellEnvPairs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewIntegrations(Config{
+		EncryptedFile: EncryptedFileDisabled,
+		ManifestFiles: []string{manifestPath},
+		ScopedEnv: map[string]map[string]string{
+			"shell-bash.gh": {"GH_TOKEN": "gh-test"},
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, ok := store.(credentials.EnvPairResolver)
+	if !ok {
+		t.Fatal("expected EnvPairResolver")
+	}
+	pairs, err := resolver.EnvPairs(context.Background(), "shell-bash.gh", credentials.EnvPairsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pairs) != 1 || pairs[0] != "GH_TOKEN=gh-test" {
+		t.Fatalf("pairs=%v", pairs)
+	}
+	secret, err := store.Resolve(context.Background(), "shell-bash.gh", "env:GH_TOKEN")
+	if err != nil || secret.Value != "gh-test" {
+		t.Fatalf("resolve: err=%v value=%q", err, secret.Value)
+	}
+}
+
+func TestEncryptedOverridesScopedEnv(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const secretsPass = "agentkit-test-secrets-passphrase"
+	store, err := NewIntegrations(Config{
+		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
+		ManifestFiles: []string{manifestPath},
+		Env: map[string]string{
+			rtcredentials.SecretsMasterKeyEnv: secretsPass,
+		},
+		ScopedEnv: map[string]map[string]string{
+			"shell-bash.gh": {"GH_TOKEN": "from-config"},
+		},
+	}, EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cmd := store.(agentkit.CommandProvider).Commands()[0]
+	if _, err := cmd.CommandExec(ctx, "add shell-bash.gh GH_TOKEN=from-enc"); err != nil {
+		t.Fatalf("env add: %v", err)
+	}
+	secret, err := store.Resolve(ctx, "shell-bash.gh", "env:GH_TOKEN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "from-enc" {
+		t.Fatalf("value=%q, want from-enc (encrypted overrides scopedEnv)", secret.Value)
+	}
+}
+
+func TestIntegrationsEnvPairs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("AGENTKIT_MANIFEST_A=pair-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := integrationTestStore(t, dir, envPath, "AGENTKIT_MANIFEST_A")
+	resolver, ok := store.(credentials.EnvPairResolver)
+	if !ok {
+		t.Fatal("integrations store must implement EnvPairResolver")
+	}
+	pairs, err := resolver.EnvPairs(context.Background(), integrationTestScope, credentials.EnvPairsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pairs) != 1 || pairs[0] != "AGENTKIT_MANIFEST_A=pair-value" {
+		t.Fatalf("pairs=%v", pairs)
+	}
+	override, err := resolver.EnvPairs(context.Background(), integrationTestScope, credentials.EnvPairsOptions{
+		Keys: []string{"AGENTKIT_MANIFEST_A"},
+	})
+	if err != nil || len(override) != 1 {
+		t.Fatalf("override pairs=%v err=%v", override, err)
+	}
+}
+
 func TestEnvReloadCommand(t *testing.T) {
 	t.Parallel()
 

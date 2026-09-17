@@ -3,6 +3,7 @@ package credentials
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
@@ -14,6 +15,9 @@ type staticStore struct {
 
 // NewStatic registers credentials/env for LLM, platform, and other YAML-static plugins.
 func NewStatic(cfg Config, deps EnvDeps) (credentials.Store, error) {
+	if len(cfg.ScopedEnv) > 0 {
+		slog.Warn("credentials/env: config.scopedEnv is ignored; use credentials/integrations for scoped secrets")
+	}
 	backend, err := newEnvStore(cfg, deps, EncryptedFileDisabled, true)
 	if err != nil {
 		return nil, err

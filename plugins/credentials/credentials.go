@@ -34,6 +34,8 @@ type Config struct {
 	ProcessEnv *bool `json:"processEnv,omitempty"`
 	// ManifestFiles lists workspace paths scanned for per-scope env: allowlists (integrations only).
 	ManifestFiles []string `json:"manifestFiles,omitempty"`
+	// ScopedEnv preloads integration secrets per scope (L1 config); enc /env add overrides same key.
+	ScopedEnv map[string]map[string]string `json:"scopedEnv,omitempty"`
 }
 
 type EnvDeps struct {
@@ -51,6 +53,7 @@ type envStore struct {
 	mu              sync.RWMutex
 	files           map[string]string
 	encrypted       map[string]string
+	configScoped    map[string]string
 }
 
 func init() {
@@ -118,6 +121,21 @@ func (s *envStore) lookupValue(ctx context.Context, ref string) (string, error) 
 		return "", fmt.Errorf("credential %q not found", key)
 	}
 	return value, nil
+}
+
+func (s *envStore) lookupStorageValue(storageKey string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if value := s.encrypted[storageKey]; value != "" {
+		return value, true
+	}
+	if value := s.files[storageKey]; value != "" {
+		return value, true
+	}
+	if value := s.configScoped[storageKey]; value != "" {
+		return value, true
+	}
+	return "", false
 }
 
 func (s *envStore) resolvePaths(ctx context.Context) ([]string, error) {

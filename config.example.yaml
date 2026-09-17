@@ -22,16 +22,87 @@ workspace.default:
     local: .agentkit
     scope: local
 
-# 示例：加密密钥库（/env add 写入 global:secrets.enc.json）
-# credentials.integrations:
-#   use: credentials/integrations
-#   config:
-#     encryptedFile: global:secrets.enc.json
-#     env:
-#       AGENTKIT_SECRETS_KEY: "<passphrase>"
+# Flat 密钥走 credentials.default；scopedEnv 只写在 credentials.integrations（写在 default 会被忽略）。
 #
-# 在聊天或 CLI 执行：/env add OPENAI_API_KEY=sk-...
-# MCP/OpenAPI 的 mcp.json / api.json 写 env:OPENAI_API_KEY；LLM 的 apiKeyRef 走 credentials.default（static）。
+# 加密库路径 L0 已设 global:secrets.enc.json（local 即 .agentkit/secrets.enc.json），两处实例共用。
+#
+# 【0】解密口令（写 enc 前必配，勿提交仓库）
+# export AGENTKIT_SECRETS_KEY='your-passphrase'
+# credentials.default:
+#   config:
+#     env:
+#       AGENTKIT_SECRETS_KEY: ${env:AGENTKIT_SECRETS_KEY}
+# credentials.integrations:
+#   config:
+#     env:
+#       AGENTKIT_SECRETS_KEY: ${env:AGENTKIT_SECRETS_KEY}
+#
+# 【1】Flat token — LLM / web-search（scope 为空，键名即 env 名）
+# 方式 A：shell export（credentials.default 会读 process env）
+#   export OPENAI_API_KEY=sk-...
+#   export TAVILY_API_KEY=tvly-...
+# 方式 B：L1 写进 config.env（适合 CI；仍走 credentials.default）
+# credentials.default:
+#   config:
+#     env:
+#       OPENAI_API_KEY: ${env:OPENAI_API_KEY}
+#       ANTHROPIC_API_KEY: ${env:ANTHROPIC_API_KEY:-}
+#       TAVILY_API_KEY: ${env:TAVILY_API_KEY:-}
+# 方式 C：已用其他工具写入 secrets.enc.json 的 flat 条目 "OPENAI_API_KEY"（与 scoped 同文件）
+#
+# 【2】Scoped token — MCP / OpenAPI / bash（enc 键名 SCOPE::KEY；或 L1 scopedEnv，见下）
+# 运行期写入 enc（需 AGENTKIT_SECRETS_KEY）：
+#   /env add mcp.knowledge KNOWLEDGE_API_KEY=...
+#   /env add shell-bash.gh GH_TOKEN=ghp_...
+#
+# L1 直接配 gh / npm token（推荐本地开发；首 token 自动对应 scope shell-bash.gh / shell-bash.npm）：
+# credentials.integrations:
+#   config:
+#     env:
+#       AGENTKIT_SECRETS_KEY: ${env:AGENTKIT_SECRETS_KEY}
+#     scopedEnv:
+#       shell-bash.gh:
+#         GH_TOKEN: ${env:GH_TOKEN}
+#       shell-bash.npm:
+#         NPM_TOKEN: ${env:NPM_TOKEN}
+# （L0 已 deps.credentials.integrations，无需再配 tool.shell-bash）
+# bash 首 token 定 scope，注入该 scope 下已配置的全部变量，无需 config.commands。
+#
+# 【3】bash：仅有 scoped 密钥可注入时裁剪 env + token；其它命令仍为全量 os.Environ()。
+# MCP/OpenAPI 的 mcp.json / api.json 只写 env:VAR 名；值用【2】。LLM 用【1】+ credentials.default。
+
+# 示例：加密密钥库（与上【0】相同，可只保留一处 AGENTKIT_SECRETS_KEY）
+# credentials.default:
+#   config:
+#     env:
+#       AGENTKIT_SECRETS_KEY: ${var:AGENTKIT_SECRETS_KEY}
+#
+# credentials.integrations:
+#   config:
+#     encryptedFile: global:secrets.enc.json   # 与 L0 一致时可省略
+#     env:
+#       AGENTKIT_SECRETS_KEY: ${var:AGENTKIT_SECRETS_KEY}
+
+# 示例：自定义 bash（tool/shell-bash）
+# L0 已 deps.credentials.integrations；配置 token 后，gh/npm 等命令会裁剪 env 并注入变量，其它命令仍为全量 os.Environ()。
+#
+# credentials.integrations:
+#   config:
+#     scopedEnv:
+#       shell-bash.gh:
+#         GH_TOKEN: ${env:GH_TOKEN}
+#       shell-bash.npm:
+#         NPM_TOKEN: ${env:NPM_TOKEN}
+#
+# tool.shell-bash.default:
+#   config:
+#     workDir: work
+#     timeoutSeconds: 120
+#   # deps.credentials 已在 L0；仅需在 integrations 配 scopedEnv 或 /env add
+#
+# 命令首 token 为 gh / npm 时自动用 scope shell-bash.gh / shell-bash.npm，无需 commands 映射。
+# 极少数情况可用 config.commands 覆盖要注入的变量名列表（一般不必）。
+# 详见 docs/guides/credentials.zh.md。
 
 # 示例：LLM 配置
 #

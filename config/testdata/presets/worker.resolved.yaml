@@ -21,6 +21,7 @@ agent.catalogCommands.default:
     deps:
         loop: loop.default
         sessionStore: sessionStore.default
+        workspace: workspace.default
     use: agent/catalog-commands
 agent.cursor.default:
     config:
@@ -28,11 +29,14 @@ agent.cursor.default:
         autoApprove: false
         command:
             - agent
+            - --trust
             - acp
+        cwd: work
         env:
             CURSOR_ENABLE: "1"
             NO_OPEN_BROWSER: "1"
         id: cursor
+        releaseSubprocessAfterTurn: true
     deps:
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -66,7 +70,7 @@ bootstrap.shell.default:
     config:
         commands:
             - echo "init"
-        workDir: local:.
+        workDir: local:work
     deps:
         workspace: workspace.default
     use: bootstrap/shell
@@ -178,7 +182,6 @@ hooks.default:
     deps:
         providers:
             - hook.before-step.default
-            - hook.turn-continue.default
             - hook.session-index.default
             - hook.background-review.default
     use: hooks/runtime
@@ -213,10 +216,12 @@ llm.default:
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
         model: gpt-5.4
+        responseHeaderTimeoutSeconds: 60
         retry:
             provider:
                 maxRetries: 0
                 maxRetryDelayMs: 60000
+        timeoutSeconds: 180
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
@@ -228,12 +233,29 @@ llm.fallback:
     deps:
         provider: llm.default
     use: llm/fallback
+llm.openai:
+    config:
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 llm.review:
     config:
         api: chat
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
         model: gpt-5.4-mini
+        responseHeaderTimeoutSeconds: 60
+        timeoutSeconds: 180
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
@@ -366,6 +388,7 @@ prompt.subagent.default:
     use: prompt/assembler/default
 prompt.subagents.default:
     deps:
+        llm: llm.fallback
         subagent: subagent.default
     use: prompt/section/subagents
 prompt.worker.default:
@@ -399,6 +422,7 @@ runner.default:
             - learning.dreamSweep
         sessionStore: sessionStore.default
         telemetry: telemetry.default
+        workspace: workspace.default
     use: runner
 schedule.cron:
     config:
@@ -457,7 +481,7 @@ subagent.inprocess.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.fallback
+        llm: llm.openai
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default
@@ -498,7 +522,7 @@ tool.finish.default:
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: .
+        root: work
         unrestricted: true
     deps:
         workspace: workspace.default
@@ -507,7 +531,7 @@ tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: .
+        root: work
         tools:
             - read
             - grep
@@ -521,6 +545,13 @@ tool.memory.default:
     deps:
         memory: memory.default
     use: tool/memory
+tool.recognize.default:
+    config:
+        model: gpt-5.4-mini
+    deps:
+        llm: llm.openai
+        workspace: workspace.default
+    use: tool/recognize
 tool.schedule.default:
     config:
         maxJobs: 32
@@ -544,6 +575,7 @@ tool.shell-bash.default:
         timeoutSeconds: 60
         workDir: work
     deps:
+        credentials: credentials.integrations
         workspace: workspace.default
     use: tool/shell-bash
 tool.skill.default:
@@ -569,6 +601,12 @@ tool.web-fetch-http.default:
 tools.default:
     config:
         defaultTimeoutSeconds: 120
+        enabled: auto
+        listing: auto
+        listingMaxTokens: 4000
+        maxSearchLimit: 25
+        searchDefaultLimit: 5
+        thresholdPct: 5
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -581,6 +619,7 @@ tools.default:
             - policy.dangerous-shell.default
         toolPacks:
             - tool.fs-workspace.default
+            - tool.recognize.default
         tools:
             - tool.shell-bash.default
             - tool.skill.default
@@ -592,7 +631,7 @@ tools.default:
             - tool.session-query.default
             - tool.memory.default
             - tool.schedule.default
-    use: tools/runtime
+    use: tools/deferred
 tools.subagent.default:
     config:
         defaultTimeoutSeconds: 120
@@ -610,6 +649,7 @@ tools.subagent.default:
 tools.worker.default:
     config:
         defaultTimeoutSeconds: 120
+        enabled: auto
         toolTimeouts:
             ask_user: 900
             delegate: 900
@@ -622,6 +662,7 @@ tools.worker.default:
             - policy.dangerous-shell.default
         toolPacks:
             - tool.fs-workspace.default
+            - tool.recognize.default
         tools:
             - tool.shell-bash.default
             - tool.skill.default
@@ -633,10 +674,12 @@ tools.worker.default:
             - tool.schedule.default
             - tool.todo.default
             - tool.finish.default
-    use: tools/runtime
+    use: tools/deferred
 workspace.default:
     config:
         global: ~/.agentkit
         local: .agentkit
         scope: local
+        uploadSubdir: upload
+        workDir: work
     use: workspace/default

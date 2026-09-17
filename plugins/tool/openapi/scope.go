@@ -1,10 +1,8 @@
 package openapi
 
-import "strings"
-
-const credentialScopePrefix = "openapi."
+import rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 
 // CredentialScope returns the scopedStore scope for an api.json apis entry name.
 func CredentialScope(apiName string) string {
-	return credentialScopePrefix + strings.TrimSpace(apiName)
+	return rtcredentials.OpenAPICredentialScope(apiName)
 }
