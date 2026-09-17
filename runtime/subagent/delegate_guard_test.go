@@ -232,9 +232,16 @@ func TestLoopDelegateAsyncReturnsBeforeSlowOutbound(t *testing.T) {
 		t.Fatal(err)
 	}
 	loop := spawner.(*LoopAgentSpawner)
-	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error { return nil })
+	submitDone := make(chan struct{}, 1)
+	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error {
+		submitDone <- struct{}{}
+		return nil
+	})
 
 	block := make(chan struct{})
+	var unblockOnce sync.Once
+	unblockOutbound := func() { unblockOnce.Do(func() { close(block) }) }
+	t.Cleanup(unblockOutbound)
 	ctx := loopParentCtx()
 	open, err := store.Get(ctx, agentkit.SessionID("cli:default"))
 	if err != nil {
@@ -257,7 +264,12 @@ func TestLoopDelegateAsyncReturnsBeforeSlowOutbound(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		t.Fatalf("async delegate blocked %v on outbound", elapsed)
 	}
-	close(block)
+	unblockOutbound()
+	select {
+	case <-submitDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("async delegate did not finish after outbound unblocked")
+	}
 }
 
 func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
