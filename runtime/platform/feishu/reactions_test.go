@@ -65,20 +65,10 @@ func TestApplyTurnEndReactionsFallsBackToTurnTrigger(t *testing.T) {
 }
 
 func TestBotReplyMessageIDPrefersProgressCard(t *testing.T) {
-	st := &streamState{
-		bodyHandle:     &feishuPreviewHandle{messageID: "body-1"},
+	st := streamStateLiteral(streamStateData{
 		progressHandle: &feishuPreviewHandle{messageID: "progress-1"},
-	}
+	})
 	if id := botReplyMessageID(st); id != "progress-1" {
 		t.Fatalf("messageID = %q, want progress-1", id)
-	}
-}
-
-func TestBotReplyMessageIDFallsBackToBodyCard(t *testing.T) {
-	st := &streamState{
-		bodyHandle: &feishuPreviewHandle{messageID: "body-1"},
-	}
-	if id := botReplyMessageID(st); id != "body-1" {
-		t.Fatalf("messageID = %q, want body-1", id)
 	}
 }

@@ -90,9 +90,9 @@ func TestReleaseSubprocessNoDeadlock(t *testing.T) {
 		close(done)
 	}()
 
-	b.mu.Lock()
-	b.proc = &subprocess{done: done}
-	b.mu.Unlock()
+	adopted := make(chan struct{})
+	b.connSend(adoptProcOp{proc: &subprocess{done: done}, done: adopted})
+	<-adopted
 
 	finished := make(chan struct{})
 	go func() {

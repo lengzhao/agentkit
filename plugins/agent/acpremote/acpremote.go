@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
@@ -53,7 +54,8 @@ type Runtime struct {
 	cfg          Config
 	workspace    workspace.Service
 	sessionStore agentkit.SessionStore
-	bridge       *bridge
+	sessionMCP   capacp.SessionMCPProvider
+	bridges      sync.Map // agentkit.SessionID -> *bridge
 }
 
 func init() {
@@ -87,8 +89,21 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		cfg:          cfg,
 		workspace:    deps.Workspace,
 		sessionStore: deps.SessionStore,
-		bridge:       newBridge(cfg, deps.Workspace, deps.SessionMCP),
+		sessionMCP:   deps.SessionMCP,
 	}, nil
+}
+
+func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
+	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.sessionMCP))
+	return v.(*bridge)
+}
+
+func (a *Runtime) dropBridge(sessionID agentkit.SessionID) {
+	if v, ok := a.bridges.LoadAndDelete(sessionID); ok {
+		br := v.(*bridge)
+		_ = br.Close()
+		br.stop()
+	}
 }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
@@ -115,6 +130,9 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	if emit == nil {
 		return fmt.Errorf("turn requires outbound emit")
 	}
+	// Async wrapping is owned by forwardParentEmit (loop-agent / inprocess),
+	// which also holds the AsyncEmitter.Close path. Doing it here would double-
+	// wrap and leak a goroutine with no closer.
 
 	if a.sessionStore != nil {
 		sess, err := a.sessionStore.Get(ctx, sessionID)
@@ -140,23 +158,24 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		endCtx := context.WithoutCancel(ctx)
 		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, session.TurnEndData{Steps: 1})
 		if a.cfg.ReleaseSubprocessAfterTurn {
-			a.bridge.releaseSubprocess()
+			a.bridgeFor(sessionID).releaseSubprocess()
 		}
 	}()
 
+	brid := a.bridgeFor(sessionID)
 	acpSessionID, err := a.ensureACPSessionWithAuth(ctx, emit, sessionID)
 	if err != nil {
 		return err
 	}
 
 	emitter := newUpdateEmitter(ctx, sessionID, a.id, emit, input.Message)
-	a.bridge.setTurn(turnState{
+	brid.setTurn(turnState{
 		ctx:       ctx,
 		emitter:   emitter,
 		sessionID: sessionID,
 		agentID:   a.id,
 	})
-	defer a.bridge.clearTurn()
+	defer brid.clearTurn()
 
 	prompt := modelMessageToPrompt(input.Message)
 	if len(prompt) == 0 {
@@ -167,18 +186,18 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		resp acpPromptResponse
 		err  error
 	}
-	promptCtx, endPrompt := a.bridge.beginPromptContext(ctx)
+	promptCtx, endPrompt := brid.beginPromptContext(ctx)
 	defer endPrompt()
 
 	done := make(chan promptResult, 1)
 	go func() {
-		resp, err := a.bridge.prompt(promptCtx, acpSessionID, prompt)
+		resp, err := brid.prompt(promptCtx, acpSessionID, prompt)
 		done <- promptResult{resp: resp, err: err}
 	}()
 
 	select {
 	case <-ctx.Done():
-		_ = a.bridge.cancel(context.Background(), acpSessionID)
+		_ = brid.cancel(context.Background(), acpSessionID)
 		return ctx.Err()
 	case result := <-done:
 		if result.err != nil {

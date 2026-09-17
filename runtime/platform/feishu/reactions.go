@@ -80,11 +80,6 @@ func botReplyMessageID(st *streamState) string {
 			return id
 		}
 	}
-	if h, ok := st.bodyHandle.(*feishuPreviewHandle); ok && h != nil {
-		if id := strings.TrimSpace(h.messageID); id != "" {
-			return id
-		}
-	}
 	for i := len(st.cards) - 1; i >= 0; i-- {
 		if st.cards[i].Kind != streamCardBody {
 			continue

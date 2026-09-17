@@ -797,7 +797,7 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 
 **出站可观测性**：Spawner 用 `forwardParentEmit` 包一层父 turn 的 `OutboundEmit`（来自 `ctx` 的 `KeyOutboundEmit`）：转发 `toolcall_start` / `toolcall_end` / `toolcall_delta`、限长 `thinking_delta`（单块 ≤96 rune、合计 ≤480 rune，**含将子 Agent `text_delta` 重映射为 `thinking_delta`**，供过程卡思考区展示而不进入主回复正文）、`tool/result`；原始 `text_delta` 不会作为正文 lane 转发。route 改回父 delivery session，避免主 Agent 的正文流与子 Agent 交错。飞书 / Lark 异步过程卡与同步过程区共用 `applyRichStreamEvent` 渲染上述信号。`platform/chat-api` 启用 `debugUi` 时仍主要在 `toolcall_end` 时发 SSE `tool_call`（参数完整）与 `tool_result`（正文限长 1024 rune）；`OutboundEvent.AgentID` 用于在 `/debug/` 标注 `subagent · <name>`。详见 [guides/subagent.zh.md §6](guides/subagent.zh.md#6-跑起来)。
 
-**并发边界**：一次 `delegate` 仍只启动一个子 Agent。`subagent/inprocess` 同步阻塞至子 Agent 结束；`subagent/loop-agent` 支持 `async: true`，让主 turn 先结束，但同一父 session 默认只允许 1 个 running 的 async job。并行 fan-out 需要更多并发控制，并先解决共享 workspace 的写冲突——那是与 `runner.maxConcurrentTurns` 默认 1 同源的问题。
+**并发边界**：一次 `delegate` 仍只启动一个子 Agent。`subagent/inprocess` 同步阻塞至子 Agent 结束；`subagent/loop-agent` 支持 `async: true`，让主 turn 先结束。同一父 session 的 async job 默认不限制，可用 `maxConcurrentJobsPerSession` 限流（per-parent buffered channel）。`agent/acp-remote` 按 harness child session 持有独立 bridge，避免多 job 共享 `promptCancel`。同 session turn 顺序由 `runner` 的 per-session FIFO 保证，Loop 不再持 per-session mutex。大规模并行 fan-out 仍须考虑共享 workspace 写冲突与 `runner.maxConcurrentTurns`。
 
 ### 5.11 MCP 动态工具
 

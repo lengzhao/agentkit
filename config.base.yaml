@@ -98,7 +98,7 @@ platform.feishu:
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
     allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
-    progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch；compact=分卡进度
+    progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch（thinking/tool/正文同卡）
     showToolProgress: true
     showThinking: true
     asyncSubagentProgressCard: true  # async delegate 时单独一张后台过程卡
@@ -116,7 +116,7 @@ platform.lark:
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
     allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
-    progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch；compact=分卡进度
+    progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch（thinking/tool/正文同卡）
     showToolProgress: true
     showThinking: true
     asyncSubagentProgressCard: true

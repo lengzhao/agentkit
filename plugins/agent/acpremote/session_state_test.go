@@ -9,7 +9,7 @@ import (
 func TestSessionStateCatalog(t *testing.T) {
 	t.Parallel()
 
-	state := &sessionState{}
+	state := newSessionState()
 	modelCategory := acp.SessionConfigOptionCategoryModel
 	state.applyBootstrap([]acp.SessionConfigOption{
 		{
@@ -42,7 +42,7 @@ func TestSessionStateCatalog(t *testing.T) {
 func TestFindConfigOption(t *testing.T) {
 	t.Parallel()
 
-	state := &sessionState{}
+	state := newSessionState()
 	modelCategory := acp.SessionConfigOptionCategoryModel
 	state.applyBootstrap([]acp.SessionConfigOption{
 		{
@@ -73,7 +73,7 @@ func TestFindConfigOption(t *testing.T) {
 func TestApplyBootstrap(t *testing.T) {
 	t.Parallel()
 
-	state := &sessionState{}
+	state := newSessionState()
 	state.applyBootstrap([]acp.SessionConfigOption{
 		{
 			Boolean: &acp.SessionConfigOptionBoolean{

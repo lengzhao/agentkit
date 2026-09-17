@@ -15,7 +15,8 @@ func (a *Runtime) ACPCommandCatalog(ctx context.Context, sessionID agentkit.Sess
 	if _, err := a.ensureACPSessionWithAuth(ctx, nil, sessionID); err != nil {
 		return agentkit.ACPCommandCatalog{}, err
 	}
-	state, ok := a.bridge.sessionState(sessionID)
+	brid := a.bridgeFor(sessionID)
+	state, ok := brid.sessionState(sessionID)
 	if !ok {
 		return agentkit.ACPCommandCatalog{}, nil
 	}
@@ -32,7 +33,8 @@ func (a *Runtime) SetACPConfigOption(ctx context.Context, sessionID agentkit.Ses
 	if err != nil {
 		return "", err
 	}
-	state, ok := a.bridge.sessionState(sessionID)
+	brid := a.bridgeFor(sessionID)
+	state, ok := brid.sessionState(sessionID)
 	if !ok {
 		return "", fmt.Errorf("acp session state is not available")
 	}
@@ -40,7 +42,7 @@ func (a *Runtime) SetACPConfigOption(ctx context.Context, sessionID agentkit.Ses
 	if !ok {
 		return "", fmt.Errorf("unknown config option %q (try /acp <agent> config)", key)
 	}
-	resp, err := a.bridge.setConfigOption(ctx, acpSessionID, opt, value)
+	resp, err := brid.setConfigOption(ctx, acpSessionID, opt, value)
 	if err != nil {
 		return "", err
 	}

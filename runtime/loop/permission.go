@@ -184,31 +184,37 @@ func (c *Control) registerPermissionPending(req permission.Request, capab permis
 		replies:    make(chan permission.Reply, 1),
 		superseded: make(chan struct{}),
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.permissionPending != nil {
-		return nil, fmt.Errorf("permission pending already exists: %s", c.permissionPending.requestID)
+	var existing *pendingPermission
+	c.sync(func(st *controlState) {
+		existing = st.permissionPending
+		if existing != nil {
+			return
+		}
+		st.permissionPending = pending
+	})
+	if existing != nil {
+		return nil, fmt.Errorf("permission pending already exists: %s", existing.requestID)
 	}
-	c.permissionPending = pending
 	return pending, nil
 }
 
 func (c *Control) clearPermissionPending() {
-	c.mu.Lock()
-	if c.permissionPending != nil {
-		c.permissionPending.finish()
-	}
-	c.permissionPending = nil
-	c.mu.Unlock()
+	c.sync(func(st *controlState) {
+		if st.permissionPending != nil {
+			st.permissionPending.finish()
+		}
+		st.permissionPending = nil
+	})
 }
 
 func (c *Control) DeliverPermissionReply(_ agentkit.SessionID, reply permission.Reply) bool {
 	if strings.TrimSpace(reply.RequestID) == "" {
 		return false
 	}
-	c.mu.Lock()
-	pending := c.permissionPending
-	c.mu.Unlock()
+	var pending *pendingPermission
+	c.sync(func(st *controlState) {
+		pending = st.permissionPending
+	})
 	if pending == nil {
 		return false
 	}
@@ -223,9 +229,10 @@ func (c *Control) DeliverPermissionReply(_ agentkit.SessionID, reply permission.
 
 func (c *Control) SupersedePending(_ agentkit.SessionID, reason string) bool {
 	_ = reason
-	c.mu.Lock()
-	pending := c.permissionPending
-	c.mu.Unlock()
+	var pending *pendingPermission
+	c.sync(func(st *controlState) {
+		pending = st.permissionPending
+	})
 	if pending == nil {
 		return false
 	}

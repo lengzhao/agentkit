@@ -2,73 +2,108 @@ package acpremote
 
 import (
 	"strings"
-	"sync"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 )
 
 type sessionState struct {
-	mu            sync.RWMutex
+	ch chan func(*sessionStateData)
+}
+
+type sessionStateData struct {
 	configOptions []acp.SessionConfigOption
 	commands      []acp.AvailableCommand
 	modes         *acp.SessionModeState
 }
 
+func newSessionState() *sessionState {
+	s := &sessionState{ch: make(chan func(*sessionStateData))}
+	go s.loop()
+	return s
+}
+
+func (s *sessionState) loop() {
+	var data sessionStateData
+	for fn := range s.ch {
+		fn(&data)
+	}
+}
+
+// Stop retires the owner goroutine. Safe to call once; the bridge calls it
+// when its connLoop exits so sessionState goroutines do not leak.
+func (s *sessionState) Stop() {
+	close(s.ch)
+}
+
+func (s *sessionState) sync(fn func(*sessionStateData)) {
+	done := make(chan struct{})
+	s.ch <- func(data *sessionStateData) {
+		fn(data)
+		close(done)
+	}
+	<-done
+}
+
 func (s *sessionState) applyBootstrap(configOptions []acp.SessionConfigOption, modes *acp.SessionModeState) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(configOptions) > 0 {
-		s.configOptions = append([]acp.SessionConfigOption(nil), configOptions...)
-	}
-	if modes != nil {
-		copied := *modes
-		s.modes = &copied
-	}
+	s.sync(func(data *sessionStateData) {
+		if len(configOptions) > 0 {
+			data.configOptions = append([]acp.SessionConfigOption(nil), configOptions...)
+		}
+		if modes != nil {
+			copied := *modes
+			data.modes = &copied
+		}
+	})
 }
 
 func (s *sessionState) applyUpdate(update acp.SessionUpdate) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	switch {
-	case update.ConfigOptionUpdate != nil:
-		s.configOptions = append([]acp.SessionConfigOption(nil), update.ConfigOptionUpdate.ConfigOptions...)
-	case update.AvailableCommandsUpdate != nil:
-		s.commands = append([]acp.AvailableCommand(nil), update.AvailableCommandsUpdate.AvailableCommands...)
-	}
+	s.sync(func(data *sessionStateData) {
+		switch {
+		case update.ConfigOptionUpdate != nil:
+			data.configOptions = append([]acp.SessionConfigOption(nil), update.ConfigOptionUpdate.ConfigOptions...)
+		case update.AvailableCommandsUpdate != nil:
+			data.commands = append([]acp.AvailableCommand(nil), update.AvailableCommandsUpdate.AvailableCommands...)
+		}
+	})
 }
 
 func (s *sessionState) catalog() agentkit.ACPCommandCatalog {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := agentkit.ACPCommandCatalog{
-		AvailableCommands: make([]agentkit.ACPCommandInfo, 0, len(s.commands)),
-		ConfigOptions:     make([]agentkit.ACPConfigOptionInfo, 0, len(s.configOptions)),
-	}
-	for _, cmd := range s.commands {
-		out.AvailableCommands = append(out.AvailableCommands, agentkit.ACPCommandInfo{
-			Name:        cmd.Name,
-			Description: cmd.Description,
-		})
-	}
-	for _, opt := range s.configOptions {
-		if info, ok := configOptionInfo(opt); ok {
-			out.ConfigOptions = append(out.ConfigOptions, info)
+	var out agentkit.ACPCommandCatalog
+	s.sync(func(data *sessionStateData) {
+		out = agentkit.ACPCommandCatalog{
+			AvailableCommands: make([]agentkit.ACPCommandInfo, 0, len(data.commands)),
+			ConfigOptions:     make([]agentkit.ACPConfigOptionInfo, 0, len(data.configOptions)),
 		}
-	}
+		for _, cmd := range data.commands {
+			out.AvailableCommands = append(out.AvailableCommands, agentkit.ACPCommandInfo{
+				Name:        cmd.Name,
+				Description: cmd.Description,
+			})
+		}
+		for _, opt := range data.configOptions {
+			if info, ok := configOptionInfo(opt); ok {
+				out.ConfigOptions = append(out.ConfigOptions, info)
+			}
+		}
+	})
 	return out
 }
 
 func (s *sessionState) findConfigOption(key string) (configOptionRef, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	key = strings.ToLower(strings.TrimSpace(key))
-	for _, opt := range s.configOptions {
-		if ref, ok := matchConfigOption(opt, key); ok {
-			return ref, true
+	var ref configOptionRef
+	var ok bool
+	s.sync(func(data *sessionStateData) {
+		for _, opt := range data.configOptions {
+			if matched, matchOK := matchConfigOption(opt, key); matchOK {
+				ref = matched
+				ok = true
+				return
+			}
 		}
-	}
-	return configOptionRef{}, false
+	})
+	return ref, ok
 }
 
 type configOptionRef struct {

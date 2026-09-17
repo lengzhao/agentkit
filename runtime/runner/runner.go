@@ -13,11 +13,11 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/session"
-	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -56,25 +56,25 @@ type Deps struct {
 	Workspace    workspace.Service         `json:"workspace,omitempty"`
 	Schedules    []capschedule.Runtime     `json:"schedules,omitempty"`
 	Init         []agentkit.AppInitializer `json:"init,omitempty"`
-	Telemetry    captelemetry.Exporter        `json:"telemetry,omitempty"`
+	Telemetry    captelemetry.Exporter     `json:"telemetry,omitempty"`
 	// CatalogCommands pulls agent catalog slash commands (/agent, /acp) into the
 	// build graph without routing through commands/registry (which platform depends on).
 	CatalogCommands agentkit.CommandProvider `json:"catalogCommands,omitempty"`
 }
 
 type Root struct {
-	platform        agentkit.Platform
-	loop            agentkit.Loop
-	sessionStore    agentkit.SessionStore
-	workspace       workspace.Service
-	schedules       []capschedule.Runtime
-	telemetry       captelemetry.Exporter
-	sessionScope    agentkit.SessionScope
-	maxConcurrent   int
-	shutdownTimeout time.Duration
+	platform              agentkit.Platform
+	loop                  agentkit.Loop
+	sessionStore          agentkit.SessionStore
+	workspace             workspace.Service
+	schedules             []capschedule.Runtime
+	telemetry             captelemetry.Exporter
+	sessionScope          agentkit.SessionScope
+	maxConcurrent         int
+	shutdownTimeout       time.Duration
 	shutdownGraceOnSignal time.Duration
-	inject          []string
-	defaultTimezone string
+	inject                []string
+	defaultTimezone       string
 }
 
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
@@ -191,15 +191,32 @@ func (r *Root) shutdownDrain(sched *scheduler, ctx context.Context) {
 		r.loop.CancelAllInFlight("shutdown")
 		slog.Info("shutdown: signal received, stopping in-flight work", "grace", r.shutdownGraceOnSignal.String())
 		sched.wait(r.shutdownGraceOnSignal)
+		sched.stop()
+		r.stopLoop(ctx)
 		return
 	}
 	if r.shutdownTimeout > 0 {
 		slog.Info("shutdown: waiting for in-flight turns", "timeout", r.shutdownTimeout.String())
 		sched.wait(r.shutdownTimeout)
+		sched.stop()
+		r.stopLoop(ctx)
 		return
 	}
 	slog.Info("shutdown: waiting for in-flight turns", "timeout", "unlimited")
 	sched.wait(-1)
+	sched.stop()
+	r.stopLoop(ctx)
+}
+
+// stopLoop retires per-session Control owner goroutines when the loop
+// implementation exposes Stop (loop/default does). Called after the scheduler
+// has drained so no Dispatch will touch a closed Control.
+func (r *Root) stopLoop(ctx context.Context) {
+	if s, ok := r.loop.(interface{ Stop(context.Context) error }); ok {
+		if err := s.Stop(ctx); err != nil {
+			slog.Debug("shutdown: loop stop", "err", err)
+		}
+	}
 }
 
 // receiveLoop reads inbound events without holding concurrency slots. Permission

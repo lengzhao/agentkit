@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
@@ -27,9 +28,9 @@ type inboundRoutingLoop struct {
 
 func (l *inboundRoutingLoop) Dispatch(context.Context, agentkit.LoopRequest) error { return nil }
 func (l *inboundRoutingLoop) Cancel(context.Context, string) error                 { return nil }
-func (l *inboundRoutingLoop) CancelAllInFlight(string)                               {}
-func (l *inboundRoutingLoop) TryDeliverPermission(agentkit.MessageEvent) bool        { return false }
-func (l *inboundRoutingLoop) SupersedePendingForInbound(agentkit.MessageEvent)       {}
+func (l *inboundRoutingLoop) CancelAllInFlight(string)                             {}
+func (l *inboundRoutingLoop) TryDeliverPermission(agentkit.MessageEvent) bool      { return false }
+func (l *inboundRoutingLoop) SupersedePendingForInbound(agentkit.MessageEvent)     {}
 
 func (l *inboundRoutingLoop) Steer(_ context.Context, msg agentkit.ModelMessage) error {
 	l.mu.Lock()
@@ -76,7 +77,7 @@ func subagentCompleteEvent(sessionID agentkit.SessionID) agentkit.MessageEvent {
 	}
 }
 
-func TestSubagentCompleteWhileBusyUsesFollowUp(t *testing.T) {
+func TestSubagentCompleteWhileBusyQueuesNewTurn(t *testing.T) {
 	t.Parallel()
 
 	sessionID := agentkit.SessionID("cli:default")
@@ -88,20 +89,48 @@ func TestSubagentCompleteWhileBusyUsesFollowUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := root.(*Root)
-	sched := newScheduler(1, func(context.Context, agentkit.LoopRequest) error { return nil }, nil)
+
+	var submitted []agentkit.LoopRequest
+	var submitMu sync.Mutex
+	sched := newScheduler(1, func(_ context.Context, req agentkit.LoopRequest) error {
+		submitMu.Lock()
+		submitted = append(submitted, req)
+		submitMu.Unlock()
+		return nil
+	}, nil)
 
 	r.handleInbound(context.Background(), sched, subagentCompleteEvent(sessionID))
+
+	// Async subagent completion must NOT steer into the running turn and must NOT
+	// use the in-loop FollowUp queue; it is a new logical turn routed through the
+	// scheduler's per-session pending queue (runs as the next Run after the
+	// current turn ends). The scheduler dispatch is async, so wait for it.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		submitMu.Lock()
+		n := len(submitted)
+		submitMu.Unlock()
+		if n >= 1 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	loop.mu.Lock()
 	defer loop.mu.Unlock()
 	if len(loop.steers) != 0 {
 		t.Fatalf("steer = %v, want none", loop.steers)
 	}
-	if len(loop.followUps) != 1 {
-		t.Fatalf("follow-ups = %d, want 1", len(loop.followUps))
+	if len(loop.followUps) != 0 {
+		t.Fatalf("follow-ups = %v, want none (subagent-complete routes via scheduler)", loop.followUps)
 	}
-	if !strings.Contains(loop.followUps[0], "subagent-complete") {
-		t.Fatalf("follow-up = %q", loop.followUps[0])
+	submitMu.Lock()
+	defer submitMu.Unlock()
+	if len(submitted) != 1 {
+		t.Fatalf("submitted turns = %d, want 1", len(submitted))
+	}
+	if !strings.Contains(textPart(submitted[0].Event.Message), "subagent-complete") {
+		t.Fatalf("submitted turn = %q, want subagent-complete", textPart(submitted[0].Event.Message))
 	}
 }
 

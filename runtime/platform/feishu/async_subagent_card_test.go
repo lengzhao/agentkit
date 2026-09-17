@@ -19,13 +19,12 @@ func TestAsyncSubagentRoutesChildToolEventsNotParent(t *testing.T) {
 	streamKey := agentkit.SessionID("feishu:oc_test:reply:om_parent")
 
 	card := &asyncSubagentCard{
+		state:         streamStateLiteral(streamStateData{toolStepIdx: make(map[int]int), status: cardStatusWorking}),
 		jobID:         "sub:job:1",
 		streamKey:     streamKey,
 		parentAgentID: agentkit.AgentID("main"),
 		agent:         "cursor",
 		task:          "refactor auth",
-		toolStepIdx:   make(map[int]int),
-		status:        cardStatusWorking,
 	}
 	p.registerAsyncSubagentCard(card)
 
@@ -84,12 +83,12 @@ func TestAsyncSubagentCardAppliesToolStart(t *testing.T) {
 	}
 	streamKey := agentkit.SessionID("feishu:oc_test:reply:om_parent")
 	card := &asyncSubagentCard{
+		state:         streamStateLiteral(streamStateData{toolStepIdx: make(map[int]int)}),
 		jobID:         "sub:job:3",
 		streamKey:     streamKey,
 		parentAgentID: agentkit.AgentID("assistant"),
 		agent:         "cursor",
 		task:          "analyze",
-		toolStepIdx:   make(map[int]int),
 	}
 	p.registerAsyncSubagentCard(card)
 
@@ -108,7 +107,7 @@ func TestAsyncSubagentCardAppliesToolStart(t *testing.T) {
 	if !handled {
 		t.Fatal("expected tool start to be handled by async card")
 	}
-	st := card.panelState()
+	st := card.state
 	if len(st.steps) != 1 || st.steps[0].Status != "running" {
 		t.Fatalf("steps = %+v, want one running tool step", st.steps)
 	}

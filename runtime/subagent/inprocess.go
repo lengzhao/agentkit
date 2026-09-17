@@ -25,10 +25,10 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type Config struct {
@@ -163,9 +163,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
 		return subagent.Result{}, err
 	}
-	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData); err != nil {
-		return subagent.Result{}, err
-	}
+	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData)
 
 	result, runErr := s.runChild(ctx, def, task, childID)
 	end := session.SubagentEndData{
@@ -181,9 +179,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
 		return subagent.Result{}, err
 	}
-	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
-		return subagent.Result{}, err
-	}
+	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
 	return result, runErr
 }
 
@@ -253,12 +249,16 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		endSubagentObs(end)
 	}()
 
+	childEmit, closeForward := forwardParentEmit(ctx, emitFromContext(ctx))
+	if closeForward != nil {
+		defer closeForward()
+	}
 	runErr = child.RunTurn(childCtx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: task}},
 		},
-		Emit: forwardParentEmit(ctx, emitFromContext(ctx)),
+		Emit: childEmit,
 	})
 
 	// Read the outcome even when the turn failed: a child that worked for ten

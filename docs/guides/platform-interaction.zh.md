@@ -132,8 +132,6 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 `turn/end` 先关 CardKit 流式再整卡 Patch；仅正文变长且工具区未变时走 `main_text` 元素流式。
 
-`progressStyle: compact` 仍按 thinking / tool / 正文**分卡**更新；类型切换时定稿旧卡并新开一张。
-
 `legacy` 在 `enableFeishuCard: true` 时正文可走 CardKit 单元素流式；`enableFeishuCard: false` 时出站为纯文本。
 
 ```mermaid
@@ -148,15 +146,15 @@ flowchart TD
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `progressStyle` | `legacy` | `card`：cc-connect 单卡 Patch；`compact`：分卡进度；`legacy`：仅流式正文 |
-| `showThinking` | `false` | `card`/`compact` 下是否在进度区展示 thinking |
-| `showToolProgress` | `card`/`compact` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
+| `progressStyle` | `legacy` | `card`：cc-connect 单卡 Patch；`legacy`：仅流式正文 |
+| `showThinking` | `false` | `card` 下是否在进度区展示 thinking |
+| `showToolProgress` | `card` 时为 `true` | 是否展示 tool 调用名与参数摘要 |
 | `asyncSubagentProgressCard` | `true` | `async` 委派子 Agent 时另发一张后台过程卡（生命周期独立于父 turn 回复卡） |
 | `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
 | `replyInThread` | `true` | 仅群聊出站时 `Im.Message.Reply` 带 `reply_in_thread`；私聊（p2p）始终平铺回复 |
 | `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
-`progressStyle: card` 时，**整轮 turn** 的 thinking / tool / 正文都在同一张 rich 卡内刷新；同一 turn 内多条 assistant 消息的正文会在每条 `message/start` 时**定稿到累积区**（段间空行拼接），不会互相覆盖。出站流式状态按 `Route.ReplyTo`（触发消息 id）与 delivery 组合隔离，连发多条用户消息时各用各的卡片句柄。`compact` 按片段分卡。平台监听 `tool/result` 与 `subagent/start|end` 更新过程区。`renderProgressBody` 在面板 JSON 中默认仅保留最近 **2** 条 tool 行（超出显示「仅显示最近更新」），与 cc-connect 一致。
+`progressStyle: card` 时，**整轮 turn** 的 thinking / tool / 正文都在同一张 rich 卡内刷新；同一 turn 内多条 assistant 消息的正文会在每条 `message/start` 时**定稿到累积区**（段间空行拼接），不会互相覆盖。出站流式状态按 `Route.ReplyTo`（触发消息 id）与 delivery 组合隔离，连发多条用户消息时各用各的卡片句柄。平台监听 `tool/result` 与 `subagent/start|end` 更新过程区。`renderProgressBody` 在面板 JSON 中默认仅保留最近 **2** 条 tool 行（超出显示「仅显示最近更新」），与 cc-connect 一致。
 
 **异步子 Agent**（`delegate` + `async: true`）：父 turn 回复卡仍在 `turn/end` 定稿；子 Agent 在 `subagent/start`（`async`）时另发一张「后台子 Agent」过程卡，按 `OutboundEvent.AgentID` 与子 Agent 区分，刷新子 Agent 经 `forwardParentEmit` 转发的 **`toolcall_start` / `toolcall_end` / `tool/result`** 与**限长思考区内容**（原生 `thinking_delta`，以及 **ACP 等子 Agent 的 `text_delta` 重映射为 `thinking_delta`**，不进入主回复正文 lane），在 `subagent/end` 定稿。完整结论仍由 follow-up turn 以新消息送达。可通过 `asyncSubagentProgressCard: false` 关闭。
 

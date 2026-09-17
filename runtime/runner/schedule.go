@@ -85,23 +85,17 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	if event.Message.Role == "" {
 		return
 	}
-	if inboundIsSubagentComplete(scoped) && r.loop.IsSessionBusy(agentkit.SessionID(conversation)) {
-		scoped = r.formatInboundEvent(scoped, env)
-		slog.Info("async subagent follow-up queued",
-			"platform", event.PlatformID,
-			"user_id", env.Actor.UserID,
-			"route", routeLogID(env.Route),
-			"conversation", conversation,
-			"workspace", env.Workspace,
-			"agent_id", scoped.AgentID,
-			"preview", telemetry.SummarizeMessage(scoped.Message),
-		)
-		if err := r.loop.FollowUp(ctx, scoped.Message); err != nil {
-			r.reportInboundError(ctx, env, scoped, err)
-		}
-		return
-	}
-	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) {
+	// Async subagent completion is a new logical turn, not an interruption:
+	// never steer it into the running turn (the result would be swallowed or
+	// interleaved with the parent's ongoing reply). Let it fall through to the
+	// normal sched.submit path below; the scheduler's per-session pending queue
+	// serializes it — when the parent is busy it queues and runs as the next
+	// Run after the current turn ends, when idle it dispatches immediately.
+	// This unifies the slow-child (parent idle) and fast-child (parent busy)
+	// cases on a single path, and decouples result delivery from the
+	// best-effort progress-card I/O.
+	subagentComplete := inboundIsSubagentComplete(scoped)
+	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) && !subagentComplete {
 		if r.tryStopBusyInbound(ctx, scoped) {
 			return
 		}
@@ -121,15 +115,27 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		return
 	}
 	scoped = r.formatInboundEvent(scoped, env)
-	slog.Info("inbound turn queued",
-		"platform", event.PlatformID,
-		"user_id", env.Actor.UserID,
-		"route", routeLogID(env.Route),
-		"conversation", conversation,
-		"workspace", env.Workspace,
-		"agent_id", scoped.AgentID,
-		"preview", telemetry.SummarizeMessage(scoped.Message),
-	)
+	if subagentComplete {
+		slog.Info("async subagent follow-up queued",
+			"platform", event.PlatformID,
+			"user_id", env.Actor.UserID,
+			"route", routeLogID(env.Route),
+			"conversation", conversation,
+			"workspace", env.Workspace,
+			"agent_id", scoped.AgentID,
+			"preview", telemetry.SummarizeMessage(scoped.Message),
+		)
+	} else {
+		slog.Info("inbound turn queued",
+			"platform", event.PlatformID,
+			"user_id", env.Actor.UserID,
+			"route", routeLogID(env.Route),
+			"conversation", conversation,
+			"workspace", env.Workspace,
+			"agent_id", scoped.AgentID,
+			"preview", telemetry.SummarizeMessage(scoped.Message),
+		)
+	}
 	fmt.Fprintln(os.Stderr)
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
 		out.Route = env.Route

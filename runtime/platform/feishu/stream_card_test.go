@@ -16,13 +16,13 @@ func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
 		showThinking:     true,
 		showToolProgress: true,
 	}
-	st := &streamState{
+	st := streamStateLiteral(streamStateData{
 		thinking: "plan",
 		steps: []toolStep{
 			{Kind: toolStepKindTool, Name: "Read", Summary: "README.md", Done: true},
 			{Kind: toolStepKindToolResult, Name: "Read", Result: "hello"},
 		},
-	}
+	})
 	md := p.renderProgressMarkdown(st, true)
 	if strings.Contains(md, "⏱ 运行中") {
 		t.Fatalf("streaming progress should not include running status line, got %q", md)
@@ -40,11 +40,11 @@ func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
 
 func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
 	p := &Platform{progressStyle: "card", showToolProgress: true}
-	st := &streamState{
+	st := streamStateLiteral(streamStateData{
 		startedAt:         time.Now().Add(-2 * time.Second),
 		progressStartedAt: time.Now().Add(-2 * time.Second),
 		steps:             []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"}},
-	}
+	})
 	md := p.renderProgressMarkdown(st, false)
 	if !strings.Contains(md, "> ⏱ 用时") {
 		t.Fatalf("expected completed status footer, got %q", md)
@@ -57,13 +57,6 @@ func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
 	}
 }
 
-func TestRichCardPatchModeForCardStyle(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: true}
-	if !p.useRichCardPatch() {
-		t.Fatal("expected cc-connect style rich card patch mode")
-	}
-}
-
 func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 	p := &Platform{
 		progressStyle:      "card",
@@ -73,13 +66,13 @@ func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 	}
 	sessionID := agentkit.SessionID("session-rich-patch")
 	st := p.streamState(sessionID)
-	st.mu.Lock()
+	st.lock()
 	st.thinking = "plan"
 	st.bodyText = "hello"
 	st.toolStepIdx = make(map[int]int)
 	st.startedAt = time.Now()
 	st.lastProgressUpdate = time.Now().Add(-time.Second)
-	st.mu.Unlock()
+	st.unlock()
 
 	ev := agentkit.OutboundEvent{AgentID: "parent"}
 	if err := p.handleRichStreamUpdate(context.Background(), sessionID, ev, agentkit.AssistantMessageEvent{
@@ -96,11 +89,8 @@ func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.bodyHandle != nil {
-		t.Fatal("compact split body handle should not be used in card patch mode")
-	}
+	st.lock()
+	defer st.unlock()
 	if st.thinking != "planmore" {
 		t.Fatalf("thinking should accumulate, got %q", st.thinking)
 	}
@@ -115,7 +105,7 @@ func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 		showThinking:     true,
 		showToolProgress: true,
 	}
-	st := &streamState{toolStepIdx: make(map[int]int)}
+	st := streamStateLiteral(streamStateData{toolStepIdx: make(map[int]int)})
 
 	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
 		Type:  agentkit.AssistantEventThinkingDelta,
@@ -177,43 +167,9 @@ func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 	}
 }
 
-func TestRenderProgressContentOmitsBodyText(t *testing.T) {
-	p := &Platform{
-		progressStyle:    "card",
-		showThinking:     true,
-		showToolProgress: true,
-	}
-	st := &streamState{
-		status:   cardStatusWorking,
-		bodyText: "final answer",
-		thinking: "hmm",
-		steps: []toolStep{{
-			Kind:    toolStepKindTool,
-			Name:    "Grep",
-			Summary: "pattern",
-			Done:    true,
-		}},
-		progressStartedAt: stTime(),
-	}
-	card := p.renderProgressContent(st, true)
-	if !strings.Contains(card, `"schema"`) {
-		t.Fatalf("expected card json, got %q", card)
-	}
-	if strings.Contains(card, "final answer") {
-		t.Fatalf("progress card should not carry body text: %q", card)
-	}
-	if !strings.Contains(card, "collapsible_panel") {
-		t.Fatalf("expected progress panel in card: %q", card)
-	}
-}
-
-func stTime() time.Time {
-	return time.Unix(0, 0)
-}
-
 func TestLegacyStreamUpdateIgnoresThinkingByDefault(t *testing.T) {
 	p := &Platform{progressStyle: "legacy", showThinking: false}
-	st := &streamState{}
+	st := streamStateLiteral(streamStateData{})
 	if p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
 		Type:  agentkit.AssistantEventThinkingDelta,
 		Delta: "secret",
@@ -222,131 +178,22 @@ func TestLegacyStreamUpdateIgnoresThinkingByDefault(t *testing.T) {
 	}
 }
 
-func TestRenderProgressContentKeepsRecentProgressOnly(t *testing.T) {
-	p := &Platform{
-		progressStyle:    "card",
-		showThinking:     true,
-		showToolProgress: true,
-	}
-	st := &streamState{
-		thinking:          "latest thought",
-		progressStartedAt: time.Now(),
-		startedAt:         time.Now(),
-		steps: []toolStep{
-			{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"},
-			{Kind: toolStepKindToolResult, Name: "Read", Result: "file-a"},
-			{Kind: toolStepKindTool, Name: "Grep", Summary: "pattern"},
-			{Kind: toolStepKindToolResult, Name: "Grep", Result: "match"},
-		},
-	}
-	card := p.renderProgressContent(st, true)
-	if strings.Contains(card, "Read") {
-		t.Fatalf("expected older Read entries to be dropped, got %q", card)
-	}
-	if !strings.Contains(card, "Grep") {
-		t.Fatalf("expected latest Grep entries to remain, got %q", card)
-	}
-}
-
-func TestRenderCompactProgressCardKeepsRecentProgressOnly(t *testing.T) {
-	p := &Platform{
-		progressStyle:    "compact",
-		showThinking:     true,
-		showToolProgress: true,
-	}
-	st := &streamState{
-		thinking: "plan",
-		steps: []toolStep{
-			{
-				Kind:    toolStepKindTool,
-				Name:    "Bash",
-				Summary: "ls",
-				Done:    true,
-				Status:  "called",
-			},
-			{
-				Kind:    toolStepKindToolResult,
-				Name:    "Bash",
-				Result:  "README.md",
-				Status:  "completed",
-				Done:    true,
-				Success: boolPtr(true),
-			},
-		},
-	}
-	content := p.renderProgressContent(st, false)
-	if !strings.HasPrefix(content, "__cc_connect_progress_card_v1__:") {
-		t.Fatalf("expected compact payload prefix, got %q", content)
-	}
-	if !strings.Contains(content, `"kind":"tool_use"`) || !strings.Contains(content, `"kind":"tool_result"`) {
-		t.Fatalf("expected separate tool_use and tool_result entries, got %q", content)
-	}
-}
-
-func TestRenderCompactProgressCardTruncatesOlderEntries(t *testing.T) {
-	p := &Platform{
-		progressStyle:    "compact",
-		showThinking:     true,
-		showToolProgress: true,
-	}
-	st := &streamState{
-		thinking: "old thought",
-		steps: []toolStep{
-			{Kind: toolStepKindTool, Name: "Read", Summary: "a.go", Done: true, Status: "called"},
-			{Kind: toolStepKindToolResult, Name: "Read", Result: "file-a", Done: true, Status: "completed", Success: boolPtr(true)},
-			{Kind: toolStepKindTool, Name: "Grep", Summary: "pattern", Done: true, Status: "called"},
-			{Kind: toolStepKindToolResult, Name: "Grep", Result: "match", Done: true, Status: "completed", Success: boolPtr(true)},
-		},
-	}
-	content := p.renderProgressContent(st, false)
-	if !strings.Contains(content, `"truncated":true`) {
-		t.Fatalf("expected truncated flag, got %q", content)
-	}
-	if strings.Contains(content, `"tool":"Read"`) {
-		t.Fatalf("expected older Read entries to be dropped, got %q", content)
-	}
-	if !strings.Contains(content, `"tool":"Grep"`) {
-		t.Fatalf("expected latest Grep entries to remain, got %q", content)
-	}
-}
-
-func TestRenderCompactProgressCardOmitsBodyText(t *testing.T) {
-	p := &Platform{
-		progressStyle:    "compact",
-		showToolProgress: true,
-	}
-	st := &streamState{
-		bodyText: "正文应在正文卡中展示",
-		steps: []toolStep{{
-			Kind:    toolStepKindTool,
-			Name:    "Read",
-			Summary: "a.go",
-			Done:    true,
-			Status:  "called",
-		}},
-	}
-	content := p.renderProgressContent(st, true)
-	if strings.Contains(content, "正文应在正文卡中展示") {
-		t.Fatalf("progress card should not carry body text, got %q", content)
-	}
-}
-
 func TestRichCardMessageStartPreservesToolSteps(t *testing.T) {
 	p := &Platform{progressStyle: "card", useInteractiveCard: true, showToolProgress: true}
 	sessionID := agentkit.SessionID("session-unified-steps")
 	st := p.streamState(sessionID)
-	st.mu.Lock()
+	st.lock()
 	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "hello.txt", Done: true}}
 	st.thinking = "plan"
 	st.bodyText = "partial answer"
-	st.mu.Unlock()
+	st.unlock()
 
 	if err := p.handleRichStreamMessageStart(context.Background(), sessionID); err != nil {
 		t.Fatal(err)
 	}
 
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.lock()
+	defer st.unlock()
 	if len(st.steps) != 1 || st.steps[0].Name != "Read" {
 		t.Fatalf("expected tool steps to persist across messages, got %#v", st.steps)
 	}
@@ -363,7 +210,7 @@ func TestRichCardMessageStartPreservesToolSteps(t *testing.T) {
 
 func TestRichCardDisplayBodyJoinsCommittedAndInflight(t *testing.T) {
 	t.Parallel()
-	st := &streamState{committedBodyText: "first", bodyText: "second"}
+	st := streamStateLiteral(streamStateData{committedBodyText: "first", bodyText: "second"})
 	got := st.richCardDisplayBody()
 	want := "first" + richCardBodySegmentSeparator + "second"
 	if got != want {
@@ -387,41 +234,10 @@ func TestOutboundStreamKeyUsesReplyTo(t *testing.T) {
 	}
 }
 
-func TestHandleRichStreamMessageStartResetsMessageState(t *testing.T) {
-	p := &Platform{progressStyle: "compact"}
-	sessionID := agentkit.SessionID("session-1")
-	st := p.streamState(sessionID)
-	st.mu.Lock()
-	st.thinking = "old"
-	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "Read"}}
-	st.bodyText = "partial"
-	st.bodyHandle = &feishuPreviewHandle{messageID: "body"}
-	st.progressHandle = &feishuPreviewHandle{messageID: "progress"}
-	st.cards = []streamCard{
-		{Kind: streamCardProgress, Handle: st.progressHandle},
-		{Kind: streamCardBody, Handle: st.bodyHandle},
-	}
-	st.mu.Unlock()
-
-	if err := p.handleRichStreamMessageStart(context.Background(), sessionID); err != nil {
-		t.Fatalf("handleRichStreamMessageStart: %v", err)
-	}
-
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.thinking != "" || len(st.steps) != 0 || st.bodyText != "" || st.bodyHandle != nil || st.progressHandle != nil || st.activeSegment != streamSegmentNone {
-		t.Fatalf("expected message state reset, got thinking=%q steps=%d bodyText=%q bodyHandle=%v progressHandle=%v segment=%q",
-			st.thinking, len(st.steps), st.bodyText, st.bodyHandle, st.progressHandle, st.activeSegment)
-	}
-	if len(st.cards) != 2 {
-		t.Fatalf("expected prior cards to remain queued, got %d", len(st.cards))
-	}
-}
-
 func TestEvictStreamCardsDropsOldestProgress(t *testing.T) {
 	p := &Platform{progressStyle: "card", useInteractiveCard: false}
 	p1 := &feishuPreviewHandle{messageID: "p1"}
-	st := &streamState{
+	st := streamStateLiteral(streamStateData{
 		cards: []streamCard{
 			{Kind: streamCardProgress, Handle: p1},
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
@@ -429,7 +245,7 @@ func TestEvictStreamCardsDropsOldestProgress(t *testing.T) {
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b2"}},
 		},
 		progressHandle: p1,
-	}
+	})
 	p.evictStreamCards(context.Background(), st)
 	if len(st.cards) != 3 {
 		t.Fatalf("cards len = %d, want 3", len(st.cards))
@@ -449,14 +265,14 @@ func TestRemovePriorProgressCardsKeepsLatestOnly(t *testing.T) {
 	p := &Platform{progressStyle: "card", useInteractiveCard: false}
 	p1 := &feishuPreviewHandle{messageID: "p1"}
 	p2 := &feishuPreviewHandle{messageID: "p2"}
-	st := &streamState{
+	st := streamStateLiteral(streamStateData{
 		cards: []streamCard{
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
 			{Kind: streamCardProgress, Handle: p1},
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b2"}},
 		},
 		progressHandle: p1,
-	}
+	})
 	p.removePriorProgressCards(context.Background(), st, p2)
 	if len(st.cards) != 2 {
 		t.Fatalf("cards len = %d, want 2", len(st.cards))
@@ -472,14 +288,14 @@ func TestRemovePriorProgressCardsKeepsLatestOnly(t *testing.T) {
 
 func TestEvictStreamCardsPopsBodyWithoutDelete(t *testing.T) {
 	p := &Platform{progressStyle: "card", useInteractiveCard: false}
-	st := &streamState{
+	st := streamStateLiteral(streamStateData{
 		cards: []streamCard{
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
 			{Kind: streamCardProgress, Handle: &feishuPreviewHandle{messageID: "p1"}},
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b2"}},
 			{Kind: streamCardProgress, Handle: &feishuPreviewHandle{messageID: "p2"}},
 		},
-	}
+	})
 	p.evictStreamCards(context.Background(), st)
 	if len(st.cards) != 3 {
 		t.Fatalf("cards len = %d, want 3", len(st.cards))
@@ -489,86 +305,6 @@ func TestEvictStreamCardsPopsBodyWithoutDelete(t *testing.T) {
 	}
 	if st.cards[2].Handle.(*feishuPreviewHandle).messageID != "p2" {
 		t.Fatalf("newest card = %v, want progress p2", st.cards[2].Handle)
-	}
-}
-
-func TestHandleRichBodyDeltaDetachesProgressCard(t *testing.T) {
-	p := &Platform{progressStyle: "compact", showThinking: true}
-	sessionID := agentkit.SessionID("session-body-delta")
-	st := p.streamState(sessionID)
-	st.mu.Lock()
-	st.progressHandle = &feishuPreviewHandle{messageID: "progress"}
-	st.activeSegment = streamSegmentThinking
-	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"}}
-	st.thinking = "plan"
-	st.toolStepIdx = make(map[int]int)
-	st.progressStartedAt = time.Now()
-	st.startedAt = time.Now()
-	st.mu.Unlock()
-
-	if err := p.handleRichBodyDelta(context.Background(), sessionID, "hello"); err != nil {
-		t.Fatal(err)
-	}
-
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.progressHandle != nil {
-		t.Fatal("body delta must not keep patching the previous progress card")
-	}
-	if st.activeSegment != streamSegmentBody {
-		t.Fatalf("activeSegment = %q, want body", st.activeSegment)
-	}
-	if st.bodyText != "hello" {
-		t.Fatalf("bodyText = %q", st.bodyText)
-	}
-}
-
-func TestSwitchSegmentOpensNewCardOnTypeChange(t *testing.T) {
-	p := &Platform{
-		progressStyle:    "compact",
-		showThinking:     true,
-		showToolProgress: true,
-	}
-	sessionID := agentkit.SessionID("session-type-switch")
-	st := p.streamState(sessionID)
-	oldProgress := &feishuPreviewHandle{messageID: "p-thinking"}
-	st.mu.Lock()
-	st.progressHandle = oldProgress
-	st.activeSegment = streamSegmentThinking
-	st.thinking = "plan"
-	st.toolStepIdx = make(map[int]int)
-	st.cards = []streamCard{{Kind: streamCardProgress, Handle: oldProgress}}
-	st.startedAt = time.Now()
-	st.progressStartedAt = time.Now()
-	st.mu.Unlock()
-
-	if err := p.handleRichBodyDelta(context.Background(), sessionID, "hello"); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.handleRichStreamUpdate(context.Background(), sessionID, agentkit.OutboundEvent{AgentID: "parent"}, agentkit.AssistantMessageEvent{
-		Type:         agentkit.AssistantEventToolCallStart,
-		ContentIndex: 1,
-		ToolName:     "Read",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.progressHandle == oldProgress {
-		t.Fatal("tool events must open a new progress card instead of patching the thinking card")
-	}
-	if st.activeSegment != streamSegmentTool {
-		t.Fatalf("activeSegment = %q, want tool", st.activeSegment)
-	}
-	if st.thinking != "" {
-		t.Fatalf("tool segment should not reuse thinking buffer, got %q", st.thinking)
-	}
-	if st.bodyHandle != nil {
-		t.Fatal("tool segment must not keep streaming into the previous body card")
-	}
-	if len(st.steps) != 1 || st.steps[0].Name != "Read" {
-		t.Fatalf("steps = %#v", st.steps)
 	}
 }
 
@@ -609,23 +345,23 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 	p := &Platform{progressStyle: "card"}
 	sessionID := agentkit.SessionID("session-body-timer")
 	st := p.streamState(sessionID)
-	st.mu.Lock()
-	st.bodyHandle = &feishuPreviewHandle{messageID: "body"}
-	st.lastBodyUpdate = time.Now()
-	st.mu.Unlock()
+	st.lock()
+	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"}}
+	st.lastProgressUpdate = time.Now()
+	st.unlock()
 
 	p.scheduleBodyFlush(sessionID)
-	st.mu.Lock()
+	st.lock()
 	first := st.bodyFlushTimer
-	st.mu.Unlock()
+	st.unlock()
 	if first == nil {
 		t.Fatal("expected body flush timer")
 	}
 
 	p.scheduleBodyFlush(sessionID)
-	st.mu.Lock()
+	st.lock()
 	second := st.bodyFlushTimer
-	st.mu.Unlock()
+	st.unlock()
 	if first != second {
 		t.Fatal("expected pending body flush timer to be reused")
 	}
@@ -634,7 +370,7 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 
 func TestToolCallEndMatchesByCallIDWithSharedContentIndex(t *testing.T) {
 	p := &Platform{showToolProgress: true}
-	st := &streamState{toolStepIdx: make(map[int]int)}
+	st := streamStateLiteral(streamStateData{toolStepIdx: make(map[int]int)})
 
 	const sharedIdx = 2
 	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
@@ -663,10 +399,6 @@ func TestToolCallEndMatchesByCallIDWithSharedContentIndex(t *testing.T) {
 	if !st.steps[0].Done || st.steps[1].Done {
 		t.Fatalf("expected only first tool done, steps=%#v", st.steps)
 	}
-}
-
-func boolPtr(v bool) *bool {
-	return &v
 }
 
 func TestBuildRichCardKeepsToolPanelAfterFinalizedSteps(t *testing.T) {

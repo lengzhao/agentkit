@@ -86,9 +86,7 @@ func TestAwaitQuestionResolvedAsync(t *testing.T) {
 		}
 	}
 
-	ctrl.mu.Lock()
-	requestID := ctrl.permissionPending.requestID
-	ctrl.mu.Unlock()
+	requestID := ctrl.permissionPendingRequestID()
 	if !ctrl.DeliverPermissionReply("feishu:oc_test", permission.Reply{
 		RequestID: requestID,
 		Text:      "2",
@@ -284,7 +282,7 @@ func TestTryDeliverPermissionConsumesReply(t *testing.T) {
 		t.Fatal("expected deliver to succeed")
 	}
 	select {
-	case reply := <-ctrl.permissionPending.replies:
+	case reply := <-ctrl.permissionPendingReplies():
 		if reply.Text != "beta" {
 			t.Fatalf("reply = %q", reply.Text)
 		}
@@ -297,10 +295,7 @@ func waitForPending(t *testing.T, ctrl *Control) {
 	t.Helper()
 	deadline := time.After(2 * time.Second)
 	for {
-		ctrl.mu.Lock()
-		ok := ctrl.permissionPending != nil
-		ctrl.mu.Unlock()
-		if ok {
+		if ctrl.hasPermissionPending() {
 			return
 		}
 		select {
@@ -310,4 +305,35 @@ func waitForPending(t *testing.T, ctrl *Control) {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}
+}
+
+// Test-only accessors for Control permission-pending state. Defined in the
+// test build so production code cannot depend on them.
+
+func (c *Control) hasPermissionPending() bool {
+	var ok bool
+	c.sync(func(st *controlState) {
+		ok = st.permissionPending != nil
+	})
+	return ok
+}
+
+func (c *Control) permissionPendingRequestID() string {
+	var id string
+	c.sync(func(st *controlState) {
+		if st.permissionPending != nil {
+			id = st.permissionPending.requestID
+		}
+	})
+	return id
+}
+
+func (c *Control) permissionPendingReplies() chan permission.Reply {
+	var ch chan permission.Reply
+	c.sync(func(st *controlState) {
+		if st.permissionPending != nil {
+			ch = st.permissionPending.replies
+		}
+	})
+	return ch
 }

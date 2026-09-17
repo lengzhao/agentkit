@@ -11,8 +11,8 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -122,11 +122,9 @@ func TestEmitSubagentLifecycleDoesNotBlockCaller(t *testing.T) {
 	}))
 
 	start := time.Now()
-	if err := emitSubagentLifecycle(ctx, "assistant", agentkit.EventSubagentStart, session.SubagentStartData{
+	emitSubagentLifecycle(ctx, "assistant", agentkit.EventSubagentStart, session.SubagentStartData{
 		Agent: "cursor", Session: "sub:1", Task: "t",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		t.Fatalf("emitSubagentLifecycle blocked %v", elapsed)
 	}
@@ -305,6 +303,59 @@ func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
 	}
 	if !sawBroker {
 		t.Fatal("child turn did not inherit permission broker from parent control")
+	}
+}
+
+func TestLoopDelegateAsyncChildInheritsSessionControl(t *testing.T) {
+	t.Parallel()
+
+	var sawBroker bool
+	ctrl := &brokerMarker{mark: &sawBroker}
+
+	root := t.TempDir()
+	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := &brokerProbeAgent{id: "cursor", store: store, probe: &sawBroker}
+	spawner, err := NewLoopAgent(LoopAgentConfig{
+		Agents: []LoopAgentEntry{{
+			Name:        "cursor",
+			Description: "coding helper",
+			Agent:       "cursor",
+			Async:       true,
+		}},
+	}, LoopAgentDeps{
+		SessionStore: store,
+		Agents:       []agentkit.Agent{agent},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop := spawner.(*LoopAgentSpawner)
+	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error { return nil })
+
+	ctx := loopParentCtx()
+	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
+	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(context.Context, agentkit.OutboundEvent) error {
+		return nil
+	}))
+	open, err := store.Get(ctx, agentkit.SessionID("cli:default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = session.WithSession(ctx, open)
+
+	_, err = spawner.Run(ctx, capsubagent.Request{Agent: "cursor", Task: "probe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !sawBroker && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !sawBroker {
+		t.Fatal("async child turn did not inherit permission broker from parent control")
 	}
 }
 

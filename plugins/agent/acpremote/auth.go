@@ -97,7 +97,7 @@ func (a *Runtime) runCursorLogin(ctx context.Context, emit agentkit.OutboundEmit
 		}
 	}
 
-	cwd, err := a.bridge.resolveCwd(ctx)
+	cwd, err := a.bridgeFor(sessionID).resolveCwd(ctx)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,8 @@ func (a *Runtime) runCursorLogin(ctx context.Context, emit agentkit.OutboundEmit
 
 // ensureACPSessionWithAuth tries ACP first; on auth failure runs agent login then retries once.
 func (a *Runtime) ensureACPSessionWithAuth(ctx context.Context, emit agentkit.OutboundEmit, sessionID agentkit.SessionID) (acp.SessionId, error) {
-	acpSessionID, err := a.bridge.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
+	brid := a.bridgeFor(sessionID)
+	acpSessionID, err := brid.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
 	if err == nil {
 		return acpSessionID, nil
 	}
@@ -134,7 +135,7 @@ func (a *Runtime) ensureACPSessionWithAuth(ctx context.Context, emit agentkit.Ou
 	}
 
 	slog.Info("acp-remote: acp auth failed, starting cursor login", "err", err)
-	_ = a.bridge.Close()
+	a.dropBridge(sessionID)
 
 	if emit == nil {
 		return "", fmt.Errorf("acp agent requires login; send a message to the agent first")
@@ -144,5 +145,5 @@ func (a *Runtime) ensureACPSessionWithAuth(ctx context.Context, emit agentkit.Ou
 		return "", loginErr
 	}
 
-	return a.bridge.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
+	return a.bridgeFor(sessionID).ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
 }

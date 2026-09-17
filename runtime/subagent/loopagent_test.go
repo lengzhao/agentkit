@@ -324,6 +324,7 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 	}
 	agent := &blockingLoopAgent{id: "cursor", started: started, unblock: unblock, finished: finished, store: store}
 	spawner, err := NewLoopAgent(LoopAgentConfig{
+		MaxConcurrentJobsPerSession: 1,
 		Agents: []LoopAgentEntry{{
 			Name:        "cursor",
 			Description: "coding helper",

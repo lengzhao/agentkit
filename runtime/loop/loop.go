@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/permission"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -33,7 +33,6 @@ type Default struct {
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
 	telemetry       captelemetry.Exporter
-	sessionLocks    sync.Map // SessionID -> *sync.Mutex
 	sessionControls sync.Map // SessionID -> *Control
 	sessionBusy     sync.Map // SessionID -> struct{}
 }
@@ -94,8 +93,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 		return fmt.Errorf("loop request requires conversation")
 	}
 
-	unlock := l.lockSession(conversation)
-	defer unlock()
+	// Per-session turn ordering is enforced by runner/scheduler session queues; no mutex here.
 
 	l.markSessionBusy(conversation, true)
 	defer l.markSessionBusy(conversation, false)
@@ -289,6 +287,17 @@ func (l *Default) controlFor(sessionID agentkit.SessionID) *Control {
 	return v.(*Control)
 }
 
+// Stop retires every per-session Control owner goroutine. Call after the
+// runner scheduler has drained (sched.wait + sched.stop); no further Dispatch
+// may run after this returns.
+func (l *Default) Stop(_ context.Context) error {
+	l.sessionControls.Range(func(_, v any) bool {
+		v.(*Control).Stop()
+		return true
+	})
+	return nil
+}
+
 func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentkit.AgentID, error) {
 	if agentID == "" {
 		agentID = l.defaultAgent
@@ -298,13 +307,6 @@ func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentk
 		return nil, "", errAgentNotFound(agentID)
 	}
 	return ag, agentID, nil
-}
-
-func (l *Default) lockSession(id agentkit.SessionID) func() {
-	v, _ := l.sessionLocks.LoadOrStore(id, &sync.Mutex{})
-	mu := v.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
 }
 
 func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, metadata map[string]any, control *Control, emit agentkit.OutboundEmit) context.Context {

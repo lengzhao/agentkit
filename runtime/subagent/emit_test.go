@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -22,7 +24,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 		got = append(got, event)
 		return nil
 	})
-	emit := forwardParentEmit(ctx, parent)
+	emit, _ := forwardParentEmit(ctx, parent)
 
 	toolStart, _ := json.Marshal(agentkit.MessageUpdatePayload{
 		AssistantMessageEvent: agentkit.AssistantMessageEvent{
@@ -162,7 +164,7 @@ func TestForwardParentEmitCondensesThinking(t *testing.T) {
 		}
 		return nil
 	})
-	emit := forwardParentEmit(ctx, parent)
+	emit, _ := forwardParentEmit(ctx, parent)
 
 	chunk := strings.Repeat("x", maxForwardedThinkingDeltaRunes+20)
 	for i := 0; i < 20; i++ {
@@ -201,26 +203,34 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
 
 	var got []agentkit.OutboundEvent
+	var gotMu sync.Mutex
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
+		gotMu.Lock()
 		got = append(got, event)
+		gotMu.Unlock()
 		return nil
 	}))
 
 	start := session.SubagentStartData{Agent: "researcher", Session: "sub:1", Task: "survey"}
-	if err := emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentStart, start); err != nil {
-		t.Fatal(err)
-	}
+	emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentStart, start)
 	end := session.SubagentEndData{Agent: "researcher", Session: "sub:1", Status: "completed", Summary: "done"}
-	if err := emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentEnd, end); err != nil {
-		t.Fatal(err)
-	}
+	emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentEnd, end)
 	deadline := time.Now().Add(500 * time.Millisecond)
-	for len(got) < 2 && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
+		gotMu.Lock()
+		n := len(got)
+		gotMu.Unlock()
+		if n >= 2 {
+			break
+		}
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	if len(got) != 2 {
-		t.Fatalf("events = %d, want 2", len(got))
+	gotMu.Lock()
+	n := len(got)
+	gotMu.Unlock()
+	if n != 2 {
+		t.Fatalf("events = %d, want 2", n)
 	}
 	var sawStart, sawEnd bool
 	for _, ev := range got {
@@ -241,10 +251,47 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 	}
 }
 
+func TestForwardParentEmitAsyncDoesNotBlock(t *testing.T) {
+	t.Parallel()
+
+	block := make(chan struct{})
+	parentSession := agentkit.SessionID("feishu:default:chat")
+	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
+	ctx = context.WithValue(ctx, agentkit.KeyAsyncSubagent, true)
+
+	parent := agentkit.OutboundEmit(func(context.Context, agentkit.OutboundEvent) error {
+		<-block
+		return nil
+	})
+	emit, closeForward := forwardParentEmit(ctx, parent)
+	if emit == nil {
+		t.Fatal("expected emit")
+	}
+
+	start := time.Now()
+	payload := loop.MarshalOutboundData(agentkit.MessageUpdatePayload{
+		AssistantMessageEvent: agentkit.AssistantMessageEvent{
+			Type:  agentkit.AssistantEventToolCallStart,
+			ID:    "tc1",
+			Delta: "x",
+		},
+	})
+	if err := emit(ctx, agentkit.OutboundEvent{Type: agentkit.EventMessageUpdate, Data: payload}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("forward emit blocked %v", elapsed)
+	}
+	close(block)
+	if closeForward != nil {
+		closeForward()
+	}
+}
+
 func TestForwardParentEmitNilWithoutParentSession(t *testing.T) {
 	t.Parallel()
 
-	emit := forwardParentEmit(context.Background(), func(context.Context, agentkit.OutboundEvent) error {
+	emit, _ := forwardParentEmit(context.Background(), func(context.Context, agentkit.OutboundEvent) error {
 		t.Fatal("parent emit should not be called")
 		return nil
 	})

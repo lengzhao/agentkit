@@ -85,41 +85,12 @@ func (msg inboundMessage) inboundRoute(platform string) session.SessionRouteInpu
 	}
 }
 
-type streamState struct {
-	mu                 sync.Mutex
-	handle             any // legacy mode preview handle
-	progressHandle     any // rich card (patch) or compact progress segment card
-	bodyHandle         any // compact mode body segment card
-	activeSegment      streamSegmentKind
-	cards              []streamCard // ordered cards for eviction (oldest first)
-	accumulated        string       // legacy mode text buffer
-	bodyText           string       // rich mode in-flight assistant markdown (current segment)
-	committedBodyText  string       // card mode: earlier assistant segments in the same turn
-	finalizedBodyText  string       // last known assistant body (survives CardKit-only stream)
-	finalizedSteps     []toolStep   // last non-streaming rich card panel (survives turn/end clearStream)
-	thinking           string
-	steps              []toolStep
-	toolStepIdx        map[int]int // contentIndex -> index in steps
-	status             cardStatus
-	startedAt          time.Time
-	progressStartedAt  time.Time
-	lastUpdate         time.Time // legacy flush throttle
-	lastProgressUpdate time.Time
-	lastBodyUpdate     time.Time
-	bodyFlushTimer     *time.Timer
-	legacyFlushTimer   *time.Timer
-	// Rich card patch: bump when tool/thinking/status panel changes; body-only deltas can use CardKit element stream.
-	richCardPanelVersion        uint64
-	richCardFlushedPanelVersion uint64
-	lastRichCardBodyStreamRunes int
-}
-
 type streamCardKind string
 
 const (
 	streamCardProgress streamCardKind = "progress"
 	streamCardBody     streamCardKind = "body"
-	maxStreamCards     = 3
+	maxStreamCards                    = 3
 )
 
 type streamSegmentKind string
@@ -139,11 +110,11 @@ type streamCard struct {
 type cardStatus string
 
 const (
-	cardStatusThinking cardStatus = "thinking"
-	cardStatusWorking  cardStatus = "working"
-	cardStatusDone       cardStatus = "done"
-	cardStatusCancelled  cardStatus = "cancelled"
-	cardStatusError      cardStatus = "error"
+	cardStatusThinking  cardStatus = "thinking"
+	cardStatusWorking   cardStatus = "working"
+	cardStatusDone      cardStatus = "done"
+	cardStatusCancelled cardStatus = "cancelled"
+	cardStatusError     cardStatus = "error"
 )
 
 type toolStepKind string
@@ -217,12 +188,10 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	progressStyle := "legacy"
 	if v := strings.TrimSpace(cfg.ProgressStyle); v != "" {
 		switch strings.ToLower(v) {
-		case "legacy":
-			progressStyle = "legacy"
-		case "compact", "card":
+		case "legacy", "card":
 			progressStyle = strings.ToLower(v)
 		default:
-			return nil, fmt.Errorf("platform/%s: invalid progressStyle %q (want legacy, compact, or card)", name, v)
+			return nil, fmt.Errorf("platform/%s: invalid progressStyle %q (want legacy or card)", name, v)
 		}
 	}
 
@@ -235,7 +204,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	if cfg.ShowThinking != nil {
 		showThinking = *cfg.ShowThinking
 	}
-	showToolProgress := progressStyle == "card" || progressStyle == "compact"
+	showToolProgress := progressStyle == "card"
 	if cfg.ShowToolProgress != nil {
 		showToolProgress = *cfg.ShowToolProgress
 	}
@@ -662,7 +631,7 @@ func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 	if raw, ok := p.streams.Load(sessionID); ok {
 		return raw.(*streamState)
 	}
-	st := &streamState{}
+	st := newStreamState()
 	actual, _ := p.streams.LoadOrStore(sessionID, st)
 	return actual.(*streamState)
 }
@@ -670,10 +639,10 @@ func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 	if raw, ok := p.streams.LoadAndDelete(sessionID); ok {
 		st := raw.(*streamState)
-		st.mu.Lock()
+		st.lock()
 		stopStreamTimer(&st.bodyFlushTimer)
 		stopStreamTimer(&st.legacyFlushTimer)
-		st.mu.Unlock()
+		st.unlock()
 	}
 }
 
@@ -700,11 +669,11 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	}
 
 	st := p.streamState(streamKey)
-	st.mu.Lock()
+	st.lock()
 	st.accumulated += delta
 	accumulated := st.accumulated
 	shouldFlushNow := st.handle == nil || time.Since(st.lastUpdate) >= p.bodyStreamInterval()
-	st.mu.Unlock()
+	st.unlock()
 
 	if shouldFlushNow {
 		p.cancelLegacyFlushTimer(streamKey)
@@ -718,10 +687,10 @@ func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundE
 	streamKey := outboundStreamKey(event)
 	delivery := session.OutboundRouteID(event)
 	st := p.streamState(streamKey)
-	st.mu.Lock()
+	st.lock()
 	text := st.accumulated
 	handle := st.handle
-	st.mu.Unlock()
+	st.unlock()
 
 	if event.Type == agentkit.EventMessageEnd {
 		var payload agentkit.MessageEndPayload
@@ -760,8 +729,8 @@ func (p *Platform) flushStream(ctx context.Context, streamKey agentkit.SessionID
 		return nil
 	}
 	st := p.streamState(streamKey)
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	st.lock()
+	defer st.unlock()
 
 	if st.handle == nil {
 		handle, err := p.SendPreviewStart(ctx, rc, text)

@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type sessionUpdateConsumer interface {
@@ -40,12 +41,15 @@ type bridge struct {
 	workspace  workspace.Service
 	sessionMCP capacp.SessionMCPProvider
 
-	mu           sync.Mutex
-	proc         *subprocess
-	promptCancel context.CancelFunc
-	promptGen    uint64
-	turn         *turnState
-	turnMu       sync.Mutex
+	connOps chan connOp
+	// proc is the current subprocess snapshot. It is written exclusively by
+	// connLoop (via ensureConnOp / subprocessExitOp / detachReleaseOp) and read
+	// by callers from any goroutine (sessionState, cancel, prompt). A Load may
+	// return nil or a stale proc that is about to be replaced; readers treat nil
+	// as "needs reconnect" on the next prompt. This is best-effort: correctness
+	// of prompt/cancel relies on connLoop serializing the real connection state.
+	proc atomic.Pointer[subprocess]
+	turn atomic.Pointer[turnState]
 }
 
 type subprocess struct {
@@ -72,8 +76,13 @@ func (proc *subprocess) alive() bool {
 }
 
 func newBridge(cfg Config, ws workspace.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
-	b := &bridge{cfg: cfg, workspace: ws, sessionMCP: sessionMCP}
-	b.proc = nil
+	b := &bridge{
+		cfg:        cfg,
+		workspace:  ws,
+		sessionMCP: sessionMCP,
+		connOps:    make(chan connOp),
+	}
+	go b.connLoop()
 	return b
 }
 
@@ -102,21 +111,17 @@ func (b *bridge) recordSessionMCP(ctx context.Context, servers []acp.McpServer) 
 }
 
 func (b *bridge) setTurn(state turnState) {
-	b.turnMu.Lock()
-	b.turn = &state
-	b.turnMu.Unlock()
+	st := new(turnState)
+	*st = state
+	b.turn.Store(st)
 }
 
 func (b *bridge) clearTurn() {
-	b.turnMu.Lock()
-	b.turn = nil
-	b.turnMu.Unlock()
+	b.turn.Store(nil)
 }
 
 func (b *bridge) currentTurn() *turnState {
-	b.turnMu.Lock()
-	defer b.turnMu.Unlock()
-	return b.turn
+	return b.turn.Load()
 }
 
 func (b *bridge) sessionStoreDir(ctx context.Context) (string, error) {
@@ -127,114 +132,6 @@ func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID 
 	proc.sessions.Store(sessionID, acpSessionID)
 	proc.acpSessions.Store(acpSessionID, sessionID)
 	proc.states.Store(sessionID, state)
-}
-
-func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
-	b.mu.Lock()
-	for b.proc != nil {
-		if b.proc.alive() && (b.proc.authenticated || b.cfg.AuthMethod == "") {
-			proc := b.proc
-			b.mu.Unlock()
-			return proc, nil
-		}
-		old, cancel := b.detachSubprocessLocked()
-		b.mu.Unlock()
-		terminateAndWaitSubprocess(old, cancel)
-		b.mu.Lock()
-	}
-
-	cwd, err := b.resolveCwd(ctx)
-	if err != nil {
-		b.mu.Unlock()
-		return nil, err
-	}
-
-	cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
-	cmd.Dir = cwd
-	configureCmdProcessGroup(cmd)
-	cmd.Env = commandEnv(b.cfg.Env)
-	cmd.Stderr = os.Stderr
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		b.mu.Unlock()
-		return nil, fmt.Errorf("acp stdin pipe: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		b.mu.Unlock()
-		return nil, fmt.Errorf("acp stdout pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		b.mu.Unlock()
-		return nil, fmt.Errorf("acp start %v: %w", b.cfg.Command, err)
-	}
-
-	client := &bridgeClient{bridge: b}
-	conn := acp.NewClientSideConnection(client, stdin, stdout)
-	conn.SetLogger(slog.Default())
-
-	initResp, err := conn.Initialize(ctx, acp.InitializeRequest{
-		ProtocolVersion: acp.ProtocolVersionNumber,
-		ClientCapabilities: acp.ClientCapabilities{
-			Fs: acp.FileSystemCapabilities{
-				ReadTextFile:  true,
-				WriteTextFile: true,
-			},
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    b.cfg.ClientName,
-			Version: b.cfg.ClientVersion,
-		},
-	})
-	if err != nil {
-		terminateProcessGroup(cmd)
-		_ = cmd.Wait()
-		b.mu.Unlock()
-		return nil, fmt.Errorf("acp initialize: %w", err)
-	}
-	slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
-
-	done := make(chan struct{})
-	b.proc = &subprocess{cmd: cmd, conn: conn, client: client, done: done}
-	go b.waitSubprocess(b.proc)
-	if err := b.authenticateLocked(ctx, b.proc); err != nil {
-		old, cancel := b.detachSubprocessLocked()
-		b.mu.Unlock()
-		terminateAndWaitSubprocess(old, cancel)
-		return nil, err
-	}
-	proc := b.proc
-	b.mu.Unlock()
-	return proc, nil
-}
-
-func (b *bridge) authenticateLocked(ctx context.Context, proc *subprocess) error {
-	if b.cfg.AuthMethod == "" {
-		proc.authenticated = true
-		return nil
-	}
-	if _, err := proc.conn.Authenticate(ctx, acp.AuthenticateRequest{
-		MethodId: b.cfg.AuthMethod,
-	}); err != nil {
-		return fmt.Errorf("acp authenticate: %w (ensure cursor cli is logged in via agent login)", err)
-	}
-	proc.authenticated = true
-	return nil
-}
-
-func (b *bridge) detachSubprocessLocked() (*subprocess, context.CancelFunc) {
-	if b.proc == nil {
-		return nil, nil
-	}
-	proc := b.proc
-	b.proc = nil
-	var cancel context.CancelFunc
-	if b.promptCancel != nil {
-		cancel = b.promptCancel
-		b.promptCancel = nil
-	}
-	return proc, cancel
 }
 
 func terminateAndWaitSubprocess(proc *subprocess, cancel context.CancelFunc) {
@@ -252,53 +149,12 @@ func terminateAndWaitSubprocess(proc *subprocess, cancel context.CancelFunc) {
 	}
 }
 
-func (b *bridge) releaseSubprocess() {
-	b.mu.Lock()
-	proc, cancel := b.detachSubprocessLocked()
-	b.mu.Unlock()
-	terminateAndWaitSubprocess(proc, cancel)
-}
-
 func (b *bridge) waitSubprocess(proc *subprocess) {
 	err := proc.cmd.Wait()
 	if proc.done != nil {
 		close(proc.done)
 	}
-	b.mu.Lock()
-	if b.proc == proc {
-		b.proc = nil
-		cancel := b.promptCancel
-		b.promptCancel = nil
-		b.mu.Unlock()
-		if cancel != nil {
-			cancel()
-		}
-		if err != nil {
-			slog.Warn("acp-remote: subprocess exited", "err", err)
-		}
-		return
-	}
-	b.mu.Unlock()
-}
-
-func (b *bridge) beginPromptContext(ctx context.Context) (context.Context, func()) {
-	b.mu.Lock()
-	if b.promptCancel != nil {
-		b.promptCancel()
-	}
-	b.promptGen++
-	gen := b.promptGen
-	pctx, cancel := context.WithCancel(ctx)
-	b.promptCancel = cancel
-	b.mu.Unlock()
-	return pctx, func() {
-		b.mu.Lock()
-		if b.promptGen == gen {
-			b.promptCancel = nil
-		}
-		b.mu.Unlock()
-		cancel()
-	}
+	b.connSend(subprocessExitOp{proc: proc, err: err})
 }
 
 func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
@@ -345,7 +201,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 			McpServers: mcpServers,
 		})
 		if err == nil {
-			state := &sessionState{}
+			state := newSessionState()
 			state.applyBootstrap(resp.ConfigOptions, resp.Modes)
 			proc.trackSession(sessionID, bind.ACPSessionID, state)
 			slog.Info("acp-remote: resumed acp session", "session_id", sessionID, "acp_session_id", bind.ACPSessionID)
@@ -361,7 +217,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if err != nil {
 		return "", fmt.Errorf("acp session/new: %w", err)
 	}
-	state := &sessionState{}
+	state := newSessionState()
 	state.applyBootstrap(resp.ConfigOptions, resp.Modes)
 	proc.trackSession(sessionID, resp.SessionId, state)
 	if err := saveACPSessionBind(bindPath, acpSessionBind{
@@ -384,9 +240,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 }
 
 func (b *bridge) sessionState(sessionID agentkit.SessionID) (*sessionState, bool) {
-	b.mu.Lock()
-	proc := b.proc
-	b.mu.Unlock()
+	proc := b.proc.Load()
 	if proc == nil {
 		return nil, false
 	}
@@ -446,33 +300,27 @@ func (b *bridge) prompt(ctx context.Context, acpSessionID acp.SessionId, prompt 
 	if err != nil {
 		return acpPromptResponse{}, err
 	}
+	sessionID := session.SessionIDFromContext(ctx)
+	slog.Info("acp-remote: prompt start", "session_id", sessionID, "acp_session_id", acpSessionID)
+	start := time.Now()
 	resp, err := proc.conn.Prompt(ctx, acp.PromptRequest{
 		SessionId: acpSessionID,
 		Prompt:    prompt,
 	})
 	if err != nil {
+		slog.Warn("acp-remote: prompt failed", "session_id", sessionID, "acp_session_id", acpSessionID, "duration", time.Since(start), "err", err)
 		return acpPromptResponse{}, err
 	}
+	slog.Info("acp-remote: prompt done", "session_id", sessionID, "acp_session_id", acpSessionID, "duration", time.Since(start), "stop_reason", resp.StopReason)
 	return acpPromptResponse{stopReason: string(resp.StopReason)}, nil
 }
 
 func (b *bridge) cancel(ctx context.Context, acpSessionID acp.SessionId) error {
-	b.mu.Lock()
-	proc := b.proc
-	b.mu.Unlock()
+	proc := b.proc.Load()
 	if proc == nil {
 		return nil
 	}
 	return proc.conn.Cancel(ctx, acp.CancelNotification{SessionId: acpSessionID})
-}
-
-// Close terminates the subprocess. Safe to call when not started.
-func (b *bridge) Close() error {
-	b.mu.Lock()
-	proc, cancel := b.detachSubprocessLocked()
-	b.mu.Unlock()
-	terminateAndWaitSubprocess(proc, cancel)
-	return nil
 }
 
 // bridgeClient implements acp.Client, delegating fs/permission to AgentKit capabilities.
@@ -483,9 +331,7 @@ type bridgeClient struct {
 var _ acp.Client = (*bridgeClient)(nil)
 
 func (c *bridgeClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
-	c.bridge.mu.Lock()
-	proc := c.bridge.proc
-	c.bridge.mu.Unlock()
+	proc := c.bridge.proc.Load()
 	if proc != nil {
 		if v, ok := proc.acpSessions.Load(params.SessionId); ok {
 			if st, ok := proc.states.Load(v.(agentkit.SessionID)); ok {

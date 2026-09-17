@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 	"unicode/utf8"
 
 	"github.com/lengzhao/agentkit"
@@ -14,6 +15,14 @@ import (
 const (
 	maxForwardedThinkingDeltaRunes = 96
 	maxForwardedThinkingTotalRunes = 480
+	// asyncSubagentDrainTimeout bounds how long the async-delegation progress
+	// card is allowed to flush its final forwarded events after the child turn
+	// ends. The card is best-effort UI; the [subagent-complete] follow-up (not
+	// the card) is what resumes the parent agent, so a hung platform call must
+	// not stall the emitter's Close (and thus the runAsync goroutine) forever.
+	// Per-event delivery is also bounded by loop.asyncEmitTimeout, so this is a
+	// coarse backstop for a backlog of slow calls.
+	asyncSubagentDrainTimeout = 5 * time.Second
 )
 
 // forwardParentEmit returns an emit hook for a child agent that forwards progress
@@ -21,21 +30,41 @@ const (
 // thinking deltas (including child text_delta remapped to thinking_delta for
 // progress cards), and tool results. Raw text_delta is never forwarded as body
 // text, so the parent's answer stream is not interleaved.
-func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) agentkit.OutboundEmit {
+//
+// When ctx carries KeyAsyncSubagent, the parent emit is wrapped in an
+// AsyncEmitter so the child runtime is not stalled by platform I/O. The second
+// return value is a closer that must be deferred by the caller to retire the
+// goroutine; it is nil for synchronous delegation.
+func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) (agentkit.OutboundEmit, func()) {
 	if parent == nil {
-		return nil
+		return nil, nil
+	}
+	var close func()
+	if ctx.Value(agentkit.KeyAsyncSubagent) != nil {
+		emitter := loop.NewAsyncEmitter(parent)
+		if emitter != nil {
+			parent = emitter.Emit
+			em := emitter
+			// Bound the drain so a hung platform call cannot stall the async
+			// completion path. closer is only non-nil for async delegation, so
+			// this is the only path that ever invokes it.
+			close = func() { em.CloseWithTimeout(asyncSubagentDrainTimeout) }
+		}
 	}
 	parentRoute := session.RouteRefFromContext(ctx)
 	id, ok := session.RouteSessionID(parentRoute)
 	if !ok || id == "" {
-		return nil
+		if close != nil {
+			close()
+		}
+		return nil, nil
 	}
 	f := &parentEmitForwarder{
 		ctx:         ctx,
 		parent:      parent,
 		parentRoute: parentRoute,
 	}
-	return f.emit
+	return f.emit, close
 }
 
 type parentEmitForwarder struct {
@@ -128,15 +157,18 @@ func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
 
 // emitSubagentLifecycle forwards subagent/start and subagent/end to the parent
 // delivery session so platforms can render delegation in the progress card.
-func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, typ agentkit.EventType, data any) error {
+// Delivery is fire-and-forget: it never blocks the caller and never fails the
+// delegate turn (the session audit was already recorded). A failed send is
+// logged at warn level inside the spawned goroutine.
+func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, typ agentkit.EventType, data any) {
 	emit := emitFromContext(ctx)
 	if emit == nil {
-		return nil
+		return
 	}
 	parentRoute := session.RouteRefFromContext(ctx)
 	id, ok := session.RouteSessionID(parentRoute)
 	if !ok || id == "" {
-		return nil
+		return
 	}
 	agentID := parentAgent
 	if agentID == "" {
@@ -155,5 +187,4 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 			slog.Warn("subagent lifecycle outbound failed (session audit already recorded)", "event", typ, "err", err)
 		}
 	}()
-	return nil
 }

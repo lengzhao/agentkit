@@ -13,10 +13,8 @@ import (
 // scheduler runs turns from distinct sessions in parallel while keeping each
 // session's own messages in arrival order.
 //
-// Loop already serializes per SessionID, but it does so with a plain mutex, and
-// Go mutexes are not FIFO: handing it two concurrent messages for one session
-// could run them out of order. So ordering is enforced here, with one worker per
-// session drained in order.
+// Per-session ordering is enforced here with one worker per session drained in
+// FIFO order. Session queue bookkeeping is owned by a single goroutine (regCh).
 //
 // Concurrency is capped by a slot semaphore: a slot is acquired when a worker
 // starts dispatching a request and released when that dispatch finishes. The
@@ -30,7 +28,7 @@ type scheduler struct {
 	onError  func(context.Context, agentkit.LoopRequest, error)
 	slots    chan struct{}
 
-	mu     sync.Mutex
+	regCh  chan func(map[agentkit.SessionID]*sessionQueue)
 	queues map[agentkit.SessionID]*sessionQueue
 	wg     sync.WaitGroup
 }
@@ -49,12 +47,36 @@ func newScheduler(
 	if maxConcurrent <= 0 {
 		maxConcurrent = 1
 	}
-	return &scheduler{
+	s := &scheduler{
 		dispatch: dispatch,
 		onError:  onError,
 		slots:    make(chan struct{}, maxConcurrent),
+		regCh:    make(chan func(map[agentkit.SessionID]*sessionQueue)),
 		queues:   make(map[agentkit.SessionID]*sessionQueue),
 	}
+	go s.registryLoop()
+	return s
+}
+
+func (s *scheduler) registryLoop() {
+	for fn := range s.regCh {
+		fn(s.queues)
+	}
+}
+
+// stop retires the registry goroutine. Call after wait returns so no further
+// submits race the close. Safe to call once.
+func (s *scheduler) stop() {
+	close(s.regCh)
+}
+
+func (s *scheduler) withQueues(fn func(map[agentkit.SessionID]*sessionQueue)) {
+	done := make(chan struct{})
+	s.regCh <- func(queues map[agentkit.SessionID]*sessionQueue) {
+		fn(queues)
+		close(done)
+	}
+	<-done
 }
 
 // acquire takes one concurrency slot before running a turn.
@@ -80,46 +102,49 @@ func (s *scheduler) release() {
 func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
 	sessionID := session.ConversationFromLoopRequest(req)
 
-	s.mu.Lock()
-	queue := s.queues[sessionID]
-	if queue == nil {
-		queue = &sessionQueue{}
-		s.queues[sessionID] = queue
-	}
-	queue.pending = append(queue.pending, req)
-	start := !queue.running
-	if start {
-		queue.running = true
-		s.wg.Add(1)
-	}
-	s.mu.Unlock()
+	var start bool
+	s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
+		queue := queues[sessionID]
+		if queue == nil {
+			queue = &sessionQueue{}
+			queues[sessionID] = queue
+		}
+		queue.pending = append(queue.pending, req)
+		start = !queue.running
+		if start {
+			queue.running = true
+		}
+	})
 
 	if start {
+		s.wg.Add(1)
 		go s.drain(ctx, sessionID)
 	}
 }
 
-// drain serves one session's backlog in order, then retires. Retiring under the
-// same lock that submit uses is what makes it safe: a request enqueued
-// concurrently either finds this worker still running, or creates a fresh one.
+// drain serves one session's backlog in order, then retires. Retiring through the
+// same registry goroutine as submit keeps enqueue/dequeue safe without a mutex.
 func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 	defer s.wg.Done()
 	for {
-		s.mu.Lock()
-		queue := s.queues[sessionID]
-		if queue == nil || len(queue.pending) == 0 {
-			if queue != nil {
-				queue.running = false
-				// Drop the entry so a daemon serving many short-lived sessions
-				// does not accumulate them forever.
-				delete(s.queues, sessionID)
+		var req agentkit.LoopRequest
+		var empty bool
+		s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
+			queue := queues[sessionID]
+			if queue == nil || len(queue.pending) == 0 {
+				if queue != nil {
+					queue.running = false
+					delete(queues, sessionID)
+				}
+				empty = true
+				return
 			}
-			s.mu.Unlock()
+			req = queue.pending[0]
+			queue.pending = queue.pending[1:]
+		})
+		if empty {
 			return
 		}
-		req := queue.pending[0]
-		queue.pending = queue.pending[1:]
-		s.mu.Unlock()
 
 		if err := s.acquire(ctx); err != nil {
 			return
@@ -161,7 +186,9 @@ func (s *scheduler) wait(timeout time.Duration) {
 }
 
 func (s *scheduler) pendingSessions() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.queues)
+	var n int
+	s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
+		n = len(queues)
+	})
+	return n
 }

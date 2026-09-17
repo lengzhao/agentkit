@@ -27,6 +27,9 @@ const (
 	KeyOutboundEmit contextKey = "agentkit.outbound_emit"
 	// KeyInSubagent marks a context running inside a delegated child agent.
 	KeyInSubagent contextKey = "agentkit.subagent.active"
+	// KeyAsyncSubagent marks a loop-agent delegation running after the parent turn
+	// returned (async delegate). Outbound must not block the child agent runtime.
+	KeyAsyncSubagent contextKey = "agentkit.subagent.async"
 	// KeySession is the open Session for the current turn, when the agent is
 	// executing tools. Delegate uses it to append subagent audit events without
 	// re-opening the session (avoids deadlocks in guarded stores).
@@ -137,11 +140,11 @@ type SessionEvent struct {
 // history/lock, Workspace for tenant resources, Route for outbound return path.
 type MessageEvent struct {
 	// Envelope is optional on ingress; runner fills it when empty.
-	Envelope TurnEnvelope `json:"envelope,omitempty"`
-	AgentID           AgentID
-	PlatformID        string
-	UserID            string
-	Message           ModelMessage
+	Envelope   TurnEnvelope `json:"envelope,omitempty"`
+	AgentID    AgentID
+	PlatformID string
+	UserID     string
+	Message    ModelMessage
 	// Metadata is optional platform context copied onto persisted user messages.
 	Metadata map[string]any `json:"metadata,omitempty"`
 	// Reply carries a permission answer as JSON. Decode with runtime/permission.DecodeReply.

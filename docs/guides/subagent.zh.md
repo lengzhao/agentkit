@@ -177,7 +177,7 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 {"agent":"cursor","status":"running","jobId":"sub:cli:default:cursor:7","session":"sub:cli:default:cursor:7","summary":"subagent started in the background; results will arrive in a follow-up turn"}
 ```
 
-完成后 runner 向父 session 投递一条带 `[subagent-complete ...]` 前缀的 user 消息，主 agent 自动开新 turn 汇总。若父 session 仍在执行当前 turn（常见于子 Agent 很快失败），该消息进入 **FollowUp** 队列，在当前 turn 结束后再开 turn，而不是当作普通入站 **Steer**（避免结论被吞或无法单独回复用户）。
+完成后 runner 向父 session 投递一条带 `[subagent-complete ...]` 前缀的 user 消息，主 agent 自动开新 turn 汇总。该消息**始终经 scheduler 开新 turn**，不走 `Steer`（避免结论被注入父正在跑的回复、被吞或交错）：父 session 空闲时立即 dispatch；仍在执行当前 turn 时进入 scheduler 的 per-session pending 队列，当前 turn 结束后作为下一个 `Run` 接续。两种情况同一条路径，结论回复始终是独立的"下一条消息"（新卡），与过程卡解耦。
 
 `status` 取值：
 
@@ -237,6 +237,7 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
 2. **子 session**（`sub:<parent>:<agent>:<seq>`）是新 id，可在子 turn 里 `LoadSession` → `store_get`；与父 guard 无竞争。
 3. **Loop** 仍按 `TurnEnvelope.Conversation` 串行 turn；这是 **调度序**，不是 SessionStore 互斥。委派不应再引入第二层「同 id 重入 Get」。
 4. **平台 outbound**（`subagent/start|end`）与 session 审计解耦：审计先 `Append`，outbound **异步**发送，不阻塞 `delegate` 返回。
+5. **`async: true` 后台子 turn** 在 context 上设置 `KeyAsyncSubagent`：继承父 turn 的 `KeySessionControl`（权限 broker）；`forwardParentEmit` 用 `loop.AsyncEmitter`（单 goroutine 串行队列）包装父 turn 的 outbound，避免 ACP `SessionUpdate` 或收尾路径被平台 I/O 同步卡住，同时保留事件顺序供过程卡渲染。每次 emit 带 `asyncEmitTimeout`（15s）超时，`Close` 用 `CloseWithTimeout`（5s）有界排空，单个挂起的平台调用不会永久卡住 goroutine。`subagent/end` 与 `[subagent-complete]` follow-up 的投递**不与子 Agent 收尾互斥阻塞**：`runChild` 返回 closer 后，`runAsync` 先跑 `finishAsync`（审计 + 过程卡定稿 + 投递 follow-up），再调 closer 排空过程卡——结论投递在排空之前。`[subagent-complete]` 始终经 scheduler 开新 turn（不走 `Steer`/`FollowUp`），父 busy 时入 pending 队列接续，结论回复为独立新卡。
 
 `agent/coding` 在执行工具前注入 `KeySession`；`tool/subagent` 打 `delegate: start/done`；`subagent/loop-agent` 打 `subagent loop delegate|started|async returned`；`session` 在 Debug 打 `source=open_turn|store_get`。
 
@@ -268,13 +269,13 @@ flowchart TB
 | 无 `delegate: done`、无 `acp-remote` | guard 重入 `Get`（查 Debug 是否出现 `source=store_get` 解析父 session） | `context_session_test.go`、`delegate_guard_test.go` |
 | `recovered interrupted turn` + `orphan_results` | 上次 delegate 未结束，进程重启或超时 | 查父 session 是否缺 `tool/result` |
 | 有 `acp-remote: connected` 后挂住 | Cursor ACP `Prompt`、权限或 MCP 回调 | pod 内 `agent --trust acp`；`autoApprove` / broker |
-| 仅同步委派久等 | 父 turn 占锁至子 agent 结束（预期） | 非死锁；可显式 `async` 缩短占锁时间 |
+| 仅同步委派久等 | 父 turn 在 runner 队列中占槽至子 agent 结束（预期） | 非死锁；可显式 `async` 让主 turn 先结束 |
 
 回归测试：`go test ./runtime/session/... ./runtime/subagent/... -run 'ParentSession|Delegate|EmitSubagent'`
 
 ## 7. 本期不做
 
-- **并行 fan-out**。一次 `delegate` 仍只启动一个子 Agent；异步可让主 turn 先结束，但同一父 session 默认只允许 1 个 running 的 async job。要并行需要在 `Run` 旁边**加**更多并发控制，并先解决共享 workspace 的写冲突——和 `runner.maxConcurrentTurns` 默认 1 是同一个问题。
+- **无上限并行 fan-out**。一次 `delegate` 仍只启动一个子 Agent；`subagent/loop-agent` 的 `async: true` 可让主 turn 先结束。同一父 session 上并行 async job 默认**不限制**；可用 `maxConcurrentJobsPerSession`（channel 信号量）设上限。大规模并行仍需注意共享 workspace 写冲突，与 `runner.maxConcurrentTurns` 同源。
 - **超过 2 层的嵌套委派**（`delegate` 工具根据 session id 嵌套层数拒绝）。
 - **`subagent/rpc`**（跨进程子 Agent）。
 - **子 Agent 独立的 workspace 隔离**：现在与父共用一个根，靠工具白名单限制写入能力。

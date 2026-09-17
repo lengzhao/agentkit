@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +14,6 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
@@ -40,6 +38,9 @@ type LoopAgentConfig struct {
 	Agents []LoopAgentEntry `json:"agents,omitempty"`
 	// TimeoutSeconds is the default wall clock for one delegation.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	// MaxConcurrentJobsPerSession limits async jobs per parent session (channel semaphore).
+	// Zero means no limit.
+	MaxConcurrentJobsPerSession int `json:"maxConcurrentJobsPerSession,omitempty"`
 }
 
 // LoopAgentDeps holds injected capabilities for Loop-backed delegation.
@@ -50,14 +51,19 @@ type LoopAgentDeps struct {
 }
 
 // LoopAgentSpawner delegates to configured Loop agents (e.g. agent/acp-remote).
+type jobGate struct {
+	slots chan struct{}
+}
+
 type LoopAgentSpawner struct {
-	entries   []LoopAgentEntry
-	defaultTO time.Duration
-	store     agentkit.SessionStore
-	agents    map[agentkit.AgentID]agentkit.Agent
-	telemetry captelemetry.Exporter
-	submit    capschedule.SubmitFunc
-	running   sync.Map // parentSession -> count
+	entries                    []LoopAgentEntry
+	defaultTO                  time.Duration
+	maxConcurrentJobsPerParent int
+	store                      agentkit.SessionStore
+	agents                     map[agentkit.AgentID]agentkit.Agent
+	telemetry                  captelemetry.Exporter
+	submit                     capschedule.SubmitFunc
+	jobGates                   sync.Map // parentSession -> *jobGate
 }
 
 var _ subagent.Spawner = (*LoopAgentSpawner)(nil)
@@ -84,11 +90,12 @@ func NewLoopAgent(cfg LoopAgentConfig, deps LoopAgentDeps) (subagent.Spawner, er
 		exp = rttelemetry.Noop
 	}
 	return &LoopAgentSpawner{
-		entries:   cfg.Agents,
-		defaultTO: defaultTO,
-		store:     deps.SessionStore,
-		agents:    agents,
-		telemetry: exp,
+		entries:                    cfg.Agents,
+		defaultTO:                  defaultTO,
+		maxConcurrentJobsPerParent: cfg.MaxConcurrentJobsPerSession,
+		store:                      deps.SessionStore,
+		agents:                     agents,
+		telemetry:                  exp,
 	}, nil
 }
 
@@ -148,7 +155,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		if s.submit == nil {
 			return subagent.Result{}, fmt.Errorf("async subagent %q: submit func not bound yet", def.Name)
 		}
-		if err := s.trackRunning(parentID); err != nil {
+		if err := s.acquireJob(parentID); err != nil {
 			return subagent.Result{}, err
 		}
 	}
@@ -163,17 +170,12 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
 		slog.Warn("subagent loop: append start failed", "parent", parentID, "child", childID, "err", err)
 		if async {
-			s.untrackRunning(parentID)
+			s.releaseJob(parentID)
 		}
 		return subagent.Result{}, err
 	}
 	slog.Info("subagent loop: started", "agent", def.Name, "parent", parentID, "child", childID, "async", async)
-	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData); err != nil {
-		if async {
-			s.untrackRunning(parentID)
-		}
-		return subagent.Result{}, err
-	}
+	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData)
 
 	if async {
 		parentCtx := captureParentContext(ctx, parent)
@@ -188,7 +190,14 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		}, nil
 	}
 
-	result, runErr := s.runChild(ctx, def, ag, task, childID)
+	result, runErr, closer := s.runChild(ctx, def, ag, task, childID)
+	// Sync delegation: the parent turn is still open and owns the progress card,
+	// so drain the forwarded stream (blocking) before recording subagent/end so
+	// the card is fully rendered before the tool result returns. closer is nil
+	// for non-async children.
+	if closer != nil {
+		closer()
+	}
 	result = finalizeSubagentResult(result, runErr)
 	end := session.SubagentEndData{
 		Agent:   def.Name,
@@ -204,40 +213,51 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
 		return subagent.Result{}, err
 	}
-	if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
-		return subagent.Result{}, err
-	}
+	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
 	result.JobID = jobID
 	return result, runErr
 }
 
-func (s *LoopAgentSpawner) trackRunning(parentID agentkit.SessionID) error {
-	const maxConcurrent = int32(1)
-	v, _ := s.running.LoadOrStore(parentID, new(int32))
-	count := v.(*int32)
-	for {
-		cur := atomic.LoadInt32(count)
-		if cur >= maxConcurrent {
-			return fmt.Errorf("parent session already has a running async subagent")
-		}
-		if atomic.CompareAndSwapInt32(count, cur, cur+1) {
-			return nil
-		}
+func (s *LoopAgentSpawner) gateFor(parentID agentkit.SessionID) *jobGate {
+	max := s.maxConcurrentJobsPerParent
+	if max <= 0 {
+		return nil
+	}
+	v, _ := s.jobGates.LoadOrStore(parentID, &jobGate{slots: make(chan struct{}, max)})
+	return v.(*jobGate)
+}
+
+func (s *LoopAgentSpawner) acquireJob(parentID agentkit.SessionID) error {
+	gate := s.gateFor(parentID)
+	if gate == nil {
+		return nil
+	}
+	select {
+	case gate.slots <- struct{}{}:
+		return nil
+	default:
+		return fmt.Errorf("parent session has too many concurrent async subagents (max %d)", s.maxConcurrentJobsPerParent)
 	}
 }
 
-func (s *LoopAgentSpawner) untrackRunning(parentID agentkit.SessionID) {
-	if v, ok := s.running.Load(parentID); ok {
-		atomic.AddInt32(v.(*int32), -1)
+func (s *LoopAgentSpawner) releaseJob(parentID agentkit.SessionID) {
+	gate := s.gateFor(parentID)
+	if gate == nil {
+		return
+	}
+	select {
+	case <-gate.slots:
+	default:
 	}
 }
 
 type parentContext struct {
-	conversation  agentkit.SessionID
-	agentID       agentkit.AgentID
-	envelope      agentkit.TurnEnvelope
-	emit          agentkit.OutboundEmit
-	parentSession agentkit.Session
+	conversation   agentkit.SessionID
+	agentID        agentkit.AgentID
+	envelope       agentkit.TurnEnvelope
+	emit           agentkit.OutboundEmit
+	parentSession  agentkit.Session
+	sessionControl any
 }
 
 func captureParentContext(ctx context.Context, parent agentkit.Session) parentContext {
@@ -248,20 +268,26 @@ func captureParentContext(ctx context.Context, parent agentkit.Session) parentCo
 		}
 	}
 	agentID := session.AgentIDFromContext(ctx)
+	var sessionControl any
+	if v := ctx.Value(agentkit.KeySessionControl); v != nil {
+		sessionControl = v
+	}
 	return parentContext{
-		conversation:  agentkit.SessionID(env.Conversation),
-		agentID:       agentID,
-		envelope:      env,
-		emit:          emitFromContext(ctx),
-		parentSession: parent,
+		conversation:   agentkit.SessionID(env.Conversation),
+		agentID:        agentID,
+		envelope:       env,
+		emit:           emitFromContext(ctx),
+		parentSession:  parent,
+		sessionControl: sessionControl,
 	}
 }
 
 func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID) {
-	defer s.untrackRunning(parentID)
+	defer s.releaseJob(parentID)
 
 	var result subagent.Result
 	var runErr error
+	var closer func()
 	defer func() {
 		if r := recover(); r != nil {
 			runErr = fmt.Errorf("async subagent panic: %v", r)
@@ -273,23 +299,28 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 			}
 			slog.Error("async subagent: panic", "job_id", jobID, "agent", def.Name, "panic", r)
 		}
+		// Deliver the follow-up turn BEFORE draining the forwarded progress-card
+		// stream. The progress card is best-effort UI; the [subagent-complete]
+		// follow-up is what actually resumes the parent agent. Draining first (the
+		// old order) let a hung platform HTTP call block Close, which blocked
+		// finishAsync, which blocked the follow-up — the parent agent never got
+		// the response. See docs/guides/subagent.zh.md §6.1.
 		s.finishAsync(parent, def, childID, jobID, parentID, parentAgent, result, runErr)
+		if closer != nil {
+			closer()
+		}
 	}()
 
-	bg := context.Background()
-	ctx := session.ApplyEnvelopeToContext(bg, parent.envelope)
-	ctx = session.WithAgentID(ctx, parentAgent)
-	ctx = loop.ContextWithOutboundEmit(ctx, parent.emit)
+	ctx := parent.asyncRunContext()
 
-	result, runErr = s.runChild(ctx, def, ag, task, childID)
+	result, runErr, closer = s.runChild(ctx, def, ag, task, childID)
 	result = finalizeSubagentResult(result, runErr)
 }
 
 func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Definition, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID, result subagent.Result, runErr error) {
 	bg := context.Background()
-	ctx := session.ApplyEnvelopeToContext(bg, parent.envelope)
+	ctx := parent.asyncRunContext()
 	ctx = session.WithAgentID(ctx, parentAgent)
-	ctx = loop.ContextWithOutboundEmit(ctx, parent.emit)
 
 	end := session.SubagentEndData{
 		Agent:   def.Name,
@@ -317,11 +348,18 @@ func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Defini
 	if parentSess != nil {
 		if err := session.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
 			slog.Error("async subagent: append end", "job_id", jobID, "err", err)
-		} else if err := emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end); err != nil {
-			slog.Error("async subagent: emit end", "job_id", jobID, "err", err)
+		} else {
+			emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
 		}
 	}
-	s.submitSubagentComplete(bg, parent, parentAgent, def.Name, jobID, result, runErr)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("async subagent: submit complete panic", "job_id", jobID, "agent", def.Name, "panic", r)
+			}
+		}()
+		s.submitSubagentComplete(bg, parent, parentAgent, def.Name, jobID, result, runErr)
+	}()
 }
 
 func finalizeSubagentResult(result subagent.Result, runErr error) subagent.Result {
@@ -387,7 +425,7 @@ func formatSubagentComplete(agentName, jobID string, result subagent.Result, run
 	return b.String()
 }
 
-func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID) (out subagent.Result, runErr error) {
+func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID) (out subagent.Result, runErr error, closer func()) {
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
@@ -424,7 +462,8 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		defer cancel()
 	}
 
-	emit := forwardParentEmit(childCtx, emitFromContext(ctx))
+	emit, closeForward := forwardParentEmit(childCtx, emitFromContext(ctx))
+	closer = closeForward
 	runErr = ag.RunTurn(childCtx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -437,16 +476,16 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 	if err != nil {
 		slog.Warn("subagent loop: load child session failed", "child", childID, "err", err)
 		if runErr != nil {
-			return out, runErr
+			return out, runErr, closer
 		}
-		return out, err
+		return out, err, closer
 	}
 	events, err := session.ReadAllEvents(ctx, sess)
 	if err != nil {
 		if runErr != nil {
-			return out, runErr
+			return out, runErr, closer
 		}
-		return out, err
+		return out, err, closer
 	}
 	out.Steps = session.StepCount(events, 0)
 	if finish := session.FinishAfter(events, 0); finish != nil {
@@ -456,7 +495,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		out.Status = subagent.StatusStopped
 		out.Summary = session.LastAssistantText(events, 0)
 	}
-	return out, runErr
+	return out, runErr, closer
 }
 
 func (s *LoopAgentSpawner) timeoutFor(def subagent.Definition) time.Duration {
