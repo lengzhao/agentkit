@@ -44,7 +44,7 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	creds, err := plugincredentials.New(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	creds, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
