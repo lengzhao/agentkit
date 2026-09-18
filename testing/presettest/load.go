@@ -18,12 +18,15 @@ import (
 	"github.com/lengzhao/pluginkit/manager"
 )
 
+const smokeNoAPIKeyOverlay = "presets/smoke-no-api-key.yaml"
+
 // Load resolves L0 + overlays from the repo root.
 func Load(t *testing.T, overlayPaths ...string) manager.Document {
 	t.Helper()
 	root := agenttest.RepoRoot(t)
 	base := filepath.Join(root, config.DefaultBasePath)
-	overlays := make([]string, 0, len(overlayPaths))
+	overlays := make([]string, 0, len(overlayPaths)+1)
+	overlays = append(overlays, filepath.Join(root, smokeNoAPIKeyOverlay))
 	for _, path := range overlayPaths {
 		overlays = append(overlays, filepath.Join(root, path))
 	}

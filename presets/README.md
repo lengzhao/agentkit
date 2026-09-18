@@ -17,6 +17,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "one-shot
 | File | Scenario | Notes |
 |---|---|---|
 | [coding.yaml](coding.yaml) | Project coding | `scope: local`; sessions under `.agentkit/sessions` |
+| [smoke-no-api-key.yaml](smoke-no-api-key.yaml) | Keyless L0 LLM | Overrides `llm.review`; **chain before other smoke presets** |
 | [coding-smoke.yaml](coding-smoke.yaml) | Smoke without API key | Scripted LLM; validates assembly and tools |
 | [autonomous.yaml](autonomous.yaml) | Autonomous run | turn-continue, todo/finish, auto-allow + policy allowlist |
 | [autonomous-smoke.yaml](autonomous-smoke.yaml) | Autonomous smoke | Scripted LLM; turn-continue / todo / finish |
@@ -64,8 +65,8 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
 # Daemon: calendar cron + agent scheduling
 go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
 
-# Smoke without API key
-go run ./cmd/agent -config presets/coding-smoke.yaml "list dir and read README"
+# Smoke without API key (chain smoke-no-api-key for L0 openai-compatible instances)
+go run ./cmd/agent -config presets/smoke-no-api-key.yaml,presets/coding-smoke.yaml "list dir and read README"
 ```
 
 ## Task modes: prompt vs script

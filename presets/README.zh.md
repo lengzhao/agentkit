@@ -17,6 +17,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 | 文件 | 场景 | 说明 |
 |---|---|---|
 | [coding.yaml](coding.yaml) | 项目目录 coding | `scope: local`，session 落在 `.agentkit/sessions` |
+| [smoke-no-api-key.yaml](smoke-no-api-key.yaml) | 无密钥 L0 LLM | 覆盖 `llm.review`；**建议放在其它 smoke 之前** |
 | [coding-smoke.yaml](coding-smoke.yaml) | 无 API Key 冒烟 | scripted LLM，验证装配与工具链 |
 | [autonomous.yaml](autonomous.yaml) | 自主运行 | turn-continue、todo/finish、auto-allow + policy 白名单 |
 | [autonomous-smoke.yaml](autonomous-smoke.yaml) | 自主运行冒烟 | scripted LLM，验证 turn-continue / todo / finish |
@@ -64,8 +65,8 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/daemon.yaml
 # 常驻：日历 cron + agent 自主排期
 go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml
 
-# 无 Key 冒烟
-go run ./cmd/agent -config presets/coding-smoke.yaml "列出目录并读 README"
+# 无 Key 冒烟（链 smoke-no-api-key 覆盖 L0 的 openai-compatible 实例）
+go run ./cmd/agent -config presets/smoke-no-api-key.yaml,presets/coding-smoke.yaml "列出目录并读 README"
 ```
 
 ## task 两种模式：prompt 与 script

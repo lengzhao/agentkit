@@ -6,6 +6,13 @@
 #   segment 2: todo complete -> finish -> 纯文本
 #              hook 看到 run/finish，Stop，进程退出
 # 期望 session 事件里出现 todo/update ×2、turn/continue ×1、run/finish ×1。
+# 与 presets/smoke-no-api-key.yaml 链接，或依赖 presettest 自动 prepend。
+
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: "smoke: L0 llm.default placeholder（agent 内联 llm 优先）"
 
 platform.default:
   use: platform/cli

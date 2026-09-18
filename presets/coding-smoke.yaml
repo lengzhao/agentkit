@@ -1,4 +1,11 @@
 # L1 preset：无 API Key 冒烟（scripted LLM，覆盖 runner / session 相关实例）。
+# 与 presets/smoke-no-api-key.yaml 链接，或依赖 presettest 自动 prepend。
+
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: "smoke: L0 llm.default placeholder（agent 内联 llm 优先）"
 
 runner.default:
   use: runner

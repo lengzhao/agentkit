@@ -1,0 +1,12 @@
+# L1 overlay：覆盖 L0 的 llm.review（background-review 用），避免 construct 阶段要求 OPENAI_API_KEY。
+# 与其它 smoke preset 合并；若还需覆盖 llm.default，见各 *-smoke.yaml 或链本文件后再链带 scripted 的 preset。
+#
+#   go run ./cmd/agent -config presets/smoke-no-api-key.yaml,presets/coding-smoke.yaml "..."
+#
+# integration 的 presettest 会自动 prepend 本文件。
+
+llm.review:
+  use: llm/scripted
+  config:
+    steps:
+      - text: ""
