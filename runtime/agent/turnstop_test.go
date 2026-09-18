@@ -25,13 +25,17 @@ type stubTurnStopping struct {
 	forceStop     bool
 	stopReason    string
 	seen          []agentkit.TurnStopping
+	completed     []agentkit.TurnComplete
 }
 
 func (h *stubTurnStopping) BeforeStep(context.Context, *agentkit.BeforeStep) error { return nil }
 func (h *stubTurnStopping) BeforeTool(context.Context, *agentkit.ToolCall) error   { return nil }
 func (h *stubTurnStopping) AfterTool(context.Context, *agentkit.ToolResult) error  { return nil }
 
-func (h *stubTurnStopping) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
+func (h *stubTurnStopping) TurnComplete(_ context.Context, in *agentkit.TurnComplete) error {
+	h.completed = append(h.completed, *in)
+	return nil
+}
 
 func (h *stubTurnStopping) TurnStopping(_ context.Context, in *agentkit.TurnStopping) error {
 	h.seen = append(h.seen, *in)
@@ -234,6 +238,25 @@ func TestTurnStoppingStopWinsOverContinue(t *testing.T) {
 	}
 	if got := countEvents(events, agentkit.EventStepStart); got != 1 {
 		t.Fatalf("step/start events = %d, want 1", got)
+	}
+}
+
+func TestTurnCompleteCarriesMeterCounts(t *testing.T) {
+	t.Parallel()
+
+	hooks := &stubTurnStopping{continueTexts: []string{"keep going"}}
+	f := newTurnFixture(t, hooks, agent.Config{ID: "test"}, textReplies(4))
+	if err := f.run(t); err != nil {
+		t.Fatalf("run turn: %v", err)
+	}
+
+	// One step per segment: the initial segment plus one continuation.
+	if len(hooks.completed) != 1 {
+		t.Fatalf("turn-complete calls = %d, want 1", len(hooks.completed))
+	}
+	got := hooks.completed[0]
+	if got.Steps != 2 || got.Segments != 1 {
+		t.Errorf("TurnComplete Steps=%d Segments=%d, want Steps=2 Segments=1", got.Steps, got.Segments)
 	}
 }
 

@@ -176,7 +176,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
 		if a.hooks != nil && runErr == nil && !cancelled {
-			a.invokeTurnComplete(endCtx, sessionID, sess, run.llmModel, run.meter.tokensUsed())
+			a.invokeTurnComplete(endCtx, sessionID, sess, run.llmModel, run.meter)
 		}
 	}()
 
@@ -608,7 +608,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session,
 	return history, ctx, nil
 }
 
-func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, model string, turnTokens int) {
+func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, model string, meter *turnMeter) {
 	if sess == nil || sess.ID() != sessionID {
 		loaded, err := sessevents.LoadSession(ctx, a.sessionStore, sessionID)
 		if err != nil {
@@ -628,7 +628,9 @@ func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.Ses
 		AgentID:    a.id,
 		SessionID:  sessionID,
 		Model:      model,
-		TurnTokens: turnTokens,
+		Steps:      meter.stepsUsed(),
+		Segments:   meter.continuationsUsed(),
+		TurnTokens: meter.tokensUsed(),
 		Messages:   messages,
 	}
 	if err := a.hooks.TurnComplete(ctx, tc); err != nil {

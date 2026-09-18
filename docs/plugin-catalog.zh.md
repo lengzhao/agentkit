@@ -360,7 +360,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | BeforeTool | `OnBeforeTool` | 工具 input 改写（policy allow 之后） |
 | AfterTool | `OnAfterTool` | 工具 result 截断/改写 |
 | TurnStopping | `OnTurnStopping` | Turn 末续跑/收尾裁决 |
-| TurnComplete | `OnTurnComplete` | Turn 成功后后台任务（FTS 刷新、review fork 等） |
+| TurnComplete | `OnTurnComplete` | Turn 成功后后台任务（FTS 刷新、review fork 等）；payload 带 `Steps`/`Segments`/`TurnTokens` |
 
 ### 3.6 共享运行时插件
 

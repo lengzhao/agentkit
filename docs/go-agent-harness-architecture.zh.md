@@ -439,6 +439,8 @@ func OnTurnComplete(h func(context.Context, *TurnComplete) error) Hook
 
 `OnBeforeStep` 的 payload 携带 `Step`（turn 内 0 起的步序号，与 `step/start` 事件一致，等于本 turn 已完成步数）与 `Segment`（0 起的续跑段号，与 `turn/continue` 的 `Segment` 编号一致），hook 据此可知当前执行进度。
 
+`OnTurnComplete` 的 payload 携带 `Steps`（本 turn 全部 segment 的步数）、`Segments`（续跑次数，单 segment turn 为 0）与 `TurnTokens`（本 turn 累计 token，未知时为 0），学习/复盘类 hook 据此判断 turn 的工作量，无需从消息历史推断。
+
 `OnBeforeTool` / `OnAfterTool` 不是拒绝通道。允许、拒绝、询问只由 Policy Plane 产生 `Decision`，见 [5.5](#55-工具执行路径)。hook 返回的 `error` 表示插件执行失败，运行时中止该阶段并写入失败事件，它不是 Policy `deny`。
 
 `OnTurnStopping` 是自主运行的唯一 seam：Agent 准备结束 turn 时调用它，hook 往 `Continue` 追加消息即延展一个 segment，置 `Stop` 即强制收尾。两条不变量：

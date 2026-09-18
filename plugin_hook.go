@@ -45,6 +45,11 @@ type TurnComplete struct {
 	AgentID   AgentID
 	SessionID SessionID
 	Model     string
+	// Steps is the number of model steps the turn ran across all segments.
+	Steps int
+	// Segments is the number of continuations the turn ran (0 for a
+	// single-segment turn), matching turn/continue's Segment numbering.
+	Segments int
 	// TurnTokens is total model tokens recorded for this turn (0 when unknown).
 	TurnTokens int
 	// Messages is the derived model-visible history at turn end (read-only).
