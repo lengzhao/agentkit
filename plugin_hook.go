@@ -76,6 +76,9 @@ type TurnStopReason string
 const (
 	// StopNoToolCalls means the assistant answered without requesting tools.
 	StopNoToolCalls TurnStopReason = "no-tool-calls"
+	// StopStepLimit means the turn hit the agent maxSteps cap before starting
+	// another model step.
+	StopStepLimit TurnStopReason = "step-limit"
 )
 
 // TurnStopping is invoked when the agent is about to end a turn segment. Hooks

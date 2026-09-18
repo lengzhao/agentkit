@@ -6,7 +6,7 @@
 
 ## 1. Turn / Segment 模型
 
-L0 默认的交互主 agent（`agent.assistant.default`）的 `hooks.default` **不含** `hook/turn-continue`：segment 内工具循环在模型不再调用工具时结束，与 Pi 类似。需要自主续跑与完成判定时，换用 `agent.worker.default`（`hooks.worker` 已挂 `hook/turn-continue`），或在自定义 agent 的 `deps.hooks` 里挂上该 hook。`agent/coding` **没有** `budget` / `maxSteps` 配置；步数、token 等上限若需要，在 `OnTurnStopping` 里根据 `TurnStopping.Steps` / `Tokens` 自行裁决。
+L0 默认的交互主 agent（`agent.assistant.default`）的 `hooks.default` **不含** `hook/turn-continue`：segment 内工具循环在模型不再调用工具时结束，与 Pi 类似。需要自主续跑与完成判定时，换用 `agent.worker.default`（`hooks.worker` 已挂 `hook/turn-continue`），或在自定义 agent 的 `deps.hooks` 里挂上该 hook。`agent/coding` 的 `maxSteps` 默认 **200**（整 turn、跨 segment 累计）；显式 `maxSteps: 0` 表示不限制。触顶时 Agent 以 `step-limit` 错误收尾（与 cancel 类似写入 `turn/end` 元数据）；Loop 在转发 `turn/end` 前通过 outbound 下发用户可见说明，不再调用 `TurnStopping` 续跑。token 等其它上限仍在 `OnTurnStopping` 里根据 `TurnStopping.Tokens` 等自行裁决。
 
 引入 `TurnStopping` 之后，自主运行的 turn 可由若干 **segment** 组成：
 
@@ -45,7 +45,7 @@ type TurnStopping struct {
 1. **`Stop` 优先于 `Continue`** —— 任一 hook 说停就停。
 2. **续跑消息必须落盘** —— Agent 把注入内容写成 `turn/continue` 事件，`DeriveMessages` 再回放成 user 消息。因此续跑既是审计记录也是模型可见来源，满足 "Model-visible ⟺ Logged"。
 
-Agent 在 turn 内累计 `steps` / `continuations` / `tokens`，写入 `TurnStopping` 供 hook 观测；**不在** runtime 内按配置截断 segment。
+Agent 在 turn 内累计 `steps` / `continuations` / `tokens`，写入 `TurnStopping` 供 hook 观测；**步数硬顶**由 `maxSteps` 在下一步模型调用前 enforcement，其余策略仍由 hook 裁决。
 
 ## 3. `hook/turn-continue` 配置
 

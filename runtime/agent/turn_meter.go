@@ -1,7 +1,7 @@
 package agent
 
-// turnMeter counts consumption for one turn (all segments). Limits are enforced
-// by TurnStopping hooks, not the agent runtime.
+// turnMeter counts consumption for one turn (all segments). Step caps are
+// enforced by the agent maxSteps config; token/continuation policy uses hooks.
 type turnMeter struct {
 	steps         int
 	continuations int

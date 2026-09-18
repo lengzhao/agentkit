@@ -126,7 +126,7 @@ func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteT
 			return RecoveryData{}, err
 		}
 	}
-	if err := AppendTurnEnd(ctx, s, agentID, turn.StepsEnded); err != nil {
+	if err := AppendTurnEnd(ctx, s, agentID, TurnEndData{Steps: turn.StepsEnded}); err != nil {
 		return RecoveryData{}, err
 	}
 	data := RecoveryData{

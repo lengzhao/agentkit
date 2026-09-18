@@ -92,6 +92,16 @@ type Platform struct {
 	cardActionMsgMu            sync.Mutex
 	cardActionMsgIDs           map[string]string
 	startOnce                  sync.Once
+	// pendingAttachments buffers file/image/audio messages received without
+	// accompanying text, so a follow-up text message can carry them in the
+	// same user turn. See pending_attachments.go.
+	pendingMu                  sync.Mutex
+	pending                    map[string]*pendingAttachEntry
+	pendingTTL                 time.Duration
+	// activeThreadSessions tracks thread sessionKeys that have been engaged
+	// by an @bot mention, allowing subsequent attachment-only messages in the
+	// same thread to pass the group @ filter.
+	activeThreadSessions       sync.Map
 }
 
 type feishuRequestFunc func(client *lark.Client, options ...larkcore.RequestOptionFunc) error
@@ -321,6 +331,7 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		chatType = *msg.ChatType
 	}
 	mentionCount := len(msg.Mentions)
+	sessionKey := p.makeSessionKey(msg, chatID, userID)
 	slog.Debug(p.tag()+": inbound message",
 		"message_id", messageID,
 		"chat_id", chatID,
@@ -329,16 +340,26 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		"thread_id", stringValue(msg.ThreadId),
 		"parent_id", stringValue(msg.ParentId),
 		"mentions", mentionCount,
+		"session_key", sessionKey,
 		"group_reply_all", p.groupReplyAll,
 		"thread_isolation", p.threadIsolation,
 	)
 
 	if chatType == "group" && !p.groupReplyAll && p.botOpenID != "" {
 		if !isBotMentioned(msg.Mentions, p.botOpenID) {
+			switch {
 			// Feishu @all sends {"text":"@_all"} with 0 mentions.
-			if p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all") {
+			case p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all"):
 				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
-			} else {
+			// Once a thread has been engaged via @bot, allow follow-up
+			// attachment-only messages (image/file/audio/media/sticker) in the
+			// same thread through without re-mentioning the bot. Plain text
+			// still requires an explicit @bot to avoid pulling in unrelated
+			// chatter.
+			case p.threadIsolation && isAttachmentMsgType(msgType) && p.isActiveThreadSession(sessionKey):
+				slog.Debug(p.tag()+": passing attachment through active thread without mention",
+					"chat_id", chatID, "session_key", sessionKey, "msg_type", msgType, "message_id", messageID)
+			default:
 				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
 				return nil
 			}
@@ -372,13 +393,16 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	mentions := msg.Mentions
 	parentID := stringValue(msg.ParentId)
 
-	sessionKey := p.makeSessionKey(msg, chatID, userID)
 	rctx := replyContext{messageID: messageID, chatID: chatID, chatType: chatType, sessionKey: sessionKey}
 	slog.Debug(p.tag()+": routed inbound message",
 		"message_id", messageID,
 		"session_key", sessionKey,
 		"reply_in_thread", p.shouldReplyInThread(rctx),
 	)
+
+	// Mark this thread as bot-engaged so subsequent attachment-only messages
+	// in the same thread can pass the group @ filter without re-mentioning.
+	p.markThreadSessionActive(sessionKey)
 
 	// Dispatch message handling asynchronously so the SDK event loop is not
 	// blocked by IO-heavy operations (image/audio download, handler HTTP calls).
@@ -433,12 +457,14 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			)
 			return
 		}
+		pending := p.drainPendingAttachments(sessionKey)
 		p.dispatchCoreMessage(&inboundMessage{
 			sessionID:    agentkit.SessionID(sessionKey),
 			messageID:    messageID,
 			userID:       userID,
 			content:      text,
 			extraContent: quotedPrefix,
+			presaved:     pending,
 			mentions:     mentions,
 			rctx:         rctx,
 		})
@@ -459,14 +485,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			}
 			return
 		}
-		p.dispatchCoreMessage(&inboundMessage{
-			sessionID: agentkit.SessionID(sessionKey),
-			messageID: messageID,
-			userID:    userID,
-			images:    []common.ImageAttachment{{MimeType: mimeType, Data: imgData}},
-			mentions:  mentions,
-			rctx:      rctx,
-		})
+		p.saveAndBuffer(sessionKey, imgData, mimeType, "")
 
 	case "audio":
 		var audioBody struct {
@@ -486,19 +505,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			}
 			return
 		}
-		p.dispatchCoreMessage(&inboundMessage{
-			sessionID: agentkit.SessionID(sessionKey),
-			messageID: messageID,
-			userID:    userID,
-			audio: &common.AudioAttachment{
-				MimeType: "audio/opus",
-				Data:     audioData,
-				Format:   "ogg",
-				Duration: audioBody.Duration / 1000,
-			},
-			mentions: mentions,
-			rctx:     rctx,
-		})
+		p.saveAndBuffer(sessionKey, audioData, "audio/opus", "")
 
 	case "post":
 		textParts, images := p.parsePostContent(messageID, content)
@@ -506,6 +513,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		if text == "" && len(images) == 0 {
 			return
 		}
+		pending := p.drainPendingAttachments(sessionKey)
 		p.dispatchCoreMessage(&inboundMessage{
 			sessionID:    agentkit.SessionID(sessionKey),
 			messageID:    messageID,
@@ -513,6 +521,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			content:      text,
 			extraContent: quotedPrefix,
 			images:       images,
+			presaved:     pending,
 			mentions:     mentions,
 			rctx:         rctx,
 		})
@@ -537,18 +546,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		}
 		slog.Debug(p.tag()+": file downloaded", "file_name", fileBody.FileName, "size", len(fileData))
 		mimeType := detectMimeType(fileData)
-		p.dispatchCoreMessage(&inboundMessage{
-			sessionID: agentkit.SessionID(sessionKey),
-			messageID: messageID,
-			userID:    userID,
-			files: []common.FileAttachment{{
-				MimeType: mimeType,
-				Data:     fileData,
-				FileName: fileBody.FileName,
-			}},
-			mentions: mentions,
-			rctx:     rctx,
-		})
+		p.saveAndBuffer(sessionKey, fileData, mimeType, fileBody.FileName)
 
 	case "merge_forward":
 		text, images, files := p.parseMergeForward(messageID)
@@ -556,6 +554,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			slog.Warn(p.tag()+": merge_forward produced no content", "message_id", messageID)
 			return
 		}
+		pending := p.drainPendingAttachments(sessionKey)
 		coreMsg := &inboundMessage{
 			sessionID: agentkit.SessionID(sessionKey),
 			messageID: messageID,
@@ -563,6 +562,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			content:   text,
 			images:    images,
 			files:     files,
+			presaved:  pending,
 			mentions:  mentions,
 			rctx:      rctx,
 		}
@@ -579,26 +579,10 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		slog.Info(p.tag()+": sticker received", "user", userID, "file_key", stickerBody.FileKey)
 		imgData, mimeType, err := p.downloadImage(messageID, stickerBody.FileKey)
 		if err != nil {
-			slog.Warn(p.tag()+": download sticker failed, falling back to placeholder", "error", err)
-			p.dispatchCoreMessage(&inboundMessage{
-				sessionID:    agentkit.SessionID(sessionKey),
-				messageID:    messageID,
-				userID:       userID,
-				content:      "[sticker]",
-				extraContent: quotedPrefix,
-				mentions:     mentions,
-				rctx:         rctx,
-			})
+			slog.Warn(p.tag()+": download sticker failed, skipping", "error", err)
 			return
 		}
-		p.dispatchCoreMessage(&inboundMessage{
-			sessionID: agentkit.SessionID(sessionKey),
-			messageID: messageID,
-			userID:    userID,
-			images:    []common.ImageAttachment{{MimeType: mimeType, Data: imgData}},
-			mentions:  mentions,
-			rctx:      rctx,
-		})
+		p.saveAndBuffer(sessionKey, imgData, mimeType, "")
 
 	case "media":
 		var mediaBody struct {
@@ -612,32 +596,18 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			return
 		}
 		slog.Info(p.tag()+": media received", "user", userID, "file_key", mediaBody.FileKey, "file_name", mediaBody.FileName)
-		text := "[video"
-		if mediaBody.FileName != "" {
-			text += ": " + mediaBody.FileName
-		}
-		if mediaBody.Duration > 0 {
-			text += fmt.Sprintf(", %ds", mediaBody.Duration/1000)
-		}
-		text += "]"
-		var images []common.ImageAttachment
-		if mediaBody.ImageKey != "" {
-			if thumbData, thumbMime, err := p.downloadImage(messageID, mediaBody.ImageKey); err == nil {
-				images = append(images, common.ImageAttachment{MimeType: thumbMime, Data: thumbData})
-			} else {
-				slog.Warn(p.tag()+": download media thumbnail failed", "error", err)
+		// Download the video file and buffer it; the thumbnail is skipped to
+		// keep the buffer lean — the agent can read the saved video path.
+		videoData, err := p.downloadResource(messageID, mediaBody.FileKey, "file")
+		if err != nil {
+			slog.Error(p.tag()+": download media file failed", "error", err)
+			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ Video download failed (network error). Please resend."); sendErr != nil {
+				slog.Error(p.tag()+": failed to notify user about media download failure", "error", sendErr)
 			}
+			return
 		}
-		p.dispatchCoreMessage(&inboundMessage{
-			sessionID:    agentkit.SessionID(sessionKey),
-			messageID:    messageID,
-			userID:       userID,
-			content:      text,
-			extraContent: quotedPrefix,
-			images:       images,
-			mentions:     mentions,
-			rctx:         rctx,
-		})
+		mimeType := "video/mp4"
+		p.saveAndBuffer(sessionKey, videoData, mimeType, mediaBody.FileName)
 
 	default:
 		slog.Debug(p.tag()+": ignoring unsupported message type", "type", msgType)

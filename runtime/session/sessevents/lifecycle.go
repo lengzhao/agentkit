@@ -12,6 +12,7 @@ type TurnStartData struct{}
 type TurnEndData struct {
 	Steps      int    `json:"steps"`
 	StopReason string `json:"stopReason,omitempty"`
+	StepLimit  int    `json:"stepLimit,omitempty"`
 	Cancelled  bool   `json:"cancelled,omitempty"`
 	Failed     bool   `json:"failed,omitempty"`
 }
@@ -60,8 +61,8 @@ func AppendTurnStart(ctx context.Context, s agentkit.Session, agentID agentkit.A
 	return appendLifecycle(ctx, s, agentID, agentkit.EventTurnStart, TurnStartData{})
 }
 
-func AppendTurnEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, steps int) error {
-	return appendLifecycle(ctx, s, agentID, agentkit.EventTurnEnd, TurnEndData{Steps: steps})
+func AppendTurnEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data TurnEndData) error {
+	return appendLifecycle(ctx, s, agentID, agentkit.EventTurnEnd, data)
 }
 
 func AppendStepStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error {

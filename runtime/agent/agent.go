@@ -31,6 +31,9 @@ type Config struct {
 	Modalities []string `json:"modalities,omitempty"`
 	// Retry is per-step retry for transient provider failures.
 	Retry *RetryConfig `json:"retry,omitempty"`
+	// MaxSteps caps model steps per turn (all segments). Omitted defaults to 200;
+	// explicit 0 disables the cap.
+	MaxSteps *int `json:"maxSteps,omitempty"`
 }
 
 type Deps struct {
@@ -49,6 +52,7 @@ type Runtime struct {
 	model        string
 	modalities   []string
 	retry        retrySettings
+	maxSteps     int
 	now          func() time.Time
 	sessionStore agentkit.SessionStore
 	llm          agentkit.LLMProvider
@@ -63,7 +67,7 @@ type Runtime struct {
 //
 // Best practices:
 //   - An interrupted turn is repaired on the next turn, so a crash mid-tool-call does not leave the session unusable.
-//   - Turn limits and autonomous continuation belong in TurnStopping hooks (e.g. hook/turn-continue), not agent config.
+//   - Autonomous continuation belongs in TurnStopping hooks (e.g. hook/turn-continue); per-turn step caps use maxSteps.
 func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	id := cfg.ID
 	if id == "" {
@@ -89,6 +93,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		model:        cfg.Model,
 		modalities:   agentkit.NormalizeModalities(cfg.Modalities),
 		retry:        resolveRetrySettings(cfg.Retry),
+		maxSteps:     resolveMaxSteps(cfg.MaxSteps),
 		now:          time.Now,
 		sessionStore: deps.SessionStore,
 		llm:          deps.LLM,
@@ -162,7 +167,11 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		telemetry.RecordTurnSteps(ctx, run.completed)
 		endData := sessevents.TurnEndData{Steps: run.completed}
 		cancelled := false
-		if reason, ok := cancelReasonFromError(runErr); ok {
+		if cap, ok := stepLimitFromError(runErr); ok {
+			endData.StopReason = string(agentkit.StopStepLimit)
+			endData.StepLimit = cap
+			telemetry.RecordTurnStopReason(ctx, endData.StopReason)
+		} else if reason, ok := cancelReasonFromError(runErr); ok {
 			cancelled = true
 			endData.Cancelled = true
 			endData.StopReason = reason
@@ -171,7 +180,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			endData.Failed = true
 			endData.StopReason = runErr.Error()
 		}
-		_ = sessevents.AppendTurnEnd(endCtx, sess, a.id, run.completed)
+		_ = sessevents.AppendTurnEnd(endCtx, sess, a.id, endData)
 		if err := a.emitLifecycle(endCtx, input.Emit, agentkit.EventTurnEnd, endData); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
@@ -234,6 +243,16 @@ func (a *Runtime) runSegment(
 			if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
 				return "", err
 			}
+		}
+
+		if a.maxSteps > 0 && run.meter.stepsUsed() >= a.maxSteps {
+			slog.Info("step limit reached",
+				"agent_id", a.id,
+				"session_id", sess.ID(),
+				"max_steps", a.maxSteps,
+				"steps", run.meter.stepsUsed(),
+			)
+			return "", newStepLimitError(a.maxSteps)
 		}
 
 		run.meter.recordStep()

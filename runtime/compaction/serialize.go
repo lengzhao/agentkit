@@ -37,7 +37,9 @@ func SerializeConversation(messages []agentkit.ModelMessage) string {
 				b.WriteString(result.Content)
 			}
 		default:
-			b.WriteString("[" + msg.Role + "]: ")
+			b.WriteString("[")
+			b.WriteString(msg.Role)
+			b.WriteString("]: ")
 			b.WriteString(messageText(msg))
 		}
 		b.WriteByte('\n')

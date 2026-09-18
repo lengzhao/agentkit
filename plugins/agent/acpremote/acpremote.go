@@ -144,7 +144,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		}
 		defer func() {
 			endCtx := context.WithoutCancel(ctx)
-			_ = sessevents.AppendTurnEnd(endCtx, sess, a.id, 1)
+			_ = sessevents.AppendTurnEnd(endCtx, sess, a.id, sessevents.TurnEndData{Steps: 1})
 		}()
 		if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 			return err

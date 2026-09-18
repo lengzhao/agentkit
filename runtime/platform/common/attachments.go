@@ -52,11 +52,25 @@ func AttachFSRel(ws cw.Service, name string) string {
 	return workpath.StripWorkPrefix(workDir, workpath.AttachRel(ws, name))
 }
 
+// PresavedAttachment is an attachment already saved to disk by the platform
+// (e.g. buffered pending attachments). Only metadata is carried; the bytes
+// are already under upload/.
+type PresavedAttachment struct {
+	Path     string
+	Mime     string
+	Size     int
+	OrigName string
+	Image    bool
+}
+
 // InboundOpts configures optional inbound media handling.
 type InboundOpts struct {
 	// Workspace resolves upload paths; when set, inbound files land under the
 	// same tenant root as session/store and tool/fs-workspace.
 	Workspace cw.Service
+	// PresavedAttachments are attachments already on disk; their paths are
+	// appended to the user prompt as an attachment block.
+	PresavedAttachments []PresavedAttachment
 }
 
 // InboundOptsFor builds inbound media options from an optional workspace.
@@ -65,6 +79,24 @@ func InboundOptsFor(ws cw.Service) *InboundOpts {
 		return nil
 	}
 	return &InboundOpts{Workspace: ws}
+}
+
+// SaveInboundAttachments writes the given files to the upload directory and
+// returns their workspace-relative paths plus metadata. Useful for platforms
+// that buffer attachments before a text message arrives.
+func SaveInboundAttachments(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []PresavedAttachment {
+	saved := saveInboundFiles(deliveryID, files, opts)
+	out := make([]PresavedAttachment, 0, len(saved))
+	for _, s := range saved {
+		out = append(out, PresavedAttachment{
+			Path:     s.path,
+			Mime:     s.mime,
+			Size:     s.size,
+			OrigName: s.origName,
+			Image:    s.image,
+		})
+	}
+	return out
 }
 
 // InboundFromContent builds a MessageEvent from text and optional rtmedia.
@@ -121,6 +153,17 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 	if len(filePaths) > 0 && len(files) == 0 {
 		for _, p := range filePaths {
 			attachmentNotes = append(attachmentNotes, inboundSavedAttachment{path: p})
+		}
+	}
+	if opts != nil && len(opts.PresavedAttachments) > 0 {
+		for _, a := range opts.PresavedAttachments {
+			attachmentNotes = append(attachmentNotes, inboundSavedAttachment{
+				path:     a.Path,
+				mime:     a.Mime,
+				size:     a.Size,
+				origName: a.OrigName,
+				image:    a.Image,
+			})
 		}
 	}
 

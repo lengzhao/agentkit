@@ -97,7 +97,7 @@ func TestScanIncompleteIgnoresClosedTurns(t *testing.T) {
 	if err := sessevents.AppendStepEnd(ctx, sess, "coder", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnEnd(ctx, sess, "coder", 1); err != nil {
+	if err := sessevents.AppendTurnEnd(ctx, sess, "coder", sessevents.TurnEndData{Steps: 1}); err != nil {
 		t.Fatal(err)
 	}
 	events, err := derive.ReadAllEvents(ctx, sess)

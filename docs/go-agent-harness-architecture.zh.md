@@ -1021,6 +1021,8 @@ Assistant 流式输出对齐 Pi RPC，经 `OutboundEmit` 在 turn 执行期间�
 
 `platform/chat-api` 在 `debugUi: true` 时把上述出站事件映射为 SSE：`text_delta` / `thinking_delta` → `text_delta`；`toolcall_end` → `tool_call`（含完整 `input`，不在 `toolcall_start` 时提前发）；`tool/result` → `tool_result`（正文限长 1024 rune）。子 Agent 经 [§5.10](#510-子-agent-委派subagent) 的 `forwardParentEmit` 转发的工具事件走同一路径，`agent_id` 区分来源。交互细节见 [guides/platform-interaction.zh.md](guides/platform-interaction.zh.md)。
 
+**飞书附件缓冲（pending attachments）**：飞书把文件、图片、语音、视频作为独立消息发送，用户「先发文件、再发文字」时文件和文字会落到不同 user turn。`platform/feishu` 在内存中按 sessionKey 维护 `pendingAttachments` 缓冲区：附件消息到达后立即落盘到 `upload/`，只把 workspace 路径与元数据（mime/size/origName/image）记入缓冲，**不 dispatch**；后续 `text` / `post` / `merge_forward` 消息到达时 `drainPendingAttachments` 取出缓冲附件，通过 `InboundOpts.PresavedAttachments` 合并进同一条 `MessageEvent`，使 agent 在同一轮看到文字与文件。缓冲条目带 3 分钟 TTL timer（`pendingTTL`，默认 `defaultPendingAttachTTL`），超时静默清除；`Stop` 时 `flushPendingAttachments` 停掉所有 timer。群聊话题（`threadIsolation`）内，一旦某 thread 被 @bot 触发过（`activeThreadSessions`），后续纯附件消息可免 @ 直接进缓冲，纯文字仍需 @ 以避免无关 chatter 灌入。
+
 ### 6.4 Agent
 
 ```go
@@ -1079,7 +1081,7 @@ sequenceDiagram
 
 Loop 不直接依赖具体工具、模型、压缩器、审批器或沙箱。它只调用 Agent 接口、调度策略和已装配的 loop-level hooks。
 
-一个 turn 由一个或多个 **segment** 组成：segment 内工具循环默认不设步数上限，直到模型停调工具。段末由 `OnTurnStopping` 决定收尾还是续跑；默认主 agent 不挂 turn-stopping 续跑 hook。`hook/turn-continue` 的 `maxContinuations` 控制单 turn 最多续跑几次；为 0 时不注入 `Continue`。
+一个 turn 由一个或多个 **segment** 组成：segment 内工具循环在模型停调工具前持续；整 turn 的模型步数由 `agent/coding` 的 `maxSteps`（默认 200）硬顶。段末由 `OnTurnStopping` 决定收尾还是续跑；默认主 agent 不挂 turn-stopping 续跑 hook。`hook/turn-continue` 的 `maxContinuations` 控制单 turn 最多续跑几次；为 0 时不注入 `Continue`。
 
 ### 6.6 Prompt
 

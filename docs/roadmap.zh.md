@@ -12,7 +12,7 @@
 |---|---|
 | `StartStop` / `Root.Stop` 空实现 | daemon 退出无法有序 flush |
 | follow-up inbox 纯内存 | 崩溃后排队消息丢失 |
-| `hook/llm-request`、`BeforeStep` 决策类型 | 请求改写与步级 reject |
+| `hook/llm-request`、`BeforeStep` 决策类型 | 请求改写（步数硬顶已用 `maxSteps`） |
 | ~~`session/sqlite-index` + `tool/session-query`~~ | 已落地（见 learning-dreaming §9.1） |
 | `platform/http`、`platform/rpc` | 通用 HTTP/RPC 接入（`platform/http` 已落地：服务 DefaultServeMux） |
 | `policy/network-deny` | SSRF 仍在 `web/http-fetch` 内 |

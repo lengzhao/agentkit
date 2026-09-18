@@ -789,6 +789,26 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 	return p.flushRichCard(ctx, streamKey, false)
 }
 
+// handleRichProactiveAssistant applies non-streaming assistant outbound (e.g. loop
+// step-limit notice) onto the in-flight rich card before turn/end.
+func (p *Platform) handleRichProactiveAssistant(ctx context.Context, event agentkit.OutboundEvent) error {
+	streamKey := outboundStreamKey(event)
+	var msg agentkit.ModelMessage
+	if err := json.Unmarshal(event.Data, &msg); err != nil {
+		return err
+	}
+	text := strings.TrimSpace(assistantText(msg))
+	if text == "" {
+		return p.outbound.Handle(ctx, event)
+	}
+	st := p.streamState(streamKey)
+	st.lock()
+	st.bodyText = text
+	st.finalizedBodyText = text
+	st.unlock()
+	return p.flushRichCard(ctx, streamKey, false)
+}
+
 // finalizeRichTurnEndAsync patches the CardKit entity without blocking turn/end teardown.
 func (p *Platform) finalizeRichTurnEndAsync(
 	ctx context.Context,

@@ -71,6 +71,7 @@ type inboundMessage struct {
 	images       []common.ImageAttachment
 	files        []common.FileAttachment
 	audio        *common.AudioAttachment
+	presaved     []common.PresavedAttachment
 	mentions     []*larkim.MentionEvent
 	rctx         replyContext
 }
@@ -367,7 +368,9 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		}
 		return nil
 	case agentkit.EventAssistantMessage:
-		// Proactive tool/send messages (text + files) bypass streaming cards.
+		if p.useRichStream() {
+			return p.handleRichProactiveAssistant(ctx, event)
+		}
 		return p.outbound.Handle(ctx, event)
 	default:
 		return p.outbound.Handle(ctx, event)
@@ -411,6 +414,7 @@ func (p *Platform) run(ctx context.Context) {
 		_ = p.startWebSocketMode(ctx)
 	}
 	<-ctx.Done()
+	p.flushPendingAttachments()
 	if p.wsClient != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -472,10 +476,17 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}
 	}
 
+	opts := common.InboundOptsFor(p.workspace)
+	if len(msg.presaved) > 0 {
+		if opts == nil {
+			opts = &common.InboundOpts{Workspace: p.workspace}
+		}
+		opts.PresavedAttachments = msg.presaved
+	}
 	event := common.InboundFromContent(
 		p.agentID, msg.inboundRoute(p.platformTag), msg.userID,
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
-		common.InboundOptsFor(p.workspace),
+		opts,
 	)
 	_ = p.inbox.Push(ctx, common.WithMetadata(event, metadata))
 }
