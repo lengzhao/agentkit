@@ -1,4 +1,4 @@
-package agent
+package command
 
 import (
 	"context"
@@ -12,13 +12,13 @@ import (
 )
 
 // Command exposes the agent catalog and session or global agent switching.
-func Command(agents []agentkit.Agent, store agentkit.SessionStore, defaultAgent agentkit.AgentID, ws workspace.Service) agentkit.Command {
+func AgentCommand(agents []agentkit.Agent, store agentkit.SessionStore, defaultAgent agentkit.AgentID, ws workspace.Service) agentkit.Command {
 	return agentCommand{agents: agents, store: store, defaultAgent: defaultAgent, workspace: ws}
 }
 
 // HelpCommand exposes the agent catalog help slash command for built agent instances.
-func HelpCommand(agents []agentkit.Agent) agentkit.Command {
-	return Command(agents, nil, "", nil)
+func AgentHelpCommand(agents []agentkit.Agent) agentkit.Command {
+	return AgentCommand(agents, nil, "", nil)
 }
 
 type agentCommand struct {
@@ -28,9 +28,11 @@ type agentCommand struct {
 	workspace    workspace.Service
 }
 
-func (agentCommand) Name() string        { return "agent" }
-func (agentCommand) Alias() string       { return "" }
-func (agentCommand) Description() string { return "list agents, switch session or global (-g) default agent" }
+func (agentCommand) Name() string  { return "agent" }
+func (agentCommand) Alias() string { return "" }
+func (agentCommand) Description() string {
+	return "list agents, switch session or global (-g) default agent"
+}
 
 func (c agentCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	global, payload, rest := parseCatalogSlashArgs(args)
@@ -217,14 +219,4 @@ func agentDoc(agents []agentkit.Agent, name string) (string, error) {
 		return fmt.Sprintf("agent %q", name), nil
 	}
 	return "", fmt.Errorf("unknown agent %q (try /agent)", name)
-}
-
-func (a *Runtime) AgentCatalogEntry() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "agent %q\n", a.id)
-	b.WriteString("kind: agent/coding\n")
-	if a.model != "" {
-		fmt.Fprintf(&b, "model: %s\n", a.model)
-	}
-	return strings.TrimRight(b.String(), "\n")
 }

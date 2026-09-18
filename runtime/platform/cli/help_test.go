@@ -8,10 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/agent"
+	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/platform/cli"
 	"github.com/lengzhao/agentkit/runtime/subagent"
@@ -71,7 +70,7 @@ func testHelpCommands(t *testing.T) agentkit.Commands {
 type agentProvider struct{}
 
 func (agentProvider) Commands() []agentkit.Command {
-	return []agentkit.Command{agent.HelpCommand([]agentkit.Agent{
+	return []agentkit.Command{command.AgentHelpCommand([]agentkit.Agent{
 		stubHelpAgent{id: "assistant"},
 	})}
 }

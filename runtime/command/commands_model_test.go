@@ -1,4 +1,4 @@
-package agent_test
+package command_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -36,7 +36,7 @@ func TestModelCommandSetAndShow(t *testing.T) {
 		defaultAgent: "assistant",
 	}
 	ws := rtworkspace.Static(t.TempDir())
-	provider, err := agent.NewCatalogCommands(agent.CatalogCommandsConfig{}, agent.CatalogCommandsDeps{
+	provider, err := command.NewCatalogCommands(command.CatalogCommandsConfig{}, command.CatalogCommandsDeps{
 		Loop:         loop,
 		SessionStore: store,
 		Workspace:    ws,
@@ -132,7 +132,7 @@ func TestModelGlobalUsesRoutedAgent(t *testing.T) {
 		defaultAgent: "assistant",
 	}
 	ws := rtworkspace.Static(t.TempDir())
-	provider, err := agent.NewCatalogCommands(agent.CatalogCommandsConfig{}, agent.CatalogCommandsDeps{
+	provider, err := command.NewCatalogCommands(command.CatalogCommandsConfig{}, command.CatalogCommandsDeps{
 		Loop:         loop,
 		SessionStore: store,
 		Workspace:    ws,

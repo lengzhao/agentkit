@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -29,7 +28,7 @@ func TestDispatchAgentUsePersistsBind(t *testing.T) {
 	store := session.NewStaticStore(mem)
 	reg, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
 		stubProvider{commands: []agentkit.Command{
-			agent.Command([]agentkit.Agent{stubAgent{id: "reviewer"}}, store, "reviewer", nil),
+			AgentCommand([]agentkit.Agent{stubAgent{id: "reviewer"}}, store, "reviewer", nil),
 		}},
 	})
 	if err != nil {

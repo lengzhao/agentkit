@@ -1,4 +1,4 @@
-package agent
+package command
 
 import (
 	"context"
@@ -22,9 +22,11 @@ type modelCommand struct {
 	workspace    workspace.Service
 }
 
-func (modelCommand) Name() string        { return "model" }
-func (modelCommand) Alias() string       { return "" }
-func (modelCommand) Description() string { return "show or set the LLM model for this session (-g for global default)" }
+func (modelCommand) Name() string  { return "model" }
+func (modelCommand) Alias() string { return "" }
+func (modelCommand) Description() string {
+	return "show or set the LLM model for this session (-g for global default)"
+}
 
 func (c modelCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	global, payload, _ := parseCatalogSlashArgs(args)

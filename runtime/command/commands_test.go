@@ -1,4 +1,4 @@
-package agent_test
+package command_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -29,7 +29,7 @@ func TestAgentHelpCommand(t *testing.T) {
 		stubAgent{id: "assistant", detail: "agent \"assistant\"\nkind: agent/coding\nmodel: gpt-5.4"},
 		stubAgent{id: "reviewer", detail: "agent \"reviewer\"\nkind: agent/coding"},
 	}
-	cmd := agent.HelpCommand(agents)
+	cmd := command.AgentHelpCommand(agents)
 	cases := []struct {
 		name string
 		args []string
@@ -83,7 +83,7 @@ func TestAgentListShowsSessionAgent(t *testing.T) {
 		stubAgent{id: "assistant"},
 		stubAgent{id: "reviewer"},
 	}
-	cmd := agent.Command(agents, store, "assistant", nil)
+	cmd := command.AgentCommand(agents, store, "assistant", nil)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
 
 	out, err := cmd.CommandExec(ctx, "")
@@ -123,7 +123,7 @@ func TestAgentGlobalUse(t *testing.T) {
 	store := session.NewStaticStore(mem)
 	agents := []agentkit.Agent{stubAgent{id: "assistant"}, stubAgent{id: "worker"}}
 	ws := rtworkspace.Static(t.TempDir())
-	cmd := agent.Command(agents, store, "assistant", ws)
+	cmd := command.AgentCommand(agents, store, "assistant", ws)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "cli:test",
 		Workspace:    "cli:test",

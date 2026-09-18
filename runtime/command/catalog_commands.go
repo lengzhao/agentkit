@@ -1,4 +1,4 @@
-package agent
+package command
 
 import (
 	"fmt"
@@ -36,7 +36,7 @@ func NewCatalogCommands(_ CatalogCommandsConfig, deps CatalogCommandsDeps) (agen
 func (c *catalogCommands) Commands() []agentkit.Command {
 	agents := c.loop.Agents()
 	return []agentkit.Command{
-		Command(agents, c.store, c.loop.DefaultAgentID(), c.workspace),
+		AgentCommand(agents, c.store, c.loop.DefaultAgentID(), c.workspace),
 		ModelCommand(agents, c.store, c.loop.DefaultAgentID(), c.workspace),
 		ACPCommand(agents, c.store),
 	}
