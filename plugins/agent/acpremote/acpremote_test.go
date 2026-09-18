@@ -10,7 +10,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -330,7 +330,7 @@ func TestRunTurnUsesResolvedSessionID(t *testing.T) {
 	t.Parallel()
 
 	storeID := agentkit.SessionID("chat-api:default_channel:t:conv_abc1234567890123456789")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: storeID})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: storeID})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -74,7 +74,7 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 		if err != nil {
 			return Output{}, err
 		}
-		if err := session.SyncSessionIndex(ctx, idx, dir); err != nil {
+		if err := sessstore.SyncSessionIndex(ctx, idx, dir); err != nil {
 			return Output{}, err
 		}
 		mode := strings.ToLower(strings.TrimSpace(input.Mode))

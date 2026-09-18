@@ -10,7 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 const maxToolSummaryRunes = 180
@@ -666,7 +666,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 	}
 	streamKey := outboundStreamKey(event)
 	if event.Type == agentkit.EventSubagentStart {
-		var data session.SubagentStartData
+		var data sessstore.SubagentStartData
 		if err := json.Unmarshal(event.Data, &data); err != nil {
 			return err
 		}
@@ -675,7 +675,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 		}
 	}
 	if event.Type == agentkit.EventSubagentEnd {
-		var data session.SubagentEndData
+		var data sessstore.SubagentEndData
 		if err := json.Unmarshal(event.Data, &data); err != nil {
 			return err
 		}
@@ -696,7 +696,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 	changed := false
 	switch event.Type {
 	case agentkit.EventSubagentStart:
-		var data session.SubagentStartData
+		var data sessstore.SubagentStartData
 		if err := json.Unmarshal(event.Data, &data); err != nil {
 			st.unlock()
 			return err
@@ -704,7 +704,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 		appendSubagentStartStep(p, st, data.Agent, data.Task)
 		changed = true
 	case agentkit.EventSubagentEnd:
-		var data session.SubagentEndData
+		var data sessstore.SubagentEndData
 		if err := json.Unmarshal(event.Data, &data); err != nil {
 			st.unlock()
 			return err
@@ -740,7 +740,7 @@ func appendSubagentStartStep(p *Platform, st *streamState, agent, task string) {
 	p.bumpRichCardPanel(st)
 }
 
-func appendSubagentEndStep(p *Platform, st *streamState, data session.SubagentEndData) {
+func appendSubagentEndStep(p *Platform, st *streamState, data sessstore.SubagentEndData) {
 	agent := subagentDisplayName(data.Agent)
 	summary := truncateRunes(strings.TrimSpace(data.Summary), maxToolSummaryRunes)
 	if summary == "" && data.Error != "" {
@@ -796,7 +796,7 @@ func (p *Platform) finalizeRichTurnEndAsync(
 	handle any,
 	content string,
 	botReplyID string,
-	endData session.TurnEndData,
+	endData sessstore.TurnEndData,
 ) {
 	parent := context.WithoutCancel(ctx)
 	go func() {
@@ -813,7 +813,7 @@ func (p *Platform) finalizeRichTurnEndAsync(
 	}()
 }
 
-func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.SessionID, endData session.TurnEndData) error {
+func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.SessionID, endData sessstore.TurnEndData) error {
 	st := p.streamState(sessionID)
 	st.lock()
 	hasHandle := st.progressHandle != nil

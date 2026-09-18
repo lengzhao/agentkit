@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 // asyncSubagentCard tracks a dedicated Feishu progress card for background (async) delegation.
@@ -79,7 +79,7 @@ func (p *Platform) unregisterAsyncSubagentCard(card *asyncSubagentCard) {
 	p.asyncSubagentByStream.Delete(card.streamKey)
 }
 
-func (p *Platform) handleAsyncSubagentStart(ctx context.Context, streamKey agentkit.SessionID, parentAgent agentkit.AgentID, data session.SubagentStartData) error {
+func (p *Platform) handleAsyncSubagentStart(ctx context.Context, streamKey agentkit.SessionID, parentAgent agentkit.AgentID, data sessstore.SubagentStartData) error {
 	jobID := strings.TrimSpace(data.JobID)
 	if jobID == "" {
 		jobID = strings.TrimSpace(data.Session)
@@ -112,7 +112,7 @@ func (p *Platform) handleAsyncSubagentStart(ctx context.Context, streamKey agent
 	return p.flushAsyncSubagentCard(ctx, card, true)
 }
 
-func (p *Platform) handleAsyncSubagentEnd(ctx context.Context, data session.SubagentEndData) error {
+func (p *Platform) handleAsyncSubagentEnd(ctx context.Context, data sessstore.SubagentEndData) error {
 	jobID := strings.TrimSpace(data.JobID)
 	if jobID == "" {
 		jobID = strings.TrimSpace(data.Session)

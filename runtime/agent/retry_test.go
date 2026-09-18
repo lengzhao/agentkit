@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -56,7 +56,7 @@ func TestRunTurnRetriesTransientLLMError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "retry-s1"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "retry-s1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestRunTurnRetriesTransientLLMError(t *testing.T) {
 		Model: "flaky",
 		Retry: &agent.RetryConfig{Enabled: &enabled, MaxRetries: 3, BaseDelayMs: 1},
 	}, agent.Deps{
-		SessionStore: session.NewStaticStore(mem),
+		SessionStore: sessstore.NewStaticStore(mem),
 		LLM:          flaky,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
@@ -120,7 +120,7 @@ func TestRunTurnDoesNotRetryQuotaError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "quota-s1"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "quota-s1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestRunTurnDoesNotRetryQuotaError(t *testing.T) {
 		Model: "quota",
 		Retry: &agent.RetryConfig{Enabled: &enabled, MaxRetries: 3, BaseDelayMs: 1},
 	}, agent.Deps{
-		SessionStore: session.NewStaticStore(mem),
+		SessionStore: sessstore.NewStaticStore(mem),
 		LLM:          quota,
 		Tools:        toolRuntime,
 		Prompt:       assembler,

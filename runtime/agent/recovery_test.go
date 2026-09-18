@@ -12,7 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -38,7 +38,7 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 	t.Helper()
 	dir := t.TempDir()
 	sessionID := agentkit.SessionID("test:crashresume")
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,19 +47,19 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendTurnStart(ctx, sess, "test"); err != nil {
+	if err := sessstore.AppendTurnStart(ctx, sess, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "read the file"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendStepStart(ctx, sess, "test", 0); err != nil {
+	if err := sessstore.AppendStepStart(ctx, sess, "test", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "test", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "test", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "crashed-call", Name: "read", Input: []byte(`{"path":"README.md"}`)}},
 	}); err != nil {
@@ -135,7 +135,7 @@ func TestRunTurnRecoversCrashedSession(t *testing.T) {
 	if got := countEvents(events, agentkit.EventTurnEnd); got != 2 {
 		t.Fatalf("turn/end events = %d, want 2", got)
 	}
-	if got := session.ScanIncomplete(events); got != nil {
+	if got := sessstore.ScanIncomplete(events); got != nil {
 		t.Fatalf("session still reports an open turn: %+v", got)
 	}
 
@@ -232,7 +232,7 @@ func TestRunTurnLeavesCleanSessionAlone(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}

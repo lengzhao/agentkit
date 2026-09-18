@@ -9,18 +9,18 @@ import (
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
 func TestResolveRunnerSessionStoreFromAgentWhenUnset(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := session.NewStaticStore(mem)
+	store := sessstore.NewStaticStore(mem)
 
 	provider, err := llm.NewScripted(llm.ScriptedConfig{
 		Steps: []llm.ScriptedStep{{Text: "ok"}},

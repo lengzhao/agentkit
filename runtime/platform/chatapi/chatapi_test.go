@@ -12,7 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func TestEngineSessionKeyEncodesColon(t *testing.T) {
@@ -275,21 +275,21 @@ func platWithSessionHistory(channel, user, query, answer string) (*testConv, err
 	if err != nil {
 		return nil, err
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{
 		ID: agentkit.SessionID(engineSessionKey(channel, c.ID)),
 	})
 	if err != nil {
 		return nil, err
 	}
-	plat.sessionStore = session.NewStaticStore(mem)
+	plat.sessionStore = sessstore.NewStaticStore(mem)
 	ctx := context.Background()
-	if err := session.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: query}},
 	}); err != nil {
 		return nil, err
 	}
-	if err := session.AppendMessage(ctx, mem, "coder", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, mem, "coder", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: answer}},
 	}); err != nil {
@@ -358,7 +358,7 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 		},
 	})
 	_ = plat.Send(ctx, agentkit.OutboundEvent{Route: chatAPIRoute(sessionID), Type: agentkit.EventMessageEnd, Data: textEnd})
-	turnEnd, _ := json.Marshal(session.TurnEndData{Steps: 2})
+	turnEnd, _ := json.Marshal(sessstore.TurnEndData{Steps: 2})
 	_ = plat.Send(ctx, agentkit.OutboundEvent{Route: chatAPIRoute(sessionID), Type: agentkit.EventTurnEnd, Data: turnEnd})
 
 	deadline := time.Now().Add(2 * time.Second)

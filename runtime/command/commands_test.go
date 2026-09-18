@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -74,11 +74,11 @@ func TestAgentHelpCommand(t *testing.T) {
 func TestAgentListShowsSessionAgent(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := session.NewStaticStore(mem)
+	store := sessstore.NewStaticStore(mem)
 	agents := []agentkit.Agent{
 		stubAgent{id: "assistant"},
 		stubAgent{id: "reviewer"},
@@ -116,11 +116,11 @@ func TestAgentListShowsSessionAgent(t *testing.T) {
 func TestAgentGlobalUse(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := session.NewStaticStore(mem)
+	store := sessstore.NewStaticStore(mem)
 	agents := []agentkit.Agent{stubAgent{id: "assistant"}, stubAgent{id: "worker"}}
 	ws := rtworkspace.Static(t.TempDir())
 	cmd := command.AgentCommand(agents, store, "assistant", ws)

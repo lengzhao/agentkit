@@ -12,7 +12,7 @@ import (
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -35,7 +35,7 @@ func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput)
 	if err != nil {
 		return err
 	}
-	return session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: a.summary}},
 	})
@@ -49,7 +49,7 @@ func newLoopSpawnerWithTelemetry(t *testing.T, async bool, summary string, telem
 	t.Helper()
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{
 		Workspace: ws,
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func TestLoopAgentInheritsParentEnvelope(t *testing.T) {
 	var captured agentkit.TurnEnvelope
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func (a *envelopeCapturingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInp
 	if err != nil {
 		return err
 	}
-	return session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
 	})
@@ -204,7 +204,7 @@ func TestLoopAgentAsyncSubmitsFollowUpOnError(t *testing.T) {
 
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 	finished := make(chan struct{})
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func (a *blockingLoopAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) e
 		}
 		return err
 	}
-	err = session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	err = sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
 	})
@@ -397,7 +397,7 @@ func TestLoopAgentDefinitionsFromConfig(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{
 		Workspace: rtworkspace.Static(root),
 	})
 	if err != nil {

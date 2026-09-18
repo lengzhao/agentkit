@@ -13,7 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 // permissionReplyPlatform delivers a user turn, then a permission reply routed
@@ -137,7 +137,7 @@ func TestRunnerDeliversPermissionReplyWithConversationOnEnvelope(t *testing.T) {
 	t.Parallel()
 
 	delivery := rctx.BuildDeliverySessionID("lark", "oc_test", "", "U1")
-	entry := rctx.ActiveSessionEntryKey("lark", delivery, session.ScopeChannel, "U1")
+	entry := rctx.ActiveSessionEntryKey("lark", delivery, sessstore.ScopeChannel, "U1")
 	logical := agentkit.SessionID(string(entry) + ":new:20260101")
 
 	turnBlocked := make(chan struct{})

@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -119,8 +119,8 @@ func TestMultiTenantChannelsGetSeparateWorkdirs(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runTurn(t, ag, rctx.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111"), "U111", "写个 notes")
-	runTurn(t, ag, rctx.SlackSessionIDForScope(session.ScopeChannel, "C002", "", "U999"), "U999", "写个 notes")
+	runTurn(t, ag, rctx.SlackSessionIDForScope(sessstore.ScopeChannel, "C001", "", "U111"), "U111", "写个 notes")
+	runTurn(t, ag, rctx.SlackSessionIDForScope(sessstore.ScopeChannel, "C002", "", "U999"), "U999", "写个 notes")
 
 	rootA := filepath.Join(base, "slack_C001")
 	rootB := filepath.Join(base, "slack_C002")
@@ -191,7 +191,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	}
 	_ = result
 
-	sessionID := rctx.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
+	sessionID := rctx.SlackSessionIDForScope(sessstore.ScopeChannel, "C001", "", "U111")
 	runTurn(t, ag, sessionID, "U111", "建个 a.txt")
 	runTurn(t, ag, sessionID, "U222", "再建个 b.txt")
 
@@ -219,7 +219,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: svc})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: svc})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 // ModelCommand shows or sets the session or global LLM model override for coding agents.
@@ -66,7 +66,7 @@ func (c modelCommand) show(ctx context.Context, globalOnly bool) (string, error)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	effectiveModel, sessionOverride, globalOverride, err := session.ResolveEffectiveModel(
+	effectiveModel, sessionOverride, globalOverride, err := sessstore.ResolveEffectiveModel(
 		ctx, c.store, c.workspace, sessionID, effective, agentDefault,
 	)
 	if err != nil {
@@ -105,7 +105,7 @@ func (c modelCommand) showGlobal(ctx context.Context, agentID agentkit.AgentID, 
 	if agentID == "" {
 		return "", fmt.Errorf("agent id is required")
 	}
-	globalOverride, err := session.GlobalModelBind(ctx, c.workspace, agentID)
+	globalOverride, err := sessstore.GlobalModelBind(ctx, c.workspace, agentID)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +140,7 @@ func (c modelCommand) set(ctx context.Context, global bool, model string) (strin
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	if err := session.SetSessionModelBind(ctx, c.store, sessionID, model); err != nil {
+	if err := sessstore.SetSessionModelBind(ctx, c.store, sessionID, model); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("session model: %s", model), nil
@@ -154,7 +154,7 @@ func (c modelCommand) setGlobal(ctx context.Context, model string) (string, erro
 	if agentID == "" {
 		return "", fmt.Errorf("agent id is required")
 	}
-	if err := session.SetGlobalModelBind(ctx, c.workspace, agentID, model); err != nil {
+	if err := sessstore.SetGlobalModelBind(ctx, c.workspace, agentID, model); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("global model (%s): %s", agentID, model), nil
@@ -169,7 +169,7 @@ func (c modelCommand) clear(ctx context.Context, global bool) (string, error) {
 		if agentID == "" {
 			return "", fmt.Errorf("agent id is required")
 		}
-		if err := session.SetGlobalModelBind(ctx, c.workspace, agentID, ""); err != nil {
+		if err := sessstore.SetGlobalModelBind(ctx, c.workspace, agentID, ""); err != nil {
 			return "", err
 		}
 		agentDefault := configuredModel(c.agents, agentID)
@@ -185,14 +185,14 @@ func (c modelCommand) clear(ctx context.Context, global bool) (string, error) {
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	if err := session.SetSessionModelBind(ctx, c.store, sessionID, ""); err != nil {
+	if err := sessstore.SetSessionModelBind(ctx, c.store, sessionID, ""); err != nil {
 		return "", err
 	}
 	agentID, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
 	if err != nil {
 		return "", err
 	}
-	effective, _, globalOverride, err := session.ResolveEffectiveModel(
+	effective, _, globalOverride, err := sessstore.ResolveEffectiveModel(
 		ctx, c.store, c.workspace, sessionID, agentID, configuredModel(c.agents, agentID),
 	)
 	if err != nil {

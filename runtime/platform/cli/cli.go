@@ -14,7 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 const platformID = "cli"
@@ -175,7 +175,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 func (p *Platform) slashContext() common.SlashContext {
 	return common.SlashContext{
 		Route:        rctx.SessionRouteFromDelivery(platformID, p.deliveryID, ""),
-		SessionScope: session.ScopeChannel,
+		SessionScope: sessstore.ScopeChannel,
 		UserID:       cliUserID(),
 	}
 }
@@ -224,7 +224,7 @@ func (p *Platform) notifyActiveSession(ctx context.Context) {
 	if !ok {
 		return
 	}
-	entry := rctx.ActiveEntryKey(p.slashContext().Route, rctx.DefaultRoutePolicy(session.ScopeChannel), cliUserID())
+	entry := rctx.ActiveEntryKey(p.slashContext().Route, rctx.DefaultRoutePolicy(sessstore.ScopeChannel), cliUserID())
 	active, err := activeStore.ActiveSession(ctx, entry)
 	if err != nil || active == "" || active == entry {
 		return

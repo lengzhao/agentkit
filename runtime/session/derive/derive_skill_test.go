@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -16,18 +17,18 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	t.Parallel()
 
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: agentkit.AgentID("assistant")})
-	sess, err := session.NewMemory(session.MemoryConfig{ID: "mem-skill-order"})
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "mem-skill-order"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := session.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "load skill"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role: "assistant",
 		ToolCalls: []agentkit.ToolCall{{
 			ID: "call-skill", Name: "skill", Input: []byte(`{"name":"feedback-ticket-intake"}`),
@@ -43,7 +44,7 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendToolResult(ctx, sess, "assistant", agentkit.ToolResult{
+	if err := sessstore.AppendToolResult(ctx, sess, "assistant", agentkit.ToolResult{
 		ID:      "call-skill",
 		Name:    "skill",
 		Content: `{"name":"feedback-ticket-intake"}`,

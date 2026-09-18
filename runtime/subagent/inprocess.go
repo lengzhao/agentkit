@@ -28,7 +28,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -134,7 +134,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
 	parentAgent := rctx.AgentIDFromContext(ctx)
-	parent, err := session.ParentSessionForDelegate(ctx, s.store, parentID)
+	parent, err := sessstore.ParentSessionForDelegate(ctx, s.store, parentID)
 	if err != nil {
 		return subagent.Result{}, err
 	}
@@ -147,18 +147,18 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	// unique within the parent session; session/store sanitizes the separators.
 	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(derive.LatestEventSeq(parentEvents))))
 
-	startData := session.SubagentStartData{
+	startData := sessstore.SubagentStartData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Task:    task,
 	}
-	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
+	if err := sessstore.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
 		return subagent.Result{}, err
 	}
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData)
 
 	result, runErr := s.runChild(ctx, def, task, childID)
-	end := session.SubagentEndData{
+	end := sessstore.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Status:  result.Status,
@@ -168,7 +168,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if runErr != nil {
 		end.Error = runErr.Error()
 	}
-	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
+	if err := sessstore.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
 		return subagent.Result{}, err
 	}
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
@@ -251,7 +251,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	// Read the outcome even when the turn failed: a child that worked for ten
 	// steps and then hit a provider error still has a partial answer worth
 	// carrying back.
-	sess, err := session.LoadSession(ctx, s.store, childID)
+	sess, err := sessstore.LoadSession(ctx, s.store, childID)
 	if err != nil {
 		if runErr != nil {
 			return out, runErr
@@ -265,13 +265,13 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		}
 		return out, err
 	}
-	out.Steps = session.StepCount(events, 0)
-	if finish := session.FinishAfter(events, 0); finish != nil {
+	out.Steps = sessstore.StepCount(events, 0)
+	if finish := sessstore.FinishAfter(events, 0); finish != nil {
 		out.Status = finish.Status
 		out.Summary = finish.Summary
 	} else {
 		out.Status = subagent.StatusStopped
-		out.Summary = session.LastAssistantText(events, 0)
+		out.Summary = sessstore.LastAssistantText(events, 0)
 	}
 	return out, runErr
 }

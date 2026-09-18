@@ -11,7 +11,7 @@ import (
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -139,24 +139,24 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		if err != nil {
 			return err
 		}
-		if err := session.AppendTurnStart(ctx, sess, a.id); err != nil {
+		if err := sessstore.AppendTurnStart(ctx, sess, a.id); err != nil {
 			return err
 		}
 		defer func() {
 			endCtx := context.WithoutCancel(ctx)
-			_ = session.AppendTurnEnd(endCtx, sess, a.id, 1)
+			_ = sessstore.AppendTurnEnd(endCtx, sess, a.id, 1)
 		}()
-		if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
+		if err := sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 			return err
 		}
 	}
 
-	if err := a.emitLifecycle(ctx, emit, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
+	if err := a.emitLifecycle(ctx, emit, agentkit.EventTurnStart, sessstore.TurnStartData{}); err != nil {
 		return err
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
-		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, session.TurnEndData{Steps: 1})
+		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, sessstore.TurnEndData{Steps: 1})
 		if a.cfg.ReleaseSubprocessAfterTurn {
 			a.bridgeFor(sessionID).releaseSubprocess()
 		}
@@ -213,7 +213,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 			}
 			assistant := emitter.assistantMessage()
 			if assistant.Role != "" {
-				if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+				if err := sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
 					slog.Debug("acp-remote: append assistant message failed", "err", err)
 				}
 			}

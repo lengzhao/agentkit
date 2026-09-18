@@ -17,7 +17,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -162,7 +162,7 @@ func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
 	if b.cfg.Cwd != "" {
 		return b.workspace.Resolve(ctx, b.cfg.Cwd)
 	}
-	return b.workspace.Resolve(ctx, session.TenantToolWorkDir)
+	return b.workspace.Resolve(ctx, sessstore.TenantToolWorkDir)
 }
 
 func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, sessionStore agentkit.SessionStore) (acp.SessionId, error) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -63,13 +63,13 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "summary-retry"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "summary-retry"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		if err := session.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessstore.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: fmt.Sprintf("msg %d", i)}},
 		}); err != nil {
@@ -125,12 +125,12 @@ func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:shorthistory"})
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:shorthistory"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := session.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 	}); err != nil {

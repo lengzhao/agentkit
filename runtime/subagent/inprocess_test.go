@@ -11,7 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -44,7 +44,7 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	}
 	ws := dirWorkspace{"local:agents": agentsDir}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{
 		Workspace: rtworkspace.Static(t.TempDir()),
 	})
 	if err != nil {
@@ -120,8 +120,8 @@ func TestRunTakesSummaryFromFinish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if result.Status != session.FinishCompleted {
-		t.Errorf("status = %q, want %q", result.Status, session.FinishCompleted)
+	if result.Status != sessstore.FinishCompleted {
+		t.Errorf("status = %q, want %q", result.Status, sessstore.FinishCompleted)
 	}
 	if result.Summary != "loop keeps one turn per session" {
 		t.Errorf("summary = %q, want the finish summary", result.Summary)
@@ -172,13 +172,13 @@ func TestRunDoesNotRecoverParentTurnWhileDelegating(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
+	if err := sessstore.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
+	if err := sessstore.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "call-delegate", Name: "delegate", Input: []byte(`{"agent":"researcher"}`)}},
 	}); err != nil {

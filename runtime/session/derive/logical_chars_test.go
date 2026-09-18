@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -17,7 +18,7 @@ import (
 func TestAppendMessageStoresFullUserText(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "mem-full-user"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "mem-full-user"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +27,7 @@ func TestAppendMessageStoresFullUserText(t *testing.T) {
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: long}},
 	}
-	if err := session.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
+	if err := sessstore.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
 		t.Fatal(err)
 	}
 	events, err := mem.Read(context.Background(), 0)

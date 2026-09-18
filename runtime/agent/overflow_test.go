@@ -11,7 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -49,7 +49,7 @@ func (f *forceCompaction) Compact(ctx context.Context, req compaction.Request) (
 	if err != nil {
 		return compaction.Result{}, err
 	}
-	if err := session.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
+	if err := sessstore.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
 		BeforeSeq: derive.LatestEventSeq(events),
 		Kind:      compaction.KindSummary,
 		Summary: agentkit.ModelMessage{
@@ -71,7 +71,7 @@ func TestRunTurnOverflowCompactAndRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "overflow-s1"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "overflow-s1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRunTurnOverflowCompactAndRetry(t *testing.T) {
 		Model: "overflow",
 		Retry: &agent.RetryConfig{Enabled: &disabled},
 	}, agent.Deps{
-		SessionStore: session.NewStaticStore(mem),
+		SessionStore: sessstore.NewStaticStore(mem),
 		LLM:          llm,
 		Tools:        toolRuntime,
 		Prompt:       assembler,
@@ -137,7 +137,7 @@ func TestRunTurnOverflowRecoveryOnlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "overflow-s2"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "overflow-s2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestRunTurnOverflowRecoveryOnlyOnce(t *testing.T) {
 		Model: "overflow",
 		Retry: &agent.RetryConfig{Enabled: &disabled},
 	}, agent.Deps{
-		SessionStore: session.NewStaticStore(mem),
+		SessionStore: sessstore.NewStaticStore(mem),
 		LLM:          llm,
 		Tools:        toolRuntime,
 		Prompt:       assembler,

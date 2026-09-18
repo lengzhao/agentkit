@@ -13,7 +13,7 @@ import (
 	rthooks "github.com/lengzhao/agentkit/runtime/hooks"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -89,7 +89,7 @@ func turnContinueReasons(t *testing.T, events []agentkit.SessionEvent) []string 
 		if ev.Type != agentkit.EventTurnContinue {
 			continue
 		}
-		var data session.TurnContinueData
+		var data sessstore.TurnContinueData
 		if err := json.Unmarshal(ev.Data, &data); err != nil {
 			t.Fatalf("decode turn/continue: %v", err)
 		}

@@ -15,7 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
@@ -135,7 +135,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
 	parentAgent := rctx.AgentIDFromContext(ctx)
-	parent, err := session.ParentSessionForDelegate(ctx, s.store, parentID)
+	parent, err := sessstore.ParentSessionForDelegate(ctx, s.store, parentID)
 	if err != nil {
 		slog.Warn("subagent loop: resolve parent failed", "parent", parentID, "agent", def.Name, "err", err)
 		return subagent.Result{}, err
@@ -162,14 +162,14 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		}
 	}
 
-	startData := session.SubagentStartData{
+	startData := sessstore.SubagentStartData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Task:    task,
 		Async:   async,
 		JobID:   jobID,
 	}
-	if err := session.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
+	if err := sessstore.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
 		slog.Warn("subagent loop: append start failed", "parent", parentID, "child", childID, "err", err)
 		if async {
 			s.releaseJob(parentID)
@@ -201,7 +201,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		closer()
 	}
 	result = finalizeSubagentResult(result, runErr)
-	end := session.SubagentEndData{
+	end := sessstore.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Status:  result.Status,
@@ -212,7 +212,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if runErr != nil {
 		end.Error = runErr.Error()
 	}
-	if err := session.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
+	if err := sessstore.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
 		return subagent.Result{}, err
 	}
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
@@ -324,7 +324,7 @@ func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Defini
 	ctx := parent.asyncRunContext()
 	ctx = rctx.WithAgentID(ctx, parentAgent)
 
-	end := session.SubagentEndData{
+	end := sessstore.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Status:  result.Status,
@@ -348,7 +348,7 @@ func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Defini
 		slog.Debug("async subagent: append end on retained parent session", "job_id", jobID, "parent", parentID)
 	}
 	if parentSess != nil {
-		if err := session.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
+		if err := sessstore.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
 			slog.Error("async subagent: append end", "job_id", jobID, "err", err)
 		} else {
 			emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
@@ -474,7 +474,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		Emit: emit,
 	})
 
-	sess, err := session.LoadSession(ctx, s.store, childID)
+	sess, err := sessstore.LoadSession(ctx, s.store, childID)
 	if err != nil {
 		slog.Warn("subagent loop: load child session failed", "child", childID, "err", err)
 		if runErr != nil {
@@ -489,13 +489,13 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		}
 		return out, err, closer
 	}
-	out.Steps = session.StepCount(events, 0)
-	if finish := session.FinishAfter(events, 0); finish != nil {
+	out.Steps = sessstore.StepCount(events, 0)
+	if finish := sessstore.FinishAfter(events, 0); finish != nil {
 		out.Status = finish.Status
 		out.Summary = finish.Summary
 	} else {
 		out.Status = subagent.StatusStopped
-		out.Summary = session.LastAssistantText(events, 0)
+		out.Summary = sessstore.LastAssistantText(events, 0)
 	}
 	return out, runErr, closer
 }

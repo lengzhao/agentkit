@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -24,11 +24,11 @@ func (a stubModelAgent) ConfiguredModel() string                           { ret
 func TestModelCommandSetAndShow(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := session.NewStaticStore(mem)
+	store := sessstore.NewStaticStore(mem)
 	loop := &stubCatalogLoop{
 		agents: []agentkit.Agent{
 			stubModelAgent{id: "assistant", model: "gpt-5.4"},
@@ -119,11 +119,11 @@ func TestModelCommandSetAndShow(t *testing.T) {
 func TestModelGlobalUsesRoutedAgent(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := session.NewStaticStore(mem)
+	store := sessstore.NewStaticStore(mem)
 	loop := &stubCatalogLoop{
 		agents: []agentkit.Agent{
 			stubModelAgent{id: "assistant", model: "gpt-5.4"},
@@ -165,11 +165,11 @@ func TestModelGlobalUsesRoutedAgent(t *testing.T) {
 		t.Fatalf("set out = %q", out)
 	}
 
-	got, err := session.GlobalModelBind(ctx, ws, agentkit.AgentID("worker"))
+	got, err := sessstore.GlobalModelBind(ctx, ws, agentkit.AgentID("worker"))
 	if err != nil || got != "worker-model" {
 		t.Fatalf("worker global model = %q err=%v", got, err)
 	}
-	got, err = session.GlobalModelBind(ctx, ws, agentkit.AgentID("assistant"))
+	got, err = sessstore.GlobalModelBind(ctx, ws, agentkit.AgentID("assistant"))
 	if err != nil || got != "" {
 		t.Fatalf("assistant should have no global model: %q err=%v", got, err)
 	}

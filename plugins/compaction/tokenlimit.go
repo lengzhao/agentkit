@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -129,6 +129,6 @@ func (s *tokenLimitService) reportedTokens(ctx context.Context, req compaction.R
 	if err != nil {
 		return 0
 	}
-	usage := session.LatestUsage(events)
+	usage := sessstore.LatestUsage(events)
 	return usage.InputTokens + usage.OutputTokens
 }

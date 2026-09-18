@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -104,14 +104,14 @@ func TestTokenLimitUsesReportedUsageWhenLarger(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:tokenlimit"})
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:tokenlimit"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The provider measured a 9000-token prompt. The character heuristic sees
 	// almost nothing, because CJK and dense payloads defeat chars/4 — the
 	// measurement has to win.
-	if err := session.AppendUsage(ctx, sess, "a", session.UsageData{
+	if err := sessstore.AppendUsage(ctx, sess, "a", sessstore.UsageData{
 		InputTokens:  9000,
 		OutputTokens: 500,
 		TotalTokens:  9500,
@@ -142,16 +142,16 @@ func TestTokenLimitTracksUsageAfterCompaction(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:posttrim"})
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:posttrim"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendUsage(ctx, sess, "a", session.UsageData{InputTokens: 9000, TotalTokens: 9000}); err != nil {
+	if err := sessstore.AppendUsage(ctx, sess, "a", sessstore.UsageData{InputTokens: 9000, TotalTokens: 9000}); err != nil {
 		t.Fatal(err)
 	}
 	// After compaction the next step reports a much smaller prompt; the gate
 	// reads the latest event, so it must close again.
-	if err := session.AppendUsage(ctx, sess, "a", session.UsageData{InputTokens: 1200, TotalTokens: 1200}); err != nil {
+	if err := sessstore.AppendUsage(ctx, sess, "a", sessstore.UsageData{InputTokens: 1200, TotalTokens: 1200}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,14 +178,14 @@ func TestTokenLimitGatesRealSummary(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:gatesummary"})
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:gatesummary"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Only two messages: summary's own minMessages gate (default 20) would never
 	// fire on its own, which is exactly why the token gate forces it.
 	for i := 0; i < 2; i++ {
-		if err := session.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessstore.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("y", 40000)}},
 		}); err != nil {

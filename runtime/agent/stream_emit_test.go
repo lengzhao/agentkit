@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -28,7 +28,7 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "s1"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "s1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestRunStepStreamsMessageUpdateDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt, err := agent.New(agent.Config{ID: "test", Model: "scripted"}, agent.Deps{
-		SessionStore: session.NewStaticStore(mem),
+		SessionStore: sessstore.NewStaticStore(mem),
 		LLM:          scripted,
 		Tools:        toolRuntime,
 		Prompt:       assembler,

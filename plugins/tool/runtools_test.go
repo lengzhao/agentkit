@@ -11,7 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/plugins/tool/todo"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -25,7 +25,7 @@ func (s singleSessionStore) Get(context.Context, agentkit.SessionID) (agentkit.S
 
 func newRunToolsFixture(t *testing.T) (todoTool, finishTool agentkit.Tool, sess agentkit.Session, ctx context.Context) {
 	t.Helper()
-	sess, err := session.NewMemory(session.MemoryConfig{ID: "test:runtools"})
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:runtools"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestTodoSetCompleteAndList(t *testing.T) {
 	if updates != 3 {
 		t.Fatalf("todo/update events = %d, want 3", updates)
 	}
-	if got := session.PendingTodos(session.LatestTodos(events)); len(got) != 0 {
+	if got := sessstore.PendingTodos(sessstore.LatestTodos(events)); len(got) != 0 {
 		t.Fatalf("pending todos on the log = %+v, want none", got)
 	}
 }
@@ -127,7 +127,7 @@ func TestFinishRecordsRunFinish(t *testing.T) {
 	_, finishTool, sess, ctx := newRunToolsFixture(t)
 
 	out := callTool(t, ctx, finishTool, `{"status":"blocked","summary":"missing credentials"}`)
-	if !strings.Contains(out, session.FinishBlocked) {
+	if !strings.Contains(out, sessstore.FinishBlocked) {
 		t.Fatalf("finish output = %q", out)
 	}
 
@@ -135,11 +135,11 @@ func TestFinishRecordsRunFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := session.FinishAfter(events, 0)
+	data := sessstore.FinishAfter(events, 0)
 	if data == nil {
 		t.Fatal("no run/finish event recorded")
 	}
-	if data.Status != session.FinishBlocked || data.Summary != "missing credentials" {
+	if data.Status != sessstore.FinishBlocked || data.Summary != "missing credentials" {
 		t.Fatalf("run/finish = %+v", data)
 	}
 }
@@ -149,7 +149,7 @@ func TestFinishDefaultsToCompletedAndRequiresSummary(t *testing.T) {
 
 	_, finishTool, sess, ctx := newRunToolsFixture(t)
 
-	if out := callTool(t, ctx, finishTool, `{"summary":"all done"}`); !strings.Contains(out, session.FinishCompleted) {
+	if out := callTool(t, ctx, finishTool, `{"summary":"all done"}`); !strings.Contains(out, sessstore.FinishCompleted) {
 		t.Fatalf("finish without status = %q, want completed", out)
 	}
 	if out := callTool(t, ctx, finishTool, `{"status":"completed"}`); !strings.Contains(out, "requires a summary") {

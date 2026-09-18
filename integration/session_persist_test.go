@@ -9,7 +9,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/llm"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -22,7 +22,7 @@ func TestIntegrationJSONLSessionPersistsAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
 	ws := rtworkspace.Static(dir)
 	openStore := func() agentkit.SessionStore {
-		store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+		store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 		if err != nil {
 			t.Fatalf("session store: %v", err)
 		}

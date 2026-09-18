@@ -13,7 +13,7 @@ import (
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -42,7 +42,7 @@ func TestLoopDelegateWithOpenSessionBypassesGuardedStore(t *testing.T) {
 
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	inner, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: ws})
+	inner, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestLoopDelegateWithoutOpenSessionFailsOnGuardedStore(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	inner, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(root)})
+	inner, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestEmitSubagentLifecycleDoesNotBlockCaller(t *testing.T) {
 	}))
 
 	start := time.Now()
-	emitSubagentLifecycle(ctx, "assistant", agentkit.EventSubagentStart, session.SubagentStartData{
+	emitSubagentLifecycle(ctx, "assistant", agentkit.EventSubagentStart, sessstore.SubagentStartData{
 		Agent: "cursor", Session: "sub:1", Task: "t",
 	})
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
@@ -136,7 +136,7 @@ func TestAsyncSubagentEndUsesRetainedParentSession(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	inner, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(root)})
+	inner, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestLoopDelegateAsyncReturnsBeforeSlowOutbound(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(root)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
 	ctrl := &brokerMarker{mark: &sawBroker}
 
 	root := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(root)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestLoopDelegateAsyncChildInheritsSessionControl(t *testing.T) {
 	ctrl := &brokerMarker{mark: &sawBroker}
 
 	root := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(root)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func (a *brokerProbeAgent) RunTurn(ctx context.Context, input agentkit.TurnInput
 	if err != nil {
 		return err
 	}
-	return session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
 	})

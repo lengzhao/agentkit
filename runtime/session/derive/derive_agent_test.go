@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"testing"
 
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestDeriveMessagesFiltersByAgent(t *testing.T) {
 	t.Parallel()
 
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: agentkit.AgentID("meetingbot")})
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "mem-test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "mem-test"})
 	if err != nil {
 		t.Fatal(err)
 	}

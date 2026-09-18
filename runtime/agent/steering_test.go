@@ -13,7 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
@@ -53,7 +53,7 @@ func TestLateSteerAfterSegmentEnds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 		t.Fatalf("run turn: %v", err)
 	}
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestSteerRunsAnotherLLMStepAfterInjected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "s1"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "s1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestSteerRunsAnotherLLMStepAfterInjected(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt, err := agent.New(agent.Config{ID: "test", Model: "blocking"}, agent.Deps{
-		SessionStore: session.NewStaticStore(mem),
+		SessionStore: sessstore.NewStaticStore(mem),
 		LLM:          block,
 		Tools:        toolRuntime,
 		Prompt:       assembler,

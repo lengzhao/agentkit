@@ -6,11 +6,11 @@ import (
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, conversation agentkit.SessionID) (agentkit.AgentID, error) {
-	effective, _, _, err := session.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, event.AgentID)
+	effective, _, _, err := sessstore.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, event.AgentID)
 	return effective, err
 }
 

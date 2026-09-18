@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 type RetryConfig struct {
@@ -70,12 +70,12 @@ func (r *stepRetry) shouldRetry(err error) bool {
 	return llm.IsRetryableError(err)
 }
 
-func (r *stepRetry) begin(err error) (session.AutoRetryStartData, bool) {
+func (r *stepRetry) begin(err error) (sessstore.AutoRetryStartData, bool) {
 	if !r.shouldRetry(err) {
-		return session.AutoRetryStartData{}, false
+		return sessstore.AutoRetryStartData{}, false
 	}
 	r.attempt++
-	data := session.AutoRetryStartData{
+	data := sessstore.AutoRetryStartData{
 		Attempt:      r.attempt,
 		MaxAttempts:  r.settings.maxRetries,
 		DelayMs:      r.delayMs(),
@@ -99,7 +99,7 @@ func (a *Runtime) runStepWithRetry(
 		msg, err := a.runStep(ctx, sess, emit, model)
 		if err == nil {
 			if retry.attempt > 0 {
-				_ = a.emitAutoRetryEnd(ctx, sess, emit, session.AutoRetryEndData{
+				_ = a.emitAutoRetryEnd(ctx, sess, emit, sessstore.AutoRetryEndData{
 					Success: true,
 					Attempt: retry.attempt,
 				})
@@ -113,7 +113,7 @@ func (a *Runtime) runStepWithRetry(
 		start, ok := retry.begin(err)
 		if !ok {
 			if retry.attempt > 0 {
-				_ = a.emitAutoRetryEnd(ctx, sess, emit, session.AutoRetryEndData{
+				_ = a.emitAutoRetryEnd(ctx, sess, emit, sessstore.AutoRetryEndData{
 					Success:    false,
 					Attempt:    retry.attempt,
 					FinalError: err.Error(),
@@ -126,7 +126,7 @@ func (a *Runtime) runStepWithRetry(
 			return msg, err
 		}
 		if err := llm.SleepContext(ctx, time.Duration(start.DelayMs)*time.Millisecond); err != nil {
-			_ = a.emitAutoRetryEnd(ctx, sess, emit, session.AutoRetryEndData{
+			_ = a.emitAutoRetryEnd(ctx, sess, emit, sessstore.AutoRetryEndData{
 				Success:    false,
 				Attempt:    retry.attempt,
 				FinalError: "retry cancelled",
@@ -137,7 +137,7 @@ func (a *Runtime) runStepWithRetry(
 	}
 }
 
-func (a *Runtime) emitAutoRetryStart(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data session.AutoRetryStartData) error {
+func (a *Runtime) emitAutoRetryStart(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data sessstore.AutoRetryStartData) error {
 	slog.Warn("llm auto retry scheduled",
 		"agent_id", a.id,
 		"session_id", sess.ID(),
@@ -146,7 +146,7 @@ func (a *Runtime) emitAutoRetryStart(ctx context.Context, sess agentkit.Session,
 		"delay_ms", data.DelayMs,
 		"error", data.ErrorMessage,
 	)
-	if err := session.AppendAutoRetryStart(ctx, sess, a.id, data); err != nil {
+	if err := sessstore.AppendAutoRetryStart(ctx, sess, a.id, data); err != nil {
 		return err
 	}
 	if emit == nil {
@@ -159,7 +159,7 @@ func (a *Runtime) emitAutoRetryStart(ctx context.Context, sess agentkit.Session,
 	})
 }
 
-func (a *Runtime) emitAutoRetryEnd(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data session.AutoRetryEndData) error {
+func (a *Runtime) emitAutoRetryEnd(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data sessstore.AutoRetryEndData) error {
 	slog.Info("llm auto retry finished",
 		"agent_id", a.id,
 		"session_id", sess.ID(),
@@ -167,7 +167,7 @@ func (a *Runtime) emitAutoRetryEnd(ctx context.Context, sess agentkit.Session, e
 		"success", data.Success,
 		"final_error", data.FinalError,
 	)
-	if err := session.AppendAutoRetryEnd(ctx, sess, a.id, data); err != nil {
+	if err := sessstore.AppendAutoRetryEnd(ctx, sess, a.id, data); err != nil {
 		return err
 	}
 	if emit == nil {

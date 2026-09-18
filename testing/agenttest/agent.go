@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
@@ -92,19 +92,19 @@ func SeedCrashedToolCall(t *testing.T, store agentkit.SessionStore, sessionID ag
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendTurnStart(ctx, sess, agentID); err != nil {
+	if err := sessstore.AppendTurnStart(ctx, sess, agentID); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, agentID, agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, agentID, agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: userText}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendStepStart(ctx, sess, agentID, 0); err != nil {
+	if err := sessstore.AppendStepStart(ctx, sess, agentID, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{call},
 	}); err != nil {

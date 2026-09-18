@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -30,7 +30,7 @@ type TodoInput struct {
 }
 
 type TodoOutput struct {
-	Items       []session.Todo `json:"items"`
+	Items       []sessstore.Todo `json:"items"`
 	Pending     int            `json:"pending"`
 	Total       int            `json:"total"`
 	Instruction string         `json:"instruction,omitempty"`
@@ -67,7 +67,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return TodoOutput{}, err
 		}
-		current := session.LatestTodos(events)
+		current := sessstore.LatestTodos(events)
 
 		op := strings.ToLower(strings.TrimSpace(input.Op))
 		switch op {
@@ -78,7 +78,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return TodoOutput{}, err
 			}
-			if err := session.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
+			if err := sessstore.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
 				return TodoOutput{}, err
 			}
 			return todoOutput(next), nil
@@ -96,7 +96,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 			if len(missing) > 0 {
 				return TodoOutput{}, fmt.Errorf("unknown todo id(s): %s", strings.Join(missing, ", "))
 			}
-			if err := session.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
+			if err := sessstore.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
 				return TodoOutput{}, err
 			}
 			return todoOutput(next), nil
@@ -112,11 +112,11 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	return tool, nil
 }
 
-func normalizeTodoItems(items []TodoItemInput) ([]session.Todo, error) {
+func normalizeTodoItems(items []TodoItemInput) ([]sessstore.Todo, error) {
 	if len(items) == 0 {
 		return nil, fmt.Errorf("set requires at least one item")
 	}
-	out := make([]session.Todo, 0, len(items))
+	out := make([]sessstore.Todo, 0, len(items))
 	seen := make(map[string]bool, len(items))
 	for i, item := range items {
 		title := strings.TrimSpace(item.Title)
@@ -131,7 +131,7 @@ func normalizeTodoItems(items []TodoItemInput) ([]session.Todo, error) {
 			return nil, fmt.Errorf("duplicate todo id %q", id)
 		}
 		seen[id] = true
-		out = append(out, session.Todo{
+		out = append(out, sessstore.Todo{
 			ID:     id,
 			Title:  title,
 			Status: normalizeTodoStatus(item.Status),
@@ -142,25 +142,25 @@ func normalizeTodoItems(items []TodoItemInput) ([]session.Todo, error) {
 
 func normalizeTodoStatus(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case session.TodoDone, "completed", "complete":
-		return session.TodoDone
-	case session.TodoInProgress, "in-progress", "active":
-		return session.TodoInProgress
+	case sessstore.TodoDone, "completed", "complete":
+		return sessstore.TodoDone
+	case sessstore.TodoInProgress, "in-progress", "active":
+		return sessstore.TodoInProgress
 	default:
-		return session.TodoPending
+		return sessstore.TodoPending
 	}
 }
 
-func completeTodos(current []session.Todo, ids []string) (next []session.Todo, missing []string) {
+func completeTodos(current []sessstore.Todo, ids []string) (next []sessstore.Todo, missing []string) {
 	index := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		index[strings.TrimSpace(id)] = true
 	}
-	next = make([]session.Todo, len(current))
+	next = make([]sessstore.Todo, len(current))
 	for i, item := range current {
 		next[i] = item
 		if index[item.ID] {
-			next[i].Status = session.TodoDone
+			next[i].Status = sessstore.TodoDone
 			delete(index, item.ID)
 		}
 	}
@@ -170,8 +170,8 @@ func completeTodos(current []session.Todo, ids []string) (next []session.Todo, m
 	return next, missing
 }
 
-func todoOutput(items []session.Todo) TodoOutput {
-	pending := session.PendingTodos(items)
+func todoOutput(items []sessstore.Todo) TodoOutput {
+	pending := sessstore.PendingTodos(items)
 	out := TodoOutput{Items: items, Pending: len(pending), Total: len(items)}
 	if len(pending) == 0 && len(items) > 0 {
 		out.Instruction = "All tasks are done. Call finish to end the run."

@@ -12,7 +12,7 @@ import (
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -108,7 +108,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 		return nil
 	}, &capcompaction.SummarizationRetryCallbacks{
 		OnScheduled: func(attempt, maxAttempts, delayMs int, errorMessage string) {
-			_ = session.AppendSummarizationRetryStart(ctx, req.Session, req.AgentID, session.SummarizationRetryStartData{
+			_ = sessstore.AppendSummarizationRetryStart(ctx, req.Session, req.AgentID, sessstore.SummarizationRetryStartData{
 				Attempt:      attempt,
 				MaxAttempts:  maxAttempts,
 				DelayMs:      delayMs,
@@ -116,7 +116,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 			})
 		},
 		OnFinished: func(success bool, attempt int, finalError string) {
-			_ = session.AppendSummarizationRetryEnd(ctx, req.Session, req.AgentID, session.SummarizationRetryEndData{
+			_ = sessstore.AppendSummarizationRetryEnd(ctx, req.Session, req.AgentID, sessstore.SummarizationRetryEndData{
 				Success:    success,
 				Attempt:    attempt,
 				FinalError: finalError,
@@ -141,7 +141,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 			}},
 		},
 	}
-	if err := session.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
+	if err := sessstore.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
 		return capcompaction.Result{}, err
 	}
 	return capcompaction.Result{Applied: true}, nil

@@ -10,7 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 // SlashOutcomeKind describes how an inbound slash command was resolved.
@@ -34,7 +34,7 @@ type SlashOutcome struct {
 // SlashContext carries delivery routing and sessionScope for slash commands.
 type SlashContext struct {
 	Route        agentkit.RouteRef
-	SessionScope session.SessionScope
+	SessionScope sessstore.SessionScope
 	UserID       string
 	Metadata     map[string]any
 }

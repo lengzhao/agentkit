@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -21,7 +21,7 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{
 		Workspace: rtworkspace.Static(dir),
 	})
 	if err != nil {
@@ -30,7 +30,7 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 
 	effective := rctx.ApplyScope(
 		rctx.BuildDeliverySessionID("slack", "C001", "", "U111"),
-		session.ScopeChannel,
+		sessstore.ScopeChannel,
 		"U111",
 	)
 	sess, err := store.Get(context.Background(), effective)
@@ -39,20 +39,20 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 	}
 
 	prefixU111 := "[meta sender_id=U111 platform=slack chat_id=C001]\n改一下 README"
-	if err := session.AppendMessage(userContext("U111"), sess, "smoke", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(userContext("U111"), sess, "smoke", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: prefixU111}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(context.Background(), sess, "smoke", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(context.Background(), sess, "smoke", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "好的"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	prefixU222 := "[meta sender_id=U222 platform=slack chat_id=C001]\n顺便跑一下测试"
-	if err := session.AppendMessage(userContext("U222"), sess, "smoke", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(userContext("U222"), sess, "smoke", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: prefixU222}},
 	}); err != nil {

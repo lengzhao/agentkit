@@ -16,7 +16,7 @@ import (
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit"
@@ -300,7 +300,7 @@ func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages [
 		slog.Debug("session recall skipped", "reason", "resolve sessions dir", "err", err)
 		return ""
 	}
-	hits, err := session.SearchSyncedSessions(ctx, p.index, dir, query, 5)
+	hits, err := sessstore.SearchSyncedSessions(ctx, p.index, dir, query, 5)
 	if err != nil {
 		slog.Debug("session recall skipped", "reason", "fts search", "err", err)
 		return ""

@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 type stubAgent struct {
@@ -21,11 +21,11 @@ func (s stubAgent) RunTurn(context.Context, agentkit.TurnInput) error { return n
 func TestDispatchAgentUsePersistsBind(t *testing.T) {
 	t.Parallel()
 
-	mem, err := session.NewMemory(session.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := session.NewStaticStore(mem)
+	store := sessstore.NewStaticStore(mem)
 	reg, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
 		stubProvider{commands: []agentkit.Command{
 			AgentCommand([]agentkit.Agent{stubAgent{id: "reviewer"}}, store, "reviewer", nil),

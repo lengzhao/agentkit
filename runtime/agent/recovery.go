@@ -6,7 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -19,7 +19,7 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 	if err != nil {
 		return err
 	}
-	incomplete := session.ScanIncomplete(events)
+	incomplete := sessstore.ScanIncomplete(events)
 	if incomplete == nil {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 		incomplete.AgentID = a.id
 	}
 
-	data, err := session.RepairIncomplete(ctx, sess, incomplete)
+	data, err := sessstore.RepairIncomplete(ctx, sess, incomplete)
 	if err != nil {
 		return err
 	}

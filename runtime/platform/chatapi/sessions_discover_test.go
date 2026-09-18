@@ -12,7 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func TestConversationIDFromSessionFile(t *testing.T) {
@@ -33,7 +33,7 @@ func TestListConversationsFromPersistedSessions(t *testing.T) {
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
 	ws := staticWorkspace{root: root}
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestListConversationsFromPersistedSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idx, err := session.NewSQLiteIndex(session.SQLiteIndexConfig{}, session.SQLiteIndexDeps{Workspace: ws})
+	idx, err := sessstore.NewSQLiteIndex(sessstore.SQLiteIndexConfig{}, sessstore.SQLiteIndexDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,19 +87,19 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
 	ws := staticWorkspace{root: root}
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	delivery := agentkit.SessionID(engineSessionKey(channel, convID))
-	effective := rctx.ApplyScope(delivery, session.ScopeChannel, "demo")
+	effective := rctx.ApplyScope(delivery, sessstore.ScopeChannel, "demo")
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(effective)})
 	sess, err := store.Get(ctx, effective)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "channel-only"}},
 	}); err != nil {
@@ -147,7 +147,7 @@ func TestConversationMessagesFromAgentSession(t *testing.T) {
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
 	ws := staticWorkspace{root: root}
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestConversationMessagesFromAgentSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "world"}},
 	}); err != nil {
@@ -191,7 +191,7 @@ func TestResolveConversationAfterRestart(t *testing.T) {
 	channel := "default_channel"
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
 	ws := staticWorkspace{root: root}
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func appendTestUserMessage(ctx context.Context, store agentkit.SessionStore, cha
 	if err != nil {
 		return err
 	}
-	return session.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	return sessstore.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	})
@@ -238,7 +238,7 @@ func TestPersistedSessionSurvivesStoreReopen(t *testing.T) {
 	convID := "conv_xleOhmgad8IfiMcirKAYQw"
 	ws := staticWorkspace{root: root}
 
-	store1, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store1, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestPersistedSessionSurvivesStoreReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store2, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store2, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
@@ -211,9 +211,9 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 		return nil
 	}))
 
-	start := session.SubagentStartData{Agent: "researcher", Session: "sub:1", Task: "survey"}
+	start := sessstore.SubagentStartData{Agent: "researcher", Session: "sub:1", Task: "survey"}
 	emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentStart, start)
-	end := session.SubagentEndData{Agent: "researcher", Session: "sub:1", Status: "completed", Summary: "done"}
+	end := sessstore.SubagentEndData{Agent: "researcher", Session: "sub:1", Status: "completed", Summary: "done"}
 	emitSubagentLifecycle(ctx, "parent-agent", agentkit.EventSubagentEnd, end)
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {

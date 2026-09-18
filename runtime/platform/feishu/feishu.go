@@ -33,7 +33,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 // sanitizingLogger wraps a logger and masks sensitive URL parameters.
@@ -134,7 +134,7 @@ type Platform struct {
 	cfg                        Config
 	agentID                    agentkit.AgentID
 	commands                   agentkit.Commands
-	sessionScope               session.SessionScope
+	sessionScope               sessstore.SessionScope
 	workspace                  workspace.Service
 	inbox                      *common.Inbox
 	outbound                   *common.Outbound

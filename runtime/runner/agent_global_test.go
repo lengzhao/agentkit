@@ -7,14 +7,14 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func TestRunnerResolvesGlobalAgentBind(t *testing.T) {
 	t.Parallel()
 
 	const sessionID = agentkit.SessionID("cli:test")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: sessionID})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: sessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestRunnerResolvesGlobalAgentBind(t *testing.T) {
 	}
 	ws := rtworkspace.Static(t.TempDir())
 	ctx := context.Background()
-	if err := session.SetGlobalAgentBind(ctx, ws, "reviewer"); err != nil {
+	if err := sessstore.SetGlobalAgentBind(ctx, ws, "reviewer"); err != nil {
 		t.Fatal(err)
 	}
 

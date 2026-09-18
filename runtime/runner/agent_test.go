@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 type agentRecordingLoop struct {
@@ -104,7 +104,7 @@ func TestRunnerResolvesLogicalStoreSessionRequiresInboundContext(t *testing.T) {
 
 	delivery := rctx.BuildDeliverySessionID("chat-api", "default_channel", "conv_test", "")
 	logical := agentkit.SessionID(string(delivery) + ":new:20260829")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: logical})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,9 +138,9 @@ func TestRunnerResolvesLogicalStoreSessionFromFixedDelivery(t *testing.T) {
 	t.Parallel()
 
 	delivery := rctx.BuildDeliverySessionID("slack", "C001", "123", "U111")
-	entry := rctx.ActiveSessionEntryKey("slack", delivery, session.ScopeChannel, "U111")
+	entry := rctx.ActiveSessionEntryKey("slack", delivery, sessstore.ScopeChannel, "U111")
 	logical := agentkit.SessionID(string(entry) + ":new:20260829")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: logical})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,9 +170,9 @@ func TestRunnerResolvesLogicalStoreSessionFromStableSlackDM(t *testing.T) {
 	t.Parallel()
 
 	stable := rctx.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
-	entry := rctx.ActiveSessionEntryKey("slack", stable, session.ScopeChannel, "U02LNUW8KV5")
+	entry := rctx.ActiveSessionEntryKey("slack", stable, sessstore.ScopeChannel, "U02LNUW8KV5")
 	logical := agentkit.SessionID(string(entry) + ":new:20260829")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: logical})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestRunnerAgentBindCacheUsesStoreBind(t *testing.T) {
 	t.Parallel()
 
 	const sessionID = agentkit.SessionID("cli:test")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: sessionID})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: sessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestRunnerResolvesSessionAgentBind(t *testing.T) {
 	t.Parallel()
 
 	const sessionID = agentkit.SessionID("cli:test")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: sessionID})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: sessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestRunnerSessionBindOverridesMessageAgent(t *testing.T) {
 	t.Parallel()
 
 	const sessionID = agentkit.SessionID("cli:test")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: sessionID})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: sessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestRunnerScheduleStatelessIgnoresActiveSessionMapping(t *testing.T) {
 	delivery := rctx.BuildDeliverySessionID("chat-api", "default_channel", "conv_test", "")
 	logical := agentkit.SessionID(string(delivery) + ":new:20260829")
 	side := agentkit.SessionID("schedule:agent-1:123456789")
-	mem, err := session.NewMemory(session.MemoryConfig{ID: logical})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: logical})
 	if err != nil {
 		t.Fatal(err)
 	}

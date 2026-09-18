@@ -15,7 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -26,11 +26,11 @@ import (
 func TestE2ECLINewSwitchesSession(t *testing.T) {
 	dir := t.TempDir()
 	ws := rtworkspace.Static(dir)
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	sessionCmds, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}

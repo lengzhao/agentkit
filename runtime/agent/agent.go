@@ -16,7 +16,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtllm "github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -111,7 +111,7 @@ func (a *Runtime) effectiveModel(ctx context.Context, sess agentkit.Session) str
 	if sess == nil {
 		return a.model
 	}
-	effective, _, _, err := session.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, sess.ID(), a.id, a.model)
+	effective, _, _, err := sessstore.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, sess.ID(), a.id, a.model)
 	if err != nil || effective == "" {
 		return a.model
 	}
@@ -150,16 +150,16 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		meter:    newTurnMeter(),
 		llmModel: a.effectiveModel(ctx, sess),
 	}
-	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, session.TurnStartData{}); err != nil {
+	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, sessstore.TurnStartData{}); err != nil {
 		return err
 	}
-	if err := session.AppendTurnStart(ctx, sess, a.id); err != nil {
+	if err := sessstore.AppendTurnStart(ctx, sess, a.id); err != nil {
 		return err
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
 		telemetry.RecordTurnSteps(ctx, run.completed)
-		endData := session.TurnEndData{Steps: run.completed}
+		endData := sessstore.TurnEndData{Steps: run.completed}
 		cancelled := false
 		if reason, ok := cancelReasonFromError(runErr); ok {
 			cancelled = true
@@ -170,7 +170,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			endData.Failed = true
 			endData.StopReason = runErr.Error()
 		}
-		_ = session.AppendTurnEnd(endCtx, sess, a.id, run.completed)
+		_ = sessstore.AppendTurnEnd(endCtx, sess, a.id, run.completed)
 		if err := a.emitLifecycle(endCtx, input.Emit, agentkit.EventTurnEnd, endData); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
@@ -179,7 +179,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		}
 	}()
 
-	if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
+	if err := sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 		return err
 	}
 
@@ -230,7 +230,7 @@ func (a *Runtime) runSegment(
 		}
 
 		for _, msg := range ctrl.PopSteering() {
-			if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
+			if err := sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
 				return "", err
 			}
 		}
@@ -248,7 +248,7 @@ func (a *Runtime) runSegment(
 			endStep()
 		}
 
-		if err := session.AppendStepStart(ctx, sess, a.id, stepIndex); err != nil {
+		if err := sessstore.AppendStepStart(ctx, sess, a.id, stepIndex); err != nil {
 			endStepOnce()
 			return "", err
 		}
@@ -257,7 +257,7 @@ func (a *Runtime) runSegment(
 
 		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted)
 		if err != nil {
-			_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+			_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 			endStepOnce()
 			return "", err
 		}
@@ -274,41 +274,41 @@ func (a *Runtime) runSegment(
 		}
 		for _, call := range assistant.ToolCalls {
 			if reason := ctrl.PopCancelReason(); reason != "" {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", fmt.Errorf("cancelled: %s", reason)
 			}
-			if err := session.AppendToolCall(ctx, sess, a.id, call); err != nil {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+			if err := sessstore.AppendToolCall(ctx, sess, a.id, call); err != nil {
+				_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 			toolCtx := withToolContext(toolBaseCtx, sess, a.id)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 			stored, err := derive.PrepareToolResultForStorage(ctx, sess.ID(), result, 0)
 			if err != nil {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
-			if err := session.AppendToolResult(ctx, sess, a.id, stored); err != nil {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+			if err := sessstore.AppendToolResult(ctx, sess, a.id, stored); err != nil {
+				_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 			if err := a.emitLifecycle(ctx, emit, agentkit.EventToolResult, stored); err != nil {
-				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessstore.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 		}
 
-		if err := session.AppendStepEnd(ctx, sess, a.id, stepIndex); err != nil {
+		if err := sessstore.AppendStepEnd(ctx, sess, a.id, stepIndex); err != nil {
 			endStepOnce()
 			return "", err
 		}
@@ -364,13 +364,13 @@ func (a *Runtime) extendTurn(
 	}
 
 	run.meter.recordContinuation()
-	data := session.TurnContinueData{
+	data := sessstore.TurnContinueData{
 		Segment:  run.meter.continuationsUsed(),
 		Reason:   string(reason),
 		Steps:    run.meter.stepsUsed(),
 		Messages: stopping.Continue,
 	}
-	if err := session.AppendTurnContinue(ctx, sess, a.id, data); err != nil {
+	if err := sessstore.AppendTurnContinue(ctx, sess, a.id, data); err != nil {
 		return false, err
 	}
 	slog.Info("turn continued",
@@ -410,7 +410,7 @@ func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *t
 		OutputTokens: usage.OutputTokens,
 		TotalTokens:  total,
 	})
-	return session.AppendUsage(ctx, sess, a.id, session.UsageData{
+	return sessstore.AppendUsage(ctx, sess, a.id, sessstore.UsageData{
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
 		TotalTokens:  total,
@@ -535,7 +535,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		return stepOutcome{}, err
 	}
 
-	if err := session.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+	if err := sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
 		observationEnd.Err = err
 		return stepOutcome{}, err
 	}
@@ -608,7 +608,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 
 func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.SessionID, sess agentkit.Session, model string, turnTokens int) {
 	if sess == nil || sess.ID() != sessionID {
-		loaded, err := session.LoadSession(ctx, a.sessionStore, sessionID)
+		loaded, err := sessstore.LoadSession(ctx, a.sessionStore, sessionID)
 		if err != nil {
 			slog.Debug("agent: turn complete skipped, session reload failed",
 				"agent_id", a.id, "session_id", sessionID, "err", err)

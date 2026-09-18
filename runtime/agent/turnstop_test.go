@@ -11,7 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -69,7 +69,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 	t.Helper()
 	dir := t.TempDir()
 
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestTurnStoppingContinueExtendsTurn(t *testing.T) {
 		t.Fatalf("second call Segments = %d, want 1", hooks.seen[1].Segments)
 	}
 
-	var data session.TurnContinueData
+	var data sessstore.TurnContinueData
 	for _, ev := range events {
 		if ev.Type == agentkit.EventTurnContinue {
 			if err := json.Unmarshal(ev.Data, &data); err != nil {

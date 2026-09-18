@@ -3,14 +3,14 @@ package chatapi
 import (
 	"context"
 
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func (p *Platform) syncConversationsFromSessionIndex(ctx context.Context, channelKey, sessionsDir string) error {
 	if p.sessionIndex == nil {
 		return nil
 	}
-	if err := session.SyncSessionIndex(ctx, p.sessionIndex, sessionsDir); err != nil {
+	if err := sessstore.SyncSessionIndex(ctx, p.sessionIndex, sessionsDir); err != nil {
 		return err
 	}
 	summaries, err := p.sessionIndex.ListSessions(ctx, 200)

@@ -1,0 +1,169 @@
+package sessstore_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessstore"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+)
+
+func sessionCommands(t *testing.T, store agentkit.SessionStore) agentkit.CommandProvider {
+	t.Helper()
+	provider, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return provider
+}
+
+func cliSlashContext(delivery agentkit.SessionID) agentkit.TurnEnvelope {
+	return rctx.MergeEnvelopeMetadata(agentkit.TurnEnvelope{
+		Conversation: string(delivery),
+		Workspace:    string(delivery),
+		Route:        rctx.SessionRouteFromDelivery("cli", delivery, ""),
+		Actor:        agentkit.ActorRef{UserID: "cli"},
+	}, map[string]any{
+		rctx.MetadataSessionScope: string(sessstore.ScopeChannel),
+	})
+}
+
+func TestStoreCommands(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := sessionCommands(t, store)
+	commands := provider.Commands()
+	if len(commands) != 2 {
+		t.Fatalf("commands=%d want 2", len(commands))
+	}
+
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), cliSlashContext(rctx.DefaultCLISessionID))
+	for _, cmd := range commands {
+		switch cmd.Name() {
+		case "new":
+			out, err := cmd.CommandExec(ctx, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(out, "cli:") {
+				t.Fatalf("unexpected new session id: %q", out)
+			}
+			active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), rctx.DefaultCLISessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if active != agentkit.SessionID(out) {
+				t.Fatalf("active session = %q, want %q", active, out)
+			}
+		case "session":
+			if _, err := cmd.CommandExec(ctx, ""); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			t.Fatalf("unexpected command %q", cmd.Name())
+		}
+	}
+}
+
+func TestNewCommandUpdatesActiveSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := sessionCommands(t, store)
+	var newCmd agentkit.Command
+	for _, cmd := range provider.Commands() {
+		if cmd.Name() == "new" {
+			newCmd = cmd
+			break
+		}
+	}
+	if newCmd == nil {
+		t.Fatal("missing /new command")
+	}
+
+	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
+	entry := rctx.ApplyScope(stable, sessstore.ScopeChannel, "U111")
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), rctx.MergeEnvelopeMetadata(agentkit.TurnEnvelope{
+		Conversation: string(entry),
+		Workspace:    string(entry),
+		Route:        rctx.SessionRoute("slack", string(stable)),
+		Actor:        agentkit.ActorRef{UserID: "U111"},
+	}, map[string]any{
+		rctx.MetadataSessionScope: string(sessstore.ScopeChannel),
+	}))
+	out, err := newCmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, string(entry)+":new:") {
+		t.Fatalf("new logical session = %q", out)
+	}
+	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != agentkit.SessionID(out) {
+		t.Fatalf("active session = %q, want %q", active, out)
+	}
+}
+
+func TestNewCommandForCLIUsesActiveSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := sessionCommands(t, store)
+	var newCmd agentkit.Command
+	for _, cmd := range provider.Commands() {
+		if cmd.Name() == "new" {
+			newCmd = cmd
+			break
+		}
+	}
+	if newCmd == nil {
+		t.Fatal("missing /new command")
+	}
+
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), cliSlashContext(rctx.DefaultCLISessionID))
+	out, err := newCmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), rctx.DefaultCLISessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != agentkit.SessionID(out) {
+		t.Fatalf("active session = %q, want %q", active, out)
+	}
+}
+
+func TestActiveEntryKeyFromContextRespectsUserScope(t *testing.T) {
+	t.Parallel()
+
+	delivery := rctx.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
+	env := rctx.WithMetadataScope(agentkit.TurnEnvelope{
+		Route: rctx.SessionRoute("slack", string(delivery)),
+		Actor: agentkit.ActorRef{UserID: "U02LNUW8KV5"},
+	}, sessstore.ScopeUser)
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	got := rctx.ActiveEntryKeyFromContext(ctx)
+	want := rctx.ApplyScope(delivery, sessstore.ScopeUser, "U02LNUW8KV5")
+	if got != want {
+		t.Fatalf("entry key = %q, want %q", got, want)
+	}
+}

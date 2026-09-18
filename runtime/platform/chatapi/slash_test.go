@@ -13,15 +13,15 @@ import (
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) {
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	sessionCmds, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,11 +61,11 @@ func TestProcessChatSlashNewKeepsConversationAndMapsActiveSession(t *testing.T) 
 }
 
 func TestProcessChatSlashSessionUsesConversation(t *testing.T) {
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	sessionCmds, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +105,11 @@ func TestProcessChatSlashSessionUsesConversation(t *testing.T) {
 }
 
 func TestServeNewConversationSlash(t *testing.T) {
-	store, err := session.NewStore(session.StoreConfig{Dir: "."}, session.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(t.TempDir())})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	sessionCmds, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,11 +147,11 @@ func TestSlashCommandDoesNotPersistSessionHistory(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"
 	ws := rtworkspace.Static(root)
-	store, err := session.NewStore(session.StoreConfig{Dir: "sessions"}, session.StoreDeps{Workspace: ws})
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionCmds, err := session.NewCommands(session.CommandsConfig{}, session.CommandsDeps{SessionStore: store})
+	sessionCmds, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
 	if err != nil {
 		t.Fatal(err)
 	}

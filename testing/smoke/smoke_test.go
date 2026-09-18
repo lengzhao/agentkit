@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -112,19 +112,19 @@ func TestSmokeSessionRecoveryAfterCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendTurnStart(ctx, sess, "nex"); err != nil {
+	if err := sessstore.AppendTurnStart(ctx, sess, "nex"); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "nex", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "nex", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "read file"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendStepStart(ctx, sess, "nex", 0); err != nil {
+	if err := sessstore.AppendStepStart(ctx, sess, "nex", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendMessage(ctx, sess, "nex", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessstore.AppendMessage(ctx, sess, "nex", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "call-read", Name: "read", Input: []byte(`{"path":"README.md"}`)}},
 	}); err != nil {

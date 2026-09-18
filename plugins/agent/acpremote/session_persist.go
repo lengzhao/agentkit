@@ -12,7 +12,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
-	rtsession "github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 const defaultSessionDir = "sessions"
@@ -25,7 +25,7 @@ type acpSessionBind struct {
 }
 
 func acpSessionBindPath(storeDir string, sessionID agentkit.SessionID, agentID agentkit.AgentID) (string, error) {
-	workDir, err := rtsession.WorkDir(storeDir, sessionID)
+	workDir, err := sessstore.WorkDir(storeDir, sessionID)
 	if err != nil {
 		return "", err
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -80,7 +80,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 		return "", fmt.Errorf("usage: /compact")
 	}
 	entryKey := rctx.SessionIDFromContext(ctx)
-	sessionID, err := session.ResolveActiveSessionID(ctx, c.sessionStore, entryKey)
+	sessionID, err := sessstore.ResolveActiveSessionID(ctx, c.sessionStore, entryKey)
 	if err != nil {
 		return "", err
 	}

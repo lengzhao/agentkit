@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func (p *Platform) clearCardProcessingReaction(messageID, reactionID string) {
@@ -102,7 +102,7 @@ func (p *Platform) useBotReplyReactionEmojis() bool {
 	return !p.useRichStream()
 }
 
-func (p *Platform) addBotReplyEndReaction(messageID string, endData session.TurnEndData, clearProcessingReactionID string) {
+func (p *Platform) addBotReplyEndReaction(messageID string, endData sessstore.TurnEndData, clearProcessingReactionID string) {
 	if !p.useBotReplyReactionEmojis() {
 		return
 	}
@@ -129,7 +129,7 @@ func (p *Platform) addBotReplyEndReaction(messageID string, endData session.Turn
 	}
 }
 
-func (p *Platform) applyTurnEndReactions(sessionID agentkit.SessionID, endData session.TurnEndData) {
+func (p *Platform) applyTurnEndReactions(sessionID agentkit.SessionID, endData sessstore.TurnEndData) {
 	rcs := p.finishTurnReactions(sessionID)
 	p.turnTriggers.LoadAndDelete(sessionID)
 	if len(rcs) == 0 {
