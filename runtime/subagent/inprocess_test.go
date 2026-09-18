@@ -3,6 +3,9 @@ package subagent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,11 +14,30 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+// dirWorkspace maps scoped rels straight to temp dirs, keeping these tests
+// independent of workspace/default's root layout.
+type dirWorkspace map[string]string
+
+func (w dirWorkspace) Resolve(_ context.Context, rel string) (string, error) {
+	if dir, ok := w[rel]; ok {
+		return dir, nil
+	}
+	return "", fmt.Errorf("unknown workspace path %q", rel)
+}
+
+func writeDef(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 type echoInput struct {
 	Text string `json:"text"`
@@ -120,8 +142,8 @@ func TestRunTakesSummaryFromFinish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if result.Status != sessstore.FinishCompleted {
-		t.Errorf("status = %q, want %q", result.Status, sessstore.FinishCompleted)
+	if result.Status != sessevents.FinishCompleted {
+		t.Errorf("status = %q, want %q", result.Status, sessevents.FinishCompleted)
 	}
 	if result.Summary != "loop keeps one turn per session" {
 		t.Errorf("summary = %q, want the finish summary", result.Summary)
@@ -172,13 +194,13 @@ func TestRunDoesNotRecoverParentTurnWhileDelegating(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
+	if err := sessevents.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
+	if err := sessevents.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "call-delegate", Name: "delegate", Input: []byte(`{"agent":"researcher"}`)}},
 	}); err != nil {

@@ -13,7 +13,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -64,7 +63,7 @@ type Platform struct {
 	agentID      agentkit.AgentID
 	apiURL       string
 	commands     agentkit.Commands
-	sessionScope sessstore.SessionScope
+	sessionScope agentkit.SessionScope
 	workspace    workspace.Service
 	inbox        *common.Inbox
 	outbound     *common.Outbound

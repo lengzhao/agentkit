@@ -6,12 +6,12 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // EmptyToolsRuntime returns a tool runtime with no tools and allow-all approval.
@@ -36,10 +36,10 @@ func DefaultAssembler(t *testing.T) agentkit.PromptAssembler {
 
 // ScriptedAgentConfig wires a minimal agent for smoke scenarios.
 type ScriptedAgentConfig struct {
-	AgentID  agentkit.AgentID
-	Steps    []llm.ScriptedStep
-	Tools    agentkit.ToolRuntime
-	Store    agentkit.SessionStore
+	AgentID agentkit.AgentID
+	Steps   []llm.ScriptedStep
+	Tools   agentkit.ToolRuntime
+	Store   agentkit.SessionStore
 	// Workspace overrides the default; use with Store from TempFileStore so spill files land beside sessions.
 	Workspace workspace.Service
 }
@@ -92,19 +92,19 @@ func SeedCrashedToolCall(t *testing.T, store agentkit.SessionStore, sessionID ag
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendTurnStart(ctx, sess, agentID); err != nil {
+	if err := sessevents.AppendTurnStart(ctx, sess, agentID); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, agentID, agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, agentID, agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: userText}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendStepStart(ctx, sess, agentID, 0); err != nil {
+	if err := sessevents.AppendStepStart(ctx, sess, agentID, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{call},
 	}); err != nil {

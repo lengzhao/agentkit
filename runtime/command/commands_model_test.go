@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -165,11 +166,11 @@ func TestModelGlobalUsesRoutedAgent(t *testing.T) {
 		t.Fatalf("set out = %q", out)
 	}
 
-	got, err := sessstore.GlobalModelBind(ctx, ws, agentkit.AgentID("worker"))
+	got, err := sessbind.GlobalModelBind(ctx, ws, agentkit.AgentID("worker"))
 	if err != nil || got != "worker-model" {
 		t.Fatalf("worker global model = %q err=%v", got, err)
 	}
-	got, err = sessstore.GlobalModelBind(ctx, ws, agentkit.AgentID("assistant"))
+	got, err = sessbind.GlobalModelBind(ctx, ws, agentkit.AgentID("assistant"))
 	if err != nil || got != "" {
 		t.Fatalf("assistant should have no global model: %q err=%v", got, err)
 	}

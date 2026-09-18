@@ -12,8 +12,9 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -47,19 +48,19 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendTurnStart(ctx, sess, "test"); err != nil {
+	if err := sessevents.AppendTurnStart(ctx, sess, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "read the file"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendStepStart(ctx, sess, "test", 0); err != nil {
+	if err := sessevents.AppendStepStart(ctx, sess, "test", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, "test", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "test", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "crashed-call", Name: "read", Input: []byte(`{"path":"README.md"}`)}},
 	}); err != nil {
@@ -135,7 +136,7 @@ func TestRunTurnRecoversCrashedSession(t *testing.T) {
 	if got := countEvents(events, agentkit.EventTurnEnd); got != 2 {
 		t.Fatalf("turn/end events = %d, want 2", got)
 	}
-	if got := sessstore.ScanIncomplete(events); got != nil {
+	if got := sessevents.ScanIncomplete(events); got != nil {
 		t.Fatalf("session still reports an open turn: %+v", got)
 	}
 

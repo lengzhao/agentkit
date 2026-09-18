@@ -21,7 +21,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 var errNotSupported = fmt.Errorf("feishu: not supported")
@@ -612,8 +612,8 @@ func (p *Platform) addErrorReaction(rc replyContext) {
 	}
 }
 
-func parseTurnEndData(event agentkit.OutboundEvent) sessstore.TurnEndData {
-	var data sessstore.TurnEndData
+func parseTurnEndData(event agentkit.OutboundEvent) sessevents.TurnEndData {
+	var data sessevents.TurnEndData
 	if len(event.Data) == 0 {
 		return data
 	}

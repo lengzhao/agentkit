@@ -16,8 +16,8 @@ import (
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit"
 )
@@ -104,6 +104,12 @@ func NewBackgroundReview(cfg BackgroundReviewConfig, deps backgroundReviewDeps) 
 
 func (p *backgroundReviewProvider) Hooks() []agentkit.Hook {
 	return []agentkit.Hook{agentkit.OnTurnComplete(p.onTurnComplete)}
+}
+
+// ShutdownHooks lets the runner cancel in-flight background reviews on shutdown
+// without importing the learning runtime.
+func (p *backgroundReviewProvider) ShutdownHooks() []func() {
+	return []func(){rtlearning.CancelAllBackgroundReviews}
 }
 
 func (p *backgroundReviewProvider) onTurnComplete(ctx context.Context, tc *agentkit.TurnComplete) error {
@@ -300,7 +306,7 @@ func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages [
 		slog.Debug("session recall skipped", "reason", "resolve sessions dir", "err", err)
 		return ""
 	}
-	hits, err := sessstore.SearchSyncedSessions(ctx, p.index, dir, query, 5)
+	hits, err := sessindex.SearchSyncedSessions(ctx, p.index, dir, query, 5)
 	if err != nil {
 		slog.Debug("session recall skipped", "reason", "fts search", "err", err)
 		return ""

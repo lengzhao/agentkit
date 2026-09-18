@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 
 	"github.com/lengzhao/agentkit"
@@ -155,7 +156,7 @@ func TestAppendMessageStoresSanitized(t *testing.T) {
 			{Type: "image_url", URL: "data:image/png;base64,abc", Source: "upload/a.png"},
 		},
 	}
-	if err := sessstore.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
+	if err := sessevents.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
 		t.Fatal(err)
 	}
 	events, err := mem.Read(context.Background(), 0)

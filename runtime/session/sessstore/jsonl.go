@@ -68,7 +68,7 @@ func NewJSONL(cfg JSONLConfig) (agentkit.Session, error) {
 }
 
 func (s *JSONL) loadExisting() error {
-	events, maxSeq, trimmed, err := scanSessionFile(s.path, s.maxLoadedEvents)
+	events, maxSeq, trimmed, err := ScanSessionFile(s.path, s.maxLoadedEvents)
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 func TestAsyncSubagentRoutesChildToolEventsNotParent(t *testing.T) {
@@ -48,7 +48,7 @@ func TestHandleRichSubagentAsyncStartRegistersCard(t *testing.T) {
 		asyncSubagentProgressCard: true,
 	}
 	streamKey := agentkit.SessionID("feishu:oc_test:reply:om_parent")
-	data := sessstore.SubagentStartData{
+	data := sessevents.SubagentStartData{
 		Agent:   "cursor",
 		Task:    "do work",
 		Async:   true,

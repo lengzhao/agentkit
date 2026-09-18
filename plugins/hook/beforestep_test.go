@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/compaction"
 	"github.com/lengzhao/agentkit/plugins/hook"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -27,13 +28,13 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	long := strings.Repeat("x", 200)
-	if err := sessstore.AppendMessage(context.Background(), sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(context.Background(), sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(context.Background(), sess, "coder", agentkit.EventToolResult, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(context.Background(), sess, "coder", agentkit.EventToolResult, agentkit.ModelMessage{
 		Role:    "tool",
 		Content: []agentkit.ContentPart{{Type: "text", Text: long}},
 	}); err != nil {

@@ -28,8 +28,9 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	"github.com/lengzhao/agentkit/runtime/subagent/definition"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -87,7 +88,7 @@ func New(cfg Config, deps Deps) (subagent.Spawner, error) {
 	}
 	dirs := cfg.Dirs
 	if len(dirs) == 0 {
-		dirs = defaultDirs
+		dirs = definition.DefaultDirs()
 	}
 	var timeout time.Duration
 	if cfg.TimeoutSeconds > 0 {
@@ -107,7 +108,7 @@ func New(cfg Config, deps Deps) (subagent.Spawner, error) {
 }
 
 func (s *Spawner) Definitions(ctx context.Context) ([]subagent.Definition, error) {
-	return loadDefinitions(ctx, s.workspace, s.dirs)
+	return definition.Load(ctx, s.workspace, s.dirs)
 }
 
 func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Result, error) {
@@ -124,7 +125,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	def, ok := findDefinition(defs, name)
+	def, ok := definition.Find(defs, name)
 	if !ok {
 		return subagent.Result{}, fmt.Errorf("unknown subagent %q; available: %s", name, namesOf(defs))
 	}
@@ -134,7 +135,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
 	parentAgent := rctx.AgentIDFromContext(ctx)
-	parent, err := sessstore.ParentSessionForDelegate(ctx, s.store, parentID)
+	parent, err := sessevents.ParentSessionForDelegate(ctx, s.store, parentID)
 	if err != nil {
 		return subagent.Result{}, err
 	}
@@ -147,18 +148,18 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	// unique within the parent session; session/store sanitizes the separators.
 	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(derive.LatestEventSeq(parentEvents))))
 
-	startData := sessstore.SubagentStartData{
+	startData := sessevents.SubagentStartData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Task:    task,
 	}
-	if err := sessstore.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
+	if err := sessevents.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
 		return subagent.Result{}, err
 	}
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData)
 
 	result, runErr := s.runChild(ctx, def, task, childID)
-	end := sessstore.SubagentEndData{
+	end := sessevents.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Status:  result.Status,
@@ -168,7 +169,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if runErr != nil {
 		end.Error = runErr.Error()
 	}
-	if err := sessstore.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
+	if err := sessevents.AppendSubagentEnd(ctx, parent, parentAgent, end); err != nil {
 		return subagent.Result{}, err
 	}
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
@@ -251,7 +252,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	// Read the outcome even when the turn failed: a child that worked for ten
 	// steps and then hit a provider error still has a partial answer worth
 	// carrying back.
-	sess, err := sessstore.LoadSession(ctx, s.store, childID)
+	sess, err := sessevents.LoadSession(ctx, s.store, childID)
 	if err != nil {
 		if runErr != nil {
 			return out, runErr
@@ -265,24 +266,15 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		}
 		return out, err
 	}
-	out.Steps = sessstore.StepCount(events, 0)
-	if finish := sessstore.FinishAfter(events, 0); finish != nil {
+	out.Steps = sessevents.StepCount(events, 0)
+	if finish := sessevents.FinishAfter(events, 0); finish != nil {
 		out.Status = finish.Status
 		out.Summary = finish.Summary
 	} else {
 		out.Status = subagent.StatusStopped
-		out.Summary = sessstore.LastAssistantText(events, 0)
+		out.Summary = sessevents.LastAssistantText(events, 0)
 	}
 	return out, runErr
-}
-
-func findDefinition(defs []subagent.Definition, name string) (subagent.Definition, bool) {
-	for _, def := range defs {
-		if strings.EqualFold(def.Name, name) {
-			return def, true
-		}
-	}
-	return subagent.Definition{}, false
 }
 
 // namesOf renders the available agents for an error the model can act on: it

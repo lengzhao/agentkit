@@ -17,7 +17,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 const (
@@ -95,7 +94,7 @@ type Platform struct {
 	sessionIndex          capsessionindex.Service
 	workspace             workspace.Service
 	commands              agentkit.Commands
-	sessionScope          sessstore.SessionScope
+	sessionScope          agentkit.SessionScope
 	sessionsDirRel        string
 	admins                []string
 

@@ -3,7 +3,6 @@ package runner
 import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 func (r *Root) BuildInboundPromptPrefixForTest(event agentkit.MessageEvent, deliveryID agentkit.SessionID) string {
@@ -11,7 +10,7 @@ func (r *Root) BuildInboundPromptPrefixForTest(event agentkit.MessageEvent, deli
 }
 
 func (r *Root) FormatInboundEventForTest(event agentkit.MessageEvent, deliveryID agentkit.SessionID) agentkit.MessageEvent {
-	env := rctx.ResolveEnvelope(event, rctx.DefaultRoutePolicy(sessstore.ScopeChannel))
+	env := rctx.ResolveEnvelope(event, rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
 	if deliveryID != "" {
 		env.Route = rctx.SessionRouteFromDelivery(event.PlatformID, deliveryID, "")
 	}

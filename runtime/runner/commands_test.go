@@ -9,7 +9,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 type stubPlatform struct{}
@@ -121,7 +120,7 @@ func TestStopCommandCancelsBusySession(t *testing.T) {
 func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
 	t.Parallel()
 	delivery := rctx.BuildDeliverySessionID("lark", "oc_test", "", "ou_user")
-	entry := rctx.ApplyScope(delivery, sessstore.ScopeChannel, "ou_user")
+	entry := rctx.ApplyScope(delivery, agentkit.SessionScopeChannel, "ou_user")
 	child := agentkit.SessionID(string(entry) + ":new:20260913")
 	loop := &stubStopLoop{busy: map[agentkit.SessionID]bool{child: true}}
 	store := stopActiveStore{active: map[agentkit.SessionID]agentkit.SessionID{entry: child}}
@@ -146,9 +145,9 @@ func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
 	env := rctx.ResolveEnvelope(agentkit.MessageEvent{
 		PlatformID: "lark",
 		UserID:     "ou_user",
-	}, rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(sessstore.ScopeChannel)))
+	}, rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel)))
 	env.Route = rctx.SessionRoute("lark", string(delivery))
-	env = rctx.WithMetadataScope(env, sessstore.ScopeChannel)
+	env = rctx.WithMetadataScope(env, agentkit.SessionScopeChannel)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
 	out, err := stopCmd.CommandExec(ctx, "")

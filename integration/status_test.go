@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/hook"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/presettest"
 )
@@ -25,11 +25,11 @@ func TestIntegrationStatusMatchesSessionEvents(t *testing.T) {
 	ctx := agenttest.TurnContext(result.SessionID, agentkit.AgentID("smoke"))
 	events := agenttest.SessionEvents(t, ctx, result.Store, result.SessionID)
 
-	startSeq := sessstore.RunStartSeq(events)
-	usage := sessstore.TotalUsage(events, startSeq)
-	todos := sessstore.LatestTodos(events)
-	pending := sessstore.PendingTodos(todos)
-	finish := sessstore.FinishAfter(events, startSeq)
+	startSeq := sessevents.RunStartSeq(events)
+	usage := sessevents.TotalUsage(events, startSeq)
+	todos := sessevents.LatestTodos(events)
+	pending := sessevents.PendingTodos(todos)
+	finish := sessevents.FinishAfter(events, startSeq)
 
 	provider, err := hook.NewTurnContinue(
 		hook.TurnContinueConfig{MaxContinuations: maxContinuations},

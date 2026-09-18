@@ -983,6 +983,7 @@ Runner 是 `pluginkit` root plugin 的返回值，负责连接 Platform 和 Loop
 | 读取不超前 | 入队前先取 slot，所以 `in-flight + queued ≤ maxConcurrentTurns`；等于 1 时行为与全串行完全一致（不会提前读走下一条事件） |
 | 单个 turn 崩溃隔离 | 每个 turn 包一层 recover，panic 记堆栈 + 报到该 session 的 error 通道后继续服务 |
 | 关停不截断 turn | 退出前等待进行中的 turn 落盘 `turn/end`，上限 `shutdownTimeoutSeconds` |
+| 插件后台工作可取消 | 实现 `agentkit.ShutdownHookProvider` 的插件（如 `hook/background-review`）经 build 图贡献关停钩子，Runner 在退出时调用，无需 import 具体插件 |
 
 默认 1（串行）是有意的：不同 session 的 turn **共享同一个工作区**，两个 agent 并发跑 `go build` 或改同一个文件是真实风险。会话之间真正独立的传输（IM、HTTP）才该往上调。
 
@@ -1298,7 +1299,10 @@ agentkit/
 ├── runtime/                # Runner、Loop、Platform、Agent 等核心实现
 │   ├── rctx/               # 运行时上下文协议：ctx 读写器、路由 codec、workspace 键名（仅依赖根包）
 │   ├── session/derive/     # 事件 → 模型消息投影（sanitize/hydrate/prune/spill）
-│   ├── session/sessstore/  # SessionStore 实现（JSONL/SQLite/memory/static、绑定、命令插件）
+│   ├── session/sessstore/  # SessionStore 实现（JSONL/memory/static、sidecar、命令插件）
+│   ├── session/sessbind/   # agent/model 绑定与 active-session 解析（操作 SessionStore 接口）
+│   ├── session/sessevents/ # 会话事件追加与运行状态查询（Append*/RunState/恢复，纯函数）
+│   ├── session/sessindex/  # session/sqlite-index：会话 FTS 索引（SQLite）
 │   └── command/            # slash 命令注册表与 /agent、/model、/acp 内建命令
 ├── cap/                    # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
 ├── plugins/                # 工具、Hook、Policy、Prompt、learning 等插件

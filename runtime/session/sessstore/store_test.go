@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 
 	"github.com/lengzhao/agentkit"
@@ -35,13 +36,13 @@ func TestStoreIsolatesSessionsByID(t *testing.T) {
 		t.Fatal("expected distinct session ids")
 	}
 
-	if err := sessstore.AppendMessage(ctx, s1, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, s1, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hello from C001"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, s2, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, s2, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hello from C002"}},
 	}); err != nil {
@@ -111,7 +112,7 @@ func TestReopenedSessionContinuesSeqNumbering(t *testing.T) {
 
 	first := open()
 	for i := 0; i < 3; i++ {
-		if err := sessstore.AppendStepStart(ctx, first, "a", i); err != nil {
+		if err := sessevents.AppendStepStart(ctx, first, "a", i); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -161,7 +162,7 @@ func TestStoreLRUCacheReloadsFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, s1a, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, s1a, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "persisted"}},
 	}); err != nil {
@@ -207,7 +208,7 @@ func TestStoreHeldSessionSurvivesCacheEviction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, held, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, held, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "still writable"}},
 	}); err != nil {

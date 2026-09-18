@@ -5,7 +5,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
 // busyStopSession finds which session id currently has an in-flight turn for this
@@ -54,7 +54,7 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 			if key == "" {
 				continue
 			}
-			resolved, err := sessstore.ResolveActiveSessionID(ctx, store, key)
+			resolved, err := sessbind.ResolveActiveSessionID(ctx, store, key)
 			if err != nil {
 				return nil, err
 			}
@@ -67,17 +67,17 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 	platform := rctx.PlatformFromContext(ctx)
 	delivery, ok := rctx.RouteSessionID(env.Route)
 	if ok && delivery != "" {
-		for _, scope := range []sessstore.SessionScope{
-			sessstore.ScopeChannel,
-			sessstore.ScopeUser,
-			sessstore.ScopeThread,
+		for _, scope := range []agentkit.SessionScope{
+			agentkit.SessionScopeChannel,
+			agentkit.SessionScopeUser,
+			agentkit.SessionScopeThread,
 		} {
 			policy := rctx.RoutePolicyForPlatform(platform, rctx.DefaultRoutePolicy(scope))
 			ek := rctx.ActiveEntryKey(env.Route, policy, userID)
 			add(ek)
 			add(rctx.ApplyScope(delivery, scope, userID))
 			if store != nil && ek != "" {
-				resolved, err := sessstore.ResolveActiveSessionID(ctx, store, ek)
+				resolved, err := sessbind.ResolveActiveSessionID(ctx, store, ek)
 				if err != nil {
 					return nil, err
 				}

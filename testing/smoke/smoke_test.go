@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -112,19 +112,19 @@ func TestSmokeSessionRecoveryAfterCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendTurnStart(ctx, sess, "nex"); err != nil {
+	if err := sessevents.AppendTurnStart(ctx, sess, "nex"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, "nex", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "nex", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "read file"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendStepStart(ctx, sess, "nex", 0); err != nil {
+	if err := sessevents.AppendStepStart(ctx, sess, "nex", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, "nex", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "nex", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "call-read", Name: "read", Input: []byte(`{"path":"README.md"}`)}},
 	}); err != nil {
@@ -132,7 +132,7 @@ func TestSmokeSessionRecoveryAfterCrash(t *testing.T) {
 	}
 
 	provider := agenttest.MustScripted(t, llm.ScriptedStep{Text: "已恢复并继续。"})
-	ag, err := agent.New(agent.Config{ID: "nex", }, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: "nex"}, agent.Deps{
 		SessionStore: store,
 		LLM:          provider,
 		Tools:        agenttest.EmptyToolsRuntime(t),

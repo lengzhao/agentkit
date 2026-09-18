@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/platform/cli"
 	"github.com/lengzhao/agentkit/runtime/subagent"
+	"github.com/lengzhao/agentkit/runtime/subagent/definition"
 	runtimeWorkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -86,7 +87,7 @@ type subagentProvider struct {
 }
 
 func (p subagentProvider) Commands() []agentkit.Command {
-	return []agentkit.Command{subagent.HelpCommand(p.ws, subagent.DefaultDefinitionDirs())}
+	return []agentkit.Command{subagent.HelpCommand(p.ws, definition.DefaultDirs())}
 }
 
 // helpOutput drives one /help invocation through Receive and returns what the

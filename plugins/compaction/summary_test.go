@@ -9,8 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 type flakySummaryLLM struct {
@@ -69,7 +70,7 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		if err := sessstore.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: fmt.Sprintf("msg %d", i)}},
 		}); err != nil {
@@ -130,7 +131,7 @@ func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := sessstore.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 	}); err != nil {

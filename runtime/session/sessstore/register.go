@@ -11,7 +11,6 @@ func init() {
 	pluginkit.Register("session/store", NewStore)
 	pluginkit.Register("session/static", NewStatic)
 	pluginkit.Register("session/commands", NewCommands)
-	pluginkit.Register("session/sqlite-index", NewSQLiteIndex)
 }
 
 var (

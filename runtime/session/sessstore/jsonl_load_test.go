@@ -43,7 +43,7 @@ func TestScanSessionFileLargeLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, maxSeq, trimmed, err := scanSessionFile(path, 0)
+	events, maxSeq, trimmed, err := ScanSessionFile(path, 0)
 	if err != nil {
 		t.Fatalf("scanSessionFile: %v", err)
 	}

@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/runner"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestRunnerResolvesGlobalAgentBind(t *testing.T) {
@@ -23,7 +24,7 @@ func TestRunnerResolvesGlobalAgentBind(t *testing.T) {
 	}
 	ws := rtworkspace.Static(t.TempDir())
 	ctx := context.Background()
-	if err := sessstore.SetGlobalAgentBind(ctx, ws, "reviewer"); err != nil {
+	if err := sessbind.SetGlobalAgentBind(ctx, ws, "reviewer"); err != nil {
 		t.Fatal(err)
 	}
 

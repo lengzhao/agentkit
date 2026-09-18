@@ -7,8 +7,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 // countingService stands in for the gated compaction chain so tests can assert
@@ -111,7 +112,7 @@ func TestTokenLimitUsesReportedUsageWhenLarger(t *testing.T) {
 	// The provider measured a 9000-token prompt. The character heuristic sees
 	// almost nothing, because CJK and dense payloads defeat chars/4 — the
 	// measurement has to win.
-	if err := sessstore.AppendUsage(ctx, sess, "a", sessstore.UsageData{
+	if err := sessevents.AppendUsage(ctx, sess, "a", sessevents.UsageData{
 		InputTokens:  9000,
 		OutputTokens: 500,
 		TotalTokens:  9500,
@@ -146,12 +147,12 @@ func TestTokenLimitTracksUsageAfterCompaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendUsage(ctx, sess, "a", sessstore.UsageData{InputTokens: 9000, TotalTokens: 9000}); err != nil {
+	if err := sessevents.AppendUsage(ctx, sess, "a", sessevents.UsageData{InputTokens: 9000, TotalTokens: 9000}); err != nil {
 		t.Fatal(err)
 	}
 	// After compaction the next step reports a much smaller prompt; the gate
 	// reads the latest event, so it must close again.
-	if err := sessstore.AppendUsage(ctx, sess, "a", sessstore.UsageData{InputTokens: 1200, TotalTokens: 1200}); err != nil {
+	if err := sessevents.AppendUsage(ctx, sess, "a", sessevents.UsageData{InputTokens: 1200, TotalTokens: 1200}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,7 +186,7 @@ func TestTokenLimitGatesRealSummary(t *testing.T) {
 	// Only two messages: summary's own minMessages gate (default 20) would never
 	// fire on its own, which is exactly why the token gate forces it.
 	for i := 0; i < 2; i++ {
-		if err := sessstore.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("y", 40000)}},
 		}); err != nil {

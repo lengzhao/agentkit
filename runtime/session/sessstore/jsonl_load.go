@@ -18,7 +18,10 @@ func newJSONLScanner(r io.Reader) *bufio.Scanner {
 	return sc
 }
 
-func scanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent, agentkit.EventSeq, bool, error) {
+// ScanSessionFile loads one session JSONL file, folding compacted history the
+// same way the store does. maxLoadedEvents <= 0 loads every retained event.
+// Exported for the session index, which reads the same on-disk format.
+func ScanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent, agentkit.EventSeq, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {

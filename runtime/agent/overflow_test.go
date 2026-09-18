@@ -11,8 +11,9 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -49,7 +50,7 @@ func (f *forceCompaction) Compact(ctx context.Context, req compaction.Request) (
 	if err != nil {
 		return compaction.Result{}, err
 	}
-	if err := sessstore.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
+	if err := sessevents.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
 		BeforeSeq: derive.LatestEventSeq(events),
 		Kind:      compaction.KindSummary,
 		Summary: agentkit.ModelMessage{

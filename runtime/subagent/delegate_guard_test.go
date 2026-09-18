@@ -13,6 +13,7 @@ import (
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -123,7 +124,7 @@ func TestEmitSubagentLifecycleDoesNotBlockCaller(t *testing.T) {
 	}))
 
 	start := time.Now()
-	emitSubagentLifecycle(ctx, "assistant", agentkit.EventSubagentStart, sessstore.SubagentStartData{
+	emitSubagentLifecycle(ctx, "assistant", agentkit.EventSubagentStart, sessevents.SubagentStartData{
 		Agent: "cursor", Session: "sub:1", Task: "t",
 	})
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
@@ -403,7 +404,7 @@ func (a *brokerProbeAgent) RunTurn(ctx context.Context, input agentkit.TurnInput
 	if err != nil {
 		return err
 	}
-	return sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
 	})

@@ -119,8 +119,8 @@ func TestMultiTenantChannelsGetSeparateWorkdirs(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runTurn(t, ag, rctx.SlackSessionIDForScope(sessstore.ScopeChannel, "C001", "", "U111"), "U111", "写个 notes")
-	runTurn(t, ag, rctx.SlackSessionIDForScope(sessstore.ScopeChannel, "C002", "", "U999"), "U999", "写个 notes")
+	runTurn(t, ag, rctx.SlackSessionIDForScope(agentkit.SessionScopeChannel, "C001", "", "U111"), "U111", "写个 notes")
+	runTurn(t, ag, rctx.SlackSessionIDForScope(agentkit.SessionScopeChannel, "C002", "", "U999"), "U999", "写个 notes")
 
 	rootA := filepath.Join(base, "slack_C001")
 	rootB := filepath.Join(base, "slack_C002")
@@ -191,7 +191,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	}
 	_ = result
 
-	sessionID := rctx.SlackSessionIDForScope(sessstore.ScopeChannel, "C001", "", "U111")
+	sessionID := rctx.SlackSessionIDForScope(agentkit.SessionScopeChannel, "C001", "", "U111")
 	runTurn(t, ag, sessionID, "U111", "建个 a.txt")
 	runTurn(t, ag, sessionID, "U222", "再建个 b.txt")
 

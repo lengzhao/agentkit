@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/configfile"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
 type catalogRoutingDeps struct {
@@ -51,7 +51,7 @@ func resolveCatalogAgentRouting(ctx context.Context, deps catalogRoutingDeps) (e
 	if err != nil {
 		return "", "", "", loopDefault, err
 	}
-	effective, sessionBind, globalBind, err = sessstore.ResolveAgentID(ctx, deps.store, deps.workspace, sessionID, "")
+	effective, sessionBind, globalBind, err = sessbind.ResolveAgentID(ctx, deps.store, deps.workspace, sessionID, "")
 	if err != nil {
 		return "", "", "", loopDefault, err
 	}

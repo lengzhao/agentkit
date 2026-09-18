@@ -12,6 +12,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
@@ -41,7 +43,7 @@ func TestListConversationsFromPersistedSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idx, err := sessstore.NewSQLiteIndex(sessstore.SQLiteIndexConfig{}, sessstore.SQLiteIndexDeps{Workspace: ws})
+	idx, err := sessindex.NewSQLiteIndex(sessindex.SQLiteIndexConfig{}, sessindex.SQLiteIndexDeps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,13 +95,13 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	}
 
 	delivery := agentkit.SessionID(engineSessionKey(channel, convID))
-	effective := rctx.ApplyScope(delivery, sessstore.ScopeChannel, "demo")
+	effective := rctx.ApplyScope(delivery, agentkit.SessionScopeChannel, "demo")
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(effective)})
 	sess, err := store.Get(ctx, effective)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "channel-only"}},
 	}); err != nil {
@@ -159,7 +161,7 @@ func TestConversationMessagesFromAgentSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessstore.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "world"}},
 	}); err != nil {
@@ -222,7 +224,7 @@ func appendTestUserMessage(ctx context.Context, store agentkit.SessionStore, cha
 	if err != nil {
 		return err
 	}
-	return sessstore.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	return sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	})

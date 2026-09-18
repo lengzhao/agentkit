@@ -6,8 +6,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 // recoverIncompleteTurn closes out a turn a previous process left open. It runs
@@ -19,7 +19,7 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 	if err != nil {
 		return err
 	}
-	incomplete := sessstore.ScanIncomplete(events)
+	incomplete := sessevents.ScanIncomplete(events)
 	if incomplete == nil {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 		incomplete.AgentID = a.id
 	}
 
-	data, err := sessstore.RepairIncomplete(ctx, sess, incomplete)
+	data, err := sessevents.RepairIncomplete(ctx, sess, incomplete)
 	if err != nil {
 		return err
 	}

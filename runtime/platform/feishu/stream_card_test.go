@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
@@ -332,7 +332,7 @@ func TestHandleRichTurnEndDoesNotDeadlockWithBodyFlushTimer(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = p.handleRichTurnEnd(context.Background(), sessionID, sessstore.TurnEndData{Steps: 1})
+		_ = p.handleRichTurnEnd(context.Background(), sessionID, sessevents.TurnEndData{Steps: 1})
 		close(done)
 	}()
 	select {

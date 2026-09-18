@@ -13,7 +13,7 @@ import (
 	rthooks "github.com/lengzhao/agentkit/runtime/hooks"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -47,7 +47,7 @@ func buildAutonomousAgent(t *testing.T, opts autonomousOpts) (agentkit.Agent, ag
 		t.Fatal(err)
 	}
 	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{todoTool, finishTool},
+		Tools:     []agentkit.Tool{todoTool, finishTool},
 		ToolPacks: []agentkit.ToolPack{readPack},
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ func turnContinueReasons(t *testing.T, events []agentkit.SessionEvent) []string 
 		if ev.Type != agentkit.EventTurnContinue {
 			continue
 		}
-		var data sessstore.TurnContinueData
+		var data sessevents.TurnContinueData
 		if err := json.Unmarshal(ev.Data, &data); err != nil {
 			t.Fatalf("decode turn/continue: %v", err)
 		}

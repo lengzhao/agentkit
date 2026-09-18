@@ -138,7 +138,7 @@ func TestRunnerResolvesLogicalStoreSessionFromFixedDelivery(t *testing.T) {
 	t.Parallel()
 
 	delivery := rctx.BuildDeliverySessionID("slack", "C001", "123", "U111")
-	entry := rctx.ActiveSessionEntryKey("slack", delivery, sessstore.ScopeChannel, "U111")
+	entry := rctx.ActiveSessionEntryKey("slack", delivery, agentkit.SessionScopeChannel, "U111")
 	logical := agentkit.SessionID(string(entry) + ":new:20260829")
 	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: logical})
 	if err != nil {
@@ -170,7 +170,7 @@ func TestRunnerResolvesLogicalStoreSessionFromStableSlackDM(t *testing.T) {
 	t.Parallel()
 
 	stable := rctx.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
-	entry := rctx.ActiveSessionEntryKey("slack", stable, sessstore.ScopeChannel, "U02LNUW8KV5")
+	entry := rctx.ActiveSessionEntryKey("slack", stable, agentkit.SessionScopeChannel, "U02LNUW8KV5")
 	logical := agentkit.SessionID(string(entry) + ":new:20260829")
 	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: logical})
 	if err != nil {

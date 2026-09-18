@@ -7,6 +7,7 @@ import (
 
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/subagent"
+	"github.com/lengzhao/agentkit/runtime/subagent/definition"
 	runtimeWorkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -16,7 +17,7 @@ func TestSubagentHelpCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := subagent.HelpCommand(ws, subagent.DefaultDefinitionDirs())
+	cmd := subagent.HelpCommand(ws, definition.DefaultDirs())
 	cases := []struct {
 		name string
 		args []string

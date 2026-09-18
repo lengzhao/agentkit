@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -20,7 +19,7 @@ const (
 	// ends. The card is best-effort UI; the [subagent-complete] follow-up (not
 	// the card) is what resumes the parent agent, so a hung platform call must
 	// not stall the emitter's Close (and thus the runAsync goroutine) forever.
-	// Per-event delivery is also bounded by loop.asyncEmitTimeout, so this is a
+	// Per-event delivery is also bounded by rctx.asyncEmitTimeout, so this is a
 	// coarse backstop for a backlog of slow calls.
 	asyncSubagentDrainTimeout = 5 * time.Second
 )
@@ -41,7 +40,7 @@ func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) (agent
 	}
 	var close func()
 	if ctx.Value(agentkit.KeyAsyncSubagent) != nil {
-		emitter := loop.NewAsyncEmitter(parent)
+		emitter := rctx.NewAsyncEmitter(parent)
 		if emitter != nil {
 			parent = emitter.Emit
 			em := emitter

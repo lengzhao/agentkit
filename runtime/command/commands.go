@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
 // Command exposes the agent catalog and session or global agent switching.
@@ -61,7 +61,7 @@ func (c agentCommand) useAgent(ctx context.Context, global bool, name string) (s
 		return "", err
 	}
 	if global {
-		if err := sessstore.SetGlobalAgentBind(ctx, c.workspace, agentkit.AgentID(name)); err != nil {
+		if err := sessbind.SetGlobalAgentBind(ctx, c.workspace, agentkit.AgentID(name)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("global agent: %s", name), nil
@@ -73,7 +73,7 @@ func (c agentCommand) useAgent(ctx context.Context, global bool, name string) (s
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	if err := sessstore.SetSessionAgentBind(ctx, c.store, sessionID, agentkit.AgentID(name)); err != nil {
+	if err := sessbind.SetSessionAgentBind(ctx, c.store, sessionID, agentkit.AgentID(name)); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("session agent: %s", name), nil
@@ -81,7 +81,7 @@ func (c agentCommand) useAgent(ctx context.Context, global bool, name string) (s
 
 func (c agentCommand) clearBind(ctx context.Context, global bool) (string, error) {
 	if global {
-		if err := sessstore.SetGlobalAgentBind(ctx, c.workspace, ""); err != nil {
+		if err := sessbind.SetGlobalAgentBind(ctx, c.workspace, ""); err != nil {
 			return "", err
 		}
 		if c.defaultAgent != "" {
@@ -96,7 +96,7 @@ func (c agentCommand) clearBind(ctx context.Context, global bool) (string, error
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	if err := sessstore.SetSessionAgentBind(ctx, c.store, sessionID, ""); err != nil {
+	if err := sessbind.SetSessionAgentBind(ctx, c.store, sessionID, ""); err != nil {
 		return "", err
 	}
 	effective, _, globalBind, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())

@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -38,13 +38,13 @@ type Input struct {
 }
 
 type Output struct {
-	Mode      string                        `json:"mode"`
-	Hits      []capsessionindex.Hit         `json:"hits,omitempty"`
+	Mode      string                           `json:"mode"`
+	Hits      []capsessionindex.Hit            `json:"hits,omitempty"`
 	Sessions  []capsessionindex.SessionSummary `json:"sessions,omitempty"`
-	Messages  []capsessionindex.MessageRow  `json:"messages,omitempty"`
-	Count     int                           `json:"count"`
-	SessionID string                        `json:"session_id,omitempty"`
-	AnchorSeq int64                         `json:"anchor_seq,omitempty"`
+	Messages  []capsessionindex.MessageRow     `json:"messages,omitempty"`
+	Count     int                              `json:"count"`
+	SessionID string                           `json:"session_id,omitempty"`
+	AnchorSeq int64                            `json:"anchor_seq,omitempty"`
 }
 
 func init() {
@@ -74,7 +74,7 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 		if err != nil {
 			return Output{}, err
 		}
-		if err := sessstore.SyncSessionIndex(ctx, idx, dir); err != nil {
+		if err := sessindex.SyncSessionIndex(ctx, idx, dir); err != nil {
 			return Output{}, err
 		}
 		mode := strings.ToLower(strings.TrimSpace(input.Mode))

@@ -7,8 +7,8 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 type TokenLimitConfig struct {
@@ -129,6 +129,6 @@ func (s *tokenLimitService) reportedTokens(ctx context.Context, req compaction.R
 	if err != nil {
 		return 0
 	}
-	usage := sessstore.LatestUsage(events)
+	usage := sessevents.LatestUsage(events)
 	return usage.InputTokens + usage.OutputTokens
 }

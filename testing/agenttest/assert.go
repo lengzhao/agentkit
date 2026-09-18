@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 // ContentText joins text parts from a model message.
@@ -67,9 +67,9 @@ func ToolResult(t *testing.T, ev agentkit.SessionEvent) agentkit.ToolResult {
 }
 
 // SubagentStart decodes a subagent/start event payload.
-func SubagentStart(t *testing.T, ev agentkit.SessionEvent) sessstore.SubagentStartData {
+func SubagentStart(t *testing.T, ev agentkit.SessionEvent) sessevents.SubagentStartData {
 	t.Helper()
-	var data sessstore.SubagentStartData
+	var data sessevents.SubagentStartData
 	if err := json.Unmarshal(ev.Data, &data); err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,6 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
@@ -75,6 +74,7 @@ type Root struct {
 	shutdownGraceOnSignal time.Duration
 	inject                []string
 	defaultTimezone       string
+	shutdownHooks         []func()
 }
 
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
@@ -154,6 +154,7 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 	if err := attachCommands(result); err != nil {
 		return err
 	}
+	r.collectShutdownHooks(result)
 	if err := runAppInit(ctx, result); err != nil {
 		return err
 	}
@@ -187,7 +188,7 @@ func (r *Root) Run(ctx context.Context, result *build.Result) error {
 
 func (r *Root) shutdownDrain(sched *scheduler, ctx context.Context) {
 	if ctx.Err() != nil {
-		learning.CancelAllBackgroundReviews()
+		r.runShutdownHooks()
 		r.loop.CancelAllInFlight("shutdown")
 		slog.Info("shutdown: signal received, stopping in-flight work", "grace", r.shutdownGraceOnSignal.String())
 		sched.wait(r.shutdownGraceOnSignal)
@@ -303,8 +304,27 @@ func attachCommands(result *build.Result) error {
 	return err
 }
 
+// collectShutdownHooks gathers ShutdownHookProvider contributions so plugins
+// with background work can stop it on shutdown without the runner importing them.
+func (r *Root) collectShutdownHooks(result *build.Result) {
+	for _, provider := range build.Collect[agentkit.ShutdownHookProvider](result) {
+		if provider == nil {
+			continue
+		}
+		r.shutdownHooks = append(r.shutdownHooks, provider.ShutdownHooks()...)
+	}
+}
+
+func (r *Root) runShutdownHooks() {
+	for _, fn := range r.shutdownHooks {
+		if fn != nil {
+			fn()
+		}
+	}
+}
+
 func (r *Root) Stop(ctx context.Context) error {
-	learning.CancelAllBackgroundReviews()
+	r.runShutdownHooks()
 	if r.telemetry == nil {
 		return nil
 	}

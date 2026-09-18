@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 
 	"github.com/lengzhao/agentkit"
@@ -27,7 +28,7 @@ func TestAppendMessageStoresFullUserText(t *testing.T) {
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: long}},
 	}
-	if err := sessstore.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
+	if err := sessevents.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
 		t.Fatal(err)
 	}
 	events, err := mem.Read(context.Background(), 0)

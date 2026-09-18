@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 type FinishConfig struct{}
@@ -49,11 +49,11 @@ func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return FinishOutput{}, err
 		}
-		status := sessstore.FinishCompleted
-		if strings.EqualFold(strings.TrimSpace(input.Status), sessstore.FinishBlocked) {
-			status = sessstore.FinishBlocked
+		status := sessevents.FinishCompleted
+		if strings.EqualFold(strings.TrimSpace(input.Status), sessevents.FinishBlocked) {
+			status = sessevents.FinishBlocked
 		}
-		if err := sessstore.AppendRunFinish(ctx, sess, agentID, sessstore.RunFinishData{
+		if err := sessevents.AppendRunFinish(ctx, sess, agentID, sessevents.RunFinishData{
 			Status:  status,
 			Summary: summary,
 		}); err != nil {

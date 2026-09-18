@@ -27,7 +27,7 @@ func cliSlashContext(delivery agentkit.SessionID) agentkit.TurnEnvelope {
 		Route:        rctx.SessionRouteFromDelivery("cli", delivery, ""),
 		Actor:        agentkit.ActorRef{UserID: "cli"},
 	}, map[string]any{
-		rctx.MetadataSessionScope: string(sessstore.ScopeChannel),
+		rctx.MetadataSessionScope: string(agentkit.SessionScopeChannel),
 	})
 }
 
@@ -93,14 +93,14 @@ func TestNewCommandUpdatesActiveSession(t *testing.T) {
 	}
 
 	stable := agentkit.SessionID("slack:C001:t:123:u:U111")
-	entry := rctx.ApplyScope(stable, sessstore.ScopeChannel, "U111")
+	entry := rctx.ApplyScope(stable, agentkit.SessionScopeChannel, "U111")
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), rctx.MergeEnvelopeMetadata(agentkit.TurnEnvelope{
 		Conversation: string(entry),
 		Workspace:    string(entry),
 		Route:        rctx.SessionRoute("slack", string(stable)),
 		Actor:        agentkit.ActorRef{UserID: "U111"},
 	}, map[string]any{
-		rctx.MetadataSessionScope: string(sessstore.ScopeChannel),
+		rctx.MetadataSessionScope: string(agentkit.SessionScopeChannel),
 	}))
 	out, err := newCmd.CommandExec(ctx, "")
 	if err != nil {
@@ -159,10 +159,10 @@ func TestActiveEntryKeyFromContextRespectsUserScope(t *testing.T) {
 	env := rctx.WithMetadataScope(agentkit.TurnEnvelope{
 		Route: rctx.SessionRoute("slack", string(delivery)),
 		Actor: agentkit.ActorRef{UserID: "U02LNUW8KV5"},
-	}, sessstore.ScopeUser)
+	}, agentkit.SessionScopeUser)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 	got := rctx.ActiveEntryKeyFromContext(ctx)
-	want := rctx.ApplyScope(delivery, sessstore.ScopeUser, "U02LNUW8KV5")
+	want := rctx.ApplyScope(delivery, agentkit.SessionScopeUser, "U02LNUW8KV5")
 	if got != want {
 		t.Fatalf("entry key = %q, want %q", got, want)
 	}

@@ -23,7 +23,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
 type replyContext struct {
@@ -62,7 +61,7 @@ type Platform struct {
 	cfg                        Config
 	agentID                    agentkit.AgentID
 	commands                   agentkit.Commands
-	sessionScope               sessstore.SessionScope
+	sessionScope               agentkit.SessionScope
 	workspace                  workspace.Service
 	inbox                      *common.Inbox
 	outbound                   *common.Outbound

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/subagent/definition"
 )
 
 func (s *Spawner) Commands() []agentkit.Command {
@@ -15,7 +16,7 @@ func (s *Spawner) Commands() []agentkit.Command {
 // HelpCommand exposes the subagent definition help slash command.
 func HelpCommand(ws workspace.Service, dirs []string) agentkit.Command {
 	if len(dirs) == 0 {
-		dirs = DefaultDefinitionDirs()
+		dirs = definition.DefaultDirs()
 	}
 	return subagentHelpCommand{workspace: ws, dirs: dirs}
 }
@@ -32,7 +33,7 @@ func (subagentHelpCommand) Description() string { return "list subagent definiti
 func (c subagentHelpCommand) CommandExec(ctx context.Context, args string) (string, error) {
 	fields := strings.Fields(strings.TrimSpace(args))
 	if len(fields) == 0 || fields[0] == "-l" || fields[0] == "--list" {
-		return formatDefinitionList(ctx, c.workspace, c.dirs)
+		return definition.FormatList(ctx, c.workspace, c.dirs)
 	}
-	return definitionDoc(ctx, c.workspace, c.dirs, strings.TrimSpace(args))
+	return definition.Doc(ctx, c.workspace, c.dirs, strings.TrimSpace(args))
 }

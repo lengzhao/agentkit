@@ -13,7 +13,7 @@ import (
 	"syscall"
 
 	"github.com/lengzhao/agentkit"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 
 	acp "github.com/coder/acp-go-sdk"
 )
@@ -116,7 +116,7 @@ func (a *Runtime) runCursorLogin(ctx context.Context, emit agentkit.OutboundEmit
 			return err
 		}
 		assistant := emitter.assistantMessage()
-		if err := sessstore.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+		if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
 			slog.Debug("acp-remote: append assistant message failed", "err", err)
 		}
 	}

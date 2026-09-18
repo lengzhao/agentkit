@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 type TurnContinueConfig struct {
@@ -89,7 +89,7 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	if sessionID == "" {
 		return nil
 	}
-	state, err := sessstore.LoadRunState(ctx, p.sessionStore, sessionID)
+	state, err := sessevents.LoadRunState(ctx, p.sessionStore, sessionID)
 	if err != nil {
 		return err
 	}
@@ -122,14 +122,14 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	return nil
 }
 
-func (p *turnContinueProvider) wantsMoreWork(state sessstore.RunState) bool {
+func (p *turnContinueProvider) wantsMoreWork(state sessevents.RunState) bool {
 	if p.requireTodosDone && len(state.Pending) > 0 {
 		return true
 	}
 	return p.requireFinish
 }
 
-func (p *turnContinueProvider) continueText(_ *agentkit.TurnStopping, state sessstore.RunState) string {
+func (p *turnContinueProvider) continueText(_ *agentkit.TurnStopping, state sessevents.RunState) string {
 	var b strings.Builder
 	b.WriteString(p.cfg.ContinuePrompt)
 	if len(state.Pending) > 0 {
@@ -161,7 +161,7 @@ func (c statusCommand) CommandExec(ctx context.Context, args string) (string, er
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	state, err := sessstore.LoadRunState(ctx, c.provider.sessionStore, sessionID)
+	state, err := sessevents.LoadRunState(ctx, c.provider.sessionStore, sessionID)
 	if err != nil {
 		return "", err
 	}

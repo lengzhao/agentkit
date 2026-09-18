@@ -23,7 +23,7 @@ func TestOutboundEmitFromContextReturnsRawEmit(t *testing.T) {
 		t.Fatal("expected emit")
 	}
 	// OutboundEmitFromContext returns the raw hook; async wrapping is owned by
-	// loop.forwardParentEmit which holds the AsyncEmitter.Close path.
+	// subagent.forwardParentEmit which holds the AsyncEmitter.Close path.
 	if err := emit(ctx, agentkit.OutboundEvent{Type: agentkit.EventTurnEnd}); err != nil {
 		t.Fatal(err)
 	}

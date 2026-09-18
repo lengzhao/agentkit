@@ -8,10 +8,9 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
-func slashCtx(platform string, delivery agentkit.SessionID, scope sessstore.SessionScope, userID string) SlashContext {
+func slashCtx(platform string, delivery agentkit.SessionID, scope agentkit.SessionScope, userID string) SlashContext {
 	return SlashContext{
 		Route:        rctx.SessionRoute(platform, string(delivery)),
 		SessionScope: scope,
@@ -69,7 +68,7 @@ func TestParseSlashCommandStripsBotSuffix(t *testing.T) {
 }
 
 func TestProcessSlashHelp(t *testing.T) {
-	out, err := ProcessSlash(context.Background(), nil, slashCtx("slack", "slack:C:u:U", sessstore.ScopeChannel, ""), "/help")
+	out, err := ProcessSlash(context.Background(), nil, slashCtx("slack", "slack:C:u:U", agentkit.SessionScopeChannel, ""), "/help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +97,7 @@ func TestProcessSlashHelpTopic(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"new": stubCommand{name: "new", out: "started new session"},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("cli", rctx.DefaultCLISessionID, sessstore.ScopeChannel, "cli"), "/help new")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("cli", rctx.DefaultCLISessionID, agentkit.SessionScopeChannel, "cli"), "/help new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +110,7 @@ func TestProcessSlashDispatch(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": stubCommand{name: "ping", out: "pong"},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C:u:U", sessstore.ScopeChannel, ""), "/ping")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C:u:U", agentkit.SessionScopeChannel, ""), "/ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +124,7 @@ func TestProcessSlashInjectsUserID(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": captureUserCommand{userID: &gotUser},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C:u:U", sessstore.ScopeChannel, "U123"), "/ping")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C:u:U", agentkit.SessionScopeChannel, "U123"), "/ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +141,7 @@ func TestProcessSlashInjectsMetadata(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": captureMetadataCommand{key: "email", value: &gotEmail},
 	}}
-	ctx := slashCtx("slack", "slack:C:u:U", sessstore.ScopeChannel, "U123")
+	ctx := slashCtx("slack", "slack:C:u:U", agentkit.SessionScopeChannel, "U123")
 	ctx.Metadata = map[string]any{"email": "alice@example.com", "displayName": "Alice"}
 	out, err := ProcessSlash(context.Background(), cmds, ctx, "/ping")
 	if err != nil {
@@ -187,7 +186,7 @@ func TestProcessSlashInjectsPlatformID(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"ping": captureSessionCommand{gotPlatform: &gotPlatform},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("chat-api", delivery, sessstore.ScopeChannel, ""), "/ping")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("chat-api", delivery, agentkit.SessionScopeChannel, ""), "/ping")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +204,7 @@ func TestProcessSlashNewUsesSessionScopeEntryKey(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"new": captureSessionCommand{entryKey: &gotEntry},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, sessstore.ScopeChannel, "U02LNUW8KV5"), "/new")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, agentkit.SessionScopeChannel, "U02LNUW8KV5"), "/new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,14 +222,14 @@ func TestProcessSlashNewUserScopeEntryKey(t *testing.T) {
 	cmds := stubCommands{byName: map[string]agentkit.Command{
 		"new": captureSessionCommand{entryKey: &gotEntry},
 	}}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, sessstore.ScopeUser, "U02LNUW8KV5"), "/new")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", delivery, agentkit.SessionScopeUser, "U02LNUW8KV5"), "/new")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out.Kind != SlashHandled {
 		t.Fatalf("kind = %v", out.Kind)
 	}
-	want := rctx.ApplyScope(delivery, sessstore.ScopeUser, "U02LNUW8KV5")
+	want := rctx.ApplyScope(delivery, agentkit.SessionScopeUser, "U02LNUW8KV5")
 	if gotEntry != want {
 		t.Fatalf("command ctx entry key = %q, want %q", gotEntry, want)
 	}
@@ -255,7 +254,7 @@ func (c captureSessionCommand) CommandExec(ctx context.Context, _ string) (strin
 }
 
 func TestProcessSlashUnknownForwards(t *testing.T) {
-	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, slashCtx("slack", "slack:C:u:U", sessstore.ScopeChannel, ""), "/missing")
+	out, err := ProcessSlash(context.Background(), stubCommands{byName: nil}, slashCtx("slack", "slack:C:u:U", agentkit.SessionScopeChannel, ""), "/missing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +309,7 @@ func TestFormatHelpHidesAdminCommands(t *testing.T) {
 		}},
 		admins: []string{"U1"},
 	}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C", sessstore.ScopeChannel, "U2"), "/help")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C", agentkit.SessionScopeChannel, "U2"), "/help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +331,7 @@ func TestProcessSlashForbidden(t *testing.T) {
 		}},
 		admins: []string{"U1"},
 	}
-	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C", sessstore.ScopeChannel, "U2"), "/shell echo hi")
+	out, err := ProcessSlash(context.Background(), cmds, slashCtx("slack", "slack:C", agentkit.SessionScopeChannel, "U2"), "/shell echo hi")
 	if err != nil {
 		t.Fatal(err)
 	}
