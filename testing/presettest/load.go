@@ -163,6 +163,14 @@ func platformUse(platform map[string]any) string {
 }
 
 func prepareRunnableGraph(graph map[string]any) {
+	// Preset once-runs exit on platform EOF; background schedule runtimes would
+	// otherwise keep receiveLoop alive until the test context times out.
+	if runnerNode, ok := graph["runner.default"].(map[string]any); ok {
+		deps := asMap(runnerNode["deps"])
+		deps["schedules"] = []any{}
+		runnerNode["deps"] = deps
+	}
+
 	platform := resolvePlatformNode(graph)
 	if platform != nil && platformUse(platform) == "platform/cli" {
 		if _, ok := graph["commands.default"]; !ok {

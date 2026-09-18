@@ -7,6 +7,11 @@ llm.default:
     steps:
       - text: "smoke: L0 llm.default placeholder（agent 内联 llm 优先）"
 
+tool.shell-bash.default:
+  config:
+    workDir: .
+    timeoutSeconds: 30
+
 runner.default:
   use: runner
   deps:
@@ -50,12 +55,7 @@ runner.default:
                         files:
                           README.md: "# AgentKit\n\nhello"
                   tools:
-                    - use: tool/shell-bash
-                      config:
-                        workDir: .
-                        timeoutSeconds: 30
-                      deps:
-                        workspace: workspace.default
+                    - tool.shell-bash.default
                   policies:
                     - use: policy/deny-dangerous-shell
 

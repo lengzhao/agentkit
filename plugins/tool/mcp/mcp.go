@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -101,7 +102,14 @@ func filterGlobalMCPFiles(files []string) []string {
 			continue
 		}
 		scope, _, scoped := rtworkspace.ParseScoped(rel)
-		if scoped && scope == workspace.ScopeGlobal {
+		if scoped {
+			if scope == workspace.ScopeGlobal {
+				out = append(out, rel)
+			}
+			continue
+		}
+		// Explicit absolute paths are always honored (tests, one-off config).
+		if filepath.IsAbs(rel) {
 			out = append(out, rel)
 		}
 	}

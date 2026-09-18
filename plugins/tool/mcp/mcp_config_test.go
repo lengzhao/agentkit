@@ -119,6 +119,13 @@ func TestResolveMCPFiles(t *testing.T) {
 	}
 
 	got = resolveMCPFiles(MCPConfig{
+		Files: []string{"/tmp/explicit/mcp.json", "local:mcp.json", "global:mcp.json"},
+	})
+	if len(got) != 2 || got[0] != "/tmp/explicit/mcp.json" || got[1] != "global:mcp.json" {
+		t.Fatalf("keep absolute explicit paths = %v", got)
+	}
+
+	got = resolveMCPFiles(MCPConfig{
 		EnableLocal: true,
 		Files:     []string{"local:mcp.json", "global:mcp.json"},
 	})
