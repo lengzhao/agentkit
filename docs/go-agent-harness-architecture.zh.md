@@ -904,7 +904,7 @@ type RouteRef struct {
 }
 ```
 
-核心层（Runner / Loop / Agent / tools）只存储或复制 `RouteRef`，不解析 `Target`。`runtime/session` 是 `RouteKindSession` 的 codec owner：`BuildSessionRoute` 构造、`DecodeSessionRoute` / `RouteSessionID` 解码 delivery id。JSON 读取兼容 legacy `session` 嵌套字段、flat `sessionId/channelId/...` 与旧 `data` 编码；写出统一使用 `target`。
+核心层（Runner / Loop / Agent / tools）只存储或复制 `RouteRef`，不解析 `Target`。`runtime/rctx` 是 `RouteKindSession` 的 codec owner：`BuildSessionRoute` 构造、`DecodeSessionRoute` / `RouteSessionID` 解码 delivery id。JSON 读取兼容 legacy `session` 嵌套字段、flat `sessionId/channelId/...` 与旧 `data` 编码；写出统一使用 `target`。
 
 路由约定：
 
@@ -1295,7 +1295,11 @@ Go 无法运行时扫描 `.go` 文件并执行新包的 `init()`，本设计也�
 agentkit/
 ├── cmd/agent/main.go
 ├── config.base.yaml        # L0 默认实例图
-├── runtime/                # Runner、Loop、Platform、session/delivery/telemetry 等实现
+├── runtime/                # Runner、Loop、Platform、Agent 等核心实现
+│   ├── rctx/               # 运行时上下文协议：ctx 读写器、路由 codec、workspace 键名（仅依赖根包）
+│   ├── session/derive/     # 事件 → 模型消息投影（sanitize/hydrate/prune/spill）
+│   ├── session/sessstore/  # SessionStore 实现（JSONL/SQLite/memory/static、绑定、命令插件）
+│   └── command/            # slash 命令注册表与 /agent、/model、/acp 内建命令
 ├── cap/                    # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
 ├── plugins/                # 工具、Hook、Policy、Prompt、learning 等插件
 │   ├── tool/fs/            # tool/fs-workspace、tool/fs-memory

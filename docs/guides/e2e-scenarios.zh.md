@@ -46,7 +46,7 @@ mindmap
 | **基本功能** | 配好 preset 能否完成 coding / 自主 / 委派任务？ | `runtime/agent`、`runtime/loop`、`plugins/tool/*` |
 | **平台接入** | 不同 ingress 能否收发消息、审批、/new？ | `runtime/platform/*` |
 | **安全与策略** | 危险工具是否被 policy / approval 拦住？ | `plugins/policy`、`cap/permission` |
-| **可靠性** | 崩溃、中断、turn 半途后状态是否可恢复？ | `runtime/session`、`runtime/agent/recovery` |
+| **可靠性** | 崩溃、中断、turn 半途后状态是否可恢复？ | `runtime/session/sessstore`、`runtime/agent/recovery` |
 | **可观测性** | 行为能否从 session 事件与 telemetry 复原？ | `events.go`、`plugins/telemetry/*` |
 | **扩展性** | 新工具 / MCP / preset 能否无改 spine 接入？ | `pluginkit.Register`、`presets/` |
 

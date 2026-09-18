@@ -8,6 +8,27 @@
 
 **设计约束（用户明确）：** 根包 `agentkit` 只保留现有类型、接口、ctx key 定义，**不新增函数**；公共实现内容一律放 `runtime/rctx`。
 
+---
+
+## 执行偏差记录（2026-09-18 执行完毕，与计划不一致处）
+
+1. **sessroute 子包未建**：route codec（route.go/scope.go/delivery.go/policy.go 等）经核实只依赖根包类型，属"协议"而非"服务"，全部并入 `runtime/rctx`。session 最终只拆两个子包。
+2. **store 子包命名为 `sessstore`**：避免与代码中大量 `store :=` 局部变量冲突（37 个文件存在该变量名）。
+3. **feishu.go 拆为 18 个文件**（计划 9 个）：2122 行之后的 progress card / rich card / post 解析 / bot menu / token 重试等继续细分（progress_card.go、rich_card.go、post_content.go、bot_menu.go、token_retry.go、reply_ctx.go、bot_identity.go、session_key.go、message_send.go）。feishu.go 保留 777 行核心（Platform/webhook/onMessage/dispatchMessage/Reply/Send*）。
+4. **`SanitizeDirSegment` 导出**：原私有 `sanitizeWorkspaceDirSegment` 被 tool_result_spill 跨域使用，随迁移导出。
+5. **`SessionRouteInput` alias 取消**：调用方直接用根包 `agentkit.SessionRouteInput`。
+6. **事件 payload 类型（Todo/RunState/UsageData 等）归 derive**：它们是事件 schema，derive 读、store 写，方向 `sessstore → derive` 保持唯一。
+7. **`AppendCompaction`/`TrimCompacted` 归 sessstore**：压缩标记写入 + 内存裁剪依赖具体存储类型分派（*Memory/*JSONL），属写路径。
+
+终态目录：
+
+```
+runtime/rctx/              # 协议包：ctx 读写器 + 路由 codec + workspace 键名（仅依赖根包）
+runtime/session/derive/    # 事件 → 模型消息投影
+runtime/session/sessstore/ # SessionStore 实现 + 绑定 + 命令插件 + session/* 插件注册
+runtime/command/           # slash 命令（/agent、/model、/acp）+ 注册表
+```
+
 **Tech Stack:** Go 1.x、pluginkit、`bash scripts/test.sh unit`（含 check-plugin-imports + go test ./...）。
 
 **背景数据（2026-09-18 统计，不含测试代码）：**

@@ -468,7 +468,8 @@ cap/memory/          # Service、Tool、Capture、Reader（memory/default 实现
 cap/learning/        # SkillProposer、ReviewHost、DreamSweepScheduler（learning/default）；memory 见 cap/memory
 runtime/memory/      # MemoryStore、ledger、staged、parse/render memory.md
 runtime/learning/    # review 循环、ApplyCapture、nudge/quota/skills policy
-runtime/session/     # FTS SyncSessionIndex、SearchSyncedSessions、FormatSessionRecall
+runtime/session/sessstore/  # FTS SyncSessionIndex、SearchSyncedSessions
+runtime/session/derive/    # FormatSessionRecall
 
 cap/telemetry/       # Exporter 接口与 DTO；实现见 runtime/telemetry
 

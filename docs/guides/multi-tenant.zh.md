@@ -24,14 +24,14 @@ flowchart LR
 
 ## 1. 会话隔离
 
-Platform 生成 **Route**（`RouteRef`：`platform` + `kind` + `target` wire contract；`session` kind 的 `target` 由 `runtime/session` codec 解码为 `SessionRouteTarget`——`deliveryId` 为稳定回邮地址，`replyTo` 为本轮临时回复锚点，`scopeUserId` 为 delivery 的 `:u:` 路由段而非说话人；`channelId` / `threadId` 为可选反查字段）。Runner / Loop / Agent 只复制 opaque `RouteRef`；Platform 构造与解码走 `session.BuildSessionRoute` / `session.DecodeSessionRoute`。Runner 用 `RoutePolicy` 推导 `Conversation` 与 `Workspace`；Loop 按 `Conversation` 串行加锁。`/new` 只替换 `Conversation`，不改变 `Route` 与 `Workspace`。
+Platform 生成 **Route**（`RouteRef`：`platform` + `kind` + `target` wire contract；`session` kind 的 `target` 由 `runtime/rctx` codec 解码为 `SessionRouteTarget`——`deliveryId` 为稳定回邮地址，`replyTo` 为本轮临时回复锚点，`scopeUserId` 为 delivery 的 `:u:` 路由段而非说话人；`channelId` / `threadId` 为可选反查字段）。Runner / Loop / Agent 只复制 opaque `RouteRef`；Platform 构造与解码走 `rctx.BuildSessionRoute` / `rctx.DecodeSessionRoute`。Runner 用 `RoutePolicy` 推导 `Conversation` 与 `Workspace`；Loop 按 `Conversation` 串行加锁。`/new` 只替换 `Conversation`，不改变 `Route` 与 `Workspace`。
 
-`chat-api` 等平台可通过 `session.RegisterPlatformPolicy` 覆盖 active-entry 等行为；默认注册见 `runtime/session/platform_policy.go`。
+`chat-api` 等平台可通过 `rctx.RegisterPlatformPolicy` 覆盖 active-entry 等行为；默认注册见 `runtime/rctx/route_policy.go`。
 
 Platform 侧：
 
 ```go
-delivery := session.BuildDeliverySessionID("slack", channelID, threadTS, userID)
+delivery := rctx.BuildDeliverySessionID("slack", channelID, threadTS, userID)
 event := common.WithInboundRoute(agentkit.MessageEvent{
     PlatformID: "slack",
     UserID:     userID,
@@ -230,7 +230,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 `presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就三件：
 
-1. 用 `session.BuildDeliverySessionID` 生成 delivery，并通过 `common.WithInboundRoute`（推荐，含 `ReplyTo`）或 `common.WithDeliverySession` / `InboundFromContent` / `InboundMessage` 写入 `MessageEvent.Envelope.Route`；
+1. 用 `rctx.BuildDeliverySessionID` 生成 delivery，并通过 `common.WithInboundRoute`（推荐，含 `ReplyTo`）或 `common.WithDeliverySession` / `InboundFromContent` / `InboundMessage` 写入 `MessageEvent.Envelope.Route`；
 2. 在 `MessageEvent.UserID` 填上发言人；
 3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。`x-task-id` 默认已纳入白名单；`X-Chat-API-User-Name`（或配置的 `userNameHeader`）会自动写入 Metadata，无需重复配置。
 
@@ -283,9 +283,9 @@ Agent 通过 `tool/send` 发出的文件会以 SSE `file_ready` 事件推送，�
 | 测试 | 覆盖 |
 |---|---|
 | `multitenant_test.go` | 两个群写 `work/` 下同一相对路径 → 落在各自根下；某群钉到项目 `.agentkit/`；同群两人共用一段历史且各自具名 |
-| `runtime/session/scope_test.go` | ApplyScope 三种粒度、legacy delivery 格式、CLI passthrough |
+| `runtime/rctx/scope_test.go` | ApplyScope 三种粒度、legacy delivery 格式、CLI passthrough |
 | `runtime/runner/runner_test.go` | scope 折叠调度键、outbound 仍用 delivery ID |
 | `runtime/workspace/tenant_test.go` | 默认隔离、三种粒度同租户、pin 生效、`global:` 共享、`..` 越权被拒、无 session 落 `_default` |
-| `runtime/session/attribution_test.go` | 只标 user 消息、无 `UserID` 不改变回放、重启后归属仍在、图片消息也具名 |
-| `runtime/session/workspace_key_test.go` | 工作目录键推导规则、目录名不可能变成 `..` |
+| `runtime/session/sessstore/attribution_test.go` | 只标 user 消息、无 `UserID` 不改变回放、重启后归属仍在、图片消息也具名 |
+| `runtime/rctx/workspace_key_test.go` | 工作目录键推导规则、目录名不可能变成 `..` |
 | `config/presets_test.go` | preset 单独可构建，且与 `autonomous.yaml` 可叠加 |
