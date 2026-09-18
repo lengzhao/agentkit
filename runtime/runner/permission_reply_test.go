@@ -9,9 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	"github.com/lengzhao/agentkit/runtime/loop"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -89,7 +89,7 @@ func (l *permissionCapturingLoop) Dispatch(ctx context.Context, req agentkit.Loo
 		}
 		_ = emit(ctx, agentkit.OutboundEvent{
 			Type: agentkit.EventPermissionRequest,
-			Data: loop.MarshalOutboundData(permission.RequestPayload{
+			Data: rctx.MarshalOutboundData(permission.RequestPayload{
 				Request: permission.Request{
 					ID:   "perm-test",
 					Kind: permission.KindQuestion,

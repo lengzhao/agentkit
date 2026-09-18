@@ -10,8 +10,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	"github.com/lengzhao/agentkit/runtime/loop"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func TestCLIPermissionRequestReply(t *testing.T) {
@@ -24,7 +24,7 @@ func TestCLIPermissionRequestReply(t *testing.T) {
 	platform := p.(*Platform)
 	platform.input = NewInput(strings.NewReader("sqlite\n"))
 
-	payload := loop.MarshalOutboundData(permission.RequestPayload{
+	payload := rctx.MarshalOutboundData(permission.RequestPayload{
 		Request: permission.Request{
 			ID:   "perm1",
 			Kind: permission.KindQuestion,
@@ -68,7 +68,7 @@ func TestCLIApprovalRequestReply(t *testing.T) {
 	platform := p.(*Platform)
 	platform.input = NewInput(strings.NewReader("y\n"))
 
-	payload := loop.MarshalOutboundData(permission.RequestPayload{
+	payload := rctx.MarshalOutboundData(permission.RequestPayload{
 		Request: permission.Request{
 			ID:     "perm2",
 			Kind:   permission.KindAllowDeny,
@@ -130,7 +130,7 @@ func TestReceiveRoutesBlockedPromptToPermission(t *testing.T) {
 		welcomed:   true,
 	}
 
-	payload := loop.MarshalOutboundData(permission.RequestPayload{
+	payload := rctx.MarshalOutboundData(permission.RequestPayload{
 		Request: permission.Request{
 			ID:     "perm3",
 			Kind:   permission.KindAllowDeny,
@@ -193,7 +193,7 @@ func TestSendReceivePendingConcurrent(t *testing.T) {
 		welcomed:   true,
 	}
 
-	payload := loop.MarshalOutboundData(permission.RequestPayload{
+	payload := rctx.MarshalOutboundData(permission.RequestPayload{
 		Request: permission.Request{
 			ID:   "perm4",
 			Kind: permission.KindQuestion,

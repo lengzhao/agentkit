@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
@@ -335,7 +336,7 @@ func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID a
 		}
 	}
 	if emit != nil {
-		ctx = ContextWithOutboundEmit(ctx, emit)
+		ctx = rctx.ContextWithOutboundEmit(ctx, emit)
 	}
 	if control != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, control)

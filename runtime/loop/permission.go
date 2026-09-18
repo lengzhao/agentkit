@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -93,7 +94,7 @@ func validateRequest(req permission.Request) error {
 }
 
 func (c *Control) awaitOne(ctx context.Context, req permission.Request, capab permission.Capability) (permission.Result, error) {
-	emit := OutboundEmitFromContext(ctx)
+	emit := rctx.OutboundEmitFromContext(ctx)
 	if emit == nil {
 		return rtpermission.NoHuman(req, "no outbound channel for permission"), nil
 	}
@@ -270,7 +271,7 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 		PlatformID: platformID,
 		UserID:     userID,
 		Type:       agentkit.EventPermissionRequest,
-		Data: MarshalOutboundData(permission.RequestPayload{
+		Data: rctx.MarshalOutboundData(permission.RequestPayload{
 			Request:      req,
 			Conversation: string(session.SessionIDFromContext(ctx)),
 		}),
@@ -289,7 +290,7 @@ func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.Outb
 		PlatformID: platformID,
 		UserID:     userID,
 		Type:       agentkit.EventPermissionResolved,
-		Data:       MarshalOutboundData(resolved),
+		Data:       rctx.MarshalOutboundData(resolved),
 	})
 }
 

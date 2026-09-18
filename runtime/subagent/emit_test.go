@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -269,7 +269,7 @@ func TestForwardParentEmitAsyncDoesNotBlock(t *testing.T) {
 	}
 
 	start := time.Now()
-	payload := loop.MarshalOutboundData(agentkit.MessageUpdatePayload{
+	payload := rctx.MarshalOutboundData(agentkit.MessageUpdatePayload{
 		AssistantMessageEvent: agentkit.AssistantMessageEvent{
 			Type:  agentkit.AssistantEventToolCallStart,
 			ID:    "tc1",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -96,14 +97,14 @@ func (f *parentEmitForwarder) emit(_ context.Context, event agentkit.OutboundEve
 			payload.AssistantMessageEvent.Type = agentkit.AssistantEventThinkingDelta
 			payload.AssistantMessageEvent.ContentIndex = 1
 			payload.AssistantMessageEvent.Delta = condensed
-			event.Data = loop.MarshalOutboundData(payload)
+			event.Data = rctx.MarshalOutboundData(payload)
 		} else if ame.Type == agentkit.AssistantEventThinkingDelta {
 			condensed := f.condenseThinkingDelta(ame.Delta)
 			if condensed == "" {
 				return nil
 			}
 			payload.AssistantMessageEvent.Delta = condensed
-			event.Data = loop.MarshalOutboundData(payload)
+			event.Data = rctx.MarshalOutboundData(payload)
 		}
 		event.Route = f.parentRoute
 		return f.parent(f.ctx, event)
@@ -152,7 +153,7 @@ func truncateRunes(s string, max int) string {
 }
 
 func emitFromContext(ctx context.Context) agentkit.OutboundEmit {
-	return loop.OutboundEmitFromContext(ctx)
+	return rctx.OutboundEmitFromContext(ctx)
 }
 
 // emitSubagentLifecycle forwards subagent/start and subagent/end to the parent
@@ -178,7 +179,7 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 		Route:   parentRoute,
 		AgentID: agentID,
 		Type:    typ,
-		Data:    loop.MarshalOutboundData(data),
+		Data:    rctx.MarshalOutboundData(data),
 	}
 	go func() {
 		emitCtx := context.WithoutCancel(ctx)

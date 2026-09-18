@@ -7,7 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/runtime/delivery"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -43,7 +43,7 @@ func TestSendProactiveInboxTextUsesEmit(t *testing.T) {
 	})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:t:1:u:U1"))
 	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
-	ctx = loop.ContextWithOutboundEmit(ctx, func(_ context.Context, ev agentkit.OutboundEvent) error {
+	ctx = rctx.ContextWithOutboundEmit(ctx, func(_ context.Context, ev agentkit.OutboundEvent) error {
 		emitted = append(emitted, ev)
 		return nil
 	})

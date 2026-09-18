@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit"
 )
@@ -229,6 +229,6 @@ func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit,
 	return emit(ctx, agentkit.OutboundEvent{
 		AgentID: a.id,
 		Type:    typ,
-		Data:    loop.MarshalOutboundData(payload),
+		Data:    rctx.MarshalOutboundData(payload),
 	})
 }

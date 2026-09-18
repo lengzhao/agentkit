@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -16,6 +16,6 @@ func (p parentContext) asyncRunContext() context.Context {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, p.sessionControl)
 	}
 	ctx = context.WithValue(ctx, agentkit.KeyAsyncSubagent, true)
-	ctx = loop.ContextWithOutboundEmit(ctx, p.emit)
+	ctx = rctx.ContextWithOutboundEmit(ctx, p.emit)
 	return ctx
 }

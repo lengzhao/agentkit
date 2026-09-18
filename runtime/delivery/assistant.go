@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // AssistantMessageOptions configures proactive assistant outbound delivery.
@@ -36,7 +36,7 @@ func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts
 		PlatformID: route.PlatformID,
 		UserID:     route.UserID,
 		Type:       agentkit.EventAssistantMessage,
-		Data:       loop.MarshalOutboundData(modelMsg),
+		Data:       rctx.MarshalOutboundData(modelMsg),
 	}
 	if err := event.RequirePlatformID(); err != nil {
 		return err
@@ -45,7 +45,7 @@ func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts
 		ctx = context.WithValue(ctx, agentkit.KeyProactiveSendRaw, true)
 	}
 	if opts.UseContextEmit && routeIsCurrentInbox(opts.Route) {
-		if emit := loop.OutboundEmitFromContext(ctx); emit != nil {
+		if emit := rctx.OutboundEmitFromContext(ctx); emit != nil {
 			ctx = context.WithValue(ctx, agentkit.KeyProactiveSendUsed, true)
 			return emit(ctx, event)
 		}

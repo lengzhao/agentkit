@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type streamEmitter struct {
@@ -192,7 +192,7 @@ func (s *streamEmitter) sendOutbound(typ agentkit.EventType, payload any) error 
 	return s.emitFn(s.ctx, agentkit.OutboundEvent{
 		AgentID: s.agentID,
 		Type:    typ,
-		Data:    loop.MarshalOutboundData(payload),
+		Data:    rctx.MarshalOutboundData(payload),
 	})
 }
 

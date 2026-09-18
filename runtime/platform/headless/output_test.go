@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -23,7 +23,7 @@ func messageEnd(text string) agentkit.OutboundEvent {
 	return agentkit.OutboundEvent{
 		Route: session.SessionRoute("headless", "s:1"),
 		Type:  agentkit.EventMessageEnd,
-		Data: loop.MarshalOutboundData(agentkit.MessageEndPayload{
+		Data: rctx.MarshalOutboundData(agentkit.MessageEndPayload{
 			Message: agentkit.ModelMessage{
 				Role:    "assistant",
 				Content: []agentkit.ContentPart{{Type: "text", Text: text}},
@@ -53,7 +53,7 @@ func TestEmitterDoesNotDoublePrintWhenStreaming(t *testing.T) {
 	e, out, _ := newTestEmitter(OutputText, true)
 	update := agentkit.OutboundEvent{
 		Type: agentkit.EventMessageUpdate,
-		Data: loop.MarshalOutboundData(agentkit.MessageUpdatePayload{
+		Data: rctx.MarshalOutboundData(agentkit.MessageUpdatePayload{
 			AssistantMessageEvent: agentkit.AssistantMessageEvent{
 				Type:  agentkit.AssistantEventTextDelta,
 				Delta: "the answer",
@@ -137,7 +137,7 @@ func TestEmitterJSONModeSuppressesDeltasUnlessStreaming(t *testing.T) {
 
 	update := agentkit.OutboundEvent{
 		Type: agentkit.EventMessageUpdate,
-		Data: loop.MarshalOutboundData(agentkit.MessageUpdatePayload{
+		Data: rctx.MarshalOutboundData(agentkit.MessageUpdatePayload{
 			AssistantMessageEvent: agentkit.AssistantMessageEvent{
 				Type:  agentkit.AssistantEventTextDelta,
 				Delta: "partial",

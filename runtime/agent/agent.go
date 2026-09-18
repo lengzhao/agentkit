@@ -15,7 +15,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtllm "github.com/lengzhao/agentkit/runtime/llm"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -43,18 +43,18 @@ type Deps struct {
 }
 
 type Runtime struct {
-	id             agentkit.AgentID
-	model          string
-	modalities     []string
-	retry          retrySettings
-	now            func() time.Time
-	sessionStore   agentkit.SessionStore
-	llm            agentkit.LLMProvider
-	tools          agentkit.ToolRuntime
-	prompt         agentkit.PromptAssembler
-	hooks          agentkit.HookRuntime
-	compaction     []compaction.Service
-	workspace      workspace.Service
+	id           agentkit.AgentID
+	model        string
+	modalities   []string
+	retry        retrySettings
+	now          func() time.Time
+	sessionStore agentkit.SessionStore
+	llm          agentkit.LLMProvider
+	tools        agentkit.ToolRuntime
+	prompt       agentkit.PromptAssembler
+	hooks        agentkit.HookRuntime
+	compaction   []compaction.Service
+	workspace    workspace.Service
 }
 
 // New registers agent/coding: Default coding agent: runs one turn against session, LLM, tools and prompt.
@@ -83,18 +83,18 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		return nil, fmt.Errorf("agent requires workspace")
 	}
 	return &Runtime{
-		id:             id,
-		model:          cfg.Model,
-		modalities:     agentkit.NormalizeModalities(cfg.Modalities),
-		retry:          resolveRetrySettings(cfg.Retry),
-		now:            time.Now,
-		sessionStore:   deps.SessionStore,
-		llm:            deps.LLM,
-		tools:          deps.Tools,
-		prompt:         deps.Prompt,
-		hooks:          deps.Hooks,
-		compaction:     deps.Compaction,
-		workspace:      deps.Workspace,
+		id:           id,
+		model:        cfg.Model,
+		modalities:   agentkit.NormalizeModalities(cfg.Modalities),
+		retry:        resolveRetrySettings(cfg.Retry),
+		now:          time.Now,
+		sessionStore: deps.SessionStore,
+		llm:          deps.LLM,
+		tools:        deps.Tools,
+		prompt:       deps.Prompt,
+		hooks:        deps.Hooks,
+		compaction:   deps.Compaction,
+		workspace:    deps.Workspace,
 	}, nil
 }
 
@@ -383,7 +383,7 @@ func (a *Runtime) extendTurn(
 		if err := emit(ctx, agentkit.OutboundEvent{
 			AgentID: a.id,
 			Type:    agentkit.EventTurnContinue,
-			Data:    loop.MarshalOutboundData(data),
+			Data:    rctx.MarshalOutboundData(data),
 		}); err != nil {
 			return false, err
 		}
@@ -678,6 +678,6 @@ func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit,
 	return emit(ctx, agentkit.OutboundEvent{
 		AgentID: a.id,
 		Type:    typ,
-		Data:    loop.MarshalOutboundData(data),
+		Data:    rctx.MarshalOutboundData(data),
 	})
 }

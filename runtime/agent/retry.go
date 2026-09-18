@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
-	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -155,7 +155,7 @@ func (a *Runtime) emitAutoRetryStart(ctx context.Context, sess agentkit.Session,
 	return emit(ctx, agentkit.OutboundEvent{
 		AgentID: a.id,
 		Type:    agentkit.EventAutoRetryStart,
-		Data:    loop.MarshalOutboundData(data),
+		Data:    rctx.MarshalOutboundData(data),
 	})
 }
 
@@ -176,6 +176,6 @@ func (a *Runtime) emitAutoRetryEnd(ctx context.Context, sess agentkit.Session, e
 	return emit(ctx, agentkit.OutboundEvent{
 		AgentID: a.id,
 		Type:    agentkit.EventAutoRetryEnd,
-		Data:    loop.MarshalOutboundData(data),
+		Data:    rctx.MarshalOutboundData(data),
 	})
 }
