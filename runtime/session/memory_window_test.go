@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -35,7 +36,7 @@ func TestCompactionTrimsMemoryButKeepsDeriveMessages(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	beforeSeq, err := session.LatestSeq(ctx, mem)
+	beforeSeq, err := derive.LatestSeq(ctx, mem)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // crashedSession builds the log a process leaves behind when it dies after
@@ -55,7 +56,7 @@ func TestScanIncompleteFindsOpenTurnAndOrphans(t *testing.T) {
 
 	ctx := context.Background()
 	sess := crashedSession(t)
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,7 @@ func TestScanIncompleteIgnoresClosedTurns(t *testing.T) {
 	if err := session.AppendTurnEnd(ctx, sess, "coder", 1); err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestRepairIncompleteClosesTurnAndAnswersCalls(t *testing.T) {
 
 	ctx := context.Background()
 	sess := crashedSession(t)
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestRepairIncompleteClosesTurnAndAnswersCalls(t *testing.T) {
 		t.Fatalf("closed step = %d, want 0", data.ClosedStep)
 	}
 
-	events, err = session.ReadAllEvents(ctx, sess)
+	events, err = derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestRepairIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	sess := crashedSession(t)
 	for i := 0; i < 2; i++ {
-		events, err := session.ReadAllEvents(ctx, sess)
+		events, err := derive.ReadAllEvents(ctx, sess)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,7 +168,7 @@ func TestRepairIsIdempotent(t *testing.T) {
 			t.Fatalf("repair %d: %v", i, err)
 		}
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

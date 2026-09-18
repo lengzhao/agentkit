@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // LoadRunState reads autonomous-run signals for the given session.
@@ -14,7 +15,7 @@ func LoadRunState(ctx context.Context, store agentkit.SessionStore, sessionID ag
 	if err != nil {
 		return RunState{}, err
 	}
-	events, err := ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		return RunState{}, err
 	}

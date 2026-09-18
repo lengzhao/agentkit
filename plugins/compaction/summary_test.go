@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 type flakySummaryLLM struct {
@@ -97,7 +98,7 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 		t.Fatalf("expected 2 llm calls, got %d", llm.calls.Load())
 	}
 
-	events, err := session.ReadAllEvents(ctx, mem)
+	events, err := derive.ReadAllEvents(ctx, mem)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package session_test
+package derive_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
@@ -34,7 +35,7 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.AppendSkillLoad(ctx, sess, "assistant", skill.Content{
+	if err := derive.AppendSkillLoad(ctx, sess, "assistant", skill.Content{
 		Name:        "feedback-ticket-intake",
 		Description: "Triage feedback",
 		Body:        "Follow these steps.",

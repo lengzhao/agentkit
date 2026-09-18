@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/todo"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 type singleSessionStore struct {
@@ -83,7 +84,7 @@ func TestTodoSetCompleteAndList(t *testing.T) {
 		t.Fatalf("expected a nudge to call finish, got %q", all.Instruction)
 	}
 
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestFinishRecordsRunFinish(t *testing.T) {
 		t.Fatalf("finish output = %q", out)
 	}
 
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestFinishDefaultsToCompletedAndRequiresSummary(t *testing.T) {
 		t.Fatalf("finish without summary = %q", out)
 	}
 
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

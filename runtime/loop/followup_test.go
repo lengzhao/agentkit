@@ -8,6 +8,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -219,7 +220,7 @@ func TestDispatchFollowUpTurnLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

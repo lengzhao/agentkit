@@ -1,4 +1,4 @@
-package session_test
+package derive_test
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -41,7 +41,7 @@ func TestHydrateLocalAttachmentsReloadsWorkspaceImage(t *testing.T) {
 			MIME:   "image/png",
 		}},
 	}}
-	out, err := session.HydrateLocalAttachments(ctx, msgs, ws, 0)
+	out, err := derive.HydrateLocalAttachments(ctx, msgs, ws, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestHydrateLocalAttachmentsExtensionlessJPEG(t *testing.T) {
 		{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "call-1", Name: "read"}}},
 		{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "call-1", Name: "read", Content: readResult}}},
 	}
-	out, err := session.HydrateLocalAttachments(ctx, msgs, ws, 0)
+	out, err := derive.HydrateLocalAttachments(ctx, msgs, ws, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestHydrateLocalAttachmentsInjectsReadToolVision(t *testing.T) {
 		{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "call-1", Name: "read"}}},
 		{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "call-1", Name: "read", Content: readResult}}},
 	}
-	out, err := session.HydrateLocalAttachments(ctx, msgs, ws, 0)
+	out, err := derive.HydrateLocalAttachments(ctx, msgs, ws, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestHydrateLocalAttachmentsFitsLargeWorkspaceImage(t *testing.T) {
 			MIME:   "image/jpeg",
 		}},
 	}}
-	out, err := session.HydrateLocalAttachments(ctx, msgs, ws, 0)
+	out, err := derive.HydrateLocalAttachments(ctx, msgs, ws, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestPrepareMessagesForLLMDemotesAttachmentsWhenTextOnly(t *testing.T) {
 			Source: "upload/shot.png",
 		}},
 	}}
-	out, err := session.PrepareMessagesForLLM(ctx, msgs, nil, 0, []string{agentkit.ModalityText})
+	out, err := derive.PrepareMessagesForLLM(ctx, msgs, nil, 0, []string{agentkit.ModalityText})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestSanitizeStoresWorkspaceImagePath(t *testing.T) {
 	t.Parallel()
 
 	ws := rtworkspace.Static(t.TempDir())
-	msg := session.SanitizeModelMessageForStorageWS(agentkit.ModelMessage{
+	msg := derive.SanitizeModelMessageForStorageWS(agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
 			Type:   "image_url",

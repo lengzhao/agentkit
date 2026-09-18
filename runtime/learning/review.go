@@ -10,7 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	rtsession "github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -215,7 +215,7 @@ func DigestMessages(messages []agentkit.ModelMessage, limit int) string {
 		if role == "" {
 			continue
 		}
-		text := rtsession.FlattenTextParts(msg.Content, "\n")
+		text := derive.FlattenTextParts(msg.Content, "\n")
 		if role == "tool" {
 			for _, tr := range msg.ToolResults {
 				line := strings.TrimSpace(tr.Content)
@@ -255,7 +255,7 @@ func DigestMessages(messages []agentkit.ModelMessage, limit int) string {
 }
 
 func flattenAssistantText(msg agentkit.ModelMessage) string {
-	return rtsession.FlattenTextParts(msg.Content, "\n")
+	return derive.FlattenTextParts(msg.Content, "\n")
 }
 
 func appendCaptureNotice(res *ReviewResult, raw string) {
@@ -275,4 +275,3 @@ func appendCaptureNotice(res *ReviewResult, raw string) {
 	}
 	res.Notices = append(res.Notices, out.Message)
 }
-

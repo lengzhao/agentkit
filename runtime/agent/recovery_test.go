@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -122,7 +123,7 @@ func TestRunTurnRecoversCrashedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +257,7 @@ func TestRunTurnLeavesCleanSessionAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

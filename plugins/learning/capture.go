@@ -10,7 +10,7 @@ import (
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // CaptureSkillPropose implements caplearning.SkillProposer.
@@ -60,7 +60,7 @@ func shouldRunReview(messages []agentkit.ModelMessage, skipSlashOnly bool) bool 
 		if msg.Role != "user" {
 			continue
 		}
-		text := strings.TrimSpace(session.FlattenTextParts(msg.Content, " "))
+		text := strings.TrimSpace(derive.FlattenTextParts(msg.Content, " "))
 		if text == "" {
 			continue
 		}

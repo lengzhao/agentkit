@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -92,7 +93,7 @@ func (f fixture) events(t *testing.T, id agentkit.SessionID) []agentkit.SessionE
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(f.ctx, sess)
+	events, err := derive.ReadAllEvents(f.ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

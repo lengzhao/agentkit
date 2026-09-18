@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 type CommandsConfig struct{}
@@ -92,7 +93,7 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	if err != nil {
 		return "", err
 	}
-	events, err := ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		return "", err
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 func newRunStateSession(t *testing.T) agentkit.Session {
@@ -35,7 +36,7 @@ func TestLatestTodosUsesMostRecentSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func TestFinishAfterIgnoresEarlierRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestFinishAfterIgnoresEarlierRuns(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	events, err = session.ReadAllEvents(ctx, sess)
+	events, err = derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestRunStartSeqIgnoresContinuations(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestRunStartSeqIgnoresContinuations(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	events, err = session.ReadAllEvents(ctx, sess)
+	events, err = derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +168,7 @@ func TestRepeatedToolCallsCountsConsecutiveTail(t *testing.T) {
 	appendCall("read", `{ "path" : "b.go" }`)
 	appendCall("read", `{"path":"b.go"}`)
 
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +177,7 @@ func TestRepeatedToolCallsCountsConsecutiveTail(t *testing.T) {
 	}
 
 	appendCall("read", `{"path":"c.go"}`)
-	events, err = session.ReadAllEvents(ctx, sess)
+	events, err = derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,16 +194,16 @@ func TestTotalUsageSumsAfterSeq(t *testing.T) {
 	if err := session.AppendUsage(ctx, sess, "a", session.UsageData{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}); err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cutoff := session.LatestEventSeq(events)
+	cutoff := derive.LatestEventSeq(events)
 
 	if err := session.AppendUsage(ctx, sess, "a", session.UsageData{InputTokens: 20, OutputTokens: 7, TotalTokens: 27}); err != nil {
 		t.Fatal(err)
 	}
-	events, err = session.ReadAllEvents(ctx, sess)
+	events, err = derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

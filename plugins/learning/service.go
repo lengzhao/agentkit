@@ -14,7 +14,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // SummarizeSessionUserMessages extracts recent user text from the current session.
@@ -32,7 +32,7 @@ func SummarizeSessionUserMessages(ctx context.Context, store agentkit.SessionSto
 	if err != nil {
 		return "", err
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		return "", err
 	}
@@ -45,7 +45,7 @@ func SummarizeSessionUserMessages(ctx context.Context, store agentkit.SessionSto
 		if err := json.Unmarshal(ev.Data, &msg); err != nil {
 			continue
 		}
-		text := strings.TrimSpace(session.FlattenTextParts(msg.Content, "\n"))
+		text := strings.TrimSpace(derive.FlattenTextParts(msg.Content, "\n"))
 		if text == "" || strings.HasPrefix(text, "/") {
 			continue
 		}

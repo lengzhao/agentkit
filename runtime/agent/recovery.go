@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // recoverIncompleteTurn closes out a turn a previous process left open. It runs
@@ -14,7 +15,7 @@ import (
 // picked up by any process at any time, and an unanswered tool call makes the
 // history unusable for the provider.
 func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit) error {
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		return err
 	}

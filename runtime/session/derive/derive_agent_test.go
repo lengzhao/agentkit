@@ -1,4 +1,4 @@
-package session_test
+package derive_test
 
 import (
 	"context"

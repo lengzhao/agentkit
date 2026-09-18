@@ -16,6 +16,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -136,7 +137,7 @@ func loadAllSessionEvents(store agentkit.SessionStore, id agentkit.SessionID) ([
 	if err != nil {
 		return nil, err
 	}
-	return session.ReadAllEvents(context.Background(), sess)
+	return derive.ReadAllEvents(context.Background(), sess)
 }
 
 func userMessageContains(events []agentkit.SessionEvent, want string) bool {

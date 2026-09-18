@@ -29,6 +29,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -137,14 +138,14 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	parentEvents, err := session.ReadAllEvents(ctx, parent)
+	parentEvents, err := derive.ReadAllEvents(ctx, parent)
 	if err != nil {
 		return subagent.Result{}, err
 	}
 
 	// The parent's current seq makes the id deterministic per call site and
 	// unique within the parent session; session/store sanitizes the separators.
-	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
+	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(derive.LatestEventSeq(parentEvents))))
 
 	startData := session.SubagentStartData{
 		Agent:   def.Name,
@@ -257,7 +258,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		}
 		return out, err
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		if runErr != nil {
 			return out, runErr

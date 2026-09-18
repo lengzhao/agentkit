@@ -1,4 +1,4 @@
-package session_test
+package derive_test
 
 import (
 	"context"
@@ -9,13 +9,14 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestSanitizeModelMessageForStorageStripsImageData(t *testing.T) {
 	t.Parallel()
 
-	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+	msg := derive.SanitizeModelMessageForStorage(agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{
 			{Type: "text", Text: "extract this"},
@@ -31,7 +32,7 @@ func TestSanitizeModelMessageForStorageStripsImageData(t *testing.T) {
 func TestSanitizeModelMessageForStorageKeepsAttachmentRef(t *testing.T) {
 	t.Parallel()
 
-	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+	msg := derive.SanitizeModelMessageForStorage(agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
 			Type:   "image_url",
@@ -52,7 +53,7 @@ func TestSanitizeModelMessageForStorageCanonicalizesAttachmentSource(t *testing.
 	t.Parallel()
 
 	ws := rtworkspace.Static(t.TempDir())
-	msg := session.SanitizeModelMessageForStorageWS(agentkit.ModelMessage{
+	msg := derive.SanitizeModelMessageForStorageWS(agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
 			Type:   "image_url",
@@ -73,7 +74,7 @@ func TestSanitizeModelMessageForStorageCanonicalizesAttachmentSource(t *testing.
 func TestSanitizeModelMessageForStorageTruncatesUserText(t *testing.T) {
 	t.Parallel()
 
-	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+	msg := derive.SanitizeModelMessageForStorage(agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 9000)}},
 	}, 100)
@@ -87,7 +88,7 @@ func TestSanitizeModelMessageForStorageKeepsFullChatTextByDefault(t *testing.T) 
 
 	long := strings.Repeat("y", 12000)
 	for _, role := range []string{"user", "assistant"} {
-		msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+		msg := derive.SanitizeModelMessageForStorage(agentkit.ModelMessage{
 			Role:    role,
 			Content: []agentkit.ContentPart{{Type: "text", Text: long}},
 		}, 0)
@@ -102,7 +103,7 @@ func TestSanitizeModelMessageForStorageKeepsFullToolCallInput(t *testing.T) {
 
 	largeContent := strings.Repeat("a", 9000)
 	rawInput := []byte(`{"path":"skills/chatai-cs/SKILL.md","content":"` + largeContent + `"}`)
-	msg := session.SanitizeModelMessageForStorage(agentkit.ModelMessage{
+	msg := derive.SanitizeModelMessageForStorage(agentkit.ModelMessage{
 		Role: "assistant",
 		ToolCalls: []agentkit.ToolCall{{
 			ID:    "write-1",
@@ -126,7 +127,7 @@ func TestSanitizeModelMessageForStorageKeepsFullToolCallInput(t *testing.T) {
 func TestSanitizeToolCallInvalidJSONPlaceholder(t *testing.T) {
 	t.Parallel()
 
-	call := session.SanitizeToolCall(agentkit.ToolCall{
+	call := derive.SanitizeToolCall(agentkit.ToolCall{
 		ID:    "x",
 		Name:  "write",
 		Input: json.RawMessage(`{"path":"x","content":"`),

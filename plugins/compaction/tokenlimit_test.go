@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // countingService stands in for the gated compaction chain so tests can assert
@@ -218,7 +219,7 @@ func TestTokenLimitGatesRealSummary(t *testing.T) {
 	if !result.Applied {
 		t.Fatal("expected the gated summary to apply")
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,6 +17,7 @@ import (
 	rtllm "github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -289,7 +290,7 @@ func (a *Runtime) runSegment(
 				endStepOnce()
 				return "", err
 			}
-			stored, err := session.PrepareToolResultForStorage(ctx, sess.ID(), result, 0)
+			stored, err := derive.PrepareToolResultForStorage(ctx, sess.ID(), result, 0)
 			if err != nil {
 				_ = session.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
@@ -588,7 +589,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 	if len(mods) == 0 {
 		mods = rtllm.ProviderModalities(a.llm)
 	}
-	history, err = session.PrepareMessagesForLLM(ctx, history, a.workspace, 0, mods)
+	history, err = derive.PrepareMessagesForLLM(ctx, history, a.workspace, 0, mods)
 	if err != nil {
 		return nil, ctx, err
 	}

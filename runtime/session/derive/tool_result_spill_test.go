@@ -1,4 +1,4 @@
-package session_test
+package derive_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -22,7 +22,7 @@ func TestPrepareToolResultForStorageSpillsLargeOutput(t *testing.T) {
 	ctx := rctx.WithWorkspaceService(context.Background(), ws)
 
 	full := strings.Repeat("line\n", 5000)
-	stored, err := session.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-a"), agentkit.ToolResult{
+	stored, err := derive.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-a"), agentkit.ToolResult{
 		ID:      "call-1",
 		Name:    "bash",
 		Content: full,
@@ -33,7 +33,7 @@ func TestPrepareToolResultForStorageSpillsLargeOutput(t *testing.T) {
 	if len(stored.Content) >= len(full) {
 		t.Fatalf("expected truncated view, content len=%d", len(stored.Content))
 	}
-	spill := stored.Audit[session.AuditSpillPath]
+	spill := stored.Audit[derive.AuditSpillPath]
 	if spill == "" {
 		t.Fatal("missing spill_path audit")
 	}
@@ -44,7 +44,7 @@ func TestPrepareToolResultForStorageSpillsLargeOutput(t *testing.T) {
 	if len(stored.Content) > 200 {
 		t.Fatalf("view with hint should fit maxViewBytes=200, len=%d", len(stored.Content))
 	}
-	abs, err := session.SpillPathAbs(ctx, ws, spill)
+	abs, err := derive.SpillPathAbs(ctx, ws, spill)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestPrepareToolResultForStorageWithoutWorkspaceTruncates(t *testing.T) {
 	t.Parallel()
 
 	full := strings.Repeat("x", 9000)
-	stored, err := session.PrepareToolResultForStorage(context.Background(), agentkit.SessionID("s"), agentkit.ToolResult{
+	stored, err := derive.PrepareToolResultForStorage(context.Background(), agentkit.SessionID("s"), agentkit.ToolResult{
 		ID:      "c",
 		Name:    "bash",
 		Content: full,
@@ -69,7 +69,7 @@ func TestPrepareToolResultForStorageWithoutWorkspaceTruncates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Audit != nil && stored.Audit[session.AuditSpillPath] != "" {
+	if stored.Audit != nil && stored.Audit[derive.AuditSpillPath] != "" {
 		t.Fatal("unexpected spill without workspace")
 	}
 	if !strings.HasSuffix(stored.Content, "\n...[truncated]") {
@@ -96,7 +96,7 @@ func TestPrepareToolResultForStorageSpillWriteFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = session.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-b"), agentkit.ToolResult{
+	_, err = derive.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-b"), agentkit.ToolResult{
 		ID:      "call-2",
 		Name:    "bash",
 		Content: strings.Repeat("x", 500),

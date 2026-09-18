@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -93,7 +94,7 @@ func TestRunTurnRetriesTransientLLMError(t *testing.T) {
 		t.Fatalf("expected 2 llm calls, got %d", flaky.calls.Load())
 	}
 
-	events, err := session.ReadAllEvents(ctx, mem)
+	events, err := derive.ReadAllEvents(ctx, mem)
 	if err != nil {
 		t.Fatal(err)
 	}

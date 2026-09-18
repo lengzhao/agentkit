@@ -12,6 +12,7 @@ import (
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -100,7 +101,7 @@ func TestRunTurnSpillsLargeToolResultToWorkspace(t *testing.T) {
 		t.Fatal("no tool/result for call-big")
 	}
 
-	abs, err := session.SpillPathAbs(ctx, ws, spillRel)
+	abs, err := derive.SpillPathAbs(ctx, ws, spillRel)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package session_test
+package derive_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -62,7 +63,7 @@ func TestHydrateOnlyLastUserMessage(t *testing.T) {
 		{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}}},
 		{Role: "user", Content: []agentkit.ContentPart{{Type: rtmedia.ContentTypeAttachmentRef, Source: "upload/new.png"}}},
 	}
-	out, err := session.HydrateLocalAttachments(context.Background(), msgs, ws, 0)
+	out, err := derive.HydrateLocalAttachments(context.Background(), msgs, ws, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

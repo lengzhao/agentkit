@@ -16,6 +16,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
 )
@@ -139,11 +140,11 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		slog.Warn("subagent loop: resolve parent failed", "parent", parentID, "agent", def.Name, "err", err)
 		return subagent.Result{}, err
 	}
-	parentEvents, err := session.ReadAllEvents(ctx, parent)
+	parentEvents, err := derive.ReadAllEvents(ctx, parent)
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
+	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(derive.LatestEventSeq(parentEvents))))
 	jobID := string(childID)
 
 	async := def.Async
@@ -481,7 +482,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		}
 		return out, err, closer
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		if runErr != nil {
 			return out, runErr, closer

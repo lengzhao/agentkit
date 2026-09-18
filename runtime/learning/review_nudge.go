@@ -5,7 +5,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	caplearning "github.com/lengzhao/agentkit/cap/learning"
-	rtsession "github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // DefaultMemoryNudgeInterval is Hermes memory.nudge_interval (user turns between background memory reviews).
@@ -26,7 +26,7 @@ func CountUserTurns(messages []agentkit.ModelMessage) int {
 		if msg.Role != "user" {
 			continue
 		}
-		if strings.TrimSpace(rtsession.FlattenTextParts(msg.Content, "\n")) == "" {
+		if strings.TrimSpace(derive.FlattenTextParts(msg.Content, "\n")) == "" {
 			continue
 		}
 		n++

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 type MemoryConfig struct {
@@ -81,27 +82,15 @@ func (s *Memory) LatestSeq() agentkit.EventSeq {
 func (s *Memory) DeriveMessages(ctx context.Context) ([]agentkit.ModelMessage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return deriveMessages(ctx, s.events, s.maxToolResultBytes), nil
-}
-
-func toolResultMessage(result agentkit.ToolResult) agentkit.ModelMessage {
-	return agentkit.ModelMessage{
-		Role: "tool",
-		ToolResults: []agentkit.ToolResult{{
-			ID:      result.ID,
-			Name:    result.Name,
-			Content: result.Content,
-			Audit:   result.Audit,
-		}},
-	}
+	return derive.DeriveMessages(ctx, s.events, s.maxToolResultBytes), nil
 }
 
 func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, typ agentkit.EventType, msg agentkit.ModelMessage) error {
 	logicalChars := 0
 	switch typ {
 	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
-		logicalChars = EstimateLogicalChars(msg)
-		msg = SanitizeModelMessageForStorageWS(msg, 0, rctx.WorkspaceServiceFromContext(ctx))
+		logicalChars = derive.EstimateLogicalChars(msg)
+		msg = derive.SanitizeModelMessageForStorageWS(msg, 0, rctx.WorkspaceServiceFromContext(ctx))
 	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
@@ -112,7 +101,7 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 		Type:    typ,
 		Data:    raw,
 	}
-	if logicalChars > 0 && logicalChars > EstimateLogicalChars(msg) {
+	if logicalChars > 0 && logicalChars > derive.EstimateLogicalChars(msg) {
 		event.Metadata = map[string]any{MetadataLogicalChars: logicalChars}
 	}
 	// Attribute user turns to whoever sent them. Only user messages carry this:
@@ -134,7 +123,7 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 }
 
 func AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, call agentkit.ToolCall) error {
-	call = SanitizeToolCall(call)
+	call = derive.SanitizeToolCall(call)
 	raw, err := json.Marshal(call)
 	if err != nil {
 		return err

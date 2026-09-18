@@ -8,6 +8,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -100,7 +101,7 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatalf("read events: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 		}
 	}
 
-	beforeSeq := session.LatestEventSeq(events[:len(events)-1])
+	beforeSeq := derive.LatestEventSeq(events[:len(events)-1])
 	if beforeSeq == 0 {
 		t.Fatal("expected non-zero seq before turn/end")
 	}

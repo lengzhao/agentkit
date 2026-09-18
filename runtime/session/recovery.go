@@ -5,15 +5,8 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
-
-// InterruptedToolResultText is the tool result synthesized for a call the
-// process never got to answer. It is model-visible on purpose: the agent needs
-// to know the call was cut off rather than silently succeeded.
-const InterruptedToolResultText = "tool execution was interrupted before it produced a result (process exited); re-run it if the result is still needed"
-
-// interruptedDecision marks synthesized results in the tool audit trail.
-const interruptedDecision = "interrupted"
 
 // IncompleteTurn describes a turn that never reached turn/end, which is what a
 // crash, SIGKILL, or power loss leaves behind.
@@ -151,13 +144,10 @@ func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteT
 
 // InterruptedToolResult is the stand-in result for a call that never ran to
 // completion.
+//
+// Deprecated: use derive.InterruptedToolResult.
 func InterruptedToolResult(call agentkit.ToolCall) agentkit.ToolResult {
-	return agentkit.ToolResult{
-		ID:      call.ID,
-		Name:    call.Name,
-		Content: InterruptedToolResultText,
-		Audit:   map[string]string{"decision": interruptedDecision},
-	}
+	return derive.InterruptedToolResult(call)
 }
 
 func AppendSessionRecovery(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data RecoveryData) error {

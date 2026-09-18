@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -123,7 +124,7 @@ func (f turnFixture) sessionEvents(t *testing.T) []agentkit.SessionEvent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(context.Background(), sess)
+	events, err := derive.ReadAllEvents(context.Background(), sess)
 	if err != nil {
 		t.Fatalf("read events: %v", err)
 	}

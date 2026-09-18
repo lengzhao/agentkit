@@ -13,6 +13,7 @@ import (
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 const (
@@ -32,7 +33,7 @@ type SummaryConfig struct {
 	// SummaryModel is model used for the summary; defaults to the agent's model.
 	SummaryModel string `json:"summaryModel"`
 	// SummaryPrompt overrides the built-in summarisation instruction.
-	SummaryPrompt string `json:"summaryPrompt"`
+	SummaryPrompt string                     `json:"summaryPrompt"`
 	Retry         *capcompaction.RetryConfig `json:"retry,omitempty"`
 }
 
@@ -74,11 +75,11 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 		return capcompaction.Result{}, fmt.Errorf("compaction/summary requires session")
 	}
 
-	events, err := session.ReadAllEvents(ctx, req.Session)
+	events, err := derive.ReadAllEvents(ctx, req.Session)
 	if err != nil {
 		return capcompaction.Result{}, err
 	}
-	indexed := session.IndexMessagesForCompaction(ctx, events)
+	indexed := derive.IndexMessagesForCompaction(ctx, events)
 	if len(indexed) == 0 {
 		return capcompaction.Result{}, nil
 	}

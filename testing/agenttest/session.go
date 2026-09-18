@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // TempFileStore creates a session/store rooted at t.TempDir().
@@ -29,7 +30,7 @@ func SessionEvents(t *testing.T, ctx context.Context, store agentkit.SessionStor
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := session.ReadAllEvents(ctx, sess)
+	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}

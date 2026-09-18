@@ -17,6 +17,7 @@ import (
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit"
 )
@@ -304,7 +305,7 @@ func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages [
 		slog.Debug("session recall skipped", "reason", "fts search", "err", err)
 		return ""
 	}
-	return session.FormatSessionRecall(hits)
+	return derive.FormatSessionRecall(hits)
 }
 
 func reviewRecallQuery(messages []agentkit.ModelMessage) string {
@@ -312,7 +313,7 @@ func reviewRecallQuery(messages []agentkit.ModelMessage) string {
 		if messages[i].Role != "user" {
 			continue
 		}
-		text := strings.TrimSpace(session.FlattenTextParts(messages[i].Content, " "))
+		text := strings.TrimSpace(derive.FlattenTextParts(messages[i].Content, " "))
 		if text == "" || strings.HasPrefix(text, "/") {
 			continue
 		}

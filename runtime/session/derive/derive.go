@@ -1,4 +1,4 @@
-package session
+package derive
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEv
 	return out
 }
 
-func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
+func DeriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
 	agentID := rctx.AgentIDFromContext(ctx)
 	view := resolveCompactionView(events, agentID)
 	out := plainCompactionPrefix(view)
@@ -172,7 +172,7 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 			return nil
 		}
 		return []visibleWalkItem{{
-			msg:         toolResultMessage(result),
+			msg:         ToolResultMessage(result),
 			seq:         ev.Seq,
 			isTurnStart: false,
 		}}
@@ -295,23 +295,6 @@ func consumeResultAfter(positions map[agentkit.ToolCallID][]int, id agentkit.Too
 		return true
 	}
 	return false
-}
-
-func AppendCompaction(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data compaction.EventData) error {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	_, err = s.Append(ctx, agentkit.SessionEvent{
-		AgentID: agentID,
-		Type:    agentkit.EventCompaction,
-		Data:    raw,
-	})
-	if err != nil {
-		return err
-	}
-	TrimCompacted(s, agentID, data.MemoryCutoffSeq())
-	return nil
 }
 
 func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) error {

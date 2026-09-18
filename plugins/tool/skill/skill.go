@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
@@ -53,7 +53,7 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return "", err
 			}
-			if err := session.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
+			if err := derive.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
 				return "", err
 			}
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -124,7 +125,7 @@ func TestReopenedSessionContinuesSeqNumbering(t *testing.T) {
 		t.Fatalf("first seq after reopen = %d, want 4", seq)
 	}
 
-	events, err := session.ReadAllEvents(ctx, second)
+	events, err := derive.ReadAllEvents(ctx, second)
 	if err != nil {
 		t.Fatal(err)
 	}

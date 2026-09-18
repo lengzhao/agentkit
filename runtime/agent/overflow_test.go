@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -44,12 +45,12 @@ func (f *forceCompaction) Compact(ctx context.Context, req compaction.Request) (
 	if req.Session == nil {
 		return compaction.Result{}, fmt.Errorf("session required")
 	}
-	events, err := session.ReadAllEvents(ctx, req.Session)
+	events, err := derive.ReadAllEvents(ctx, req.Session)
 	if err != nil {
 		return compaction.Result{}, err
 	}
 	if err := session.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
-		BeforeSeq: session.LatestEventSeq(events),
+		BeforeSeq: derive.LatestEventSeq(events),
 		Kind:      compaction.KindSummary,
 		Summary: agentkit.ModelMessage{
 			Role:    "user",
@@ -112,7 +113,7 @@ func TestRunTurnOverflowCompactAndRetry(t *testing.T) {
 		t.Fatalf("expected 1 forced compaction, got %d", compact.calls.Load())
 	}
 
-	events, err := session.ReadAllEvents(ctx, mem)
+	events, err := derive.ReadAllEvents(ctx, mem)
 	if err != nil {
 		t.Fatal(err)
 	}

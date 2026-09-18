@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 type TodoConfig struct{}
@@ -62,7 +63,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return TodoOutput{}, err
 		}
-		events, err := session.ReadAllEvents(ctx, sess)
+		events, err := derive.ReadAllEvents(ctx, sess)
 		if err != nil {
 			return TodoOutput{}, err
 		}
