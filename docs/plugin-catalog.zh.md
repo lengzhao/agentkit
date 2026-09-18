@@ -356,7 +356,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Hook 点 | 接口 | 说明 |
 |---|---|---|
-| BeforeStep | `OnBeforeStep` | model step 前注入/检查 |
+| BeforeStep | `OnBeforeStep` | model step 前注入/检查；payload 带 `Step`/`Segment`（turn 内 0 起） |
 | BeforeTool | `OnBeforeTool` | 工具 input 改写（policy allow 之后） |
 | AfterTool | `OnAfterTool` | 工具 result 截断/改写 |
 | TurnStopping | `OnTurnStopping` | Turn 末续跑/收尾裁决 |

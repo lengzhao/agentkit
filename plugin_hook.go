@@ -55,6 +55,13 @@ type TurnComplete struct {
 // ctx.Value(KeyTurnEnvelope) / SessionIDFromContext; hooks that need durable
 // state should depend on SessionStore via pluginkit Deps.
 type BeforeStep struct {
+	// Step is the 0-based, turn-wide index of the step about to run; it matches
+	// the step/start event index and equals the number of steps completed so
+	// far in this turn.
+	Step int
+	// Segment is the 0-based continuation segment the step belongs to (0 for
+	// the initial segment), matching turn/continue's Segment numbering.
+	Segment  int
 	Messages []ModelMessage
 }
 

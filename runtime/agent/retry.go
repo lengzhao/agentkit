@@ -94,9 +94,10 @@ func (a *Runtime) runStepWithRetry(
 	emit agentkit.OutboundEmit,
 	model string,
 	retry *stepRetry,
+	pos stepPosition,
 ) (stepOutcome, error) {
 	for {
-		msg, err := a.runStep(ctx, sess, emit, model)
+		msg, err := a.runStep(ctx, sess, emit, model, pos)
 		if err == nil {
 			if retry.attempt > 0 {
 				_ = a.emitAutoRetryEnd(ctx, sess, emit, sessevents.AutoRetryEndData{

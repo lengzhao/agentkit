@@ -238,6 +238,7 @@ func (a *Runtime) runSegment(
 
 		run.meter.recordStep()
 		stepIndex := run.meter.stepsUsed() - 1
+		pos := stepPosition{step: stepIndex, segment: run.meter.continuationsUsed()}
 
 		stepCtx, endStep := ctrl.BeginStep(ctx)
 		stepDone := false
@@ -256,7 +257,7 @@ func (a *Runtime) runSegment(
 
 		stepRetry := newStepRetry(a.retry)
 
-		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted)
+		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted, pos)
 		if err != nil {
 			_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 			endStepOnce()
@@ -427,7 +428,7 @@ type stepOutcome struct {
 	ctx context.Context
 }
 
-func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, model string) (stepOutcome, error) {
+func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, model string, pos stepPosition) (stepOutcome, error) {
 	stepStarted := time.Now()
 	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name: "agent.step.prep",
@@ -443,7 +444,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		endPrep(prepEnd)
 	}
 
-	history, ctx, err := a.prepareStepHistory(ctx, sess)
+	history, ctx, err := a.prepareStepHistory(ctx, sess, pos)
 	if err != nil {
 		prepEnd.Err = err
 		finishPrep()
@@ -581,7 +582,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	return stepOutcome{message: assistant, usage: usage, ctx: ctx}, nil
 }
 
-func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session) ([]agentkit.ModelMessage, context.Context, error) {
+func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session, pos stepPosition) ([]agentkit.ModelMessage, context.Context, error) {
 	history, err := sess.DeriveMessages(ctx)
 	if err != nil {
 		return nil, ctx, err
@@ -597,7 +598,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session)
 	if a.hooks == nil {
 		return history, ctx, nil
 	}
-	step := &agentkit.BeforeStep{Messages: history}
+	step := &agentkit.BeforeStep{Step: pos.step, Segment: pos.segment, Messages: history}
 	if err := a.hooks.BeforeStep(ctx, step); err != nil {
 		return nil, ctx, err
 	}

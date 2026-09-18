@@ -20,9 +20,10 @@ func (a *Runtime) runStepWithOverflowRecovery(
 	model string,
 	retry *stepRetry,
 	overflowRecoveryAttempted *bool,
+	pos stepPosition,
 ) (stepOutcome, error) {
 	for {
-		msg, err := a.runStepWithRetry(ctx, sess, emit, model, retry)
+		msg, err := a.runStepWithRetry(ctx, sess, emit, model, retry, pos)
 		if err == nil {
 			*overflowRecoveryAttempted = false
 			return msg, nil

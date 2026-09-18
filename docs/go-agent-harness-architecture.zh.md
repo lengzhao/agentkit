@@ -437,6 +437,8 @@ func OnTurnComplete(h func(context.Context, *TurnComplete) error) Hook
 
 内部 Hook Runtime 可以支持 chain、serial、parallel 三种模式；插件作者只看到稳定 payload 类型和返回约定，不调用 `next()`。hook 实例只有在 root graph 中被依赖后才会进入运行时；未配置的 hook 即使被 import 也不会运行。
 
+`OnBeforeStep` 的 payload 携带 `Step`（turn 内 0 起的步序号，与 `step/start` 事件一致，等于本 turn 已完成步数）与 `Segment`（0 起的续跑段号，与 `turn/continue` 的 `Segment` 编号一致），hook 据此可知当前执行进度。
+
 `OnBeforeTool` / `OnAfterTool` 不是拒绝通道。允许、拒绝、询问只由 Policy Plane 产生 `Decision`，见 [5.5](#55-工具执行路径)。hook 返回的 `error` 表示插件执行失败，运行时中止该阶段并写入失败事件，它不是 Policy `deny`。
 
 `OnTurnStopping` 是自主运行的唯一 seam：Agent 准备结束 turn 时调用它，hook 往 `Continue` 追加消息即延展一个 segment，置 `Stop` 即强制收尾。两条不变量：
