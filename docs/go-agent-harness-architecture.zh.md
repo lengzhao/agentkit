@@ -1140,7 +1140,7 @@ LLM Runtime 负责：
 - 请求构造和 hook。
 - 流式 chunk 归一化。
 - 使用量统计。
-- provider 错误分类和可重试策略。
+- provider 错误分类和可重试策略（含 OpenAI 兼容流 SSE chunk JSON 截断，如 `unexpected end of JSON input`；Agent 默认 `retry.enabled` 下按 step 自动重试，Session 仅在 step 成功后才 append assistant 消息）。
 
 ## 7. 能力扩展模型
 

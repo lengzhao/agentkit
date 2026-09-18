@@ -85,6 +85,8 @@ var (
 		`ended without`,
 		`stream ended before message_stop`,
 		`stream ended before a terminal response event`,
+		`unexpected end of JSON input`,
+		`unexpected EOF`,
 		`http2 request did not get a response`,
 		`retry delay`,
 		`you can retry your request`,

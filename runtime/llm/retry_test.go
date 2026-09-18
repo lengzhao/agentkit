@@ -17,6 +17,8 @@ func TestIsRetryableError(t *testing.T) {
 	}{
 		{errors.New("rate limit exceeded"), true},
 		{errors.New("connection lost"), true},
+		{errors.New("unexpected end of JSON input"), true},
+		{errors.New("unexpected EOF"), true},
 		{&openai.APIError{HTTPStatusCode: 503, Message: "overloaded"}, true},
 		{&openai.APIError{HTTPStatusCode: 429, Message: "insufficient_quota"}, false},
 		{errors.New("context length exceeded"), false},
