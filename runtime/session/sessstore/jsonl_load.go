@@ -3,19 +3,19 @@ package sessstore
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 
 	"github.com/lengzhao/agentkit"
 )
 
-// jsonlScannerMaxLineBytes caps one JSONL record (sanitized messages stay well below this).
-const jsonlScannerMaxLineBytes = 1 << 20 // 1 MiB
-
-func newJSONLScanner(r io.Reader) *bufio.Scanner {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), jsonlScannerMaxLineBytes)
-	return sc
+// newJSONLDecoder returns a streaming JSON decoder over r. Unlike bufio.Scanner,
+// json.Decoder has no per-record size limit, so oversized JSONL lines (large
+// images, long tool outputs, accumulated long conversations) no longer crash
+// the session loader with "bufio.Scanner: token too long".
+func newJSONLDecoder(r io.Reader) *json.Decoder {
+	return json.NewDecoder(bufio.NewReader(r))
 }
 
 // ScanSessionFile loads one session JSONL file, folding compacted history the
@@ -39,10 +39,13 @@ func ScanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent,
 	)
 	ring.max = maxLoadedEvents
 
-	sc := newJSONLScanner(f)
-	for sc.Scan() {
+	dec := newJSONLDecoder(f)
+	for {
 		var ev agentkit.SessionEvent
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+		if err := dec.Decode(&ev); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			return nil, 0, false, err
 		}
 		if ev.Seq > maxSeq {
@@ -54,9 +57,6 @@ func ScanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent,
 		}
 		nonCompactionSeen++
 		ring.add(ev)
-	}
-	if err := sc.Err(); err != nil {
-		return nil, 0, false, err
 	}
 
 	cutoffs := cutoffsFromCompactions(compactions)
@@ -76,18 +76,18 @@ func readSessionFile(path string, from agentkit.EventSeq) ([]agentkit.SessionEve
 	defer f.Close()
 
 	out := make([]agentkit.SessionEvent, 0)
-	sc := newJSONLScanner(f)
-	for sc.Scan() {
+	dec := newJSONLDecoder(f)
+	for {
 		var ev agentkit.SessionEvent
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+		if err := dec.Decode(&ev); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			return nil, err
 		}
 		if ev.Seq > from {
 			out = append(out, ev)
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, err
 	}
 	return out, nil
 }
