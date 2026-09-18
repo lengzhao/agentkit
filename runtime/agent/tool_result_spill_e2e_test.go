@@ -11,7 +11,6 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -85,7 +84,7 @@ func TestRunTurnSpillsLargeToolResultToWorkspace(t *testing.T) {
 		if result.ID != "call-big" {
 			continue
 		}
-		spillRel = result.Audit[session.AuditSpillPath]
+		spillRel = result.Audit[derive.AuditSpillPath]
 		if spillRel == "" {
 			t.Fatalf("tool result missing spill_path audit: %s", string(ev.Data))
 		}
