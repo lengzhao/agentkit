@@ -208,9 +208,19 @@ learning.dreamSweep:
     use: learning/dream-sweep
 llm.default:
     config:
-        steps:
-            - text: 'smoke: L0 llm.default placeholder（agent 内联 llm 优先）'
-    use: llm/scripted
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 llm.fallback:
     config:
         fallbackModels:
@@ -221,20 +231,24 @@ llm.fallback:
     use: llm/fallback
 llm.openai:
     config:
-        steps:
-            - text: 'smoke: L0 llm.default placeholder（agent 内联 llm 优先）'
-    use: llm/scripted
-llm.review:
-    config:
         api: chat
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
-        model: gpt-5.4-mini
+        model: gpt-5.4
         responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
         timeoutSeconds: 180
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
+llm.review:
+    config:
+        steps:
+            - text: ""
+    use: llm/scripted
 loop.default:
     deps:
         agents:
@@ -411,57 +425,8 @@ runner.default:
         catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
-        loop:
-            deps:
-                agents:
-                    - config:
-                        id: smoke
-                      deps:
-                        llm:
-                            config:
-                                steps:
-                                    - text: 当前目录内容需要通过 bash 工具列出，然后用 read 读取 README.md
-                                      toolCalls:
-                                        - id: call-ls
-                                          input: '{"command":"ls -la"}'
-                                          name: bash
-                                    - text: 已完成目录列表。
-                                      toolCalls:
-                                        - id: call-read
-                                          input: '{"path":"README.md"}'
-                                          name: read
-                                    - text: README 已读取完毕。
-                            use: llm/scripted
-                        prompt:
-                            use: prompt/assembler/default
-                        sessionStore: sessionStore.default
-                        tools:
-                            deps:
-                                policies:
-                                    - use: policy/deny-dangerous-shell
-                                toolPacks:
-                                    - config:
-                                        files:
-                                            README.md: |-
-                                                # AgentKit
-
-                                                hello
-                                      use: tool/fs-memory
-                                tools:
-                                    - config:
-                                        timeoutSeconds: 30
-                                        workDir: .
-                                      deps:
-                                        workspace: workspace.default
-                                      use: tool/shell-bash
-                            use: tools/runtime
-                        workspace: workspace.default
-                      use: agent/coding
-            use: loop/default
-        platform:
-            config:
-                once: true
-            use: platform/cli
+        loop: loop.default
+        platform: platform.default
         schedules:
             - schedule.cron
             - learning.dreamSweep
@@ -485,10 +450,6 @@ schedule.default:
     deps:
         workspace: workspace.default
     use: schedule/multi
-session.default:
-    config:
-        id: cli:default
-    use: session/memory
 sessionCommands.default:
     deps:
         sessionStore: sessionStore.default
@@ -500,9 +461,14 @@ sessionIndex.default:
         workspace: workspace.default
     use: session/sqlite-index
 sessionStore.default:
+    config:
+        cacheIdleTTL: 30m
+        dir: sessions
+        maxCachedSessions: 64
+        maxLoadedEvents: 256
     deps:
-        session: session.default
-    use: session/static
+        workspace: workspace.default
+    use: session/store
 skills.default:
     config:
         dirs:

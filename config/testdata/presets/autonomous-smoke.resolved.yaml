@@ -112,12 +112,6 @@ compaction.token-limit.worker:
         services:
             - compaction.summary.default
     use: compaction/token-limit
-credentials.default:
-    config:
-        encryptedFile: global:secrets.enc.json
-    deps:
-        workspace: workspace.default
-    use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
@@ -171,19 +165,9 @@ learning.dreamSweep:
     use: learning/dream-sweep
 llm.default:
     config:
-        api: chat
-        apiKeyRef: env:OPENAI_API_KEY
-        baseUrl: https://api.openai.com/v1
-        model: gpt-5.4
-        responseHeaderTimeoutSeconds: 60
-        retry:
-            provider:
-                maxRetries: 0
-                maxRetryDelayMs: 60000
-        timeoutSeconds: 180
-    deps:
-        credentials: credentials.default
-    use: llm/openai-compatible
+        steps:
+            - text: 'smoke: L0 llm.default placeholder（agent 内联 llm 优先）'
+    use: llm/scripted
 llm.fallback:
     config:
         fallbackModels:
@@ -194,19 +178,9 @@ llm.fallback:
     use: llm/fallback
 llm.openai:
     config:
-        api: chat
-        apiKeyRef: env:OPENAI_API_KEY
-        baseUrl: https://api.openai.com/v1
-        model: gpt-5.4
-        responseHeaderTimeoutSeconds: 60
-        retry:
-            provider:
-                maxRetries: 0
-                maxRetryDelayMs: 60000
-        timeoutSeconds: 180
-    deps:
-        credentials: credentials.default
-    use: llm/openai-compatible
+        steps:
+            - text: 'smoke: L0 llm.default placeholder（agent 内联 llm 优先）'
+    use: llm/scripted
 loop.default:
     deps:
         agents:
