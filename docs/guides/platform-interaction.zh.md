@@ -111,6 +111,8 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | `platform/cli` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | stderr prompt | `Receive` → `Reply` |
 | `platform/feishu` | `Interactive`, `MultiSelect`, `DefaultTimeout≥10m` | 卡片 + 按钮 | callback 或 reply-to |
 | `platform/slack` | 同上 | Block Kit 卡片 + 按钮 | 交互 payload |
+
+飞书 / Lark 确认卡（`ask_user` 选项、工具 allow/deny 的列表项）短选项仍是「文案 | 按钮」一行；**选项文案换行或超过约 16 字**时改为通栏说明 + 通栏按钮，避免窄列把长文本挤乱。确认后的静态卡标题只放短选项，长选项进正文「已选择」。
 | `platform/chat-api` | 默认 `Interactive=true`；`config.interactive: false` 降级为 headless | SSE `question_request` / debug 弹窗 | `POST /runs/.../respond` |
 | `platform/acp` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | ACP `session/update` 流式 chunk | ACP `request_permission`（Send 内同步） |
 | `platform/headless` | `Interactive=false` | 无 | 直接 `NoHuman` |

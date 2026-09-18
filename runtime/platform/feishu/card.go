@@ -13,6 +13,12 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
+// listItemInlineMaxRunes is the longest option text that still fits beside a button.
+const listItemInlineMaxRunes = 16
+
+// cardButtonMaxRunes keeps Feishu button labels from overflowing the control.
+const cardButtonMaxRunes = 12
+
 func plainText(content string) map[string]any {
 	return map[string]any{"tag": "plain_text", "content": content}
 }
@@ -150,13 +156,31 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 			for k, v := range e.Extra {
 				valMap[k] = v
 			}
+			btn := map[string]any{
+				"tag": "button", "text": plainText(truncateRunes(e.BtnText, cardButtonMaxRunes)),
+				"type": btnType, "value": valMap,
+			}
+			if listItemStacksVertically(e.Text) {
+				btn["width"] = "fill"
+				elements = append(elements, map[string]any{
+					"tag": "column_set", "flex_mode": "none",
+					"columns": []map[string]any{
+						{"tag": "column", "width": "weighted", "weight": 1, "vertical_align": "top",
+							"elements": []map[string]any{
+								{"tag": "markdown", "content": e.Text},
+								btn,
+							}},
+					},
+				})
+				continue
+			}
 			elements = append(elements, map[string]any{
 				"tag": "column_set", "flex_mode": "none",
 				"columns": []map[string]any{
 					{"tag": "column", "width": "weighted", "weight": 5, "vertical_align": "center",
 						"elements": []map[string]any{{"tag": "markdown", "content": e.Text}}},
 					{"tag": "column", "width": "auto", "vertical_align": "center",
-						"elements": []map[string]any{{"tag": "button", "text": plainText(e.BtnText), "type": btnType, "value": valMap}}},
+						"elements": []map[string]any{btn}},
 				},
 			})
 		case common.CardSelect:
@@ -189,6 +213,17 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 	}
 	result["elements"] = elements
 	return result
+}
+
+func listItemStacksVertically(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	if strings.Contains(text, "\n") {
+		return true
+	}
+	return len([]rune(text)) > listItemInlineMaxRunes
 }
 
 func renderCard(card *common.Card, sessionKey string) string {

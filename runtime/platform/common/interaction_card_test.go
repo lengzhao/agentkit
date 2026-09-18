@@ -1,6 +1,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/permission"
@@ -115,10 +116,31 @@ func TestConfirmedPermissionCardIsStatic(t *testing.T) {
 	if card == nil || !card.Static {
 		t.Fatal("expected static confirmed card")
 	}
+	if card.Header == nil || card.Header.Title != "✅ A" {
+		t.Fatalf("short answer header = %+v", card.Header)
+	}
 	for _, elem := range card.Elements {
 		if _, ok := elem.(CardListItem); ok {
 			t.Fatal("confirmed card must not contain buttons")
 		}
+	}
+}
+
+func TestConfirmedPermissionCardLongAnswerUsesShortTitle(t *testing.T) {
+	long := "这是一段非常长的选项文案，不应该塞进卡片标题里"
+	card := ConfirmedPermissionCard("选一个", long)
+	if card.Header == nil || card.Header.Title != "✅ 已选择" {
+		t.Fatalf("header = %+v", card.Header)
+	}
+	found := false
+	for _, elem := range card.Elements {
+		md, ok := elem.(CardMarkdown)
+		if ok && strings.Contains(md.Content, long) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("long answer should stay in body: %+v", card.Elements)
 	}
 }
 

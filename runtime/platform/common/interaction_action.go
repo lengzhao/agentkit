@@ -107,16 +107,28 @@ func confirmedDecisionTitle(decision string) string {
 	}
 }
 
+const confirmedAnswerTitleMaxRunes = 16
+
 // ConfirmedPermissionCard updates the card after the user picks an option.
 func ConfirmedPermissionCard(question, answer string) *Card {
-	b := NewCard().Title("✅ "+answer, "green")
+	b := NewCard().Title(confirmedPermissionTitle(answer), "green")
 	if question != "" {
 		b.Markdown(question)
 	}
-	b.Markdown("**→ " + answer + "**")
+	if strings.TrimSpace(answer) != "" {
+		b.Markdown("**已选择**\n" + answer)
+	}
 	card := b.Build()
 	card.Static = true
 	return card
+}
+
+func confirmedPermissionTitle(answer string) string {
+	answer = strings.TrimSpace(answer)
+	if answer == "" || strings.Contains(answer, "\n") || len([]rune(answer)) > confirmedAnswerTitleMaxRunes {
+		return "✅ 已选择"
+	}
+	return "✅ " + answer
 }
 
 // ConfirmedAllowDenyCard updates an allow/deny card after the user decides.
