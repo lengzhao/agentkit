@@ -448,12 +448,7 @@ runner.default:
                                                 hello
                                       use: tool/fs-memory
                                 tools:
-                                    - config:
-                                        timeoutSeconds: 30
-                                        workDir: .
-                                      deps:
-                                        workspace: workspace.default
-                                      use: tool/shell-bash
+                                    - tool.shell-bash.default
                             use: tools/runtime
                         workspace: workspace.default
                       use: agent/coding
@@ -619,8 +614,8 @@ tool.session-query.default:
     use: tool/session-query
 tool.shell-bash.default:
     config:
-        timeoutSeconds: 60
-        workDir: work
+        timeoutSeconds: 30
+        workDir: .
     deps:
         credentials: credentials.integrations
         workspace: workspace.default
