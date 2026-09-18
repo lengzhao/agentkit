@@ -1,8 +1,12 @@
 package feishu
 
 import (
+	"context"
+	"log/slog"
 	"strings"
 	"sync"
+
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/lengzhao/agentkit"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -147,4 +151,77 @@ func (p *Platform) applyTurnEndReactions(sessionID agentkit.SessionID, endData s
 			p.addDoneReaction(rc)
 		}
 	}
+}
+
+func (p *Platform) addReaction(messageID string) string {
+	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
+}
+
+func (p *Platform) addReactionWithEmoji(messageID, emojiType string) string {
+	if emojiType == "" {
+		return ""
+	}
+	resp, err := p.client.Im.MessageReaction.Create(context.Background(),
+		larkim.NewCreateMessageReactionReqBuilder().
+			MessageId(messageID).
+			Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+				ReactionType(&larkim.Emoji{EmojiType: &emojiType}).
+				Build()).
+			Build())
+	if err != nil {
+		slog.Debug(p.tag()+": add reaction failed", "error", err)
+		return ""
+	}
+	if !resp.Success() {
+		slog.Debug(p.tag()+": add reaction failed", "code", resp.Code, "msg", resp.Msg)
+		return ""
+	}
+	if resp.Data != nil && resp.Data.ReactionId != nil {
+		return *resp.Data.ReactionId
+	}
+	return ""
+}
+
+func (p *Platform) removeReaction(messageID, reactionID string) {
+	if reactionID == "" || messageID == "" {
+		return
+	}
+	resp, err := p.client.Im.MessageReaction.Delete(context.Background(),
+		larkim.NewDeleteMessageReactionReqBuilder().
+			MessageId(messageID).
+			ReactionId(reactionID).
+			Build())
+	if err != nil {
+		slog.Debug(p.tag()+": remove reaction failed", "error", err)
+		return
+	}
+	if !resp.Success() {
+		slog.Debug(p.tag()+": remove reaction failed", "code", resp.Code, "msg", resp.Msg)
+	}
+}
+
+// StartTyping adds an emoji reaction to the user's message and returns a stop
+// function that removes the reaction when processing is complete.
+func (p *Platform) StartTyping(ctx context.Context, rctx any) (stop func()) {
+	rc, ok := rctx.(replyContext)
+	if !ok || rc.messageID == "" {
+		return func() {}
+	}
+	reactionID := p.addReaction(rc.messageID)
+	return func() {
+		go p.removeReaction(rc.messageID, reactionID)
+	}
+}
+
+// AddDoneReaction adds a "done" emoji reaction so the user gets a push
+// notification when the agent finishes a multi-round turn in quiet mode.
+func (p *Platform) AddDoneReaction(rctx any) {
+	if p.doneEmoji == "" {
+		return
+	}
+	rc, ok := rctx.(replyContext)
+	if !ok || rc.messageID == "" {
+		return
+	}
+	go p.addReactionWithEmoji(rc.messageID, p.doneEmoji)
 }

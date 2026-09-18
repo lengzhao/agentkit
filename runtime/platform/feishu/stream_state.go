@@ -7,26 +7,26 @@ import (
 
 // streamStateData is a mutable card snapshot (tests and async subagent panel use this directly).
 type streamStateData struct {
-	handle                     any
-	progressHandle             any
-	cards                      []streamCard
-	accumulated                string
-	bodyText                   string
-	committedBodyText          string
-	finalizedBodyText          string
-	finalizedSteps             []toolStep
-	thinking                   string
-	steps                      []toolStep
-	toolStepIdx                map[int]int
-	status                     cardStatus
-	startedAt                  time.Time
-	progressStartedAt          time.Time
-	lastUpdate                 time.Time
-	lastProgressUpdate         time.Time
-	lastBodyUpdate             time.Time
-	bodyFlushTimer             *time.Timer
-	legacyFlushTimer           *time.Timer
-	richCardPanelVersion       uint64
+	handle                      any
+	progressHandle              any
+	cards                       []streamCard
+	accumulated                 string
+	bodyText                    string
+	committedBodyText           string
+	finalizedBodyText           string
+	finalizedSteps              []toolStep
+	thinking                    string
+	steps                       []toolStep
+	toolStepIdx                 map[int]int
+	status                      cardStatus
+	startedAt                   time.Time
+	progressStartedAt           time.Time
+	lastUpdate                  time.Time
+	lastProgressUpdate          time.Time
+	lastBodyUpdate              time.Time
+	bodyFlushTimer              *time.Timer
+	legacyFlushTimer            *time.Timer
+	richCardPanelVersion        uint64
 	richCardFlushedPanelVersion uint64
 	lastRichCardBodyStreamRunes int
 }

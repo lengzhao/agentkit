@@ -1,11 +1,11 @@
 package feishu
 
 import (
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/chathistory"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/pluginkit"
-	lark "github.com/larksuite/oapi-sdk-go/v3"
 )
 
 func init() {
@@ -16,7 +16,7 @@ func init() {
 }
 
 var (
-	_ agentkit.Platform       = (*Platform)(nil)
-	_ permission.Capable      = (*Platform)(nil)
-	_ chathistory.Provider    = (*Platform)(nil)
+	_ agentkit.Platform    = (*Platform)(nil)
+	_ permission.Capable   = (*Platform)(nil)
+	_ chathistory.Provider = (*Platform)(nil)
 )
