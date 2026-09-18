@@ -48,8 +48,8 @@ type delivery struct {
 	slashResponseURL string
 }
 
-func (d delivery) inboundRoute(user string) session.SessionRouteInput {
-	return session.SessionRouteInput{
+func (d delivery) inboundRoute(user string) agentkit.SessionRouteInput {
+	return agentkit.SessionRouteInput{
 		Platform:    "slack",
 		DeliveryID:  d.sessionID,
 		ChannelID:   d.channel,
@@ -211,7 +211,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
-	delivery := session.OutboundRouteID(event)
+	delivery := rctx.OutboundRouteID(event)
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
@@ -433,7 +433,7 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
 	metadata := p.inboundMetadata(user, text)
 	outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-		Route:        session.BuildSessionRoute(d.inboundRoute(user)),
+		Route:        rctx.BuildSessionRoute(d.inboundRoute(user)),
 		SessionScope: p.sessionScope,
 		UserID:       user,
 		Metadata:     metadata,
@@ -520,7 +520,7 @@ func (p *Platform) deliveryForSend(sessionID agentkit.SessionID) (delivery, bool
 }
 
 func (p *Platform) buildSessionKey(channel, user, threadTS string) string {
-	return string(session.BuildDeliverySessionID("slack", channel, threadTS, user))
+	return string(rctx.BuildDeliverySessionID("slack", channel, threadTS, user))
 }
 
 func threadRootTS(threadTS, msgTS string) string {
@@ -560,7 +560,7 @@ func stripBotMention(text string) string {
 }
 
 func parseSessionKey(key string) (delivery, error) {
-	parts := session.ParseDelivery(agentkit.SessionID(key), "")
+	parts := rctx.ParseDelivery(agentkit.SessionID(key), "")
 	if !parts.Routable || parts.Platform != "slack" {
 		return delivery{}, fmt.Errorf("slack: invalid session key %q", key)
 	}

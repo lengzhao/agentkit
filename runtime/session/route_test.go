@@ -6,14 +6,14 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func TestRouteSessionIDUsesDeliveryIDField(t *testing.T) {
 	t.Parallel()
 
-	route := session.SessionRoute("slack", "slack:C001:t:1:u:U1")
-	id, ok := session.RouteSessionID(route)
+	route := rctx.SessionRoute("slack", "slack:C001:t:1:u:U1")
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != "slack:C001:t:1:u:U1" {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
@@ -22,17 +22,17 @@ func TestRouteSessionIDUsesDeliveryIDField(t *testing.T) {
 func TestRouteSessionIDBuildsFromParts(t *testing.T) {
 	t.Parallel()
 
-	route := session.BuildSessionRoute(session.SessionRouteInput{
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:    "slack",
 		ChannelID:   "C001",
 		ThreadID:    "1.0",
 		ScopeUserID: "U1",
 	})
-	id, ok := session.RouteSessionID(route)
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != "slack:C001:t:1.0:u:U1" {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
-	target, ok := session.DecodeSessionRoute(route)
+	target, ok := rctx.DecodeSessionRoute(route)
 	if !ok || string(target.DeliveryID) != "slack:C001:t:1.0:u:U1" {
 		t.Fatalf("deliveryId = %q ok = %v", target.DeliveryID, ok)
 	}
@@ -41,8 +41,8 @@ func TestRouteSessionIDBuildsFromParts(t *testing.T) {
 func TestRouteSessionIDDecodesStringData(t *testing.T) {
 	t.Parallel()
 
-	route := session.SessionRoute("slack", "slack:C001:t:1:u:U1")
-	id, ok := session.RouteSessionID(route)
+	route := rctx.SessionRoute("slack", "slack:C001:t:1:u:U1")
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != "slack:C001:t:1:u:U1" {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
@@ -60,7 +60,7 @@ func TestRouteSessionIDAcceptsLegacyStringData(t *testing.T) {
 	if err := json.Unmarshal(raw, &route); err != nil {
 		t.Fatal(err)
 	}
-	id, ok := session.RouteSessionID(route)
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != "slack:C001" {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
@@ -78,7 +78,7 @@ func TestRouteSessionIDAcceptsLegacyObjectData(t *testing.T) {
 	if err := json.Unmarshal(raw, &route); err != nil {
 		t.Fatal(err)
 	}
-	id, ok := session.RouteSessionID(route)
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != "slack:C001" {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
@@ -96,7 +96,7 @@ func TestRouteSessionIDAcceptsLegacySessionField(t *testing.T) {
 	if err := json.Unmarshal(raw, &route); err != nil {
 		t.Fatal(err)
 	}
-	id, ok := session.RouteSessionID(route)
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != "slack:C001:t:1:u:U1" {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
@@ -105,13 +105,13 @@ func TestRouteSessionIDAcceptsLegacySessionField(t *testing.T) {
 func TestSessionRouteFromDeliveryPopulatesParts(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "C001", "1.0", "U1")
-	route := session.SessionRouteFromDelivery("slack", delivery, "msg-1")
-	id, ok := session.RouteSessionID(route)
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "1.0", "U1")
+	route := rctx.SessionRouteFromDelivery("slack", delivery, "msg-1")
+	id, ok := rctx.RouteSessionID(route)
 	if !ok || id != delivery {
 		t.Fatalf("id = %q ok = %v", id, ok)
 	}
-	target, ok := session.RouteTargetFromRoute(route)
+	target, ok := rctx.RouteTargetFromRoute(route)
 	if !ok {
 		t.Fatal("RouteTargetFromRoute failed")
 	}
@@ -123,8 +123,8 @@ func TestSessionRouteFromDeliveryPopulatesParts(t *testing.T) {
 func TestRouteTargetFromRouteFillsPartsFromDeliveryID(t *testing.T) {
 	t.Parallel()
 
-	route := session.SessionRoute("slack", "slack:C001:t:1.0:u:U1")
-	target, ok := session.RouteTargetFromRoute(route)
+	route := rctx.SessionRoute("slack", "slack:C001:t:1.0:u:U1")
+	target, ok := rctx.RouteTargetFromRoute(route)
 	if !ok {
 		t.Fatal("RouteTargetFromRoute failed")
 	}
@@ -136,7 +136,7 @@ func TestRouteTargetFromRouteFillsPartsFromDeliveryID(t *testing.T) {
 func TestSessionRouteJSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	route := session.BuildSessionRoute(session.SessionRouteInput{
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:    "slack",
 		ChannelID:   "C001",
 		ThreadID:    "1.0",
@@ -157,7 +157,7 @@ func TestSessionRouteJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	target, ok := session.RouteTargetFromRoute(decoded)
+	target, ok := rctx.RouteTargetFromRoute(decoded)
 	if !ok {
 		t.Fatal("RouteTargetFromRoute failed")
 	}
@@ -182,7 +182,7 @@ func TestRouteRefUnmarshalLegacyFlatFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &route); err != nil {
 		t.Fatal(err)
 	}
-	target, ok := session.RouteTargetFromRoute(route)
+	target, ok := rctx.RouteTargetFromRoute(route)
 	if !ok {
 		t.Fatal("RouteTargetFromRoute failed")
 	}
@@ -197,10 +197,10 @@ func TestRouteRefHasTarget(t *testing.T) {
 	if (agentkit.RouteRef{}).HasTarget() {
 		t.Fatal("empty route should not have target")
 	}
-	if !session.SessionRoute("slack", "slack:C001").HasTarget() {
+	if !rctx.SessionRoute("slack", "slack:C001").HasTarget() {
 		t.Fatal("session route should have target")
 	}
-	if !session.BuildSessionRoute(session.SessionRouteInput{
+	if !rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:  "slack",
 		ChannelID: "C001",
 	}).HasTarget() {
@@ -214,7 +214,7 @@ func TestRouteRefIsZero(t *testing.T) {
 	if !(agentkit.RouteRef{}).IsZero() {
 		t.Fatal("empty route should be zero")
 	}
-	if session.SessionRoute("slack", "slack:C001").IsZero() {
+	if rctx.SessionRoute("slack", "slack:C001").IsZero() {
 		t.Fatal("session route should not be zero")
 	}
 }
@@ -222,11 +222,11 @@ func TestRouteRefIsZero(t *testing.T) {
 func TestDecodeSessionRoutePayload(t *testing.T) {
 	t.Parallel()
 
-	route := session.BuildSessionRoute(session.SessionRouteInput{
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:  "slack",
 		ChannelID: "C001",
 	})
-	payload, ok := session.DecodeSessionRoute(route)
+	payload, ok := rctx.DecodeSessionRoute(route)
 	if !ok {
 		t.Fatal("DecodeSessionRoute failed")
 	}

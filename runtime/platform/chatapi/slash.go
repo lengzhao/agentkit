@@ -7,7 +7,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type chatSlashResult struct {
@@ -16,7 +15,7 @@ type chatSlashResult struct {
 
 func (p *Platform) slashContext(delivery agentkit.SessionID, conv *conversation, user string, metadata map[string]any) common.SlashContext {
 	ctx := common.SlashContext{
-		Route: session.BuildSessionRoute(session.SessionRouteInput{
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 			Platform:    "chat-api",
 			DeliveryID:  delivery,
 			ScopeUserID: user,

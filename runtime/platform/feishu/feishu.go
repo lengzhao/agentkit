@@ -32,6 +32,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -2300,7 +2301,7 @@ func (p *Platform) makeSessionKey(msg *larkim.EventMessage, chatID, userID strin
 		}
 		thread = rootID
 	}
-	return string(session.BuildDeliverySessionID(p.tag(), chatID, thread, userID))
+	return string(rctx.BuildDeliverySessionID(p.tag(), chatID, thread, userID))
 }
 
 func (p *Platform) sessionKeyFromCardAction(chatID, userID string, value map[string]any) string {
@@ -2309,7 +2310,7 @@ func (p *Platform) sessionKeyFromCardAction(chatID, userID string, value map[str
 			return sessionKey
 		}
 	}
-	return string(session.BuildDeliverySessionID(p.tag(), chatID, "", userID))
+	return string(rctx.BuildDeliverySessionID(p.tag(), chatID, "", userID))
 }
 
 func (p *Platform) shouldReplyInThread(rc replyContext) bool {
@@ -2540,7 +2541,7 @@ func stringValue(v *string) string {
 }
 
 func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
-	parts := session.ParseDelivery(agentkit.SessionID(sessionKey), "")
+	parts := rctx.ParseDelivery(agentkit.SessionID(sessionKey), "")
 	if !parts.Routable || parts.Platform != p.platformTag {
 		return nil, fmt.Errorf("%s: invalid session key %q", p.tag(), sessionKey)
 	}
@@ -2552,7 +2553,7 @@ func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
 }
 
 func isThreadSessionKey(sessionKey string) bool {
-	parts := session.ParseDelivery(agentkit.SessionID(sessionKey), "")
+	parts := rctx.ParseDelivery(agentkit.SessionID(sessionKey), "")
 	return parts.Thread != ""
 }
 
@@ -3382,7 +3383,7 @@ func (p *Platform) onBotMenu(event *larkapplication.P2BotMenuV6) error {
 		content = "/" + content
 	}
 
-	sessionKey := string(session.BuildDeliverySessionID(p.platformTag, userID, "", userID))
+	sessionKey := string(rctx.BuildDeliverySessionID(p.platformTag, userID, "", userID))
 
 	p.dispatchInbound(context.Background(), inboundMessage{
 		sessionID: agentkit.SessionID(sessionKey),

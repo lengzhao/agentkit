@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type CommandsConfig struct{}
@@ -46,11 +47,11 @@ func (c newCommand) CommandExec(ctx context.Context, args string) (string, error
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /new")
 	}
-	entryKey := ActiveEntryKeyFromContext(ctx)
+	entryKey := rctx.ActiveEntryKeyFromContext(ctx)
 	if entryKey == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	id := agentkit.SessionID(NewConversationID(string(entryKey)))
+	id := agentkit.SessionID(rctx.NewConversationID(string(entryKey)))
 	activeStore, ok := c.store.(agentkit.ActiveSessionStore)
 	if !ok {
 		return "", fmt.Errorf("session store does not support active sessions")
@@ -75,10 +76,10 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /session")
 	}
-	env := EnvelopeFromContext(ctx)
-	entryKey := ActiveEntryKeyFromContext(ctx)
+	env := rctx.EnvelopeFromContext(ctx)
+	entryKey := rctx.ActiveEntryKeyFromContext(ctx)
 	if entryKey == "" {
-		entryKey = SessionIDFromContext(ctx)
+		entryKey = rctx.SessionIDFromContext(ctx)
 	}
 	sessionID, err := ResolveActiveSessionID(ctx, c.store, entryKey)
 	if err != nil {
@@ -101,12 +102,12 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	}
 
 	var b strings.Builder
-	if convID := MetadataString(env, MetadataConversationID); convID != "" {
+	if convID := rctx.MetadataString(env, rctx.MetadataConversationID); convID != "" {
 		fmt.Fprintf(&b, "conversation id: %s\n", convID)
 	}
 	fmt.Fprintf(&b, "session id: %s\n", sessionID)
 	fmt.Fprintf(&b, "path: %s\n", sessionPath(sess))
-	if turns := MetadataString(env, MetadataTurnCount); turns != "" {
+	if turns := rctx.MetadataString(env, rctx.MetadataTurnCount); turns != "" {
 		fmt.Fprintf(&b, "turns: %s\n", turns)
 	}
 	fmt.Fprintf(&b, "events: %d\n", len(events))

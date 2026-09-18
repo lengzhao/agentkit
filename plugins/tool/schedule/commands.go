@@ -9,8 +9,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type scheduleBundle struct {
@@ -75,7 +75,7 @@ func formatCronList(ctx context.Context, registry capschedule.Registry, includeF
 	if err != nil {
 		return "", err
 	}
-	channel := session.WorkspaceFromContext(ctx)
+	channel := rctx.WorkspaceFromContext(ctx)
 	var b strings.Builder
 	if channel != "" {
 		fmt.Fprintf(&b, "channel: %s\n", channel)

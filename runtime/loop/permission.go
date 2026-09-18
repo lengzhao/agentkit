@@ -14,7 +14,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type pendingPermission struct {
@@ -242,7 +241,7 @@ func (c *Control) SupersedePending(_ agentkit.SessionID, reason string) bool {
 }
 
 func (l *Default) TryDeliverPermission(event agentkit.MessageEvent) bool {
-	conversation := session.ConversationFromEvent(event)
+	conversation := rctx.ConversationFromEvent(event)
 	if conversation == "" || len(event.Reply) == 0 {
 		return false
 	}
@@ -254,7 +253,7 @@ func (l *Default) TryDeliverPermission(event agentkit.MessageEvent) bool {
 }
 
 func (l *Default) SupersedePendingForInbound(event agentkit.MessageEvent) {
-	conversation := session.ConversationFromEvent(event)
+	conversation := rctx.ConversationFromEvent(event)
 	if conversation == "" || event.Message.Role == "" || len(event.Reply) > 0 {
 		return
 	}
@@ -266,7 +265,7 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 	platformID := rctx.PlatformFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	return emit(ctx, agentkit.OutboundEvent{
-		Route:      session.RouteRefFromContext(ctx),
+		Route:      rctx.RouteRefFromContext(ctx),
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
@@ -285,7 +284,7 @@ func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.Outb
 	resolved := result
 	resolved.ID = id
 	return emit(ctx, agentkit.OutboundEvent{
-		Route:      session.RouteRefFromContext(ctx),
+		Route:      rctx.RouteRefFromContext(ctx),
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,

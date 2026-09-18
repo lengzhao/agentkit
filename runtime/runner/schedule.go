@@ -12,7 +12,6 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -42,13 +41,13 @@ func (r *Root) inboundSubmit(sched *scheduler) capschedule.SubmitFunc {
 	}
 }
 
-func (r *Root) routePolicy(event agentkit.MessageEvent) session.RoutePolicy {
-	return session.RoutePolicyForPlatform(event.PlatformID, session.DefaultRoutePolicy(r.sessionScope))
+func (r *Root) routePolicy(event agentkit.MessageEvent) rctx.RoutePolicy {
+	return rctx.RoutePolicyForPlatform(event.PlatformID, rctx.DefaultRoutePolicy(r.sessionScope))
 }
 
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
 	policy := r.routePolicy(event)
-	env := session.ResolveEnvelope(event, policy)
+	env := rctx.ResolveEnvelope(event, policy)
 	env = rctx.WithMetadataScope(env, r.sessionScope)
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	conversation, err := r.resolveConversation(ctx, event, env, policy)
@@ -58,7 +57,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	}
 	env = env.WithConversation(conversation)
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
-	scoped := session.SyncMessageEvent(event, env)
+	scoped := rctx.SyncMessageEvent(event, env)
 	agentID, err := r.resolveAgentID(ctx, scoped, agentkit.SessionID(conversation))
 	if err != nil {
 		r.reportInboundError(ctx, env, event, err)
@@ -162,7 +161,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 }
 
 func routeLogID(route agentkit.RouteRef) string {
-	if id, ok := session.RouteSessionID(route); ok {
+	if id, ok := rctx.RouteSessionID(route); ok {
 		return string(id)
 	}
 	return string(route.Kind)
@@ -174,7 +173,7 @@ func (r *Root) reportInboundError(ctx context.Context, env agentkit.TurnEnvelope
 		"route", routeLogID(env.Route),
 		"err", err,
 	)
-	out := session.OutboundFromEnvelope(env, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
+	out := rctx.OutboundFromEnvelope(env, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
 	out.AgentID = event.AgentID
 	_ = r.platform.Send(ctx, out)
 }

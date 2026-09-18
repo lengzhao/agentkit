@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -169,11 +169,11 @@ func (s *TenantService) rootFor(ctx context.Context, scope string) (string, erro
 
 // TenantRoot reports the local root the current context resolves against.
 func (s *TenantService) TenantRoot(ctx context.Context) string {
-	key := session.WorkspaceFromContext(ctx)
+	key := rctx.WorkspaceFromContext(ctx)
 	if root, ok := s.roots[key]; ok {
 		return root
 	}
-	dir := session.WorkspaceLocalDirName(key, s.omitPlatformPrefix)
+	dir := rctx.WorkspaceLocalDirName(key, s.omitPlatformPrefix)
 	if dir == "" {
 		dir = DefaultTenantDir
 	}

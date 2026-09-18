@@ -4,15 +4,16 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestSlackSessionID(t *testing.T) {
 	t.Parallel()
-	if got := session.SlackSessionID("C001", ""); got != agentkit.SessionID("slack:C001") {
+	if got := rctx.SlackSessionID("C001", ""); got != agentkit.SessionID("slack:C001") {
 		t.Fatalf("channel = %q", got)
 	}
-	if got := session.SlackSessionID("C001", "123.456"); got != agentkit.SessionID("slack:C001:t:123.456") {
+	if got := rctx.SlackSessionID("C001", "123.456"); got != agentkit.SessionID("slack:C001:t:123.456") {
 		t.Fatalf("thread = %q", got)
 	}
 }
@@ -32,7 +33,7 @@ func TestSlackSessionIDForScope(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := session.SlackSessionIDForScope(tc.scope, "C001", "123.456", "U777")
+			got := rctx.SlackSessionIDForScope(tc.scope, "C001", "123.456", "U777")
 			if got != tc.want {
 				t.Fatalf("got %q want %q", got, tc.want)
 			}
@@ -47,8 +48,8 @@ func TestEverySlackScopeSharesOneTenant(t *testing.T) {
 
 	scopes := []session.SessionScope{session.ScopeChannel, session.ScopeThread, session.ScopeUser}
 	for _, scope := range scopes {
-		id := session.SlackSessionIDForScope(scope, "C001", "123.456", "U777")
-		if key := session.WorkspaceKey(string(id)); key != "slack:C001" {
+		id := rctx.SlackSessionIDForScope(scope, "C001", "123.456", "U777")
+		if key := rctx.WorkspaceKey(string(id)); key != "slack:C001" {
 			t.Fatalf("scope %q: session %q -> tenant %q, want slack:C001", scope, id, key)
 		}
 	}
@@ -56,7 +57,7 @@ func TestEverySlackScopeSharesOneTenant(t *testing.T) {
 
 func TestScopeUserWithoutUserFallsBackToChannel(t *testing.T) {
 	t.Parallel()
-	got := session.SlackSessionIDForScope(session.ScopeUser, "C001", "", "")
+	got := rctx.SlackSessionIDForScope(session.ScopeUser, "C001", "", "")
 	if got != agentkit.SessionID("slack:C001") {
 		t.Fatalf("got %q", got)
 	}

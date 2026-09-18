@@ -8,7 +8,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestInboundFromContentSavesFiles(t *testing.T) {
@@ -23,9 +22,9 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	}}
 	event := InboundFromContent(
 		"assistant",
-		session.SessionRouteInput{
-			Platform:   "slack",
-			DeliveryID: agentkit.SessionID("slack:D0AK8MAHW22:u:U02LNUW8KV5"),
+		agentkit.SessionRouteInput{
+			Platform:    "slack",
+			DeliveryID:  agentkit.SessionID("slack:D0AK8MAHW22:u:U02LNUW8KV5"),
 			ScopeUserID: "U02LNUW8KV5",
 		},
 		"U02LNUW8KV5",
@@ -66,7 +65,7 @@ func TestInboundFromContentSavesImageWithoutExtension(t *testing.T) {
 	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}
 	event := InboundFromContent(
 		"assistant",
-		session.SessionRouteInput{
+		agentkit.SessionRouteInput{
 			Platform:    "lark",
 			DeliveryID:  agentkit.SessionID("lark:C001"),
 			ScopeUserID: "U1",
@@ -100,9 +99,9 @@ func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 	}}
 	event := InboundFromContent(
 		"assistant",
-		session.SessionRouteInput{
-			Platform:   "slack",
-			DeliveryID: agentkit.SessionID("slack:C001"),
+		agentkit.SessionRouteInput{
+			Platform:    "slack",
+			DeliveryID:  agentkit.SessionID("slack:C001"),
 			ScopeUserID: "U1",
 		},
 		"U1",

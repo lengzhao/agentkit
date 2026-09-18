@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -55,7 +56,7 @@ func TestHandleRichSubagentAsyncStartRegistersCard(t *testing.T) {
 		Session: "sub:job:2",
 	}
 	raw, _ := json.Marshal(data)
-	route := session.SessionRouteFromDelivery("feishu", agentkit.SessionID("feishu:oc_test"), "om_parent")
+	route := rctx.SessionRouteFromDelivery("feishu", agentkit.SessionID("feishu:oc_test"), "om_parent")
 	if outboundStreamKey(agentkit.OutboundEvent{Route: route}) != streamKey {
 		t.Fatalf("stream key mismatch")
 	}

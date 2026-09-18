@@ -13,7 +13,6 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -196,7 +195,7 @@ func TestScheduleCapturesDeliveryFromContext(t *testing.T) {
 	t.Parallel()
 
 	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
-	ctx := session.ContextWithDeliveryRoute(context.Background(), "chat-api", agentkit.SessionID("chat-api:ch:t:conv"))
+	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "chat-api", agentkit.SessionID("chat-api:ch:t:conv"))
 	ctx = func() context.Context {
 		env := rctx.EnvelopeFromContext(ctx)
 		env.Actor.UserID = "u1"

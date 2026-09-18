@@ -93,7 +93,7 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	}
 
 	delivery := agentkit.SessionID(engineSessionKey(channel, convID))
-	effective := session.ApplyScope(delivery, session.ScopeChannel, "demo")
+	effective := rctx.ApplyScope(delivery, session.ScopeChannel, "demo")
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(effective)})
 	sess, err := store.Get(ctx, effective)
 	if err != nil {

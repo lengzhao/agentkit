@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/settings"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -66,8 +67,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 		"agent": map[string]any{
 			"use": "agent/coding",
 			"config": map[string]any{
-				"id":       "test",
-				
+				"id": "test",
 			},
 			"deps": map[string]any{
 				"sessionStore": sessionStoreCfg,
@@ -89,7 +89,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 						},
 					},
 				},
-				"prompt": map[string]any{"use": "prompt/assembler/default"},
+				"prompt":    map[string]any{"use": "prompt/assembler/default"},
 				"workspace": workspaceCfg,
 				"tools": map[string]any{
 					"use": "tools/runtime",
@@ -122,7 +122,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

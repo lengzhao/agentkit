@@ -12,7 +12,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type stubScopedCredentials struct {
@@ -92,8 +91,8 @@ func TestPoolKeyGlobalVsTenant(t *testing.T) {
 
 	pool := &clientPool{}
 
-	ctxA := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
-	ctxB := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
+	ctxA := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctxB := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
 
 	globalA := pool.poolKey(ctxA, globalServer)
 	globalB := pool.poolKey(ctxB, globalServer)

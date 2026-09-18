@@ -120,8 +120,8 @@ func TestStopCommandCancelsBusySession(t *testing.T) {
 
 func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
 	t.Parallel()
-	delivery := session.BuildDeliverySessionID("lark", "oc_test", "", "ou_user")
-	entry := session.ApplyScope(delivery, session.ScopeChannel, "ou_user")
+	delivery := rctx.BuildDeliverySessionID("lark", "oc_test", "", "ou_user")
+	entry := rctx.ApplyScope(delivery, session.ScopeChannel, "ou_user")
 	child := agentkit.SessionID(string(entry) + ":new:20260913")
 	loop := &stubStopLoop{busy: map[agentkit.SessionID]bool{child: true}}
 	store := stopActiveStore{active: map[agentkit.SessionID]agentkit.SessionID{entry: child}}
@@ -143,11 +143,11 @@ func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
 	if stopCmd == nil {
 		t.Fatal("missing /stop command")
 	}
-	env := session.ResolveEnvelope(agentkit.MessageEvent{
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{
 		PlatformID: "lark",
 		UserID:     "ou_user",
-	}, session.RoutePolicyForPlatform("lark", session.DefaultRoutePolicy(session.ScopeChannel)))
-	env.Route = session.SessionRoute("lark", string(delivery))
+	}, rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(session.ScopeChannel)))
+	env.Route = rctx.SessionRoute("lark", string(delivery))
 	env = rctx.WithMetadataScope(env, session.ScopeChannel)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 

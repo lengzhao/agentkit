@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // recordingLoop tracks dispatch order and peak concurrency.
@@ -24,7 +24,7 @@ type recordingLoop struct {
 }
 
 func (l *recordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) error {
-	label := fmt.Sprintf("%s/%s", session.ConversationFromLoopRequest(req), textOf(req.Event.Message))
+	label := fmt.Sprintf("%s/%s", rctx.ConversationFromLoopRequest(req), textOf(req.Event.Message))
 
 	l.mu.Lock()
 	l.active++

@@ -7,7 +7,6 @@ import (
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // WalkLocalTenants invokes fn once per tenant local root. Pinned tenant entries run first;
@@ -38,7 +37,7 @@ func (s *TenantService) WalkLocalTenants(ctx context.Context, fn func(context.Co
 		if seenRoots[root] {
 			continue
 		}
-		key := session.WorkspaceKeyFromLocalDir(ent.Name(), s.omitPlatformPrefix)
+		key := rctx.WorkspaceKeyFromLocalDir(ent.Name(), s.omitPlatformPrefix)
 		tctx := rctx.WithWorkspace(ctx, key)
 		if err := fn(tctx); err != nil {
 			return err

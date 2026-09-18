@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type eofPlatform struct{}
@@ -65,7 +65,7 @@ func subagentCompleteEvent(sessionID agentkit.SessionID) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
 		PlatformID: "cli",
 		Envelope: agentkit.TurnEnvelope{
-			Route: session.SessionRoute("cli", string(sessionID)),
+			Route: rctx.SessionRoute("cli", string(sessionID)),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -151,7 +151,7 @@ func TestBusyUserMessageStillSteers(t *testing.T) {
 	r.handleInbound(context.Background(), sched, agentkit.MessageEvent{
 		PlatformID: "cli",
 		Envelope: agentkit.TurnEnvelope{
-			Route: session.SessionRoute("cli", string(sessionID)),
+			Route: rctx.SessionRoute("cli", string(sessionID)),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",

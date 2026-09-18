@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
@@ -31,7 +32,7 @@ func PrepareToolResultForStorage(ctx context.Context, sessionID agentkit.Session
 		return result, nil
 	}
 
-	ws := WorkspaceServiceFromContext(ctx)
+	ws := rctx.WorkspaceServiceFromContext(ctx)
 	if ws == nil {
 		return TruncateToolResult(result, maxViewBytes), nil
 	}
@@ -78,8 +79,8 @@ func toolResultViewWithSpillHint(ctx context.Context, ws cw.Service, full string
 }
 
 func toolSpillRelPath(ws cw.Service, sessionID agentkit.SessionID, callID agentkit.ToolCallID) string {
-	sess := sanitizeWorkspaceDirSegment(string(sessionID))
-	call := sanitizeWorkspaceDirSegment(string(callID))
+	sess := rctx.SanitizeDirSegment(string(sessionID))
+	call := rctx.SanitizeDirSegment(string(callID))
 	if call == "" || call == "_" {
 		call = "call"
 	}

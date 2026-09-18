@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const defaultGlobalSchedulePath = "global:schedules/schedule.json"
@@ -49,13 +49,13 @@ func (r *multiRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := session.WorkspaceFromContext(ctx)
+	key := rctx.WorkspaceFromContext(ctx)
 	if key == "" {
 		return jobs, nil
 	}
 	filtered := make([]schedule.Job, 0, len(jobs))
 	for _, job := range jobs {
-		if session.ChannelKeyMatches(job.ChannelKey, key) {
+		if rctx.ChannelKeyMatches(job.ChannelKey, key) {
 			filtered = append(filtered, job)
 		}
 	}
@@ -65,7 +65,7 @@ func (r *multiRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 func (r *multiRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job, error) {
 	key := strings.TrimSpace(job.ChannelKey)
 	if key == "" {
-		key = session.WorkspaceFromContext(ctx)
+		key = rctx.WorkspaceFromContext(ctx)
 	}
 	if key == "" {
 		return schedule.Job{}, fmt.Errorf("schedule add requires channel context")
@@ -75,7 +75,7 @@ func (r *multiRegistry) Add(ctx context.Context, job schedule.Job) (schedule.Job
 }
 
 func (r *multiRegistry) Remove(ctx context.Context, id string) (bool, error) {
-	key := session.WorkspaceFromContext(ctx)
+	key := rctx.WorkspaceFromContext(ctx)
 	if key != "" {
 		jobs, err := r.inner.List(ctx)
 		if err != nil {
@@ -86,7 +86,7 @@ func (r *multiRegistry) Remove(ctx context.Context, id string) (bool, error) {
 			if job.ID != id {
 				continue
 			}
-			if !session.ChannelKeyMatches(job.ChannelKey, key) {
+			if !rctx.ChannelKeyMatches(job.ChannelKey, key) {
 				return false, nil
 			}
 			found = true

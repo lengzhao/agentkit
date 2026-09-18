@@ -5,6 +5,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -13,7 +14,7 @@ func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, 
 	return effective, err
 }
 
-func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEvent, env agentkit.TurnEnvelope, policy session.RoutePolicy) (string, error) {
+func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEvent, env agentkit.TurnEnvelope, policy rctx.RoutePolicy) (string, error) {
 	if capschedule.IsFireStateless(event.Metadata) {
 		return env.Conversation, nil
 	}
@@ -22,7 +23,7 @@ func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEv
 	if !ok {
 		return defaultConversation, nil
 	}
-	entryKey := session.ActiveEntryKey(env.Route, policy, env.Actor.UserID)
+	entryKey := rctx.ActiveEntryKey(env.Route, policy, env.Actor.UserID)
 	if entryKey == "" {
 		return defaultConversation, nil
 	}
@@ -35,4 +36,3 @@ func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEv
 	}
 	return defaultConversation, nil
 }
-

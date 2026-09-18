@@ -1,4 +1,4 @@
-package session
+package rctx
 
 import (
 	"strings"
@@ -17,4 +17,9 @@ func ConversationFromEvent(event agentkit.MessageEvent) agentkit.SessionID {
 // ConversationFromLoopRequest returns the conversation key for a queued turn.
 func ConversationFromLoopRequest(req agentkit.LoopRequest) agentkit.SessionID {
 	return ConversationFromEvent(req.Event)
+}
+
+// ChannelKeyMatches reports whether a job belongs to the given channel key.
+func ChannelKeyMatches(jobChannelKey, contextChannelKey string) bool {
+	return strings.TrimSpace(jobChannelKey) == strings.TrimSpace(contextChannelKey)
 }

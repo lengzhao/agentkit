@@ -14,7 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const (
@@ -177,7 +177,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	event := common.InboundFromContent(eventAgentID, session.SessionRouteInput{
+	event := common.InboundFromContent(eventAgentID, agentkit.SessionRouteInput{
 		Platform:    "chat-api",
 		DeliveryID:  agentkit.SessionID(engineSessionKey),
 		ReplyTo:     msgID,
@@ -317,7 +317,7 @@ func (p *Platform) runForSession(sessionID agentkit.SessionID) *runState {
 }
 
 func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEvent) error {
-	delivery := session.OutboundRouteID(event)
+	delivery := rctx.OutboundRouteID(event)
 	run := p.runForSession(delivery)
 	if run == nil {
 		if event.Type == agentkit.EventAssistantMessage {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
@@ -49,8 +50,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 		"agent": map[string]any{
 			"use": "agent/coding",
 			"config": map[string]any{
-				"id":       "test",
-				
+				"id": "test",
 			},
 			"deps": map[string]any{
 				"sessionStore": map[string]any{
@@ -62,7 +62,7 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 					"use":    "llm/scripted",
 					"config": map[string]any{"steps": steps},
 				},
-				"prompt": map[string]any{"use": "prompt/assembler/default"},
+				"prompt":    map[string]any{"use": "prompt/assembler/default"},
 				"workspace": workspaceNode,
 				"tools": map[string]any{
 					"use": "tools/runtime",
@@ -94,7 +94,7 @@ func runTurn(t *testing.T, ag agentkit.Agent, sessionID agentkit.SessionID, user
 	if userID != "" {
 		env.Actor.UserID = userID
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 	err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -119,8 +119,8 @@ func TestMultiTenantChannelsGetSeparateWorkdirs(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runTurn(t, ag, session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111"), "U111", "写个 notes")
-	runTurn(t, ag, session.SlackSessionIDForScope(session.ScopeChannel, "C002", "", "U999"), "U999", "写个 notes")
+	runTurn(t, ag, rctx.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111"), "U111", "写个 notes")
+	runTurn(t, ag, rctx.SlackSessionIDForScope(session.ScopeChannel, "C002", "", "U999"), "U999", "写个 notes")
 
 	rootA := filepath.Join(base, "slack_C001")
 	rootB := filepath.Join(base, "slack_C002")
@@ -191,7 +191,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	}
 	_ = result
 
-	sessionID := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
+	sessionID := rctx.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
 	runTurn(t, ag, sessionID, "U111", "建个 a.txt")
 	runTurn(t, ag, sessionID, "U222", "再建个 b.txt")
 
@@ -223,7 +223,7 @@ func TestMultiTenantSharedChannelSessionIdentifiesUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	sess, err := store.Get(ctx, sessionID)
 	if err != nil {
 		t.Fatal(err)

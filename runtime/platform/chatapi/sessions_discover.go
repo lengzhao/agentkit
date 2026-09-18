@@ -10,7 +10,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -249,8 +248,8 @@ type tenantStaticWorkspace struct {
 }
 
 func (s tenantStaticWorkspace) Resolve(ctx context.Context, rel string) (string, error) {
-	key := session.WorkspaceFromContext(ctx)
-	dir := session.WorkspaceLocalDirName(key, s.omitPlatformPrefix)
+	key := rctx.WorkspaceFromContext(ctx)
+	dir := rctx.WorkspaceLocalDirName(key, s.omitPlatformPrefix)
 	if dir == "" {
 		dir = "_default"
 	}

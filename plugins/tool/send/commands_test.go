@@ -7,7 +7,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type recordingPlatform struct {
@@ -26,7 +25,7 @@ func (p *recordingPlatform) Send(_ context.Context, event agentkit.OutboundEvent
 func withSendCtx(ctx context.Context, platform string, sessionID, deliveryID agentkit.SessionID) context.Context {
 	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if platform != "" {
-		ctx = session.ContextWithDeliveryRoute(ctx, platform, deliveryID)
+		ctx = rctx.ContextWithDeliveryRoute(ctx, platform, deliveryID)
 	}
 	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	return ctx
@@ -104,7 +103,7 @@ func TestSendSlashCommandTargetChat(t *testing.T) {
 	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
 	ctx = func() context.Context {
 		env := rctx.EnvelopeFromContext(ctx)
-		env.Route = session.SessionRoute("slack", "delivery")
+		env.Route = rctx.SessionRoute("slack", "delivery")
 		return rctx.ApplyEnvelopeToContext(ctx, env)
 	}()
 	out, err := bundle.Commands()[0].CommandExec(ctx, "C002 remote ping")

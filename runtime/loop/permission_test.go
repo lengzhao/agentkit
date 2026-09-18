@@ -10,7 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func interactiveCapability() permission.Capability {
@@ -30,7 +30,7 @@ func turnContext(parent context.Context, sessionID, deliverySessionID agentkit.S
 		routeID = sessionID
 	}
 	env := agentkit.TurnEnvelope{
-		Route:        session.SessionRoute(platformID, string(routeID)),
+		Route:        rctx.SessionRoute(platformID, string(routeID)),
 		Conversation: string(sessionID),
 		Actor:        agentkit.ActorRef{UserID: userID},
 	}

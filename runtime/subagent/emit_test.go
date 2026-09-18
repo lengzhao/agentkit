@@ -17,7 +17,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 	t.Parallel()
 
 	parentSession := agentkit.SessionID("chat-api:default_channel:t:conv_abc")
-	ctx := session.ContextWithDeliveryRoute(context.Background(), "chat-api", parentSession)
+	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "chat-api", parentSession)
 
 	var got []agentkit.OutboundEvent
 	parent := agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
@@ -34,7 +34,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route:   session.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route:   rctx.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		AgentID: "sub:researcher",
 		Type:    agentkit.EventMessageUpdate,
 		Data:    toolStart,
@@ -55,7 +55,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route:   session.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route:   rctx.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		AgentID: "sub:researcher",
 		Type:    agentkit.EventMessageUpdate,
 		Data:    toolEnd,
@@ -69,7 +69,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 		Content: "matched 3 lines",
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route:   session.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route:   rctx.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		AgentID: "sub:researcher",
 		Type:    agentkit.EventToolResult,
 		Data:    resultData,
@@ -84,7 +84,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route:   session.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route:   rctx.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		AgentID: "sub:researcher",
 		Type:    agentkit.EventMessageUpdate,
 		Data:    thinkingDelta,
@@ -99,7 +99,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 		},
 	})
 	if err := emit(ctx, agentkit.OutboundEvent{
-		Route: session.SessionRoute("chat-api", "sub:parent:researcher:1"),
+		Route: rctx.SessionRoute("chat-api", "sub:parent:researcher:1"),
 		Type:  agentkit.EventMessageUpdate,
 		Data:  textDelta,
 	}); err != nil {
@@ -119,8 +119,8 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 	if startPayload.AssistantMessageEvent.Type != agentkit.AssistantEventToolCallStart {
 		t.Fatalf("first update = %q, want toolcall_start", startPayload.AssistantMessageEvent.Type)
 	}
-	if session.OutboundRouteID(got[0]) != parentSession {
-		t.Fatalf("route = %q, want parent delivery %q", session.OutboundRouteID(got[0]), parentSession)
+	if rctx.OutboundRouteID(got[0]) != parentSession {
+		t.Fatalf("route = %q, want parent delivery %q", rctx.OutboundRouteID(got[0]), parentSession)
 	}
 	if got[2].Type != agentkit.EventToolResult {
 		t.Fatalf("third event type = %q, want tool/result", got[2].Type)
@@ -148,7 +148,7 @@ func TestForwardParentEmitCondensesThinking(t *testing.T) {
 	t.Parallel()
 
 	parentSession := agentkit.SessionID("feishu:default:chat")
-	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
+	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
 
 	var gotThinking int
 	parent := agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
@@ -175,7 +175,7 @@ func TestForwardParentEmitCondensesThinking(t *testing.T) {
 			},
 		})
 		_ = emit(ctx, agentkit.OutboundEvent{
-			Route: session.SessionRoute("feishu", string(parentSession)),
+			Route: rctx.SessionRoute("feishu", string(parentSession)),
 			Type:  agentkit.EventMessageUpdate,
 			Data:  data,
 		})
@@ -200,7 +200,7 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 	t.Parallel()
 
 	parentSession := agentkit.SessionID("feishu:default:chat")
-	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
+	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
 
 	var got []agentkit.OutboundEvent
 	var gotMu sync.Mutex
@@ -237,8 +237,8 @@ func TestEmitSubagentLifecycleUsesParentDeliverySession(t *testing.T) {
 		switch ev.Type {
 		case agentkit.EventSubagentStart:
 			sawStart = true
-			if session.OutboundRouteID(ev) != parentSession {
-				t.Fatalf("route = %q, want parent delivery %q", session.OutboundRouteID(ev), parentSession)
+			if rctx.OutboundRouteID(ev) != parentSession {
+				t.Fatalf("route = %q, want parent delivery %q", rctx.OutboundRouteID(ev), parentSession)
 			}
 		case agentkit.EventSubagentEnd:
 			sawEnd = true
@@ -256,7 +256,7 @@ func TestForwardParentEmitAsyncDoesNotBlock(t *testing.T) {
 
 	block := make(chan struct{})
 	parentSession := agentkit.SessionID("feishu:default:chat")
-	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
+	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "feishu", parentSession)
 	ctx = context.WithValue(ctx, agentkit.KeyAsyncSubagent, true)
 
 	parent := agentkit.OutboundEmit(func(context.Context, agentkit.OutboundEvent) error {

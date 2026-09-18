@@ -7,7 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func (p *Platform) sendPermissionCard(ctx context.Context, event agentkit.OutboundEvent) error {
@@ -15,7 +15,7 @@ func (p *Platform) sendPermissionCard(ctx context.Context, event agentkit.Outbou
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
-	raw, ok := p.deliveries.Load(session.OutboundRouteID(event))
+	raw, ok := p.deliveries.Load(rctx.OutboundRouteID(event))
 	if !ok {
 		return nil
 	}

@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/command"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/prompt"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -96,15 +97,15 @@ func TestE2ECLINewSwitchesSession(t *testing.T) {
 		t.Fatalf("runner: %v", err)
 	}
 
-	current, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), session.DefaultCLISessionID)
+	current, err := store.(agentkit.ActiveSessionStore).ActiveSession(context.Background(), rctx.DefaultCLISessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current == session.DefaultCLISessionID {
+	if current == rctx.DefaultCLISessionID {
 		t.Fatalf("active session = %q, want a new session after /new", current)
 	}
 
-	firstEvents, err := loadAllSessionEvents(store, session.DefaultCLISessionID)
+	firstEvents, err := loadAllSessionEvents(store, rctx.DefaultCLISessionID)
 	if err != nil {
 		t.Fatal(err)
 	}

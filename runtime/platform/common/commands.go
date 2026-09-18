@@ -70,7 +70,7 @@ func ParseSlashCommand(line string) (name, args string, ok bool) {
 // metadata and optional admin enrichment.
 func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash SlashContext) context.Context {
 	platformID := strings.TrimSpace(slash.Route.Platform)
-	policy := session.RoutePolicyForPlatform(platformID, session.DefaultRoutePolicy(slash.SessionScope))
+	policy := rctx.RoutePolicyForPlatform(platformID, rctx.DefaultRoutePolicy(slash.SessionScope))
 	event := agentkit.MessageEvent{
 		PlatformID: platformID,
 		UserID:     slash.UserID,
@@ -78,7 +78,7 @@ func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash 
 	if len(slash.Metadata) > 0 {
 		event.Metadata = slash.Metadata
 	}
-	env := session.ResolveEnvelope(WithDeliveryRoute(event, slash.Route), policy)
+	env := rctx.ResolveEnvelope(WithDeliveryRoute(event, slash.Route), policy)
 	env = rctx.WithMetadataScope(env, slash.SessionScope)
 	cmdCtx := rctx.ApplyEnvelopeToContext(ctx, env)
 	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {

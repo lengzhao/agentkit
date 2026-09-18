@@ -13,7 +13,6 @@ import (
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
@@ -72,13 +71,13 @@ func InboundOptsFor(ws cw.Service) *InboundOpts {
 // extraContent is prepended (e.g. quoted reply context). Attachments are saved
 // under work/upload/ and described in the user text (path, mime, size) so
 // Paths are relative to the agent work dir (e.g. upload/…); vision paths are also in image_url parts when present.
-func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
+func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
 	if route.ScopeUserID == "" {
 		route.ScopeUserID = strings.TrimSpace(userID)
 	}
 	deliveryID := route.DeliveryID
 	if deliveryID == "" && route.Platform != "" && strings.TrimSpace(route.ChannelID) != "" {
-		deliveryID = session.BuildDeliverySessionID(route.Platform, route.ChannelID, route.ThreadID, route.ScopeUserID)
+		deliveryID = rctx.BuildDeliverySessionID(route.Platform, route.ChannelID, route.ThreadID, route.ScopeUserID)
 		route.DeliveryID = deliveryID
 	}
 
@@ -128,7 +127,7 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 	var inboundCtx context.Context
 	if opts != nil && opts.Workspace != nil {
 		inboundCtx = rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-			Workspace: session.WorkspaceKey(string(deliveryID)),
+			Workspace: rctx.WorkspaceKey(string(deliveryID)),
 		})
 	}
 
@@ -257,7 +256,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 	}
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: string(deliveryID),
-		Workspace:    session.WorkspaceKey(string(deliveryID)),
+		Workspace:    rctx.WorkspaceKey(string(deliveryID)),
 	})
 	attachDir, err := workpath.ResolveFile(ctx, opts.Workspace, UploadWorkRel(opts.Workspace))
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type Config struct{}
@@ -139,7 +139,7 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 			return
 		}
 		event.PlatformID = id
-		if delivery := session.InboundDeliveryID(event); delivery != "" {
+		if delivery := rctx.InboundDeliveryID(event); delivery != "" {
 			if event.Envelope.Route.HasTarget() {
 				if event.Envelope.Route.Platform == "" {
 					route := event.Envelope.Route

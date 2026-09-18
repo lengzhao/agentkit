@@ -28,8 +28,8 @@ func TestSmokeInjectPrefixReplayedFromHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	effective := session.ApplyScope(
-		session.BuildDeliverySessionID("slack", "C001", "", "U111"),
+	effective := rctx.ApplyScope(
+		rctx.BuildDeliverySessionID("slack", "C001", "", "U111"),
 		session.ScopeChannel,
 		"U111",
 	)

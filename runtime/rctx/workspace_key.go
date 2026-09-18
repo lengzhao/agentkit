@@ -1,4 +1,4 @@
-package session
+package rctx
 
 import (
 	"strings"
@@ -62,10 +62,11 @@ func WorkspaceLocalDirName(key string, omitPlatform bool) string {
 			return ""
 		}
 	}
-	return sanitizeWorkspaceDirSegment(key)
+	return SanitizeDirSegment(key)
 }
 
-func sanitizeWorkspaceDirSegment(key string) string {
+// SanitizeDirSegment maps an arbitrary string to a single safe path segment.
+func SanitizeDirSegment(key string) string {
 	var b strings.Builder
 	b.Grow(len(key))
 	prevDot := false
@@ -91,4 +92,20 @@ func sanitizeWorkspaceDirSegment(key string) string {
 		return "_"
 	}
 	return name
+}
+
+// WorkspaceKeyFromLocalDir maps a tenant directory name under localBase back to a workspace key.
+// This mirrors WorkspaceLocalDirName for the common platform_channel layout.
+func WorkspaceKeyFromLocalDir(dirName string, omitPlatform bool) string {
+	dirName = strings.TrimSpace(dirName)
+	if dirName == "" || dirName == "_" {
+		return ""
+	}
+	if omitPlatform {
+		return dirName
+	}
+	if i := strings.Index(dirName, "_"); i > 0 {
+		return dirName[:i] + ":" + dirName[i+1:]
+	}
+	return dirName
 }

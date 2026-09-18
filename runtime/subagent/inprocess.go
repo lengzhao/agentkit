@@ -144,7 +144,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 
 	// The parent's current seq makes the id deterministic per call site and
 	// unique within the parent session; session/store sanitizes the separators.
-	childID := agentkit.SessionID(session.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
+	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
 
 	startData := session.SubagentStartData{
 		Agent:   def.Name,

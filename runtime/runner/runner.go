@@ -18,7 +18,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -246,15 +245,15 @@ func (r *Root) receiveLoop(ctx context.Context, sched *scheduler, done chan<- er
 // reportTurnError surfaces a failed turn on its own session's channel and keeps
 // the process serving. A turn failure is never fatal to the runner.
 func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, err error) {
-	deliveryID := session.DeliveryFromEnvelope(req.Event.Envelope)
-	conversation := session.ConversationFromLoopRequest(req)
+	deliveryID := rctx.DeliveryFromEnvelope(req.Event.Envelope)
+	conversation := rctx.ConversationFromLoopRequest(req)
 	slog.Error("loop dispatch failed",
 		"session_id", conversation,
 		"delivery_session_id", deliveryID,
 		"agent_id", req.Event.AgentID,
 		"err", err,
 	)
-	out := session.OutboundFromEnvelope(req.Event.Envelope, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
+	out := rctx.OutboundFromEnvelope(req.Event.Envelope, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
 	out.AgentID = req.Event.AgentID
 	if out.PlatformID == "" {
 		out.PlatformID = req.Event.PlatformID
@@ -279,8 +278,8 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 			return
 		}
 		slog.Error("turn panicked",
-			"session_id", session.ConversationFromLoopRequest(req),
-			"delivery_session_id", session.DeliveryFromEnvelope(req.Event.Envelope),
+			"session_id", rctx.ConversationFromLoopRequest(req),
+			"delivery_session_id", rctx.DeliveryFromEnvelope(req.Event.Envelope),
 			"agent_id", req.Event.AgentID,
 			"panic", fmt.Sprint(recovered),
 			"stack", string(debug.Stack()),

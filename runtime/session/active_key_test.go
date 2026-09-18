@@ -4,14 +4,15 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestActiveSessionEntryKey(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
-	conv := session.BuildDeliverySessionID("chat-api", "default_channel", "conv_1", "")
+	delivery := rctx.BuildDeliverySessionID("slack", "D0AK8MAHW22", "", "U02LNUW8KV5")
+	conv := rctx.BuildDeliverySessionID("chat-api", "default_channel", "conv_1", "")
 
 	cases := []struct {
 		name     string
@@ -47,7 +48,7 @@ func TestActiveSessionEntryKey(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := session.ActiveSessionEntryKey(tc.platform, tc.delivery, tc.scope, tc.userID)
+			got := rctx.ActiveSessionEntryKey(tc.platform, tc.delivery, tc.scope, tc.userID)
 			if got != tc.want {
 				t.Fatalf("got %q want %q", got, tc.want)
 			}

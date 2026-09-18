@@ -77,7 +77,7 @@ type permissionCapturingLoop struct {
 
 func (l *permissionCapturingLoop) Dispatch(ctx context.Context, req agentkit.LoopRequest) error {
 	l.mu.Lock()
-	l.conversation = session.ConversationFromLoopRequest(req)
+	l.conversation = rctx.ConversationFromLoopRequest(req)
 	l.mu.Unlock()
 
 	emit := req.Emit
@@ -121,7 +121,7 @@ func (l *permissionCapturingLoop) TryDeliverPermission(event agentkit.MessageEve
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if session.ConversationFromEvent(event) != l.conversation {
+	if rctx.ConversationFromEvent(event) != l.conversation {
 		return false
 	}
 	if reply.RequestID != "perm-test" {
@@ -136,8 +136,8 @@ func (l *permissionCapturingLoop) SupersedePendingForInbound(agentkit.MessageEve
 func TestRunnerDeliversPermissionReplyWithConversationOnEnvelope(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("lark", "oc_test", "", "U1")
-	entry := session.ActiveSessionEntryKey("lark", delivery, session.ScopeChannel, "U1")
+	delivery := rctx.BuildDeliverySessionID("lark", "oc_test", "", "U1")
+	entry := rctx.ActiveSessionEntryKey("lark", delivery, session.ScopeChannel, "U1")
 	logical := agentkit.SessionID(string(entry) + ":new:20260101")
 
 	turnBlocked := make(chan struct{})

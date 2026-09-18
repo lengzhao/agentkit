@@ -45,8 +45,8 @@ func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 	t.Parallel()
 
 	store := attributionTestStore(t, t.TempDir())
-	id := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
-	if other := session.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U222"); other != id {
+	id := rctx.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U111")
+	if other := rctx.SlackSessionIDForScope(session.ScopeChannel, "C001", "", "U222"); other != id {
 		t.Fatalf("channel scope split the session: %q vs %q", id, other)
 	}
 
@@ -91,7 +91,7 @@ func TestNoUserIDLeavesHistoryUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sess, err := store.Get(context.Background(), session.DefaultCLISessionID)
+	sess, err := store.Get(context.Background(), rctx.DefaultCLISessionID)
 	if err != nil {
 		t.Fatal(err)
 	}

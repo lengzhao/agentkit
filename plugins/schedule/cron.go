@@ -10,11 +10,11 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 const cronPlatformID = "schedule"
@@ -319,7 +319,7 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 		deliverySessionID = agentkit.SessionID(delivery)
 		platformID = strings.TrimSpace(job.PlatformID)
 		if platformID == "" {
-			platformID = session.ParseDelivery(deliverySessionID, job.UserID).Platform
+			platformID = rctx.ParseDelivery(deliverySessionID, job.UserID).Platform
 		}
 	}
 

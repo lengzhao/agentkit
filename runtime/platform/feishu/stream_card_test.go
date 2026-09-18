@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -221,7 +222,7 @@ func TestRichCardDisplayBodyJoinsCommittedAndInflight(t *testing.T) {
 func TestOutboundStreamKeyUsesReplyTo(t *testing.T) {
 	t.Parallel()
 	event := agentkit.OutboundEvent{
-		Route: session.BuildSessionRoute(session.SessionRouteInput{
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 			Platform:   "feishu",
 			DeliveryID: agentkit.SessionID("feishu:oc_chat:u:U1"),
 			ReplyTo:    "om_msg_1",

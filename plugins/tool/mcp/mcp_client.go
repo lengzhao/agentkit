@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -150,7 +150,7 @@ func (p *clientPool) poolKey(ctx context.Context, server serverConfig) string {
 	if server.Global {
 		return "global\x00" + server.Name
 	}
-	return session.WorkspaceFromContext(ctx) + "\x00" + server.Name
+	return rctx.WorkspaceFromContext(ctx) + "\x00" + server.Name
 }
 
 func (p *clientPool) ensure(ctx context.Context, server serverConfig, creds credentials.Store) (*mcpclient.Client, error) {

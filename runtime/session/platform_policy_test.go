@@ -12,9 +12,9 @@ import (
 func TestRoutePolicyForPlatformChatAPIUsesDeliveryEntry(t *testing.T) {
 	t.Parallel()
 
-	base := session.DefaultRoutePolicy(session.ScopeChannel)
-	policy := session.RoutePolicyForPlatform("chat-api", base)
-	if policy.ActiveEntryMode != session.ActiveEntryDelivery {
+	base := rctx.DefaultRoutePolicy(session.ScopeChannel)
+	policy := rctx.RoutePolicyForPlatform("chat-api", base)
+	if policy.ActiveEntryMode != rctx.ActiveEntryDelivery {
 		t.Fatalf("active entry = %q", policy.ActiveEntryMode)
 	}
 }
@@ -23,11 +23,11 @@ func TestRegisterPlatformPolicyOverridesDefaults(t *testing.T) {
 	t.Parallel()
 
 	const platform = "test-platform-delivery-entry"
-	session.RegisterPlatformPolicy(platform, session.PlatformSessionPolicy{
-		ActiveEntryMode: session.ActiveEntryDelivery,
+	rctx.RegisterPlatformPolicy(platform, rctx.PlatformSessionPolicy{
+		ActiveEntryMode: rctx.ActiveEntryDelivery,
 	})
-	policy := session.RoutePolicyForPlatform(platform, session.DefaultRoutePolicy(session.ScopeChannel))
-	if policy.ActiveEntryMode != session.ActiveEntryDelivery {
+	policy := rctx.RoutePolicyForPlatform(platform, rctx.DefaultRoutePolicy(session.ScopeChannel))
+	if policy.ActiveEntryMode != rctx.ActiveEntryDelivery {
 		t.Fatalf("active entry = %q", policy.ActiveEntryMode)
 	}
 }
@@ -35,13 +35,13 @@ func TestRegisterPlatformPolicyOverridesDefaults(t *testing.T) {
 func TestInboundDeliveryIDPrefersRoute(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "C001", "1", "U1")
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "1", "U1")
 	event := agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{
-			Route: session.SessionRoute("slack", string(delivery)),
+			Route: rctx.SessionRoute("slack", string(delivery)),
 		},
 	}
-	if got := session.InboundDeliveryID(event); got != delivery {
+	if got := rctx.InboundDeliveryID(event); got != delivery {
 		t.Fatalf("got %q want %q", got, delivery)
 	}
 }
@@ -51,9 +51,9 @@ func TestDeliveryFromEnvelopeUsesRoute(t *testing.T) {
 
 	delivery := agentkit.SessionID("slack:C001:t:1")
 	env := agentkit.TurnEnvelope{
-		Route: session.SessionRoute("slack", string(delivery)),
+		Route: rctx.SessionRoute("slack", string(delivery)),
 	}
-	if got := session.DeliveryFromEnvelope(env); got != delivery {
+	if got := rctx.DeliveryFromEnvelope(env); got != delivery {
 		t.Fatalf("got %q want %q", got, delivery)
 	}
 }
@@ -61,15 +61,15 @@ func TestDeliveryFromEnvelopeUsesRoute(t *testing.T) {
 func TestDeliveryRouteFromContextPrefersEnvelope(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "C001", "1", "U1")
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "1", "U1")
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-		Route: session.SessionRoute("slack", string(delivery)),
+		Route: rctx.SessionRoute("slack", string(delivery)),
 	})
-	if got := session.DeliveryRouteFromContext(ctx); got != delivery {
+	if got := rctx.DeliveryRouteFromContext(ctx); got != delivery {
 		t.Fatalf("got %q want %q", got, delivery)
 	}
-	route := session.RouteRefFromContext(ctx)
-	if id, ok := session.RouteSessionID(route); !ok || id != delivery {
+	route := rctx.RouteRefFromContext(ctx)
+	if id, ok := rctx.RouteSessionID(route); !ok || id != delivery {
 		t.Fatalf("route = %v", route)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -23,7 +24,7 @@ func TestEngineSessionKeyEncodesColon(t *testing.T) {
 }
 
 func chatAPIRoute(sessionID agentkit.SessionID) agentkit.RouteRef {
-	return session.SessionRoute("chat-api", string(sessionID))
+	return rctx.SessionRoute("chat-api", string(sessionID))
 }
 
 func TestChatOutboundSSE(t *testing.T) {

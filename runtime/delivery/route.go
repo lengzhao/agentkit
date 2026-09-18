@@ -8,19 +8,18 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // ResolveRoute resolves the delivery session and platform from context.
 func ResolveRoute(ctx context.Context, input delivery.RouteInput) (delivery.Route, error) {
-	inbox := session.DeliveryRouteFromContext(ctx)
+	inbox := rctx.DeliveryRouteFromContext(ctx)
 
 	var r delivery.Route
 	switch {
 	case strings.TrimSpace(input.SessionID) != "":
 		r.SessionID = NormalizeSessionID(ctx, input.SessionID)
 	case strings.TrimSpace(input.UserID) != "":
-		r.SessionID = session.DeliveryWithUser(inbox, input.UserID)
+		r.SessionID = rctx.DeliveryWithUser(inbox, input.UserID)
 	default:
 		r.SessionID = inbox
 	}
@@ -34,7 +33,7 @@ func ResolveRoute(ctx context.Context, input delivery.RouteInput) (delivery.Rout
 	} else {
 		r.UserID = rctx.UserIDFromContext(ctx)
 	}
-	if p := session.ParseDelivery(r.SessionID, r.UserID).Platform; p != "" {
+	if p := rctx.ParseDelivery(r.SessionID, r.UserID).Platform; p != "" {
 		if r.PlatformID == "" || strings.TrimSpace(input.SessionID) != "" {
 			r.PlatformID = p
 		}
@@ -60,10 +59,10 @@ func NormalizeSessionID(ctx context.Context, raw string) agentkit.SessionID {
 
 // OutboundRoute builds a session-kind route for proactive delivery.
 func OutboundRoute(platform string, deliveryID agentkit.SessionID) agentkit.RouteRef {
-	return session.SessionRouteFromDelivery(platform, deliveryID, "")
+	return rctx.SessionRouteFromDelivery(platform, deliveryID, "")
 }
 
 // OutboundRouteID returns the platform routing target for an outbound event.
 func OutboundRouteID(event agentkit.OutboundEvent) agentkit.SessionID {
-	return session.OutboundRouteID(event)
+	return rctx.OutboundRouteID(event)
 }

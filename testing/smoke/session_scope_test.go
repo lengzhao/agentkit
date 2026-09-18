@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -23,10 +24,10 @@ func TestSmokeSessionScopeChannelFoldsDeliveries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	delivery1 := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
-	delivery2 := session.BuildDeliverySessionID("slack", "C001", "222.0", "U222")
-	effective := session.ApplyScope(delivery1, session.ScopeChannel, "U111")
-	if other := session.ApplyScope(delivery2, session.ScopeChannel, "U222"); other != effective {
+	delivery1 := rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
+	delivery2 := rctx.BuildDeliverySessionID("slack", "C001", "222.0", "U222")
+	effective := rctx.ApplyScope(delivery1, session.ScopeChannel, "U111")
+	if other := rctx.ApplyScope(delivery2, session.ScopeChannel, "U222"); other != effective {
 		t.Fatalf("effective ids differ: %q vs %q", effective, other)
 	}
 
@@ -77,10 +78,10 @@ func TestSmokeSessionScopeThreadSplitsDeliveries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	delivery1 := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
-	delivery2 := session.BuildDeliverySessionID("slack", "C001", "222.0", "U222")
-	effective1 := session.ApplyScope(delivery1, session.ScopeThread, "U111")
-	effective2 := session.ApplyScope(delivery2, session.ScopeThread, "U222")
+	delivery1 := rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
+	delivery2 := rctx.BuildDeliverySessionID("slack", "C001", "222.0", "U222")
+	effective1 := rctx.ApplyScope(delivery1, session.ScopeThread, "U111")
+	effective2 := rctx.ApplyScope(delivery2, session.ScopeThread, "U222")
 	if effective1 == effective2 {
 		t.Fatalf("thread scope collapsed distinct threads: %q", effective1)
 	}

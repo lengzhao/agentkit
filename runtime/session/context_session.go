@@ -8,25 +8,11 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-// WithSession attaches the turn's open session for tool handlers (e.g. delegate).
-//
-// Deprecated: use rctx.WithSession.
-func WithSession(ctx context.Context, s agentkit.Session) context.Context {
-	return rctx.WithSession(ctx, s)
-}
-
-// SessionFromContext returns the open session when the agent set it for tools.
-//
-// Deprecated: use rctx.SessionFromContext.
-func SessionFromContext(ctx context.Context) (agentkit.Session, bool) {
-	return rctx.SessionFromContext(ctx)
-}
-
 // ParentSessionForDelegate returns the parent session for delegation, preferring
 // the turn's open session object over SessionStore.Get to avoid re-entrant locks
 // (e.g. session/agent-guard while a turn is open).
 func ParentSessionForDelegate(ctx context.Context, store agentkit.SessionStore, parentID agentkit.SessionID) (agentkit.Session, error) {
-	if parent, ok := SessionFromContext(ctx); ok && parent.ID() == parentID {
+	if parent, ok := rctx.SessionFromContext(ctx); ok && parent.ID() == parentID {
 		slog.Debug("session: resolve parent for delegate", "parent", parentID, "source", "open_turn")
 		return parent, nil
 	}
@@ -37,7 +23,7 @@ func ParentSessionForDelegate(ctx context.Context, store agentkit.SessionStore, 
 // LoadSession opens a session by id. If id matches the turn's open session
 // (KeySession), returns that object without SessionStore.Get.
 func LoadSession(ctx context.Context, store agentkit.SessionStore, id agentkit.SessionID) (agentkit.Session, error) {
-	if open, ok := SessionFromContext(ctx); ok && open.ID() == id {
+	if open, ok := rctx.SessionFromContext(ctx); ok && open.ID() == id {
 		slog.Debug("session: load", "id", id, "source", "open_turn")
 		return open, nil
 	}

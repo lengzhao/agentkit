@@ -115,7 +115,7 @@ func TestEmitSubagentLifecycleDoesNotBlockCaller(t *testing.T) {
 	t.Parallel()
 
 	parentSession := agentkit.SessionID("lark:delivery")
-	ctx := session.ContextWithDeliveryRoute(context.Background(), "lark", parentSession)
+	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "lark", parentSession)
 	block := make(chan struct{})
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(context.Context, agentkit.OutboundEvent) error {
 		<-block

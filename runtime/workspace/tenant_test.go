@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -233,10 +232,10 @@ func TestTenantConfigValidation(t *testing.T) {
 func TestTenantKeyFromContext(t *testing.T) {
 	t.Parallel()
 
-	if got := session.WorkspaceFromContext(tenantCtx("slack:C001:t:17.9")); got != "slack:C001" {
+	if got := rctx.WorkspaceFromContext(tenantCtx("slack:C001:t:17.9")); got != "slack:C001" {
 		t.Fatalf("WorkspaceFromContext = %q", got)
 	}
-	if got := session.WorkspaceFromContext(context.Background()); got != "" {
+	if got := rctx.WorkspaceFromContext(context.Background()); got != "" {
 		t.Fatalf("WorkspaceFromContext without session = %q", got)
 	}
 }
@@ -247,7 +246,7 @@ func TestTenantUsesEnvelopeWorkspace(t *testing.T) {
 	base := t.TempDir()
 	svc := newTenantSvc(t, rw.TenantConfig{Global: t.TempDir(), LocalBase: base})
 	env := agentkit.TurnEnvelope{
-		Route:        session.SessionRoute("slack", "slack:C001:t:17.9"),
+		Route:        rctx.SessionRoute("slack", "slack:C001:t:17.9"),
 		Conversation: "schedule:job:1",
 		Workspace:    "slack:C001",
 	}

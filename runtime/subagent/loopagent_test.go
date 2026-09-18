@@ -86,7 +86,7 @@ func newLoopSpawnerWithTelemetry(t *testing.T, async bool, summary string, telem
 
 func loopParentCtx() context.Context {
 	env := agentkit.TurnEnvelope{
-		Route:        session.SessionRoute("cli", "cli:default:t:1:u:user-1"),
+		Route:        rctx.SessionRoute("cli", "cli:default:t:1:u:user-1"),
 		Conversation: "cli:default",
 		Workspace:    "cli:default",
 		Actor:        agentkit.ActorRef{UserID: "user-1"},
@@ -124,7 +124,7 @@ func TestLoopAgentInheritsParentEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id, ok := session.RouteSessionID(captured.Route); !ok || id != "cli:default:t:1:u:user-1" {
+	if id, ok := rctx.RouteSessionID(captured.Route); !ok || id != "cli:default:t:1:u:user-1" {
 		t.Fatalf("route = %v", captured.Route)
 	}
 	if captured.Workspace != "cli:default" {

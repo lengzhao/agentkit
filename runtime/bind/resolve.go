@@ -8,7 +8,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -45,7 +44,7 @@ func (defaultResolver) ResolveCtxValue(ctx context.Context, from string) (string
 		}
 		return "", nil
 	case key == "delivery_session_id":
-		if v := session.DeliveryRouteFromContext(ctx); v != "" {
+		if v := rctx.DeliveryRouteFromContext(ctx); v != "" {
 			return string(v), nil
 		}
 		return "", nil
@@ -73,7 +72,7 @@ func (defaultResolver) ResolveCtxValue(ctx context.Context, from string) (string
 		}
 		return "", nil
 	case key == "tenant":
-		if v := session.WorkspaceFromContext(ctx); v != "" {
+		if v := rctx.WorkspaceFromContext(ctx); v != "" {
 			return v, nil
 		}
 		return "", nil

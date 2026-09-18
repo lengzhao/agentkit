@@ -10,9 +10,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type fakeClock struct {
@@ -214,11 +214,11 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 
 	select {
 	case event := <-got:
-		if session.ConversationFromEvent(event) == "chat-api:default:t:conv_1" {
-			t.Fatalf("schedule fire should use side session, got delivery conversation %q", session.ConversationFromEvent(event))
+		if rctx.ConversationFromEvent(event) == "chat-api:default:t:conv_1" {
+			t.Fatalf("schedule fire should use side session, got delivery conversation %q", rctx.ConversationFromEvent(event))
 		}
-		if session.InboundDeliveryID(event) != "chat-api:default:t:conv_1" {
-			t.Fatalf("delivery = %q", session.InboundDeliveryID(event))
+		if rctx.InboundDeliveryID(event) != "chat-api:default:t:conv_1" {
+			t.Fatalf("delivery = %q", rctx.InboundDeliveryID(event))
 		}
 		if event.PlatformID != "chat-api" {
 			t.Fatalf("platform = %q", event.PlatformID)
@@ -262,8 +262,8 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 
 	select {
 	case event := <-got:
-		if session.ConversationFromEvent(event) != "chat-api:default:t:conv_reuse" {
-			t.Fatalf("reuse conversation = %q, want delivery session", session.ConversationFromEvent(event))
+		if rctx.ConversationFromEvent(event) != "chat-api:default:t:conv_reuse" {
+			t.Fatalf("reuse conversation = %q, want delivery session", rctx.ConversationFromEvent(event))
 		}
 		meta, ok := event.Metadata["schedule"].(map[string]any)
 		if !ok {
@@ -305,8 +305,8 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 
 	select {
 	case event := <-got:
-		if !strings.HasPrefix(string(session.ConversationFromEvent(event)), "schedule:agent-9:") {
-			t.Fatalf("stateless conversation = %q", session.ConversationFromEvent(event))
+		if !strings.HasPrefix(string(rctx.ConversationFromEvent(event)), "schedule:agent-9:") {
+			t.Fatalf("stateless conversation = %q", rctx.ConversationFromEvent(event))
 		}
 		meta, ok := event.Metadata["schedule"].(map[string]any)
 		if !ok {

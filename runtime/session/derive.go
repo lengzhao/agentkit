@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	"github.com/lengzhao/agentkit/cap/skill"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // IndexedMessage is a model-visible message with its primary source event seq.
@@ -15,7 +16,7 @@ type IndexedMessage = compaction.IndexedMessage
 // IndexMessagesForCompaction rebuilds the model-visible list used for compaction,
 // including the latest compaction summary and retained tail when present.
 func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEvent) []IndexedMessage {
-	agentID := AgentIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
 	view := resolveCompactionView(events, agentID)
 	out := indexedCompactionPrefix(view)
 	out = append(out, walkIndexedEvents(events, agentID, view.AfterSeq)...)
@@ -23,7 +24,7 @@ func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEv
 }
 
 func deriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxToolBytes int) []agentkit.ModelMessage {
-	agentID := AgentIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
 	view := resolveCompactionView(events, agentID)
 	out := plainCompactionPrefix(view)
 	out = append(out, walkPlainEvents(events, agentID, view.AfterSeq)...)

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // Built-in inject tokens for runner.config.inject (cc-connect inject_* style).
@@ -39,7 +39,7 @@ func (r *Root) formatInboundEvent(event agentkit.MessageEvent, env agentkit.Turn
 	if event.Message.Role == "" || skipInboundPromptMeta(event.Metadata) {
 		return event
 	}
-	deliveryID, _ := session.RouteSessionID(env.Route)
+	deliveryID, _ := rctx.RouteSessionID(env.Route)
 	prefix := r.buildInboundPromptPrefix(event, deliveryID)
 	if prefix == "" {
 		return event
@@ -86,7 +86,7 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 	if len(cfg.inject) == 0 {
 		return nil
 	}
-	parts := session.ParseDelivery(deliveryID, event.UserID)
+	parts := rctx.ParseDelivery(deliveryID, event.UserID)
 	platformID := strings.TrimSpace(event.PlatformID)
 	if platformID == "" {
 		platformID = parts.Platform

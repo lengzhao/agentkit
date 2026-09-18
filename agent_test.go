@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -20,8 +21,7 @@ func TestCodingAgentReadsFile(t *testing.T) {
 		"agent": map[string]any{
 			"use": "agent/coding",
 			"config": map[string]any{
-				"id":       "test",
-				
+				"id": "test",
 			},
 			"deps": map[string]any{
 				"sessionStore": map[string]any{
@@ -87,7 +87,7 @@ func TestCodingAgentReadsFile(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

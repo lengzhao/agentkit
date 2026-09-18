@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -21,8 +22,8 @@ const outboundStreamReplySuffix = ":reply:"
 
 // outboundStreamKey isolates in-flight card state per trigger message (Route.ReplyTo).
 func outboundStreamKey(event agentkit.OutboundEvent) agentkit.SessionID {
-	delivery := session.OutboundRouteID(event)
-	replyTo := strings.TrimSpace(session.RouteReplyTo(event.Route))
+	delivery := rctx.OutboundRouteID(event)
+	replyTo := strings.TrimSpace(rctx.RouteReplyTo(event.Route))
 	if replyTo == "" {
 		return delivery
 	}

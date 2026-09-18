@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // PrepareMessagesForLLM applies modality policy and optional vision hydration before an LLM call.
@@ -212,8 +213,8 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 			if len(data) == 0 {
 				slog.Warn("vision hydrate skipped empty image payload",
 					"path", path,
-					"session_id", SessionIDFromContext(ctx),
-					"agent_id", AgentIDFromContext(ctx),
+					"session_id", rctx.SessionIDFromContext(ctx),
+					"agent_id", rctx.AgentIDFromContext(ctx),
 				)
 				continue
 			}

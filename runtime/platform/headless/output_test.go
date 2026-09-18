@@ -8,7 +8,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func newTestEmitter(mode string, stream bool) (*emitter, *bytes.Buffer, *bytes.Buffer) {
@@ -21,7 +20,7 @@ func newTestEmitter(mode string, stream bool) (*emitter, *bytes.Buffer, *bytes.B
 
 func messageEnd(text string) agentkit.OutboundEvent {
 	return agentkit.OutboundEvent{
-		Route: session.SessionRoute("headless", "s:1"),
+		Route: rctx.SessionRoute("headless", "s:1"),
 		Type:  agentkit.EventMessageEnd,
 		Data: rctx.MarshalOutboundData(agentkit.MessageEndPayload{
 			Message: agentkit.ModelMessage{
@@ -103,7 +102,7 @@ func TestEmitterJSONModeEmitsOneObjectPerLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := e.send(agentkit.OutboundEvent{
-		Route: session.SessionRoute("headless", "s:1"),
+		Route: rctx.SessionRoute("headless", "s:1"),
 		Type:  "error",
 		Data:  []byte(`{"error":"boom"}`),
 	}); err != nil {

@@ -12,8 +12,8 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // scriptedPlatform feeds a fixed set of events then reports EOF, and records
@@ -60,7 +60,7 @@ func (l *panickyLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) erro
 	l.mu.Lock()
 	l.calls++
 	l.mu.Unlock()
-	if session.ConversationFromLoopRequest(req) == "s:1" {
+	if rctx.ConversationFromLoopRequest(req) == "s:1" {
 		panic("boom")
 	}
 	return nil
@@ -83,7 +83,7 @@ func (l *panickyLoop) count() int {
 func userEvent(sessionID agentkit.SessionID, text string) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{
-			Route: session.SessionRoute("", string(sessionID)),
+			Route: rctx.SessionRoute("", string(sessionID)),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -96,7 +96,7 @@ func deliveryUserEvent(platform, userID string, delivery agentkit.SessionID, tex
 	evt := agentkit.MessageEvent{
 		UserID: userID,
 		Envelope: agentkit.TurnEnvelope{
-			Route: session.SessionRoute(platform, string(delivery)),
+			Route: rctx.SessionRoute(platform, string(delivery)),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -143,8 +143,8 @@ func TestRunSurvivesPanickingTurn(t *testing.T) {
 		if err := json.Unmarshal(event.Data, &payload); err != nil {
 			t.Fatalf("decode error event: %v", err)
 		}
-		if session.OutboundRouteID(event) != "s:1" {
-			t.Fatalf("error reported on route %q, want s:1", session.OutboundRouteID(event))
+		if rctx.OutboundRouteID(event) != "s:1" {
+			t.Fatalf("error reported on route %q, want s:1", rctx.OutboundRouteID(event))
 		}
 		reported = payload.Error
 	}
@@ -257,7 +257,7 @@ func (p *stagedPermissionPlatform) Receive(ctx context.Context) (agentkit.Messag
 		}
 		return agentkit.MessageEvent{
 			Envelope: agentkit.TurnEnvelope{
-				Route: session.SessionRoute("", "s:1"),
+				Route: rctx.SessionRoute("", "s:1"),
 			},
 			Reply: rtpermission.MarshalReply(permission.Reply{
 				RequestID: "perm1",
@@ -367,13 +367,13 @@ func TestSessionScopeChannelCollapsesDistinctUsers(t *testing.T) {
 	order := make([]agentkit.SessionID, 0, 2)
 	loop := &recordingLoop{hold: func(req agentkit.LoopRequest) {
 		mu.Lock()
-		order = append(order, session.ConversationFromLoopRequest(req))
+		order = append(order, rctx.ConversationFromLoopRequest(req))
 		mu.Unlock()
 	}}
 
 	events := []agentkit.MessageEvent{
-		deliveryUserEvent("slack", "U111", session.BuildDeliverySessionID("slack", "C001", "111.0", "U111"), "one"),
-		deliveryUserEvent("slack", "U222", session.BuildDeliverySessionID("slack", "C001", "222.0", "U222"), "two"),
+		deliveryUserEvent("slack", "U111", rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U111"), "one"),
+		deliveryUserEvent("slack", "U222", rctx.BuildDeliverySessionID("slack", "C001", "222.0", "U222"), "two"),
 	}
 	runToCompletion(t, runner.Config{SessionScope: "channel"}, &scriptedPlatform{events: events}, loop)
 
@@ -392,7 +392,7 @@ func TestSessionScopeChannelCollapsesDistinctUsers(t *testing.T) {
 func TestOutboundUsesDeliverySessionID(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
 	platform := &scriptedPlatform{events: []agentkit.MessageEvent{
 		deliveryUserEvent("slack", "U111", delivery, "hi"),
 	}}
@@ -410,8 +410,8 @@ func TestOutboundUsesDeliverySessionID(t *testing.T) {
 		if out.Type != "error" {
 			continue
 		}
-		if session.OutboundRouteID(out) != delivery {
-			t.Fatalf("error outbound route = %q, want delivery %q", session.OutboundRouteID(out), delivery)
+		if rctx.OutboundRouteID(out) != delivery {
+			t.Fatalf("error outbound route = %q, want delivery %q", rctx.OutboundRouteID(out), delivery)
 		}
 		return
 	}

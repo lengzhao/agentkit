@@ -143,7 +143,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	childID := agentkit.SessionID(session.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
+	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(session.LatestEventSeq(parentEvents))))
 	jobID := string(childID)
 
 	async := def.Async
@@ -385,7 +385,7 @@ func (s *LoopAgentSpawner) submitSubagentComplete(ctx context.Context, parent pa
 	if parentEnv.Conversation == "" {
 		parentEnv = parentEnv.WithConversation(string(parent.conversation))
 	}
-	event := session.SyncMessageEvent(agentkit.MessageEvent{
+	event := rctx.SyncMessageEvent(agentkit.MessageEvent{
 		AgentID: parentAgent,
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -517,7 +517,7 @@ func (s *LoopAgentSpawner) childTurnMeta(ctx context.Context, ag agentkit.Agent,
 	return captelemetry.TurnMeta{
 		TurnID:            uuid.NewString(),
 		SessionID:         string(childID),
-		DeliverySessionID: string(session.DeliveryFromEnvelope(env)),
+		DeliverySessionID: string(rctx.DeliveryFromEnvelope(env)),
 		AgentID:           string(ag.ID()),
 		PlatformID:        env.Route.Platform,
 		UserID:            env.Actor.UserID,

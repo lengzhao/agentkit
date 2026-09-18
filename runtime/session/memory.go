@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type MemoryConfig struct {
@@ -100,7 +101,7 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 	switch typ {
 	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
 		logicalChars = EstimateLogicalChars(msg)
-		msg = SanitizeModelMessageForStorageWS(msg, 0, WorkspaceServiceFromContext(ctx))
+		msg = SanitizeModelMessageForStorageWS(msg, 0, rctx.WorkspaceServiceFromContext(ctx))
 	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
@@ -118,8 +119,8 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 	// stamping the assistant with the user who prompted it would make the reply
 	// look like that person's words on replay.
 	if typ == agentkit.EventUserMessage {
-		event.UserID = UserIDFromContext(ctx)
-		if md := MetadataFromContext(ctx); len(md) > 0 {
+		event.UserID = rctx.UserIDFromContext(ctx)
+		if md := rctx.MetadataFromContext(ctx); len(md) > 0 {
 			if event.Metadata == nil {
 				event.Metadata = make(map[string]any, len(md))
 			}

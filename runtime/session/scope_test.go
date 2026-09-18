@@ -11,7 +11,7 @@ import (
 func TestApplyScope(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "C001", "123.456", "U777")
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "123.456", "U777")
 
 	cases := []struct {
 		name  string
@@ -24,7 +24,7 @@ func TestApplyScope(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := session.ApplyScope(delivery, tc.scope, "U777")
+			got := rctx.ApplyScope(delivery, tc.scope, "U777")
 			if got != tc.want {
 				t.Fatalf("ApplyScope(%q, %q) = %q, want %q", delivery, tc.scope, got, tc.want)
 			}
@@ -35,7 +35,7 @@ func TestApplyScope(t *testing.T) {
 func TestParseDelivery(t *testing.T) {
 	t.Parallel()
 
-	got := session.ParseDelivery("slack:C001:t:123.456:u:U777", "")
+	got := rctx.ParseDelivery("slack:C001:t:123.456:u:U777", "")
 	if got.Platform != "slack" || got.Channel != "C001" || got.Thread != "123.456" || got.User != "U777" || !got.Routable {
 		t.Fatalf("got %+v", got)
 	}
@@ -46,7 +46,7 @@ func TestApplyScopePassthroughCLI(t *testing.T) {
 
 	id := agentkit.SessionID("cli:default")
 	for _, scope := range []session.SessionScope{session.ScopeChannel, session.ScopeThread, session.ScopeUser} {
-		if got := session.ApplyScope(id, scope, ""); got != id {
+		if got := rctx.ApplyScope(id, scope, ""); got != id {
 			t.Fatalf("scope %q changed cli id to %q", scope, got)
 		}
 	}
@@ -77,7 +77,7 @@ func TestParseScopeDefaultsToChannel(t *testing.T) {
 func TestBuildDeliverySessionID(t *testing.T) {
 	t.Parallel()
 
-	got := session.BuildDeliverySessionID("slack", "C001", "123.456", "U777")
+	got := rctx.BuildDeliverySessionID("slack", "C001", "123.456", "U777")
 	want := agentkit.SessionID("slack:C001:t:123.456:u:U777")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
@@ -88,7 +88,7 @@ func TestApplyScopeScheduleSideSessionIsOpaque(t *testing.T) {
 	t.Parallel()
 
 	side := agentkit.SessionID("schedule:agent-1:123456789")
-	if got := session.ApplyScope(side, session.ScopeChannel, ""); got != side {
+	if got := rctx.ApplyScope(side, session.ScopeChannel, ""); got != side {
 		t.Fatalf("ApplyScope = %q, want opaque %q", got, side)
 	}
 }
@@ -96,9 +96,9 @@ func TestApplyScopeScheduleSideSessionIsOpaque(t *testing.T) {
 func TestDeliveryWithUser(t *testing.T) {
 	t.Parallel()
 
-	delivery := session.BuildDeliverySessionID("slack", "C001", "123.456", "U111")
-	got := session.DeliveryWithUser(delivery, "U222")
-	want := session.BuildDeliverySessionID("slack", "C001", "123.456", "U222")
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "123.456", "U111")
+	got := rctx.DeliveryWithUser(delivery, "U222")
+	want := rctx.BuildDeliverySessionID("slack", "C001", "123.456", "U222")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}

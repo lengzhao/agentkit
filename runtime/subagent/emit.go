@@ -10,7 +10,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 const (
@@ -52,8 +51,8 @@ func forwardParentEmit(ctx context.Context, parent agentkit.OutboundEmit) (agent
 			close = func() { em.CloseWithTimeout(asyncSubagentDrainTimeout) }
 		}
 	}
-	parentRoute := session.RouteRefFromContext(ctx)
-	id, ok := session.RouteSessionID(parentRoute)
+	parentRoute := rctx.RouteRefFromContext(ctx)
+	id, ok := rctx.RouteSessionID(parentRoute)
 	if !ok || id == "" {
 		if close != nil {
 			close()
@@ -166,8 +165,8 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 	if emit == nil {
 		return
 	}
-	parentRoute := session.RouteRefFromContext(ctx)
-	id, ok := session.RouteSessionID(parentRoute)
+	parentRoute := rctx.RouteRefFromContext(ctx)
+	id, ok := rctx.RouteSessionID(parentRoute)
 	if !ok || id == "" {
 		return
 	}

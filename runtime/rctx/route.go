@@ -1,14 +1,12 @@
-package session
+package rctx
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
 )
-
-// SessionRouteInput carries structured session-kind route fields.
-type SessionRouteInput = agentkit.SessionRouteInput
 
 type sessionRouteData struct {
 	ID string `json:"id"`
@@ -24,7 +22,7 @@ type RouteTarget struct {
 }
 
 // BuildSessionRoute builds a session-kind RouteRef from structured fields.
-func BuildSessionRoute(in SessionRouteInput) agentkit.RouteRef {
+func BuildSessionRoute(in agentkit.SessionRouteInput) agentkit.RouteRef {
 	platform := strings.TrimSpace(in.Platform)
 	channel := strings.TrimSpace(in.ChannelID)
 	thread := strings.TrimSpace(in.ThreadID)
@@ -51,13 +49,13 @@ func SessionRouteFromDelivery(platform string, delivery agentkit.SessionID, repl
 	}
 	parts := ParseDelivery(delivery, "")
 	if !parts.Routable {
-		return BuildSessionRoute(SessionRouteInput{
+		return BuildSessionRoute(agentkit.SessionRouteInput{
 			Platform:   platform,
 			DeliveryID: delivery,
 			ReplyTo:    strings.TrimSpace(replyTo),
 		})
 	}
-	return BuildSessionRoute(SessionRouteInput{
+	return BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:    platform,
 		DeliveryID:  delivery,
 		ChannelID:   parts.Channel,
@@ -181,7 +179,7 @@ func sessionRouteFromTarget(platform string, target agentkit.SessionRouteTarget)
 
 // SessionRoute builds a minimal session-kind route from a delivery id string.
 func SessionRoute(platform, deliveryID string) agentkit.RouteRef {
-	return BuildSessionRoute(SessionRouteInput{
+	return BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:   strings.TrimSpace(platform),
 		DeliveryID: agentkit.SessionID(strings.TrimSpace(deliveryID)),
 	})
@@ -201,4 +199,173 @@ func buildDeliverySessionID(platform, channel, thread, user string) agentkit.Ses
 		id += ":u:" + user
 	}
 	return agentkit.SessionID(id)
+}
+
+// DeliveryParts holds parsed segments of a platform delivery SessionID.
+type DeliveryParts struct {
+	Platform string
+	Channel  string
+	Thread   string
+	User     string
+	Routable bool
+}
+
+// opaqueDeliveryPlatforms lists platforms whose two-segment ids (platform:segment)
+// should not be treated as IM-style routable deliveries. These are runtime
+// conventions for headless/CLI transports, not a root-package contract.
+var opaqueDeliveryPlatforms = map[string]bool{
+	"cli":    true,
+	"sub":    true,
+	"jsonl":  true,
+	"worker": true,
+	"timer":  true,
+	"cron":   true,
+}
+
+// ParseDelivery splits a delivery SessionID into routing segments.
+func ParseDelivery(id agentkit.SessionID, fallbackUser string) DeliveryParts {
+	return parseDeliveryParts(string(id), fallbackUser)
+}
+
+// BuildDeliverySessionID is the canonical finest-grain id platforms should emit.
+func BuildDeliverySessionID(platform, channel, thread, user string) agentkit.SessionID {
+	platform = strings.TrimSpace(platform)
+	channel = strings.TrimSpace(channel)
+	if platform == "" || channel == "" {
+		return ""
+	}
+	id := platform + ":" + channel
+	if thread = strings.TrimSpace(thread); thread != "" {
+		id += ":t:" + thread
+	}
+	if user = strings.TrimSpace(user); user != "" {
+		id += ":u:" + user
+	}
+	return agentkit.SessionID(id)
+}
+
+// ApplyScope derives the effective session id used for Loop locking, history,
+// and permission pending.
+func ApplyScope(delivery agentkit.SessionID, scope agentkit.SessionScope, userID string) agentkit.SessionID {
+	id := strings.TrimSpace(string(delivery))
+	if id == "" {
+		return delivery
+	}
+	parts := parseDeliveryParts(id, userID)
+	if !parts.Routable {
+		return delivery
+	}
+	return parts.effective(ParseScope(string(scope)))
+}
+
+// DeliveryWithUser returns a delivery SessionID with the :u: segment set or replaced.
+func DeliveryWithUser(delivery agentkit.SessionID, userID string) agentkit.SessionID {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return delivery
+	}
+	parts := ParseDelivery(delivery, "")
+	if !parts.Routable {
+		return delivery
+	}
+	parts.User = userID
+	return BuildDeliverySessionID(parts.Platform, parts.Channel, parts.Thread, parts.User)
+}
+
+func parseDeliveryParts(id, fallbackUser string) DeliveryParts {
+	segments := strings.Split(id, ":")
+	if len(segments) < 2 {
+		return DeliveryParts{Routable: false}
+	}
+
+	p := DeliveryParts{
+		Platform: segments[0],
+		Channel:  segments[1],
+		Routable: true,
+	}
+
+	if p.Platform == "schedule" {
+		p.Routable = false
+		return p
+	}
+
+	if opaqueDeliveryPlatforms[p.Platform] && len(segments) == 2 {
+		p.Routable = false
+		return p
+	}
+
+	for i := 2; i < len(segments); {
+		switch segments[i] {
+		case "t":
+			if i+1 >= len(segments) {
+				i++
+				continue
+			}
+			p.Thread = segments[i+1]
+			i += 2
+		case "u":
+			if i+1 >= len(segments) {
+				i++
+				continue
+			}
+			p.User = segments[i+1]
+			i += 2
+		default:
+			i++
+		}
+	}
+
+	if p.User == "" {
+		p.User = strings.TrimSpace(fallbackUser)
+	}
+	return p
+}
+
+func (p DeliveryParts) effective(scope agentkit.SessionScope) agentkit.SessionID {
+	base := p.Platform + ":" + p.Channel
+	switch scope {
+	case agentkit.SessionScopeChannel:
+		return agentkit.SessionID(base)
+	case agentkit.SessionScopeUser:
+		if p.User == "" {
+			return agentkit.SessionID(base)
+		}
+		return agentkit.SessionID(base + ":u:" + p.User)
+	default:
+		if p.Thread == "" {
+			return agentkit.SessionID(base)
+		}
+		return agentkit.SessionID(base + ":t:" + p.Thread)
+	}
+}
+
+// DeliveryRouteFromContext returns the platform delivery target from the turn envelope.
+func DeliveryRouteFromContext(ctx context.Context) agentkit.SessionID {
+	if id, ok := RouteSessionID(EnvelopeFromContext(ctx).Route); ok && id != "" {
+		return id
+	}
+	return ""
+}
+
+// RouteRefFromContext returns the outbound route from the turn envelope.
+func RouteRefFromContext(ctx context.Context) agentkit.RouteRef {
+	return EnvelopeFromContext(ctx).Route
+}
+
+// ContextWithDeliveryRoute attaches a minimal session-kind delivery route to ctx.
+func ContextWithDeliveryRoute(ctx context.Context, platform string, delivery agentkit.SessionID) context.Context {
+	env := EnvelopeFromContext(ctx)
+	env.Route = SessionRouteFromDelivery(platform, delivery, "")
+	return ApplyEnvelopeToContext(ctx, env)
+}
+
+// InboundDeliveryID returns the platform delivery target from an inbound message.
+func InboundDeliveryID(event agentkit.MessageEvent) agentkit.SessionID {
+	return DeliveryFromEnvelope(event.Envelope)
+}
+
+// DeliveryFromEnvelope returns the outbound delivery id from a turn envelope.
+func DeliveryFromEnvelope(env agentkit.TurnEnvelope) agentkit.SessionID {
+	id, _ := RouteSessionID(env.Route)
+	return id
 }

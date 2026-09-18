@@ -6,12 +6,11 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func testEnvelope(route, conversation, workspace, userID string) agentkit.TurnEnvelope {
 	return agentkit.TurnEnvelope{
-		Route:        session.SessionRoute("slack", route),
+		Route:        rctx.SessionRoute("slack", route),
 		Conversation: conversation,
 		Workspace:    workspace,
 		Actor:        agentkit.ActorRef{UserID: userID},
@@ -45,7 +44,7 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 	ctx := withTurnContext(
 		context.Background(),
 		agentkit.TurnEnvelope{
-			Route:        session.SessionRoute("cli", "cli:default"),
+			Route:        rctx.SessionRoute("cli", "cli:default"),
 			Conversation: "cli:default",
 			Workspace:    "cli:default",
 		},
@@ -78,7 +77,7 @@ func TestWithTurnContextSetsDeliveryRoute(t *testing.T) {
 		nil,
 	)
 
-	delivery := session.DeliveryRouteFromContext(ctx)
+	delivery := rctx.DeliveryRouteFromContext(ctx)
 	if delivery != "slack:C001:t:111.0:u:U456" {
 		t.Fatalf("delivery session id = %q", delivery)
 	}
@@ -105,7 +104,7 @@ func TestWithTurnContextSetsResolvedSessionID(t *testing.T) {
 	if rctx.SessionIDFromContext(ctx) != "slack:C001:new:20260829" {
 		t.Fatalf("session id = %q", rctx.SessionIDFromContext(ctx))
 	}
-	delivery := session.DeliveryRouteFromContext(ctx)
+	delivery := rctx.DeliveryRouteFromContext(ctx)
 	if delivery != "slack:C001:t:111.0:u:U456" {
 		t.Fatalf("delivery session id = %q", delivery)
 	}

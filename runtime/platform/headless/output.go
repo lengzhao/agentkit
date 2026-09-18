@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // Output modes.
@@ -69,7 +69,7 @@ func (e *emitter) sendJSON(event agentkit.OutboundEvent) error {
 		Data      json.RawMessage    `json:"data,omitempty"`
 	}{
 		Type:      event.Type,
-		SessionID: session.OutboundRouteID(event),
+		SessionID: rctx.OutboundRouteID(event),
 		AgentID:   event.AgentID,
 		Data:      event.Data,
 	}

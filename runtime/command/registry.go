@@ -9,7 +9,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 // Config controls which contributed commands are exposed.
@@ -233,7 +232,7 @@ func (r *Registry) commandLogAttrs(ctx context.Context, cmd agentkit.Command, ra
 		"user_id", rctx.UserIDFromContext(ctx),
 		"platform_id", rctx.PlatformFromContext(ctx),
 		"session_id", rctx.ConversationFromContext(ctx),
-		"delivery_session_id", session.DeliveryRouteFromContext(ctx),
+		"delivery_session_id", rctx.DeliveryRouteFromContext(ctx),
 		"args", sanitizeArgsForLog(cmd, rawArgs),
 	}
 	return append(attrs, extra...)

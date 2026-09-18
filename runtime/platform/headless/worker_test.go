@@ -11,9 +11,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capshell "github.com/lengzhao/agentkit/cap/shell"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/headless"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // newWorker builds a worker without a schedule registry, i.e. batch mode.
@@ -31,7 +31,7 @@ func tasks(prompts ...string) []headless.TaskSpec {
 }
 
 func deliveryID(event agentkit.MessageEvent) agentkit.SessionID {
-	return session.InboundDeliveryID(event)
+	return rctx.InboundDeliveryID(event)
 }
 
 func textOfMessage(msg agentkit.ModelMessage) string {

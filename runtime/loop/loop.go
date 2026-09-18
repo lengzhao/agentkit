@@ -13,7 +13,6 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -89,7 +88,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	if err != nil {
 		return err
 	}
-	conversation := session.ConversationFromLoopRequest(req)
+	conversation := rctx.ConversationFromLoopRequest(req)
 	if conversation == "" {
 		return fmt.Errorf("loop request requires conversation")
 	}
@@ -174,8 +173,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	turnID := uuid.NewString()
 	meta := captelemetry.TurnMeta{
 		TurnID:            turnID,
-		SessionID:         string(session.ConversationFromLoopRequest(req)),
-		DeliverySessionID: string(session.DeliveryFromEnvelope(req.Event.Envelope)),
+		SessionID:         string(rctx.ConversationFromLoopRequest(req)),
+		DeliverySessionID: string(rctx.DeliveryFromEnvelope(req.Event.Envelope)),
 		AgentID:           string(agentID),
 		PlatformID:        req.Event.PlatformID,
 		UserID:            req.Event.UserID,
@@ -186,8 +185,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	slog.Info("turn start",
 		"turn_id", turnID,
 		"agent_id", agentID,
-		"session_id", session.ConversationFromLoopRequest(req),
-		"delivery_session_id", session.DeliveryFromEnvelope(req.Event.Envelope),
+		"session_id", rctx.ConversationFromLoopRequest(req),
+		"delivery_session_id", rctx.DeliveryFromEnvelope(req.Event.Envelope),
 		"platform_id", req.Event.PlatformID,
 		"user_id", req.Event.UserID,
 	)
@@ -202,7 +201,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		attrs := []any{
 			"turn_id", turnID,
 			"agent_id", agentID,
-			"session_id", session.ConversationFromLoopRequest(req),
+			"session_id", rctx.ConversationFromLoopRequest(req),
 			"duration", time.Since(turnStarted),
 		}
 		if end.Steps > 0 {

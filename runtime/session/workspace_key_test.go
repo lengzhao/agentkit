@@ -3,7 +3,7 @@ package session_test
 import (
 	"testing"
 
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func TestWorkspaceKey(t *testing.T) {
@@ -23,7 +23,7 @@ func TestWorkspaceKey(t *testing.T) {
 		":leading":                      ":leading",
 	}
 	for in, want := range cases {
-		if got := session.WorkspaceKey(in); got != want {
+		if got := rctx.WorkspaceKey(in); got != want {
 			t.Errorf("WorkspaceKey(%q) = %q, want %q", in, got, want)
 		}
 	}
@@ -39,7 +39,7 @@ func TestWorkspaceDirName(t *testing.T) {
 		"":              "",
 	}
 	for in, want := range cases {
-		if got := session.WorkspaceDirName(in); got != want {
+		if got := rctx.WorkspaceDirName(in); got != want {
 			t.Errorf("WorkspaceDirName(%q) = %q, want %q", in, got, want)
 		}
 	}
@@ -54,11 +54,11 @@ func TestWorkspaceLocalDirNameOmitPlatform(t *testing.T) {
 		"cli:default":         "default",
 	}
 	for in, want := range cases {
-		if got := session.WorkspaceLocalDirName(in, true); got != want {
+		if got := rctx.WorkspaceLocalDirName(in, true); got != want {
 			t.Errorf("WorkspaceLocalDirName(%q, true) = %q, want %q", in, got, want)
 		}
-		if got := session.WorkspaceLocalDirName(in, false); got != session.WorkspaceDirName(in) {
-			t.Errorf("WorkspaceLocalDirName(%q, false) = %q, want WorkspaceDirName %q", in, got, session.WorkspaceDirName(in))
+		if got := rctx.WorkspaceLocalDirName(in, false); got != rctx.WorkspaceDirName(in) {
+			t.Errorf("WorkspaceLocalDirName(%q, false) = %q, want WorkspaceDirName %q", in, got, rctx.WorkspaceDirName(in))
 		}
 	}
 }
@@ -67,7 +67,7 @@ func TestWorkspaceDirNameNeverTraverses(t *testing.T) {
 	t.Parallel()
 
 	for _, in := range []string{"..", "../..", "slack:../other", "a/../../b", ".", "./..", "...."} {
-		got := session.WorkspaceDirName(in)
+		got := rctx.WorkspaceDirName(in)
 		if got == "." || got == ".." {
 			t.Fatalf("WorkspaceDirName(%q) = %q", in, got)
 		}

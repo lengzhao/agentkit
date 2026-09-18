@@ -10,7 +10,6 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type ScheduleConfig struct {
@@ -258,7 +257,7 @@ func parseAt(raw string, loc *time.Location) (time.Time, error) {
 }
 
 func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.Job {
-	if delivery := session.DeliveryRouteFromContext(ctx); delivery != "" {
+	if delivery := rctx.DeliveryRouteFromContext(ctx); delivery != "" {
 		job.DeliverySessionID = string(delivery)
 	}
 	if platform := rctx.PlatformFromContext(ctx); platform != "" {
@@ -270,6 +269,6 @@ func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.J
 	if agent := rctx.AgentIDFromContext(ctx); agent != "" {
 		job.AgentID = string(agent)
 	}
-	job.ChannelKey = session.WorkspaceFromContext(ctx)
+	job.ChannelKey = rctx.WorkspaceFromContext(ctx)
 	return job
 }

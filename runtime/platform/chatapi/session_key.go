@@ -6,7 +6,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 const defaultWorkspaceChannelID = "default_channel"
@@ -18,7 +17,7 @@ func engineSessionKey(channelKey, conversationID string) string {
 	if channelKey == "" {
 		channelKey = defaultWorkspaceChannelID
 	}
-	return string(session.BuildDeliverySessionID(
+	return string(rctx.BuildDeliverySessionID(
 		"chat-api",
 		encodeSessionChannelSegment(channelKey),
 		conversationID,
@@ -29,7 +28,7 @@ func engineSessionKey(channelKey, conversationID string) string {
 func channelWorkspaceEnvelope(channelKey string) agentkit.TurnEnvelope {
 	delivery := engineSessionKey(channelKey, "probe")
 	return agentkit.TurnEnvelope{
-		Workspace: session.WorkspaceKey(delivery),
+		Workspace: rctx.WorkspaceKey(delivery),
 	}
 }
 
@@ -37,8 +36,8 @@ func sessionEnvelope(channelKey, conversationID string) agentkit.TurnEnvelope {
 	delivery := agentkit.SessionID(engineSessionKey(channelKey, conversationID))
 	return agentkit.TurnEnvelope{
 		Conversation: string(delivery),
-		Route:        session.SessionRouteFromDelivery("chat-api", delivery, ""),
-		Workspace:    session.WorkspaceKey(string(delivery)),
+		Route:        rctx.SessionRouteFromDelivery("chat-api", delivery, ""),
+		Workspace:    rctx.WorkspaceKey(string(delivery)),
 	}
 }
 

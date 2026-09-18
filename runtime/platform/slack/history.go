@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/chathistory"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	slackapi "github.com/slack-go/slack"
 )
 
@@ -19,7 +19,7 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 		return chathistory.Result{}, fmt.Errorf("slack: client not ready")
 	}
 
-	parts := session.ParseDelivery(req.SessionID, req.UserID)
+	parts := rctx.ParseDelivery(req.SessionID, req.UserID)
 	if !parts.Routable || parts.Channel == "" {
 		return chathistory.Result{}, fmt.Errorf("slack: chat_history requires a routable delivery session")
 	}

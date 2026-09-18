@@ -75,8 +75,8 @@ type inboundMessage struct {
 	rctx         replyContext
 }
 
-func (msg inboundMessage) inboundRoute(platform string) session.SessionRouteInput {
-	return session.SessionRouteInput{
+func (msg inboundMessage) inboundRoute(platform string) agentkit.SessionRouteInput {
+	return agentkit.SessionRouteInput{
 		Platform:    platform,
 		DeliveryID:  msg.sessionID,
 		ChannelID:   msg.rctx.chatID,
@@ -314,7 +314,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
-	delivery := session.OutboundRouteID(event)
+	delivery := rctx.OutboundRouteID(event)
 	streamKey := outboundStreamKey(event)
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
@@ -447,7 +447,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	metadata := p.inboundMetadata(msg)
 	if text != "" {
 		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
-			Route:        session.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
+			Route:        rctx.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
 			SessionScope: p.sessionScope,
 			UserID:       msg.userID,
 			Metadata:     metadata,
@@ -529,7 +529,7 @@ func (p *Platform) sendPermissionCard(ctx context.Context, event agentkit.Outbou
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
-	rc, ok := p.deliveryFor(session.OutboundRouteID(event))
+	rc, ok := p.deliveryFor(rctx.OutboundRouteID(event))
 	if !ok {
 		return nil
 	}
@@ -686,7 +686,7 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 
 func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundEvent) error {
 	streamKey := outboundStreamKey(event)
-	delivery := session.OutboundRouteID(event)
+	delivery := rctx.OutboundRouteID(event)
 	st := p.streamState(streamKey)
 	st.lock()
 	text := st.accumulated
@@ -760,7 +760,7 @@ func assistantText(msg agentkit.ModelMessage) string {
 }
 
 func threadIDFromSessionKey(sessionKey string) string {
-	parts := session.ParseDelivery(agentkit.SessionID(sessionKey), "")
+	parts := rctx.ParseDelivery(agentkit.SessionID(sessionKey), "")
 	if !parts.Routable {
 		return ""
 	}

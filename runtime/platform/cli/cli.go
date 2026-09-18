@@ -13,6 +13,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -34,7 +35,7 @@ type Deps struct {
 }
 
 type Platform struct {
-	mu    sync.Mutex
+	mu     sync.Mutex
 	turnMu sync.Mutex
 
 	initialPrompt string
@@ -58,7 +59,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	}
 	deliveryID := agentkit.SessionID(cfg.DefaultSessionID)
 	if deliveryID == "" {
-		deliveryID = session.DefaultCLISessionID
+		deliveryID = rctx.DefaultCLISessionID
 	}
 	return &Platform{
 		initialPrompt: initial,
@@ -165,7 +166,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
-	}, session.SessionRouteInput{
+	}, agentkit.SessionRouteInput{
 		Platform:   platformID,
 		DeliveryID: p.deliveryID,
 	}), nil
@@ -173,7 +174,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 
 func (p *Platform) slashContext() common.SlashContext {
 	return common.SlashContext{
-		Route:        session.SessionRouteFromDelivery(platformID, p.deliveryID, ""),
+		Route:        rctx.SessionRouteFromDelivery(platformID, p.deliveryID, ""),
 		SessionScope: session.ScopeChannel,
 		UserID:       cliUserID(),
 	}
@@ -223,7 +224,7 @@ func (p *Platform) notifyActiveSession(ctx context.Context) {
 	if !ok {
 		return
 	}
-	entry := session.ActiveEntryKey(p.slashContext().Route, session.DefaultRoutePolicy(session.ScopeChannel), cliUserID())
+	entry := rctx.ActiveEntryKey(p.slashContext().Route, rctx.DefaultRoutePolicy(session.ScopeChannel), cliUserID())
 	active, err := activeStore.ActiveSession(ctx, entry)
 	if err != nil || active == "" || active == entry {
 		return

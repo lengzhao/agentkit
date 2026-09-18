@@ -4,12 +4,12 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // WithInboundRoute attaches a structured session route to an inbound event.
-func WithInboundRoute(event agentkit.MessageEvent, route session.SessionRouteInput) agentkit.MessageEvent {
-	return WithDeliveryRoute(event, session.BuildSessionRoute(route))
+func WithInboundRoute(event agentkit.MessageEvent, route agentkit.SessionRouteInput) agentkit.MessageEvent {
+	return WithDeliveryRoute(event, rctx.BuildSessionRoute(route))
 }
 
 // WithDeliveryRoute attaches the platform return address to an inbound event.
@@ -35,7 +35,7 @@ func WithDeliverySession(event agentkit.MessageEvent, platformID string, deliver
 	if delivery == "" {
 		return event
 	}
-	return WithInboundRoute(event, session.SessionRouteInput{
+	return WithInboundRoute(event, agentkit.SessionRouteInput{
 		Platform:   platformID,
 		DeliveryID: delivery,
 	})

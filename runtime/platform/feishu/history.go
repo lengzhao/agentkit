@@ -13,14 +13,14 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/lengzhao/agentkit/cap/chathistory"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const maxHistoryContentLen = 4096
 
 // ReadChatHistory lists messages from Feishu/Lark IM for the given delivery session.
 func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request) (chathistory.Result, error) {
-	parts := session.ParseDelivery(req.SessionID, req.UserID)
+	parts := rctx.ParseDelivery(req.SessionID, req.UserID)
 	if !parts.Routable || parts.Channel == "" {
 		return chathistory.Result{}, fmt.Errorf("%s: chat_history requires a routable delivery session", p.tag())
 	}

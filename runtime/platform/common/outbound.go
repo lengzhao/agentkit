@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // TextSender delivers finalized assistant text to a conversation.
@@ -32,7 +32,7 @@ func NewOutbound(send TextSender, media MediaSender) *Outbound {
 }
 
 func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) error {
-	delivery := session.OutboundRouteID(event)
+	delivery := rctx.OutboundRouteID(event)
 	switch event.Type {
 	case agentkit.EventMessageStart:
 		o.clear(delivery)

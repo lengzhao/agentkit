@@ -41,7 +41,7 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 		out = append(out, id)
 	}
 
-	entry := session.ActiveEntryKeyFromContext(ctx)
+	entry := rctx.ActiveEntryKeyFromContext(ctx)
 	if entry == "" {
 		entry = rctx.SessionIDFromContext(ctx)
 	}
@@ -65,17 +65,17 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 	env := rctx.EnvelopeFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	platform := rctx.PlatformFromContext(ctx)
-	delivery, ok := session.RouteSessionID(env.Route)
+	delivery, ok := rctx.RouteSessionID(env.Route)
 	if ok && delivery != "" {
 		for _, scope := range []session.SessionScope{
 			session.ScopeChannel,
 			session.ScopeUser,
 			session.ScopeThread,
 		} {
-			policy := session.RoutePolicyForPlatform(platform, session.DefaultRoutePolicy(scope))
-			ek := session.ActiveEntryKey(env.Route, policy, userID)
+			policy := rctx.RoutePolicyForPlatform(platform, rctx.DefaultRoutePolicy(scope))
+			ek := rctx.ActiveEntryKey(env.Route, policy, userID)
 			add(ek)
-			add(session.ApplyScope(delivery, scope, userID))
+			add(rctx.ApplyScope(delivery, scope, userID))
 			if store != nil && ek != "" {
 				resolved, err := session.ResolveActiveSessionID(ctx, store, ek)
 				if err != nil {

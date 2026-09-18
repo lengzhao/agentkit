@@ -15,7 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const platformID = "acp"
@@ -116,7 +116,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
-	delivery := session.OutboundRouteID(event)
+	delivery := rctx.OutboundRouteID(event)
 	if p.conn == nil {
 		return nil
 	}
@@ -182,7 +182,7 @@ func (p *Platform) getOrCreateSession(acpID acp.SessionId) *sessionState {
 	if sess, ok := p.sessions[acpID]; ok {
 		return sess
 	}
-	deliveryID := session.BuildDeliverySessionID(platformID, string(acpID), "", "")
+	deliveryID := rctx.BuildDeliverySessionID(platformID, string(acpID), "", "")
 	sess := &sessionState{
 		acpSessionID: acpID,
 		deliveryID:   deliveryID,

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -54,7 +55,7 @@ func TestSQLiteIndexSearch(t *testing.T) {
 
 func TestWorkspaceKeyFromLocalDir(t *testing.T) {
 	t.Parallel()
-	if got := session.WorkspaceKeyFromLocalDir("slack_C001", false); got != "slack:C001" {
+	if got := rctx.WorkspaceKeyFromLocalDir("slack_C001", false); got != "slack:C001" {
 		t.Fatalf("got %q", got)
 	}
 }

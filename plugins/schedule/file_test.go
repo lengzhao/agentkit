@@ -12,7 +12,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -47,7 +46,7 @@ func TestGlobalPathSharedAcrossTenantContexts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tenantCtx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("chat-api", "chat-api:nex-channel:t:conv_1"), Conversation: "chat-api:nex-channel:t:conv_1", Workspace: "chat-api:nex-channel:t:conv_1"})
+	tenantCtx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("chat-api", "chat-api:nex-channel:t:conv_1"), Conversation: "chat-api:nex-channel:t:conv_1", Workspace: "chat-api:nex-channel:t:conv_1"})
 	if _, err := reg.Add(tenantCtx, capschedule.Job{Kind: capschedule.KindCron, Cron: "@daily", Prompt: "remind"}); err != nil {
 		t.Fatal(err)
 	}
