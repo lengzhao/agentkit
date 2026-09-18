@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -16,7 +16,7 @@ func runAppInit(ctx context.Context, result *build.Result) error {
 	if result == nil {
 		return nil
 	}
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
 		Route: agentkit.RouteRef{Platform: "bootstrap"},
 		Actor: agentkit.ActorRef{UserID: bootstrapUserID},
 	})

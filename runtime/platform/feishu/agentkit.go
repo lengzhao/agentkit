@@ -20,6 +20,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -278,7 +279,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		agentID:                    cfg.ResolveAgentID(),
 		commands:                   deps.Commands,
 		workspace:                  deps.Workspace,
-		sessionScope:               session.ParseScope(cfg.SessionScope),
+		sessionScope:               rctx.ParseScope(cfg.SessionScope),
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
 	}

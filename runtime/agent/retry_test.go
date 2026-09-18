@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type flakyLLM struct {
@@ -78,7 +79,7 @@ func TestRunTurnRetriesTransientLLMError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	err = rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -142,7 +143,7 @@ func TestRunTurnDoesNotRetryQuotaError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	err = rt.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

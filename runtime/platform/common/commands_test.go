@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/command"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -163,7 +164,7 @@ func (captureUserCommand) Name() string        { return "ping" }
 func (captureUserCommand) Alias() string       { return "" }
 func (captureUserCommand) Description() string { return "capture user" }
 func (c captureUserCommand) CommandExec(ctx context.Context, _ string) (string, error) {
-	*c.userID = session.UserIDFromContext(ctx)
+	*c.userID = rctx.UserIDFromContext(ctx)
 	return "ok", nil
 }
 
@@ -176,7 +177,7 @@ func (captureMetadataCommand) Name() string        { return "ping" }
 func (captureMetadataCommand) Alias() string       { return "" }
 func (captureMetadataCommand) Description() string { return "capture metadata" }
 func (c captureMetadataCommand) CommandExec(ctx context.Context, _ string) (string, error) {
-	*c.value = session.MetadataString(session.EnvelopeFromContext(ctx), c.key)
+	*c.value = rctx.MetadataString(rctx.EnvelopeFromContext(ctx), c.key)
 	return "ok", nil
 }
 
@@ -248,7 +249,7 @@ func (c captureSessionCommand) CommandExec(ctx context.Context, _ string) (strin
 		*c.entryKey = session.ActiveEntryKeyFromContext(ctx)
 	}
 	if c.gotPlatform != nil {
-		*c.gotPlatform = session.PlatformFromContext(ctx)
+		*c.gotPlatform = rctx.PlatformFromContext(ctx)
 	}
 	return "ok", nil
 }
@@ -269,7 +270,7 @@ type adminRegistry struct {
 }
 
 func (r adminRegistry) EnrichSlashContext(ctx context.Context) context.Context {
-	userID := session.UserIDFromContext(ctx)
+	userID := rctx.UserIDFromContext(ctx)
 	for _, id := range r.admins {
 		if strings.EqualFold(id, userID) {
 			return context.WithValue(ctx, agentkit.KeyIsAdmin, true)

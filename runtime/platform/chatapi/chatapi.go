@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/cap/permission"
+	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -29,30 +30,30 @@ const (
 
 type Config struct {
 	common.AgentRoutingConfig
-	ListenAddr         string   `json:"listenAddr"`
+	ListenAddr string `json:"listenAddr"`
 	// RegisterOnly mounts routes on http.DefaultServeMux and does not listen.
 	// Use with platform/http (or any plugin that serves DefaultServeMux).
 	// listenAddr "-" is an alias for registerOnly.
-	RegisterOnly       bool     `json:"registerOnly"`
-	Path               string   `json:"path"`
-	APIToken           string   `json:"apiToken"`
-	UserHeader         string   `json:"userHeader"`
-	UserNameHeader     string   `json:"userNameHeader"`
-	UserEmailHeader    string   `json:"userEmailHeader"`
-	ChannelHeader      string   `json:"channelHeader"`
+	RegisterOnly    bool   `json:"registerOnly"`
+	Path            string `json:"path"`
+	APIToken        string `json:"apiToken"`
+	UserHeader      string `json:"userHeader"`
+	UserNameHeader  string `json:"userNameHeader"`
+	UserEmailHeader string `json:"userEmailHeader"`
+	ChannelHeader   string `json:"channelHeader"`
 	// MetadataHeaders lists HTTP headers copied into MessageEvent.Metadata.
 	MetadataHeaders    []string `json:"metadataHeaders"`
 	CORSOrigins        []string `json:"corsOrigins"`
 	RequestTimeout     string   `json:"requestTimeout"`
 	InteractionTimeout string   `json:"interactionTimeout"`
 	// Interactive enables permission/ask_user prompts via SSE (default true when unset).
-	Interactive        *bool    `json:"interactive,omitempty"`
-	BusyPolicy         string   `json:"busyPolicy"`
-	MaxRuns            int      `json:"maxRuns"`
-	MaxUploadSize      int64    `json:"maxUploadSize"`
-	PublicBaseURL      string   `json:"publicBaseUrl"`
-	DebugUI            bool     `json:"debugUi"`
-	SessionsDir        string   `json:"sessionsDir"`
+	Interactive   *bool  `json:"interactive,omitempty"`
+	BusyPolicy    string `json:"busyPolicy"`
+	MaxRuns       int    `json:"maxRuns"`
+	MaxUploadSize int64  `json:"maxUploadSize"`
+	PublicBaseURL string `json:"publicBaseUrl"`
+	DebugUI       bool   `json:"debugUi"`
+	SessionsDir   string `json:"sessionsDir"`
 	// Agents lists selectable agent ids for debug UI and request validation.
 	Agents []string `json:"agents"`
 	// Admins lists user IDs allowed to upload/download files outside work/
@@ -66,48 +67,48 @@ type Deps struct {
 	Workspace    workspace.Service     `json:"workspace,omitempty"`
 	// SessionIndex optional: list conversations from the same SQLite index as tool/session-query.
 	SessionIndex capsessionindex.Service `json:"sessionIndex,omitempty"`
-	Agents       []agentkit.Agent      `json:"agents,omitempty"`
+	Agents       []agentkit.Agent        `json:"agents,omitempty"`
 }
 
 type Platform struct {
-	listenAddr          string
-	registerOnly        bool
-	path                string
-	apiToken            string
-	agentID             agentkit.AgentID
-	availableAgents     []string
-	userHeader          string
-	userNameHeader      string
-	userEmailHeader     string
-	channelHeader       string
-	metadataHeaders     []string
-	corsOrigins         []string
-	requestTimeout      time.Duration
-	interactionTimeout  time.Duration
+	listenAddr            string
+	registerOnly          bool
+	path                  string
+	apiToken              string
+	agentID               agentkit.AgentID
+	availableAgents       []string
+	userHeader            string
+	userNameHeader        string
+	userEmailHeader       string
+	channelHeader         string
+	metadataHeaders       []string
+	corsOrigins           []string
+	requestTimeout        time.Duration
+	interactionTimeout    time.Duration
 	permissionInteractive bool
-	busyPolicy          string
-	maxRuns             int
-	maxUploadSize       int64
-	publicBaseURL       string
-	debugUI             bool
-	sessionStore        agentkit.SessionStore
-	sessionIndex        capsessionindex.Service
-	workspace           workspace.Service
-	commands            agentkit.Commands
-	sessionScope        session.SessionScope
+	busyPolicy            string
+	maxRuns               int
+	maxUploadSize         int64
+	publicBaseURL         string
+	debugUI               bool
+	sessionStore          agentkit.SessionStore
+	sessionIndex          capsessionindex.Service
+	workspace             workspace.Service
+	commands              agentkit.Commands
+	sessionScope          session.SessionScope
 	sessionsDirRel        string
-	admins              []string
+	admins                []string
 
-	inbox        *common.Inbox
+	inbox         *common.Inbox
 	conversations *conversationStore
-	pending      *pendingStore
-	activeByConv map[string]string
-	activeMu     sync.RWMutex
+	pending       *pendingStore
+	activeByConv  map[string]string
+	activeMu      sync.RWMutex
 
 	resolvedAddr string
 	server       *http.Server
-	cancel   context.CancelFunc
-	startOnce sync.Once
+	cancel       context.CancelFunc
+	startOnce    sync.Once
 }
 
 // New registers platform/chat-api: Dify-like HTTP + SSE API for custom apps and BFFs.
@@ -173,37 +174,37 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	}
 
 	p := &Platform{
-		listenAddr:         listen,
-		registerOnly:       registerOnly,
-		path:               path,
-		apiToken:           strings.TrimSpace(cfg.APIToken),
-		agentID:            cfg.ResolveAgentID(),
-		availableAgents:    collectAgentIDs(cfg.Agents, deps.Agents),
-		userHeader:         userHeader,
-		userNameHeader:     userNameHeader,
-		userEmailHeader:    userEmailHeader,
-		channelHeader:      channelHeader,
-		metadataHeaders:    resolveMetadataHeaders(cfg.MetadataHeaders),
-		corsOrigins:        cfg.CORSOrigins,
-		requestTimeout:     timeout,
-		interactionTimeout: interactionTimeout,
+		listenAddr:            listen,
+		registerOnly:          registerOnly,
+		path:                  path,
+		apiToken:              strings.TrimSpace(cfg.APIToken),
+		agentID:               cfg.ResolveAgentID(),
+		availableAgents:       collectAgentIDs(cfg.Agents, deps.Agents),
+		userHeader:            userHeader,
+		userNameHeader:        userNameHeader,
+		userEmailHeader:       userEmailHeader,
+		channelHeader:         channelHeader,
+		metadataHeaders:       resolveMetadataHeaders(cfg.MetadataHeaders),
+		corsOrigins:           cfg.CORSOrigins,
+		requestTimeout:        timeout,
+		interactionTimeout:    interactionTimeout,
 		permissionInteractive: permissionInteractive,
-		busyPolicy:         busy,
-		maxRuns:            maxRuns,
-		maxUploadSize:      maxUpload,
-		publicBaseURL:      strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/"),
-		inbox:              common.NewInbox(128),
-		conversations:      newConversationStore(),
-		pending:            newPendingStore(maxRuns),
-		activeByConv:       make(map[string]string),
-		debugUI:            cfg.DebugUI,
-		sessionStore:       deps.SessionStore,
-		sessionIndex:       deps.SessionIndex,
-		workspace:          deps.Workspace,
-		commands:           deps.Commands,
-		sessionScope:       session.ParseScope(cfg.SessionScope),
-		sessionsDirRel:       sessionsDir,
-		admins:             cfg.Admins,
+		busyPolicy:            busy,
+		maxRuns:               maxRuns,
+		maxUploadSize:         maxUpload,
+		publicBaseURL:         strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/"),
+		inbox:                 common.NewInbox(128),
+		conversations:         newConversationStore(),
+		pending:               newPendingStore(maxRuns),
+		activeByConv:          make(map[string]string),
+		debugUI:               cfg.DebugUI,
+		sessionStore:          deps.SessionStore,
+		sessionIndex:          deps.SessionIndex,
+		workspace:             deps.Workspace,
+		commands:              deps.Commands,
+		sessionScope:          rctx.ParseScope(cfg.SessionScope),
+		sessionsDirRel:        sessionsDir,
+		admins:                cfg.Admins,
 	}
 	if registerOnly {
 		p.registerDefaultHTTP()
@@ -329,6 +330,6 @@ func parseDuration(raw string, fallback time.Duration) (time.Duration, error) {
 }
 
 var (
-	_ agentkit.Platform          = (*Platform)(nil)
-	_ permission.Capable         = (*Platform)(nil)
+	_ agentkit.Platform  = (*Platform)(nil)
+	_ permission.Capable = (*Platform)(nil)
 )

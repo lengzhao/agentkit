@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/slack-go/slack"
@@ -122,7 +123,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		apiURL:           apiURL,
 		commands:         deps.Commands,
 		workspace:        deps.Workspace,
-		sessionScope:     session.ParseScope(cfg.SessionScope),
+		sessionScope:     rctx.ParseScope(cfg.SessionScope),
 		inbox:            common.NewInbox(64),
 		channelNameCache: make(map[string]string),
 		typingStops:      make(map[agentkit.SessionID]func()),

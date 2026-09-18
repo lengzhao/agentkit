@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
-	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -27,7 +27,7 @@ type uidCapturingInit struct {
 }
 
 func (r *uidCapturingInit) InitApp(ctx context.Context) error {
-	*r.uid = session.UserIDFromContext(ctx)
+	*r.uid = rctx.UserIDFromContext(ctx)
 	return nil
 }
 

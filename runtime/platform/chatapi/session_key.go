@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -42,7 +43,7 @@ func sessionEnvelope(channelKey, conversationID string) agentkit.TurnEnvelope {
 }
 
 func channelWorkspaceCtx(ctx context.Context, channelKey string) context.Context {
-	return session.ApplyEnvelopeToContext(ctx, channelWorkspaceEnvelope(channelKey))
+	return rctx.ApplyEnvelopeToContext(ctx, channelWorkspaceEnvelope(channelKey))
 }
 
 func encodeSessionChannelSegment(channelKey string) string {

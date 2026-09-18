@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // ACPCommand exposes ACP session config control for agent/acp-remote agents.
@@ -138,7 +138,7 @@ func (c acpCommand) lookupACPAgent(agentID string) (agentkit.ACPCommandCapable, 
 }
 
 func (c acpCommand) resolveSessionID(ctx context.Context) (agentkit.SessionID, error) {
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}

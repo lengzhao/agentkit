@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // TurnContext returns a context seeded for agent.RunTurn.
 func TurnContext(sessionID agentkit.SessionID, agentID agentkit.AgentID) context.Context {
 	conv := string(sessionID)
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: conv,
 		AgentID:      agentID,
 	})

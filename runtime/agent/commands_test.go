@@ -7,12 +7,13 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type stubAgent struct {
-	id   agentkit.AgentID
+	id     agentkit.AgentID
 	detail string
 }
 
@@ -83,7 +84,7 @@ func TestAgentListShowsSessionAgent(t *testing.T) {
 		stubAgent{id: "reviewer"},
 	}
 	cmd := agent.Command(agents, store, "assistant", nil)
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
 
 	out, err := cmd.CommandExec(ctx, "")
 	if err != nil {
@@ -123,7 +124,7 @@ func TestAgentGlobalUse(t *testing.T) {
 	agents := []agentkit.Agent{stubAgent{id: "assistant"}, stubAgent{id: "worker"}}
 	ws := rtworkspace.Static(t.TempDir())
 	cmd := agent.Command(agents, store, "assistant", ws)
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "cli:test",
 		Workspace:    "cli:test",
 	})

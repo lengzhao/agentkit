@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/pluginkit"
 )
@@ -78,7 +79,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /compact")
 	}
-	entryKey := session.SessionIDFromContext(ctx)
+	entryKey := rctx.SessionIDFromContext(ctx)
 	sessionID, err := session.ResolveActiveSessionID(ctx, c.sessionStore, entryKey)
 	if err != nil {
 		return "", err
@@ -86,7 +87,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	agentID := session.AgentIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
 	sess, err := c.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return "", err
@@ -112,8 +113,8 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 }
 
 func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) error {
-	sessionID := session.SessionIDFromContext(ctx)
-	agentID := session.AgentIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
 	var sess agentkit.Session
 	if sessionID != "" {
 		var err error

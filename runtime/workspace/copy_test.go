@@ -8,7 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -72,7 +72,7 @@ func TestCopyLocalToGlobalTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "slack:C001",
 		Workspace:    "slack:C001",
 	})

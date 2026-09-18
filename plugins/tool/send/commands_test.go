@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/delivery"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -23,11 +24,11 @@ func (p *recordingPlatform) Send(_ context.Context, event agentkit.OutboundEvent
 }
 
 func withSendCtx(ctx context.Context, platform string, sessionID, deliveryID agentkit.SessionID) context.Context {
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if platform != "" {
 		ctx = session.ContextWithDeliveryRoute(ctx, platform, deliveryID)
 	}
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	return ctx
 }
 
@@ -102,9 +103,9 @@ func TestSendSlashCommandTargetChat(t *testing.T) {
 	bundle := tool.(*sendBundle)
 	ctx := withSendCtx(t.Context(), "slack", "slack:C001", "slack:C001")
 	ctx = func() context.Context {
-		env := session.EnvelopeFromContext(ctx)
+		env := rctx.EnvelopeFromContext(ctx)
 		env.Route = session.SessionRoute("slack", "delivery")
-		return session.ApplyEnvelopeToContext(ctx, env)
+		return rctx.ApplyEnvelopeToContext(ctx, env)
 	}()
 	out, err := bundle.Commands()[0].CommandExec(ctx, "C002 remote ping")
 	if err != nil {
@@ -149,8 +150,8 @@ func TestSendSlashCommandRequiresPlatformID(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := tool.(*sendBundle)
-	ctx := session.ApplyEnvelopeToContext(t.Context(), agentkit.TurnEnvelope{Conversation: "notvalid", Workspace: "notvalid"})
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
+	ctx := rctx.ApplyEnvelopeToContext(t.Context(), agentkit.TurnEnvelope{Conversation: "notvalid", Workspace: "notvalid"})
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	_, err = bundle.Commands()[0].CommandExec(ctx, "C002 hello")
 	if err == nil {
 		t.Fatal("expected error without delivery route in context")

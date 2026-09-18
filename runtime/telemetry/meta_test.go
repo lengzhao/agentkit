@@ -6,7 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -14,7 +14,7 @@ func TestObservationMetaFromContextFillsAgentAndSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
 		Conversation: "sub:parent:researcher:1",
 		Workspace:    "sub:parent:researcher:1",
 		AgentID:      agentkit.AgentID("sub:researcher"),
@@ -36,7 +36,7 @@ func TestEnrichEventAttrsAddsAgentAndSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
 		Conversation: "cli:default",
 		Workspace:    "cli:default",
 		AgentID:      agentkit.AgentID("coder"),

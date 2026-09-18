@@ -9,7 +9,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -78,7 +78,7 @@ func TestSmokeLoopSteerWhileBusy(t *testing.T) {
 	}
 
 	sessionID := agentkit.SessionID("lark:smoke:busy-steer")
-	steerCtx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	steerCtx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: string(sessionID),
 		Workspace:    string(sessionID),
 	})

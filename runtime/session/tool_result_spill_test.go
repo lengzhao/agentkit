@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -18,7 +19,7 @@ func TestPrepareToolResultForStorageSpillsLargeOutput(t *testing.T) {
 
 	dir := t.TempDir()
 	ws := rtworkspace.Static(dir)
-	ctx := session.WithWorkspaceService(context.Background(), ws)
+	ctx := rctx.WithWorkspaceService(context.Background(), ws)
 
 	full := strings.Repeat("line\n", 5000)
 	stored, err := session.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-a"), agentkit.ToolResult{
@@ -81,7 +82,7 @@ func TestPrepareToolResultForStorageSpillWriteFails(t *testing.T) {
 
 	dir := t.TempDir()
 	ws := rtworkspace.Static(dir)
-	ctx := session.WithWorkspaceService(context.Background(), ws)
+	ctx := rctx.WithWorkspaceService(context.Background(), ws)
 
 	rel := "work/tool-spill/sess-b/call-2.txt"
 	abs, err := ws.Resolve(ctx, rel)

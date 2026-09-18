@@ -9,8 +9,8 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestCompactionTrimsMemoryButKeepsDeriveMessages(t *testing.T) {

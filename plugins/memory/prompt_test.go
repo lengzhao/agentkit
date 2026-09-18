@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -35,7 +35,7 @@ func TestPromptBodyGlobalAndLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.WithWorkspace(context.Background(), tenant)
+	ctx := rctx.WithWorkspace(context.Background(), tenant)
 	body, err := mem.PromptBody(ctx)
 	if err != nil {
 		t.Fatal(err)

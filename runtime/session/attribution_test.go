@@ -7,12 +7,13 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func userCtx(userID string) context.Context {
-	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: userID}})
+	return rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: userID}})
 }
 
 func textMessage(role, text string) agentkit.ModelMessage {

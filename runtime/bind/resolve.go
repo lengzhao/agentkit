@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 // Resolver resolves ctx:-prefixed bind sources from the current turn context.
@@ -34,12 +35,12 @@ func (defaultResolver) ResolveCtxValue(ctx context.Context, from string) (string
 	key := strings.TrimPrefix(from, "ctx:")
 	switch {
 	case key == "user_id":
-		if v := session.UserIDFromContext(ctx); v != "" {
+		if v := rctx.UserIDFromContext(ctx); v != "" {
 			return v, nil
 		}
 		return "", nil
 	case key == "session_id":
-		if v := session.SessionIDFromContext(ctx); v != "" {
+		if v := rctx.SessionIDFromContext(ctx); v != "" {
 			return string(v), nil
 		}
 		return "", nil
@@ -49,12 +50,12 @@ func (defaultResolver) ResolveCtxValue(ctx context.Context, from string) (string
 		}
 		return "", nil
 	case key == "agent_id":
-		if v := session.AgentIDFromContext(ctx); v != "" {
+		if v := rctx.AgentIDFromContext(ctx); v != "" {
 			return string(v), nil
 		}
 		return "", nil
 	case key == "platform_id":
-		if v := session.PlatformFromContext(ctx); v != "" {
+		if v := rctx.PlatformFromContext(ctx); v != "" {
 			return v, nil
 		}
 		return "", nil
@@ -81,7 +82,7 @@ func (defaultResolver) ResolveCtxValue(ctx context.Context, from string) (string
 		if mdKey == "" {
 			return "", fmt.Errorf("metadata key is required")
 		}
-		md := session.MetadataFromContext(ctx)
+		md := rctx.MetadataFromContext(ctx)
 		if md == nil {
 			return "", nil
 		}

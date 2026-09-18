@@ -326,7 +326,7 @@ func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID a
 	if len(metadata) > 0 && len(env.Metadata) == 0 {
 		env.Metadata = metadata
 	}
-	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	if len(metadata) > 0 {
 		if rtschedule.IsFireTurn(metadata) {
 			ctx = context.WithValue(ctx, agentkit.KeyScheduleFireTurn, true)
@@ -353,7 +353,7 @@ func permissionCapability(raw any) permission.Capability {
 }
 
 func sessionIDFromContext(ctx context.Context) (agentkit.SessionID, error) {
-	id := session.SessionIDFromContext(ctx)
+	id := rctx.SessionIDFromContext(ctx)
 	if id == "" {
 		return "", fmt.Errorf("session id required in context")
 	}

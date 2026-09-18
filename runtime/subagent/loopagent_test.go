@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -29,7 +30,7 @@ func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput)
 	if a.err != nil {
 		return a.err
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
 		return err
@@ -90,8 +91,8 @@ func loopParentCtx() context.Context {
 		Workspace:    "cli:default",
 		Actor:        agentkit.ActorRef{UserID: "user-1"},
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("assistant"))
 	return ctx
 }
 
@@ -146,8 +147,8 @@ type envelopeCapturingAgent struct {
 func (a *envelopeCapturingAgent) ID() agentkit.AgentID { return a.id }
 
 func (a *envelopeCapturingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
-	*a.capture = session.EnvelopeFromContext(ctx)
-	sessionID := session.SessionIDFromContext(ctx)
+	*a.capture = rctx.EnvelopeFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
 		return err
@@ -374,7 +375,7 @@ func (a *blockingLoopAgent) ID() agentkit.AgentID { return a.id }
 func (a *blockingLoopAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
 	close(a.started)
 	<-a.unblock
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
 		if a.finished != nil {

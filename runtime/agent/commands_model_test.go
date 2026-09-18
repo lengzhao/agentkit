@@ -7,8 +7,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type stubModelAgent struct {
@@ -16,9 +17,9 @@ type stubModelAgent struct {
 	model string
 }
 
-func (a stubModelAgent) ID() agentkit.AgentID { return a.id }
+func (a stubModelAgent) ID() agentkit.AgentID                              { return a.id }
 func (a stubModelAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
-func (a stubModelAgent) ConfiguredModel() string { return a.model }
+func (a stubModelAgent) ConfiguredModel() string                           { return a.model }
 
 func TestModelCommandSetAndShow(t *testing.T) {
 	t.Parallel()
@@ -54,7 +55,7 @@ func TestModelCommandSetAndShow(t *testing.T) {
 		t.Fatal("missing /model command")
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "cli:test",
 		Workspace:    "cli:test",
 	})
@@ -148,7 +149,7 @@ func TestModelGlobalUsesRoutedAgent(t *testing.T) {
 			modelCmd = cmd
 		}
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "cli:test",
 		Workspace:    "cli:test",
 	})

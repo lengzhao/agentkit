@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -156,7 +157,7 @@ func (r *Registry) EnrichSlashContext(ctx context.Context) context.Context {
 	if len(r.cfg.Admins) == 0 {
 		return ctx
 	}
-	userID := session.UserIDFromContext(ctx)
+	userID := rctx.UserIDFromContext(ctx)
 	if !isAdminUser(r.cfg.Admins, userID) {
 		return ctx
 	}
@@ -212,10 +213,10 @@ func (r *Registry) List(ctx context.Context) []agentkit.Command {
 }
 
 var (
-	_ agentkit.Commands           = (*Registry)(nil)
-	_ agentkit.CommandCollector   = (*Registry)(nil)
-	_ agentkit.CommandProvider    = (*Registry)(nil)
-	_ agentkit.SlashAdminContext  = (*Registry)(nil)
+	_ agentkit.Commands          = (*Registry)(nil)
+	_ agentkit.CommandCollector  = (*Registry)(nil)
+	_ agentkit.CommandProvider   = (*Registry)(nil)
+	_ agentkit.SlashAdminContext = (*Registry)(nil)
 )
 
 func normalizeName(name string) string {
@@ -229,9 +230,9 @@ func (r *Registry) commandLogAttrs(ctx context.Context, cmd agentkit.Command, ra
 	}
 	attrs := []any{
 		"command", strings.TrimSpace(name),
-		"user_id", session.UserIDFromContext(ctx),
-		"platform_id", session.PlatformFromContext(ctx),
-		"session_id", session.ConversationFromContext(ctx),
+		"user_id", rctx.UserIDFromContext(ctx),
+		"platform_id", rctx.PlatformFromContext(ctx),
+		"session_id", rctx.ConversationFromContext(ctx),
 		"delivery_session_id", session.DeliveryRouteFromContext(ctx),
 		"args", sanitizeArgsForLog(cmd, rawArgs),
 	}

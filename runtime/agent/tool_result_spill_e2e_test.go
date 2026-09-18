@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -22,7 +23,7 @@ type bigOutputTool struct {
 }
 
 func (bigOutputTool) Name() string        { return "big" }
-func (bigOutputTool) Description() string  { return "returns a large string" }
+func (bigOutputTool) Description() string { return "returns a large string" }
 func (bigOutputTool) InputSchema() agentkit.JSONSchema {
 	return agentkit.JSONSchema{Type: "object"}
 }
@@ -58,7 +59,7 @@ func TestRunTurnSpillsLargeToolResultToWorkspace(t *testing.T) {
 	})
 
 	sessionID := agentkit.SessionID("spill-e2e")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: string(sessionID),
 		Workspace:    string(sessionID),
 	})

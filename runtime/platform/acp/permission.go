@@ -7,7 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func (p *Platform) handlePermission(ctx context.Context, sess *sessionState, data json.RawMessage) error {
@@ -24,7 +24,7 @@ func (p *Platform) handlePermission(ctx context.Context, sess *sessionState, dat
 		return err
 	}
 	reply := acpPermissionToReply(payload.ID, resp)
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	if deliverer, ok := ctx.Value(agentkit.KeySessionControl).(permissionDeliverer); ok && deliverer != nil {
 		if !deliverer.DeliverPermissionReply(sessionID, reply) {
 			return fmt.Errorf("permission reply not delivered")

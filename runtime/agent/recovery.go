@@ -26,7 +26,7 @@ func (a *Runtime) recoverIncompleteTurn(ctx context.Context, sess agentkit.Sessi
 	// ever resolves the wrong session object, skip rather than repair a parent
 	// delegate turn.
 	if ctx.Value(agentkit.KeyInSubagent) != nil {
-		turnSessionID := session.SessionIDFromContext(ctx)
+		turnSessionID := rctx.SessionIDFromContext(ctx)
 		if turnSessionID != "" && sess.ID() != turnSessionID {
 			return nil
 		}

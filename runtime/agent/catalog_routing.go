@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -24,7 +25,7 @@ func parseCatalogSlashArgs(args string) (global bool, payload string, rest []str
 }
 
 func resolveCatalogSessionID(ctx context.Context, store agentkit.SessionStore) (agentkit.SessionID, error) {
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return "", nil
 	}

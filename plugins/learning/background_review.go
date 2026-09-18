@@ -15,6 +15,7 @@ import (
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit"
@@ -22,13 +23,13 @@ import (
 
 // BackgroundReviewConfig controls post-turn LLM review (Hermes-style learning fork).
 type BackgroundReviewConfig struct {
-	Enabled           *bool  `json:"enabled"`
-	Model             string `json:"model"`
-	MaxSteps          int    `json:"maxSteps"`
-	MaxDigestMessages int    `json:"maxDigestMessages"`
-	SkipSlashOnly     *bool  `json:"skipSlashOnly"`
-	MinTurnTokens     int    `json:"minTurnTokens"`
-	MaxReviewsPerDay  int    `json:"maxReviewsPerDay"`
+	Enabled             *bool  `json:"enabled"`
+	Model               string `json:"model"`
+	MaxSteps            int    `json:"maxSteps"`
+	MaxDigestMessages   int    `json:"maxDigestMessages"`
+	SkipSlashOnly       *bool  `json:"skipSlashOnly"`
+	MinTurnTokens       int    `json:"minTurnTokens"`
+	MaxReviewsPerDay    int    `json:"maxReviewsPerDay"`
 	MinIdleSeconds      int    `json:"minIdleSeconds"`
 	MemoryNotifications string `json:"memoryNotifications"` // off | on | verbose (Hermes display.memory_notifications)
 	// MemoryNudgeInterval user turns between automatic memory reviews (Hermes memory.nudge_interval). 0 disables; default 10.
@@ -44,11 +45,11 @@ type reviewLearning interface {
 }
 
 type backgroundReviewDeps struct {
-	Learning     reviewLearning            `json:"learning"`
-	Memory       capmemory.Capture         `json:"memory"`
-	LLM          agentkit.LLMProvider      `json:"llm"`
-	SessionIndex capsessionindex.Service   `json:"sessionIndex,omitempty"`
-	Sender       capsdelivery.Sender       `json:"sender,omitempty"`
+	Learning     reviewLearning          `json:"learning"`
+	Memory       capmemory.Capture       `json:"memory"`
+	LLM          agentkit.LLMProvider    `json:"llm"`
+	SessionIndex capsessionindex.Service `json:"sessionIndex,omitempty"`
+	Sender       capsdelivery.Sender     `json:"sender,omitempty"`
 }
 
 type backgroundReviewProvider struct {
@@ -175,10 +176,10 @@ func (p *backgroundReviewProvider) runBackgroundReview(parent context.Context, t
 	rtlearning.Go(func() {
 		defer cancel()
 		defer runs.End(string(tc.SessionID))
-		runCtx := session.WithWorkspaceService(reviewCtx, p.learning.Workspace())
-		runCtx = session.ApplyEnvelopeToContext(runCtx, session.EnvelopeFromContext(parent))
-		runCtx = session.WithConversation(runCtx, string(tc.SessionID))
-		runCtx = session.WithAgentID(runCtx, tc.AgentID)
+		runCtx := rctx.WithWorkspaceService(reviewCtx, p.learning.Workspace())
+		runCtx = rctx.ApplyEnvelopeToContext(runCtx, rctx.EnvelopeFromContext(parent))
+		runCtx = rctx.WithConversation(runCtx, string(tc.SessionID))
+		runCtx = rctx.WithAgentID(runCtx, tc.AgentID)
 
 		if p.cfg.MaxReviewsPerDay > 0 {
 			ok, err := p.learning.TryConsumeReviewQuota(runCtx, p.cfg.MaxReviewsPerDay)

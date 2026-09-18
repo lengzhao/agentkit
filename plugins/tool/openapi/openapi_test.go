@@ -13,9 +13,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/runtime/session"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -305,8 +305,16 @@ func TestOpenAPIToolBindFromContext(t *testing.T) {
 		t.Fatalf("new: %v", err)
 	}
 	ctx := context.Background()
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Actor.UserID = "user-42"; return session.ApplyEnvelopeToContext(ctx, env) }()
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Metadata = map[string]any{"org_id": "org-7"}; return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = func() context.Context {
+		env := rctx.EnvelopeFromContext(ctx)
+		env.Actor.UserID = "user-42"
+		return rctx.ApplyEnvelopeToContext(ctx, env)
+	}()
+	ctx = func() context.Context {
+		env := rctx.EnvelopeFromContext(ctx)
+		env.Metadata = map[string]any{"org_id": "org-7"}
+		return rctx.ApplyEnvelopeToContext(ctx, env)
+	}()
 
 	tools, err := provider.ListTools(ctx)
 	if err != nil {
@@ -376,7 +384,7 @@ func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "user-99"}})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "user-99"}})
 	tools, err := provider.ListTools(ctx)
 	if err != nil {
 		t.Fatalf("list: %v", err)

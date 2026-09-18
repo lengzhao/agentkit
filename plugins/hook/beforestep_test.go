@@ -7,10 +7,11 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/compaction"
 	"github.com/lengzhao/agentkit/plugins/hook"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestCompactCommand(t *testing.T) {
@@ -59,7 +60,7 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatalf("unexpected commands: %+v", commands)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	out, err := commands[0].CommandExec(ctx, "")
 	if err != nil {
 		t.Fatal(err)

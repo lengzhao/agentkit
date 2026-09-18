@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // DefaultSessionScope is the runner default when sessionScope is unset.
@@ -20,17 +21,10 @@ const (
 )
 
 // ParseScope normalizes runner config. Unknown values fall back to channel scope.
+//
+// Deprecated: use rctx.ParseScope.
 func ParseScope(raw string) SessionScope {
-	switch SessionScope(strings.ToLower(strings.TrimSpace(raw))) {
-	case ScopeThread:
-		return ScopeThread
-	case ScopeUser:
-		return ScopeUser
-	case ScopeChannel:
-		return ScopeChannel
-	default:
-		return DefaultSessionScope
-	}
+	return rctx.ParseScope(raw)
 }
 
 // DeliveryParts holds parsed segments of a platform delivery SessionID.

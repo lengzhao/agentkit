@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	workspaceruntime "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -98,7 +99,7 @@ func TestLearnCommandSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
 	sess, err := store.Get(ctx, agentkit.SessionID("cli:default"))
 	if err != nil {
 		t.Fatal(err)

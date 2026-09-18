@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -48,7 +49,7 @@ func TestParentSessionForDelegatePrefersOpenSession(t *testing.T) {
 	}
 	guard.markTurnOpen(parentID)
 
-	ctx = session.WithSession(ctx, open)
+	ctx = rctx.WithSession(ctx, open)
 	got, err := session.ParentSessionForDelegate(ctx, guard, parentID)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +75,7 @@ func TestLoadSessionPrefersOpenTurn(t *testing.T) {
 	}
 	guard.markTurnOpen(id)
 
-	ctx := session.WithSession(context.Background(), open)
+	ctx := rctx.WithSession(context.Background(), open)
 	got, err := session.LoadSession(ctx, guard, id)
 	if err != nil {
 		t.Fatal(err)

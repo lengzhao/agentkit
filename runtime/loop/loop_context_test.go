@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -32,7 +33,7 @@ func TestWithTurnContextSetsUserID(t *testing.T) {
 		nil,
 	)
 
-	userID := session.UserIDFromContext(ctx)
+	userID := rctx.UserIDFromContext(ctx)
 	if userID != "U456" {
 		t.Fatalf("user id = %q", userID)
 	}
@@ -57,7 +58,7 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 		nil,
 	)
 
-	if session.UserIDFromContext(ctx) != "" {
+	if rctx.UserIDFromContext(ctx) != "" {
 		t.Fatal("expected no user id in context")
 	}
 }
@@ -81,8 +82,8 @@ func TestWithTurnContextSetsDeliveryRoute(t *testing.T) {
 	if delivery != "slack:C001:t:111.0:u:U456" {
 		t.Fatalf("delivery session id = %q", delivery)
 	}
-	if session.SessionIDFromContext(ctx) != "slack:C001" {
-		t.Fatalf("effective session id = %q", session.SessionIDFromContext(ctx))
+	if rctx.SessionIDFromContext(ctx) != "slack:C001" {
+		t.Fatalf("effective session id = %q", rctx.SessionIDFromContext(ctx))
 	}
 }
 
@@ -101,8 +102,8 @@ func TestWithTurnContextSetsResolvedSessionID(t *testing.T) {
 		nil,
 	)
 
-	if session.SessionIDFromContext(ctx) != "slack:C001:new:20260829" {
-		t.Fatalf("session id = %q", session.SessionIDFromContext(ctx))
+	if rctx.SessionIDFromContext(ctx) != "slack:C001:new:20260829" {
+		t.Fatalf("session id = %q", rctx.SessionIDFromContext(ctx))
 	}
 	delivery := session.DeliveryRouteFromContext(ctx)
 	if delivery != "slack:C001:t:111.0:u:U456" {

@@ -56,7 +56,7 @@ func (c *Control) Await(ctx context.Context, req permission.Request) (permission
 		req.ID = newPermissionRequestID()
 	}
 	if req.AskedBy == "" {
-		if userID := session.UserIDFromContext(ctx); userID != "" {
+		if userID := rctx.UserIDFromContext(ctx); userID != "" {
 			req.AskedBy = userID
 		}
 	}
@@ -262,9 +262,9 @@ func (l *Default) SupersedePendingForInbound(event agentkit.MessageEvent) {
 }
 
 func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.OutboundEmit, req permission.Request) error {
-	agentID := session.AgentIDFromContext(ctx)
-	platformID := session.PlatformFromContext(ctx)
-	userID := session.UserIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
+	platformID := rctx.PlatformFromContext(ctx)
+	userID := rctx.UserIDFromContext(ctx)
 	return emit(ctx, agentkit.OutboundEvent{
 		Route:      session.RouteRefFromContext(ctx),
 		AgentID:    agentID,
@@ -273,15 +273,15 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 		Type:       agentkit.EventPermissionRequest,
 		Data: rctx.MarshalOutboundData(permission.RequestPayload{
 			Request:      req,
-			Conversation: string(session.SessionIDFromContext(ctx)),
+			Conversation: string(rctx.SessionIDFromContext(ctx)),
 		}),
 	})
 }
 
 func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.OutboundEmit, id string, result permission.Result) error {
-	agentID := session.AgentIDFromContext(ctx)
-	platformID := session.PlatformFromContext(ctx)
-	userID := session.UserIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
+	platformID := rctx.PlatformFromContext(ctx)
+	userID := rctx.UserIDFromContext(ctx)
 	resolved := result
 	resolved.ID = id
 	return emit(ctx, agentkit.OutboundEvent{

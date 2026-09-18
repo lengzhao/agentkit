@@ -173,7 +173,7 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 	}
 	agentID := parentAgent
 	if agentID == "" {
-		agentID = session.AgentIDFromContext(ctx)
+		agentID = rctx.AgentIDFromContext(ctx)
 	}
 	event := agentkit.OutboundEvent{
 		Route:   parentRoute,

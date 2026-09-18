@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -115,12 +116,12 @@ func TestApplyEnvelopeToContextStoresEnvelope(t *testing.T) {
 		AgentID:      agentkit.AgentID("coder"),
 		Actor:        agentkit.ActorRef{UserID: "U1"},
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
-	if got := session.SessionIDFromContext(ctx); got != "slack:C001:new:20260101" {
+	if got := rctx.SessionIDFromContext(ctx); got != "slack:C001:new:20260101" {
 		t.Fatalf("session id = %q", got)
 	}
-	if got := session.AgentIDFromContext(ctx); got != "coder" {
+	if got := rctx.AgentIDFromContext(ctx); got != "coder" {
 		t.Fatalf("agent id = %q", got)
 	}
 	if got := session.DeliveryRouteFromContext(ctx); got != "slack:C001:t:1:u:U1" {
@@ -139,13 +140,13 @@ func TestWithRouteUpdatesEnvelopeRoute(t *testing.T) {
 		Conversation: "slack:C001",
 		Workspace:    "slack:C001",
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), base)
-	ctx = session.WithRoute(ctx, session.SessionRoute("slack", "slack:C002"))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), base)
+	ctx = rctx.WithRoute(ctx, session.SessionRoute("slack", "slack:C002"))
 
 	if got := session.DeliveryRouteFromContext(ctx); got != "slack:C002" {
 		t.Fatalf("delivery = %q", got)
 	}
-	if got := session.SessionIDFromContext(ctx); got != "slack:C001" {
+	if got := rctx.SessionIDFromContext(ctx); got != "slack:C001" {
 		t.Fatalf("conversation unchanged = %q", got)
 	}
 }

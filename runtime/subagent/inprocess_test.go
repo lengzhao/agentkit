@@ -8,11 +8,12 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type echoInput struct {
@@ -80,8 +81,8 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	}
 
 	parentID := agentkit.SessionID("cli:default")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(parentID), Workspace: string(parentID)})
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("coding"))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(parentID), Workspace: string(parentID)})
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("coding"))
 	return fixture{spawner: spawner, store: store, parentID: parentID, ctx: ctx}
 }
 
@@ -288,7 +289,7 @@ func TestRunAcceptsDelegationBelowDepthLimit(t *testing.T) {
 	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{{Text: "done"}})
 
 	ctx := context.WithValue(f.ctx, agentkit.KeyInSubagent, true)
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: "sub:cli:default:parent:1", Workspace: "sub:cli:default:parent:1"})
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: "sub:cli:default:parent:1", Workspace: "sub:cli:default:parent:1"})
 	if _, err := f.spawner.Run(ctx, subagent.Request{Agent: "researcher", Task: "nested once"}); err != nil {
 		if strings.Contains(err.Error(), "cannot delegate further") {
 			t.Fatalf("spawner should allow delegation below depth limit, got %v", err)

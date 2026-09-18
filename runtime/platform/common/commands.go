@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -78,8 +79,8 @@ func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash 
 		event.Metadata = slash.Metadata
 	}
 	env := session.ResolveEnvelope(WithDeliveryRoute(event, slash.Route), policy)
-	env = session.WithMetadataScope(env, slash.SessionScope)
-	cmdCtx := session.ApplyEnvelopeToContext(ctx, env)
+	env = rctx.WithMetadataScope(env, slash.SessionScope)
+	cmdCtx := rctx.ApplyEnvelopeToContext(ctx, env)
 	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {
 		cmdCtx = enricher.EnrichSlashContext(cmdCtx)
 	}

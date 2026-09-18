@@ -126,11 +126,11 @@ type turnRun struct {
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr error) {
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
 	}
-	ctx = session.WithWorkspaceService(ctx, a.workspace)
+	ctx = rctx.WithWorkspaceService(ctx, a.workspace)
 	sess, err := a.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return err
@@ -635,15 +635,15 @@ func (a *Runtime) invokeTurnComplete(ctx context.Context, sessionID agentkit.Ses
 }
 
 func withToolContext(ctx context.Context, sess agentkit.Session, agentID agentkit.AgentID) context.Context {
-	env := session.EnvelopeFromContext(ctx)
+	env := rctx.EnvelopeFromContext(ctx)
 	if sess != nil && sess.ID() != "" {
 		env = env.WithConversation(string(sess.ID()))
 	}
-	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	if agentID != "" {
-		ctx = session.WithAgentID(ctx, agentID)
+		ctx = rctx.WithAgentID(ctx, agentID)
 	}
-	ctx = session.WithSession(ctx, sess)
+	ctx = rctx.WithSession(ctx, sess)
 	return ctx
 }
 

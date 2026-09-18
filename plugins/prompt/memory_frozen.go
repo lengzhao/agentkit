@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type frozenSnapshot struct {
@@ -20,7 +20,7 @@ type turnCacheKey struct {
 }
 
 func turnCacheKeyFrom(ctx context.Context) (turnCacheKey, bool) {
-	sessionID := session.ConversationFromContext(ctx)
+	sessionID := rctx.ConversationFromContext(ctx)
 	turnID, _ := ctx.Value(agentkit.KeyTurnID).(string)
 	if sessionID == "" || turnID == "" {
 		return turnCacheKey{}, false
@@ -45,4 +45,3 @@ func loadFrozenMemory(ctx context.Context, load func() (string, error)) (string,
 	memoryTurnCache.Store(key, &frozenSnapshot{Content: content})
 	return content, nil
 }
-

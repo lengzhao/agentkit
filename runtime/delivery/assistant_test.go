@@ -36,13 +36,13 @@ func TestSendProactiveInboxTextUsesEmit(t *testing.T) {
 
 	platform := &recordingSender{}
 	var emitted []agentkit.OutboundEvent
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Route:        session.SessionRoute("slack", "slack:C001"),
 		Conversation: "slack:C001",
 		Workspace:    "slack:C001",
 	})
 	ctx = session.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:t:1:u:U1"))
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("coder"))
 	ctx = rctx.ContextWithOutboundEmit(ctx, func(_ context.Context, ev agentkit.OutboundEvent) error {
 		emitted = append(emitted, ev)
 		return nil
@@ -67,7 +67,7 @@ func TestSendAssistantMessageUsesSenderWhenNoEmit(t *testing.T) {
 
 	sender := &recordingSender{}
 	ctx := session.ContextWithDeliveryRoute(context.Background(), "slack", agentkit.SessionID("slack:C002"))
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("a1"))
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("a1"))
 
 	err := delivery.SendAssistantText(ctx, sender, "hi", delivery.AssistantMessageOptions{
 		Route: capsdelivery.RouteInput{SessionID: "slack:C002"},

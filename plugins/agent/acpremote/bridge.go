@@ -16,6 +16,7 @@ import (
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -300,7 +301,7 @@ func (b *bridge) prompt(ctx context.Context, acpSessionID acp.SessionId, prompt 
 	if err != nil {
 		return acpPromptResponse{}, err
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	slog.Info("acp-remote: prompt start", "session_id", sessionID, "acp_session_id", acpSessionID)
 	start := time.Now()
 	resp, err := proc.conn.Prompt(ctx, acp.PromptRequest{

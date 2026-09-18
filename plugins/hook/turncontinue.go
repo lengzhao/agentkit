@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -84,7 +85,7 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	if p.cfg.MaxContinuations <= 0 {
 		return nil
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return nil
 	}
@@ -156,7 +157,7 @@ func (c statusCommand) CommandExec(ctx context.Context, args string) (string, er
 	if strings.TrimSpace(args) != "" {
 		return "", fmt.Errorf("usage: /status")
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -107,7 +108,7 @@ func newTurnFixture(t *testing.T, hooks agentkit.HookRuntime, cfg agent.Config, 
 
 func (f turnFixture) run(t *testing.T) error {
 	t.Helper()
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(f.sessionID), Workspace: string(f.sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(f.sessionID), Workspace: string(f.sessionID)})
 	return f.agent.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

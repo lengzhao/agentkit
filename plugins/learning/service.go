@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -236,7 +237,7 @@ func (s *Service) learnSession(ctx context.Context) (string, error) {
 	if st != nil && !st.Enabled {
 		return "dreaming is off; use /learn dream on to queue session notes for background review", nil
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	summary, err := SummarizeSessionUserMessages(ctx, s.sessions, sessionID, 8)
 	if err != nil {
 		return "", err
@@ -323,7 +324,7 @@ func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) 
 	if !s.skillsWorkshopEnabled(ctx) {
 		return "", fmt.Errorf("skill workshop is disabled (use /learn policy skills propose|auto)")
 	}
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	summary, err := SummarizeSessionUserMessages(ctx, s.sessions, sessionID, 12)
 	if err != nil {
 		return "", err
@@ -396,4 +397,3 @@ func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, er
 		return "", fmt.Errorf("usage: /learn workshop list|show <id>|apply <id>|reject <id>")
 	}
 }
-

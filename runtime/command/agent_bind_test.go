@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -35,7 +36,7 @@ func TestDispatchAgentUsePersistsBind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
 	out, err := reg.Dispatch(ctx, "agent", "use reviewer")
 	if err != nil {
 		t.Fatal(err)

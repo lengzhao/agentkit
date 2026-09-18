@@ -6,7 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/bind"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -47,11 +47,24 @@ func TestResolveCtxValue(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Actor.UserID = "u-42"; return session.ApplyEnvelopeToContext(ctx, env) }()
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("coder"))
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Conversation = "slack:C001:t:1"; env.Workspace = "slack:C001"; return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = func() context.Context {
+		env := rctx.EnvelopeFromContext(ctx)
+		env.Actor.UserID = "u-42"
+		return rctx.ApplyEnvelopeToContext(ctx, env)
+	}()
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("coder"))
+	ctx = func() context.Context {
+		env := rctx.EnvelopeFromContext(ctx)
+		env.Conversation = "slack:C001:t:1"
+		env.Workspace = "slack:C001"
+		return rctx.ApplyEnvelopeToContext(ctx, env)
+	}()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, "turn-abc")
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Metadata = map[string]any{"channel": "general"}; return session.ApplyEnvelopeToContext(ctx, env) }()
+	ctx = func() context.Context {
+		env := rctx.EnvelopeFromContext(ctx)
+		env.Metadata = map[string]any{"channel": "general"}
+		return rctx.ApplyEnvelopeToContext(ctx, env)
+	}()
 
 	cases := []struct {
 		from string
@@ -119,7 +132,7 @@ func TestHeaderBindFunc(t *testing.T) {
 		{Key: "X-User-Id", From: "ctx:user_id", In: "header"},
 		{Key: "trace", From: "ctx:turn_id", In: "meta"},
 	})
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "u-7"}})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "u-7"}})
 	headers := fn(ctx)
 	if headers["X-User-Id"] != "u-7" {
 		t.Fatalf("headers = %#v", headers)

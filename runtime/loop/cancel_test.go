@@ -6,9 +6,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/loop"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -37,7 +38,7 @@ func TestLoopCancelInterruptsBusySession(t *testing.T) {
 
 	waitUntil(t, func() bool { return l.IsSessionBusy(sessionID) })
 
-	cancelCtx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	cancelCtx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := l.Cancel(cancelCtx, "/stop"); err != nil {
 		t.Fatal(err)
 	}

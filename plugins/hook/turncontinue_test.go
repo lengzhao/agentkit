@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/hook"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -40,7 +41,7 @@ func newDriver(t *testing.T, cfg hook.TurnContinueConfig) (agentkit.TurnStopping
 }
 
 func driverCtx(sess agentkit.Session) context.Context {
-	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sess.ID()), Workspace: string(sess.ID())})
+	return rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sess.ID()), Workspace: string(sess.ID())})
 }
 
 // startRun records the inbound user message that marks the run's beginning.

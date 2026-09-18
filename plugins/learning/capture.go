@@ -9,6 +9,7 @@ import (
 	caplearning "github.com/lengzhao/agentkit/cap/learning"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -36,7 +37,7 @@ func NewLearnCaptureTool(mem capmemory.Capture, skills caplearning.SkillProposer
 		return nil, fmt.Errorf("learn_capture requires learning skill proposer")
 	}
 	return agentkit.NewTool[caplearning.CaptureInput, caplearning.CaptureOutput]("learn_capture", func(ctx context.Context, input caplearning.CaptureInput) (caplearning.CaptureOutput, error) {
-		sid := string(session.SessionIDFromContext(ctx))
+		sid := string(rctx.SessionIDFromContext(ctx))
 		out, err := rtlearning.ApplyCapture(ctx, mem, skills, sid, input)
 		if err != nil {
 			return caplearning.CaptureOutput{}, err

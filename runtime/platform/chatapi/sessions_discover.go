@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -109,7 +110,7 @@ func (p *Platform) scanSessionDir(ctx context.Context, channelKey, dir string) e
 }
 
 func (p *Platform) sessionCtx(ctx context.Context, channelKey, conversationID string) context.Context {
-	return session.ApplyEnvelopeToContext(ctx, sessionEnvelope(channelKey, conversationID))
+	return rctx.ApplyEnvelopeToContext(ctx, sessionEnvelope(channelKey, conversationID))
 }
 
 func (p *Platform) loadConversationFromSession(ctx context.Context, channelKey, conversationID, createdBy string) (*conversation, error) {

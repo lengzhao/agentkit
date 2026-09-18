@@ -17,6 +17,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/learning"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
@@ -117,7 +118,7 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 		workspace:             deps.Workspace,
 		schedules:             deps.Schedules,
 		telemetry:             exp,
-		sessionScope:          session.ParseScope(cfg.SessionScope),
+		sessionScope:          rctx.ParseScope(cfg.SessionScope),
 		maxConcurrent:         maxConcurrent,
 		shutdownTimeout:       shutdownTimeout,
 		shutdownGraceOnSignal: shutdownGraceOnSignal,

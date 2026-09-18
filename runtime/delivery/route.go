@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/delivery"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -26,12 +27,12 @@ func ResolveRoute(ctx context.Context, input delivery.RouteInput) (delivery.Rout
 	if r.SessionID == "" {
 		return delivery.Route{}, fmt.Errorf("requires inbox session in context, or sessionId/userId")
 	}
-	r.AgentID = session.AgentIDFromContext(ctx)
-	r.PlatformID = session.PlatformFromContext(ctx)
+	r.AgentID = rctx.AgentIDFromContext(ctx)
+	r.PlatformID = rctx.PlatformFromContext(ctx)
 	if id := strings.TrimSpace(input.UserID); id != "" {
 		r.UserID = id
 	} else {
-		r.UserID = session.UserIDFromContext(ctx)
+		r.UserID = rctx.UserIDFromContext(ctx)
 	}
 	if p := session.ParseDelivery(r.SessionID, r.UserID).Platform; p != "" {
 		if r.PlatformID == "" || strings.TrimSpace(input.SessionID) != "" {
@@ -51,7 +52,7 @@ func NormalizeSessionID(ctx context.Context, raw string) agentkit.SessionID {
 	if strings.Contains(raw, ":") {
 		return agentkit.SessionID(raw)
 	}
-	if platformID := session.PlatformFromContext(ctx); platformID != "" {
+	if platformID := rctx.PlatformFromContext(ctx); platformID != "" {
 		return agentkit.SessionID(platformID + ":" + raw)
 	}
 	return agentkit.SessionID(raw)

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func (r *Root) Commands() []agentkit.Command {
@@ -35,9 +35,9 @@ func (c stopCommand) CommandExec(ctx context.Context, args string) (string, erro
 	if !busy || sessionID == "" {
 		return "no turn in progress", nil
 	}
-	env := session.EnvelopeFromContext(ctx)
+	env := rctx.EnvelopeFromContext(ctx)
 	env.Conversation = string(sessionID)
-	cancelCtx := session.ApplyEnvelopeToContext(ctx, env)
+	cancelCtx := rctx.ApplyEnvelopeToContext(ctx, env)
 	if err := c.loop.Cancel(cancelCtx, "/stop"); err != nil {
 		return "", err
 	}

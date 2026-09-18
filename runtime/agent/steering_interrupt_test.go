@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/prompt"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // blockingLLM blocks the first Stream.Recv until release is signaled.
@@ -96,7 +97,7 @@ func TestSteerDoesNotInterruptInFlightStep(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	turnDone := make(chan error, 1)
 	go func() {
@@ -188,7 +189,7 @@ func TestRunTurnLeavesFollowUpsForLoop(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	if err := ctrl.FollowUp(ctx, agentkit.ModelMessage{
 		Role:    "user",

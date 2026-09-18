@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -73,7 +74,7 @@ func TestMergeHeaderFuncStaticAndBind(t *testing.T) {
 	}, []bindConfig{
 		{Key: "X-User-Id", From: "ctx:user_id", In: "header"},
 	})
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "u-9"}})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "u-9"}})
 	headers := fn(ctx)
 	if headers["X-agenthub-apikey"] != "static-key" {
 		t.Fatalf("static header = %q", headers["X-agenthub-apikey"])
@@ -91,8 +92,8 @@ func TestPoolKeyGlobalVsTenant(t *testing.T) {
 
 	pool := &clientPool{}
 
-	ctxA := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
-	ctxB := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
+	ctxA := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001"})
+	ctxB := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: session.SessionRoute("slack", "slack:C002"), Conversation: "slack:C002", Workspace: "slack:C002"})
 
 	globalA := pool.poolKey(ctxA, globalServer)
 	globalB := pool.poolKey(ctxB, globalServer)

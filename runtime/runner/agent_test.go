@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
@@ -91,7 +92,7 @@ type tenantScopedActiveStore struct {
 }
 
 func (s tenantScopedActiveStore) ActiveSession(ctx context.Context, id agentkit.SessionID) (agentkit.SessionID, error) {
-	effective := session.SessionIDFromContext(ctx)
+	effective := rctx.SessionIDFromContext(ctx)
 	if effective == "" {
 		return id, nil
 	}

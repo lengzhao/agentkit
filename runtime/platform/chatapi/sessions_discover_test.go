@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -93,7 +94,7 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 
 	delivery := agentkit.SessionID(engineSessionKey(channel, convID))
 	effective := session.ApplyScope(delivery, session.ScopeChannel, "demo")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(effective)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(effective)})
 	sess, err := store.Get(ctx, effective)
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +229,7 @@ func appendTestUserMessage(ctx context.Context, store agentkit.SessionStore, cha
 }
 
 func tenantCtx(channel, convID string) context.Context {
-	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(engineSessionKey(channel, convID))})
+	return rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(engineSessionKey(channel, convID))})
 }
 
 func TestPersistedSessionSurvivesStoreReopen(t *testing.T) {

@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // recordingLLM captures the history it is asked to complete, which is how these
@@ -83,7 +84,7 @@ func newAgentOn(t *testing.T, store agentkit.SessionStore, provider agentkit.LLM
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag, err := agent.New(agent.Config{ID: "test", }, agent.Deps{
+	ag, err := agent.New(agent.Config{ID: "test"}, agent.Deps{
 		SessionStore: store,
 		LLM:          provider,
 		Tools:        toolRT,
@@ -107,7 +108,7 @@ func TestRunTurnRecoversCrashedSession(t *testing.T) {
 	recorder := &recordingLLM{inner: scripted}
 	ag := newAgentOn(t, store, recorder)
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -181,7 +182,7 @@ func TestRecoverIncompleteTurnSkipsForeignAgentTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := foreign.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -241,7 +242,7 @@ func TestRunTurnLeavesCleanSessionAlone(t *testing.T) {
 	ag := newAgentOn(t, store, scripted)
 
 	sessionID := agentkit.SessionID("test:clean")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",

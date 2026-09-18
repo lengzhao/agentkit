@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/permission"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -69,7 +70,7 @@ func TestLoopDelegateWithOpenSessionBypassesGuardedStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	guard.markTurnOpen(parentID)
-	ctx = session.WithSession(ctx, open)
+	ctx = rctx.WithSession(ctx, open)
 
 	result, err := spawner.Run(ctx, capsubagent.Request{Agent: "cursor", Task: "say hi"})
 	if err != nil {
@@ -175,7 +176,7 @@ func TestAsyncSubagentEndUsesRetainedParentSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	guard.markTurnOpen(parentID)
-	ctx = session.WithSession(ctx, open)
+	ctx = rctx.WithSession(ctx, open)
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(context.Context, agentkit.OutboundEvent) error {
 		return nil
 	}))
@@ -247,7 +248,7 @@ func TestLoopDelegateAsyncReturnsBeforeSlowOutbound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = session.WithSession(ctx, open)
+	ctx = rctx.WithSession(ctx, open)
 	ctx = context.WithValue(ctx, agentkit.KeyOutboundEmit, agentkit.OutboundEmit(func(context.Context, agentkit.OutboundEvent) error {
 		<-block
 		return nil
@@ -307,7 +308,7 @@ func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = session.WithSession(ctx, open)
+	ctx = rctx.WithSession(ctx, open)
 
 	_, err = spawner.Run(ctx, capsubagent.Request{Agent: "cursor", Task: "probe"})
 	if err != nil {
@@ -356,7 +357,7 @@ func TestLoopDelegateAsyncChildInheritsSessionControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = session.WithSession(ctx, open)
+	ctx = rctx.WithSession(ctx, open)
 
 	_, err = spawner.Run(ctx, capsubagent.Request{Agent: "cursor", Task: "probe"})
 	if err != nil {
@@ -398,7 +399,7 @@ func (a *brokerProbeAgent) RunTurn(ctx context.Context, input agentkit.TurnInput
 	if _, ok := rtpermission.BrokerFrom(ctx); ok && a.probe != nil {
 		*a.probe = true
 	}
-	sess, err := a.store.Get(ctx, session.SessionIDFromContext(ctx))
+	sess, err := a.store.Get(ctx, rctx.SessionIDFromContext(ctx))
 	if err != nil {
 		return err
 	}

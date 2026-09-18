@@ -7,13 +7,14 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/skill"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	t.Parallel()
 
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: agentkit.AgentID("assistant")})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: agentkit.AgentID("assistant")})
 	sess, err := session.NewMemory(session.MemoryConfig{ID: "mem-skill-order"})
 	if err != nil {
 		t.Fatal(err)

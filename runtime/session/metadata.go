@@ -2,77 +2,41 @@ package session
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const (
-	MetadataSessionScope   = "sessionScope"
-	MetadataConversationID = "conversationId"
-	MetadataTurnCount      = "turnCount"
+	MetadataSessionScope   = rctx.MetadataSessionScope
+	MetadataConversationID = rctx.MetadataConversationID
+	MetadataTurnCount      = rctx.MetadataTurnCount
 )
 
 // WithMetadataScope stamps session scope onto envelope metadata for /new entry-key resolution.
+//
+// Deprecated: use rctx.WithMetadataScope.
 func WithMetadataScope(env agentkit.TurnEnvelope, scope SessionScope) agentkit.TurnEnvelope {
-	if scope == "" {
-		scope = DefaultSessionScope
-	}
-	return MergeEnvelopeMetadata(env, map[string]any{
-		MetadataSessionScope: string(scope),
-	})
+	return rctx.WithMetadataScope(env, scope)
 }
 
 // MergeEnvelopeMetadata copies extra metadata onto env.
+//
+// Deprecated: use rctx.MergeEnvelopeMetadata.
 func MergeEnvelopeMetadata(env agentkit.TurnEnvelope, extra map[string]any) agentkit.TurnEnvelope {
-	if len(extra) == 0 {
-		return env
-	}
-	meta := env.Metadata
-	if meta == nil {
-		meta = make(map[string]any, len(extra))
-	}
-	for k, v := range extra {
-		meta[k] = v
-	}
-	env.Metadata = meta
-	return env
+	return rctx.MergeEnvelopeMetadata(env, extra)
 }
 
 // SessionScopeFromContext reads the runner/platform session scope from envelope metadata.
+//
+// Deprecated: use rctx.SessionScopeFromContext.
 func SessionScopeFromContext(ctx context.Context) SessionScope {
-	env := EnvelopeFromContext(ctx)
-	if env.Metadata != nil {
-		if raw, ok := env.Metadata[MetadataSessionScope]; ok {
-			switch v := raw.(type) {
-			case SessionScope:
-				if v != "" {
-					return v
-				}
-			case string:
-				if scope := ParseScope(v); scope != "" {
-					return scope
-				}
-			}
-		}
-	}
-	return DefaultSessionScope
+	return rctx.SessionScopeFromContext(ctx)
 }
 
 // MetadataString returns a trimmed metadata string when present.
+//
+// Deprecated: use rctx.MetadataString.
 func MetadataString(env agentkit.TurnEnvelope, key string) string {
-	if env.Metadata == nil {
-		return ""
-	}
-	raw, ok := env.Metadata[key]
-	if !ok || raw == nil {
-		return ""
-	}
-	switch v := raw.(type) {
-	case string:
-		return strings.TrimSpace(v)
-	default:
-		return strings.TrimSpace(fmt.Sprint(v))
-	}
+	return rctx.MetadataString(env, key)
 }

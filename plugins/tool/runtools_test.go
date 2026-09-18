@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/plugins/tool/todo"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -36,7 +37,7 @@ func newRunToolsFixture(t *testing.T) (todoTool, finishTool agentkit.Tool, sess 
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sess.ID()), Workspace: string(sess.ID())})
+	ctx = rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sess.ID()), Workspace: string(sess.ID())})
 	return todoTool, finishTool, sess, ctx
 }
 

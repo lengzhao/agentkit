@@ -18,13 +18,13 @@ type MemoryConfig struct {
 
 // Memory is an in-memory session backend for tests and ephemeral runs.
 type Memory struct {
-	mu                  sync.RWMutex
-	id                  agentkit.SessionID
-	seq                 agentkit.EventSeq
-	events              []agentkit.SessionEvent
-	cutoffByAgent       map[agentkit.AgentID]agentkit.EventSeq
-	trimmed             bool
-	maxToolResultBytes  int
+	mu                 sync.RWMutex
+	id                 agentkit.SessionID
+	seq                agentkit.EventSeq
+	events             []agentkit.SessionEvent
+	cutoffByAgent      map[agentkit.AgentID]agentkit.EventSeq
+	trimmed            bool
+	maxToolResultBytes int
 }
 
 func newMemory(cfg MemoryConfig) (*Memory, error) {

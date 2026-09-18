@@ -45,4 +45,3 @@ func unmarshalModelMessage(raw json.RawMessage) (agentkit.ModelMessage, error) {
 	err := json.Unmarshal(raw, &msg)
 	return msg, err
 }
-

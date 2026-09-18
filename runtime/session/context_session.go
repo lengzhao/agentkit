@@ -5,20 +5,21 @@ import (
 	"log/slog"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // WithSession attaches the turn's open session for tool handlers (e.g. delegate).
+//
+// Deprecated: use rctx.WithSession.
 func WithSession(ctx context.Context, s agentkit.Session) context.Context {
-	if s == nil {
-		return ctx
-	}
-	return context.WithValue(ctx, agentkit.KeySession, s)
+	return rctx.WithSession(ctx, s)
 }
 
 // SessionFromContext returns the open session when the agent set it for tools.
+//
+// Deprecated: use rctx.SessionFromContext.
 func SessionFromContext(ctx context.Context) (agentkit.Session, bool) {
-	s, ok := ctx.Value(agentkit.KeySession).(agentkit.Session)
-	return s, ok && s != nil
+	return rctx.SessionFromContext(ctx)
 }
 
 // ParentSessionForDelegate returns the parent session for delegation, preferring

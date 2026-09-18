@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	caphistory "github.com/lengzhao/agentkit/cap/chathistory"
 	"github.com/lengzhao/agentkit/plugins/tool/chathistory"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -47,9 +48,9 @@ func TestChatHistoryReturnsEmptyWithoutProvider(t *testing.T) {
 
 	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", agentkit.SessionID("feishu:oc_test"))
 	ctx = func() context.Context {
-		env := session.EnvelopeFromContext(ctx)
+		env := rctx.EnvelopeFromContext(ctx)
 		env.Route = session.SessionRoute("feishu", "delivery")
-		return session.ApplyEnvelopeToContext(ctx, env)
+		return rctx.ApplyEnvelopeToContext(ctx, env)
 	}()
 
 	raw, err := tool.Call(ctx, []byte(`{}`))
@@ -87,9 +88,9 @@ func TestChatHistoryRoutesThroughMultiplex(t *testing.T) {
 
 	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", agentkit.SessionID("feishu:oc_test:t:om_root"))
 	ctx = func() context.Context {
-		env := session.EnvelopeFromContext(ctx)
+		env := rctx.EnvelopeFromContext(ctx)
 		env.Route = session.SessionRoute("feishu", "delivery")
-		return session.ApplyEnvelopeToContext(ctx, env)
+		return rctx.ApplyEnvelopeToContext(ctx, env)
 	}()
 
 	raw, err := tool.Call(ctx, []byte(`{"limit":10}`))
@@ -125,9 +126,9 @@ func TestChatHistoryThreadCanBeDisabled(t *testing.T) {
 
 	ctx := session.ContextWithDeliveryRoute(context.Background(), "feishu", agentkit.SessionID("feishu:oc_test:t:om_root"))
 	ctx = func() context.Context {
-		env := session.EnvelopeFromContext(ctx)
+		env := rctx.EnvelopeFromContext(ctx)
 		env.Route = session.SessionRoute("feishu", "delivery")
-		return session.ApplyEnvelopeToContext(ctx, env)
+		return rctx.ApplyEnvelopeToContext(ctx, env)
 	}()
 
 	if _, err := tool.Call(ctx, []byte(`{"thread":false}`)); err != nil {

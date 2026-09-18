@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // maxDelegateDepth is the maximum number of delegate calls in one chain
@@ -18,7 +18,7 @@ import (
 const maxDelegateDepth = 2
 
 func delegationDepth(ctx context.Context) int {
-	sessionID := session.SessionIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
 	return strings.Count(string(sessionID), ":sub:")
 }
 
@@ -58,7 +58,7 @@ func NewSubagent(_ SubagentConfig, deps SubagentDeps) (agentkit.Tool, error) {
 		if depth := delegationDepth(ctx); depth >= maxDelegateDepth {
 			return SubagentOutput{}, fmt.Errorf("delegation depth limit reached (%d); at most %d delegate calls allowed", depth, maxDelegateDepth)
 		}
-		parent := session.SessionIDFromContext(ctx)
+		parent := rctx.SessionIDFromContext(ctx)
 		slog.Info("delegate: start", "agent", input.Agent, "parent", parent, "async", input.Async)
 		started := time.Now()
 		result, err := spawner.Run(ctx, subagent.Request{Agent: input.Agent, Task: input.Task, Async: input.Async})

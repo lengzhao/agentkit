@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -42,9 +43,9 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 
 	entry := session.ActiveEntryKeyFromContext(ctx)
 	if entry == "" {
-		entry = session.SessionIDFromContext(ctx)
+		entry = rctx.SessionIDFromContext(ctx)
 	}
-	conv := session.SessionIDFromContext(ctx)
+	conv := rctx.SessionIDFromContext(ctx)
 	add(entry)
 	add(conv)
 
@@ -61,9 +62,9 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 		}
 	}
 
-	env := session.EnvelopeFromContext(ctx)
-	userID := session.UserIDFromContext(ctx)
-	platform := session.PlatformFromContext(ctx)
+	env := rctx.EnvelopeFromContext(ctx)
+	userID := rctx.UserIDFromContext(ctx)
+	platform := rctx.PlatformFromContext(ctx)
 	delivery, ok := session.RouteSessionID(env.Route)
 	if ok && delivery != "" {
 		for _, scope := range []session.SessionScope{

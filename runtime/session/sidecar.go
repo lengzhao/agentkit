@@ -116,9 +116,9 @@ type activeCacheEntry struct {
 
 // fileSidecar persists agent binds and active-session mappings beside session logs.
 type fileSidecar struct {
-	dir           func(ctx context.Context) (string, error)
-	runtimeCache  sync.Map
-	activeCache   sync.Map
+	dir          func(ctx context.Context) (string, error)
+	runtimeCache sync.Map
+	activeCache  sync.Map
 }
 
 func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.SessionID) (SessionRuntimeData, error) {

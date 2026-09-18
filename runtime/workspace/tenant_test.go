@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func tenantCtx(id string) context.Context {
-	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: id})
+	return rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: id})
 }
 
 func newTenantSvc(t *testing.T, cfg rw.TenantConfig) *rw.TenantService {
@@ -250,7 +251,7 @@ func TestTenantUsesEnvelopeWorkspace(t *testing.T) {
 		Conversation: "schedule:job:1",
 		Workspace:    "slack:C001",
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), env)
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
 	got, err := svc.Resolve(ctx, "work/marker.txt")
 	if err != nil {

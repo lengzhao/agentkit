@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -14,7 +15,7 @@ import (
 func (s *TenantService) WalkLocalTenants(ctx context.Context, fn func(context.Context) error) error {
 	seenRoots := map[string]bool{}
 	for key := range s.roots {
-		tctx := session.WithWorkspace(ctx, key)
+		tctx := rctx.WithWorkspace(ctx, key)
 		if err := fn(tctx); err != nil {
 			return err
 		}
@@ -38,7 +39,7 @@ func (s *TenantService) WalkLocalTenants(ctx context.Context, fn func(context.Co
 			continue
 		}
 		key := session.WorkspaceKeyFromLocalDir(ent.Name(), s.omitPlatformPrefix)
-		tctx := session.WithWorkspace(ctx, key)
+		tctx := rctx.WithWorkspace(ctx, key)
 		if err := fn(tctx); err != nil {
 			return err
 		}

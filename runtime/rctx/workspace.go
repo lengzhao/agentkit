@@ -1,22 +1,23 @@
-package session
+package rctx
 
 import (
 	"context"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
+type workspaceServiceKey struct{}
+
 // WithWorkspaceService attaches the workspace resolver used for session spill files.
-//
-// Deprecated: use rctx.WithWorkspaceService.
 func WithWorkspaceService(ctx context.Context, ws workspace.Service) context.Context {
-	return rctx.WithWorkspaceService(ctx, ws)
+	if ws == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, workspaceServiceKey{}, ws)
 }
 
 // WorkspaceServiceFromContext returns the workspace service for spill I/O, if set.
-//
-// Deprecated: use rctx.WorkspaceServiceFromContext.
 func WorkspaceServiceFromContext(ctx context.Context) workspace.Service {
-	return rctx.WorkspaceServiceFromContext(ctx)
+	ws, _ := ctx.Value(workspaceServiceKey{}).(workspace.Service)
+	return ws
 }

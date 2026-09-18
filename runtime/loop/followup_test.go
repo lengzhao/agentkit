@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -26,8 +27,7 @@ func testLoopGraph(t *testing.T, followUpMode agentkit.FollowUpMode, storeDir st
 					map[string]any{
 						"use": "agent/coding",
 						"config": map[string]any{
-							"id":       "test",
-							
+							"id": "test",
 						},
 						"deps": map[string]any{
 							"sessionStore": map[string]any{
@@ -102,13 +102,13 @@ func readUserTexts(t *testing.T, storeDir string, sessionID agentkit.SessionID) 
 }
 
 func testContext(sessionID agentkit.SessionID) context.Context {
-	return session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	return rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 }
 
 func loopReq(sessionID agentkit.SessionID, msg agentkit.ModelMessage) agentkit.LoopRequest {
 	return agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			Message: msg,
+			Message:  msg,
 			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
 		},
 	}

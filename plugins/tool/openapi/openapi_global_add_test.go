@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -25,7 +25,7 @@ func TestOpenAPIAddGlobalCopiesLocalSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "slack:C001",
 		Workspace:    "slack:C001",
 	})

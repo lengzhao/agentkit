@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func TestFrozenMemoryCachePerTurn(t *testing.T) {
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default"})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:default"})
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, "turn-1")
 	calls := 0
 	load := func() (string, error) {

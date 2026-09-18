@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -56,19 +57,19 @@ func TestParseScopeDefaultsToChannel(t *testing.T) {
 
 	for _, raw := range []string{"", "channel", "CHANNEL", "bogus"} {
 		if raw == "bogus" {
-			if got := session.ParseScope(raw); got != session.ScopeChannel {
+			if got := rctx.ParseScope(raw); got != session.ScopeChannel {
 				t.Fatalf("ParseScope(%q) = %q, want channel", raw, got)
 			}
 			continue
 		}
-		if got := session.ParseScope(raw); got != session.ScopeChannel {
+		if got := rctx.ParseScope(raw); got != session.ScopeChannel {
 			t.Fatalf("ParseScope(%q) = %q, want channel", raw, got)
 		}
 	}
-	if got := session.ParseScope("thread"); got != session.ScopeThread {
+	if got := rctx.ParseScope("thread"); got != session.ScopeThread {
 		t.Fatalf("got %q", got)
 	}
-	if got := session.ParseScope("user"); got != session.ScopeUser {
+	if got := rctx.ParseScope("user"); got != session.ScopeUser {
 		t.Fatalf("got %q", got)
 	}
 }

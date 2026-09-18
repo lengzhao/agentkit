@@ -27,6 +27,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -127,11 +128,11 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 		return subagent.Result{}, fmt.Errorf("unknown subagent %q; available: %s", name, namesOf(defs))
 	}
 
-	parentID := session.SessionIDFromContext(ctx)
+	parentID := rctx.SessionIDFromContext(ctx)
 	if parentID == "" {
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
 	}
-	parentAgent := session.AgentIDFromContext(ctx)
+	parentAgent := rctx.AgentIDFromContext(ctx)
 	parent, err := session.ParentSessionForDelegate(ctx, s.store, parentID)
 	if err != nil {
 		return subagent.Result{}, err
@@ -202,10 +203,10 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
-	parentEnv := session.EnvelopeFromContext(ctx)
+	parentEnv := rctx.EnvelopeFromContext(ctx)
 	childEnv := parentEnv.WithConversation(string(childID))
-	childCtx = session.ApplyEnvelopeToContext(childCtx, childEnv)
-	childCtx = session.WithAgentID(childCtx, child.ID())
+	childCtx = rctx.ApplyEnvelopeToContext(childCtx, childEnv)
+	childCtx = rctx.WithAgentID(childCtx, child.ID())
 	// Drop the parent's turn control: steering and cancel reasons belong to the
 	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)

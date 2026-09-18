@@ -5,20 +5,20 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // ObservationMetaFromContext fills agent and session ids from ctx when unset.
 func ObservationMetaFromContext(ctx context.Context, meta captelemetry.ObservationMeta) captelemetry.ObservationMeta {
 	if meta.AgentID == "" {
-		if id := string(session.AgentIDFromContext(ctx)); id != "" {
+		if id := string(rctx.AgentIDFromContext(ctx)); id != "" {
 			meta.AgentID = id
 		} else if id := agentIDFromEnvelope(ctx); id != "" {
 			meta.AgentID = id
 		}
 	}
 	if meta.SessionID == "" {
-		if id := string(session.SessionIDFromContext(ctx)); id != "" {
+		if id := string(rctx.SessionIDFromContext(ctx)); id != "" {
 			meta.SessionID = id
 		} else if id := conversationFromEnvelope(ctx); id != "" {
 			meta.SessionID = id
@@ -33,7 +33,7 @@ func ContextObservationAttrs(ctx context.Context) map[string]string {
 	if id := TurnIDFrom(ctx); id != "" {
 		out["turn_id"] = id
 	}
-	env := session.EnvelopeFromContext(ctx)
+	env := rctx.EnvelopeFromContext(ctx)
 	if env.Route.Platform != "" {
 		out["platform_id"] = env.Route.Platform
 	}

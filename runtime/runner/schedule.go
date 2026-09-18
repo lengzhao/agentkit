@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -48,15 +49,15 @@ func (r *Root) routePolicy(event agentkit.MessageEvent) session.RoutePolicy {
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
 	policy := r.routePolicy(event)
 	env := session.ResolveEnvelope(event, policy)
-	env = session.WithMetadataScope(env, r.sessionScope)
-	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	env = rctx.WithMetadataScope(env, r.sessionScope)
+	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	conversation, err := r.resolveConversation(ctx, event, env, policy)
 	if err != nil {
 		r.reportInboundError(ctx, env, event, err)
 		return
 	}
 	env = env.WithConversation(conversation)
-	ctx = session.ApplyEnvelopeToContext(ctx, env)
+	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	scoped := session.SyncMessageEvent(event, env)
 	agentID, err := r.resolveAgentID(ctx, scoped, agentkit.SessionID(conversation))
 	if err != nil {

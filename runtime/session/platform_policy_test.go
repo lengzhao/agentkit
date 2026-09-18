@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -61,7 +62,7 @@ func TestDeliveryRouteFromContextPrefersEnvelope(t *testing.T) {
 	t.Parallel()
 
 	delivery := session.BuildDeliverySessionID("slack", "C001", "1", "U1")
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Route: session.SessionRoute("slack", string(delivery)),
 	})
 	if got := session.DeliveryRouteFromContext(ctx); got != delivery {

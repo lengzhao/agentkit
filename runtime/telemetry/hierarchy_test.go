@@ -6,7 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -20,7 +20,7 @@ func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 		SessionID: "cli:default",
 		AgentID:   "coder",
 	})
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
 		Conversation: "cli:default",
 		Workspace:    "cli:default",
 		AgentID:      agentkit.AgentID("coder"),
@@ -39,7 +39,7 @@ func TestSubagentObservationsNestUnderDelegate(t *testing.T) {
 		Input: `{"agent":"researcher"}`,
 	})
 
-	ctx = session.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{
 		Conversation: "sub:cli:researcher:1",
 		Workspace:    "sub:cli:researcher:1",
 		AgentID:      agentkit.AgentID("sub:researcher"),

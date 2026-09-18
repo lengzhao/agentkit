@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/skill"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
@@ -42,8 +43,8 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return "", err
 		}
-		sessionID := session.SessionIDFromContext(ctx)
-		agentID := session.AgentIDFromContext(ctx)
+		sessionID := rctx.SessionIDFromContext(ctx)
+		agentID := rctx.AgentIDFromContext(ctx)
 		if sessionID != "" {
 			if store == nil {
 				return "", fmt.Errorf("tool/skill requires sessionStore dependency")

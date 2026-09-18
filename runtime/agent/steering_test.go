@@ -7,14 +7,15 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/prompt"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -77,7 +78,7 @@ func TestLateSteerAfterSegmentEnds(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	turnDone := make(chan error, 1)
 	go func() {
@@ -146,8 +147,7 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 		"agent": map[string]any{
 			"use": "agent/coding",
 			"config": map[string]any{
-				"id":       "test",
-				
+				"id": "test",
 			},
 			"deps": map[string]any{
 				"sessionStore": map[string]any{
@@ -190,7 +190,7 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	if err := ctrl.Steer(ctx, agentkit.ModelMessage{
 		Role:    "user",
@@ -269,7 +269,7 @@ func TestSteerRunsAnotherLLMStepAfterInjected(t *testing.T) {
 	}
 
 	ctrl := loop.NewControl()
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
 	turnDone := make(chan error, 1)
 	go func() {

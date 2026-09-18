@@ -12,10 +12,10 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
-	"github.com/lengzhao/agentkit/runtime/session"
 )
 
 type RuntimeConfig struct {
@@ -49,8 +49,8 @@ type Runtime struct {
 	policies         []agentkit.Policy
 	approval         agentkit.Approval
 	hooks            agentkit.HookRuntime
-	defaultTimeout time.Duration
-	toolTimeouts   map[string]time.Duration
+	defaultTimeout   time.Duration
+	toolTimeouts     map[string]time.Duration
 	filter           toolNameFilter
 	filterWarnOnce   sync.Once
 }
@@ -92,8 +92,8 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		policies:         deps.Policies,
 		approval:         deps.Approval,
 		hooks:            deps.Hooks,
-		defaultTimeout: defaultTimeout,
-		toolTimeouts:   toolTimeouts,
+		defaultTimeout:   defaultTimeout,
+		toolTimeouts:     toolTimeouts,
 		filter:           newToolNameFilter(cfg.AllowTools, cfg.DenyTools),
 	}, nil
 }
@@ -189,8 +189,8 @@ func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 }
 
 func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
-	sessionID := session.SessionIDFromContext(ctx)
-	agentID := session.AgentIDFromContext(ctx)
+	sessionID := rctx.SessionIDFromContext(ctx)
+	agentID := rctx.AgentIDFromContext(ctx)
 
 	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{

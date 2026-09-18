@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
@@ -126,7 +127,7 @@ func InboundFromContent(agentID agentkit.AgentID, route session.SessionRouteInpu
 
 	var inboundCtx context.Context
 	if opts != nil && opts.Workspace != nil {
-		inboundCtx = session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		inboundCtx = rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 			Workspace: session.WorkspaceKey(string(deliveryID)),
 		})
 	}
@@ -254,7 +255,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 		slog.Warn("common: inbound attachments require workspace")
 		return nil
 	}
-	ctx := session.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: string(deliveryID),
 		Workspace:    session.WorkspaceKey(string(deliveryID)),
 	})

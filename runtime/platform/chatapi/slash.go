@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
 )
 
@@ -41,8 +42,8 @@ func mergeSlashMetadata(metadata map[string]any, conv *conversation) map[string]
 		if out == nil {
 			out = make(map[string]any, 2)
 		}
-		out[session.MetadataConversationID] = conv.ID
-		out[session.MetadataTurnCount] = conv.TurnCount
+		out[rctx.MetadataConversationID] = conv.ID
+		out[rctx.MetadataTurnCount] = conv.TurnCount
 	}
 	return out
 }

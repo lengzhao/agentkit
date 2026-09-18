@@ -9,11 +9,12 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func newScheduleTool(t *testing.T, cfg schedule.ScheduleConfig) (agentkit.Tool, capschedule.Registry) {
@@ -99,14 +100,14 @@ func TestScheduleRejectsBadInput(t *testing.T) {
 
 	// The tool builder turns handler errors into text results, so assert on those.
 	cases := map[string]string{
-		`{"op":"add","prompt":"x"}`:                     "requires kind",
-		`{"op":"add","kind":"cron"}`:                    "requires a prompt",
-		`{"op":"add","kind":"cron","cron":"nope","prompt":"x"}`:       "fields",
-		`{"op":"add","kind":"cron","cron":"99 * * * *","prompt":"x"}`: "out of range",
+		`{"op":"add","prompt":"x"}`:                                          "requires kind",
+		`{"op":"add","kind":"cron"}`:                                         "requires a prompt",
+		`{"op":"add","kind":"cron","cron":"nope","prompt":"x"}`:              "fields",
+		`{"op":"add","kind":"cron","cron":"99 * * * *","prompt":"x"}`:        "out of range",
 		`{"op":"add","kind":"delay","in":"1m","cron":"@daily","prompt":"x"}`: "only accepts in",
-		`{"op":"remove"}`:                               "requires an id",
-		`{"op":"remove","id":"ghost"}`:                  "no job with id",
-		`{"op":"frobnicate"}`:                           "unknown op",
+		`{"op":"remove"}`:              "requires an id",
+		`{"op":"remove","id":"ghost"}`: "no job with id",
+		`{"op":"frobnicate"}`:          "unknown op",
 	}
 	for input, want := range cases {
 		if got := testutil.CallTool(t, ctx, tl, input); !strings.Contains(got, want) {
@@ -196,8 +197,12 @@ func TestScheduleCapturesDeliveryFromContext(t *testing.T) {
 
 	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
 	ctx := session.ContextWithDeliveryRoute(context.Background(), "chat-api", agentkit.SessionID("chat-api:ch:t:conv"))
-	ctx = func() context.Context { env := session.EnvelopeFromContext(ctx); env.Actor.UserID = "u1"; return session.ApplyEnvelopeToContext(ctx, env) }()
-	ctx = session.WithAgentID(ctx, agentkit.AgentID("assistant"))
+	ctx = func() context.Context {
+		env := rctx.EnvelopeFromContext(ctx)
+		env.Actor.UserID = "u1"
+		return rctx.ApplyEnvelopeToContext(ctx, env)
+	}()
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("assistant"))
 
 	testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"delay","in":"1m","prompt":"remind"}`)
 
