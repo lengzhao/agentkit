@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/compaction"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	rtllm "github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
@@ -34,6 +35,11 @@ type Config struct {
 	// MaxSteps caps model steps per turn (all segments). Omitted defaults to 200;
 	// explicit 0 disables the cap.
 	MaxSteps *int `json:"maxSteps,omitempty"`
+	// MaxPromptTokens is the pre-send guard: when the assembled prompt (system
+	// prompt + hydrated history, inline media counted at real size) exceeds it,
+	// force-run compaction once before the LLM call; if it still exceeds, fail
+	// the step instead of sending a request the provider will reject. 0 disables.
+	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
 }
 
 type Deps struct {
@@ -48,19 +54,20 @@ type Deps struct {
 }
 
 type Runtime struct {
-	id           agentkit.AgentID
-	model        string
-	modalities   []string
-	retry        retrySettings
-	maxSteps     int
-	now          func() time.Time
-	sessionStore agentkit.SessionStore
-	llm          agentkit.LLMProvider
-	tools        agentkit.ToolRuntime
-	prompt       agentkit.PromptAssembler
-	hooks        agentkit.HookRuntime
-	compaction   []compaction.Service
-	workspace    workspace.Service
+	id              agentkit.AgentID
+	model           string
+	modalities      []string
+	retry           retrySettings
+	maxSteps        int
+	maxPromptTokens int
+	now             func() time.Time
+	sessionStore    agentkit.SessionStore
+	llm             agentkit.LLMProvider
+	tools           agentkit.ToolRuntime
+	prompt          agentkit.PromptAssembler
+	hooks           agentkit.HookRuntime
+	compaction      []compaction.Service
+	workspace       workspace.Service
 }
 
 // New registers agent/coding: Default coding agent: runs one turn against session, LLM, tools and prompt.
@@ -89,19 +96,20 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		return nil, fmt.Errorf("agent requires workspace")
 	}
 	return &Runtime{
-		id:           id,
-		model:        cfg.Model,
-		modalities:   agentkit.NormalizeModalities(cfg.Modalities),
-		retry:        resolveRetrySettings(cfg.Retry),
-		maxSteps:     resolveMaxSteps(cfg.MaxSteps),
-		now:          time.Now,
-		sessionStore: deps.SessionStore,
-		llm:          deps.LLM,
-		tools:        deps.Tools,
-		prompt:       deps.Prompt,
-		hooks:        deps.Hooks,
-		compaction:   deps.Compaction,
-		workspace:    deps.Workspace,
+		id:              id,
+		model:           cfg.Model,
+		modalities:      agentkit.NormalizeModalities(cfg.Modalities),
+		retry:           resolveRetrySettings(cfg.Retry),
+		maxSteps:        resolveMaxSteps(cfg.MaxSteps),
+		maxPromptTokens: cfg.MaxPromptTokens,
+		now:             time.Now,
+		sessionStore:    deps.SessionStore,
+		llm:             deps.LLM,
+		tools:           deps.Tools,
+		prompt:          deps.Prompt,
+		hooks:           deps.Hooks,
+		compaction:      deps.Compaction,
+		workspace:       deps.Workspace,
 	}, nil
 }
 
@@ -483,6 +491,14 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		finishPrep()
 		return stepOutcome{}, err
 	}
+	if a.maxPromptTokens > 0 && len(a.compaction) > 0 {
+		messages, ctx, err = a.guardPromptSize(ctx, sess, pos, messages)
+		if err != nil {
+			prepEnd.Err = err
+			finishPrep()
+			return stepOutcome{}, err
+		}
+	}
 	prepEnd.Output = fmt.Sprintf("%d messages, %d tools", len(messages), len(specs))
 	finishPrep()
 
@@ -599,6 +615,42 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	observationEnd.Usage = usageOut
 
 	return stepOutcome{message: assistant, usage: usage, ctx: ctx}, nil
+}
+
+// guardPromptSize is the last line of defense before the LLM call: it estimates
+// the assembled prompt at real send size (system prompt and inline media
+// included), force-runs compaction once when over maxPromptTokens, and fails
+// the step when the prompt still does not fit.
+func (a *Runtime) guardPromptSize(ctx context.Context, sess agentkit.Session, pos stepPosition, messages []agentkit.ModelMessage) ([]agentkit.ModelMessage, context.Context, error) {
+	est := rtcompaction.EstimateMessagesSendTokens(messages)
+	if est <= a.maxPromptTokens {
+		return messages, ctx, nil
+	}
+	slog.Warn("prompt exceeds maxPromptTokens, compacting before send",
+		"agent_id", a.id,
+		"session_id", sess.ID(),
+		"estimated_tokens", est,
+		"max_prompt_tokens", a.maxPromptTokens,
+	)
+	applied, compactErr := a.runForcedCompaction(ctx, sess)
+	if compactErr != nil {
+		return nil, ctx, fmt.Errorf("pre-send compaction failed: %w", compactErr)
+	}
+	if applied == 0 {
+		return nil, ctx, fmt.Errorf("prompt %d tokens exceeds maxPromptTokens %d and compaction did not apply", est, a.maxPromptTokens)
+	}
+	history, ctx, err := a.prepareStepHistory(ctx, sess, pos)
+	if err != nil {
+		return nil, ctx, err
+	}
+	messages, err = a.prompt.Assemble(ctx, agentkit.PromptRequest{Messages: history})
+	if err != nil {
+		return nil, ctx, err
+	}
+	if est := rtcompaction.EstimateMessagesSendTokens(messages); est > a.maxPromptTokens {
+		return nil, ctx, fmt.Errorf("prompt %d tokens still exceeds maxPromptTokens %d after compaction", est, a.maxPromptTokens)
+	}
+	return messages, ctx, nil
 }
 
 func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session, pos stepPosition) ([]agentkit.ModelMessage, context.Context, error) {

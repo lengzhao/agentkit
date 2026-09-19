@@ -178,10 +178,77 @@ func TestRunTurnOverflowRecoveryOnlyOnce(t *testing.T) {
 	}
 }
 
-type alwaysOverflowLLM struct{}
+type alwaysOverflowLLM struct {
+	calls atomic.Int32
+}
 
-func (alwaysOverflowLLM) Name() string { return "always-overflow" }
+func (o *alwaysOverflowLLM) Name() string { return "always-overflow" }
 
-func (alwaysOverflowLLM) Stream(context.Context, agentkit.LLMRequest) (agentkit.LLMStream, error) {
+func (o *alwaysOverflowLLM) Stream(context.Context, agentkit.LLMRequest) (agentkit.LLMStream, error) {
+	o.calls.Add(1)
 	return nil, fmt.Errorf("maximum context length exceeded")
+}
+
+// fakeAppliedService reports Applied without writing a session/compaction
+// event, like prune-tool-results does. Overflow recovery must not treat this
+// as real compaction and retry the same oversized request.
+type fakeAppliedService struct {
+	calls atomic.Int32
+}
+
+func (f *fakeAppliedService) Compact(_ context.Context, req compaction.Request) (compaction.Result, error) {
+	f.calls.Add(1)
+	return compaction.Result{Applied: true, Messages: req.Messages}, nil
+}
+
+func TestRunTurnOverflowDoesNotRetryOnFakeApplied(t *testing.T) {
+	t.Parallel()
+
+	llm := &alwaysOverflowLLM{}
+	compact := &fakeAppliedService{}
+	assembler, err := prompt.NewAssembler(prompt.AssemblerConfig{}, prompt.AssemblerDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "overflow-s3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolRuntime, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	rt, err := agent.New(agent.Config{
+		ID:    "test",
+		Model: "overflow",
+		Retry: &agent.RetryConfig{Enabled: &disabled},
+	}, agent.Deps{
+		SessionStore: sessstore.NewStaticStore(mem),
+		LLM:          llm,
+		Tools:        toolRuntime,
+		Prompt:       assembler,
+		Compaction:   []compaction.Service{compact},
+		Workspace:    rtworkspace.Static(t.TempDir()),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
+	err = rt.RunTurn(ctx, agentkit.TurnInput{
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected overflow failure")
+	}
+	if got := llm.calls.Load(); got != 1 {
+		t.Fatalf("llm calls = %d, want 1: no retry when compaction only fake-applied", got)
+	}
+	if got := compact.calls.Load(); got != 1 {
+		t.Fatalf("compaction calls = %d, want 1", got)
+	}
 }

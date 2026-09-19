@@ -29,8 +29,9 @@ func NewPrune(cfg PruneConfig) (compaction.Service, error) {
 }
 
 func (s *pruneService) Compact(_ context.Context, req compaction.Request) (compaction.Result, error) {
+	messages, pruned := rtcompaction.PruneToolResultsReport(req.Messages, s.maxBytes)
 	return compaction.Result{
-		Applied:  true,
-		Messages: rtcompaction.PruneToolResults(req.Messages, s.maxBytes),
+		Applied:  pruned,
+		Messages: messages,
 	}, nil
 }

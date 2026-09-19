@@ -94,7 +94,15 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 	tokensBefore := rtcompaction.EstimateMessagesTokens(req.Messages)
 	prep := rtcompaction.Prepare(indexed, boundaryStart, s.cfg.KeepRecentTokens, previousSummary, tokensBefore)
 	if prep == nil {
+		if req.Force {
+			return s.truncateOnlyCompaction(ctx, req, indexed[boundaryStart:], tokensBefore)
+		}
 		return capcompaction.Result{}, nil
+	}
+	// A single retained message larger than the keep budget would keep the
+	// post-compaction history oversized; bound it in the model-visible view.
+	if truncated, ok := rtcompaction.TruncateOversizedMessageTexts(prep.RetainedTail, s.maxRetainedChars()); ok {
+		prep.RetainedTail = truncated
 	}
 
 	policy := rtcompaction.ResolveRetrySettings(s.cfg.Retry)
@@ -138,6 +146,47 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 			Content: []agentkit.ContentPart{{
 				Type: "text",
 				Text: summaryText,
+			}},
+		},
+	}
+	if err := sessevents.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
+		return capcompaction.Result{}, err
+	}
+	return capcompaction.Result{Applied: true}, nil
+}
+
+// maxRetainedChars bounds a single retained message in the model-visible view;
+// keepRecentTokens uses the chars/4 estimate, so the char budget matches.
+func (s *summaryService) maxRetainedChars() int {
+	return s.cfg.KeepRecentTokens * 4
+}
+
+// truncateOnlyCompaction handles forced compaction when there is nothing to
+// summarize (e.g. the whole history is one oversized message): it persists a
+// compaction event whose retained tail is the truncated history, so overflow
+// recovery retries with a bounded prompt instead of the same oversized one.
+func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcompaction.Request, tail []capcompaction.IndexedMessage, tokensBefore int) (capcompaction.Result, error) {
+	if len(tail) == 0 {
+		return capcompaction.Result{}, nil
+	}
+	msgs := make([]agentkit.ModelMessage, len(tail))
+	for i, item := range tail {
+		msgs[i] = item.Message
+	}
+	truncated, ok := rtcompaction.TruncateOversizedMessageTexts(msgs, s.maxRetainedChars())
+	if !ok {
+		return capcompaction.Result{}, nil
+	}
+	data := capcompaction.EventData{
+		FirstKeptSeq: tail[0].Seq,
+		RetainedTail: truncated,
+		TokensBefore: tokensBefore,
+		Kind:         capcompaction.KindSummary,
+		Summary: agentkit.ModelMessage{
+			Role: "user",
+			Content: []agentkit.ContentPart{{
+				Type: "text",
+				Text: "[Earlier context could not be summarized: a single message exceeded the retention budget and was truncated.]",
 			}},
 		},
 	}
@@ -260,7 +309,7 @@ const initialSummarizationPrompt = `The messages above are a conversation to sum
 Use this EXACT format:
 
 ## Goal
-[What is the user trying to accomplish?]
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
 
 ## Constraints & Preferences
 - [Any constraints, preferences, or requirements mentioned by user]
@@ -296,8 +345,36 @@ Update the existing structured summary with new information. RULES:
 - UPDATE the Progress section: move items from "In Progress" to "Done" when completed
 - UPDATE "Next Steps" based on what was accomplished
 - PRESERVE exact file paths, function names, and error messages
+- If something is no longer relevant, you may remove it
 
-Use the same structured format as the initial summary.`
+Use this EXACT format:
+
+## Goal
+[Preserve existing goals, add new ones if the task expanded]
+
+## Constraints & Preferences
+- [Preserve existing, add new ones discovered]
+
+## Progress
+### Done
+- [x] [Include previously done items AND newly completed items]
+
+### In Progress
+- [ ] [Current work - update based on progress]
+
+### Blocked
+- [Current blockers - remove if resolved]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+
+## Next Steps
+1. [Update based on current state]
+
+## Critical Context
+- [Preserve important context, add new if needed]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`
 
 const turnPrefixSummarizationPrompt = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
 

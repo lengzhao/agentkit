@@ -2,8 +2,10 @@ package compaction
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -153,5 +155,160 @@ func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 	}
 	if result.Applied {
 		t.Fatal("nothing should be compacted when the history fits in keepRecentTokens")
+	}
+}
+
+type okSummaryLLM struct {
+	calls atomic.Int32
+}
+
+func (o *okSummaryLLM) Name() string { return "ok-summary" }
+
+func (o *okSummaryLLM) Stream(_ context.Context, _ agentkit.LLMRequest) (agentkit.LLMStream, error) {
+	o.calls.Add(1)
+	return &summaryStream{text: "summary"}, nil
+}
+
+func lastCompactionData(t *testing.T, ctx context.Context, sess agentkit.Session) capcompaction.EventData {
+	t.Helper()
+	events, err := derive.ReadAllEvents(ctx, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != agentkit.EventCompaction {
+			continue
+		}
+		var data capcompaction.EventData
+		if err := json.Unmarshal(events[i].Data, &data); err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	t.Fatal("no session/compaction event")
+	return capcompaction.EventData{}
+}
+
+// A retained message larger than keepRecentTokens must be truncated in the
+// compaction event, otherwise the post-compaction history stays oversized and
+// the retry hits context overflow again.
+func TestSummaryTruncatesOversizedRetainedMessage(t *testing.T) {
+	t.Parallel()
+
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:giantretained"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, msg := range []agentkit.ModelMessage{
+		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "old question"}}},
+		{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "old answer"}}},
+		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 5000)}}},
+	} {
+		if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		AgentID:   "a",
+		Session:   sess,
+		Messages:  messages,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected compaction applied")
+	}
+	data := lastCompactionData(t, ctx, sess)
+	if len(data.RetainedTail) == 0 {
+		t.Fatal("expected retained tail")
+	}
+	last := data.RetainedTail[len(data.RetainedTail)-1]
+	got := last.Content[0].Text
+	if len(got) >= 5000 {
+		t.Fatalf("oversized retained message not truncated, len=%d", len(got))
+	}
+	if !strings.Contains(got, "truncated") {
+		t.Fatal("truncated retained message should carry a marker")
+	}
+}
+
+// When the whole history is one oversized message there is nothing to
+// summarize; forced compaction must still bound the history by truncating the
+// giant message instead of silently reporting not-applied.
+func TestSummaryForceTruncatesWhenNothingToSummarize(t *testing.T) {
+	t.Parallel()
+
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:onlygiant"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("y", 5000)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		AgentID:   "a",
+		Session:   sess,
+		Messages:  messages,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("forced compaction must apply when an oversized message is truncatable")
+	}
+	if llm.calls.Load() != 0 {
+		t.Fatalf("summary llm calls = %d, want 0: nothing to summarize", llm.calls.Load())
+	}
+	data := lastCompactionData(t, ctx, sess)
+	if len(data.RetainedTail) != 1 {
+		t.Fatalf("retained tail = %d, want 1", len(data.RetainedTail))
+	}
+	got := data.RetainedTail[0].Content[0].Text
+	if len(got) >= 5000 {
+		t.Fatalf("oversized message not truncated, len=%d", len(got))
+	}
+
+	derived, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, msg := range derived {
+		for _, part := range msg.Content {
+			total += len(part.Text)
+		}
+	}
+	if total >= 5000 {
+		t.Fatalf("derived history still oversized, chars=%d", total)
 	}
 }

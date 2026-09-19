@@ -34,9 +34,10 @@ func TestCompactCommand(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(context.Background(), sess, "coder", agentkit.EventToolResult, agentkit.ModelMessage{
-		Role:    "tool",
-		Content: []agentkit.ContentPart{{Type: "text", Text: long}},
+	if err := sessevents.AppendToolResult(context.Background(), sess, "coder", agentkit.ToolResult{
+		ID:      "call-1",
+		Name:    "read",
+		Content: long,
 	}); err != nil {
 		t.Fatal(err)
 	}

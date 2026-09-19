@@ -196,6 +196,8 @@ agent.assistant.default:
   config:
     id: assistant
     model: gpt-5.4
+    # 发送前兜底：assembled prompt（含 system prompt 与 inline 媒体实际大小）超过则先强制压缩；与 token-limit 的 200k 窗口假设自洽
+    maxPromptTokens: 180000
     retry:
       enabled: true
       maxRetries: 3
@@ -216,6 +218,7 @@ agent.worker.default:
   config:
     id: worker
     model: gpt-5.4
+    maxPromptTokens: 180000
     retry:
       enabled: true
       maxRetries: 3

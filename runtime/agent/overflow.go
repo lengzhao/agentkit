@@ -10,6 +10,7 @@ import (
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
@@ -58,6 +59,10 @@ func (a *Runtime) runStepWithOverflowRecovery(
 }
 
 func (a *Runtime) runForcedCompaction(ctx context.Context, sess agentkit.Session) (int, error) {
+	before, err := latestCompactionSeq(ctx, sess)
+	if err != nil {
+		return 0, err
+	}
 	messages, err := sess.DeriveMessages(ctx)
 	if err != nil {
 		return 0, err
@@ -69,7 +74,35 @@ func (a *Runtime) runForcedCompaction(ctx context.Context, sess agentkit.Session
 		Messages:  messages,
 		Force:     true,
 	})
-	return applied, err
+	if err != nil {
+		return 0, err
+	}
+	after, err := latestCompactionSeq(ctx, sess)
+	if err != nil {
+		return 0, err
+	}
+	if after <= before {
+		// Services like prune-tool-results may report Applied without persisting a
+		// compaction event. That is not real compaction: the next request would
+		// carry the same oversized history, so do not retry.
+		return 0, nil
+	}
+	return applied, nil
+}
+
+// latestCompactionSeq returns the newest session/compaction event seq, or 0.
+func latestCompactionSeq(ctx context.Context, sess agentkit.Session) (agentkit.EventSeq, error) {
+	events, err := derive.ReadAllEvents(ctx, sess)
+	if err != nil {
+		return 0, err
+	}
+	var seq agentkit.EventSeq
+	for _, ev := range events {
+		if ev.Type == agentkit.EventCompaction && ev.Seq > seq {
+			seq = ev.Seq
+		}
+	}
+	return seq, nil
 }
 
 func (a *Runtime) emitOverflowRecovery(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data sessevents.OverflowRecoveryData) error {

@@ -1,6 +1,7 @@
 agent.assistant.default:
     config:
         id: assistant
+        maxPromptTokens: 180000
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -43,6 +44,7 @@ agent.cursor.default:
 agent.worker.default:
     config:
         id: worker
+        maxPromptTokens: 180000
         model: gpt-5.4
         retry:
             baseDelayMs: 2000

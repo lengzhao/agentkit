@@ -4,18 +4,49 @@ import "github.com/lengzhao/agentkit"
 
 // PruneToolResults truncates oversized tool result text deterministically.
 func PruneToolResults(messages []agentkit.ModelMessage, maxBytes int) []agentkit.ModelMessage {
+	out, _ := PruneToolResultsReport(messages, maxBytes)
+	return out
+}
+
+// PruneToolResultsReport is PruneToolResults plus whether any content was
+// actually truncated, so callers can report Applied honestly.
+func PruneToolResultsReport(messages []agentkit.ModelMessage, maxBytes int) ([]agentkit.ModelMessage, bool) {
 	if maxBytes <= 0 {
-		return messages
+		return messages, false
 	}
+	pruned := false
 	out := make([]agentkit.ModelMessage, len(messages))
 	for i, msg := range messages {
 		out[i] = msg
 		if msg.Role != "tool" && len(msg.ToolResults) == 0 {
 			continue
 		}
-		out[i] = pruneMessage(msg, maxBytes)
+		next := pruneMessage(msg, maxBytes)
+		if pruneMessageChanged(msg, next) {
+			pruned = true
+		}
+		out[i] = next
 	}
-	return out
+	return out, pruned
+}
+
+// pruneMessageChanged reports whether pruneMessage modified the message; it
+// only rewrites Content part text and ToolResults content.
+func pruneMessageChanged(a, b agentkit.ModelMessage) bool {
+	if len(a.Content) != len(b.Content) || len(a.ToolResults) != len(b.ToolResults) {
+		return true
+	}
+	for i := range a.Content {
+		if a.Content[i].Text != b.Content[i].Text {
+			return true
+		}
+	}
+	for i := range a.ToolResults {
+		if a.ToolResults[i].Content != b.ToolResults[i].Content {
+			return true
+		}
+	}
+	return false
 }
 
 // TruncateToolResult truncates oversized tool result content after execution.
