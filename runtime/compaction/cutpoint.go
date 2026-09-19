@@ -40,7 +40,7 @@ func FindCutPoint(messages []capscompaction.IndexedMessage, startIndex, endIndex
 	accumulated := 0
 	cutIndex := cutPoints[0]
 	for i := endIndex - 1; i >= startIndex; i-- {
-		tokens := EstimateTokens(messages[i].Message)
+		tokens := indexedMessageTokens(messages[i])
 		if tokens == 0 {
 			continue
 		}

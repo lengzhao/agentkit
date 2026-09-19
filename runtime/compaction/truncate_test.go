@@ -1,0 +1,73 @@
+package compaction_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/lengzhao/agentkit"
+	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
+)
+
+// 记录大小超预算的消息里，可 hydrate 的附件 part 必须被替换成文本提示，
+// 否则压缩后的 retained tail 会在下一轮 hydrate 时重新膨胀。
+func TestBoundOversizedIndexedMessagesNeutralizesGiantAttachments(t *testing.T) {
+	t.Parallel()
+
+	indexed := []capscompaction.IndexedMessage{
+		{
+			Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{
+				{Type: "attachment_ref", Source: "upload/huge.png", MIME: "image/png"},
+				{Type: "text", Text: "看这张图"},
+			}},
+			Seq:          1,
+			LogicalChars: 3_000_000,
+		},
+		{
+			Message:      agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "小消息"}}},
+			Seq:          2,
+			LogicalChars: 20,
+		},
+	}
+	out, changed := rtcompaction.BoundOversizedIndexedMessages(indexed, 80_000)
+	if !changed {
+		t.Fatal("expected changes for oversized attachment message")
+	}
+	for _, part := range out[0].Content {
+		if part.Type == "attachment_ref" {
+			t.Fatalf("attachment part should have been replaced by a text hint: %#v", part)
+		}
+	}
+	joined := ""
+	for _, part := range out[0].Content {
+		joined += part.Text + "\n"
+	}
+	if !strings.Contains(joined, "upload/huge.png") {
+		t.Fatalf("hint should keep the source path, got %q", joined)
+	}
+	if !strings.Contains(joined, "看这张图") {
+		t.Fatalf("text parts must be preserved, got %q", joined)
+	}
+	if out[1].Content[0].Text != "小消息" {
+		t.Fatalf("small message must stay untouched, got %#v", out[1].Content[0])
+	}
+}
+
+// 文本截断能力保持不变：巨型 text 仍按 maxChars 截断。
+func TestBoundOversizedIndexedMessagesTruncatesGiantText(t *testing.T) {
+	t.Parallel()
+
+	indexed := []capscompaction.IndexedMessage{{
+		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{
+			{Type: "text", Text: strings.Repeat("x", 300_000)},
+		}},
+		Seq: 1,
+	}}
+	out, changed := rtcompaction.BoundOversizedIndexedMessages(indexed, 80_000)
+	if !changed {
+		t.Fatal("expected truncation")
+	}
+	if len(out[0].Content[0].Text) > 90_000 {
+		t.Fatalf("text len = %d, want truncated near 80000", len(out[0].Content[0].Text))
+	}
+}

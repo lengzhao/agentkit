@@ -79,6 +79,7 @@ out := agenttest.CallTool(t, ctx, tool, `{"id":"42","verbose":true}`)
 | `mcp_test.go` | MCP stdio 动态工具 agent turn | tool/mcp + tools/runtime |
 | `permission_test.go` | policy ask allow/deny 经 Loop 审批 | permission 协议、tool 执行/拒绝 |
 | `recovery_test.go` | orphan read 修复、干净 session | recovery 合成 interrupted result、不误触发 |
+| `compaction_overflow_test.go` | overflow 只认真实压缩（prune-only 不重试、summary/prune+summary 重试成功）、before-step token-limit 自动压缩、maxPromptTokens 发送前兜底、巨型消息 truncate-only、压缩视图跨重启 | 压缩与溢出回归（真实 compaction 服务 + JSONL store，仅 LLM fake） |
 | `web_test.go` | scripted web_search / web_fetch | 网络工具脚本链（无 API Key） |
 | `openapi_test.go` | OpenAPI mock + bind + scripted turn | 动态 HTTP 工具、ctx bind、tool runtime 挂载 |
 

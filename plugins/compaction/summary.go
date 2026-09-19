@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -19,6 +20,9 @@ import (
 const (
 	defaultKeepRecentTokens = 20000
 	defaultReserveTokens    = 16384
+	// defaultMaxInputTokens bounds the summarization request input so an
+	// already-oversized history cannot 400 the summary model itself.
+	defaultMaxInputTokens = 400_000
 )
 
 type SummaryConfig struct {
@@ -32,6 +36,9 @@ type SummaryConfig struct {
 	KeepRecent int `json:"keepRecent"`
 	// SummaryModel is model used for the summary; defaults to the agent's model.
 	SummaryModel string `json:"summaryModel"`
+	// MaxInputTokens bounds the summarization request input (oldest messages
+	// are dropped first, single messages truncated). Zero uses the default.
+	MaxInputTokens int `json:"maxInputTokens"`
 	// SummaryPrompt overrides the built-in summarisation instruction.
 	SummaryPrompt string                     `json:"summaryPrompt"`
 	Retry         *capcompaction.RetryConfig `json:"retry,omitempty"`
@@ -60,6 +67,9 @@ func NewSummary(cfg SummaryConfig, deps SummaryDeps) (capcompaction.Service, err
 	}
 	if cfg.ReserveTokens <= 0 {
 		cfg.ReserveTokens = defaultReserveTokens
+	}
+	if cfg.MaxInputTokens <= 0 {
+		cfg.MaxInputTokens = defaultMaxInputTokens
 	}
 	if cfg.SummaryPrompt == "" {
 		cfg.SummaryPrompt = initialSummarizationPrompt
@@ -101,8 +111,10 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 	}
 	// A single retained message larger than the keep budget would keep the
 	// post-compaction history oversized; bound it in the model-visible view.
-	if truncated, ok := rtcompaction.TruncateOversizedMessageTexts(prep.RetainedTail, s.maxRetainedChars()); ok {
-		prep.RetainedTail = truncated
+	// Attachments whose recorded size exceeds the budget are neutralized into
+	// text hints so hydration cannot re-inflate the retained tail.
+	if bounded, ok := rtcompaction.BoundOversizedIndexedMessages(indexed[prep.FirstKeptIndex:], s.maxRetainedChars()); ok {
+		prep.RetainedTail = bounded
 	}
 
 	policy := rtcompaction.ResolveRetrySettings(s.cfg.Retry)
@@ -161,25 +173,39 @@ func (s *summaryService) maxRetainedChars() int {
 	return s.cfg.KeepRecentTokens * 4
 }
 
+// maxInputChars converts the summarization input token budget to chars (chars/4).
+func (s *summaryService) maxInputChars() int {
+	return s.cfg.MaxInputTokens * 4
+}
+
 // truncateOnlyCompaction handles forced compaction when there is nothing to
 // summarize (e.g. the whole history is one oversized message): it persists a
-// compaction event whose retained tail is the truncated history, so overflow
+// compaction event whose retained tail is the bounded history, so overflow
 // recovery retries with a bounded prompt instead of the same oversized one.
 func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcompaction.Request, tail []capcompaction.IndexedMessage, tokensBefore int) (capcompaction.Result, error) {
 	if len(tail) == 0 {
 		return capcompaction.Result{}, nil
 	}
-	msgs := make([]agentkit.ModelMessage, len(tail))
-	for i, item := range tail {
-		msgs[i] = item.Message
-	}
-	truncated, ok := rtcompaction.TruncateOversizedMessageTexts(msgs, s.maxRetainedChars())
+	bounded, ok := rtcompaction.BoundOversizedIndexedMessages(tail, s.maxRetainedChars())
 	if !ok {
+		slog.Warn("forced compaction did not apply: nothing to summarize and no oversized retained content",
+			"session_id", req.SessionID,
+			"agent_id", req.AgentID,
+			"indexed_messages", len(tail),
+			"tokens_before", tokensBefore,
+			"keep_recent_tokens", s.cfg.KeepRecentTokens,
+		)
 		return capcompaction.Result{}, nil
 	}
+	slog.Info("forced compaction applied without summary: bounded oversized retained content",
+		"session_id", req.SessionID,
+		"agent_id", req.AgentID,
+		"indexed_messages", len(tail),
+		"tokens_before", tokensBefore,
+	)
 	data := capcompaction.EventData{
 		FirstKeptSeq: tail[0].Seq,
-		RetainedTail: truncated,
+		RetainedTail: bounded,
 		TokensBefore: tokensBefore,
 		Kind:         capcompaction.KindSummary,
 		Summary: agentkit.ModelMessage{
@@ -240,7 +266,7 @@ func (s *summaryService) summarizePrepared(ctx context.Context, prep *capcompact
 }
 
 func (s *summaryService) summarizeOnce(ctx context.Context, messages []agentkit.ModelMessage, previousSummary string, turnPrefix bool) (string, error) {
-	conversationText := rtcompaction.SerializeConversation(messages)
+	conversationText := rtcompaction.SerializeConversationWithBudget(messages, s.maxInputChars())
 	prompt := s.cfg.SummaryPrompt
 	if previousSummary != "" {
 		prompt = updateSummarizationPrompt

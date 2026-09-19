@@ -79,25 +79,28 @@ func indexedCompactionPrefix(view compactionView) []IndexedMessage {
 		return nil
 	}
 	out := []IndexedMessage{{
-		Message:     *view.Summary,
-		Seq:         view.CompactionSeq,
-		IsTurnStart: false,
+		Message:      *view.Summary,
+		Seq:          view.CompactionSeq,
+		IsTurnStart:  false,
+		LogicalChars: EstimateLogicalChars(*view.Summary),
 	}}
 	for _, msg := range view.RetainedTail {
 		out = append(out, IndexedMessage{
-			Message:     msg,
-			Seq:         view.FirstKeptSeq,
-			IsTurnStart: msg.Role == "user",
+			Message:      msg,
+			Seq:          view.FirstKeptSeq,
+			IsTurnStart:  msg.Role == "user",
+			LogicalChars: EstimateLogicalChars(msg),
 		})
 	}
 	return out
 }
 
 type visibleWalkItem struct {
-	msg         agentkit.ModelMessage
-	seq         agentkit.EventSeq
-	isTurnStart bool
-	deferSkill  bool
+	msg          agentkit.ModelMessage
+	seq          agentkit.EventSeq
+	isTurnStart  bool
+	deferSkill   bool
+	logicalChars int
 }
 
 func walkPlainEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID, afterSeq agentkit.EventSeq) []agentkit.ModelMessage {
@@ -114,9 +117,10 @@ func walkIndexedEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID,
 	out := make([]IndexedMessage, 0, len(items))
 	for _, item := range items {
 		out = append(out, IndexedMessage{
-			Message:     item.msg,
-			Seq:         item.seq,
-			IsTurnStart: item.isTurnStart,
+			Message:      item.msg,
+			Seq:          item.seq,
+			IsTurnStart:  item.isTurnStart,
+			LogicalChars: item.logicalChars,
 		})
 	}
 	return out
@@ -162,19 +166,22 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 			return nil
 		}
 		return []visibleWalkItem{{
-			msg:         msg,
-			seq:         ev.Seq,
-			isTurnStart: ev.Type == agentkit.EventUserMessage,
+			msg:          msg,
+			seq:          ev.Seq,
+			isTurnStart:  ev.Type == agentkit.EventUserMessage,
+			logicalChars: recordedLogicalChars(ev, msg),
 		}}
 	case agentkit.EventToolResult:
 		var result agentkit.ToolResult
 		if err := json.Unmarshal(ev.Data, &result); err != nil {
 			return nil
 		}
+		msg := ToolResultMessage(result)
 		return []visibleWalkItem{{
-			msg:         ToolResultMessage(result),
-			seq:         ev.Seq,
-			isTurnStart: false,
+			msg:          msg,
+			seq:          ev.Seq,
+			isTurnStart:  false,
+			logicalChars: EstimateLogicalChars(msg),
 		}}
 	case agentkit.EventSkillLoad:
 		var load skillLoadEvent
@@ -184,11 +191,13 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 		// Skill loads are recorded during tool execution, before the tool
 		// result event. Defer them so assistant tool_calls are immediately
 		// followed by tool messages, as providers require.
+		msg := skillLoadMessage(load)
 		return []visibleWalkItem{{
-			msg:         skillLoadMessage(load),
-			seq:         ev.Seq,
-			isTurnStart: true,
-			deferSkill:  true,
+			msg:          msg,
+			seq:          ev.Seq,
+			isTurnStart:  true,
+			deferSkill:   true,
+			logicalChars: EstimateLogicalChars(msg),
 		}}
 	case agentkit.EventTurnContinue:
 		var data TurnContinueData
@@ -198,15 +207,26 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 		out := make([]visibleWalkItem, 0, len(data.Messages))
 		for _, msg := range data.Messages {
 			out = append(out, visibleWalkItem{
-				msg:         msg,
-				seq:         ev.Seq,
-				isTurnStart: msg.Role == "user",
+				msg:          msg,
+				seq:          ev.Seq,
+				isTurnStart:  msg.Role == "user",
+				logicalChars: EstimateLogicalChars(msg),
 			})
 		}
 		return out
 	default:
 		return nil
 	}
+}
+
+// recordedLogicalChars prefers the ingest-time size stored in event metadata:
+// sanitize strips bulky parts (attachments) before persistence, so measuring
+// the stored message would undercount what the message cost on the wire.
+func recordedLogicalChars(ev agentkit.SessionEvent, msg agentkit.ModelMessage) int {
+	if v := metadataInt(ev.Metadata, MetadataLogicalChars); v > 0 {
+		return v
+	}
+	return EstimateLogicalChars(msg)
 }
 
 func latestCompactionForAgent(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, compaction.EventData, bool) {

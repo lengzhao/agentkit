@@ -391,7 +391,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `compaction/summary` | `compaction.Service` | LLM 摘要压缩 |
+| `compaction/summary` | `compaction.Service` | LLM 摘要压缩；`config`：`keepRecentTokens` / `reserveTokens` / `maxInputTokens`（摘要输入上限，默认 400k）/ `summaryModel` / `retry` |
 | `compaction/prune-tool-results` | `compaction.Service` | 无模型工具结果裁剪 |
 | `compaction/token-limit` | `compaction.Service` | 按 token 阈值门控内层压缩链（deps.services）；阈值取 `maxTokens` 或 `contextWindow × triggerRatio` |
 | `compaction/pipeline` | `compaction.Service` | 按序执行 deps.services 中的压缩链，供 agent / hook 单点引用 |

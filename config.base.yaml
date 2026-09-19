@@ -196,8 +196,9 @@ agent.assistant.default:
   config:
     id: assistant
     model: gpt-5.4
-    # 发送前兜底：assembled prompt（含 system prompt 与 inline 媒体实际大小）超过则先强制压缩；与 token-limit 的 200k 窗口假设自洽
-    maxPromptTokens: 180000
+    # 发送前兜底：assembled prompt（含 system prompt 与 inline 媒体实际大小）超过则先强制压缩；
+    # 必须低于所接端点的真实上下文窗口（chatai gateway 为 1M），并高于 token-limit 触发点
+    maxPromptTokens: 1000000
     retry:
       enabled: true
       maxRetries: 3
@@ -218,7 +219,7 @@ agent.worker.default:
   config:
     id: worker
     model: gpt-5.4
-    maxPromptTokens: 180000
+    maxPromptTokens: 1000000
     retry:
       enabled: true
       maxRetries: 3
@@ -552,7 +553,8 @@ compaction.summary.default:
 compaction.token-limit.default:
   use: compaction/token-limit
   config:
-    contextWindow: 200000
+    # 必须等于所接端点的真实上下文窗口（chatai gateway 自报 1,048,576）；假设过小会过早触发摘要
+    contextWindow: 1048576
     triggerRatio: 0.92
     charsPerToken: 3
   deps:
@@ -562,7 +564,7 @@ compaction.token-limit.default:
 compaction.token-limit.worker:
   use: compaction/token-limit
   config:
-    contextWindow: 200000
+    contextWindow: 1048576
     triggerRatio: 0.7
     charsPerToken: 3
   deps:

@@ -90,7 +90,7 @@ mindmap
 | INT-002 | autonomous-smoke once-run | `"读取 README 并汇报"` | 无 `session/recovery`；`run/finish` ≥1；`todo/update` ≥2；`turn/continue` ≥1 | ✅ | integration |
 | E2E-020 | todo 未完成触发续跑 | scripted todo→read→finish | `turn/continue`；多 segment | ✅ | `testing/smoke/autonomous_test.go` |
 | E2E-022 | stalled 检测（同参重复调用） | scripted 重复 tool | `turn/end` + stop reason | ✅ | `testing/smoke/autonomous_test.go` |
-| E2E-023 | token-limit 触发压缩 | 大上下文 seed | `session/compaction` 事件 | ⬜ | smoke |
+| E2E-023 | token-limit 触发压缩 | 大上下文 seed | `session/compaction` 事件 | ✅ | `testing/smoke/compaction_overflow_test.go` |
 
 ### 3.4 子 Agent 委派
 
@@ -164,7 +164,10 @@ mindmap
 | SMK-042 | 同 session 串行 | 并发 dispatch | 无交错 turn | ✅ | loop_test |
 | SMK-043 | 跨 session 隔离 | 两 session 并行 | 事件不混 | ✅ | loop_test |
 | E2E-300 | jsonl 持久化重启后继续 | 写盘后新进程 | 历史可 derive | ✅ | `integration/session_persist_test.go` |
-| E2E-301 | compaction 后 derive 一致 | 触发压缩 | Model-visible ⟺ Logged | ⬜ | golden test |
+| E2E-301 | compaction 后 derive 一致 | 触发压缩后重开 store | 压缩视图跨重启有界、落盘原文不动 | ✅ | `testing/smoke/compaction_overflow_test.go` |
+| E2E-304 | overflow 恢复只认真实压缩 | 首调用 overflow | prune-only 链不重试且报错；summary / prune+summary 链重试成功且 prompt 变小 | ✅ | `testing/smoke/compaction_overflow_test.go` |
+| E2E-305 | maxPromptTokens 发送前兜底 | 超大历史 seed | 压缩后发送；链无法压缩则不发送并报错 | ✅ | `testing/smoke/compaction_overflow_test.go` |
+| E2E-306 | 巨型单消息 truncate-only | 单条 20k 字符消息 | 截断式 compaction 事件；summary LLM 不调用；落盘原文不动 | ✅ | `testing/smoke/compaction_overflow_test.go` |
 | E2E-302 | follow-up inbox 崩溃恢复 | roadmap M2 | 排队消息不丢 | ⬜ | 待实现 |
 | E2E-303 | Ctrl-C 优雅关停 | roadmap M2 | session flush 完整 | ⬜ | 待实现 |
 
@@ -292,12 +295,12 @@ func TestE2E040WorkerOnceRun(t *testing.T) {
 |---|---|---|---|
 | 装配 build | 18 preset + 6 chain | manager UI | ~85% |
 | Coding / 工具 | read、deny、openapi | write+bash INT | ~70% |
-| 自主运行 | autonomous-smoke + 续跑/stalled | 压缩 | ~75% |
+| 自主运行 | autonomous-smoke + 续跑/stalled + token-limit 压缩 | — | ~85% |
 | 子 Agent | 6 smoke + 1 INT | 白名单/超时 | ~75% |
 | Headless | build + INT once-run | cron/script | ~60% |
 | Platform | chat-api HTTP E2E、CLI /new、单测分散 | IM E2E | ~50% |
 | 安全与策略 | deny、permission allow/deny | headless 降级 | ~55% |
-| 可靠性 | recovery + loop 锁 + jsonl 重启 | 跨进程 jsonl | ~75% |
+| 可靠性 | recovery + loop 锁 + jsonl 重启 + 压缩/溢出兜底（E2E-301/304/305/306） | 跨进程 jsonl | ~85% |
 | 可观测性 | langfuse 单测 + INT turn flush、status 一致性 | — | ~70% |
 | 扩展性 | openapi + MCP + skill + scope/attribution | — | ~80% |
 

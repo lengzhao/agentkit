@@ -622,7 +622,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 // included), force-runs compaction once when over maxPromptTokens, and fails
 // the step when the prompt still does not fit.
 func (a *Runtime) guardPromptSize(ctx context.Context, sess agentkit.Session, pos stepPosition, messages []agentkit.ModelMessage) ([]agentkit.ModelMessage, context.Context, error) {
-	est := rtcompaction.EstimateMessagesSendTokens(messages)
+	est := rtcompaction.EstimateMessagesTokens(messages)
 	if est <= a.maxPromptTokens {
 		return messages, ctx, nil
 	}
@@ -647,7 +647,7 @@ func (a *Runtime) guardPromptSize(ctx context.Context, sess agentkit.Session, po
 	if err != nil {
 		return nil, ctx, err
 	}
-	if est := rtcompaction.EstimateMessagesSendTokens(messages); est > a.maxPromptTokens {
+	if est := rtcompaction.EstimateMessagesTokens(messages); est > a.maxPromptTokens {
 		return nil, ctx, fmt.Errorf("prompt %d tokens still exceeds maxPromptTokens %d after compaction", est, a.maxPromptTokens)
 	}
 	return messages, ctx, nil

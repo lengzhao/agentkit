@@ -115,7 +115,7 @@ compaction.token-limit.default:
 
 取 max 的效果是**宁可压缩得早一点** —— 这是两种误差里代价小的那个。压缩后下一步 usage 变小，门自然重新关上。
 
-**挂载位置有两处，都要配**：`hook/before-step.deps.services`（每步触发的路径）和 `agent.deps.compaction`（overflow 报错兜底路径）。L0 `config.base.yaml` 的 `compaction.pipeline.default` 已是 `prune + token-limit`（200k×0.92），worker 用更激进的 0.7；`presets/autonomous.yaml` 同样两处都挂 token-limit。
+**挂载位置有两处，都要配**：`hook/before-step.deps.services`（每步触发的路径）和 `agent.deps.compaction`（overflow 报错兜底路径）。L0 `config.base.yaml` 的 `compaction.pipeline.default` 已是 `prune + token-limit`（按端点真实窗口 1M×0.92），worker 用更激进的 0.7；`presets/autonomous.yaml` 同样两处都挂 token-limit。
 
 ### 5.1 发送前兜底：agent `maxPromptTokens`
 
@@ -125,7 +125,7 @@ before-step 的估算只看 session 历史，**看不到 system prompt，也对 
 agent.assistant.default:
   use: agent/coding
   config:
-    maxPromptTokens: 180000   # 按模型真实窗口减余量配置；0 = 关闭
+    maxPromptTokens: 1000000   # 按端点真实窗口减余量配置（须高于 token-limit 触发点）；0 = 关闭
 ```
 
 `prompt.Assemble` 之后、LLM 调用之前，按**实际发送大小**估算（system prompt 全量、`data:` URL 按真实长度），超阈值则 `Force=true` 跑一遍 `agent.deps.compaction` 链，重新 derive + assemble 再发；仍超则直接报错，**不把必然 400 的请求发出去**。
@@ -134,7 +134,9 @@ agent.assistant.default:
 
 - **只认真实压缩**：压缩前后比较最新 `session/compaction` 事件 seq，没有新事件（例如链上只有 `prune-tool-results`）视为「未压缩」，不重试原请求。
 - **`prune-tool-results` 诚实上报**：没有实际截断时返回 `Applied: false`。
-- **巨型单消息兜底**：retained tail 中单条消息文本超过 `keepRecentTokens` 预算时，`compaction/summary` 在压缩事件里截断其模型可见视图（落盘原文不动）；整条历史就是一条巨型消息、无可摘要时，强制压缩写入「截断式」compaction 事件，而不是静默 no-op。
+- **切点按入站真实大小计算**：`FindCutPoint`/`Prepare` 优先用事件 metadata 里 sanitize 前记录的 `logical_chars`（落盘被剥成 `attachment_ref` 的附件消息仍按原始大小参与累加），避免「存储形态很小、hydrate 后巨大」的历史让压缩计划落空（`Prepare` 返回 nil → 静默 not applied）。
+- **巨型单消息兜底**：retained tail 中单条消息文本超过 `keepRecentTokens` 预算时，`compaction/summary` 在压缩事件里截断其模型可见视图（落盘原文不动）；记录大小超预算的附件 part 会被替换成带路径的文本提示，防止压缩后 hydrate 重新膨胀；整条历史就是一条巨型消息、无可摘要时，强制压缩写入「截断式」compaction 事件，而不是静默 no-op。
+- **摘要输入有界**：序列化摘要输入时单条消息截断（100k 字符）、总量超 `maxInputTokens`（默认 400k）则丢弃最旧消息并标注，保证摘要请求本身不会超出 summary 模型窗口。
 
 ## 6. 崩溃恢复
 

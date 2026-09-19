@@ -1,7 +1,7 @@
 agent.assistant.default:
     config:
         id: assistant
-        maxPromptTokens: 180000
+        maxPromptTokens: 1000000
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -44,7 +44,7 @@ agent.cursor.default:
 agent.worker.default:
     config:
         id: worker
-        maxPromptTokens: 180000
+        maxPromptTokens: 1000000
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -103,7 +103,7 @@ compaction.summary.default:
 compaction.token-limit.default:
     config:
         charsPerToken: 3
-        contextWindow: 200000
+        contextWindow: 1048576
         triggerRatio: 0.92
     deps:
         services:
@@ -112,7 +112,7 @@ compaction.token-limit.default:
 compaction.token-limit.worker:
     config:
         charsPerToken: 3
-        contextWindow: 200000
+        contextWindow: 1048576
         triggerRatio: 0.7
     deps:
         services:

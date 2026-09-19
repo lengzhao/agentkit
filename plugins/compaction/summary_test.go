@@ -312,3 +312,133 @@ func TestSummaryForceTruncatesWhenNothingToSummarize(t *testing.T) {
 		t.Fatalf("derived history still oversized, chars=%d", total)
 	}
 }
+
+// 线上事故回归（trace e3ac4ade）：用户发过的大文件/图片在存储时被 sanitize 成
+// attachment_ref（几十字节），真实大小只留在事件 metadata 的 logical_chars 里。
+// 压缩切点必须按 metadata 的大小累加，否则 Prepare 永远返回 nil、Force 压缩静默
+// not applied，会话在 "compaction did not apply" 下永久卡死。
+func TestSummaryForceAppliesWhenGiantsSanitizedToAttachments(t *testing.T) {
+	t.Parallel()
+
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:sanitized-giants"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	giant := strings.Repeat("x", 300_000)
+	// 两条旧的巨型附件消息：入站带大文本，存储时剥成 attachment_ref。
+	for _, src := range []string{"upload/a.log", "upload/b.log"} {
+		if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+			Role: "user",
+			Content: []agentkit.ContentPart{
+				{Type: "document", Text: giant, Source: src, MIME: "text/plain"},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 近期小消息。
+	for i := 0; i < 4; i++ {
+		if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "继续"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		AgentID:   "assistant",
+		Session:   sess,
+		Messages:  messages,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("forced compaction must apply: recorded logical sizes make the giants visible to the cut point")
+	}
+	if llm.calls.Load() != 1 {
+		t.Fatalf("summary llm calls = %d, want 1", llm.calls.Load())
+	}
+	data := lastCompactionData(t, ctx, sess)
+	for _, msg := range data.RetainedTail {
+		for _, part := range msg.Content {
+			if part.Type == "attachment_ref" {
+				t.Fatalf("retained tail must not keep hydratable attachment parts: %#v", part)
+			}
+		}
+	}
+}
+
+// 退化形态：整段历史只有一条巨型附件消息 + 一句跟进。切点只能落在 0、
+// 没有可摘要内容时，truncateOnly 兜底必须中和附件 part 并落压缩事件，
+// 而不是静默 not applied。
+func TestSummaryForceNeutralizesSingleGiantAttachment(t *testing.T) {
+	t.Parallel()
+
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:single-giant-attachment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role: "user",
+		Content: []agentkit.ContentPart{
+			{Type: "document", Text: strings.Repeat("x", 300_000), Source: "upload/huge.log", MIME: "text/plain"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "继续"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		AgentID:   "assistant",
+		Session:   sess,
+		Messages:  messages,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("forced compaction must apply by neutralizing the oversized attachment")
+	}
+	if llm.calls.Load() != 0 {
+		t.Fatalf("summary llm calls = %d, want 0: nothing to summarize", llm.calls.Load())
+	}
+	data := lastCompactionData(t, ctx, sess)
+	for _, msg := range data.RetainedTail {
+		for _, part := range msg.Content {
+			if part.Type == "attachment_ref" {
+				t.Fatalf("attachment part should have been neutralized: %#v", part)
+			}
+		}
+	}
+}

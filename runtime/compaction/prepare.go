@@ -62,7 +62,7 @@ func indexedMessages(indexed []capscompaction.IndexedMessage) []agentkit.ModelMe
 func estimateIndexedTokens(indexed []capscompaction.IndexedMessage) int {
 	total := 0
 	for _, item := range indexed {
-		total += EstimateTokens(item.Message)
+		total += indexedMessageTokens(item)
 	}
 	return total
 }
