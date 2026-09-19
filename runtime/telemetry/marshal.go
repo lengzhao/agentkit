@@ -138,13 +138,31 @@ func exportToolCalls(calls []agentkit.ToolCall, maxFieldBytes int) []map[string]
 	return out
 }
 
-const fieldTruncationSuffix = "\n...[truncated]"
-
 func truncateFieldText(text string, maxBytes int) string {
 	if maxBytes <= 0 || text == "" || len(text) <= maxBytes {
 		return text
 	}
-	suffix := fieldTruncationSuffix
+	omitted := len(text) - maxBytes
+	if omitted < 1 {
+		omitted = 1
+	}
+	for range 4 {
+		suffix := fmt.Sprintf("\n...[truncated %d]", omitted)
+		limit := maxBytes - len(suffix)
+		if limit < 1 {
+			return TruncatePayload(text, maxBytes)
+		}
+		cut := text[:limit]
+		for len(cut) > 0 && !utf8.ValidString(cut) {
+			cut = cut[:len(cut)-1]
+		}
+		actual := len(text) - len(cut)
+		if actual == omitted {
+			return cut + suffix
+		}
+		omitted = actual
+	}
+	suffix := fmt.Sprintf("\n...[truncated %d]", omitted)
 	limit := maxBytes - len(suffix)
 	if limit < 1 {
 		return TruncatePayload(text, maxBytes)

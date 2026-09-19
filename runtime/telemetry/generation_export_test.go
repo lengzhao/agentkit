@@ -2,6 +2,7 @@ package telemetry_test
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,8 +35,23 @@ func TestFormatGenerationInputForExportTruncatesFieldsNotJSON(t *testing.T) {
 	if len(content) > 100 {
 		t.Fatalf("content not truncated: len=%d", len(content))
 	}
-	if !strings.Contains(content, "...[truncated]") {
-		t.Fatalf("content = %q", content)
+	const marker = "\n...[truncated "
+	idx := strings.LastIndex(content, marker)
+	if idx < 0 {
+		t.Fatalf("missing truncation marker, content = %q", content)
+	}
+	rest := content[idx+len(marker):]
+	end := strings.IndexByte(rest, ']')
+	if end <= 0 {
+		t.Fatalf("truncated marker not closed, content = %q", content)
+	}
+	omitted, err := strconv.Atoi(rest[:end])
+	if err != nil {
+		t.Fatalf("truncated count: %v, content = %q", err, content)
+	}
+	prefix := content[:idx]
+	if omitted != len(long)-len(prefix) {
+		t.Fatalf("omitted=%d want %d (prefix=%d original=%d)", omitted, len(long)-len(prefix), len(prefix), len(long))
 	}
 }
 

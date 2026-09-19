@@ -38,7 +38,8 @@ type LangfuseConfig struct {
 	// MaxPayloadBytes truncates exported input/output payloads. 0 means no limit.
 	MaxPayloadBytes int `json:"maxPayloadBytes"`
 	// MaxFieldBytes truncates individual message content fields in llm.generation
-	// input while keeping JSON valid. Omit to default to 8192; set 0 for no limit.
+	// input while keeping JSON valid. Oversized fields end with
+	// `\n...[truncated N]` where N is omitted bytes. Omit to default to 8192; set 0 for no limit.
 	MaxFieldBytes *int `json:"maxFieldBytes"`
 	// DeduplicateGenerationPrefix omits message prefixes identical to the previous
 	// llm.generation observation within the same trace.
