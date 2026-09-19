@@ -145,10 +145,26 @@ type MessageEvent struct {
 	PlatformID string
 	UserID     string
 	Message    ModelMessage
+	// Attachments carries inbound file metadata (real on-disk sizes) for
+	// telemetry. It is NOT persisted: only Message (sanitized) + Metadata are
+	// written to the session log. Platforms that save attachments to disk
+	// (IM/chat-api) populate it so observability backends can record a
+	// dedicated attachment span without re-stat'ing files.
+	Attachments []InboundAttachment `json:"attachments,omitempty"`
 	// Metadata is optional platform context copied onto persisted user messages.
 	Metadata map[string]any `json:"metadata,omitempty"`
 	// Reply carries a permission answer as JSON. Decode with runtime/permission.DecodeReply.
 	Reply json.RawMessage `json:"reply,omitempty"`
+}
+
+// InboundAttachment is one inbound file saved to the workspace upload dir by a
+// platform. Size is the real on-disk byte count recorded at ingest time.
+type InboundAttachment struct {
+	Path     string `json:"path"`
+	MIME     string `json:"mime,omitempty"`
+	Size     int    `json:"size"`
+	OrigName string `json:"origName,omitempty"`
+	Image    bool   `json:"image,omitempty"`
 }
 
 // OutboundEvent is the outbound envelope from Agent/Loop to Platform. Route is

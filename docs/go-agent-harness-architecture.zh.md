@@ -1383,9 +1383,9 @@ go run ./cmd/agent --preset coding "inspect this repo"
 
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|
-| RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；metadata 含 `turn_id`、`workspace_key`、`attachment_sources`（逗号分隔 workspace 路径，无 base64）、`usage_*_tokens`、`steps`、`stop_reason`） | `loop.Dispatch` |
+| RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；metadata 含 `turn_id`、`workspace_key`、`attachment_sources`（逗号分隔 workspace 路径，无 base64）、`usage_*_tokens`、`steps`、`stop_reason`）；当入站带附件时，turn 起始额外发一个独立 Span `inbound.attachments`，metadata 含 `attachments`（每条附件 `type`/`mime`/`source`/`origName`/`bytes`，`bytes` 为入站落盘时的真实文件大小）、`attachment_count`、`attachment_bytes`（总字节数），便于在 Langfuse 上按附件大小/类型过滤 | `loop.Dispatch` |
 | Loop 子 agent 委派 | 独立 Trace `agent.turn`（`sessionId` 为子 session；`agent_id` 为实际 Loop agent，如 `cursor`；async 委派同样在后台 goroutine 导出） | `subagent/loop-agent.runChild` |
-| LLM 准备 | Span `agent.step.prep`（history hydrate、tools.Visible、prompt.Assemble） | `agent.runStep` |
+| LLM 准备 | Span `agent.step.prep`（history hydrate、tools.Visible、prompt.Assemble）；hydrate 图片经 `FitForVision` 压缩后注入 vision 时发 Event `vision.hydrate`（attrs 含 `path`、`mime`、`out_bytes`（压缩后字节数）、`source`（`attachment_ref` 入站附件 / `read_tool` read 工具读图）），便于核对图片压缩是否发生及压缩后大小 | `agent.runStep` + `derive.PrepareMessagesForLLM` |
 | LLM 调用 | Generation（metadata 含 `agent_id`、`session_id`、`turn_id`、`tools`；agent 传入完整 `GenerationMessages`；Langfuse exporter 记录时做逐字段截断，超限字段后缀 `\n...[truncated N]`（N 为省略字节数），并同 trace 前缀去重，格式 `{"sharedPrefixMessages":N,"messages":[...]}`；不影响实际 LLM 请求） | `agent.runStep` + `telemetry/langfuse` |
 | Tool 执行 | Span（metadata 含 `tool_name`、`tool_call_id`；`read` 额外 `read_path`；`delegate` 额外 `delegate_agent`、`delegate_task`） | `tools.Execute` |
 | 进程内子 Agent | Span `subagent.<name>`（metadata 含 `subagent`、`child_session`、`delegate_task`） | `subagent/inprocess` |

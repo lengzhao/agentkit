@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtllm "github.com/lengzhao/agentkit/runtime/llm"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 const (
@@ -87,6 +88,12 @@ func (s *service) recognizeImage(ctx context.Context, input RecognizeImageInput)
 		userText = "Describe this image."
 	}
 	slog.Info("recognize_image", "path", path, "mime", mime, "bytes", len(data))
+	rttelemetry.RecordEvent(ctx, "vision.hydrate", map[string]string{
+		"path":      path,
+		"mime":      mime,
+		"out_bytes": fmt.Sprint(len(data)),
+		"source":    "recognize_tool",
+	})
 	return rtllm.CompleteText(ctx, s.llm, agentkit.LLMRequest{
 		Model: s.model,
 		Messages: []agentkit.ModelMessage{

@@ -223,7 +223,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 	if len(parts) == 0 {
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: ""})
 	}
-	return WithInboundRoute(agentkit.MessageEvent{
+	event := WithInboundRoute(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: strings.TrimSpace(route.Platform),
 		UserID:     userID,
@@ -232,6 +232,19 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 			Content: parts,
 		},
 	}, route)
+	if len(attachmentNotes) > 0 {
+		event.Attachments = make([]agentkit.InboundAttachment, 0, len(attachmentNotes))
+		for _, a := range attachmentNotes {
+			event.Attachments = append(event.Attachments, agentkit.InboundAttachment{
+				Path:     a.path,
+				MIME:     a.mime,
+				Size:     a.size,
+				OrigName: a.origName,
+				Image:    a.image,
+			})
+		}
+	}
+	return event
 }
 
 type inboundSavedAttachment struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -15,6 +16,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -219,5 +221,79 @@ func TestSanitizeStoresWorkspaceImagePath(t *testing.T) {
 	}
 	if msg.Content[0].Source != "upload/shot.png" {
 		t.Fatalf("Source = %q", msg.Content[0].Source)
+	}
+}
+
+// 图片 hydrate（含 FitForVision 压缩）必须向 telemetry 发 vision.hydrate 事件，
+// 记录路径/mime/压缩后字节数，便于在 Langfuse 上核对图片压缩是否发生。
+func TestHydrateLocalAttachmentsRecordsVisionHydrateEvent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work", "upload")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 3200, 2400))
+	for y := 0; y < 2400; y++ {
+		for x := 0; x < 3200; x++ {
+			img.Set(x, y, color.RGBA{uint8(x % 256), uint8(y % 256), 128, 255})
+		}
+	}
+	var raw bytes.Buffer
+	if err := jpeg.Encode(&raw, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "big.jpg"), raw.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &rttelemetry.RecordingExporter{}
+	ws := rtworkspace.Static(root)
+	ctx := rttelemetry.WithExporter(context.Background(), rec)
+	msgs := []agentkit.ModelMessage{{
+		Role: "user",
+		Content: []agentkit.ContentPart{{
+			Type:   rtmedia.ContentTypeAttachmentRef,
+			Source: "upload/big.jpg",
+			MIME:   "image/jpeg",
+		}},
+	}}
+	out, err := derive.HydrateLocalAttachments(ctx, msgs, ws, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || out[0].Content[0].Type != "image_url" {
+		t.Fatalf("content = %#v", out[0].Content)
+	}
+
+	_, _, events := rec.Snapshot()
+	var evt *rttelemetry.RecordedEvent
+	for i := range events {
+		if events[i].Name == "vision.hydrate" {
+			evt = &events[i]
+			break
+		}
+	}
+	if evt == nil {
+		t.Fatalf("no vision.hydrate event recorded; events = %#v", events)
+	}
+	if evt.Attrs["path"] != "upload/big.jpg" {
+		t.Fatalf("path = %q", evt.Attrs["path"])
+	}
+	if evt.Attrs["source"] != "attachment_ref" {
+		t.Fatalf("source = %q, want attachment_ref", evt.Attrs["source"])
+	}
+	outBytes := evt.Attrs["out_bytes"]
+	if outBytes == "" {
+		t.Fatal("missing out_bytes")
+	}
+	// 压缩后必须 <= 1MB（FitForVision 默认上限）。
+	var n int
+	if _, err := fmt.Sscanf(outBytes, "%d", &n); err != nil || n <= 0 {
+		t.Fatalf("out_bytes = %q", outBytes)
+	}
+	if n > rtmedia.DefaultMaxVisionPayloadBytes {
+		t.Fatalf("out_bytes %d exceeds vision payload cap %d", n, rtmedia.DefaultMaxVisionPayloadBytes)
 	}
 }

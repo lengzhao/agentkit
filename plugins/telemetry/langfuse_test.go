@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
 	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
@@ -528,5 +529,94 @@ func TestLangfuseMissingCredentialFailsAtBuild(t *testing.T) {
 	}, plugintelemetry.LangfuseDeps{Credentials: store})
 	if err == nil || !strings.Contains(err.Error(), "LANGFUSE_PUBLIC_KEY") {
 		t.Fatalf("expected missing key error, got %v", err)
+	}
+}
+
+// 附件的大小/信息（type/mime/source/bytes）必须作为独立 span 落到 Langfuse，
+// 方便按附件大小/类型过滤，而不必解析 trace input 文本。
+func TestLangfuseExporterRecordsAttachmentsAsDedicatedSpan(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, payload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, err := plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
+		BaseURL:              server.URL,
+		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
+		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
+		FlushIntervalSeconds: 1,
+	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	attachments := []agentkit.InboundAttachment{
+		{Path: "upload/x.png", MIME: "image/png", Size: 12345, OrigName: "x.png", Image: true},
+		{Path: "upload/big.log", MIME: "text/plain", Size: 200000, OrigName: "big.log"},
+	}
+	attrs := rttelemetry.AttachmentSpanAttrs(attachments)
+
+	ctx, endTurn := exp.BeginTurn(context.Background(), captelemetry.TurnMeta{
+		TurnID:            "turn-1",
+		SessionID:         "cli:default",
+		AttachmentSources: "upload/x.png,upload/big.log",
+		Input:             "hello",
+	})
+	ctx, endSpan := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name:       "inbound.attachments",
+		Kind:       captelemetry.KindSpan,
+		Attributes: attrs,
+	})
+	endSpan(captelemetry.ObservationEnd{})
+	endTurn(captelemetry.TurnEnd{Output: "done"})
+	if err := exp.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	raw, err := json.Marshal(bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"name":"inbound.attachments"`) {
+		t.Fatalf("missing inbound.attachments span in %s", text)
+	}
+	if !strings.Contains(text, `"type":"span-create"`) {
+		t.Fatalf("missing span-create in %s", text)
+	}
+	if !strings.Contains(text, `"attachment_count":"2"`) {
+		t.Fatalf("missing attachment_count in %s", text)
+	}
+	if !strings.Contains(text, `"attachment_bytes":"212345"`) {
+		t.Fatalf("missing attachment_bytes in %s", text)
+	}
+	// attachments JSON is nested inside span metadata, inner quotes escaped.
+	if !strings.Contains(text, `bytes\":12345`) {
+		t.Fatalf("missing image file size in %s", text)
+	}
+	if !strings.Contains(text, `mime\":\"text/plain\"`) {
+		t.Fatalf("missing file attachment mime in %s", text)
+	}
+	if !strings.Contains(text, `origName\":\"big.log\"`) {
+		t.Fatalf("missing origName in %s", text)
 	}
 }

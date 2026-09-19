@@ -56,6 +56,14 @@ func TestInboundFromContentSavesFiles(t *testing.T) {
 	if string(data) != "hello attachment" {
 		t.Fatalf("saved data = %q", data)
 	}
+	// 真实文件信息（含 size）必须随 event 暴露给 telemetry，无需再 stat。
+	if len(event.Attachments) != 1 {
+		t.Fatalf("event.Attachments = %#v, want 1 entry", event.Attachments)
+	}
+	a := event.Attachments[0]
+	if a.Path != "upload/note.txt" || a.MIME != "text/plain" || a.Size != 16 || a.OrigName != "note.txt" || a.Image {
+		t.Fatalf("attachment = %#v", a)
+	}
 }
 
 func TestInboundFromContentSavesImageWithoutExtension(t *testing.T) {

@@ -112,6 +112,9 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	if err := l.runTurn(ctx, req, agentID, ag, turnInput); err != nil {
 		return err
 	}
+	// Inbound attachments belong to the first turn's input message; steering and
+	// follow-up turns reuse req but must not re-emit the attachment span.
+	req.Event.Attachments = nil
 
 	for {
 		if steered := control.PopSteering(); len(steered) > 0 {
@@ -194,6 +197,20 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	turnStarted := time.Now()
 	ctx, endTurn := rttelemetry.BeginTurn(ctx, meta)
 	ctx = rttelemetry.WithTurnAccum(ctx)
+	// Emit a dedicated span for inbound file attachments so size/mime/path are
+	// queryable in telemetry backends without re-parsing the trace input text.
+	// Only platforms that save attachments to disk populate req.Event.Attachments
+	// (with real on-disk sizes); entry points without it simply emit no span.
+	if attrs := rttelemetry.AttachmentSpanAttrs(req.Event.Attachments); attrs != nil {
+		_, endAttach := rttelemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+			Name:       "inbound.attachments",
+			Kind:       captelemetry.KindSpan,
+			AgentID:    string(agentID),
+			SessionID:  string(rctx.ConversationFromLoopRequest(req)),
+			Attributes: attrs,
+		})
+		endAttach(captelemetry.ObservationEnd{})
+	}
 	var runErr error
 	defer func() {
 		end := rttelemetry.TurnEndFromAccum(ctx)

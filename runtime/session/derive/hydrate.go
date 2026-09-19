@@ -2,6 +2,7 @@ package derive
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 // PrepareMessagesForLLM applies modality policy and optional vision hydration before an LLM call.
@@ -132,6 +134,12 @@ func expandAttachmentRef(ctx context.Context, part agentkit.ContentPart, ws work
 			if mime == "" {
 				mime = rtmedia.DetectMIME(src, data)
 			}
+			rttelemetry.RecordEvent(ctx, "vision.hydrate", map[string]string{
+				"path":      src,
+				"mime":      mime,
+				"out_bytes": fmt.Sprint(len(data)),
+				"source":    "attachment_ref",
+			})
 			return []agentkit.ContentPart{{
 				Type:   "image_url",
 				URL:    rtmedia.DataURL(mime, data),
@@ -221,6 +229,12 @@ func injectReadToolVision(ctx context.Context, msgs []agentkit.ModelMessage, las
 			if mime == "" {
 				mime = rtmedia.DetectMIME(path, data)
 			}
+			rttelemetry.RecordEvent(ctx, "vision.hydrate", map[string]string{
+				"path":      path,
+				"mime":      mime,
+				"out_bytes": fmt.Sprint(len(data)),
+				"source":    "read_tool",
+			})
 			parts = append(parts, agentkit.ContentPart{
 				Type:   "image_url",
 				URL:    rtmedia.DataURL(mime, data),
