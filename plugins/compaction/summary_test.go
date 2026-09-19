@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -438,6 +439,290 @@ func TestSummaryForceNeutralizesSingleGiantAttachment(t *testing.T) {
 		for _, part := range msg.Content {
 			if part.Type == "attachment_ref" {
 				t.Fatalf("attachment part should have been neutralized: %#v", part)
+			}
+		}
+	}
+}
+
+// 摘要流与 openai accumulator 一致：每个 text_delta 同时带累计 Message 快照和
+// 增量 Delta，结束再发一篇完整 message。只应保留最终正文，不能把快照拼进去。
+func TestSummaryDoesNotAccumulateSnapshotPlusDelta(t *testing.T) {
+	t.Parallel()
+
+	llm := &snapshotDeltaLLM{chunks: []string{"Hel", "lo", " world"}}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 1}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:snapshot-delta-summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for i := 0; i < 4; i++ {
+		if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: fmt.Sprintf("old-%d %s", i, strings.Repeat("z", 80))}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected compaction applied")
+	}
+	got := lastCompactionData(t, ctx, sess).Summary.Content[0].Text
+	if got != "Hello world" {
+		t.Fatalf("summary = %q, want exact stream text without snapshot duplication", got)
+	}
+}
+
+type snapshotDeltaLLM struct {
+	chunks []string
+	calls  atomic.Int32
+}
+
+func (s *snapshotDeltaLLM) Name() string { return "snapshot-delta" }
+
+func (s *snapshotDeltaLLM) Stream(_ context.Context, _ agentkit.LLMRequest) (agentkit.LLMStream, error) {
+	s.calls.Add(1)
+	return &snapshotDeltaStream{chunks: s.chunks}, nil
+}
+
+type snapshotDeltaStream struct {
+	chunks []string
+	acc    string
+	i      int
+	final  bool
+}
+
+func (s *snapshotDeltaStream) Recv() (agentkit.LLMEvent, error) {
+	if s.i < len(s.chunks) {
+		s.acc += s.chunks[s.i]
+		delta := s.chunks[s.i]
+		s.i++
+		msg := agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: s.acc}}}
+		return agentkit.LLMEvent{Type: agentkit.AssistantEventTextDelta, Delta: delta, Message: &msg}, nil
+	}
+	if !s.final {
+		s.final = true
+		msg := agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: s.acc}}}
+		return agentkit.LLMEvent{Type: agentkit.LLMEventMessage, Message: &msg}, nil
+	}
+	return agentkit.LLMEvent{}, io.EOF
+}
+
+func (s *snapshotDeltaStream) Close() error { return nil }
+
+// 已落盘的巨型摘要（上次流式拼接错误留下的）必须在强制压缩时被截断，
+// 不能因为 Prepare 从 boundaryStart=1 跳过摘要就静默 not applied。
+func TestSummaryForceTruncatesOversizedPreviousSummary(t *testing.T) {
+	t.Parallel()
+
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:giant-previous-summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "old"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessevents.AppendCompaction(ctx, sess, "assistant", capcompaction.EventData{
+		FirstKeptSeq: 1,
+		Kind:         capcompaction.KindSummary,
+		Summary: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("S", 300_000)}},
+		},
+		RetainedTail: []agentkit.ModelMessage{{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "继续"}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(), AgentID: "assistant", Session: sess, Messages: messages, Force: true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("forced compaction must shrink an oversized previous summary")
+	}
+	derived, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, msg := range derived {
+		for _, part := range msg.Content {
+			total += len(part.Text)
+		}
+	}
+	if total >= 300_000 {
+		t.Fatalf("derived history still carries the giant summary, chars=%d", total)
+	}
+}
+
+// 线上验证：indexed 存储形态很小（attachment_ref），但 req.Messages 是 hydrate 后的
+// 大图。keepRecent 切点看不见这些体积 → Prepare nil；单条也不超 per-message
+// 预算 → 旧 truncate-only no-op。Force 必须中和附件并落盘，避免下一轮再 hydrate。
+func TestSummaryForceFitsHydratedAttachmentsWhenStoredTiny(t *testing.T) {
+	t.Parallel()
+
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 500}, SummaryDeps{LLM: llm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:tiny-stored-hydrated-send"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for i := 0; i < 8; i++ {
+		if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+			Role: "user",
+			Content: []agentkit.ContentPart{
+				{Type: "attachment_ref", Source: fmt.Sprintf("upload/%d.png", i), MIME: "image/png"},
+				{Type: "text", Text: "看图"},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hydrated := make([]agentkit.ModelMessage, 0, 8)
+	for i := 0; i < 8; i++ {
+		hydrated = append(hydrated, agentkit.ModelMessage{
+			Role: "user",
+			Content: []agentkit.ContentPart{
+				{Type: "image_url", URL: "data:image/png;base64," + strings.Repeat("A", 4000)},
+				{Type: "text", Text: "看图"},
+			},
+		})
+	}
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		AgentID:   "assistant",
+		Session:   sess,
+		Messages:  hydrated,
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("forced compaction must apply when hydrated send size exceeds keepRecentTokens")
+	}
+	if llm.calls.Load() != 0 {
+		t.Fatalf("summary llm calls = %d, want 0", llm.calls.Load())
+	}
+	data := lastCompactionData(t, ctx, sess)
+	for _, msg := range data.RetainedTail {
+		for _, part := range msg.Content {
+			if part.Type == "attachment_ref" || part.Type == "image_url" {
+				t.Fatalf("retained tail still hydratable: %#v", part)
+			}
+		}
+	}
+}
+
+// 回归：历史上只有一次 legacy 空 tail 压缩、之后零新事件时，强制压缩写出的
+// 事件必须保证 RetainedTail 非空。否则 derive 把它当 legacy 标记（AfterSeq=
+// BeforeSeq=0），重启后全量读文件会从 seq 0 回放，被压缩隐藏的旧历史会复活。
+func TestSummaryForceNeverWritesEmptyRetainedTail(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	sess, err := sessstore.NewJSONL(sessstore.JSONLConfig{Path: path, ID: "test:never-empty-tail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// 一条已被过去压缩隐藏的巨型旧消息
+	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("G", 5000)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// legacy 格式 compaction：无 RetainedTail，BeforeSeq=1，巨型 summary
+	if err := sessevents.AppendCompaction(ctx, sess, "a", capcompaction.EventData{
+		BeforeSeq: 1,
+		Kind:      capcompaction.KindSummary,
+		Summary: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("S", 100_000)}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 100}, SummaryDeps{LLM: &okSummaryLLM{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected forced compaction to bound the oversized legacy summary")
+	}
+	if data := lastCompactionData(t, ctx, sess); len(data.RetainedTail) == 0 {
+		t.Fatal("compaction event must never persist an empty retained tail")
+	}
+
+	// 模拟进程重启：重新打开同一个 JSONL 文件，被压缩隐藏的旧消息不得复活。
+	reopened, err := sessstore.NewJSONL(sessstore.JSONLConfig{Path: path, ID: "test:never-empty-tail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err = reopened.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: reopened.ID(), AgentID: "a", Session: reopened, Messages: messages, Force: true,
+	}); err != nil {
+		t.Fatalf("compact after reopen: %v", err)
+	}
+	derived, err := reopened.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, msg := range derived {
+		for _, part := range msg.Content {
+			if strings.Contains(part.Text, "GGGG") {
+				t.Fatalf("compacted-away message resurrected into model view: %.80q", part.Text)
 			}
 		}
 	}

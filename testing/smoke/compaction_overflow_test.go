@@ -548,8 +548,24 @@ func TestSmokePreSendGuardGiantMessageTruncateOnly(t *testing.T) {
 	if len(compactions[0].RetainedTail) == 0 {
 		t.Fatal("truncate-only compaction must keep a retained tail")
 	}
-	if got := compactions[0].RetainedTail[0].Content[0].Text; !strings.Contains(got, "truncated") || len(got) >= giantLen {
-		t.Fatalf("retained giant message not truncated in model-visible view, len=%d", len(got))
+	// The giant message is bounded out of the model-visible view: truncated to
+	// the per-message budget, then dropped oldest when the total still exceeds
+	// the keep budget. The newest message is always retained.
+	retainedChars := 0
+	for _, msg := range compactions[0].RetainedTail {
+		for _, part := range msg.Content {
+			if len(part.Text) >= giantLen {
+				t.Fatalf("retained tail still carries the full giant message, len=%d", len(part.Text))
+			}
+			retainedChars += len(part.Text)
+		}
+	}
+	if retainedChars > 800 { // keepRecentTokens=200 → 800 chars
+		t.Fatalf("retained tail exceeds the keep budget, chars=%d", retainedChars)
+	}
+	last := compactions[0].RetainedTail[len(compactions[0].RetainedTail)-1]
+	if len(last.Content) == 0 || last.Content[0].Text != "hi" {
+		t.Fatalf("newest message must be retained, got %#v", last.Content)
 	}
 
 	// Durable log keeps the original full text; only the model-visible view

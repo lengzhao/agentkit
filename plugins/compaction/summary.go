@@ -3,9 +3,7 @@ package compaction
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 
@@ -105,7 +103,10 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 	prep := rtcompaction.Prepare(indexed, boundaryStart, s.cfg.KeepRecentTokens, previousSummary, tokensBefore)
 	if prep == nil {
 		if req.Force {
-			return s.truncateOnlyCompaction(ctx, req, indexed[boundaryStart:], tokensBefore)
+			// Include a previous summary (indexed[0]) so an oversized checkpoint
+			// can still be truncated; skipping it is how a bad summary permanently
+			// stuck the session.
+			return s.truncateOnlyCompaction(ctx, req, indexed, boundaryStart, tokensBefore)
 		}
 		return capcompaction.Result{}, nil
 	}
@@ -182,39 +183,63 @@ func (s *summaryService) maxInputChars() int {
 // summarize (e.g. the whole history is one oversized message): it persists a
 // compaction event whose retained tail is the bounded history, so overflow
 // recovery retries with a bounded prompt instead of the same oversized one.
-func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcompaction.Request, tail []capcompaction.IndexedMessage, tokensBefore int) (capcompaction.Result, error) {
-	if len(tail) == 0 {
+func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcompaction.Request, indexed []capcompaction.IndexedMessage, boundaryStart int, tokensBefore int) (capcompaction.Result, error) {
+	if len(indexed) == 0 {
 		return capcompaction.Result{}, nil
 	}
-	bounded, ok := rtcompaction.BoundOversizedIndexedMessages(tail, s.maxRetainedChars())
+	if boundaryStart < 0 {
+		boundaryStart = 0
+	}
+	if boundaryStart > len(indexed) {
+		boundaryStart = len(indexed)
+	}
+	bounded, ok := rtcompaction.FitIndexedMessagesToBudget(indexed, s.maxRetainedChars())
 	if !ok {
 		slog.Warn("forced compaction did not apply: nothing to summarize and no oversized retained content",
 			"session_id", req.SessionID,
 			"agent_id", req.AgentID,
-			"indexed_messages", len(tail),
+			"indexed_messages", len(indexed),
 			"tokens_before", tokensBefore,
 			"keep_recent_tokens", s.cfg.KeepRecentTokens,
 		)
 		return capcompaction.Result{}, nil
 	}
+	summary := agentkit.ModelMessage{
+		Role: "user",
+		Content: []agentkit.ContentPart{{
+			Type: "text",
+			Text: "[Earlier context could not be summarized: a single message exceeded the retention budget and was truncated.]",
+		}},
+	}
+	drop := len(indexed) - len(bounded)
+	if drop < 0 {
+		drop = 0
+	}
+	tail := bounded
+	firstKept := indexed[drop].Seq
+	// Promote the bounded previous summary only when a non-empty tail remains:
+	// derive treats an empty RetainedTail as a legacy marker and replays events
+	// after BeforeSeq (0 here), which would resurrect compacted-away history.
+	if boundaryStart > drop && len(bounded) > 1 {
+		summary = bounded[0]
+		tail = bounded[1:]
+		if drop+1 < len(indexed) {
+			firstKept = indexed[drop+1].Seq
+		}
+	}
 	slog.Info("forced compaction applied without summary: bounded oversized retained content",
 		"session_id", req.SessionID,
 		"agent_id", req.AgentID,
-		"indexed_messages", len(tail),
+		"indexed_messages", len(indexed),
+		"retained_messages", len(tail),
 		"tokens_before", tokensBefore,
 	)
 	data := capcompaction.EventData{
-		FirstKeptSeq: tail[0].Seq,
-		RetainedTail: bounded,
+		FirstKeptSeq: firstKept,
+		RetainedTail: tail,
 		TokensBefore: tokensBefore,
 		Kind:         capcompaction.KindSummary,
-		Summary: agentkit.ModelMessage{
-			Role: "user",
-			Content: []agentkit.ContentPart{{
-				Type: "text",
-				Text: "[Earlier context could not be summarized: a single message exceeded the retention budget and was truncated.]",
-			}},
-		},
+		Summary:      summary,
 	}
 	if err := sessevents.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
 		return capcompaction.Result{}, err
@@ -280,6 +305,9 @@ func (s *summaryService) summarizeOnce(ctx context.Context, messages []agentkit.
 	promptText.WriteString(conversationText)
 	promptText.WriteString("\n</conversation>\n\n")
 	if previousSummary != "" {
+		// A legacy oversized summary (e.g. left by a streaming bug) must not
+		// bloat the update prompt beyond the summary model window either.
+		previousSummary = s.boundSummaryText(previousSummary)
 		promptText.WriteString("<previous-summary>\n")
 		promptText.WriteString(previousSummary)
 		promptText.WriteString("\n</previous-summary>\n\n")
@@ -297,33 +325,36 @@ func (s *summaryService) summarizeOnce(ctx context.Context, messages []agentkit.
 	if err != nil {
 		return "", err
 	}
-	defer stream.Close()
-
-	var out strings.Builder
-	for {
-		ev, err := stream.Recv()
-		if ev.Message != nil {
-			for _, part := range ev.Message.Content {
-				if part.Type == "text" {
-					out.WriteString(part.Text)
-				}
-			}
-		}
-		if ev.Delta != "" {
-			out.WriteString(ev.Delta)
-		}
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
+	text, err := llm.CollectAssistantText(stream)
+	if err != nil {
+		return "", err
 	}
-	text := strings.TrimSpace(out.String())
 	if text == "" {
 		return "", fmt.Errorf("empty compaction summary")
 	}
+	if bounded := s.boundSummaryText(text); bounded != text {
+		slog.Warn("compaction summary exceeded reserveTokens, truncating",
+			"summary_chars", len(text),
+			"reserve_chars", s.cfg.ReserveTokens*4,
+		)
+		text = bounded
+	}
 	return text, nil
+}
+
+// boundSummaryText caps summary text to the reserve budget (marker included, at
+// a rune boundary) so neither the persisted summary nor a previous summary
+// embedded in the next prompt can exceed it.
+func (s *summaryService) boundSummaryText(text string) string {
+	reserveChars := s.cfg.ReserveTokens * 4
+	if reserveChars <= 0 || len(text) <= reserveChars {
+		return text
+	}
+	msgs, _ := rtcompaction.TruncateOversizedMessageTexts([]agentkit.ModelMessage{{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
+	}}, reserveChars)
+	return msgs[0].Content[0].Text
 }
 
 const summarizationSystemPrompt = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.

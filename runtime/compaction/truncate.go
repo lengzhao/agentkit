@@ -3,6 +3,7 @@ package compaction
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lengzhao/agentkit"
 	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
@@ -38,6 +39,49 @@ func BoundOversizedIndexedMessages(indexed []capscompaction.IndexedMessage, maxC
 	}
 	out, truncated := TruncateOversizedMessageTexts(msgs, maxChars)
 	return out, changed || truncated
+}
+
+// FitIndexedMessagesToBudget is the force-compaction send budget: neutralize
+// every hydratable part (stored attachment_ref can be tiny but hydrate into a
+// huge data: URL), cap each message, then drop oldest messages until the total
+// fits maxChars. Durable session events keep the original content.
+func FitIndexedMessagesToBudget(indexed []capscompaction.IndexedMessage, maxChars int) ([]agentkit.ModelMessage, bool) {
+	msgs := make([]agentkit.ModelMessage, len(indexed))
+	for i, item := range indexed {
+		msgs[i] = item.Message
+	}
+	if maxChars <= 0 {
+		return msgs, false
+	}
+	changed := false
+	for i, msg := range msgs {
+		if next, ok := neutralizeAttachmentParts(msg); ok {
+			msgs[i] = next
+			changed = true
+		}
+	}
+	msgs, truncated := TruncateOversizedMessageTexts(msgs, maxChars)
+	msgs, dropped := dropOldestMessagesToFit(msgs, maxChars)
+	return msgs, changed || truncated || dropped
+}
+
+func dropOldestMessagesToFit(messages []agentkit.ModelMessage, maxChars int) ([]agentkit.ModelMessage, bool) {
+	if len(messages) <= 1 {
+		return messages, false
+	}
+	total := 0
+	for _, msg := range messages {
+		total += estimateMessageChars(msg)
+	}
+	if total <= maxChars {
+		return messages, false
+	}
+	drop := 0
+	for drop < len(messages)-1 && total > maxChars {
+		total -= estimateMessageChars(messages[drop])
+		drop++
+	}
+	return messages[drop:], true
 }
 
 // neutralizeAttachmentParts replaces hydratable attachment parts (and inline
@@ -127,7 +171,7 @@ func TruncateOversizedMessageTexts(messages []agentkit.ModelMessage, maxChars in
 			if len(part.Text) > budget {
 				parts = append(parts, agentkit.ContentPart{
 					Type: "text",
-					Text: part.Text[:budget] + fmt.Sprintf("\n…[message truncated: %d chars omitted]", total-budget),
+					Text: fitTruncatedText(part.Text, budget, total),
 				})
 				budget = 0
 				continue
@@ -138,4 +182,53 @@ func TruncateOversizedMessageTexts(messages []agentkit.ModelMessage, maxChars in
 		out[i].Content = parts
 	}
 	return out, changed
+}
+
+// fitTruncatedText keeps the result at most maxChars, including the omission marker.
+func fitTruncatedText(text string, maxChars, originalTotal int) string {
+	if maxChars <= 0 {
+		return ""
+	}
+	if len(text) <= maxChars {
+		return text
+	}
+	omitted := originalTotal
+	if omitted < len(text) {
+		omitted = len(text)
+	}
+	for range 4 {
+		marker := fmt.Sprintf("\n…[message truncated: %d chars omitted]", omitted)
+		if len(marker) >= maxChars {
+			return marker[:runeSafeLen(marker, maxChars)]
+		}
+		keep := maxChars - len(marker)
+		if keep > len(text) {
+			keep = len(text)
+		}
+		keep = runeSafeLen(text, keep)
+		omitted = originalTotal - keep
+		if omitted < len(text)-keep {
+			omitted = len(text) - keep
+		}
+		marker = fmt.Sprintf("\n…[message truncated: %d chars omitted]", omitted)
+		if keep+len(marker) <= maxChars {
+			return text[:keep] + marker
+		}
+	}
+	return text[:runeSafeLen(text, maxChars)]
+}
+
+// runeSafeLen returns the largest prefix byte length of s not exceeding n that
+// ends on a UTF-8 rune boundary, so truncation never emits invalid UTF-8.
+func runeSafeLen(s string, n int) int {
+	if n >= len(s) {
+		return len(s)
+	}
+	if n < 0 {
+		return 0
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return n
 }

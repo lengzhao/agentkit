@@ -136,7 +136,9 @@ agent.assistant.default:
 - **`prune-tool-results` 诚实上报**：没有实际截断时返回 `Applied: false`。
 - **切点按入站真实大小计算**：`FindCutPoint`/`Prepare` 优先用事件 metadata 里 sanitize 前记录的 `logical_chars`（落盘被剥成 `attachment_ref` 的附件消息仍按原始大小参与累加），避免「存储形态很小、hydrate 后巨大」的历史让压缩计划落空（`Prepare` 返回 nil → 静默 not applied）。
 - **巨型单消息兜底**：retained tail 中单条消息文本超过 `keepRecentTokens` 预算时，`compaction/summary` 在压缩事件里截断其模型可见视图（落盘原文不动）；记录大小超预算的附件 part 会被替换成带路径的文本提示，防止压缩后 hydrate 重新膨胀；整条历史就是一条巨型消息、无可摘要时，强制压缩写入「截断式」compaction 事件，而不是静默 no-op。
-- **摘要输入有界**：序列化摘要输入时单条消息截断（100k 字符）、总量超 `maxInputTokens`（默认 400k）则丢弃最旧消息并标注，保证摘要请求本身不会超出 summary 模型窗口。
+- **摘要输入有界**：序列化摘要输入时单条消息截断（100k 字符）、总量超 `maxInputTokens`（默认 400k）则丢弃最旧消息并标注；嵌入 prompt 的上一轮 `<previous-summary>` 与本轮生成的摘要都按 `reserveTokens` 截断（含标记 ≤ 预算、按 rune 边界切断），保证摘要请求与落盘摘要都不会超出 summary 模型窗口。
+- **摘要流只收最终正文**：`summarizeOnce` 走 `llm.CollectAssistantText`（`message` 事件覆盖累计结果，否则只拼 `Delta`）。OpenAI 兼容流每个 `text_delta` 会同时带累计 Message 快照，若两者都写入，摘要会按 chunk 数平方膨胀并落盘，下一轮 `Prepare` 又从 `boundaryStart=1` 跳过这条摘要，会话会卡在 not applied。
+- **巨型旧摘要可自愈**：强制压缩在 `Prepare` 为空时对**整段 indexed**（含上一次 summary）做 `FitIndexedMessagesToBudget`：中和全部可 hydrate 附件（存储里很小的 `attachment_ref` 仍会在发送前胀成 data: URL）、单条截断、再丢最旧直到总量落入 `keepRecentTokens` 字符预算。截断结果（含标记）必须 ≤ 预算。写出的压缩事件保证 `RetainedTail` 非空——空 tail 会被 derive 当作 legacy 标记从 `BeforeSeq` 全量回放，导致已压缩历史复活。`maxPromptTokens` 必须大于 assembled system prompt；压缩只缩小 session 历史。
 
 ## 6. 崩溃恢复
 
