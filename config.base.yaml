@@ -287,6 +287,7 @@ sessionIndex.default:
   use: session/sqlite-index
   config:
     indexRel: sessions/.index.sqlite
+    sessionsRel: sessions
   deps:
     workspace: workspace.default
 
@@ -470,11 +471,8 @@ tool.memory.default:
 
 hook.session-index.default:
   use: hook/session-index
-  config:
-    sessionsDir: sessions
   deps:
     index: sessionIndex.default
-    workspace: workspace.default
 
 hooks.default:
   use: hooks/runtime
@@ -713,11 +711,8 @@ skills.default:
 
 tool.session-query.default:
   use: tool/session-query
-  config:
-    sessionsDir: sessions
   deps:
     index: sessionIndex.default
-    workspace: workspace.default
 
 tools.default:
   use: tools/deferred

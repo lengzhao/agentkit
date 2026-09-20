@@ -2,18 +2,20 @@ package chatapi
 
 import (
 	"context"
-
-	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 )
 
-func (p *Platform) syncConversationsFromSessionIndex(ctx context.Context, channelKey, sessionsDir string) error {
+// syncConversationsFromSessionIndex refreshes the tenant FTS index and lists
+// sessions from it. Both sync and list run under the channel workspace scope so
+// they hit the same per-tenant index the turn-complete hook maintains.
+func (p *Platform) syncConversationsFromSessionIndex(ctx context.Context, channelKey string) error {
 	if p.sessionIndex == nil {
 		return nil
 	}
-	if err := sessindex.SyncSessionIndex(ctx, p.sessionIndex, sessionsDir); err != nil {
+	tenantCtx := channelWorkspaceCtx(ctx, channelKey)
+	if err := p.sessionIndex.SyncSessions(tenantCtx); err != nil {
 		return err
 	}
-	summaries, err := p.sessionIndex.ListSessions(ctx, 200)
+	summaries, err := p.sessionIndex.ListSessions(tenantCtx, 200)
 	if err != nil {
 		return err
 	}

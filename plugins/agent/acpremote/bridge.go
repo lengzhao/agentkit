@@ -17,8 +17,8 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 type sessionUpdateConsumer interface {
@@ -125,8 +125,8 @@ func (b *bridge) currentTurn() *turnState {
 	return b.turn.Load()
 }
 
-func (b *bridge) sessionStoreDir(ctx context.Context) (string, error) {
-	return b.workspace.Resolve(ctx, defaultSessionDir)
+func (b *bridge) bindDir(ctx context.Context) (string, error) {
+	return b.workspace.Resolve(ctx, defaultBindDir)
 }
 
 func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID acp.SessionId, state *sessionState) {
@@ -162,7 +162,11 @@ func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
 	if b.cfg.Cwd != "" {
 		return b.workspace.Resolve(ctx, b.cfg.Cwd)
 	}
-	return b.workspace.Resolve(ctx, sessstore.TenantToolWorkDir)
+	workDir, _ := workpath.WorkLayout(b.workspace)
+	if workDir == "" {
+		workDir = "work"
+	}
+	return b.workspace.Resolve(ctx, workDir)
 }
 
 func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, sessionStore agentkit.SessionStore) (acp.SessionId, error) {
@@ -178,11 +182,11 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		return "", err
 	}
 
-	storeDir, err := b.sessionStoreDir(ctx)
+	bindDir, err := b.bindDir(ctx)
 	if err != nil {
 		return "", err
 	}
-	bindPath, err := acpSessionBindPath(storeDir, sessionID, agentID)
+	bindPath, err := acpSessionBindPath(bindDir, sessionID, agentID)
 	if err != nil {
 		return "", err
 	}

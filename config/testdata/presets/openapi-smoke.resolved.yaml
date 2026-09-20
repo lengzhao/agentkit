@@ -157,11 +157,8 @@ hook.before-step.worker:
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:
-    config:
-        sessionsDir: sessions
     deps:
         index: sessionIndex.default
-        workspace: workspace.default
     use: hook/session-index
 hook.turn-continue.default:
     config:
@@ -432,6 +429,7 @@ schedule.default:
 sessionIndex.default:
     config:
         indexRel: sessions/.index.sqlite
+        sessionsRel: sessions
     deps:
         workspace: workspace.default
     use: session/sqlite-index
@@ -552,11 +550,8 @@ tool.send.default:
         workspace: workspace.default
     use: tool/send
 tool.session-query.default:
-    config:
-        sessionsDir: sessions
     deps:
         index: sessionIndex.default
-        workspace: workspace.default
     use: tool/session-query
 tool.shell-bash.default:
     config:

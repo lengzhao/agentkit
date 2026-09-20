@@ -14,8 +14,8 @@ type indexableMessage struct {
 	Text string
 }
 
-// ExtractIndexableMessages returns user/assistant text from session events.
-func ExtractIndexableMessages(events []agentkit.SessionEvent) []indexableMessage {
+// extractIndexableMessages returns user/assistant text from session events.
+func extractIndexableMessages(events []agentkit.SessionEvent) []indexableMessage {
 	var out []indexableMessage
 	for _, ev := range events {
 		switch ev.Type {

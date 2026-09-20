@@ -1,6 +1,7 @@
 agent.assistant.default:
     config:
         id: assistant
+        maxPromptTokens: 1000000
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -43,6 +44,7 @@ agent.cursor.default:
 agent.worker.default:
     config:
         id: worker
+        maxPromptTokens: 1000000
         model: gpt-5.4
         retry:
             baseDelayMs: 2000
@@ -97,7 +99,7 @@ compaction.summary.default:
 compaction.token-limit.default:
     config:
         charsPerToken: 3
-        contextWindow: 200000
+        contextWindow: 1048576
         triggerRatio: 0.92
     deps:
         services:
@@ -106,7 +108,7 @@ compaction.token-limit.default:
 compaction.token-limit.worker:
     config:
         charsPerToken: 3
-        contextWindow: 200000
+        contextWindow: 1048576
         triggerRatio: 0.7
     deps:
         services:
@@ -155,11 +157,8 @@ hook.before-step.worker:
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:
-    config:
-        sessionsDir: sessions
     deps:
         index: sessionIndex.default
-        workspace: workspace.default
     use: hook/session-index
 hook.turn-continue.default:
     config:
@@ -434,6 +433,7 @@ schedule.default:
 sessionIndex.default:
     config:
         indexRel: sessions/.index.sqlite
+        sessionsRel: sessions
     deps:
         workspace: workspace.default
     use: session/sqlite-index

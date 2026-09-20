@@ -61,6 +61,7 @@ func (s *Memory) Append(_ context.Context, event agentkit.SessionEvent) (agentki
 		event.CreatedAt = time.Now().UTC()
 	}
 	s.events = append(s.events, event)
+	s.trimIfCompaction(event)
 	return event.Seq, nil
 }
 

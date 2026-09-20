@@ -163,7 +163,7 @@ flowchart TB
 - [x] **删薄包装 / 死代码**：`plugins/learning/memory.go` 去掉 `ParseMemory`/`RenderMemory` re-export；`runtime/learning/memory.go` 去掉未用的 `formatMeta`。
 - [x] **`FlattenTextParts`**：`runtime/session` 导出文本 part 拼接（sep 参数）；`capture`、`background_review`、`review`、`index_extract` 对齐语义。
 - [x] **`TruncateEllipsis`**：`runtime/learning` 单一截断 helper；`background_review` 与 review digest 共用。
-- [x] **`SearchSyncedSessions` / `SyncSessionIndex`**：`runtime/session` 封装 FTS sync + search；background review、`session-query`、chat-api 发现共用。
+- [x] ~~**`SearchSyncedSessions` / `SyncSessionIndex`**~~：已简化删除——`cap/sessionindex.Service.SyncSessions(ctx)` 由实现自行解析会话目录，background review、`session-query`、chat-api 发现直接调 cap 接口。
 - [x] **通知文案迁回 plugin**：`FormatBackgroundReviewNotification` / `NormalizeMemoryNotifications` 在 `plugins/learning/background_notify.go`。
 
 ### P2 — 架构对齐（后续）

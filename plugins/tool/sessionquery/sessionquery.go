@@ -7,19 +7,15 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
-	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 	"github.com/lengzhao/pluginkit"
 )
 
 type Config struct {
-	SessionsDir  string `json:"sessionsDir"`
-	DefaultLimit int    `json:"defaultLimit"`
+	DefaultLimit int `json:"defaultLimit"`
 }
 
 type Deps struct {
-	Index     capsessionindex.Service `json:"index"`
-	Workspace workspace.Service       `json:"workspace"`
+	Index capsessionindex.Service `json:"index"`
 }
 
 // Input supports Hermes-style session_search shapes: search (FTS), list (browse sessions), scroll (context around a hit).
@@ -56,25 +52,13 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 	if deps.Index == nil {
 		return nil, fmt.Errorf("tool/session-search requires index")
 	}
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("tool/session-search requires workspace")
-	}
-	sessionsDir := strings.TrimSpace(cfg.SessionsDir)
-	if sessionsDir == "" {
-		sessionsDir = "sessions"
-	}
 	defaultLimit := cfg.DefaultLimit
 	if defaultLimit <= 0 {
 		defaultLimit = 10
 	}
 	idx := deps.Index
-	ws := deps.Workspace
 	tool, err := agentkit.NewTool[Input, Output]("session_search", func(ctx context.Context, input Input) (Output, error) {
-		dir, err := ws.Resolve(ctx, sessionsDir)
-		if err != nil {
-			return Output{}, err
-		}
-		if err := sessindex.SyncSessionIndex(ctx, idx, dir); err != nil {
+		if err := idx.SyncSessions(ctx); err != nil {
 			return Output{}, err
 		}
 		mode := strings.ToLower(strings.TrimSpace(input.Mode))

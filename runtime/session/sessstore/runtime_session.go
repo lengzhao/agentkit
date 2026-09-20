@@ -13,8 +13,8 @@ import (
 
 const sessionRuntimeFileName = "runtime.json"
 
-// SessionRuntimeData holds per-session dynamic overrides (agent route, LLM model).
-type SessionRuntimeData struct {
+// sessionRuntimeData holds per-session dynamic overrides (agent route, LLM model).
+type sessionRuntimeData struct {
 	AgentID agentkit.AgentID `json:"agentId,omitempty"`
 	Model   string           `json:"model,omitempty"`
 }
@@ -27,28 +27,28 @@ func sessionRuntimeFilePath(storeDir string, id agentkit.SessionID) (string, err
 	return filepath.Join(dir, sessionRuntimeFileName), nil
 }
 
-func loadSessionRuntime(storeDir string, id agentkit.SessionID) (SessionRuntimeData, error) {
+func loadSessionRuntime(storeDir string, id agentkit.SessionID) (sessionRuntimeData, error) {
 	path, err := sessionRuntimeFilePath(storeDir, id)
 	if err != nil {
-		return SessionRuntimeData{}, err
+		return sessionRuntimeData{}, err
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return SessionRuntimeData{}, nil
+			return sessionRuntimeData{}, nil
 		}
-		return SessionRuntimeData{}, err
+		return sessionRuntimeData{}, err
 	}
-	var data SessionRuntimeData
+	var data sessionRuntimeData
 	if err := json.Unmarshal(raw, &data); err != nil {
-		return SessionRuntimeData{}, err
+		return sessionRuntimeData{}, err
 	}
 	data.Model = strings.TrimSpace(data.Model)
 	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
 	return data, nil
 }
 
-func saveSessionRuntime(storeDir string, id agentkit.SessionID, data SessionRuntimeData) error {
+func saveSessionRuntime(storeDir string, id agentkit.SessionID, data sessionRuntimeData) error {
 	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
 	data.Model = strings.TrimSpace(data.Model)
 

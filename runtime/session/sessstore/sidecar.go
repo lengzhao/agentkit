@@ -15,14 +15,14 @@ import (
 // memorySidecar stores per-session agent binds and active-session mappings in memory.
 type memorySidecar struct {
 	mu       sync.RWMutex
-	runtime  map[agentkit.SessionID]SessionRuntimeData
+	runtime  map[agentkit.SessionID]sessionRuntimeData
 	active   map[agentkit.SessionID]agentkit.SessionID
 	fallback agentkit.SessionID
 }
 
 func newMemorySidecar(fallback agentkit.SessionID) memorySidecar {
 	return memorySidecar{
-		runtime:  make(map[agentkit.SessionID]SessionRuntimeData),
+		runtime:  make(map[agentkit.SessionID]sessionRuntimeData),
 		active:   make(map[agentkit.SessionID]agentkit.SessionID),
 		fallback: fallback,
 	}
@@ -35,7 +35,7 @@ func (m *memorySidecar) normalize(id agentkit.SessionID) agentkit.SessionID {
 	return id
 }
 
-func (m *memorySidecar) sessionRuntime(id agentkit.SessionID) SessionRuntimeData {
+func (m *memorySidecar) sessionRuntime(id agentkit.SessionID) sessionRuntimeData {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.runtime[id]
@@ -71,7 +71,7 @@ func (m *memorySidecar) SetModelBind(_ context.Context, id agentkit.SessionID, m
 	return nil
 }
 
-func (m *memorySidecar) storeRuntime(id agentkit.SessionID, data SessionRuntimeData) {
+func (m *memorySidecar) storeRuntime(id agentkit.SessionID, data sessionRuntimeData) {
 	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
 	data.Model = strings.TrimSpace(data.Model)
 	if data.AgentID == "" && data.Model == "" {
@@ -104,7 +104,7 @@ func (m *memorySidecar) SetActiveSession(_ context.Context, id, active agentkit.
 }
 
 type runtimeCacheEntry struct {
-	data    SessionRuntimeData
+	data    sessionRuntimeData
 	modTime time.Time
 	missing bool
 }
@@ -121,14 +121,14 @@ type fileSidecar struct {
 	activeCache  sync.Map
 }
 
-func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.SessionID) (SessionRuntimeData, error) {
+func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.SessionID) (sessionRuntimeData, error) {
 	dir, err := f.dir(ctx)
 	if err != nil {
-		return SessionRuntimeData{}, err
+		return sessionRuntimeData{}, err
 	}
 	path, err := sessionRuntimeFilePath(dir, id)
 	if err != nil {
-		return SessionRuntimeData{}, err
+		return sessionRuntimeData{}, err
 	}
 	info, statErr := os.Stat(path)
 	if statErr == nil {
@@ -146,11 +146,11 @@ func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.
 			}
 		}
 	} else {
-		return SessionRuntimeData{}, statErr
+		return sessionRuntimeData{}, statErr
 	}
 	data, err := loadSessionRuntime(dir, id)
 	if err != nil {
-		return SessionRuntimeData{}, err
+		return sessionRuntimeData{}, err
 	}
 	modTime := time.Time{}
 	missing := errors.Is(statErr, os.ErrNotExist)

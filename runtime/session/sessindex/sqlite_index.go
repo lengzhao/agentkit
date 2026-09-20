@@ -19,6 +19,8 @@ import (
 type SQLiteIndexConfig struct {
 	// IndexRel is the workspace-relative SQLite file path.
 	IndexRel string `json:"indexRel"`
+	// SessionsRel is the workspace-relative sessions directory to ingest.
+	SessionsRel string `json:"sessionsRel"`
 }
 
 type SQLiteIndexDeps struct {
@@ -27,9 +29,10 @@ type SQLiteIndexDeps struct {
 
 // SQLiteIndex persists FTS5 over session JSONL transcripts per tenant workspace.
 type SQLiteIndex struct {
-	workspace workspace.Service
-	indexRel  string
-	mu        sync.Mutex
+	workspace   workspace.Service
+	indexRel    string
+	sessionsRel string
+	mu          sync.Mutex
 }
 
 // NewSQLiteIndex registers session/sqlite-index: FTS index over session/store JSONL files.
@@ -41,15 +44,21 @@ func NewSQLiteIndex(cfg SQLiteIndexConfig, deps SQLiteIndexDeps) (capsessioninde
 	if rel == "" {
 		rel = "sessions/.index.sqlite"
 	}
+	sessionsRel := strings.TrimSpace(cfg.SessionsRel)
+	if sessionsRel == "" {
+		sessionsRel = "sessions"
+	}
 	return &SQLiteIndex{
-		workspace: deps.Workspace,
-		indexRel:  rel,
+		workspace:   deps.Workspace,
+		indexRel:    rel,
+		sessionsRel: sessionsRel,
 	}, nil
 }
 
-func (s *SQLiteIndex) SyncSessions(ctx context.Context, sessionsDir string) error {
-	if strings.TrimSpace(sessionsDir) == "" {
-		return fmt.Errorf("sessions dir is required")
+func (s *SQLiteIndex) SyncSessions(ctx context.Context) error {
+	sessionsDir, err := s.workspace.Resolve(ctx, s.sessionsRel)
+	if err != nil {
+		return err
 	}
 	dbPath, err := s.workspace.Resolve(ctx, s.indexRel)
 	if err != nil {
@@ -329,7 +338,7 @@ func (s *SQLiteIndex) syncOneFile(db *sql.DB, path string) error {
 	if err != nil {
 		return err
 	}
-	msgs := ExtractIndexableMessages(events)
+	msgs := extractIndexableMessages(events)
 
 	tx, err := db.Begin()
 	if err != nil {

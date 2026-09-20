@@ -13,13 +13,8 @@ import (
 
 const activeSessionFileName = "current.json"
 
-type ActiveSessionData struct {
+type activeSessionData struct {
 	SessionID agentkit.SessionID `json:"sessionId"`
-}
-
-// WorkDir returns the per-session directory under storeDir (runtime.json, current.json, etc.).
-func WorkDir(storeDir string, id agentkit.SessionID) (string, error) {
-	return sessionWorkDir(storeDir, id)
 }
 
 func sessionWorkDir(storeDir string, id agentkit.SessionID) (string, error) {
@@ -58,7 +53,7 @@ func readActiveSessionFile(path string) (agentkit.SessionID, error) {
 		}
 		return "", err
 	}
-	var active ActiveSessionData
+	var active activeSessionData
 	if err := json.Unmarshal(data, &active); err != nil {
 		return "", err
 	}
@@ -69,7 +64,7 @@ func writeActiveSessionFile(path string, id agentkit.SessionID) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(ActiveSessionData{SessionID: id})
+	raw, err := json.Marshal(activeSessionData{SessionID: id})
 	if err != nil {
 		return err
 	}

@@ -117,7 +117,7 @@ func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteT
 	}
 	agentID := turn.AgentID
 	for _, call := range turn.OrphanCalls {
-		if err := AppendToolResult(ctx, s, agentID, InterruptedToolResult(call)); err != nil {
+		if err := AppendToolResult(ctx, s, agentID, derive.InterruptedToolResult(call)); err != nil {
 			return RecoveryData{}, err
 		}
 	}
@@ -140,14 +140,6 @@ func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteT
 		return RecoveryData{}, err
 	}
 	return data, nil
-}
-
-// InterruptedToolResult is the stand-in result for a call that never ran to
-// completion.
-//
-// Deprecated: use derive.InterruptedToolResult.
-func InterruptedToolResult(call agentkit.ToolCall) agentkit.ToolResult {
-	return derive.InterruptedToolResult(call)
 }
 
 func AppendSessionRecovery(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data RecoveryData) error {

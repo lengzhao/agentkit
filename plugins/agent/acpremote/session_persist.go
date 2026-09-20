@@ -12,10 +12,11 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
-const defaultSessionDir = "sessions"
+// defaultBindDir is the tenant-relative dir holding ACP session resume binds.
+// Owned by this plugin; independent of the session store backend layout.
+const defaultBindDir = "acp"
 const maxReplayMessages = 40
 
 type acpSessionBind struct {
@@ -24,25 +25,24 @@ type acpSessionBind struct {
 	Cwd          string           `json:"cwd"`
 }
 
-func acpSessionBindPath(storeDir string, sessionID agentkit.SessionID, agentID agentkit.AgentID) (string, error) {
-	workDir, err := sessstore.WorkDir(storeDir, sessionID)
+func acpSessionBindPath(bindDir string, sessionID agentkit.SessionID, agentID agentkit.AgentID) (string, error) {
+	sessName, err := safeNameForFile(string(sessionID))
 	if err != nil {
 		return "", err
 	}
-	name, err := safeAgentIDForFile(agentID)
+	agentName, err := safeNameForFile(string(agentID))
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(workDir, "acp-session."+name+".json"), nil
+	return filepath.Join(bindDir, sessName, "acp-session."+agentName+".json"), nil
 }
 
-func safeAgentIDForFile(id agentkit.AgentID) (string, error) {
-	raw := string(id)
+func safeNameForFile(raw string) (string, error) {
 	if raw == "" {
-		return "", fmt.Errorf("empty agent id")
+		return "", fmt.Errorf("empty id")
 	}
 	if strings.Contains(raw, "..") {
-		return "", fmt.Errorf("invalid agent id")
+		return "", fmt.Errorf("invalid id")
 	}
 	var b strings.Builder
 	for _, r := range raw {

@@ -27,8 +27,7 @@ func TestWebSearchAutoSkipsTavilyWithoutKey(t *testing.T) {
 	t.Parallel()
 
 	auto := &webSearchAuto{
-		tavily:     &tavilySearcher{apiKey: "", maxResults: 5},
-		duckduckgo: &duckduckgoSearcher{maxResults: 5},
+		tavily: &tavilySearcher{apiKey: "", maxResults: 5},
 	}
 	if auto.tavily.apiKey != "" {
 		t.Fatal("expected empty tavily key in fallback setup")

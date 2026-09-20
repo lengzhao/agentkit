@@ -236,7 +236,7 @@ func TestStoreEnsuresToolWorkDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workDir := filepath.Join(dir, sessstore.TenantToolWorkDir)
+	workDir := filepath.Join(dir, "work")
 	if _, err := os.Stat(workDir); !os.IsNotExist(err) {
 		t.Fatalf("work dir should not exist before first session: %v", err)
 	}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/compaction"
 )
 
 type JSONLConfig struct {
@@ -99,12 +98,6 @@ func (s *JSONL) LatestSeq() agentkit.EventSeq {
 	return s.seq
 }
 
-func (s *JSONL) trimCompacted(agentID agentkit.AgentID, beforeSeq agentkit.EventSeq) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.mem.trimCompacted(agentID, beforeSeq)
-}
-
 func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentkit.EventSeq, error) {
 	s.mu.Lock()
 	seq, err := s.mem.appendLocked(ctx, event)
@@ -121,11 +114,6 @@ func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentk
 		return 0, err
 	}
 	path := s.path
-	compact := ev.Type == agentkit.EventCompaction
-	var compactData compaction.EventData
-	if compact {
-		_ = json.Unmarshal(ev.Data, &compactData)
-	}
 	s.mu.Unlock()
 
 	if err := appendJSONLLine(path, raw); err != nil {
@@ -138,9 +126,7 @@ func (s *JSONL) Append(ctx context.Context, event agentkit.SessionEvent) (agentk
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq = seq
-	if compact {
-		s.mem.trimCompacted(ev.AgentID, compactData.MemoryCutoffSeq())
-	}
+	s.mem.trimIfCompaction(ev)
 	return seq, nil
 }
 

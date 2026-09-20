@@ -161,11 +161,8 @@ hook.before-step.worker:
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:
-    config:
-        sessionsDir: sessions
     deps:
         index: sessionIndex.default
-        workspace: workspace.default
     use: hook/session-index
 hook.turn-continue.default:
     config:
@@ -465,6 +462,7 @@ sessionCommands.default:
 sessionIndex.default:
     config:
         indexRel: sessions/.index.sqlite
+        sessionsRel: sessions
     deps:
         workspace: workspace.default
     use: session/sqlite-index

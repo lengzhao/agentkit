@@ -103,6 +103,20 @@ func (r *eventRing) add(ev agentkit.SessionEvent) {
 	r.buf[len(r.buf)-1] = ev
 }
 
+// trimIfCompaction drops in-memory history superseded by a compaction marker.
+// Compaction events are self-describing: every backend trims its own cache when
+// appending one, so no cross-package helper is needed.
+func (m *Memory) trimIfCompaction(ev agentkit.SessionEvent) {
+	if ev.Type != agentkit.EventCompaction {
+		return
+	}
+	var data compaction.EventData
+	if err := json.Unmarshal(ev.Data, &data); err != nil {
+		return
+	}
+	m.trimCompacted(ev.AgentID, data.MemoryCutoffSeq())
+}
+
 func (m *Memory) trimCompacted(agentID agentkit.AgentID, beforeSeq agentkit.EventSeq) {
 	if beforeSeq == 0 {
 		return
@@ -143,16 +157,4 @@ func (m *Memory) readUnlocked(from agentkit.EventSeq) []agentkit.SessionEvent {
 		}
 	}
 	return out
-}
-
-// TrimCompacted drops model-visible history superseded by a compaction marker.
-func TrimCompacted(s agentkit.Session, agentID agentkit.AgentID, beforeSeq agentkit.EventSeq) {
-	switch backing := s.(type) {
-	case *Memory:
-		backing.mu.Lock()
-		defer backing.mu.Unlock()
-		backing.trimCompacted(agentID, beforeSeq)
-	case *JSONL:
-		backing.trimCompacted(agentID, beforeSeq)
-	}
 }

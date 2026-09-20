@@ -17,7 +17,6 @@ import (
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
-	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit"
 )
@@ -292,21 +291,16 @@ func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages [
 		slog.Debug("session recall skipped", "reason", "no session index dep")
 		return ""
 	}
-	if p.learning == nil {
-		slog.Debug("session recall skipped", "reason", "no learning dep")
-		return ""
-	}
 	query := reviewRecallQuery(messages)
 	if query == "" {
 		slog.Debug("session recall skipped", "reason", "no recall query from messages")
 		return ""
 	}
-	dir, err := p.learning.Workspace().Resolve(ctx, p.learning.SessionsDir())
-	if err != nil {
-		slog.Debug("session recall skipped", "reason", "resolve sessions dir", "err", err)
+	if err := p.index.SyncSessions(ctx); err != nil {
+		slog.Debug("session recall skipped", "reason", "index sync", "err", err)
 		return ""
 	}
-	hits, err := sessindex.SearchSyncedSessions(ctx, p.index, dir, query, 5)
+	hits, err := p.index.Search(ctx, query, 5)
 	if err != nil {
 		slog.Debug("session recall skipped", "reason", "fts search", "err", err)
 		return ""

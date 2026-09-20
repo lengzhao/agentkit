@@ -30,7 +30,7 @@ func TestSQLiteIndexSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := idx.SyncSessions(ctx, sessionsDir); err != nil {
+	if err := idx.SyncSessions(ctx); err != nil {
 		t.Fatal(err)
 	}
 	hits, err := idx.Search(ctx, "kubernetes", 5)
