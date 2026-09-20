@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
-	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
 type CommandsConfig struct{}
@@ -83,7 +83,7 @@ func (c showSessionCommand) CommandExec(ctx context.Context, args string) (strin
 	if entryKey == "" {
 		entryKey = rctx.SessionIDFromContext(ctx)
 	}
-	sessionID, err := sessbind.ResolveActiveSessionID(ctx, c.store, entryKey)
+	sessionID, err := capsession.ResolveActiveSessionID(ctx, c.store, entryKey)
 	if err != nil {
 		return "", err
 	}

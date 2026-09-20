@@ -5,6 +5,7 @@ import (
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	subagentplugin "github.com/lengzhao/agentkit/plugins/tool/subagent"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -13,7 +14,11 @@ import (
 func subagentDelegateConfig() agenttest.SubagentDelegateConfig {
 	return agenttest.SubagentDelegateConfig{
 		NewFinishTool: func(store agentkit.SessionStore) (agentkit.Tool, error) {
-			return finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+			events, err := sessevents.New()
+			if err != nil {
+				return nil, err
+			}
+			return finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store, SessionEvents: events})
 		},
 		NewDelegateTool: func(spawner capsubagent.Spawner) (agentkit.Tool, error) {
 			return subagentplugin.NewSubagent(subagentplugin.SubagentConfig{}, subagentplugin.SubagentDeps{Subagent: spawner})

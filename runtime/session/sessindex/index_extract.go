@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 // indexableMessage is one searchable row from a session log.
@@ -24,7 +24,7 @@ func extractIndexableMessages(events []agentkit.SessionEvent) []indexableMessage
 			if err != nil {
 				continue
 			}
-			text := derive.FlattenTextParts(msg.Content, "\n")
+			text := capsession.FlattenTextParts(msg.Content, "\n")
 			if text == "" {
 				continue
 			}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -146,7 +147,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 
 	// The parent's current seq makes the id deterministic per call site and
 	// unique within the parent session; session/store sanitizes the separators.
-	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(derive.LatestEventSeq(parentEvents))))
+	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(capsession.LatestEventSeq(parentEvents))))
 
 	startData := sessevents.SubagentStartData{
 		Agent:   def.Name,
@@ -266,13 +267,13 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		}
 		return out, err
 	}
-	out.Steps = sessevents.StepCount(events, 0)
-	if finish := sessevents.FinishAfter(events, 0); finish != nil {
+	out.Steps = capsession.StepCount(events, 0)
+	if finish := capsession.FinishAfter(events, 0); finish != nil {
 		out.Status = finish.Status
 		out.Summary = finish.Summary
 	} else {
 		out.Status = subagent.StatusStopped
-		out.Summary = sessevents.LastAssistantText(events, 0)
+		out.Summary = capsession.LastAssistantText(events, 0)
 	}
 	return out, runErr
 }

@@ -28,13 +28,13 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	long := strings.Repeat("x", 200)
-	if err := sessevents.AppendMessage(context.Background(), sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(context.Background(), sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendToolResult(context.Background(), sess, "coder", agentkit.ToolResult{
+	if err := sessevents.Default.AppendToolResult(context.Background(), sess, "coder", agentkit.ToolResult{
 		ID:      "call-1",
 		Name:    "read",
 		Content: long,

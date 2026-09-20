@@ -6,14 +6,15 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 type FinishConfig struct{}
 
 type FinishDeps struct {
-	SessionStore agentkit.SessionStore `json:"sessionStore"`
+	SessionStore  agentkit.SessionStore `json:"sessionStore"`
+	SessionEvents capsession.RunLog     `json:"sessionEvents"`
 }
 
 type FinishInput struct {
@@ -34,6 +35,9 @@ func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/finish requires sessionStore dependency")
 	}
+	if deps.SessionEvents == nil {
+		return nil, fmt.Errorf("tool/finish requires sessionEvents dependency")
+	}
 	store := deps.SessionStore
 	tool, err := agentkit.NewTool[FinishInput, FinishOutput]("finish", func(ctx context.Context, input FinishInput) (FinishOutput, error) {
 		summary := strings.TrimSpace(input.Summary)
@@ -49,11 +53,11 @@ func NewFinish(_ FinishConfig, deps FinishDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return FinishOutput{}, err
 		}
-		status := sessevents.FinishCompleted
-		if strings.EqualFold(strings.TrimSpace(input.Status), sessevents.FinishBlocked) {
-			status = sessevents.FinishBlocked
+		status := capsession.FinishCompleted
+		if strings.EqualFold(strings.TrimSpace(input.Status), capsession.FinishBlocked) {
+			status = capsession.FinishBlocked
 		}
-		if err := sessevents.AppendRunFinish(ctx, sess, agentID, sessevents.RunFinishData{
+		if err := deps.SessionEvents.AppendRunFinish(ctx, sess, agentID, capsession.RunFinishData{
 			Status:  status,
 			Summary: summary,
 		}); err != nil {

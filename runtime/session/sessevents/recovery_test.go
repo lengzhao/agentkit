@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -20,19 +21,19 @@ func crashedSession(t *testing.T) agentkit.Session {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnStart(ctx, sess, "coder"); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, sess, "coder"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "refactor it"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepStart(ctx, sess, "coder", 0); err != nil {
+	if err := sessevents.Default.AppendStepStart(ctx, sess, "coder", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "coder", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role: "assistant",
 		ToolCalls: []agentkit.ToolCall{
 			{ID: "call-a", Name: "read", Input: []byte(`{"path":"a.go"}`)},
@@ -42,7 +43,7 @@ func crashedSession(t *testing.T) agentkit.Session {
 		t.Fatal(err)
 	}
 	// Only the first call got an answer before the process died.
-	if err := sessevents.AppendToolResult(ctx, sess, "coder", agentkit.ToolResult{
+	if err := sessevents.Default.AppendToolResult(ctx, sess, "coder", agentkit.ToolResult{
 		ID:      "call-a",
 		Name:    "read",
 		Content: "package a",
@@ -88,16 +89,16 @@ func TestScanIncompleteIgnoresClosedTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnStart(ctx, sess, "coder"); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, sess, "coder"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepStart(ctx, sess, "coder", 0); err != nil {
+	if err := sessevents.Default.AppendStepStart(ctx, sess, "coder", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepEnd(ctx, sess, "coder", 0); err != nil {
+	if err := sessevents.Default.AppendStepEnd(ctx, sess, "coder", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnEnd(ctx, sess, "coder", sessevents.TurnEndData{Steps: 1}); err != nil {
+	if err := sessevents.Default.AppendTurnEnd(ctx, sess, "coder", capsession.TurnEndData{Steps: 1}); err != nil {
 		t.Fatal(err)
 	}
 	events, err := derive.ReadAllEvents(ctx, sess)
@@ -222,13 +223,13 @@ func TestDeriveKeepsRepeatedToolCallIDsPaired(t *testing.T) {
 	// Scripted and retried runs reuse call IDs across steps. Each call must
 	// consume its own later result, not an earlier one.
 	for i := 0; i < 2; i++ {
-		if err := sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, sess, "coder", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 			Role:      "assistant",
 			ToolCalls: []agentkit.ToolCall{{ID: "read-call", Name: "read", Input: []byte(`{"path":"a.go"}`)}},
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := sessevents.AppendToolResult(ctx, sess, "coder", agentkit.ToolResult{
+		if err := sessevents.Default.AppendToolResult(ctx, sess, "coder", agentkit.ToolResult{
 			ID:      "read-call",
 			Name:    "read",
 			Content: "package a",

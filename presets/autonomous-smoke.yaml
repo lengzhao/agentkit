@@ -75,9 +75,11 @@ runner.default:
                     - use: tool/todo
                       deps:
                         sessionStore: sessionStore.default
+                        sessionEvents: session.events
                     - use: tool/finish
                       deps:
                         sessionStore: sessionStore.default
+                        sessionEvents: session.events
 
 hooks.default:
   use: hooks/runtime

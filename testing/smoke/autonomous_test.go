@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/plugins/hook"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
@@ -38,11 +39,15 @@ func buildAutonomousAgent(t *testing.T, opts autonomousOpts) (agentkit.Agent, ag
 	if err != nil {
 		t.Fatal(err)
 	}
-	todoTool, err := todotool.NewTodo(todotool.TodoConfig{}, todotool.TodoDeps{SessionStore: store})
+	events, err := sessevents.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishTool, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+	todoTool, err := todotool.NewTodo(todotool.TodoConfig{}, todotool.TodoDeps{SessionStore: store, SessionEvents: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishTool, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store, SessionEvents: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +94,7 @@ func turnContinueReasons(t *testing.T, events []agentkit.SessionEvent) []string 
 		if ev.Type != agentkit.EventTurnContinue {
 			continue
 		}
-		var data sessevents.TurnContinueData
+		var data capsession.TurnContinueData
 		if err := json.Unmarshal(ev.Data, &data); err != nil {
 			t.Fatalf("decode turn/continue: %v", err)
 		}

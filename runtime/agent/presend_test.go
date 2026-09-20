@@ -83,7 +83,7 @@ func TestRunTurnPreSendGuardCompacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
-	if err := sessevents.AppendMessage(ctx, mem, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, mem, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 100000)}},
 	}); err != nil {
@@ -123,7 +123,7 @@ func TestRunTurnPreSendGuardFailsWhenCompactionDoesNotApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
-	if err := sessevents.AppendMessage(ctx, mem, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, mem, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 100000)}},
 	}); err != nil {
@@ -161,7 +161,7 @@ func TestRunTurnPreSendGuardFailsWhenStillOversized(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(mem.ID()), Workspace: string(mem.ID())})
-	if err := sessevents.AppendMessage(ctx, mem, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, mem, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 100000)}},
 	}); err != nil {

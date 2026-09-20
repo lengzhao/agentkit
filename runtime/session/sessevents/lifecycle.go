@@ -5,91 +5,42 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
-type TurnStartData struct{}
-
-type TurnEndData struct {
-	Steps      int    `json:"steps"`
-	StopReason string `json:"stopReason,omitempty"`
-	StepLimit  int    `json:"stepLimit,omitempty"`
-	Cancelled  bool   `json:"cancelled,omitempty"`
-	Failed     bool   `json:"failed,omitempty"`
+func (events) AppendTurnStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID) error {
+	return appendLifecycle(ctx, s, agentID, agentkit.EventTurnStart, capsession.TurnStartData{})
 }
 
-type StepStartData struct {
-	Step int `json:"step"`
-}
-
-type StepEndData struct {
-	Step int `json:"step"`
-}
-
-type AutoRetryStartData struct {
-	Attempt      int    `json:"attempt"`
-	MaxAttempts  int    `json:"maxAttempts"`
-	DelayMs      int    `json:"delayMs"`
-	ErrorMessage string `json:"errorMessage"`
-}
-
-type AutoRetryEndData struct {
-	Success    bool   `json:"success"`
-	Attempt    int    `json:"attempt"`
-	FinalError string `json:"finalError,omitempty"`
-}
-
-type SummarizationRetryStartData struct {
-	Attempt      int    `json:"attempt"`
-	MaxAttempts  int    `json:"maxAttempts"`
-	DelayMs      int    `json:"delayMs"`
-	ErrorMessage string `json:"errorMessage"`
-}
-
-type SummarizationRetryEndData struct {
-	Success    bool   `json:"success"`
-	Attempt    int    `json:"attempt"`
-	FinalError string `json:"finalError,omitempty"`
-}
-
-type OverflowRecoveryData struct {
-	Applied int    `json:"applied"`
-	Reason  string `json:"reason,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
-func AppendTurnStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID) error {
-	return appendLifecycle(ctx, s, agentID, agentkit.EventTurnStart, TurnStartData{})
-}
-
-func AppendTurnEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data TurnEndData) error {
+func (events) AppendTurnEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.TurnEndData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventTurnEnd, data)
 }
 
-func AppendStepStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error {
-	return appendLifecycle(ctx, s, agentID, agentkit.EventStepStart, StepStartData{Step: step})
+func (events) AppendStepStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error {
+	return appendLifecycle(ctx, s, agentID, agentkit.EventStepStart, capsession.StepStartData{Step: step})
 }
 
-func AppendStepEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error {
-	return appendLifecycle(ctx, s, agentID, agentkit.EventStepEnd, StepEndData{Step: step})
+func (events) AppendStepEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error {
+	return appendLifecycle(ctx, s, agentID, agentkit.EventStepEnd, capsession.StepEndData{Step: step})
 }
 
-func AppendAutoRetryStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data AutoRetryStartData) error {
+func (events) AppendAutoRetryStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.RetryStartData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventAutoRetryStart, data)
 }
 
-func AppendAutoRetryEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data AutoRetryEndData) error {
+func (events) AppendAutoRetryEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.RetryEndData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventAutoRetryEnd, data)
 }
 
-func AppendSummarizationRetryStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data SummarizationRetryStartData) error {
+func (events) AppendSummarizationRetryStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.RetryStartData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventSummarizationRetryStart, data)
 }
 
-func AppendSummarizationRetryEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data SummarizationRetryEndData) error {
+func (events) AppendSummarizationRetryEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.RetryEndData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventSummarizationRetryEnd, data)
 }
 
-func AppendOverflowRecovery(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data OverflowRecoveryData) error {
+func (events) AppendOverflowRecovery(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.OverflowRecoveryData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventOverflowRecovery, data)
 }
 

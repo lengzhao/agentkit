@@ -11,7 +11,6 @@ import (
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 
 	"github.com/lengzhao/agentkit"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -28,7 +27,7 @@ func TestAppendMessageStoresFullUserText(t *testing.T) {
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: long}},
 	}
-	if err := sessevents.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
+	if err := sessevents.Default.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
 		t.Fatal(err)
 	}
 	events, err := mem.Read(context.Background(), 0)
@@ -61,15 +60,15 @@ func TestHydrateOnlyLastUserMessage(t *testing.T) {
 
 	ws := rtworkspace.Static(root)
 	msgs := []agentkit.ModelMessage{
-		{Role: "user", Content: []agentkit.ContentPart{{Type: rtmedia.ContentTypeAttachmentRef, Source: "upload/old.png"}}},
+		{Role: "user", Content: []agentkit.ContentPart{{Type: agentkit.ContentTypeAttachmentRef, Source: "upload/old.png"}}},
 		{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}}},
-		{Role: "user", Content: []agentkit.ContentPart{{Type: rtmedia.ContentTypeAttachmentRef, Source: "upload/new.png"}}},
+		{Role: "user", Content: []agentkit.ContentPart{{Type: agentkit.ContentTypeAttachmentRef, Source: "upload/new.png"}}},
 	}
 	out, err := derive.HydrateLocalAttachments(context.Background(), msgs, ws, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out[0].Content[0].Type != rtmedia.ContentTypeAttachmentRef {
+	if out[0].Content[0].Type != agentkit.ContentTypeAttachmentRef {
 		t.Fatalf("old user message hydrated unexpectedly: %#v", out[0].Content)
 	}
 	if out[2].Content[0].Type != "image_url" {

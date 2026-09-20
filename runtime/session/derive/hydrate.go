@@ -72,7 +72,7 @@ func demoteVisualParts(ctx context.Context, msg agentkit.ModelMessage, ws worksp
 	out := make([]agentkit.ContentPart, 0, len(msg.Content))
 	for _, part := range msg.Content {
 		switch part.Type {
-		case rtmedia.ContentTypeAttachmentRef, "image", "image_url":
+		case agentkit.ContentTypeAttachmentRef, "image", "image_url":
 			out = append(out, agentkit.ContentPart{Type: "text", Text: attachmentHint(ctx, part, ws)})
 		case "audio", "video":
 			out = append(out, agentkit.ContentPart{Type: "text", Text: mediaHint(ctx, part, ws)})
@@ -102,7 +102,7 @@ func hydrateMessageAttachments(ctx context.Context, msg agentkit.ModelMessage, w
 	out := make([]agentkit.ContentPart, 0, len(msg.Content))
 	for _, part := range msg.Content {
 		switch part.Type {
-		case rtmedia.ContentTypeAttachmentRef:
+		case agentkit.ContentTypeAttachmentRef:
 			expanded, err := expandAttachmentRef(ctx, part, ws, maxImageBytes, hydrateImages)
 			if err != nil {
 				return msg, err

@@ -36,7 +36,7 @@ func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput)
 	if err != nil {
 		return err
 	}
-	return sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: a.summary}},
 	})
@@ -154,7 +154,7 @@ func (a *envelopeCapturingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInp
 	if err != nil {
 		return err
 	}
-	return sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
 	})
@@ -384,7 +384,7 @@ func (a *blockingLoopAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) e
 		}
 		return err
 	}
-	err = sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	err = sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
 	})

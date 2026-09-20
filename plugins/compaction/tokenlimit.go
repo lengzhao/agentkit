@@ -6,9 +6,8 @@ import (
 	"log/slog"
 
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 type TokenLimitConfig struct {
@@ -103,10 +102,10 @@ func (s *tokenLimitService) Compact(ctx context.Context, req compaction.Request)
 // covers the current history but misjudges dense or non-Latin content. Taking
 // the max errs toward compacting slightly early, which is the cheap mistake.
 func (s *tokenLimitService) estimate(ctx context.Context, req compaction.Request) int {
-	heuristic := derive.EstimateMessagesChars(req.Messages) / s.charsPerToken
+	heuristic := capsession.EstimateMessagesChars(req.Messages) / s.charsPerToken
 	if req.Session != nil {
-		if events, err := derive.ReadAllEvents(ctx, req.Session); err == nil {
-			logical := derive.SumLogicalCharsFromEvents(events, req.AgentID) / s.charsPerToken
+		if events, err := req.Session.Read(ctx, 0); err == nil {
+			logical := capsession.SumLogicalCharsFromEvents(events, req.AgentID) / s.charsPerToken
 			if logical > heuristic {
 				heuristic = logical
 			}
@@ -125,10 +124,10 @@ func (s *tokenLimitService) reportedTokens(ctx context.Context, req compaction.R
 	if req.Session == nil {
 		return 0
 	}
-	events, err := derive.ReadAllEvents(ctx, req.Session)
+	events, err := req.Session.Read(ctx, 0)
 	if err != nil {
 		return 0
 	}
-	usage := sessevents.LatestUsage(events)
+	usage := capsession.LatestUsage(events)
 	return usage.InputTokens + usage.OutputTokens
 }

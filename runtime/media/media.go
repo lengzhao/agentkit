@@ -4,11 +4,7 @@ import (
 	"encoding/base64"
 	"path/filepath"
 	"strings"
-
 )
-
-// ContentTypeAttachmentRef is persisted in session history for stripped attachments.
-const ContentTypeAttachmentRef = "attachment_ref"
 
 // IsImage reports whether a file looks like an image from MIME type and/or path.
 func IsImage(mimeType, path string) bool {

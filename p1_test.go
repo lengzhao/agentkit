@@ -98,7 +98,8 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 							map[string]any{
 								"use": "tool/skill",
 								"deps": map[string]any{
-									"sessionStore": sessionStoreCfg,
+									"sessionStore":  sessionStoreCfg,
+									"sessionEvents": map[string]any{"use": "session/events"},
 									"skills": map[string]any{
 										"use": "skill/filesystem",
 										"config": map[string]any{

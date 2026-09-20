@@ -107,11 +107,13 @@ tool.todo.default:
   use: tool/todo
   deps:
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 tool.finish.default:
   use: tool/finish
   deps:
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 approval.auto-allow.default:
   use: approval/auto-allow

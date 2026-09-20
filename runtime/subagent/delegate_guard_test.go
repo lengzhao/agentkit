@@ -404,7 +404,7 @@ func (a *brokerProbeAgent) RunTurn(ctx context.Context, input agentkit.TurnInput
 	if err != nil {
 		return err
 	}
-	return sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	return sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "ok"}},
 	})

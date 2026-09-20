@@ -10,7 +10,6 @@ import (
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 
 	"github.com/lengzhao/agentkit"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -46,7 +45,7 @@ func TestSanitizeModelMessageForStorageKeepsAttachmentRef(t *testing.T) {
 	if len(msg.Content) != 1 {
 		t.Fatalf("content = %#v", msg.Content)
 	}
-	if msg.Content[0].Type != rtmedia.ContentTypeAttachmentRef || msg.Content[0].Source != "upload/shot.png" {
+	if msg.Content[0].Type != agentkit.ContentTypeAttachmentRef || msg.Content[0].Source != "upload/shot.png" {
 		t.Fatalf("content = %#v", msg.Content[0])
 	}
 }
@@ -156,7 +155,7 @@ func TestAppendMessageStoresSanitized(t *testing.T) {
 			{Type: "image_url", URL: "data:image/png;base64,abc", Source: "upload/a.png"},
 		},
 	}
-	if err := sessevents.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
+	if err := sessevents.Default.AppendMessage(context.Background(), mem, "assistant", agentkit.EventUserMessage, raw); err != nil {
 		t.Fatal(err)
 	}
 	events, err := mem.Read(context.Background(), 0)

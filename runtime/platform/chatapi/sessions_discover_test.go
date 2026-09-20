@@ -101,7 +101,7 @@ func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "channel-only"}},
 	}); err != nil {
@@ -161,7 +161,7 @@ func TestConversationMessagesFromAgentSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "world"}},
 	}); err != nil {
@@ -224,7 +224,7 @@ func appendTestUserMessage(ctx context.Context, store agentkit.SessionStore, cha
 	if err != nil {
 		return err
 	}
-	return sessevents.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	return sessevents.Default.AppendMessage(ctx, sess, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	})

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -145,7 +146,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(derive.LatestEventSeq(parentEvents))))
+	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(capsession.LatestEventSeq(parentEvents))))
 	jobID := string(childID)
 
 	async := def.Async
@@ -490,13 +491,13 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		}
 		return out, err, closer
 	}
-	out.Steps = sessevents.StepCount(events, 0)
-	if finish := sessevents.FinishAfter(events, 0); finish != nil {
+	out.Steps = capsession.StepCount(events, 0)
+	if finish := capsession.FinishAfter(events, 0); finish != nil {
 		out.Status = finish.Status
 		out.Summary = finish.Summary
 	} else {
 		out.Status = subagent.StatusStopped
-		out.Summary = sessevents.LastAssistantText(events, 0)
+		out.Summary = capsession.LastAssistantText(events, 0)
 	}
 	return out, runErr, closer
 }

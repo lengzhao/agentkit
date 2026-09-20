@@ -65,7 +65,7 @@ func TestSummarizeSessionUserMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, text := range []string{"/learn help", "prefers Go", "likes tests"} {
-		if err := sessevents.AppendMessage(ctx, sess, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, sess, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		}); err != nil {
@@ -107,7 +107,7 @@ func TestLearnCommandSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "agent", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "remember I prefer YAML configs"}},
 	}); err != nil {

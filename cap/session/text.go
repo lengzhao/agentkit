@@ -1,4 +1,4 @@
-package derive
+package session
 
 import (
 	"strings"
@@ -9,18 +9,18 @@ import (
 // FlattenTextParts joins non-empty text parts with sep (empty type is treated as text).
 func FlattenTextParts(parts []agentkit.ContentPart, sep string) string {
 	var b strings.Builder
-	for _, p := range parts {
-		if p.Type != "" && p.Type != "text" {
+	for _, part := range parts {
+		if part.Type != "" && part.Type != "text" {
 			continue
 		}
-		t := strings.TrimSpace(p.Text)
-		if t == "" {
+		text := strings.TrimSpace(part.Text)
+		if text == "" {
 			continue
 		}
-		if b.Len() > 0 && sep != "" {
+		if b.Len() > 0 {
 			b.WriteString(sep)
 		}
-		b.WriteString(t)
+		b.WriteString(text)
 	}
 	return b.String()
 }

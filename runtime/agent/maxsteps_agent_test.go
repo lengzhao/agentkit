@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 func readStep() llm.ScriptedStep {
@@ -28,7 +28,7 @@ func TestMaxStepsDefaultCapsTurn(t *testing.T) {
 		t.Fatalf("step/start events = %d, want 2", got)
 	}
 
-	var end sessevents.TurnEndData
+	var end capsession.TurnEndData
 	for _, ev := range events {
 		if ev.Type == agentkit.EventTurnEnd {
 			if err := json.Unmarshal(ev.Data, &end); err != nil {

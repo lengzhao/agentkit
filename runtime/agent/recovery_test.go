@@ -48,19 +48,19 @@ func crashedStore(t *testing.T) (agentkit.SessionStore, agentkit.SessionID) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnStart(ctx, sess, "test"); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, sess, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "test", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "read the file"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepStart(ctx, sess, "test", 0); err != nil {
+	if err := sessevents.Default.AppendStepStart(ctx, sess, "test", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "test", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "test", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "crashed-call", Name: "read", Input: []byte(`{"path":"README.md"}`)}},
 	}); err != nil {

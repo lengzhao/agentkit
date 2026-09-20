@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 func TestWrapTurnEndNoticesEmitsStepLimitBeforeTurnEnd(t *testing.T) {
@@ -19,7 +19,7 @@ func TestWrapTurnEndNoticesEmitsStepLimitBeforeTurnEnd(t *testing.T) {
 	}
 	wrapped := wrapTurnEndNotices(emit)
 
-	endData := sessevents.TurnEndData{
+	endData := capsession.TurnEndData{
 		Steps:      2,
 		StopReason: string(agentkit.StopStepLimit),
 		StepLimit:  2,

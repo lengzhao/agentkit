@@ -1,4 +1,4 @@
-package sessbind
+package session
 
 import (
 	"context"

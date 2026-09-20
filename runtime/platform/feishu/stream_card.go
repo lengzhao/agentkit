@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
@@ -816,7 +817,7 @@ func (p *Platform) finalizeRichTurnEndAsync(
 	handle any,
 	content string,
 	botReplyID string,
-	endData sessevents.TurnEndData,
+	endData capsession.TurnEndData,
 ) {
 	parent := context.WithoutCancel(ctx)
 	go func() {
@@ -833,7 +834,7 @@ func (p *Platform) finalizeRichTurnEndAsync(
 	}()
 }
 
-func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.SessionID, endData sessevents.TurnEndData) error {
+func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.SessionID, endData capsession.TurnEndData) error {
 	st := p.streamState(sessionID)
 	st.lock()
 	hasHandle := st.progressHandle != nil

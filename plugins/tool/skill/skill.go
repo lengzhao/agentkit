@@ -6,17 +6,18 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
 type SkillConfig struct{}
 
 type SkillDeps struct {
-	Skills       skill.Registry        `json:"skills"`
-	SessionStore agentkit.SessionStore `json:"sessionStore"`
+	Skills        skill.Registry        `json:"skills"`
+	SessionStore  agentkit.SessionStore `json:"sessionStore"`
+	SessionEvents capsession.Skills     `json:"sessionEvents"`
 }
 
 type SkillInput struct {
@@ -46,14 +47,14 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		sessionID := rctx.SessionIDFromContext(ctx)
 		agentID := rctx.AgentIDFromContext(ctx)
 		if sessionID != "" {
-			if store == nil {
-				return "", fmt.Errorf("tool/skill requires sessionStore dependency")
+			if store == nil || deps.SessionEvents == nil {
+				return "", fmt.Errorf("tool/skill requires sessionStore and sessionEvents dependencies")
 			}
 			sess, err := store.Get(ctx, sessionID)
 			if err != nil {
 				return "", err
 			}
-			if err := derive.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
+			if err := deps.SessionEvents.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
 				return "", err
 			}
 		}

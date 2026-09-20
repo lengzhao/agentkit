@@ -118,19 +118,19 @@ func TestSmokeSessionRecoveryAfterCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnStart(ctx, sess, "nex"); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, sess, "nex"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "nex", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "nex", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "read file"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepStart(ctx, sess, "nex", 0); err != nil {
+	if err := sessevents.Default.AppendStepStart(ctx, sess, "nex", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "nex", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "nex", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "call-read", Name: "read", Input: []byte(`{"path":"README.md"}`)}},
 	}); err != nil {

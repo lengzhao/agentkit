@@ -17,6 +17,15 @@ import (
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
+func testSummaryDeps(t *testing.T, llm agentkit.LLMProvider) SummaryDeps {
+	t.Helper()
+	events, err := sessevents.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return SummaryDeps{LLM: llm, SessionEvents: events}
+}
+
 type flakySummaryLLM struct {
 	calls atomic.Int32
 }
@@ -62,7 +71,7 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 			MaxRetries:  3,
 			BaseDelayMs: 1,
 		},
-	}, SummaryDeps{LLM: llm})
+	}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +82,7 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		if err := sessevents.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: fmt.Sprintf("msg %d", i)}},
 		}); err != nil {
@@ -125,7 +134,7 @@ func TestSummaryRetriesTransientLLMError(t *testing.T) {
 func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 	t.Parallel()
 
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, SummaryDeps{LLM: &flakySummaryLLM{}})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, testSummaryDeps(t, &flakySummaryLLM{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +143,7 @@ func TestForcedCompactionBelowKeepRecent(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
 	}); err != nil {
@@ -197,7 +206,7 @@ func TestSummaryTruncatesOversizedRetainedMessage(t *testing.T) {
 	t.Parallel()
 
 	llm := &okSummaryLLM{}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +220,7 @@ func TestSummaryTruncatesOversizedRetainedMessage(t *testing.T) {
 		{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "old answer"}}},
 		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 5000)}}},
 	} {
-		if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, msg); err != nil {
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, msg); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -254,7 +263,7 @@ func TestSummaryForceTruncatesWhenNothingToSummarize(t *testing.T) {
 	t.Parallel()
 
 	llm := &okSummaryLLM{}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +272,7 @@ func TestSummaryForceTruncatesWhenNothingToSummarize(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("y", 5000)}},
 	}); err != nil {
@@ -322,7 +331,7 @@ func TestSummaryForceAppliesWhenGiantsSanitizedToAttachments(t *testing.T) {
 	t.Parallel()
 
 	llm := &okSummaryLLM{}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +343,7 @@ func TestSummaryForceAppliesWhenGiantsSanitizedToAttachments(t *testing.T) {
 	giant := strings.Repeat("x", 300_000)
 	// 两条旧的巨型附件消息：入站带大文本，存储时剥成 attachment_ref。
 	for _, src := range []string{"upload/a.log", "upload/b.log"} {
-		if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role: "user",
 			Content: []agentkit.ContentPart{
 				{Type: "document", Text: giant, Source: src, MIME: "text/plain"},
@@ -345,7 +354,7 @@ func TestSummaryForceAppliesWhenGiantsSanitizedToAttachments(t *testing.T) {
 	}
 	// 近期小消息。
 	for i := 0; i < 4; i++ {
-		if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "继续"}},
 		}); err != nil {
@@ -390,7 +399,7 @@ func TestSummaryForceNeutralizesSingleGiantAttachment(t *testing.T) {
 	t.Parallel()
 
 	llm := &okSummaryLLM{}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +408,7 @@ func TestSummaryForceNeutralizesSingleGiantAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{
 			{Type: "document", Text: strings.Repeat("x", 300_000), Source: "upload/huge.log", MIME: "text/plain"},
@@ -407,7 +416,7 @@ func TestSummaryForceNeutralizesSingleGiantAttachment(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "继续"}},
 	}); err != nil {
@@ -450,7 +459,7 @@ func TestSummaryDoesNotAccumulateSnapshotPlusDelta(t *testing.T) {
 	t.Parallel()
 
 	llm := &snapshotDeltaLLM{chunks: []string{"Hel", "lo", " world"}}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 1}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 1}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +469,7 @@ func TestSummaryDoesNotAccumulateSnapshotPlusDelta(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 4; i++ {
-		if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: fmt.Sprintf("old-%d %s", i, strings.Repeat("z", 80))}},
 		}); err != nil {
@@ -529,7 +538,7 @@ func TestSummaryForceTruncatesOversizedPreviousSummary(t *testing.T) {
 	t.Parallel()
 
 	llm := &okSummaryLLM{}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,13 +547,13 @@ func TestSummaryForceTruncatesOversizedPreviousSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "old"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendCompaction(ctx, sess, "assistant", capcompaction.EventData{
+	if err := sessevents.Default.AppendCompaction(ctx, sess, "assistant", capcompaction.EventData{
 		FirstKeptSeq: 1,
 		Kind:         capcompaction.KindSummary,
 		Summary: agentkit.ModelMessage{
@@ -593,7 +602,7 @@ func TestSummaryForceFitsHydratedAttachmentsWhenStoredTiny(t *testing.T) {
 	t.Parallel()
 
 	llm := &okSummaryLLM{}
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 500}, SummaryDeps{LLM: llm})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 500}, testSummaryDeps(t, llm))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +612,7 @@ func TestSummaryForceFitsHydratedAttachmentsWhenStoredTiny(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 8; i++ {
-		if err := sessevents.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, sess, "assistant", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role: "user",
 			Content: []agentkit.ContentPart{
 				{Type: "attachment_ref", Source: fmt.Sprintf("upload/%d.png", i), MIME: "image/png"},
@@ -662,14 +671,14 @@ func TestSummaryForceNeverWritesEmptyRetainedTail(t *testing.T) {
 	}
 	ctx := context.Background()
 	// 一条已被过去压缩隐藏的巨型旧消息
-	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("G", 5000)}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// legacy 格式 compaction：无 RetainedTail，BeforeSeq=1，巨型 summary
-	if err := sessevents.AppendCompaction(ctx, sess, "a", capcompaction.EventData{
+	if err := sessevents.Default.AppendCompaction(ctx, sess, "a", capcompaction.EventData{
 		BeforeSeq: 1,
 		Kind:      capcompaction.KindSummary,
 		Summary: agentkit.ModelMessage{
@@ -680,7 +689,7 @@ func TestSummaryForceNeverWritesEmptyRetainedTail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 100}, SummaryDeps{LLM: &okSummaryLLM{}})
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 100}, testSummaryDeps(t, &okSummaryLLM{}))
 	if err != nil {
 		t.Fatal(err)
 	}

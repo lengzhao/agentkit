@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 // BoundOversizedIndexedMessages bounds each indexed message's model-visible size
@@ -110,7 +109,7 @@ func neutralizeAttachmentParts(msg agentkit.ModelMessage) (agentkit.ModelMessage
 
 func isHydratablePart(part agentkit.ContentPart) bool {
 	switch part.Type {
-	case rtmedia.ContentTypeAttachmentRef, "image", "image_url", "document", "file", "audio", "video":
+	case agentkit.ContentTypeAttachmentRef, "image", "image_url", "document", "file", "audio", "video":
 		return true
 	case "text", "":
 		return false

@@ -9,9 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -42,20 +42,22 @@ type Config struct {
 
 // Deps holds injected capabilities for the ACP client side.
 type Deps struct {
-	Workspace    workspace.Service     `json:"workspace"`
-	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Workspace     workspace.Service       `json:"workspace"`
+	SessionStore  agentkit.SessionStore   `json:"sessionStore,omitempty"`
+	SessionEvents capsession.Conversation `json:"sessionEvents,omitempty"`
 	// SessionMCP supplies harness MCP servers for session/new (not project mcp.json).
 	SessionMCP capacp.SessionMCPProvider `json:"sessionMcp,omitempty"`
 }
 
 // Runtime proxies turns to an external ACP agent over stdio.
 type Runtime struct {
-	id           agentkit.AgentID
-	cfg          Config
-	workspace    workspace.Service
-	sessionStore agentkit.SessionStore
-	sessionMCP   capacp.SessionMCPProvider
-	bridges      sync.Map // agentkit.SessionID -> *bridge
+	id            agentkit.AgentID
+	cfg           Config
+	workspace     workspace.Service
+	sessionStore  agentkit.SessionStore
+	sessionEvents capsession.Conversation
+	sessionMCP    capacp.SessionMCPProvider
+	bridges       sync.Map // agentkit.SessionID -> *bridge
 }
 
 func init() {
@@ -85,11 +87,12 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	cfg.ClientName = clientName
 	cfg.ClientVersion = clientVersion
 	return &Runtime{
-		id:           id,
-		cfg:          cfg,
-		workspace:    deps.Workspace,
-		sessionStore: deps.SessionStore,
-		sessionMCP:   deps.SessionMCP,
+		id:            id,
+		cfg:           cfg,
+		workspace:     deps.Workspace,
+		sessionStore:  deps.SessionStore,
+		sessionEvents: deps.SessionEvents,
+		sessionMCP:    deps.SessionMCP,
 	}, nil
 }
 
@@ -134,29 +137,29 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	// which also holds the AsyncEmitter.Close path. Doing it here would double-
 	// wrap and leak a goroutine with no closer.
 
-	if a.sessionStore != nil {
+	if a.sessionStore != nil && a.sessionEvents != nil {
 		sess, err := a.sessionStore.Get(ctx, sessionID)
 		if err != nil {
 			return err
 		}
-		if err := sessevents.AppendTurnStart(ctx, sess, a.id); err != nil {
+		if err := a.sessionEvents.AppendTurnStart(ctx, sess, a.id); err != nil {
 			return err
 		}
 		defer func() {
 			endCtx := context.WithoutCancel(ctx)
-			_ = sessevents.AppendTurnEnd(endCtx, sess, a.id, sessevents.TurnEndData{Steps: 1})
+			_ = a.sessionEvents.AppendTurnEnd(endCtx, sess, a.id, capsession.TurnEndData{Steps: 1})
 		}()
-		if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
+		if err := a.sessionEvents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 			return err
 		}
 	}
 
-	if err := a.emitLifecycle(ctx, emit, agentkit.EventTurnStart, sessevents.TurnStartData{}); err != nil {
+	if err := a.emitLifecycle(ctx, emit, agentkit.EventTurnStart, capsession.TurnStartData{}); err != nil {
 		return err
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
-		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, sessevents.TurnEndData{Steps: 1})
+		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, capsession.TurnEndData{Steps: 1})
 		if a.cfg.ReleaseSubprocessAfterTurn {
 			a.bridgeFor(sessionID).releaseSubprocess()
 		}
@@ -206,14 +209,14 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		if err := emitter.finalize(); err != nil {
 			return err
 		}
-		if a.sessionStore != nil {
+		if a.sessionStore != nil && a.sessionEvents != nil {
 			sess, err := a.sessionStore.Get(ctx, sessionID)
 			if err != nil {
 				return err
 			}
 			assistant := emitter.assistantMessage()
 			if assistant.Role != "" {
-				if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+				if err := a.sessionEvents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
 					slog.Debug("acp-remote: append assistant message failed", "err", err)
 				}
 			}

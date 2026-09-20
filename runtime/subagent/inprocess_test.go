@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -76,7 +77,11 @@ func newFixture(t *testing.T, defs map[string]string, steps []llm.ScriptedStep) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishTool, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+	events, err := sessevents.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishTool, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store, SessionEvents: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,8 +147,8 @@ func TestRunTakesSummaryFromFinish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if result.Status != sessevents.FinishCompleted {
-		t.Errorf("status = %q, want %q", result.Status, sessevents.FinishCompleted)
+	if result.Status != capsession.FinishCompleted {
+		t.Errorf("status = %q, want %q", result.Status, capsession.FinishCompleted)
 	}
 	if result.Summary != "loop keeps one turn per session" {
 		t.Errorf("summary = %q, want the finish summary", result.Summary)
@@ -194,13 +199,13 @@ func TestRunDoesNotRecoverParentTurnWhileDelegating(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, parentSess, "coding"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
+	if err := sessevents.Default.AppendStepStart(ctx, parentSess, "coding", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, parentSess, "coding", agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{{ID: "call-delegate", Name: "delegate", Input: []byte(`{"agent":"researcher"}`)}},
 	}); err != nil {

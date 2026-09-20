@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -24,15 +25,15 @@ func TestLatestTodosUsesMostRecentSnapshot(t *testing.T) {
 
 	ctx := context.Background()
 	sess := newRunStateSession(t)
-	if err := sessevents.AppendTodoUpdate(ctx, sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "first", Status: sessevents.TodoPending},
-		{ID: "2", Title: "second", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(ctx, sess, "a", []capsession.Todo{
+		{ID: "1", Title: "first", Status: capsession.TodoPending},
+		{ID: "2", Title: "second", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTodoUpdate(ctx, sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "first", Status: sessevents.TodoDone},
-		{ID: "2", Title: "second", Status: sessevents.TodoInProgress},
+	if err := sessevents.Default.AppendTodoUpdate(ctx, sess, "a", []capsession.Todo{
+		{ID: "1", Title: "first", Status: capsession.TodoDone},
+		{ID: "2", Title: "second", Status: capsession.TodoInProgress},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -41,14 +42,14 @@ func TestLatestTodosUsesMostRecentSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	todos := sessevents.LatestTodos(events)
+	todos := capsession.LatestTodos(events)
 	if len(todos) != 2 {
 		t.Fatalf("todos = %d, want 2", len(todos))
 	}
-	if todos[0].Status != sessevents.TodoDone {
+	if todos[0].Status != capsession.TodoDone {
 		t.Fatalf("todo 1 status = %q, want done", todos[0].Status)
 	}
-	pending := sessevents.PendingTodos(todos)
+	pending := capsession.PendingTodos(todos)
 	if len(pending) != 1 || pending[0].ID != "2" {
 		t.Fatalf("pending = %+v, want only id 2", pending)
 	}
@@ -60,13 +61,13 @@ func TestFinishAfterIgnoresEarlierRuns(t *testing.T) {
 	ctx := context.Background()
 	sess := newRunStateSession(t)
 	// A previous run finished, then a new user message started a new run.
-	if err := sessevents.AppendRunFinish(ctx, sess, "a", sessevents.RunFinishData{
-		Status:  sessevents.FinishCompleted,
+	if err := sessevents.Default.AppendRunFinish(ctx, sess, "a", capsession.RunFinishData{
+		Status:  capsession.FinishCompleted,
 		Summary: "old run",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "new task"}},
 	}); err != nil {
@@ -77,16 +78,16 @@ func TestFinishAfterIgnoresEarlierRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	startSeq := sessevents.RunStartSeq(events)
+	startSeq := capsession.RunStartSeq(events)
 	if startSeq == 0 {
 		t.Fatal("expected a run start seq")
 	}
-	if got := sessevents.FinishAfter(events, startSeq); got != nil {
+	if got := capsession.FinishAfter(events, startSeq); got != nil {
 		t.Fatalf("stale finish leaked into the new run: %+v", got)
 	}
 
-	if err := sessevents.AppendRunFinish(ctx, sess, "a", sessevents.RunFinishData{
-		Status:  sessevents.FinishBlocked,
+	if err := sessevents.Default.AppendRunFinish(ctx, sess, "a", capsession.RunFinishData{
+		Status:  capsession.FinishBlocked,
 		Summary: "cannot proceed",
 	}); err != nil {
 		t.Fatal(err)
@@ -95,8 +96,8 @@ func TestFinishAfterIgnoresEarlierRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	finish := sessevents.FinishAfter(events, startSeq)
-	if finish == nil || finish.Status != sessevents.FinishBlocked {
+	finish := capsession.FinishAfter(events, startSeq)
+	if finish == nil || finish.Status != capsession.FinishBlocked {
 		t.Fatalf("finish = %+v, want blocked", finish)
 	}
 }
@@ -106,7 +107,7 @@ func TestRunStartSeqIgnoresContinuations(t *testing.T) {
 
 	ctx := context.Background()
 	sess := newRunStateSession(t)
-	if err := sessevents.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "task"}},
 	}); err != nil {
@@ -116,10 +117,10 @@ func TestRunStartSeqIgnoresContinuations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	startSeq := sessevents.RunStartSeq(events)
+	startSeq := capsession.RunStartSeq(events)
 
 	// A continuation is its own event type, so it must not move the run start.
-	if err := sessevents.AppendTurnContinue(ctx, sess, "a", sessevents.TurnContinueData{
+	if err := sessevents.Default.AppendTurnContinue(ctx, sess, "a", capsession.TurnContinueData{
 		Segment: 1,
 		Reason:  "no-tool-calls",
 		Messages: []agentkit.ModelMessage{{
@@ -133,7 +134,7 @@ func TestRunStartSeqIgnoresContinuations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sessevents.RunStartSeq(events); got != startSeq {
+	if got := capsession.RunStartSeq(events); got != startSeq {
 		t.Fatalf("run start seq moved from %d to %d after a continuation", startSeq, got)
 	}
 
@@ -154,7 +155,7 @@ func TestRepeatedToolCallsCountsConsecutiveTail(t *testing.T) {
 	sess := newRunStateSession(t)
 	appendCall := func(name, input string) {
 		t.Helper()
-		if err := sessevents.AppendToolCall(ctx, sess, "a", agentkit.ToolCall{
+		if err := sessevents.Default.AppendToolCall(ctx, sess, "a", agentkit.ToolCall{
 			ID:    agentkit.ToolCallID(name),
 			Name:  name,
 			Input: []byte(input),
@@ -173,7 +174,7 @@ func TestRepeatedToolCallsCountsConsecutiveTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sessevents.RepeatedToolCalls(events, 0); got != 3 {
+	if got := capsession.RepeatedToolCalls(events, 0); got != 3 {
 		t.Fatalf("repeats = %d, want 3", got)
 	}
 
@@ -182,7 +183,7 @@ func TestRepeatedToolCallsCountsConsecutiveTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sessevents.RepeatedToolCalls(events, 0); got != 1 {
+	if got := capsession.RepeatedToolCalls(events, 0); got != 1 {
 		t.Fatalf("repeats after a different call = %d, want 1", got)
 	}
 }
@@ -192,26 +193,26 @@ func TestTotalUsageSumsAfterSeq(t *testing.T) {
 
 	ctx := context.Background()
 	sess := newRunStateSession(t)
-	if err := sessevents.AppendUsage(ctx, sess, "a", sessevents.UsageData{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}); err != nil {
+	if err := sessevents.Default.AppendUsage(ctx, sess, "a", capsession.UsageData{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}); err != nil {
 		t.Fatal(err)
 	}
 	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cutoff := derive.LatestEventSeq(events)
+	cutoff := capsession.LatestEventSeq(events)
 
-	if err := sessevents.AppendUsage(ctx, sess, "a", sessevents.UsageData{InputTokens: 20, OutputTokens: 7, TotalTokens: 27}); err != nil {
+	if err := sessevents.Default.AppendUsage(ctx, sess, "a", capsession.UsageData{InputTokens: 20, OutputTokens: 7, TotalTokens: 27}); err != nil {
 		t.Fatal(err)
 	}
 	events, err = derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sessevents.TotalUsage(events, 0).TotalTokens; got != 42 {
+	if got := capsession.TotalUsage(events, 0).TotalTokens; got != 42 {
 		t.Fatalf("total usage = %d, want 42", got)
 	}
-	if got := sessevents.TotalUsage(events, cutoff).TotalTokens; got != 27 {
+	if got := capsession.TotalUsage(events, cutoff).TotalTokens; got != 27 {
 		t.Fatalf("usage after cutoff = %d, want 27", got)
 	}
 }

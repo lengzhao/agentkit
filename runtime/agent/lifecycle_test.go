@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -129,7 +130,7 @@ func TestRunTurnWritesLifecycleEventsInOrder(t *testing.T) {
 		}
 	}
 
-	beforeSeq := derive.LatestEventSeq(events[:len(events)-1])
+	beforeSeq := capsession.LatestEventSeq(events[:len(events)-1])
 	if beforeSeq == 0 {
 		t.Fatal("expected non-zero seq before turn/end")
 	}

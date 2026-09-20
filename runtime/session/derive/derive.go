@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
@@ -15,8 +16,7 @@ type IndexedMessage = compaction.IndexedMessage
 
 // IndexMessagesForCompaction rebuilds the model-visible list used for compaction,
 // including the latest compaction summary and retained tail when present.
-func IndexMessagesForCompaction(ctx context.Context, events []agentkit.SessionEvent) []IndexedMessage {
-	agentID := rctx.AgentIDFromContext(ctx)
+func IndexMessagesForCompaction(events []agentkit.SessionEvent, agentID agentkit.AgentID) []IndexedMessage {
 	view := resolveCompactionView(events, agentID)
 	out := indexedCompactionPrefix(view)
 	out = append(out, walkIndexedEvents(events, agentID, view.AfterSeq)...)
@@ -82,14 +82,14 @@ func indexedCompactionPrefix(view compactionView) []IndexedMessage {
 		Message:      *view.Summary,
 		Seq:          view.CompactionSeq,
 		IsTurnStart:  false,
-		LogicalChars: EstimateLogicalChars(*view.Summary),
+		LogicalChars: capsession.EstimateLogicalChars(*view.Summary),
 	}}
 	for _, msg := range view.RetainedTail {
 		out = append(out, IndexedMessage{
 			Message:      msg,
 			Seq:          view.FirstKeptSeq,
 			IsTurnStart:  msg.Role == "user",
-			LogicalChars: EstimateLogicalChars(msg),
+			LogicalChars: capsession.EstimateLogicalChars(msg),
 		})
 	}
 	return out
@@ -181,7 +181,7 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 			msg:          msg,
 			seq:          ev.Seq,
 			isTurnStart:  false,
-			logicalChars: EstimateLogicalChars(msg),
+			logicalChars: capsession.EstimateLogicalChars(msg),
 		}}
 	case agentkit.EventSkillLoad:
 		var load skillLoadEvent
@@ -197,10 +197,10 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 			seq:          ev.Seq,
 			isTurnStart:  true,
 			deferSkill:   true,
-			logicalChars: EstimateLogicalChars(msg),
+			logicalChars: capsession.EstimateLogicalChars(msg),
 		}}
 	case agentkit.EventTurnContinue:
-		var data TurnContinueData
+		var data capsession.TurnContinueData
 		if err := json.Unmarshal(ev.Data, &data); err != nil {
 			return nil
 		}
@@ -210,7 +210,7 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 				msg:          msg,
 				seq:          ev.Seq,
 				isTurnStart:  msg.Role == "user",
-				logicalChars: EstimateLogicalChars(msg),
+				logicalChars: capsession.EstimateLogicalChars(msg),
 			})
 		}
 		return out
@@ -223,10 +223,10 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 // sanitize strips bulky parts (attachments) before persistence, so measuring
 // the stored message would undercount what the message cost on the wire.
 func recordedLogicalChars(ev agentkit.SessionEvent, msg agentkit.ModelMessage) int {
-	if v := metadataInt(ev.Metadata, MetadataLogicalChars); v > 0 {
+	if v := capsession.MetadataInt(ev.Metadata, capsession.MetadataLogicalChars); v > 0 {
 		return v
 	}
-	return EstimateLogicalChars(msg)
+	return capsession.EstimateLogicalChars(msg)
 }
 
 func latestCompactionForAgent(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, compaction.EventData, bool) {
@@ -336,16 +336,6 @@ func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.A
 	return err
 }
 
-func LatestEventSeq(events []agentkit.SessionEvent) agentkit.EventSeq {
-	var seq agentkit.EventSeq
-	for _, ev := range events {
-		if ev.Seq > seq {
-			seq = ev.Seq
-		}
-	}
-	return seq
-}
-
 func ReadAllEvents(ctx context.Context, s agentkit.Session) ([]agentkit.SessionEvent, error) {
 	return s.Read(ctx, 0)
 }
@@ -359,5 +349,5 @@ func LatestSeq(ctx context.Context, s agentkit.Session) (agentkit.EventSeq, erro
 	if err != nil {
 		return 0, err
 	}
-	return LatestEventSeq(events), nil
+	return capsession.LatestEventSeq(events), nil
 }

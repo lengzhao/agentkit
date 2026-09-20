@@ -12,6 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
@@ -164,16 +165,16 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		meter:    newTurnMeter(),
 		llmModel: a.effectiveModel(ctx, sess),
 	}
-	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, sessevents.TurnStartData{}); err != nil {
+	if err := a.emitLifecycle(ctx, input.Emit, agentkit.EventTurnStart, capsession.TurnStartData{}); err != nil {
 		return err
 	}
-	if err := sessevents.AppendTurnStart(ctx, sess, a.id); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, sess, a.id); err != nil {
 		return err
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
 		telemetry.RecordTurnSteps(ctx, run.completed)
-		endData := sessevents.TurnEndData{Steps: run.completed}
+		endData := capsession.TurnEndData{Steps: run.completed}
 		cancelled := false
 		if cap, ok := stepLimitFromError(runErr); ok {
 			endData.StopReason = string(agentkit.StopStepLimit)
@@ -188,7 +189,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 			endData.Failed = true
 			endData.StopReason = runErr.Error()
 		}
-		_ = sessevents.AppendTurnEnd(endCtx, sess, a.id, endData)
+		_ = sessevents.Default.AppendTurnEnd(endCtx, sess, a.id, endData)
 		if err := a.emitLifecycle(endCtx, input.Emit, agentkit.EventTurnEnd, endData); err != nil {
 			slog.Debug("agent: emit turn/end failed", "agent_id", a.id, "session_id", sessionID, "err", err)
 		}
@@ -197,7 +198,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		}
 	}()
 
-	if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
+	if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 		return err
 	}
 
@@ -248,7 +249,7 @@ func (a *Runtime) runSegment(
 		}
 
 		for _, msg := range ctrl.PopSteering() {
-			if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
+			if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
 				return "", err
 			}
 		}
@@ -277,7 +278,7 @@ func (a *Runtime) runSegment(
 			endStep()
 		}
 
-		if err := sessevents.AppendStepStart(ctx, sess, a.id, stepIndex); err != nil {
+		if err := sessevents.Default.AppendStepStart(ctx, sess, a.id, stepIndex); err != nil {
 			endStepOnce()
 			return "", err
 		}
@@ -286,7 +287,7 @@ func (a *Runtime) runSegment(
 
 		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted, pos)
 		if err != nil {
-			_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+			_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 			endStepOnce()
 			return "", err
 		}
@@ -303,41 +304,41 @@ func (a *Runtime) runSegment(
 		}
 		for _, call := range assistant.ToolCalls {
 			if reason := ctrl.PopCancelReason(); reason != "" {
-				_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", fmt.Errorf("cancelled: %s", reason)
 			}
-			if err := sessevents.AppendToolCall(ctx, sess, a.id, call); err != nil {
-				_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+			if err := sessevents.Default.AppendToolCall(ctx, sess, a.id, call); err != nil {
+				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 			toolCtx := withToolContext(toolBaseCtx, sess, a.id)
 			result, err := a.tools.Execute(toolCtx, call)
 			if err != nil {
-				_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 			stored, err := derive.PrepareToolResultForStorage(ctx, sess.ID(), result, 0)
 			if err != nil {
-				_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
-			if err := sessevents.AppendToolResult(ctx, sess, a.id, stored); err != nil {
-				_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+			if err := sessevents.Default.AppendToolResult(ctx, sess, a.id, stored); err != nil {
+				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 			if err := a.emitLifecycle(ctx, emit, agentkit.EventToolResult, stored); err != nil {
-				_ = sessevents.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
+				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
 			}
 		}
 
-		if err := sessevents.AppendStepEnd(ctx, sess, a.id, stepIndex); err != nil {
+		if err := sessevents.Default.AppendStepEnd(ctx, sess, a.id, stepIndex); err != nil {
 			endStepOnce()
 			return "", err
 		}
@@ -393,13 +394,13 @@ func (a *Runtime) extendTurn(
 	}
 
 	run.meter.recordContinuation()
-	data := sessevents.TurnContinueData{
+	data := capsession.TurnContinueData{
 		Segment:  run.meter.continuationsUsed(),
 		Reason:   string(reason),
 		Steps:    run.meter.stepsUsed(),
 		Messages: stopping.Continue,
 	}
-	if err := sessevents.AppendTurnContinue(ctx, sess, a.id, data); err != nil {
+	if err := sessevents.Default.AppendTurnContinue(ctx, sess, a.id, data); err != nil {
 		return false, err
 	}
 	slog.Info("turn continued",
@@ -439,7 +440,7 @@ func (a *Runtime) recordUsage(ctx context.Context, sess agentkit.Session, run *t
 		OutputTokens: usage.OutputTokens,
 		TotalTokens:  total,
 	})
-	return sessevents.AppendUsage(ctx, sess, a.id, sessevents.UsageData{
+	return sessevents.Default.AppendUsage(ctx, sess, a.id, capsession.UsageData{
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
 		TotalTokens:  total,
@@ -572,7 +573,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		return stepOutcome{}, err
 	}
 
-	if err := sessevents.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+	if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
 		observationEnd.Err = err
 		return stepOutcome{}, err
 	}

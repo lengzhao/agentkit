@@ -12,11 +12,11 @@ import (
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	caplearning "github.com/lengzhao/agentkit/cap/learning"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/pluginkit"
 )
@@ -305,7 +305,22 @@ func (p *backgroundReviewProvider) sessionRecall(ctx context.Context, messages [
 		slog.Debug("session recall skipped", "reason", "fts search", "err", err)
 		return ""
 	}
-	return derive.FormatSessionRecall(hits)
+	return formatSessionRecall(hits)
+}
+
+// formatSessionRecall renders FTS hits for the review digest.
+func formatSessionRecall(hits []capsessionindex.Hit) string {
+	if len(hits) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, h := range hits {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "- session=%s seq=%d role=%s: %s", h.SessionID, h.Seq, h.Role, strings.TrimSpace(h.Snippet))
+	}
+	return b.String()
 }
 
 func reviewRecallQuery(messages []agentkit.ModelMessage) string {
@@ -313,7 +328,7 @@ func reviewRecallQuery(messages []agentkit.ModelMessage) string {
 		if messages[i].Role != "user" {
 			continue
 		}
-		text := strings.TrimSpace(derive.FlattenTextParts(messages[i].Content, " "))
+		text := strings.TrimSpace(capsession.FlattenTextParts(messages[i].Content, " "))
 		if text == "" || strings.HasPrefix(text, "/") {
 			continue
 		}

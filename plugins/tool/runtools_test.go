@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/plugins/tool/todo"
@@ -31,11 +32,15 @@ func newRunToolsFixture(t *testing.T) (todoTool, finishTool agentkit.Tool, sess 
 		t.Fatal(err)
 	}
 	store := singleSessionStore{sess: sess}
-	todoTool, err = todo.NewTodo(todo.TodoConfig{}, todo.TodoDeps{SessionStore: store})
+	events, err := sessevents.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	finishTool, err = finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+	todoTool, err = todo.NewTodo(todo.TodoConfig{}, todo.TodoDeps{SessionStore: store, SessionEvents: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishTool, err = finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store, SessionEvents: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +103,7 @@ func TestTodoSetCompleteAndList(t *testing.T) {
 	if updates != 3 {
 		t.Fatalf("todo/update events = %d, want 3", updates)
 	}
-	if got := sessevents.PendingTodos(sessevents.LatestTodos(events)); len(got) != 0 {
+	if got := capsession.PendingTodos(capsession.LatestTodos(events)); len(got) != 0 {
 		t.Fatalf("pending todos on the log = %+v, want none", got)
 	}
 }
@@ -128,7 +133,7 @@ func TestFinishRecordsRunFinish(t *testing.T) {
 	_, finishTool, sess, ctx := newRunToolsFixture(t)
 
 	out := callTool(t, ctx, finishTool, `{"status":"blocked","summary":"missing credentials"}`)
-	if !strings.Contains(out, sessevents.FinishBlocked) {
+	if !strings.Contains(out, capsession.FinishBlocked) {
 		t.Fatalf("finish output = %q", out)
 	}
 
@@ -136,11 +141,11 @@ func TestFinishRecordsRunFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := sessevents.FinishAfter(events, 0)
+	data := capsession.FinishAfter(events, 0)
 	if data == nil {
 		t.Fatal("no run/finish event recorded")
 	}
-	if data.Status != sessevents.FinishBlocked || data.Summary != "missing credentials" {
+	if data.Status != capsession.FinishBlocked || data.Summary != "missing credentials" {
 		t.Fatalf("run/finish = %+v", data)
 	}
 }
@@ -150,7 +155,7 @@ func TestFinishDefaultsToCompletedAndRequiresSummary(t *testing.T) {
 
 	_, finishTool, sess, ctx := newRunToolsFixture(t)
 
-	if out := callTool(t, ctx, finishTool, `{"summary":"all done"}`); !strings.Contains(out, sessevents.FinishCompleted) {
+	if out := callTool(t, ctx, finishTool, `{"summary":"all done"}`); !strings.Contains(out, capsession.FinishCompleted) {
 		t.Fatalf("finish without status = %q, want completed", out)
 	}
 	if out := callTool(t, ctx, finishTool, `{"status":"completed"}`); !strings.Contains(out, "requires a summary") {

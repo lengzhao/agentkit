@@ -253,6 +253,7 @@ agent.cursor.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 # 通过 ACP 调用 claude-agent-acp（Claude Agent SDK）。需 Node.js ≥ 22；凭证经子进程 env 注入（见 docs/plugin-catalog.zh.md §3.2）。
 agent.claude.default:
@@ -272,6 +273,7 @@ agent.claude.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 sessionStore.default:
   use: session/store
@@ -282,6 +284,10 @@ sessionStore.default:
     maxLoadedEvents: 256
   deps:
     workspace: workspace.default
+
+# 会话事件追加/索引契约（cap/session.Events）的标准实现；tool/todo、tool/finish、tool/skill、compaction/summary、agent/acp-remote 共用。
+session.events:
+  use: session/events
 
 sessionIndex.default:
   use: session/sqlite-index
@@ -559,6 +565,7 @@ compaction.summary.default:
       baseDelayMs: 2000
   deps:
     llm: llm.fallback
+    sessionEvents: session.events
 
 compaction.token-limit.default:
   use: compaction/token-limit
@@ -869,6 +876,7 @@ tool.skill.default:
   deps:
     skills: skills.default
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 tool.schedule.default:
   use: tool/schedule
@@ -887,11 +895,13 @@ tool.todo.default:
   use: tool/todo
   deps:
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 tool.finish.default:
   use: tool/finish
   deps:
     sessionStore: sessionStore.default
+    sessionEvents: session.events
 
 tool.web-fetch-http.default:
   use: tool/web-fetch-http

@@ -58,7 +58,7 @@ func sanitizeContentParts(parts []agentkit.ContentPart, maxTextBytes int, ws wor
 		switch part.Type {
 		case "thinking":
 			continue
-		case rtmedia.ContentTypeAttachmentRef:
+		case agentkit.ContentTypeAttachmentRef:
 			out = append(out, canonicalizeStoredAttachmentPart(part, ws))
 		case "image", "image_url", "document", "file", "audio", "video":
 			if ref := sanitizeAttachmentRef(part, ws); ref != nil {
@@ -105,7 +105,7 @@ func canonicalizeStoredAttachmentPart(part agentkit.ContentPart, ws workspace.Se
 
 func sanitizeAttachmentRef(part agentkit.ContentPart, ws workspace.Service) *agentkit.ContentPart {
 	ref := agentkit.ContentPart{
-		Type: rtmedia.ContentTypeAttachmentRef,
+		Type: agentkit.ContentTypeAttachmentRef,
 		MIME: strings.TrimSpace(part.MIME),
 	}
 	if src := strings.TrimSpace(part.Source); src != "" {

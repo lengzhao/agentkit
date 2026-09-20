@@ -9,11 +9,22 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
+
+func mustEvents(t *testing.T) capsession.Events {
+	t.Helper()
+	events, err := sessevents.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
 
 func TestModelMessageToPrompt(t *testing.T) {
 	blocks := modelMessageToPrompt(agentkit.ModelMessage{
@@ -339,8 +350,9 @@ func TestRunTurnUsesResolvedSessionID(t *testing.T) {
 		ID:      "cursor",
 		Command: []string{"/nonexistent/agent-acp-test-binary"},
 	}, Deps{
-		Workspace:    &stubWorkspace{},
-		SessionStore: rec,
+		Workspace:     &stubWorkspace{},
+		SessionStore:  rec,
+		SessionEvents: mustEvents(t),
 	})
 	if err != nil {
 		t.Fatal(err)

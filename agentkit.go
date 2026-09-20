@@ -110,9 +110,12 @@ type ContentPart struct {
 	Detail string `json:"detail,omitempty"`
 	// Source is a workspace-relative attachment path (e.g. work/upload/foo.png) used
 	// for session persistence and vision replay; not sent to model providers.
-	// Persisted attachments use type attachment_ref (see runtime/media).
+	// Persisted attachments use type ContentTypeAttachmentRef.
 	Source string `json:"source,omitempty"`
 }
+
+// ContentTypeAttachmentRef is persisted in session history for stripped attachments.
+const ContentTypeAttachmentRef = "attachment_ref"
 
 type SessionEvent struct {
 	ID        EventID

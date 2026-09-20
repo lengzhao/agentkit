@@ -38,6 +38,7 @@ agent.cursor.default:
         id: cursor
         releaseSubprocessAfterTurn: true
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: agent/acp-remote
@@ -95,6 +96,7 @@ compaction.summary.default:
         summaryModel: gpt-5.4
     deps:
         llm: llm.fallback
+        sessionEvents: session.events
     use: compaction/summary
 compaction.token-limit.default:
     config:
@@ -435,6 +437,8 @@ schedule.default:
     use: schedule/multi
 schedule.engine:
     use: schedule/engine
+session.events:
+    use: session/events
 sessionIndex.default:
     config:
         indexRel: sessions/.index.sqlite
@@ -512,6 +516,7 @@ tool.chat-history.default:
     use: tool/chat-history
 tool.finish.default:
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
     use: tool/finish
 tool.fs-workspace.default:
@@ -573,6 +578,7 @@ tool.shell-bash.default:
     use: tool/shell-bash
 tool.skill.default:
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
         skills: skills.default
     use: tool/skill
@@ -582,6 +588,7 @@ tool.subagent.default:
     use: tool/subagent
 tool.todo.default:
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
     use: tool/todo
 tool.web-fetch-http.default:

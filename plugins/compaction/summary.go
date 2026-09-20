@@ -9,10 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 const (
@@ -43,18 +42,23 @@ type SummaryConfig struct {
 }
 
 type SummaryDeps struct {
-	LLM agentkit.LLMProvider `json:"llm"`
+	LLM           agentkit.LLMProvider  `json:"llm"`
+	SessionEvents capsession.Compaction `json:"sessionEvents"`
 }
 
 type summaryService struct {
-	cfg SummaryConfig
-	llm agentkit.LLMProvider
+	cfg    SummaryConfig
+	llm    agentkit.LLMProvider
+	events capsession.Compaction
 }
 
 // NewSummary registers compaction/summary: Pi-style summary + retained tail compaction.
 func NewSummary(cfg SummaryConfig, deps SummaryDeps) (capcompaction.Service, error) {
 	if deps.LLM == nil {
 		return nil, fmt.Errorf("compaction/summary requires llm dependency")
+	}
+	if deps.SessionEvents == nil {
+		return nil, fmt.Errorf("compaction/summary requires sessionEvents dependency")
 	}
 	if cfg.KeepRecentTokens <= 0 {
 		if cfg.KeepRecent > 0 {
@@ -72,7 +76,7 @@ func NewSummary(cfg SummaryConfig, deps SummaryDeps) (capcompaction.Service, err
 	if cfg.SummaryPrompt == "" {
 		cfg.SummaryPrompt = initialSummarizationPrompt
 	}
-	return &summaryService{cfg: cfg, llm: deps.LLM}, nil
+	return &summaryService{cfg: cfg, llm: deps.LLM, events: deps.SessionEvents}, nil
 }
 
 func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request) (capcompaction.Result, error) {
@@ -83,11 +87,14 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 		return capcompaction.Result{}, fmt.Errorf("compaction/summary requires session")
 	}
 
-	events, err := derive.ReadAllEvents(ctx, req.Session)
+	events, err := req.Session.Read(ctx, 0)
 	if err != nil {
 		return capcompaction.Result{}, err
 	}
-	indexed := derive.IndexMessagesForCompaction(ctx, events)
+	indexed, err := s.events.IndexForCompaction(ctx, req.Session, req.AgentID)
+	if err != nil {
+		return capcompaction.Result{}, err
+	}
 	if len(indexed) == 0 {
 		return capcompaction.Result{}, nil
 	}
@@ -129,7 +136,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 		return nil
 	}, &capcompaction.SummarizationRetryCallbacks{
 		OnScheduled: func(attempt, maxAttempts, delayMs int, errorMessage string) {
-			_ = sessevents.AppendSummarizationRetryStart(ctx, req.Session, req.AgentID, sessevents.SummarizationRetryStartData{
+			_ = s.events.AppendSummarizationRetryStart(ctx, req.Session, req.AgentID, capsession.RetryStartData{
 				Attempt:      attempt,
 				MaxAttempts:  maxAttempts,
 				DelayMs:      delayMs,
@@ -137,7 +144,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 			})
 		},
 		OnFinished: func(success bool, attempt int, finalError string) {
-			_ = sessevents.AppendSummarizationRetryEnd(ctx, req.Session, req.AgentID, sessevents.SummarizationRetryEndData{
+			_ = s.events.AppendSummarizationRetryEnd(ctx, req.Session, req.AgentID, capsession.RetryEndData{
 				Success:    success,
 				Attempt:    attempt,
 				FinalError: finalError,
@@ -162,7 +169,7 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 			}},
 		},
 	}
-	if err := sessevents.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
+	if err := s.events.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
 		return capcompaction.Result{}, err
 	}
 	return capcompaction.Result{Applied: true}, nil
@@ -241,7 +248,7 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 		Kind:         capcompaction.KindSummary,
 		Summary:      summary,
 	}
-	if err := sessevents.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
+	if err := s.events.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
 		return capcompaction.Result{}, err
 	}
 	return capcompaction.Result{Applied: true}, nil

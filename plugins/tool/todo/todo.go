@@ -6,15 +6,15 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 type TodoConfig struct{}
 
 type TodoDeps struct {
-	SessionStore agentkit.SessionStore `json:"sessionStore"`
+	SessionStore  agentkit.SessionStore `json:"sessionStore"`
+	SessionEvents capsession.RunLog     `json:"sessionEvents"`
 }
 
 type TodoItemInput struct {
@@ -30,7 +30,7 @@ type TodoInput struct {
 }
 
 type TodoOutput struct {
-	Items       []sessevents.Todo `json:"items"`
+	Items       []capsession.Todo `json:"items"`
 	Pending     int               `json:"pending"`
 	Total       int               `json:"total"`
 	Instruction string            `json:"instruction,omitempty"`
@@ -52,7 +52,11 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("tool/todo requires sessionStore dependency")
 	}
+	if deps.SessionEvents == nil {
+		return nil, fmt.Errorf("tool/todo requires sessionEvents dependency")
+	}
 	store := deps.SessionStore
+	events := deps.SessionEvents
 	tool, err := agentkit.NewTool[TodoInput, TodoOutput]("todo", func(ctx context.Context, input TodoInput) (TodoOutput, error) {
 		sessionID := rctx.SessionIDFromContext(ctx)
 		if sessionID == "" {
@@ -63,11 +67,11 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return TodoOutput{}, err
 		}
-		events, err := derive.ReadAllEvents(ctx, sess)
+		recorded, err := sess.Read(ctx, 0)
 		if err != nil {
 			return TodoOutput{}, err
 		}
-		current := sessevents.LatestTodos(events)
+		current := capsession.LatestTodos(recorded)
 
 		op := strings.ToLower(strings.TrimSpace(input.Op))
 		switch op {
@@ -78,7 +82,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return TodoOutput{}, err
 			}
-			if err := sessevents.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
+			if err := events.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
 				return TodoOutput{}, err
 			}
 			return todoOutput(next), nil
@@ -96,7 +100,7 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 			if len(missing) > 0 {
 				return TodoOutput{}, fmt.Errorf("unknown todo id(s): %s", strings.Join(missing, ", "))
 			}
-			if err := sessevents.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
+			if err := events.AppendTodoUpdate(ctx, sess, agentID, next); err != nil {
 				return TodoOutput{}, err
 			}
 			return todoOutput(next), nil
@@ -112,11 +116,11 @@ func NewTodo(_ TodoConfig, deps TodoDeps) (agentkit.Tool, error) {
 	return tool, nil
 }
 
-func normalizeTodoItems(items []TodoItemInput) ([]sessevents.Todo, error) {
+func normalizeTodoItems(items []TodoItemInput) ([]capsession.Todo, error) {
 	if len(items) == 0 {
 		return nil, fmt.Errorf("set requires at least one item")
 	}
-	out := make([]sessevents.Todo, 0, len(items))
+	out := make([]capsession.Todo, 0, len(items))
 	seen := make(map[string]bool, len(items))
 	for i, item := range items {
 		title := strings.TrimSpace(item.Title)
@@ -131,7 +135,7 @@ func normalizeTodoItems(items []TodoItemInput) ([]sessevents.Todo, error) {
 			return nil, fmt.Errorf("duplicate todo id %q", id)
 		}
 		seen[id] = true
-		out = append(out, sessevents.Todo{
+		out = append(out, capsession.Todo{
 			ID:     id,
 			Title:  title,
 			Status: normalizeTodoStatus(item.Status),
@@ -142,25 +146,25 @@ func normalizeTodoItems(items []TodoItemInput) ([]sessevents.Todo, error) {
 
 func normalizeTodoStatus(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case sessevents.TodoDone, "completed", "complete":
-		return sessevents.TodoDone
-	case sessevents.TodoInProgress, "in-progress", "active":
-		return sessevents.TodoInProgress
+	case capsession.TodoDone, "completed", "complete":
+		return capsession.TodoDone
+	case capsession.TodoInProgress, "in-progress", "active":
+		return capsession.TodoInProgress
 	default:
-		return sessevents.TodoPending
+		return capsession.TodoPending
 	}
 }
 
-func completeTodos(current []sessevents.Todo, ids []string) (next []sessevents.Todo, missing []string) {
+func completeTodos(current []capsession.Todo, ids []string) (next []capsession.Todo, missing []string) {
 	index := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		index[strings.TrimSpace(id)] = true
 	}
-	next = make([]sessevents.Todo, len(current))
+	next = make([]capsession.Todo, len(current))
 	for i, item := range current {
 		next[i] = item
 		if index[item.ID] {
-			next[i].Status = sessevents.TodoDone
+			next[i].Status = capsession.TodoDone
 			delete(index, item.ID)
 		}
 	}
@@ -170,8 +174,8 @@ func completeTodos(current []sessevents.Todo, ids []string) (next []sessevents.T
 	return next, missing
 }
 
-func todoOutput(items []sessevents.Todo) TodoOutput {
-	pending := sessevents.PendingTodos(items)
+func todoOutput(items []capsession.Todo) TodoOutput {
+	pending := capsession.PendingTodos(items)
 	out := TodoOutput{Items: items, Pending: len(pending), Total: len(items)}
 	if len(pending) == 0 && len(items) > 0 {
 		out.Instruction = "All tasks are done. Call finish to end the run."

@@ -50,6 +50,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/prompt"
 	_ "github.com/lengzhao/agentkit/runtime/runner"
 	_ "github.com/lengzhao/agentkit/runtime/schedule"
+	_ "github.com/lengzhao/agentkit/runtime/session/sessevents"
 	_ "github.com/lengzhao/agentkit/runtime/session/sessindex"
 	_ "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	_ "github.com/lengzhao/agentkit/runtime/subagent"

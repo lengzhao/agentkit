@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -22,15 +23,6 @@ type IncompleteTurn struct {
 	// answers. Left alone they make the history unusable: providers reject an
 	// assistant message whose tool calls have no replies.
 	OrphanCalls []agentkit.ToolCall
-}
-
-// RecoveryData is the audit payload of a session/recovery event.
-type RecoveryData struct {
-	TurnStartSeq  agentkit.EventSeq `json:"turnStartSeq"`
-	Steps         int               `json:"steps"`
-	OrphanResults int               `json:"orphanResults"`
-	ClosedStep    int               `json:"closedStep"`
-	Reason        string            `json:"reason"`
 }
 
 // ScanIncomplete reports the trailing unterminated turn, or nil when the log
@@ -53,7 +45,7 @@ func ScanIncomplete(events []agentkit.SessionEvent) *IncompleteTurn {
 				continue
 			}
 			open.StepsStarted++
-			var data StepStartData
+			var data capsession.StepStartData
 			if err := json.Unmarshal(ev.Data, &data); err == nil {
 				open.OpenStep = data.Step
 			}
@@ -111,25 +103,25 @@ func orphanToolCalls(events []agentkit.SessionEvent, seq agentkit.EventSeq) []ag
 // RepairIncomplete makes an interrupted turn replayable and closes it: it
 // answers every orphan tool call, ends the open step, writes turn/end, then
 // records a session/recovery event for audit.
-func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteTurn) (RecoveryData, error) {
+func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteTurn) (capsession.RecoveryData, error) {
 	if turn == nil {
-		return RecoveryData{}, nil
+		return capsession.RecoveryData{}, nil
 	}
 	agentID := turn.AgentID
 	for _, call := range turn.OrphanCalls {
-		if err := AppendToolResult(ctx, s, agentID, derive.InterruptedToolResult(call)); err != nil {
-			return RecoveryData{}, err
+		if err := Default.AppendToolResult(ctx, s, agentID, derive.InterruptedToolResult(call)); err != nil {
+			return capsession.RecoveryData{}, err
 		}
 	}
 	if turn.OpenStep >= 0 {
-		if err := AppendStepEnd(ctx, s, agentID, turn.OpenStep); err != nil {
-			return RecoveryData{}, err
+		if err := Default.AppendStepEnd(ctx, s, agentID, turn.OpenStep); err != nil {
+			return capsession.RecoveryData{}, err
 		}
 	}
-	if err := AppendTurnEnd(ctx, s, agentID, TurnEndData{Steps: turn.StepsEnded}); err != nil {
-		return RecoveryData{}, err
+	if err := Default.AppendTurnEnd(ctx, s, agentID, capsession.TurnEndData{Steps: turn.StepsEnded}); err != nil {
+		return capsession.RecoveryData{}, err
 	}
-	data := RecoveryData{
+	data := capsession.RecoveryData{
 		TurnStartSeq:  turn.TurnStartSeq,
 		Steps:         turn.StepsEnded,
 		OrphanResults: len(turn.OrphanCalls),
@@ -137,11 +129,13 @@ func RepairIncomplete(ctx context.Context, s agentkit.Session, turn *IncompleteT
 		Reason:        "turn/start without turn/end",
 	}
 	if err := AppendSessionRecovery(ctx, s, agentID, data); err != nil {
-		return RecoveryData{}, err
+		return capsession.RecoveryData{}, err
 	}
 	return data, nil
 }
 
-func AppendSessionRecovery(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data RecoveryData) error {
+// AppendSessionRecovery records the recovery audit marker. It is runtime-only:
+// not part of the plugin-facing capsession.Events contract.
+func AppendSessionRecovery(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data capsession.RecoveryData) error {
 	return appendLifecycle(ctx, s, agentID, agentkit.EventSessionRecovery, data)
 }

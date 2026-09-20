@@ -9,7 +9,6 @@ import (
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 
 	"github.com/lengzhao/agentkit"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -57,13 +56,13 @@ func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := sessevents.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U111]\n改一下 README")); err != nil {
+	if err := sessevents.Default.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U111]\n改一下 README")); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(context.Background(), sess, "coder", agentkit.EventAssistantMessage, textMessage("assistant", "好的")); err != nil {
+	if err := sessevents.Default.AppendMessage(context.Background(), sess, "coder", agentkit.EventAssistantMessage, textMessage("assistant", "好的")); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(userCtx("U222"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U222]\n顺便跑一下测试")); err != nil {
+	if err := sessevents.Default.AppendMessage(userCtx("U222"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U222]\n顺便跑一下测试")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,7 +96,7 @@ func TestNoUserIDLeavesHistoryUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(context.Background(), sess, "coder", agentkit.EventUserMessage, textMessage("user", "列出目录")); err != nil {
+	if err := sessevents.Default.AppendMessage(context.Background(), sess, "coder", agentkit.EventUserMessage, textMessage("user", "列出目录")); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := sess.DeriveMessages(context.Background())
@@ -123,7 +122,7 @@ func TestStoredInjectPrefixSurvivesReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U111]\nhi")); err != nil {
+	if err := sessevents.Default.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, textMessage("user", "[meta sender_id=U111]\nhi")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +155,7 @@ func TestImageOnlyMessageDerivesPlaceholder(t *testing.T) {
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "image", URL: "https://example.com/a.png"}},
 	}
-	if err := sessevents.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, msg); err != nil {
+	if err := sessevents.Default.AppendMessage(userCtx("U111"), sess, "coder", agentkit.EventUserMessage, msg); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := sess.DeriveMessages(context.Background())
@@ -166,7 +165,7 @@ func TestImageOnlyMessageDerivesPlaceholder(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("derived %d messages, want 1", len(msgs))
 	}
-	if len(msgs[0].Content) != 1 || msgs[0].Content[0].Type != rtmedia.ContentTypeAttachmentRef {
+	if len(msgs[0].Content) != 1 || msgs[0].Content[0].Type != agentkit.ContentTypeAttachmentRef {
 		t.Fatalf("content = %#v", msgs[0].Content)
 	}
 	if msgs[0].Content[0].URL != "https://example.com/a.png" {

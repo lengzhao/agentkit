@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
 // busyStopSession finds which session id currently has an in-flight turn for this
@@ -54,7 +54,7 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 			if key == "" {
 				continue
 			}
-			resolved, err := sessbind.ResolveActiveSessionID(ctx, store, key)
+			resolved, err := capsession.ResolveActiveSessionID(ctx, store, key)
 			if err != nil {
 				return nil, err
 			}
@@ -77,7 +77,7 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 			add(ek)
 			add(rctx.ApplyScope(delivery, scope, userID))
 			if store != nil && ek != "" {
-				resolved, err := sessbind.ResolveActiveSessionID(ctx, store, ek)
+				resolved, err := capsession.ResolveActiveSessionID(ctx, store, ek)
 				if err != nil {
 					return nil, err
 				}

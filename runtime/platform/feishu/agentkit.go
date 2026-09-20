@@ -18,10 +18,10 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 var errNotSupported = fmt.Errorf("feishu: not supported")
@@ -623,8 +623,8 @@ func (p *Platform) addErrorReaction(rc replyContext) {
 	}
 }
 
-func parseTurnEndData(event agentkit.OutboundEvent) sessevents.TurnEndData {
-	var data sessevents.TurnEndData
+func parseTurnEndData(event agentkit.OutboundEvent) capsession.TurnEndData {
+	var data capsession.TurnEndData
 	if len(event.Data) == 0 {
 		return data
 	}

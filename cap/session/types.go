@@ -1,4 +1,4 @@
-package derive
+package session
 
 import "github.com/lengzhao/agentkit"
 
@@ -64,3 +64,53 @@ type RunState struct {
 
 // MetadataLogicalChars stores pre-sanitize size when storage shrinks the message (e.g. stripped inline media).
 const MetadataLogicalChars = "logical_chars"
+
+type TurnStartData struct{}
+
+type TurnEndData struct {
+	Steps      int    `json:"steps"`
+	StopReason string `json:"stopReason,omitempty"`
+	StepLimit  int    `json:"stepLimit,omitempty"`
+	Cancelled  bool   `json:"cancelled,omitempty"`
+	Failed     bool   `json:"failed,omitempty"`
+}
+
+type StepStartData struct {
+	Step int `json:"step"`
+}
+
+type StepEndData struct {
+	Step int `json:"step"`
+}
+
+// RetryStartData is the shared payload of the retry-bracketing start events
+// (auto-retry, summarization-retry); the event type distinguishes the domain.
+type RetryStartData struct {
+	Attempt      int    `json:"attempt"`
+	MaxAttempts  int    `json:"maxAttempts"`
+	DelayMs      int    `json:"delayMs"`
+	ErrorMessage string `json:"errorMessage"`
+}
+
+// RetryEndData is the shared payload of the retry-bracketing end events.
+type RetryEndData struct {
+	Success    bool   `json:"success"`
+	Attempt    int    `json:"attempt"`
+	FinalError string `json:"finalError,omitempty"`
+}
+
+type OverflowRecoveryData struct {
+	Applied int    `json:"applied"`
+	Reason  string `json:"reason,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// RecoveryData is the audit payload of a session/recovery event, written after
+// repairing an interrupted turn.
+type RecoveryData struct {
+	TurnStartSeq  agentkit.EventSeq `json:"turnStartSeq"`
+	Steps         int               `json:"steps"`
+	OrphanResults int               `json:"orphanResults"`
+	ClosedStep    int               `json:"closedStep"`
+	Reason        string            `json:"reason"`
+}

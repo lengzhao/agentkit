@@ -9,7 +9,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 func (p *Platform) clearCardProcessingReaction(messageID, reactionID string) {
@@ -106,7 +106,7 @@ func (p *Platform) useBotReplyReactionEmojis() bool {
 	return !p.useRichStream()
 }
 
-func (p *Platform) addBotReplyEndReaction(messageID string, endData sessevents.TurnEndData, clearProcessingReactionID string) {
+func (p *Platform) addBotReplyEndReaction(messageID string, endData capsession.TurnEndData, clearProcessingReactionID string) {
 	if !p.useBotReplyReactionEmojis() {
 		return
 	}
@@ -133,7 +133,7 @@ func (p *Platform) addBotReplyEndReaction(messageID string, endData sessevents.T
 	}
 }
 
-func (p *Platform) applyTurnEndReactions(sessionID agentkit.SessionID, endData sessevents.TurnEndData) {
+func (p *Platform) applyTurnEndReactions(sessionID agentkit.SessionID, endData capsession.TurnEndData) {
 	rcs := p.finishTurnReactions(sessionID)
 	p.turnTriggers.LoadAndDelete(sessionID)
 	if len(rcs) == 0 {

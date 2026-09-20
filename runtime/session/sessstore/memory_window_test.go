@@ -25,14 +25,14 @@ func TestCompactionTrimsMemoryButKeepsDeriveMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 5; i++ {
-		if err := sessevents.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+		if err := sessevents.Default.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "old"}},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := sessevents.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, mem, "coder", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "recent"}},
 	}); err != nil {
@@ -56,7 +56,7 @@ func TestCompactionTrimsMemoryButKeepsDeriveMessages(t *testing.T) {
 		Kind:    compaction.KindSummary,
 		Summary: summary,
 	}
-	if err := sessevents.AppendCompaction(ctx, mem, "coder", data); err != nil {
+	if err := sessevents.Default.AppendCompaction(ctx, mem, "coder", data); err != nil {
 		t.Fatal(err)
 	}
 

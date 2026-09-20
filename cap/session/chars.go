@@ -1,10 +1,10 @@
-package derive
+package session
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 const visionPlaceholderChars = 256
@@ -42,7 +42,7 @@ func partsLogicalChars(parts []agentkit.ContentPart) int {
 			} else {
 				chars += len(part.URL)
 			}
-		case rtmedia.ContentTypeAttachmentRef:
+		case agentkit.ContentTypeAttachmentRef:
 			if part.URL != "" && !isDataURL(part.URL) {
 				chars += len(part.URL)
 			}
@@ -63,7 +63,7 @@ func SumLogicalCharsFromEvents(events []agentkit.SessionEvent, agentID agentkit.
 		if agentID != "" && ev.AgentID != agentID {
 			continue
 		}
-		if v := metadataInt(ev.Metadata, MetadataLogicalChars); v > 0 {
+		if v := MetadataInt(ev.Metadata, MetadataLogicalChars); v > 0 {
 			total += v
 			continue
 		}
@@ -76,7 +76,8 @@ func SumLogicalCharsFromEvents(events []agentkit.SessionEvent, agentID agentkit.
 	return total
 }
 
-func metadataInt(md map[string]any, key string) int {
+// MetadataInt reads an integer metadata value written at ingest time.
+func MetadataInt(md map[string]any, key string) int {
 	if len(md) == 0 {
 		return 0
 	}
@@ -94,4 +95,8 @@ func metadataInt(md map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func isDataURL(raw string) bool {
+	return strings.HasPrefix(strings.TrimSpace(raw), "data:")
 }

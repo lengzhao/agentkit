@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -37,7 +38,7 @@ func (a *Runtime) runStepWithOverflowRecovery(
 		}
 		*overflowRecoveryAttempted = true
 		applied, compactErr := a.runForcedCompaction(ctx, sess)
-		recoveryData := sessevents.OverflowRecoveryData{Reason: "overflow"}
+		recoveryData := capsession.OverflowRecoveryData{Reason: "overflow"}
 		if compactErr != nil {
 			recoveryData.Error = compactErr.Error()
 			_ = a.emitOverflowRecovery(ctx, sess, emit, recoveryData)
@@ -105,8 +106,8 @@ func latestCompactionSeq(ctx context.Context, sess agentkit.Session) (agentkit.E
 	return seq, nil
 }
 
-func (a *Runtime) emitOverflowRecovery(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data sessevents.OverflowRecoveryData) error {
-	if err := sessevents.AppendOverflowRecovery(ctx, sess, a.id, data); err != nil {
+func (a *Runtime) emitOverflowRecovery(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, data capsession.OverflowRecoveryData) error {
+	if err := sessevents.Default.AppendOverflowRecovery(ctx, sess, a.id, data); err != nil {
 		return err
 	}
 	if emit == nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/skill"
 	skilltool "github.com/lengzhao/agentkit/plugins/tool/skill"
 	"github.com/lengzhao/agentkit/runtime/llm"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -43,9 +44,14 @@ func TestSmokeSkillLoadEvent(t *testing.T) {
 		Body:        "Follow these demo instructions.",
 		Path:        "/tmp/demo",
 	}}
+	sessionEvents, err := sessevents.New()
+	if err != nil {
+		t.Fatal(err)
+	}
 	skillTool, err := skilltool.NewSkill(skilltool.SkillConfig{}, skilltool.SkillDeps{
-		Skills:       reg,
-		SessionStore: store,
+		Skills:        reg,
+		SessionStore:  store,
+		SessionEvents: sessionEvents,
 	})
 	if err != nil {
 		t.Fatal(err)

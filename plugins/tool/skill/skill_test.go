@@ -11,6 +11,7 @@ import (
 	capskill "github.com/lengzhao/agentkit/cap/skill"
 	skilltool "github.com/lengzhao/agentkit/plugins/tool/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -56,9 +57,14 @@ func TestSkillToolLoadsAndRecords(t *testing.T) {
 	}
 
 	store, _ := agenttest.TempFileStore(t)
+	sessionEvents, err := sessevents.New()
+	if err != nil {
+		t.Fatal(err)
+	}
 	tool, err := skilltool.NewSkill(skilltool.SkillConfig{}, skilltool.SkillDeps{
-		Skills:       dirRegistry{root: root},
-		SessionStore: store,
+		Skills:        dirRegistry{root: root},
+		SessionStore:  store,
+		SessionEvents: sessionEvents,
 	})
 	if err != nil {
 		t.Fatal(err)

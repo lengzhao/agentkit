@@ -92,19 +92,19 @@ func SeedCrashedToolCall(t *testing.T, store agentkit.SessionStore, sessionID ag
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendTurnStart(ctx, sess, agentID); err != nil {
+	if err := sessevents.Default.AppendTurnStart(ctx, sess, agentID); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, agentID, agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, agentID, agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: userText}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendStepStart(ctx, sess, agentID, 0); err != nil {
+	if err := sessevents.Default.AppendStepStart(ctx, sess, agentID, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:      "assistant",
 		ToolCalls: []agentkit.ToolCall{call},
 	}); err != nil {

@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // AppendMessage sanitizes and appends a user/assistant message event.
-func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, typ agentkit.EventType, msg agentkit.ModelMessage) error {
+func (events) AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, typ agentkit.EventType, msg agentkit.ModelMessage) error {
 	logicalChars := 0
 	switch typ {
 	case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
-		logicalChars = derive.EstimateLogicalChars(msg)
+		logicalChars = capsession.EstimateLogicalChars(msg)
 		msg = derive.SanitizeModelMessageForStorageWS(msg, 0, rctx.WorkspaceServiceFromContext(ctx))
 	}
 	raw, err := json.Marshal(msg)
@@ -26,8 +27,8 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 		Type:    typ,
 		Data:    raw,
 	}
-	if logicalChars > 0 && logicalChars > derive.EstimateLogicalChars(msg) {
-		event.Metadata = map[string]any{MetadataLogicalChars: logicalChars}
+	if logicalChars > 0 && logicalChars > capsession.EstimateLogicalChars(msg) {
+		event.Metadata = map[string]any{capsession.MetadataLogicalChars: logicalChars}
 	}
 	// Attribute user turns to whoever sent them. Only user messages carry this:
 	// stamping the assistant with the user who prompted it would make the reply
@@ -48,7 +49,7 @@ func AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.Age
 }
 
 // AppendToolCall sanitizes and appends a tool call event.
-func AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, call agentkit.ToolCall) error {
+func (events) AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, call agentkit.ToolCall) error {
 	call = derive.SanitizeToolCall(call)
 	raw, err := json.Marshal(call)
 	if err != nil {
@@ -63,7 +64,7 @@ func AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.Ag
 }
 
 // AppendToolResult appends a tool result event.
-func AppendToolResult(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, result agentkit.ToolResult) error {
+func (events) AppendToolResult(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, result agentkit.ToolResult) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return err

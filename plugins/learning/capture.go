@@ -8,9 +8,9 @@ import (
 	"github.com/lengzhao/agentkit"
 	caplearning "github.com/lengzhao/agentkit/cap/learning"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // CaptureSkillPropose implements caplearning.SkillProposer.
@@ -60,7 +60,7 @@ func shouldRunReview(messages []agentkit.ModelMessage, skipSlashOnly bool) bool 
 		if msg.Role != "user" {
 			continue
 		}
-		text := strings.TrimSpace(derive.FlattenTextParts(msg.Content, " "))
+		text := strings.TrimSpace(capsession.FlattenTextParts(msg.Content, " "))
 		if text == "" {
 			continue
 		}

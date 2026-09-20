@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	plugincompaction "github.com/lengzhao/agentkit/plugins/compaction"
 	pluginhook "github.com/lengzhao/agentkit/plugins/hook"
 	"github.com/lengzhao/agentkit/runtime/agent"
@@ -18,8 +19,8 @@ import (
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
-	"github.com/lengzhao/agentkit/testing/agenttest"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
 // This file covers the compaction/overflow fix chain end to end: real
@@ -112,9 +113,13 @@ func (c *countingLLM) count() int {
 
 func mustSummaryService(t *testing.T, keepRecentTokens int, summaryLLM agentkit.LLMProvider) capcompaction.Service {
 	t.Helper()
+	events, err := sessevents.New()
+	if err != nil {
+		t.Fatal(err)
+	}
 	svc, err := plugincompaction.NewSummary(plugincompaction.SummaryConfig{
 		KeepRecentTokens: keepRecentTokens,
-	}, plugincompaction.SummaryDeps{LLM: summaryLLM})
+	}, plugincompaction.SummaryDeps{LLM: summaryLLM, SessionEvents: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +170,7 @@ func seedText(t *testing.T, ctx context.Context, store agentkit.SessionStore, se
 	if role == "assistant" {
 		typ = agentkit.EventAssistantMessage
 	}
-	if err := sessevents.AppendMessage(ctx, sess, compactionAgentID, typ, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, compactionAgentID, typ, agentkit.ModelMessage{
 		Role:    role,
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	}); err != nil {
@@ -181,7 +186,7 @@ func seedToolCall(t *testing.T, ctx context.Context, store agentkit.SessionStore
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendMessage(ctx, sess, compactionAgentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(ctx, sess, compactionAgentID, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role: "assistant",
 		ToolCalls: []agentkit.ToolCall{{
 			ID:    callID,
@@ -191,7 +196,7 @@ func seedToolCall(t *testing.T, ctx context.Context, store agentkit.SessionStore
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendToolResult(ctx, sess, compactionAgentID, agentkit.ToolResult{
+	if err := sessevents.Default.AppendToolResult(ctx, sess, compactionAgentID, agentkit.ToolResult{
 		ID:      callID,
 		Name:    "read",
 		Content: result,
@@ -226,14 +231,14 @@ func compactionEvents(t *testing.T, events []agentkit.SessionEvent) []capcompact
 	return out
 }
 
-func overflowRecoveries(t *testing.T, events []agentkit.SessionEvent) []sessevents.OverflowRecoveryData {
+func overflowRecoveries(t *testing.T, events []agentkit.SessionEvent) []capsession.OverflowRecoveryData {
 	t.Helper()
-	var out []sessevents.OverflowRecoveryData
+	var out []capsession.OverflowRecoveryData
 	for _, ev := range events {
 		if ev.Type != agentkit.EventOverflowRecovery {
 			continue
 		}
-		var data sessevents.OverflowRecoveryData
+		var data capsession.OverflowRecoveryData
 		if err := json.Unmarshal(ev.Data, &data); err != nil {
 			t.Fatal(err)
 		}

@@ -1,12 +1,11 @@
 package derive_test
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/rctx"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
@@ -15,7 +14,6 @@ import (
 func TestIndexMessagesForCompactionPopulatesLogicalChars(t *testing.T) {
 	t.Parallel()
 
-	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{AgentID: "assistant"})
 	stripped := agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "attachment_ref", Source: "upload/big.log", MIME: "text/plain"}},
@@ -31,7 +29,7 @@ func TestIndexMessagesForCompactionPopulatesLogicalChars(t *testing.T) {
 			Type:    agentkit.EventUserMessage,
 			Data:    mustMarshalMsg(t, stripped),
 			// AppendMessage 在 sanitize 前记录的真实大小。
-			Metadata: map[string]any{derive.MetadataLogicalChars: 3_000_000},
+			Metadata: map[string]any{capsession.MetadataLogicalChars: 3_000_000},
 		},
 		{
 			Seq:     2,
@@ -41,14 +39,14 @@ func TestIndexMessagesForCompactionPopulatesLogicalChars(t *testing.T) {
 		},
 	}
 
-	indexed := derive.IndexMessagesForCompaction(ctx, events)
+	indexed := derive.IndexMessagesForCompaction(events, "assistant")
 	if len(indexed) != 2 {
 		t.Fatalf("indexed len = %d, want 2", len(indexed))
 	}
 	if indexed[0].LogicalChars != 3_000_000 {
 		t.Fatalf("indexed[0].LogicalChars = %d, want recorded 3000000", indexed[0].LogicalChars)
 	}
-	want := derive.EstimateLogicalChars(small)
+	want := capsession.EstimateLogicalChars(small)
 	if indexed[1].LogicalChars != want {
 		t.Fatalf("indexed[1].LogicalChars = %d, want fallback EstimateLogicalChars %d", indexed[1].LogicalChars, want)
 	}

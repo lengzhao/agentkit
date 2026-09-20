@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -74,7 +73,7 @@ func contentToChatParts(parts []agentkit.ContentPart) (string, []openai.ChatMess
 			if part.Text != "" {
 				textParts = append(textParts, part.Text)
 			}
-		case rtmedia.ContentTypeAttachmentRef:
+		case agentkit.ContentTypeAttachmentRef:
 			if hint := attachmentRefHint(part); hint != "" {
 				textParts = append(textParts, hint)
 			}
@@ -277,7 +276,7 @@ func contentToResponseParts(role string, parts []agentkit.ContentPart) any {
 					Text: part.Text,
 				})
 			}
-		case rtmedia.ContentTypeAttachmentRef:
+		case agentkit.ContentTypeAttachmentRef:
 			if role == "assistant" {
 				continue
 			}

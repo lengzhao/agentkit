@@ -11,11 +11,11 @@ import (
 	"github.com/lengzhao/agentkit"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 // SummarizeSessionUserMessages extracts recent user text from the current session.
@@ -33,7 +33,7 @@ func SummarizeSessionUserMessages(ctx context.Context, store agentkit.SessionSto
 	if err != nil {
 		return "", err
 	}
-	events, err := derive.ReadAllEvents(ctx, sess)
+	events, err := sess.Read(ctx, 0)
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +46,7 @@ func SummarizeSessionUserMessages(ctx context.Context, store agentkit.SessionSto
 		if err := json.Unmarshal(ev.Data, &msg); err != nil {
 			continue
 		}
-		text := strings.TrimSpace(derive.FlattenTextParts(msg.Content, "\n"))
+		text := strings.TrimSpace(capsession.FlattenTextParts(msg.Content, "\n"))
 		if text == "" || strings.HasPrefix(text, "/") {
 			continue
 		}

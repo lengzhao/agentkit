@@ -40,6 +40,10 @@ agent.acp.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
+    sessionEvents: session.events
+
+session.events:
+  use: session/events
 
 session.default:
   use: session/memory

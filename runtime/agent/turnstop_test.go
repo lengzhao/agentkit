@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -173,7 +173,7 @@ func TestTurnStoppingContinueExtendsTurn(t *testing.T) {
 		t.Fatalf("second call Segments = %d, want 1", hooks.seen[1].Segments)
 	}
 
-	var data sessevents.TurnContinueData
+	var data capsession.TurnContinueData
 	for _, ev := range events {
 		if ev.Type == agentkit.EventTurnContinue {
 			if err := json.Unmarshal(ev.Data, &data); err != nil {

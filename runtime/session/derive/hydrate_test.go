@@ -38,7 +38,7 @@ func TestHydrateLocalAttachmentsReloadsWorkspaceImage(t *testing.T) {
 	msgs := []agentkit.ModelMessage{{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
-			Type:   rtmedia.ContentTypeAttachmentRef,
+			Type:   agentkit.ContentTypeAttachmentRef,
 			Source: "upload/shot.png",
 			MIME:   "image/png",
 		}},
@@ -151,7 +151,7 @@ func TestHydrateLocalAttachmentsFitsLargeWorkspaceImage(t *testing.T) {
 	msgs := []agentkit.ModelMessage{{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
-			Type:   rtmedia.ContentTypeAttachmentRef,
+			Type:   agentkit.ContentTypeAttachmentRef,
 			Source: "upload/big.jpg",
 			MIME:   "image/jpeg",
 		}},
@@ -188,7 +188,7 @@ func TestPrepareMessagesForLLMDemotesAttachmentsWhenTextOnly(t *testing.T) {
 	msgs := []agentkit.ModelMessage{{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
-			Type:   rtmedia.ContentTypeAttachmentRef,
+			Type:   agentkit.ContentTypeAttachmentRef,
 			Source: "upload/shot.png",
 		}},
 	}}
@@ -216,7 +216,7 @@ func TestSanitizeStoresWorkspaceImagePath(t *testing.T) {
 			Source: "upload/shot.png",
 		}},
 	}, 0, ws)
-	if len(msg.Content) != 1 || msg.Content[0].Type != rtmedia.ContentTypeAttachmentRef {
+	if len(msg.Content) != 1 || msg.Content[0].Type != agentkit.ContentTypeAttachmentRef {
 		t.Fatalf("content = %#v", msg.Content)
 	}
 	if msg.Content[0].Source != "upload/shot.png" {
@@ -254,7 +254,7 @@ func TestHydrateLocalAttachmentsRecordsVisionHydrateEvent(t *testing.T) {
 	msgs := []agentkit.ModelMessage{{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
-			Type:   rtmedia.ContentTypeAttachmentRef,
+			Type:   agentkit.ContentTypeAttachmentRef,
 			Source: "upload/big.jpg",
 			MIME:   "image/jpeg",
 		}},

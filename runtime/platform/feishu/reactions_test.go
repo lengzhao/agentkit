@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 func TestRichStreamSkipsBotReplyReactionEmojis(t *testing.T) {
@@ -57,7 +57,7 @@ func TestApplyTurnEndReactionsFallsBackToTurnTrigger(t *testing.T) {
 	trigger := replyContext{messageID: "trigger-msg", processingReactionID: "rx-1"}
 	p.turnTriggers.Store(sessionID, trigger)
 
-	p.applyTurnEndReactions(sessionID, sessevents.TurnEndData{Steps: 1})
+	p.applyTurnEndReactions(sessionID, capsession.TurnEndData{Steps: 1})
 
 	if _, still := p.turnTriggers.Load(sessionID); still {
 		t.Fatal("turn trigger should be cleared")

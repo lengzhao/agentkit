@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/plugins/hook"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
@@ -48,7 +49,7 @@ func driverCtx(sess agentkit.Session) context.Context {
 // startRun records the inbound user message that marks the run's beginning.
 func startRun(t *testing.T, sess agentkit.Session) {
 	t.Helper()
-	if err := sessevents.AppendMessage(context.Background(), sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+	if err := sessevents.Default.AppendMessage(context.Background(), sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "do the task"}},
 	}); err != nil {
@@ -68,9 +69,9 @@ func TestDriverContinuesWhileTodosPending(t *testing.T) {
 
 	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 5})
 	startRun(t, sess)
-	if err := sessevents.AppendTodoUpdate(context.Background(), sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "write the parser", Status: sessevents.TodoInProgress},
-		{ID: "2", Title: "add tests", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "write the parser", Status: capsession.TodoInProgress},
+		{ID: "2", Title: "add tests", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -99,13 +100,13 @@ func TestDriverStopsAfterFinish(t *testing.T) {
 	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 5})
 	startRun(t, sess)
 	// Work remains, but the agent declared the run over: finish wins.
-	if err := sessevents.AppendTodoUpdate(context.Background(), sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "unfinished", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "unfinished", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendRunFinish(context.Background(), sess, "a", sessevents.RunFinishData{
-		Status:  sessevents.FinishBlocked,
+	if err := sessevents.Default.AppendRunFinish(context.Background(), sess, "a", capsession.RunFinishData{
+		Status:  capsession.FinishBlocked,
 		Summary: "needs credentials",
 	}); err != nil {
 		t.Fatal(err)
@@ -121,8 +122,8 @@ func TestDriverStopsAfterFinish(t *testing.T) {
 	if len(in.Continue) != 0 {
 		t.Fatalf("continue messages = %d, want 0", len(in.Continue))
 	}
-	if !strings.Contains(in.StopReason, sessevents.FinishBlocked) {
-		t.Fatalf("stop reason = %q, want it to mention %q", in.StopReason, sessevents.FinishBlocked)
+	if !strings.Contains(in.StopReason, capsession.FinishBlocked) {
+		t.Fatalf("stop reason = %q, want it to mention %q", in.StopReason, capsession.FinishBlocked)
 	}
 }
 
@@ -131,13 +132,13 @@ func TestDriverStopsOnStall(t *testing.T) {
 
 	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 5, StallLimit: 3})
 	startRun(t, sess)
-	if err := sessevents.AppendTodoUpdate(context.Background(), sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "still pending", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "still pending", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
-		if err := sessevents.AppendToolCall(context.Background(), sess, "a", agentkit.ToolCall{
+		if err := sessevents.Default.AppendToolCall(context.Background(), sess, "a", agentkit.ToolCall{
 			ID:    "call",
 			Name:  "read",
 			Input: []byte(`{"path":"same.go"}`),
@@ -163,8 +164,8 @@ func TestDriverStopsAtContinuationLimit(t *testing.T) {
 
 	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 2})
 	startRun(t, sess)
-	if err := sessevents.AppendTodoUpdate(context.Background(), sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "still pending", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "still pending", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -188,8 +189,8 @@ func TestDriverIsInertWithoutMaxContinuations(t *testing.T) {
 	// The default config must not make an existing agent autonomous.
 	h, sess := newDriver(t, hook.TurnContinueConfig{})
 	startRun(t, sess)
-	if err := sessevents.AppendTodoUpdate(context.Background(), sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "still pending", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "still pending", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -232,13 +233,13 @@ func TestStatusCommandReportsRunState(t *testing.T) {
 	}
 
 	startRun(t, sess)
-	if err := sessevents.AppendTodoUpdate(context.Background(), sess, "a", []sessevents.Todo{
-		{ID: "1", Title: "done thing", Status: sessevents.TodoDone},
-		{ID: "2", Title: "pending thing", Status: sessevents.TodoPending},
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "done thing", Status: capsession.TodoDone},
+		{ID: "2", Title: "pending thing", Status: capsession.TodoPending},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessevents.AppendUsage(context.Background(), sess, "a", sessevents.UsageData{
+	if err := sessevents.Default.AppendUsage(context.Background(), sess, "a", capsession.UsageData{
 		InputTokens: 100, OutputTokens: 20, TotalTokens: 120,
 	}); err != nil {
 		t.Fatal(err)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -50,8 +51,8 @@ func (f *forceCompaction) Compact(ctx context.Context, req compaction.Request) (
 	if err != nil {
 		return compaction.Result{}, err
 	}
-	if err := sessevents.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
-		BeforeSeq: derive.LatestEventSeq(events),
+	if err := sessevents.Default.AppendCompaction(ctx, req.Session, req.AgentID, compaction.EventData{
+		BeforeSeq: capsession.LatestEventSeq(events),
 		Kind:      compaction.KindSummary,
 		Summary: agentkit.ModelMessage{
 			Role:    "user",

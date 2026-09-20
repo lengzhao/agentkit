@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
 // wrapTurnEndNotices emits user-visible outbound (e.g. step-limit) before turn/end,
@@ -18,7 +18,7 @@ func wrapTurnEndNotices(emit agentkit.OutboundEmit) agentkit.OutboundEmit {
 	}
 	return func(ctx context.Context, event agentkit.OutboundEvent) error {
 		if event.Type == agentkit.EventTurnEnd {
-			var end sessevents.TurnEndData
+			var end capsession.TurnEndData
 			if err := json.Unmarshal(event.Data, &end); err == nil {
 				if err := emitStepLimitNotice(ctx, emit, event, end); err != nil {
 					return err
@@ -29,7 +29,7 @@ func wrapTurnEndNotices(emit agentkit.OutboundEmit) agentkit.OutboundEmit {
 	}
 }
 
-func emitStepLimitNotice(ctx context.Context, emit agentkit.OutboundEmit, turnEnd agentkit.OutboundEvent, end sessevents.TurnEndData) error {
+func emitStepLimitNotice(ctx context.Context, emit agentkit.OutboundEmit, turnEnd agentkit.OutboundEvent, end capsession.TurnEndData) error {
 	if end.StopReason != string(agentkit.StopStepLimit) {
 		return nil
 	}

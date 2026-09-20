@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 func TestCancelledTurnEndProgressFooter(t *testing.T) {
@@ -34,7 +34,7 @@ func TestCancelledBodyText(t *testing.T) {
 }
 
 func TestParseTurnEndDataCancelled(t *testing.T) {
-	raw, err := json.Marshal(sessevents.TurnEndData{Steps: 2, Cancelled: true, StopReason: "/stop"})
+	raw, err := json.Marshal(capsession.TurnEndData{Steps: 2, Cancelled: true, StopReason: "/stop"})
 	if err != nil {
 		t.Fatal(err)
 	}
