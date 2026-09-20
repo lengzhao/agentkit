@@ -27,7 +27,7 @@ func TestOpenAPICredentialWarningOnReload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter, Credentials: scopedCredsForAPI("petstore", nil)})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestOpenAPIStatusListsCredentialScopes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter, Credentials: scopedCredsForAPI("petstore", nil)})
 	if err != nil {
 		t.Fatal(err)
 	}

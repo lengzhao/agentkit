@@ -144,7 +144,7 @@ func (s *TenantService) UploadDirRel() string {
 }
 
 func (s *TenantService) Resolve(ctx context.Context, rel string) (string, error) {
-	scope, path, scoped := ParseScoped(rel)
+	scope, path, scoped := cw.ParseScoped(rel)
 	if !scoped {
 		scope = s.scope
 		path = rel

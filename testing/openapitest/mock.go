@@ -15,7 +15,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/plugins/tool/openapi"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -182,21 +181,20 @@ func (s scopedCredentialStore) Resolve(_ context.Context, scope string, ref stri
 
 func credentialsForAPI(apiName string) credentials.Store {
 	return scopedCredentialStore{
-		scope: openapi.CredentialScope(apiName),
+		scope: rtcredentials.OpenAPICredentialScope(apiName),
 		env:   map[string]string{"OPENAPITEST_TOKEN": DefaultToken},
 	}
 }
 
-// NewProvider builds tool/openapi against a materialized workspace.
-func NewProvider(t *testing.T, root string) agentkit.ToolProvider {
+// NewProvider builds an OpenAPI tool provider against a materialized workspace.
+// newProvider builds the plugin provider from the workspace and credential store;
+// openapitest stays plugin-agnostic, callers inject the tool/openapi constructor.
+func NewProvider(t *testing.T, root string, newProvider func(ws workspace.Service, creds credentials.Store) (agentkit.ToolProvider, error)) agentkit.ToolProvider {
 	t.Helper()
-	provider, err := openapi.NewOpenAPI(openapi.OpenAPIConfig{
-		EnableLocal: true,
-		Files:       []string{"api.json", "local:api.json"},
-	}, openapi.OpenAPIDeps{
-		Workspace:   Workspace(root),
-		Credentials: credentialsForAPI("petstore"),
-	})
+	if newProvider == nil {
+		t.Fatal("openapitest.NewProvider requires a provider factory")
+	}
+	provider, err := newProvider(Workspace(root), credentialsForAPI("petstore"))
 	if err != nil {
 		t.Fatalf("new openapi provider: %v", err)
 	}

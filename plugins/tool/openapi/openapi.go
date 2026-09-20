@@ -12,12 +12,11 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 const defaultGlobalAPIFile = "global:api.json"
@@ -32,8 +31,10 @@ type OpenAPIConfig struct {
 }
 
 type OpenAPIDeps struct {
-	Workspace   workspace.Service       `json:"workspace"`
+	Workspace   workspace.Service `json:"workspace"`
 	Credentials credentials.Store `json:"credentials,omitempty"`
+	// ConfigFile powers /openapi add writes; without it the add command fails fast.
+	ConfigFile configfile.Writer `json:"configfile,omitempty"`
 }
 
 type openapiProvider struct {
@@ -41,6 +42,7 @@ type openapiProvider struct {
 	enableLocal bool
 	workspace   workspace.Service
 	credentials credentials.Store
+	configFile  configfile.Writer
 	client      *http.Client
 
 	mu     sync.RWMutex
@@ -73,6 +75,7 @@ func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, err
 		enableLocal: cfg.EnableLocal,
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
+		configFile:  deps.ConfigFile,
 		client:      &http.Client{},
 	}, nil
 }
@@ -98,7 +101,7 @@ func filterGlobalAPIFiles(files []string) []string {
 		if rel == "" {
 			continue
 		}
-		scope, _, scoped := rtworkspace.ParseScoped(rel)
+		scope, _, scoped := workspace.ParseScoped(rel)
 		if scoped && scope == workspace.ScopeGlobal {
 			out = append(out, rel)
 		}
@@ -178,7 +181,10 @@ func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 }
 
 func (p *openapiProvider) writeTarget(ctx context.Context, global bool) (string, error) {
-	rel, err := configfile.WriteTargetForAdd(p.files, global)
+	if p.configFile == nil {
+		return "", fmt.Errorf("tool/openapi requires configFile dependency for /openapi add")
+	}
+	rel, err := p.configFile.WriteTargetForAdd(p.files, global)
 	if err != nil {
 		return "", err
 	}
@@ -222,12 +228,12 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 	if err != nil {
 		return "", err
 	}
-	if err := configfile.WriteAtomic(target, merged, 0o644); err != nil {
+	if err := p.configFile.WriteAtomic(target, merged, 0o644); err != nil {
 		return "", fmt.Errorf("write %s: %w", target, err)
 	}
 	apis, err := p.reload(ctx)
 	if err != nil {
-		_ = configfile.Restore(target, prevBytes, 0o644)
+		_ = p.configFile.Restore(target, prevBytes, 0o644)
 		_, _ = p.reload(ctx)
 		return "", err
 	}
@@ -239,7 +245,7 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 		}
 	}
 	if loaded == nil || len(loaded.Operations) != len(cfg.Operations) {
-		_ = configfile.Restore(target, prevBytes, 0o644)
+		_ = p.configFile.Restore(target, prevBytes, 0o644)
 		_, _ = p.reload(ctx)
 		return "", fmt.Errorf("api %q failed validation after reload", name)
 	}

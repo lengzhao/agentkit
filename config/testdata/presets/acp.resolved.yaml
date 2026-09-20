@@ -80,16 +80,20 @@ compaction.token-limit.default:
         services:
             - compaction.summary.default
     use: compaction/token-limit
+configfile.default:
+    use: configfile/writer
 credentials.default:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
+        configfile: configfile.default
         workspace: workspace.default
     use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
+        configfile: configfile.default
         workspace: workspace.default
     use: credentials/integrations
 hook.background-review.default:

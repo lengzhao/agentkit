@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	openapiplugin "github.com/lengzhao/agentkit/plugins/tool/openapi"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -20,7 +23,16 @@ func TestIntegrationOpenAPIAgentTurn(t *testing.T) {
 
 	mock := openapitest.StartMock(t)
 	root := openapitest.Materialize(t, mock.URL)
-	provider := openapitest.NewProvider(t, root)
+	provider := openapitest.NewProvider(t, root, func(ws workspace.Service, creds credentials.Store) (agentkit.ToolProvider, error) {
+		return openapiplugin.NewOpenAPI(openapiplugin.OpenAPIConfig{
+			EnableLocal: true,
+			Files:       []string{"api.json", "local:api.json"},
+		}, openapiplugin.OpenAPIDeps{
+			Workspace:   ws,
+			Credentials: creds,
+			ConfigFile:  newTestConfigFileWriter(),
+		})
+	})
 	ctx := openapitest.TurnContext(agentkit.SessionID("it:openapi"), agentkit.AgentID("smoke"), "user-42", nil)
 
 	toolRT := agenttest.ToolsRuntime(t, tools.RuntimeDeps{

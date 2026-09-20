@@ -5,17 +5,33 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
+	openapiplugin "github.com/lengzhao/agentkit/plugins/tool/openapi"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/openapitest"
 )
 
+// newOpenAPIProvider injects the real tool/openapi constructor into openapitest,
+// keeping the helper package plugin-agnostic.
+func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit.ToolProvider, error) {
+	return openapiplugin.NewOpenAPI(openapiplugin.OpenAPIConfig{
+		EnableLocal: true,
+		Files:       []string{"api.json", "local:api.json"},
+	}, openapiplugin.OpenAPIDeps{
+		Workspace:   ws,
+		Credentials: creds,
+		ConfigFile:  newTestConfigFileWriter(),
+	})
+}
+
 func TestSmokeOpenAPIDynamicTools(t *testing.T) {
 	mock := openapitest.StartMock(t)
 	root := openapitest.Materialize(t, mock.URL)
-	provider := openapitest.NewProvider(t, root)
+	provider := openapitest.NewProvider(t, root, newOpenAPIProvider)
 	ctx := openapitest.TurnContext(agentkit.SessionID("smoke:openapi"), agentkit.AgentID("smoke"), "user-42", nil)
 
 	toolRT := agenttest.ToolsRuntime(t, tools.RuntimeDeps{
@@ -50,7 +66,7 @@ func TestSmokeOpenAPIDynamicTools(t *testing.T) {
 func TestSmokeOpenAPIProviderDirect(t *testing.T) {
 	mock := openapitest.StartMock(t)
 	root := openapitest.Materialize(t, mock.URL)
-	provider := openapitest.NewProvider(t, root)
+	provider := openapitest.NewProvider(t, root, newOpenAPIProvider)
 	ctx := context.Background()
 
 	tools, err := provider.ListTools(ctx)

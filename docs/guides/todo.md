@@ -1,192 +1,146 @@
-# Learning / Dreaming / Background Review — 后续 Todo
+# 插件解耦 Todo — 契约层回归（仅根包 + cap/*）
 
-本清单承接 [learning-dreaming.zh.md](learning-dreaming.zh.md) §9～§10 与 [roadmap.zh.md](../roadmap.zh.md)。Background review（`hook/background-review`）已默认挂在 L0；以下按 **优先级** 排列，做完可在文中勾选 `[x]`。
+本清单承接 [go-agent-harness-architecture.zh.md](../go-agent-harness-architecture.zh.md) 的依赖方向规则，目标收敛为：
 
-相关对照：Hermes 的 post-turn review、`session_search`、Curator、`write_approval`。
+- 插件只允许 import ① 根包 `agentkit` 接口定义；② `cap/*` 接口定义
+- 插件模块默认不对外提供公共方法（仅 `init()` + `pluginkit.Register`）
 
----
+> **cap 的内容边界（已确认）**：cap 默认只放**抽象后的接口定义**（接口 + DTO + 常量），允许例外仅两类：
+> 1. **与接口语义一体的纯函数**（契约词汇）：如 `workspace.ParseScoped` 之于 Scope 常量、`schedule.Schedule.Next` 之于 cron 表达式、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定。
+> 2. 不放工作流/多步逻辑——单一消费者的下沉到消费方包内（如 `CopyLocalToGlobal` → `plugins/tool/openapi`）；多消费者的**抽象成接口 + runtime 实现 + deps 注入**（如 `configfile.Writer`）。
+>
+> 重实现插件（需 runtime 内部设施）的另一条出路：**kind 注册迁入对应 runtime 包自注册**（先例：`runtime/llm`、`runtime/workspace`、`runtime/agent` 等 20 处）。
 
-## 现状（三条学习通路）
-
-| 通路 | 机制 | 强项 | 短板 |
-|------|------|------|------|
-| Background review | Turn 后 LLM + `learn_capture` | 接近「自己会记」 | 成本、误记、无用户可见反馈 |
-| Dreaming sweep | 采集信号 + 日记；晋升由 background review | 可审计、低成本 | L0 默认挂 `learning.dreamSweep`（可用 `/learn dream off` 关闭） |
-| Workshop + `/learn` | 提案闸门 | 安全 | 与 review `skill_propose` 重叠时需控 `workshop.mode` |
-| 主 agent `tool/memory` | 当轮写 `memory.md` | 显式、可控 | 与 review 分工：用户/模型主动 vs 后台巩固 |
+> **暂不处理**：`runtime/rctx`（16 个插件依赖的上下文协议），后续单独立项上移根包/cap，本清单不包含。
+>
+> 排查方法：`go list -f '{{.ImportPath}}|{{join .Imports "|"}}' ./plugins/...` + 符号级 grep。已符合规则的参照包：`bootstrap`、`policy`、`settings`、`tool/web`、`tool/sessionquery`。
 
 ```mermaid
 flowchart TB
-  subgraph p0 [P0 可运营与信任]
-    A[write_approval + 暂存]
-    B[aux LLM + 节流 + 成本]
-    C[集成测试 + telemetry]
+  subgraph p0 [P0 反向依赖消除]
+    A[testing/agenttest 反转]
+    B[testing/mcptest 反转]
+    C[testing/openapitest 反转]
   end
-  subgraph p1 [P1 回忆与多租户]
-    D[session/sqlite + session-query]
-    E[全租户 dream-sweep]
-    F[USER 分仓 / frozen snapshot]
+  subgraph p1 [P1 会话层契约化]
+    D[sessevents/derive/sessbind → cap/session]
+    E[sessstore 构造解耦]
   end
-  subgraph p2 [P2 治理与产品]
-    G[Curator 技能归档]
-    H[/learn 增强 + 可选 memory 工具]
-    I[review 与 dreaming 写入门统一]
+  subgraph p2 [P2 workspace 纯函数归位]
+    F[Resolve/Static/Scope → cap/workspace]
   end
-  subgraph p3 [P3 深度]
-    J[LLM Dream Diary]
-    K[Deep rehydrate]
-    L[外部 memory provider]
+  subgraph p3 [P3 服务构造改 deps 注入]
+    G[schedule/compaction/chathistory 等 11 项]
   end
-  p0 --> p1 --> p2 --> p3
-  D --> H
+  subgraph p4 [P4 纯函数工具归位]
+    H[configfile/bind/filesystem/media/workpath]
+  end
+  subgraph p5 [P5 公共方法私有化 + CI 固化]
+    I[learning/send 等冗余导出收敛]
+    J[check-plugin-imports 扩展]
+  end
+  p0 --> p1 --> p2 --> p3 --> p4 --> p5
 ```
 
 ---
 
-## P0 — 上线 review 前（建议下一迭代）
+## P0 — 反向依赖消除（testing/* 非测试源码 import 插件）
 
-- [x] **write_approval + 暂存队列**  
-  - `memory.default.config.review.writeApproval`（或 `/memory policy approve`）：review 的 memory 类 `learn_capture` 先入 `memory/.staged/`，不立刻进 prompt 注入链。  
-  - 用户面：memory 用 `/memory pending`、`approve` / `reject`；skill 用 `/learn workshop list|apply|reject`。  
-  - 验收：后台误记可拒绝，且从未写入 `memory.md`。
+- [x] **testing/agenttest 依赖反转**（最严重，`subagent.go` 为非测试源码）
+  - 方案：`SubagentDelegateConfig` 新增 `NewFinishTool`/`NewDelegateTool` 工厂字段，插件构造由调用方注入（`testing/smoke/helpers_test.go` 的 `subagentDelegateConfig()`）。
+  - 验收：`grep -rn 'agentkit/plugins/' testing/agenttest --include='*.go'` 无结果。✅
 
-- [x] **独立 review 用 LLM + 节流**  
-  - L0 增加 `llm.review`（或 `hook.background-review.deps.llm` 指向便宜模型实例），不单靠 `model` 字符串覆盖主 `llm.fallback`。  
-  - 配置：`minTurnTokens`、`maxReviewsPerDayPerTenant`、`minIdleSeconds`（可选）。  
-  - 验收：群聊高频场景 token 可预期。
+- [x] **testing/mcptest 依赖反转**
+  - 方案：`NewProvider(t, newProvider func(configPath, workspaceRoot string))` 工厂注入，smoke 测试传入 `mcpplugin.NewMCP` 适配器。
+  - 验收：`grep -rn 'agentkit/plugins/' testing/mcptest --include='*.go'` 无结果。✅
 
-- [x] **可观测**  
-  - Telemetry：`learning.review` span，记录 steps、in/out tokens、cancel/ok。  
-  - 可选 platform：`learning.notification`（IM 短句，对齐 Hermes `💾`）；默认 off。  
-  - 对齐 roadmap M3「成本汇总 CLI」时纳入 review 用量。
+- [x] **testing/openapitest 依赖反转**
+  - 方案：`NewProvider(t, root, newProvider func(ws, creds))` 工厂注入；`openapi.CredentialScope` 薄封装替换为 `rtcredentials.OpenAPICredentialScope`。
+  - 验收：`grep -rn 'agentkit/plugins/' testing/openapitest --include='*.go'` 无结果。✅
 
-- [x] **集成测试**  
-  - `llm/scripted`：一轮用户 turn → 等待 review → 断言 `memory.md` 或 `.workshop` 条目。  
-  - 验收：CI 与 `coding-smoke` 同层级可跑。
+- [x] **testing/smoke 与 config/runtime 测试文件的插件 import——重新界定为允许**
+  - 结论：smoke、config、runtime 对插件的 import **全部位于 `_test.go`**（叶子测试二进制，不构成依赖网），且使用类型化 Config/Deps 构造（如 `hook.TurnContinueConfig{MaxContinuations: 3}`）；改注册表反射会丢失编译期类型安全，无架构收益。
+  - 调整后的规则：**非测试源码**禁止 import 插件（由 P7 检查脚本保证）；`_test.go` 允许直接 import 被测插件。
 
-- [x] **M2 交叉：关停与 review**  
-  - `StartStop` / runner 关停时 cancel 进行中的 review goroutine；staged 文件原子写不误半截。  
-  - 验收：SIGTERM 后 `memory.md` 可解析、无损坏。
+## P1 — 会话层契约化（sessevents / derive / sessbind / sessstore）
 
----
+- [ ] **会话事件读写提为 cap 契约**
+  - 现状：`hook`、`compaction`、`tool/todo`、`tool/finish`、`agent/acpremote`、`learning`、`tool/skill` 直接调用 `sessevents.Append*`、`derive.ReadAllEvents`、`sessbind.ResolveActiveSessionID` 等包级函数。
+  - 动作：事件追加/派生读取/运行状态抽象为接口（如 `cap/session` 事件服务），由 `runtime/session/*` 实现，经 `deps` 注入插件。
+  - 验收：上述插件不再 import `runtime/session/sessevents`、`runtime/session/derive`、`runtime/session/sessbind`。
 
-## P1 — 跨会话回忆与多租户（依赖 roadmap M3）
+- [ ] **sessstore 构造解耦**
+  - 现状：`hook`、`compaction`、`agent/acpremote` 直接 `sessstore.NewStore` / `NewJSONL` / `NewMemory`。
+  - 动作：插件不自行构造存储，改注入根包 `agentkit.SessionStore` 或 cap 存储契约；JSONL/memory 实现选择留在 runtime 装配层。
+  - 验收：三个插件不再 import `runtime/session/sessstore`。
 
-- [x] **`session/sqlite` + `tool/session-query`**（roadmap M3）  
-  - FTS/查询 API；review digest 可附带「是否已记过类似内容」检索结果。  
-  - 验收：agent 或 review prompt 能回答「上周是否讨论过 X」（同 tenant）。
+## P2 — workspace 纯函数归位
 
-- [x] **多租户 dream-sweep**  
-  - 文档现状：sweep 用启动时单一 workspace；需 tenant registry 或按 tenant cron。  
-  - 验收：`presets/multi-tenant.yaml` 下每租户独立 `memory/dreaming/state.json` 可 sweep。
+- [x] **`runtime/workspace` 纯函数归位（按 cap 边界规则修正后）**
+  - 实际非测试引用仅 2 个插件：`tool/mcp`（ParseScoped×2）、`tool/openapi`（ParseScoped + CopyLocalToGlobal）；其余插件的 `workspace.Service`/Scope 常量本就走 `cap/workspace`。
+  - 已做：`ParseScoped` → `cap/workspace/paths.go`（契约词汇：Scope 前缀语法，符合边界例外 1）；`CopyLocalToGlobal` 为 IO 工作流且仅 openapi 一个消费者 → 下沉为 `plugins/tool/openapi/copy_global.go` 包内私有函数（符合边界规则：工作流下沉消费方）；runtime 内部（default/tenant/memory/chatapi）同步改调 cap 版 ParseScoped。
+  - 验收：`grep -rn 'runtime/workspace"' plugins/ --include='*.go' | grep -v _test` 仅剩 all.go 聚合。✅
+  - 备注：`workpath`（acpremote/fs 使用）归 P4 处理。
 
-- [x] **USER 分仓 + frozen snapshot（可选）**  
-  - 文档约定 background review 写入 **下轮** 才进 system prompt（同 turn frozen snapshot）。  
-  - 验收：与 Hermes 行为说明一致，且单测覆盖注入时机。
+## P3 — 服务构造改 deps 注入（逐项核销）
 
----
+- [x] **runtime/schedule → cap/schedule**：`plugins/schedule`、`plugins/tool/schedule`、`learning`、`runtime/loop`
+  - 实际情况：runtime/schedule 是纯算法包（ParseCron/NextFire/JobKind/InFlightExpired + fire_meta 别名），只依赖 cap/schedule；已整体 git mv 入 `cap/schedule` 并删除 runtime 包。符合边界例外 1（cron 表达式与 Job DTO 的领域语义，契约词汇）。✅
+- [ ] **runtime/compaction → cap/compaction**：`plugins/hook`（NewPrune/PruneConfig）
+- [ ] **runtime/chathistory → cap/chathistory**：`plugins/tool/chathistory`（NewChatHistory）
+- [ ] **runtime/credentials → cap/credentials**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell`（Store/Secret/EnvPairResolver）
+- [ ] **runtime/llm**：`plugins/compaction`（Stream/CollectAssistantText/IsRetryableError）、`tool/recognize`（NewScripted）、`plugins/prompt`；纯函数助手上移根包或 cap
+- [ ] **runtime/memory → cap/memory**：`plugins/memory`、`learning`、`prompt`（Service/LoadEntries/ResolveRel/PromptBody）
+- [ ] **runtime/skill → cap/skill**：`plugins/skill`、`tool/skill`（Registry/Descriptor/Content）
+- [ ] **runtime/tools**：`plugins/tools/deferred`（NewRuntime）、`learning`；ToolRuntime 契约已在根包，构造收归 runtime 装配层
+- [ ] **runtime/delivery → cap/delivery**：`learning`、`tool/chathistory`、`tool/send`（OutboundRouteID 等）
+- [ ] **runtime/permission → cap/permission**：`tool/askuser`、`agent/acpremote`（Broker/Request/Result）
+- [ ] **runtime/acpclient**：`agent/acpremote`（MCPServerNames/ToMCPServers）；ACP 适配类型评估入 `cap/acp`
+- [ ] **runtime/platform/common**：`plugins/schedule`（WithDeliverySession）；投递路由约定并入 rctx 上移时一并处理或入 cap/delivery
+- [ ] **runtime/telemetry → cap/telemetry**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize`（BeginObservation/WithExporter 等）；`cap/telemetry` 需补齐观测接口契约
+- [ ] **runtime/learning**：`plugins/learning`（ReviewNudge*/TryConsumeReviewQuota 等）评估入 `cap/learning`
+- [ ] **runtime/memory 后台暂存判定**：`learning` 的 `BackgroundReviewRequiresStaging` 一并随 cap/memory 处理
 
-## P2 — 技能治理与命令面
+> 每项验收一致：对应插件不再 import 该 runtime 包；能力经 `deps` 注入 cap 接口；`scripts/refresh-preset-goldens` 无 diff。
 
-- [ ] **Curator（确定性归档优先）**  
-  - `active → stale → archive`、pin、schedule/cron 引用保护；LLM 合并二期。  
-  - 参考 Hermes curator；对应 learning-dreaming §10「周度 collection review」。  
-  - 验收：`workshop.mode=auto` + review 大量 `skill_propose` 时库不无限膨胀。
+## P4 — 纯函数工具归位
 
-- [ ] **review ↔ dreaming 写入门策略**  
-  - 规则示例：Deep 不晋升与 `background-review` 重复的文本；或 review 只写 staging、Deep 统一晋升。  
-  - 验收：同一会话 fact 不出现两条 § 重复。
+- [x] **runtime/configfile → cap 接口 + deps 注入**：`credentials`、`mcp`、`openapi`
+  - 已做：`cap/configfile` 定义 `Writer` 接口（WriteTarget/WriteTargetForAdd/WriteAtomic/Restore）+ `PeelGlobalFlag` 纯函数（/add 命令 `-g` 约定的契约词汇）；`runtime/configfile` 保留实现并自注册 `configfile/writer` kind；三插件 Deps 新增 `ConfigFile configfile.Writer`（omitempty，缺失时 /add 命令快速报错）；`config.base.yaml` 新增 `configfile.default` 实例并接入 credentials.default/integrations，scaffold 的 mcp/openapi 规格接入；golden 已重新生成。
+  - 验收：`grep -rn 'runtime/configfile' plugins/ --include='*.go' | grep -v _test` 仅剩 all.go 聚合。✅
+- [ ] **runtime/bind**：`mcp`、`openapi` 的 `ResolveCtxValue`/`In`/`Key`；`cap/bind` 目前为空目录，补齐契约或并入根包
+- [ ] **runtime/filesystem → cap/filesystem**：`tool/fs` 的 Grep/Find DTO 统一到 cap 版（架构文档既定 cap/filesystem 为共享 DTO 归属）
+- [ ] **runtime/media**：`fs`、`recognize` 使用点梳理；`cap/media` 目前为空目录，补齐或并入根包
+- [ ] **runtime/workspace/workpath**：`acpremote`（WorkLayout）、`fs`（TrimRedundantFSRootPrefix）随 P2 一并归位
 
-- [ ] **`/learn` 增强**  
-  - 从 URL/路径生成 skill：委派受限 agent（read/web），替代纯 `DraftSkillBody` 模板。  
-  - 可选：主 agent `tool/memory`（与 `learn_capture` 共用 `cap/memory.Capture`）。  
-  - 验收：文档与 `plugin-catalog` 更新。
+## P5 — 越界依赖与插件间测试耦合
 
-- [ ] **可运维**  
-  - 扩展 `/learn`：memory 用量、pending workshop、最近 review 摘要（读 slog/telemetry 或本地 state）。
+- [ ] **plugins/credentials → config 解耦**
+  - 现状：使用 `config.EnvLookup`/`MapEnvLookup`/`RegisterGraphEnvSource`。
+  - 动作：env 图注册改为根包/cap 契约或经 deps 注入；插件不依赖 config 内部。
+- [ ] **插件测试 → testing/agenttest 收敛**：`tool/mcp`、`tool/openapi`、`tool/skill`、`tool/testutil` 的 `agenttest.CallTool` 等用法，随 P0 反转方案一并迁移
+- [ ] **tool/testutil 跨插件测试依赖**：`tool/schedule`、`tool/web`、`tool/subagent`、`plugins/tool` 根包测试 import `plugins/tool/testutil`；helper 移入 `testing/` 公共层或各测试内化
 
----
+## P6 — 公共方法私有化（模块默认不暴露公共 API）
 
-## P3 — 深度（需求驱动）
+- [ ] **plugins/learning**：`NormalizeMemoryNotifications`、`FormatBackgroundReviewNotification`、`NewBackgroundReview`、`NewLearnCaptureTool`、`NewDreamSweep`、`Service` 及其 8 个方法——包外零使用，全部降级为包内符号
+- [ ] **plugins/learning/dreaming**：`Run`、`IngestSessions`、`TopScoredCandidates`、`FormatReviewCandidateBlock`、`FormatStatus`、`Store`/`State`/`Diary` 方法集——仅父包使用，收敛导出面
+- [ ] **plugins/learning/workshop**：`Store`/`Proposal` 方法集、`FormatList`、`FormatProposal`、`DraftSkillBody`、`SuggestSkillName`、`Scan`——同上
+- [ ] **plugins/tool/send**：`Dispatch`、`ParseSlashArgs` 私有化
+- [ ] **各插件 New\* 构造函数**：仅被包内 `init()` 的 `pluginkit.Register` 引用者，统一改小写（测试随同调整）
 
-- [ ] **LLM 驱动 Dream Diary**（§10）  
-  - 叙事写 `DREAMS.md`；**永不**作为 Deep 晋升来源。
+## P7 — CI 固化
 
-- [ ] **Deep rehydrate source snippet**（§10）  
-  - 晋升时从 session 拉回原文；依赖 session 存储与 query。
-
-- [ ] **`memory forget` 与会话准入策略**（§10）
-
-- [ ] **外部 memory provider**（Honcho/Mem0 类）  
-  - 按需 `cap/*`；与内置 `memory.md` 互斥或分层文档化。
-
----
-
-## 文档与配置同步（随功能勾选）
-
-- [ ] [roadmap.zh.md](../roadmap.zh.md) 增加「Learning / Review」小节，标明 session-query 为 P1 依赖  
-- [x] [config.example.yaml](../../config.example.yaml) 示例：`hook.background-review`、`memory.default` `writeApproval`、`llm.review`  
-- [ ] [learning-dreaming.zh.md](learning-dreaming.zh.md) §10 与本文档互链；大项完成后从 §10 迁入「已做」  
-- [ ] 默认策略决策：L0 `hook.background-review` **默认 enabled** 是否对多租户/高流量改为 preset 开启  
-
----
-
-## 建议执行顺序（简表）
-
-| 序 | 项 | 验收 |
-|----|-----|------|
-| 1 | write_approval + staged | 误记可 reject |
-| 2 | llm.review + 节流 | token 可预期 |
-| 3 | telemetry + 可选 IM 通知 | 可查 review 次数/token |
-| 4 | scripted 集成测试 | CI 绿 |
-| 5 | M2 关停 cancel review | memory 文件一致 |
-| 6 | session-query | 跨 session 检索 |
-| 7 | 多租户 sweep | 每 tenant state |
-| 8 | Curator 归档 | 长期未用 skill 可恢复归档 |
-| 9 | review↔dreaming 写入门 | 无重复 memory（review-led，dreaming 不写 memory） |
-| 10 | `/learn` URL + 可选 memory 工具 | 产品体感提升 |
+- [ ] **扩展 scripts/check-plugin-imports**
+  - 新增禁止 `plugins/*` → `runtime/*`（本清单核销期间用白名单过渡，核销一项移除一项）
+  - 覆盖 `_test.go`（捕获 testutil 类跨插件测试依赖）
+  - 禁止 `plugins/*` → `config`、`testing/*`
+  - 可选：校验插件包导出符号白名单（仅注册必需）
+- [ ] **文档同步**：更新 [go-agent-harness-architecture.zh.md](../go-agent-harness-architecture.zh.md) 依赖方向章节与 [plugin-catalog.zh.md](../plugin-catalog.zh.md)，明确「仅根包 + cap/*」为强制规则
 
 ---
 
-## 代码简化 / 通用化（learning · delivery · session，2026-03）
+## 备注
 
-承接近期 memory 工具、通用 outbound、`memory_commit` 收敛后的剩余债务。做完勾选 `[x]`。
-
-### P0 — 小步重构（本迭代）
-
-- [x] **`applyMemoryAdd` + `memoryToolSnapshot`**：`plugins/learning` 统一 store.Add + commit；`memoryTool*` / `addMemory` / capture 共用；工具输出拼装一处。
-- [x] **`SendProactiveInboxText`**：`runtime/delivery` 封装 `Raw` + `UseContextEmit` 默认；background review 等调用点瘦身。
-
-### P1 — 去重与 helper
-
-- [x] **`FormatMemoryPromptBody`**：`runtime/learning` 统一 prompt 注入正文（`\n\n` 拼接）；`prompt/memorymd` 与测试共用。
-- [x] **删薄包装 / 死代码**：`plugins/learning/memory.go` 去掉 `ParseMemory`/`RenderMemory` re-export；`runtime/learning/memory.go` 去掉未用的 `formatMeta`。
-- [x] **`FlattenTextParts`**：`runtime/session` 导出文本 part 拼接（sep 参数）；`capture`、`background_review`、`review`、`index_extract` 对齐语义。
-- [x] **`TruncateEllipsis`**：`runtime/learning` 单一截断 helper；`background_review` 与 review digest 共用。
-- [x] ~~**`SearchSyncedSessions` / `SyncSessionIndex`**~~：已简化删除——`cap/sessionindex.Service.SyncSessions(ctx)` 由实现自行解析会话目录，background review、`session-query`、chat-api 发现直接调 cap 接口。
-- [x] **通知文案迁回 plugin**：`FormatBackgroundReviewNotification` / `NormalizeMemoryNotifications` 在 `plugins/learning/background_notify.go`。
-
-### P2 — 架构对齐（后续）
-
-- [x] **`cap/learning` 注入边界**：`SkillProposer` / `ReviewHost` / `DreamSweepScheduler`；`cap/memory` + hook deps `memory`+`learning`；内建 `learn_capture`
-- [x] **Chat API 会话列表与 `sessionindex` 统一**：L0 `platform.chat-api.deps.sessionIndex`；发现走 `ListSessions` + JSONL 元数据；`chat-api/conversations/*.json` 仍保留 API 专有字段；见 [platform-interaction.zh.md](platform-interaction.zh.md)。
-- [x] **`MemoryStore` 在 `runtime/memory`**：插件经 `memoryStore()` 构造；秘密检测 `LooksLikeSecret` 同包。
-- [x] **`memory/default` + `/memory`**：`cap/memory`；`tool/memory` / `prompt/section/memory` deps `memory`；`/learn session` 仅 dreaming 信号。
-- [x] **review `sessionRecall` 可关**：`hook.background-review.config.sessionRecall: false` 跳过 digest FTS 块。
-- [x] **`CommitObserver` 多订阅**：`memory/default` `RegisterCommitObserver` append，commit 时通知全部观察者。
-
-### P2 — runtime/memory 迁移（进行中）
-
-- [x] **`MemoryStore` / ledger / staged → `runtime/memory`**：`AddOutcome` 统一 `cap/memory`；`plugins/memory` 不再依赖 `runtime/learning`。
-- [ ] **Dreaming / Workshop → `runtime/learning/*`**（可选阶段 3）。
-
----
-
-## 核对
-
-改插件或配置后：
-
-```sh
-grep -E 'background-review|learning/' docs/plugin-catalog.zh.md docs/guides/learning-dreaming.zh.md config.base.yaml
-go test ./cap/learning/... ./plugins/learning/... ./runtime/learning/... -count=1
-```
+- `runtime/rctx` 上移（16 个插件依赖）**暂不在本清单**，待单独评估后另行立项；届时 `runtime/platform/common` 的路由约定可一并处理。
+- 每完成一项：跑 `go build ./... && scripts/check-plugin-imports`，并确认 `config/testdata/presets/*.resolved.yaml` 无意外 diff。

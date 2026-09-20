@@ -87,7 +87,7 @@ func (s *Service) UploadDirRel() string {
 }
 
 func (s *Service) Resolve(_ context.Context, rel string) (string, error) {
-	scope, path, scoped := ParseScoped(rel)
+	scope, path, scoped := cw.ParseScoped(rel)
 	if !scoped {
 		scope = s.scope
 		path = rel

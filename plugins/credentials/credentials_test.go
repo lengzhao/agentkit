@@ -15,7 +15,7 @@ import (
 
 func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
-	store, err := NewStatic(Config{}, EnvDeps{})
+	store, err := NewStatic(Config{}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 
 func TestResolveFallsBackToEnvironment(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
-	store, err := NewStatic(Config{}, EnvDeps{})
+	store, err := NewStatic(Config{}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestResolveFallsBackToEnvironment(t *testing.T) {
 func TestResolveFallsBackToConfigEnv(t *testing.T) {
 	store, err := NewStatic(Config{Env: map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-config",
-	}}, EnvDeps{})
+	}}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestResolveConfigEnvUsesPrefix(t *testing.T) {
 		Env: map[string]string{
 			"AGENTKIT_TEST_SECRET": "from-config",
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestResolveEnvironmentOverridesConfigEnv(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
 	store, err := NewStatic(Config{Env: map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-config",
-	}}, EnvDeps{})
+	}}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestResolveConfigEnvOverridesEnvFile(t *testing.T) {
 		Env: map[string]string{
 			"AGENTKIT_TEST_SECRET": "from-config",
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestResolveFallsBackToEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewStatic(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
+	store, err := NewStatic(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestResolveEnvironmentOverridesEnvFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGENTKIT_TEST_SECRET=from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewStatic(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{})
+	store, err := NewStatic(Config{EncryptedFile: EncryptedFileDisabled, Files: []string{path}}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestResolveEnvironmentOverridesEnvFile(t *testing.T) {
 
 func TestResolveUsesPrefixAfterContextMiss(t *testing.T) {
 	t.Setenv("PREFIX_AGENTKIT_TEST_SECRET", "prefixed")
-	store, err := NewStatic(Config{Prefix: "PREFIX_"}, EnvDeps{})
+	store, err := NewStatic(Config{Prefix: "PREFIX_"}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestResolveUsesPrefixAfterContextMiss(t *testing.T) {
 func TestResolveMissing(t *testing.T) {
 	t.Parallel()
 
-	store, err := NewStatic(Config{}, EnvDeps{})
+	store, err := NewStatic(Config{}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func integrationTestStore(t *testing.T, dir string, envFile string, secretKey st
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         files,
 		ManifestFiles: []string{manifestPath},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestIntegrationsManifestLazyRefresh(t *testing.T) {
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         []string{envPath},
 		ManifestFiles: []string{manifestPath},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestScopedEnvShellEnvPairs(t *testing.T) {
 		ScopedEnv: map[string]map[string]string{
 			"shell-bash.gh": {"GH_TOKEN": "gh-test"},
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestEncryptedOverridesScopedEnv(t *testing.T) {
 		ScopedEnv: map[string]map[string]string{
 			"shell-bash.gh": {"GH_TOKEN": "from-config"},
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +526,7 @@ func TestEnvAddBeforeManifest(t *testing.T) {
 		Env: map[string]string{
 			rtcredentials.SecretsMasterKeyEnv: secretsPass,
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +557,7 @@ func TestEnvAddScopedIsolation(t *testing.T) {
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         []string{filepath.Join(dir, ".env")},
 		ManifestFiles: []string{manifestPath},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,7 +595,7 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 		Env: map[string]string{
 			rtcredentials.SecretsMasterKeyEnv: secretsPass,
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,7 +653,7 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 		Env: map[string]string{
 			rtcredentials.SecretsMasterKeyEnv: secretsPass,
 		},
-	}, EnvDeps{})
+	}, EnvDeps{ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}

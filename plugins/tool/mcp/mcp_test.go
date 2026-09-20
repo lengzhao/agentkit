@@ -48,9 +48,10 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 
 	ws := &countingWorkspace{inner: testWorkspace{root: dir}}
 	provider := &mcpProvider{
-		files:     []string{configPath},
-		workspace: ws,
-		pool:      newClientPool(0),
+		files:      []string{configPath},
+		workspace:  ws,
+		configFile: testConfigFileWriter,
+		pool:       newClientPool(0),
 	}
 	ctx := context.Background()
 
@@ -119,6 +120,7 @@ func TestMCPAddCommand(t *testing.T) {
 		files:       []string{filepath.Join(dir, "mcp.json")},
 		enableLocal: true,
 		workspace:   &testWorkspace{root: dir},
+		configFile:  testConfigFileWriter,
 		pool:        newClientPool(0),
 	}
 	ctx := context.Background()
@@ -162,6 +164,7 @@ func TestMCPAddKeepsConfigWhenCredentialsMissing(t *testing.T) {
 		files:       []string{configPath},
 		enableLocal: true,
 		workspace:   &testWorkspace{root: dir},
+		configFile:  testConfigFileWriter,
 		pool:        newClientPool(0),
 		credentials: hintCredentials{},
 	}
@@ -189,9 +192,10 @@ func TestMCPAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
 
 	dir := t.TempDir()
 	provider := &mcpProvider{
-		files:     []string{"global:mcp.json"},
-		workspace: &testWorkspace{root: dir},
-		pool:      newClientPool(0),
+		files:      []string{"global:mcp.json"},
+		workspace:  &testWorkspace{root: dir},
+		configFile: testConfigFileWriter,
+		pool:       newClientPool(0),
 	}
 	ctx := context.Background()
 	cmd := agentkit.ToolProvider(provider).(agentkit.CommandProvider).Commands()[0]
@@ -221,9 +225,10 @@ func TestMCPReloadRecordsInitObservation(t *testing.T) {
 	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
 	provider := &mcpProvider{
-		files:     []string{configPath},
-		workspace: &testWorkspace{root: dir},
-		pool:      newClientPool(0),
+		files:      []string{configPath},
+		workspace:  &testWorkspace{root: dir},
+		configFile: testConfigFileWriter,
+		pool:       newClientPool(0),
 	}
 	if _, err := provider.ListTools(ctx); err != nil {
 		t.Fatalf("list: %v", err)

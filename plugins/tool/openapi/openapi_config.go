@@ -12,7 +12,6 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type rawServer struct {
@@ -187,7 +186,7 @@ func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service,
 	if doc == "" {
 		return raw, nil
 	}
-	globalDoc, err := rtworkspace.CopyLocalToGlobal(ctx, ws, doc)
+	globalDoc, err := copyLocalToGlobal(ctx, ws, doc)
 	if err != nil {
 		return nil, err
 	}

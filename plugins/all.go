@@ -35,6 +35,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tools/deferred"
 	_ "github.com/lengzhao/agentkit/runtime/agent"
 	_ "github.com/lengzhao/agentkit/runtime/command"
+	_ "github.com/lengzhao/agentkit/runtime/configfile"
 	_ "github.com/lengzhao/agentkit/runtime/hooks"
 	_ "github.com/lengzhao/agentkit/runtime/llm"
 	_ "github.com/lengzhao/agentkit/runtime/loop"

@@ -22,12 +22,3 @@ func TestWriteTargetForAdd(t *testing.T) {
 		t.Fatal("expected error when no global file configured")
 	}
 }
-
-func TestPeelGlobalFlag(t *testing.T) {
-	t.Parallel()
-
-	global, rest := PeelGlobalFlag([]string{"-g", "add", "name"})
-	if !global || len(rest) != 2 || rest[0] != "add" {
-		t.Fatalf("global=%v rest=%v", global, rest)
-	}
-}

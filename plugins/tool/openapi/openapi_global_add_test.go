@@ -55,7 +55,7 @@ func TestOpenAPIAddGlobalCopiesLocalSpec(t *testing.T) {
 
 	provider, err := NewOpenAPI(OpenAPIConfig{
 		Files: []string{"global:api.json"},
-	}, OpenAPIDeps{Workspace: ws})
+	}, OpenAPIDeps{Workspace: ws, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatal(err)
 	}

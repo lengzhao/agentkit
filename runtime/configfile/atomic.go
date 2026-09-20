@@ -1,3 +1,5 @@
+// Package configfile implements cap/configfile.Writer over the local
+// filesystem and registers the configfile/writer kind.
 package configfile
 
 import (
@@ -34,19 +36,6 @@ func WriteTargetForAdd(files []string, global bool) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no local config file configured")
-}
-
-// PeelGlobalFlag removes -g/--global from args.
-func PeelGlobalFlag(args []string) (global bool, rest []string) {
-	for _, arg := range args {
-		switch arg {
-		case "-g", "--global":
-			global = true
-		default:
-			rest = append(rest, arg)
-		}
-	}
-	return global, rest
 }
 
 // WriteAtomic writes data to path via a temp file in the same directory.

@@ -120,7 +120,7 @@ func TestOpenAPIToolEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, Credentials: creds})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter, Credentials: creds})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestOpenAPIToolMissingRequiredPathParam(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestOpenAPIToolSpecFileEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestOpenAPIToolBindFromContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestOpenAPIToolBindMissingContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 	}
 	writeAPI("a")
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -505,7 +505,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 func TestOpenAPIAddCommand(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -533,7 +533,7 @@ func TestOpenAPIAddCommand(t *testing.T) {
 func TestOpenAPIAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}})
+	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
 	ctx := telemetry.WithExporter(context.Background(), rec)
 	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
+	cw "github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
@@ -640,7 +640,7 @@ func (p *Platform) resolveFileAPIPath(ctx context.Context, channelKey, userID, r
 		return "", "", errInvalidPath
 	}
 	var resolvePath string
-	_, _, scoped := rtworkspace.ParseScoped(rawPath)
+	_, _, scoped := cw.ParseScoped(rawPath)
 	switch {
 	case rawPath == "~" || strings.HasPrefix(rawPath, "~/") || filepath.IsAbs(rawPath):
 		if !p.isAdminUser(userID) {

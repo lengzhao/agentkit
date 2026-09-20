@@ -11,7 +11,6 @@ import (
 	"time"
 
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -76,7 +75,7 @@ func (r *fileRegistry) Add(ctx context.Context, job capschedule.Job) (capschedul
 	if job.Source == "" {
 		job.Source = capschedule.SourceAgent
 	}
-	job.Kind = rtschedule.JobKind(job)
+	job.Kind = capschedule.JobKind(job)
 
 	path, err := r.resolve(ctx)
 	if err != nil {
@@ -147,14 +146,14 @@ func validateJob(job capschedule.Job, allowScript bool) error {
 	if strings.TrimSpace(job.Prompt) == "" && (!allowScript || strings.TrimSpace(job.Script) == "") {
 		return fmt.Errorf("job requires a prompt")
 	}
-	switch rtschedule.JobKind(job) {
+	switch capschedule.JobKind(job) {
 	case capschedule.KindCron:
-		if _, err := rtschedule.ParseCron(job.Cron); err != nil {
+		if _, err := capschedule.ParseCron(job.Cron); err != nil {
 			return err
 		}
 	case capschedule.KindDelay, capschedule.KindAt:
 		if job.FireAt.IsZero() {
-			return fmt.Errorf("%s job requires fireAt", rtschedule.JobKind(job))
+			return fmt.Errorf("%s job requires fireAt", capschedule.JobKind(job))
 		}
 	default:
 		return fmt.Errorf("unknown schedule kind %q", job.Kind)
@@ -228,12 +227,12 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Jo
 		if job.Disabled || job.Fired {
 			continue
 		}
-		switch rtschedule.JobKind(job) {
+		switch capschedule.JobKind(job) {
 		case capschedule.KindDelay, capschedule.KindAt:
 			if job.FireAt.After(now) {
 				continue
 			}
-			if job.InFlight && !rtschedule.InFlightExpired(job, now) {
+			if job.InFlight && !capschedule.InFlightExpired(job, now) {
 				continue
 			}
 			state.Jobs[i].InFlight = true
@@ -241,7 +240,7 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Jo
 			changed = true
 			due = append(due, state.Jobs[i])
 		default:
-			next, ok := rtschedule.NextFire(job, job.LastRun)
+			next, ok := capschedule.NextFire(job, job.LastRun)
 			if !ok || next.After(now) {
 				continue
 			}

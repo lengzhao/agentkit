@@ -9,7 +9,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 type ScheduleConfig struct {
@@ -163,7 +162,7 @@ func scheduleOutput(jobs []capschedule.Job, instruction string, includeFired boo
 		}
 		entry := ScheduleEntry{
 			ID:        job.ID,
-			Kind:      rtschedule.JobKind(job),
+			Kind:      capschedule.JobKind(job),
 			Cron:      job.Cron,
 			In:        job.In,
 			Prompt:    job.Prompt,
@@ -179,7 +178,7 @@ func scheduleOutput(jobs []capschedule.Job, instruction string, includeFired boo
 		if !job.FiredAt.IsZero() {
 			entry.FiredAt = job.FiredAt.Format(time.RFC3339)
 		}
-		if next, ok := rtschedule.NextFire(job, job.LastRun); ok {
+		if next, ok := capschedule.NextFire(job, job.LastRun); ok {
 			entry.NextRun = next.Format(time.RFC3339)
 		}
 		out.Jobs = append(out.Jobs, entry)
@@ -207,7 +206,7 @@ func jobFromInput(now time.Time, input ScheduleInput) (capschedule.Job, error) {
 		if job.Cron == "" {
 			return capschedule.Job{}, fmt.Errorf("kind=cron requires cron")
 		}
-		if _, err := rtschedule.ParseCron(job.Cron); err != nil {
+		if _, err := capschedule.ParseCron(job.Cron); err != nil {
 			return capschedule.Job{}, err
 		}
 	case capschedule.KindDelay:

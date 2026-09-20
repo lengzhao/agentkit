@@ -6,8 +6,8 @@ import (
 	"time"
 
 	caplearning "github.com/lengzhao/agentkit/cap/learning"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 var (
@@ -56,7 +56,7 @@ func (s *Service) DreamSweepDue(ctx context.Context) bool {
 	if expr == "" {
 		expr = "0 3 * * *"
 	}
-	sched, err := rtschedule.ParseCron(expr)
+	sched, err := capschedule.ParseCron(expr)
 	if err != nil {
 		return false
 	}

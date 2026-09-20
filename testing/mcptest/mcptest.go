@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
 )
 
 var (
@@ -65,10 +63,15 @@ func ServerBinaryAndRoot(t *testing.T) (bin string, root string) {
 	return serverBin, root
 }
 
-// NewProvider wires tool/mcp against a temp mcp.json that launches the test stdio server.
+// NewProvider wires an MCP tool provider against a temp mcp.json that launches the test stdio server.
+// newProvider builds the plugin provider from the generated config path and the workspace root dir;
+// mcptest stays plugin-agnostic, callers inject the tool/mcp constructor.
 // The returned root is the MCP server's allowed filesystem root.
-func NewProvider(t *testing.T) (agentkit.ToolProvider, string) {
+func NewProvider(t *testing.T, newProvider func(configPath, workspaceRoot string) (agentkit.ToolProvider, error)) (agentkit.ToolProvider, string) {
 	t.Helper()
+	if newProvider == nil {
+		t.Fatal("mcptest.NewProvider requires a provider factory")
+	}
 	bin, mcpRoot := ServerBinaryAndRoot(t)
 
 	dir := t.TempDir()
@@ -89,12 +92,7 @@ func NewProvider(t *testing.T) (agentkit.ToolProvider, string) {
 		t.Fatal(err)
 	}
 
-	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{
-		EnableLocal: true,
-		Files:       []string{configPath},
-	}, mcpplugin.MCPDeps{
-		Workspace: rtworkspace.Static(dir),
-	})
+	provider, err := newProvider(configPath, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

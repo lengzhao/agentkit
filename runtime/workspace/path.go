@@ -10,24 +10,6 @@ import (
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// ParseScoped splits scoped paths such as "global:skills" or "local:.".
-// Bare paths and absolute paths (~/foo, /abs) are not scoped.
-func ParseScoped(rel string) (scope, path string, ok bool) {
-	i := strings.Index(rel, ":")
-	if i <= 0 {
-		return "", rel, false
-	}
-	prefix := rel[:i]
-	if prefix != cw.ScopeGlobal && prefix != cw.ScopeLocal {
-		return "", rel, false
-	}
-	path = rel[i+1:]
-	if path == "" {
-		path = "."
-	}
-	return prefix, path, true
-}
-
 // Resolve expands ~/ and returns an absolute path. Use at build time for workspace.root config.
 func Resolve(path string) (string, error) {
 	if path == "" {
@@ -118,7 +100,7 @@ type staticService struct {
 }
 
 func (s *staticService) Resolve(_ context.Context, rel string) (string, error) {
-	if _, path, ok := ParseScoped(rel); ok {
+	if _, path, ok := cw.ParseScoped(rel); ok {
 		return ResolveRel(s.root, path)
 	}
 	return ResolveRel(s.root, rel)

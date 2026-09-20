@@ -11,10 +11,10 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/config"
-	"github.com/lengzhao/agentkit/runtime/configfile"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/pluginkit"
 )
@@ -40,6 +40,8 @@ type Config struct {
 
 type EnvDeps struct {
 	Workspace workspace.Service `json:"workspace,omitempty"`
+	// ConfigFile powers /env add writes; without it the add command fails fast.
+	ConfigFile configfile.Writer `json:"configfile,omitempty"`
 }
 
 type envStore struct {
@@ -49,6 +51,7 @@ type envStore struct {
 	filePaths       []string
 	encryptedRel    string
 	workspace       workspace.Service
+	configFile      configfile.Writer
 	processEnv      bool
 	mu              sync.RWMutex
 	files           map[string]string
@@ -86,6 +89,7 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 		filePaths:       append([]string(nil), files...),
 		encryptedRel:    encRel,
 		workspace:       deps.Workspace,
+		configFile:      deps.ConfigFile,
 		processEnv:      processEnv,
 		files:           make(map[string]string),
 		encrypted:       make(map[string]string),
@@ -162,7 +166,7 @@ func (s *envStore) writeTarget(ctx context.Context) (string, error) {
 	if s.encryptedRel != "" && s.encryptedRel != EncryptedFileDisabled {
 		return s.resolveEncryptedPath(ctx)
 	}
-	rel, err := configfile.WriteTarget(s.filePaths)
+	rel, err := s.configFile.WriteTarget(s.filePaths)
 	if err != nil {
 		return "", err
 	}
@@ -263,6 +267,9 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 type verifyRefFunc func(ctx context.Context, ref string) error
 
 func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, refs []string, verify verifyRefFunc) (string, int, error) {
+	if s.configFile == nil {
+		return "", 0, fmt.Errorf("credentials requires configFile dependency for /env add")
+	}
 	if verify == nil {
 		verify = func(ctx context.Context, ref string) error {
 			value, err := s.lookupValue(ctx, ref)
@@ -303,17 +310,17 @@ func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, re
 			return "", 0, err
 		}
 	}
-	if err := configfile.WriteAtomic(target, merged, 0o600); err != nil {
+	if err := s.configFile.WriteAtomic(target, merged, 0o600); err != nil {
 		return "", 0, fmt.Errorf("write %s: %w", target, err)
 	}
 	if _, err := s.reload(ctx); err != nil {
-		_ = configfile.Restore(target, prevBytes, 0o600)
+		_ = s.configFile.Restore(target, prevBytes, 0o600)
 		_, _ = s.reload(ctx)
 		return "", 0, err
 	}
 	for _, ref := range refs {
 		if err := verify(ctx, ref); err != nil {
-			_ = configfile.Restore(target, prevBytes, 0o600)
+			_ = s.configFile.Restore(target, prevBytes, 0o600)
 			_, _ = s.reload(ctx)
 			return "", 0, fmt.Errorf("verify %s: %w", ref, err)
 		}

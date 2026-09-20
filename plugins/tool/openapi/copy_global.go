@@ -1,20 +1,19 @@
-package workspace
+package openapi
 
 import (
 	"context"
 	"fmt"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-
-	cw "github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// CopyLocalToGlobal copies the file at rel (local-scoped or bare local-relative) into the
+// copyLocalToGlobal copies the file at rel (local-scoped or bare local-relative) into the
 // global workspace at the same relative path (local:api/foo.yaml → global:api/foo.yaml).
 // Already-global paths are returned unchanged.
-func CopyLocalToGlobal(ctx context.Context, ws cw.Service, rel string) (string, error) {
+func copyLocalToGlobal(ctx context.Context, ws workspace.Service, rel string) (string, error) {
 	localRel, globalRel, unchanged := localToGlobalRels(rel)
 	if unchanged {
 		return strings.TrimSpace(rel), nil
@@ -45,20 +44,20 @@ func localToGlobalRels(rel string) (localRel, globalRel string, unchanged bool) 
 	if rel == "" {
 		return "", "", true
 	}
-	scope, path, scoped := ParseScoped(rel)
-	if scoped && scope == cw.ScopeGlobal {
+	scope, path, scoped := workspace.ParseScoped(rel)
+	if scoped && scope == workspace.ScopeGlobal {
 		return "", rel, true
 	}
-	if scoped && scope != cw.ScopeLocal {
+	if scoped && scope != workspace.ScopeLocal {
 		return "", rel, true
 	}
 	if !scoped {
-		localRel = cw.ScopeLocal + ":" + rel
+		localRel = workspace.ScopeLocal + ":" + rel
 		path = rel
 	} else {
 		localRel = rel
 	}
-	return localRel, cw.ScopeGlobal + ":" + path, false
+	return localRel, workspace.ScopeGlobal + ":" + path, false
 }
 
 func copyRegularFile(src, dst string) error {

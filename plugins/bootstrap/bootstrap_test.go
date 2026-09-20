@@ -108,7 +108,7 @@ func newScopedWorkspace(global, local string) (workspace.Service, error) {
 }
 
 func (s *scopedWorkspace) Resolve(_ context.Context, rel string) (string, error) {
-	if scope, path, ok := rtworkspace.ParseScoped(rel); ok {
+	if scope, path, ok := workspace.ParseScoped(rel); ok {
 		switch scope {
 		case workspace.ScopeGlobal:
 			return rtworkspace.ResolveRel(s.global, path)

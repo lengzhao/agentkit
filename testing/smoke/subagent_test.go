@@ -14,7 +14,9 @@ func TestSmokeSubagentSecondParentTurn(t *testing.T) {
 	steps := append(agenttest.DefaultSubagentSmokeSteps(),
 		llm.ScriptedStep{Text: "第二轮：委派已完成，继续回答用户。"},
 	)
-	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{Steps: steps})
+	cfg := subagentDelegateConfig()
+	cfg.Steps = steps
+	env := agenttest.NewSubagentDelegateEnv(t, cfg)
 	ctx := agenttest.TurnContext(env.LogicalID, agentkit.AgentID("nex"))
 
 	agenttest.RunTurn(t, ctx, env.Agent, "第一轮：委派 researcher")
@@ -37,7 +39,7 @@ func TestSmokeSubagentSecondParentTurn(t *testing.T) {
 func TestSmokeSubagentChildEventsStayInChildSession(t *testing.T) {
 	t.Parallel()
 
-	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{})
+	env := agenttest.NewSubagentDelegateEnv(t, subagentDelegateConfig())
 	ctx := agenttest.TurnContext(env.LogicalID, agentkit.AgentID("nex"))
 	agenttest.RunTurn(t, ctx, env.Agent, "委派 researcher")
 

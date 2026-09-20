@@ -7,8 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/plugins/tool/finish"
-	subagentplugin "github.com/lengzhao/agentkit/plugins/tool/subagent"
+	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/prompt"
@@ -39,6 +38,12 @@ type SubagentDelegateConfig struct {
 	ResearcherDef string
 	Steps         []llm.ScriptedStep
 	ParentAgentID agentkit.AgentID
+	// NewFinishTool builds the child agent's finish tool from the session store,
+	// e.g. an adapter of finish.NewFinish. Required: agenttest stays plugin-agnostic.
+	NewFinishTool func(store agentkit.SessionStore) (agentkit.Tool, error)
+	// NewDelegateTool builds the parent agent's delegate tool bound to the spawner,
+	// e.g. an adapter of the tool/subagent plugin constructor. Required.
+	NewDelegateTool func(spawner capsubagent.Spawner) (agentkit.Tool, error)
 }
 
 // NewSubagentDelegateEnv builds a scripted parent→child delegate stack on a temp store.
@@ -54,6 +59,9 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 	if cfg.ParentAgentID == "" {
 		cfg.ParentAgentID = "nex"
 	}
+	if cfg.NewFinishTool == nil || cfg.NewDelegateTool == nil {
+		t.Fatal("SubagentDelegateConfig requires NewFinishTool and NewDelegateTool factories")
+	}
 
 	store, root := TempFileStore(t)
 	agentsDir := filepath.Join(root, "agents")
@@ -65,7 +73,7 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 	}
 
 	provider := MustScripted(t, cfg.Steps...)
-	finishTool, err := finish.NewFinish(finish.FinishConfig{}, finish.FinishDeps{SessionStore: store})
+	finishTool, err := cfg.NewFinishTool(store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +100,7 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 		t.Fatal(err)
 	}
 
-	delegateTool, err := subagentplugin.NewSubagent(subagentplugin.SubagentConfig{}, subagentplugin.SubagentDeps{Subagent: spawner})
+	delegateTool, err := cfg.NewDelegateTool(spawner)
 	if err != nil {
 		t.Fatal(err)
 	}

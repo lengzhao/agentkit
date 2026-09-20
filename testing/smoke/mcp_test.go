@@ -8,15 +8,25 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/mcptest"
 )
 
 // E2E-500: MCP stdio server tools mount on tools/runtime and run through a full agent turn.
 func TestSmokeMCPDynamicToolsAgentTurn(t *testing.T) {
-	provider, mcpRoot := mcptest.NewProvider(t)
+	provider, mcpRoot := mcptest.NewProvider(t, func(configPath, workspaceRoot string) (agentkit.ToolProvider, error) {
+		return mcpplugin.NewMCP(mcpplugin.MCPConfig{
+			EnableLocal: true,
+			Files:       []string{configPath},
+		}, mcpplugin.MCPDeps{
+			Workspace:  rtworkspace.Static(workspaceRoot),
+			ConfigFile: newTestConfigFileWriter(),
+		})
+	})
 	ctx := context.Background()
 
 	toolsList, err := provider.ListTools(ctx)

@@ -232,6 +232,7 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 			Deps: map[string]any{
 				"workspace":   "workspace.default",
 				"credentials": "credentials.default",
+				"configfile":  "configfile.default",
 			},
 		},
 		"tool/openapi": {
@@ -242,6 +243,7 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 			Deps: map[string]any{
 				"workspace":   "workspace.default",
 				"credentials": "credentials.default",
+				"configfile":  "configfile.default",
 			},
 		},
 		"tool/recognize": {

@@ -114,10 +114,13 @@ compaction.token-limit.worker:
         services:
             - compaction.summary.default
     use: compaction/token-limit
+configfile.default:
+    use: configfile/writer
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
+        configfile: configfile.default
         workspace: workspace.default
     use: credentials/integrations
 hook.before-step.worker:

@@ -19,7 +19,7 @@ import (
 func TestSmokeSubagentDelegateEndToEnd(t *testing.T) {
 	t.Parallel()
 
-	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{})
+	env := agenttest.NewSubagentDelegateEnv(t, subagentDelegateConfig())
 	ctx := agenttest.TurnContext(env.LogicalID, agentkit.AgentID("nex"))
 	agenttest.RunTurn(t, ctx, env.Agent, "调研一下 loop 串行机制")
 
@@ -40,7 +40,9 @@ func TestSmokeSubagentDelegateWithLogicalStoreSession(t *testing.T) {
 	t.Parallel()
 
 	logical := agentkit.SessionID("chat-api:nex-channel")
-	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{LogicalID: logical})
+	cfg := subagentDelegateConfig()
+	cfg.LogicalID = logical
+	env := agenttest.NewSubagentDelegateEnv(t, cfg)
 
 	ctx := agenttest.TurnContext(logical, agentkit.AgentID("nex"))
 	agenttest.RunTurn(t, ctx, env.Agent, "调研一下 loop 串行机制")
@@ -60,7 +62,9 @@ func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 	t.Parallel()
 
 	logical := agentkit.SessionID("chat-api:nex-channel")
-	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{LogicalID: logical})
+	cfg := subagentDelegateConfig()
+	cfg.LogicalID = logical
+	env := agenttest.NewSubagentDelegateEnv(t, cfg)
 
 	loopInst, err := loop.New(loop.Config{DefaultAgent: "nex"}, loop.Deps{Agents: []agentkit.Agent{env.Agent}})
 	if err != nil {
@@ -88,7 +92,9 @@ func TestSmokeSubagentDelegateWithoutStoreSessionMapping(t *testing.T) {
 	t.Parallel()
 
 	logical := agentkit.SessionID("cli:smoke-delegate")
-	env := agenttest.NewSubagentDelegateEnv(t, agenttest.SubagentDelegateConfig{LogicalID: logical})
+	cfg := subagentDelegateConfig()
+	cfg.LogicalID = logical
+	env := agenttest.NewSubagentDelegateEnv(t, cfg)
 	ctx := agenttest.TurnContext(logical, agentkit.AgentID("nex"))
 	agenttest.RunTurn(t, ctx, env.Agent, "调研一下 loop 串行机制")
 

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	rw "github.com/lengzhao/agentkit/runtime/workspace"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
 )
 
 const (
@@ -19,7 +19,7 @@ func JoinUnderRoot(root string, parts ...string) string {
 		root = DefaultRoot
 	}
 	tail := filepath.ToSlash(filepath.Join(parts...))
-	if scope, base, scoped := rw.ParseScoped(root); scoped {
+	if scope, base, scoped := cw.ParseScoped(root); scoped {
 		if tail == "" || tail == "." {
 			return scope + ":" + base
 		}

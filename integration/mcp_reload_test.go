@@ -32,7 +32,8 @@ func TestIntegrationMCPEndToEndHotReload(t *testing.T) {
 	}
 
 	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{Files: []string{configPath}}, mcpplugin.MCPDeps{
-		Workspace: rtworkspace.Static(dir),
+		Workspace:  rtworkspace.Static(dir),
+		ConfigFile: newTestConfigFileWriter(),
 	})
 	if err != nil {
 		t.Fatal(err)
