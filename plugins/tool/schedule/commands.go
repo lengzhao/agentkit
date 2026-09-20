@@ -15,6 +15,7 @@ import (
 type scheduleBundle struct {
 	tool     agentkit.Tool
 	registry capschedule.Registry
+	engine   capschedule.Engine
 }
 
 func (b *scheduleBundle) Name() string { return b.tool.Name() }
@@ -28,11 +29,12 @@ func (b *scheduleBundle) Call(ctx context.Context, input json.RawMessage) (strin
 }
 
 func (b *scheduleBundle) Commands() []agentkit.Command {
-	return []agentkit.Command{cronSlashCommand{registry: b.registry}}
+	return []agentkit.Command{cronSlashCommand{registry: b.registry, engine: b.engine}}
 }
 
 type cronSlashCommand struct {
 	registry capschedule.Registry
+	engine   capschedule.Engine
 }
 
 func (cronSlashCommand) Name() string { return "cron" }
@@ -47,10 +49,10 @@ func (c cronSlashCommand) CommandExec(ctx context.Context, args string) (string,
 	args = strings.TrimSpace(args)
 	switch {
 	case args == "", args == "list":
-		return formatCronList(ctx, c.registry, false)
+		return formatCronList(ctx, c.registry, c.engine, false)
 	case strings.HasPrefix(args, "list "):
 		includeFired := strings.TrimSpace(strings.TrimPrefix(args, "list")) == "all"
-		return formatCronList(ctx, c.registry, includeFired)
+		return formatCronList(ctx, c.registry, c.engine, includeFired)
 	case strings.HasPrefix(args, "remove "), strings.HasPrefix(args, "rm "), strings.HasPrefix(args, "del "):
 		id := strings.TrimSpace(strings.Fields(args)[1])
 		if id == "" {
@@ -69,7 +71,7 @@ func (c cronSlashCommand) CommandExec(ctx context.Context, args string) (string,
 	}
 }
 
-func formatCronList(ctx context.Context, registry capschedule.Registry, includeFired bool) (string, error) {
+func formatCronList(ctx context.Context, registry capschedule.Registry, engine capschedule.Engine, includeFired bool) (string, error) {
 	jobs, err := registry.List(ctx)
 	if err != nil {
 		return "", err
@@ -85,7 +87,7 @@ func formatCronList(ctx context.Context, registry capschedule.Registry, includeF
 			continue
 		}
 		pending++
-		writeCronLine(&b, job)
+		writeCronLine(&b, engine, job)
 	}
 	if pending == 0 {
 		b.WriteString("no scheduled jobs")
@@ -93,24 +95,20 @@ func formatCronList(ctx context.Context, registry capschedule.Registry, includeF
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
-func writeCronLine(b *strings.Builder, job capschedule.Job) {
-	kind := capschedule.JobKind(job)
+func writeCronLine(b *strings.Builder, engine capschedule.Engine, job capschedule.Job) {
+	kind := job.NormalizedKind()
 	fmt.Fprintf(b, "- %s [%s]", job.ID, kind)
 	switch kind {
 	case capschedule.KindCron:
 		if job.Cron != "" {
 			fmt.Fprintf(b, " cron=%s", job.Cron)
 		}
-	case capschedule.KindDelay:
-		if job.In != "" {
-			fmt.Fprintf(b, " in=%s", job.In)
-		}
-	case capschedule.KindAt:
+	case capschedule.KindDelay, capschedule.KindAt:
 		if !job.FireAt.IsZero() {
 			fmt.Fprintf(b, " at=%s", job.FireAt.Format(time.RFC3339))
 		}
 	}
-	if next, ok := capschedule.NextFire(job, job.LastRun); ok && !job.Fired {
+	if next, ok := engine.NextFire(job, job.LastRun); ok && !job.Fired {
 		fmt.Fprintf(b, " next=%s", next.Format(time.RFC3339))
 	}
 	if job.Fired {

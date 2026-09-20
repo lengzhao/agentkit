@@ -18,6 +18,7 @@ type ScheduleConfig struct {
 
 type ScheduleDeps struct {
 	Schedule capschedule.Registry `json:"schedule"`
+	Engine   capschedule.Engine   `json:"engine"`
 }
 
 type ScheduleInput struct {
@@ -35,19 +36,15 @@ type ScheduleInput struct {
 // ScheduleEntry is one job as reported to the model, with the next fire time
 // resolved so the agent can reason about it without parsing cron itself.
 type ScheduleEntry struct {
-	ID        string `json:"id"`
-	Kind      string `json:"kind"`
-	Cron      string `json:"cron,omitempty"`
-	In        string `json:"in,omitempty"`
-	FireAt    string `json:"fireAt,omitempty"`
-	Prompt    string `json:"prompt"`
-	Source    string `json:"source"`
-	Note      string `json:"note,omitempty"`
-	Disabled  bool   `json:"disabled,omitempty"`
-	Fired     bool   `json:"fired,omitempty"`
-	FiredAt   string `json:"firedAt,omitempty"`
-	LastError string `json:"lastError,omitempty"`
-	NextRun   string `json:"nextRun,omitempty"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Cron    string `json:"cron,omitempty"`
+	FireAt  string `json:"fireAt,omitempty"`
+	Prompt  string `json:"prompt"`
+	Source  string `json:"source"`
+	Note    string `json:"note,omitempty"`
+	Fired   bool   `json:"fired,omitempty"`
+	NextRun string `json:"nextRun,omitempty"`
 }
 
 type ScheduleOutput struct {
@@ -74,11 +71,15 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	if deps.Schedule == nil {
 		return nil, fmt.Errorf("tool/schedule requires schedule dependency")
 	}
+	if deps.Engine == nil {
+		return nil, fmt.Errorf("tool/schedule requires engine dependency")
+	}
 	maxJobs := cfg.MaxJobs
 	if maxJobs <= 0 {
 		maxJobs = defaultMaxAgentJobs
 	}
 	registry := deps.Schedule
+	engine := deps.Engine
 
 	tool, err := agentkit.NewTool[ScheduleInput, ScheduleOutput]("schedule", func(ctx context.Context, input ScheduleInput) (ScheduleOutput, error) {
 		switch strings.ToLower(strings.TrimSpace(input.Op)) {
@@ -87,13 +88,13 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return ScheduleOutput{}, err
 			}
-			return scheduleOutput(jobs, "", input.IncludeFired), nil
+			return scheduleOutput(engine, jobs, "", input.IncludeFired), nil
 
 		case scheduleOpAdd:
 			if strings.TrimSpace(input.Prompt) == "" {
 				return ScheduleOutput{}, fmt.Errorf("add requires a prompt")
 			}
-			job, err := jobFromInput(time.Now(), input)
+			job, err := jobFromInput(engine, time.Now(), input)
 			if err != nil {
 				return ScheduleOutput{}, err
 			}
@@ -112,7 +113,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return ScheduleOutput{}, err
 			}
-			return scheduleOutput(jobs, fmt.Sprintf("scheduled %s", added.ID), input.IncludeFired), nil
+			return scheduleOutput(engine, jobs, fmt.Sprintf("scheduled %s", added.ID), input.IncludeFired), nil
 
 		case scheduleOpRemove:
 			id := strings.TrimSpace(input.ID)
@@ -130,7 +131,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 			if err != nil {
 				return ScheduleOutput{}, err
 			}
-			return scheduleOutput(jobs, fmt.Sprintf("removed %s", id), input.IncludeFired), nil
+			return scheduleOutput(engine, jobs, fmt.Sprintf("removed %s", id), input.IncludeFired), nil
 
 		default:
 			return ScheduleOutput{}, fmt.Errorf("unknown op %q: use list, add or remove", input.Op)
@@ -141,7 +142,7 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &scheduleBundle{tool: tool, registry: registry}, nil
+	return &scheduleBundle{tool: tool, registry: registry, engine: engine}, nil
 }
 
 func countSource(jobs []capschedule.Job, source string) int {
@@ -154,31 +155,25 @@ func countSource(jobs []capschedule.Job, source string) int {
 	return n
 }
 
-func scheduleOutput(jobs []capschedule.Job, instruction string, includeFired bool) ScheduleOutput {
+func scheduleOutput(engine capschedule.Engine, jobs []capschedule.Job, instruction string, includeFired bool) ScheduleOutput {
 	out := ScheduleOutput{Instruction: instruction, Jobs: make([]ScheduleEntry, 0, len(jobs))}
 	for _, job := range jobs {
 		if job.Fired && !includeFired {
 			continue
 		}
 		entry := ScheduleEntry{
-			ID:        job.ID,
-			Kind:      capschedule.JobKind(job),
-			Cron:      job.Cron,
-			In:        job.In,
-			Prompt:    job.Prompt,
-			Source:    job.Source,
-			Note:      job.Note,
-			Disabled:  job.Disabled,
-			Fired:     job.Fired,
-			LastError: job.LastError,
+			ID:     job.ID,
+			Kind:   job.NormalizedKind(),
+			Cron:   job.Cron,
+			Prompt: job.Prompt,
+			Source: job.Source,
+			Note:   job.Note,
+			Fired:  job.Fired,
 		}
 		if !job.FireAt.IsZero() {
 			entry.FireAt = job.FireAt.Format(time.RFC3339)
 		}
-		if !job.FiredAt.IsZero() {
-			entry.FiredAt = job.FiredAt.Format(time.RFC3339)
-		}
-		if next, ok := capschedule.NextFire(job, job.LastRun); ok {
+		if next, ok := engine.NextFire(job, job.LastRun); ok {
 			entry.NextRun = next.Format(time.RFC3339)
 		}
 		out.Jobs = append(out.Jobs, entry)
@@ -186,7 +181,7 @@ func scheduleOutput(jobs []capschedule.Job, instruction string, includeFired boo
 	return out
 }
 
-func jobFromInput(now time.Time, input ScheduleInput) (capschedule.Job, error) {
+func jobFromInput(engine capschedule.Engine, now time.Time, input ScheduleInput) (capschedule.Job, error) {
 	kind := strings.ToLower(strings.TrimSpace(input.Kind))
 	if kind == "" {
 		return capschedule.Job{}, fmt.Errorf("add requires kind=cron, kind=delay, or kind=at")
@@ -206,7 +201,7 @@ func jobFromInput(now time.Time, input ScheduleInput) (capschedule.Job, error) {
 		if job.Cron == "" {
 			return capschedule.Job{}, fmt.Errorf("kind=cron requires cron")
 		}
-		if _, err := capschedule.ParseCron(job.Cron); err != nil {
+		if _, err := engine.ParseCron(job.Cron); err != nil {
 			return capschedule.Job{}, err
 		}
 	case capschedule.KindDelay:
@@ -221,7 +216,6 @@ func jobFromInput(now time.Time, input ScheduleInput) (capschedule.Job, error) {
 		if err != nil || delay <= 0 {
 			return capschedule.Job{}, fmt.Errorf("invalid delay %q", delayText)
 		}
-		job.In = delayText
 		job.FireAt = now.Add(delay)
 	case capschedule.KindAt:
 		if strings.TrimSpace(input.Cron) != "" || strings.TrimSpace(input.In) != "" {
@@ -257,16 +251,16 @@ func parseAt(raw string, loc *time.Location) (time.Time, error) {
 
 func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.Job {
 	if delivery := rctx.DeliveryRouteFromContext(ctx); delivery != "" {
-		job.DeliverySessionID = string(delivery)
+		job.Route.DeliverySessionID = string(delivery)
 	}
 	if platform := rctx.PlatformFromContext(ctx); platform != "" {
-		job.PlatformID = strings.TrimSpace(platform)
+		job.Route.PlatformID = strings.TrimSpace(platform)
 	}
 	if user := rctx.UserIDFromContext(ctx); user != "" {
-		job.UserID = strings.TrimSpace(user)
+		job.Route.UserID = strings.TrimSpace(user)
 	}
 	if agent := rctx.AgentIDFromContext(ctx); agent != "" {
-		job.AgentID = string(agent)
+		job.Route.AgentID = string(agent)
 	}
 	job.ChannelKey = rctx.WorkspaceFromContext(ctx)
 	return job

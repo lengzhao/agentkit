@@ -10,10 +10,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -348,10 +348,10 @@ func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID a
 	}
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	if len(metadata) > 0 {
-		if capschedule.IsFireTurn(metadata) {
+		if rtschedule.IsFireTurn(metadata) {
 			ctx = context.WithValue(ctx, agentkit.KeyScheduleFireTurn, true)
 		}
-		if capschedule.IsFireStateless(metadata) {
+		if rtschedule.IsFireStateless(metadata) {
 			ctx = context.WithValue(ctx, agentkit.KeyScheduleStateless, true)
 		}
 	}

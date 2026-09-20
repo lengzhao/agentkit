@@ -182,7 +182,10 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 			Config: map[string]any{
 				"maxJobs": 32,
 			},
-			Deps: map[string]any{"schedule": "schedule.default"},
+			Deps: map[string]any{
+				"schedule": "schedule.default",
+				"engine":   "schedule.engine",
+			},
 		},
 		"tool/subagent": {
 			ID:   "tool.subagent.default",

@@ -47,6 +47,7 @@ type CronDeps struct {
 	Schedule  capschedule.Registry `json:"schedule"`
 	Workspace workspace.Service    `json:"workspace,omitempty"`
 	Shell     shell.Executor       `json:"shell,omitempty"`
+	Engine    capschedule.Engine   `json:"engine"`
 }
 
 const defaultPollSeconds = 30
@@ -57,6 +58,7 @@ type Cron struct {
 	registry    capschedule.Registry
 	workspace   workspace.Service
 	shell       shell.Executor
+	engine      capschedule.Engine
 	jobs        []capschedule.Job
 	poll        time.Duration
 	missedGrace time.Duration
@@ -81,7 +83,10 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 	if deps.Schedule == nil {
 		return nil, fmt.Errorf("schedule/cron requires schedule dependency")
 	}
-	jobs, err := parseCronJobs(cfg.Jobs)
+	if deps.Engine == nil {
+		return nil, fmt.Errorf("schedule/cron requires engine dependency")
+	}
+	jobs, err := parseCronJobs(cfg.Jobs, deps.Engine)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +113,7 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 		registry:    deps.Schedule,
 		workspace:   deps.Workspace,
 		shell:       deps.Shell,
+		engine:      deps.Engine,
 		jobs:        jobs,
 		poll:        poll,
 		missedGrace: missedGrace,
@@ -118,7 +124,7 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 	}, nil
 }
 
-func parseCronJobs(specs []CronJobSpec) ([]capschedule.Job, error) {
+func parseCronJobs(specs []CronJobSpec, engine capschedule.Engine) ([]capschedule.Job, error) {
 	jobs := make([]capschedule.Job, 0, len(specs))
 	for i, spec := range specs {
 		spec.Prompt = strings.TrimSpace(spec.Prompt)
@@ -133,7 +139,7 @@ func parseCronJobs(specs []CronJobSpec) ([]capschedule.Job, error) {
 		if spec.Prompt != "" && spec.Script != "" {
 			return nil, fmt.Errorf("schedule/cron job %d: prompt and script are mutually exclusive", i+1)
 		}
-		if _, err := capschedule.ParseCron(spec.Cron); err != nil {
+		if _, err := engine.ParseCron(spec.Cron); err != nil {
 			return nil, fmt.Errorf("schedule/cron job %d: %w", i+1, err)
 		}
 		job := capschedule.Job{
@@ -219,16 +225,16 @@ func (c *Cron) fire(ctx context.Context, submit capschedule.SubmitFunc, job caps
 	if c.isStaleOneShot(job, now) {
 		err := fmt.Errorf("missed by %v (stale)", now.Sub(job.FireAt))
 		slog.Warn("cron one-shot skipped as stale", "job_id", job.ID, "fire_at", job.FireAt, "err", err)
-		return c.registry.MarkFired(ctx, job.ID, now, err)
+		return c.registry.MarkFired(ctx, job.ID)
 	}
 	c.mu.Lock()
 	run := c.runCount
 	c.runCount++
 	c.mu.Unlock()
-	slog.Info("cron job firing", "job_id", job.ID, "kind", capschedule.JobKind(job), "cron", job.Cron, "source", job.Source)
+	slog.Info("cron job firing", "job_id", job.ID, "kind", job.NormalizedKind(), "cron", job.Cron, "source", job.Source)
 	err := submit(ctx, c.event(run, job))
-	if capschedule.IsOneShot(job) {
-		if markErr := c.registry.MarkFired(ctx, job.ID, now, err); markErr != nil {
+	if job.IsOneShot() {
+		if markErr := c.registry.MarkFired(ctx, job.ID); markErr != nil {
 			return fmt.Errorf("mark one-shot job %q fired: %w", job.ID, markErr)
 		}
 	}
@@ -239,7 +245,7 @@ func (c *Cron) fire(ctx context.Context, submit capschedule.SubmitFunc, job caps
 }
 
 func (c *Cron) isStaleOneShot(job capschedule.Job, now time.Time) bool {
-	return capschedule.IsOneShot(job) && !job.FireAt.IsZero() && now.Sub(job.FireAt) > c.missedGrace
+	return job.IsOneShot() && !job.FireAt.IsZero() && now.Sub(job.FireAt) > c.missedGrace
 }
 
 func (c *Cron) runScript(ctx context.Context, scriptPath string) error {
@@ -271,10 +277,10 @@ func (c *Cron) nextWake(ctx context.Context, now time.Time) time.Duration {
 	var next time.Time
 	found := false
 	for _, job := range jobs {
-		if job.Disabled || job.Fired {
+		if job.Fired {
 			continue
 		}
-		fireAt, ok := capschedule.NextFire(job, job.LastRun)
+		fireAt, ok := c.engine.NextFire(job, job.LastRun)
 		if !ok {
 			continue
 		}
@@ -314,11 +320,11 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 	now := c.now()
 	platformID := cronPlatformID
 	deliverySessionID := agentkit.SessionID("")
-	if delivery := strings.TrimSpace(job.DeliverySessionID); delivery != "" {
+	if delivery := strings.TrimSpace(job.Route.DeliverySessionID); delivery != "" {
 		deliverySessionID = agentkit.SessionID(delivery)
-		platformID = strings.TrimSpace(job.PlatformID)
+		platformID = strings.TrimSpace(job.Route.PlatformID)
 		if platformID == "" {
-			platformID = rctx.ParseDelivery(deliverySessionID, job.UserID).Platform
+			platformID = rctx.ParseDelivery(deliverySessionID, job.Route.UserID).Platform
 		}
 	}
 
@@ -339,7 +345,7 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 	prompt := scheduleInboundPrompt(job)
 	evt := agentkit.MessageEvent{
 		PlatformID: platformID,
-		UserID:     strings.TrimSpace(job.UserID),
+		UserID:     strings.TrimSpace(job.Route.UserID),
 		Envelope: agentkit.TurnEnvelope{
 			Conversation: string(sessionID),
 		},
@@ -351,7 +357,7 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 			"schedule": map[string]any{
 				"fired":       true,
 				"jobId":       job.ID,
-				"kind":        capschedule.JobKind(job),
+				"kind":        job.NormalizedKind(),
 				"sessionMode": c.sessionMode,
 			},
 		},
@@ -359,14 +365,14 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 	if deliverySessionID != "" {
 		evt = common.WithDeliverySession(evt, platformID, deliverySessionID)
 	}
-	if agent := strings.TrimSpace(job.AgentID); agent != "" {
+	if agent := strings.TrimSpace(job.Route.AgentID); agent != "" {
 		evt.AgentID = agentkit.AgentID(agent)
 	}
 	return evt
 }
 
 func scheduleInboundPrompt(job capschedule.Job) string {
-	kind := capschedule.JobKind(job)
+	kind := job.NormalizedKind()
 	desc := strings.TrimSpace(job.Note)
 	if desc == "" {
 		desc = strings.TrimSpace(job.Prompt)

@@ -6,7 +6,7 @@
 - 插件模块默认不对外提供公共方法（仅 `init()` + `pluginkit.Register`）
 
 > **cap 的内容边界（已确认）**：cap 默认只放**抽象后的接口定义**（接口 + DTO + 常量），允许例外仅两类：
-> 1. **与接口语义一体的纯函数**（契约词汇）：如 `workspace.ParseScoped` 之于 Scope 常量、`schedule.Schedule.Next` 之于 cron 表达式、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定。
+> 1. **与接口语义一体的纯函数**（契约词汇）：如 `workspace.ParseScoped` 之于 Scope 常量、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定。
 > 2. 不放工作流/多步逻辑——单一消费者的下沉到消费方包内（如 `CopyLocalToGlobal` → `plugins/tool/openapi`）；多消费者的**抽象成接口 + runtime 实现 + deps 注入**（如 `configfile.Writer`）。
 >
 > 重实现插件（需 runtime 内部设施）的另一条出路：**kind 注册迁入对应 runtime 包自注册**（先例：`runtime/llm`、`runtime/workspace`、`runtime/agent` 等 20 处）。
@@ -84,8 +84,9 @@ flowchart TB
 
 ## P3 — 服务构造改 deps 注入（逐项核销）
 
-- [x] **runtime/schedule → cap/schedule**：`plugins/schedule`、`plugins/tool/schedule`、`learning`、`runtime/loop`
-  - 实际情况：runtime/schedule 是纯算法包（ParseCron/NextFire/JobKind/InFlightExpired + fire_meta 别名），只依赖 cap/schedule；已整体 git mv 入 `cap/schedule` 并删除 runtime 包。符合边界例外 1（cron 表达式与 Job DTO 的领域语义，契约词汇）。✅
+- [x] **runtime/schedule ← cap/schedule 实现下沉**：`plugins/schedule`、`plugins/tool/schedule`、`learning`、`runtime/loop`
+  - `cap/schedule` 只保留 `Registry`/`Runtime`/`Engine`/`Cron` 接口与 `Job` DTO/常量；cron 求值与 fire metadata 实现在 `runtime/schedule`（`schedule/engine` kind）。`JobKind`/`IsOneShot`/`InFlightExpired` 收敛为 `Job` 的方法。插件经 deps 注入 `Engine`，不再调用 cap 包级函数。
+  - 验收：`cap/schedule` 无函数实现；插件非测试源码不 import `runtime/schedule`。✅
 - [ ] **runtime/compaction → cap/compaction**：`plugins/hook`（NewPrune/PruneConfig）
 - [ ] **runtime/chathistory → cap/chathistory**：`plugins/tool/chathistory`（NewChatHistory）
 - [ ] **runtime/credentials → cap/credentials**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell`（Store/Secret/EnvPairResolver）

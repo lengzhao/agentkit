@@ -12,6 +12,7 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -42,11 +43,11 @@ func (c *fakeClock) Sleep(_ context.Context, d time.Duration) error {
 func newCronRuntime(t *testing.T, cfg pluginschedule.CronConfig) (capschedule.Runtime, capschedule.Registry, *fakeClock) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir())})
+		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir()), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt, err := pluginschedule.NewCron(cfg, pluginschedule.CronDeps{Schedule: registry})
+	rt, err := pluginschedule.NewCron(cfg, pluginschedule.CronDeps{Schedule: registry, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func waitJobFired(t *testing.T, registry capschedule.Registry, ctx context.Conte
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(jobs) == 1 && jobs[0].Fired && !jobs[0].FiredAt.IsZero() {
+		if len(jobs) == 1 && jobs[0].Fired {
 			return jobs[0]
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -193,14 +194,16 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 	defer cancel()
 
 	if _, err := registry.Add(ctx, capschedule.Job{
-		Kind:              capschedule.KindCron,
-		Cron:              "*/5 * * * *",
-		Prompt:            "remind",
-		LastRun:           clock.Now().Add(-15 * time.Minute),
-		DeliverySessionID: "chat-api:default:t:conv_1",
-		PlatformID:        "chat-api",
-		UserID:            "user-1",
-		AgentID:           "assistant",
+		Kind:    capschedule.KindCron,
+		Cron:    "*/5 * * * *",
+		Prompt:  "remind",
+		LastRun: clock.Now().Add(-15 * time.Minute),
+		Route: capschedule.Route{
+			DeliverySessionID: "chat-api:default:t:conv_1",
+			PlatformID:        "chat-api",
+			UserID:            "user-1",
+			AgentID:           "assistant",
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -243,12 +246,14 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 	defer cancel()
 
 	if _, err := registry.Add(ctx, capschedule.Job{
-		Kind:              capschedule.KindCron,
-		Cron:              "*/5 * * * *",
-		Prompt:            "remind",
-		LastRun:           clock.Now().Add(-15 * time.Minute),
-		DeliverySessionID: "chat-api:default:t:conv_reuse",
-		PlatformID:        "chat-api",
+		Kind:    capschedule.KindCron,
+		Cron:    "*/5 * * * *",
+		Prompt:  "remind",
+		LastRun: clock.Now().Add(-15 * time.Minute),
+		Route: capschedule.Route{
+			DeliverySessionID: "chat-api:default:t:conv_reuse",
+			PlatformID:        "chat-api",
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -286,12 +291,14 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 	defer cancel()
 
 	if _, err := registry.Add(ctx, capschedule.Job{
-		ID:                "agent-9",
-		Kind:              capschedule.KindCron,
-		Cron:              "*/5 * * * *",
-		Prompt:            "remind",
-		LastRun:           clock.Now().Add(-15 * time.Minute),
-		DeliverySessionID: "chat-api:default:t:conv_1",
+		ID:      "agent-9",
+		Kind:    capschedule.KindCron,
+		Cron:    "*/5 * * * *",
+		Prompt:  "remind",
+		LastRun: clock.Now().Add(-15 * time.Minute),
+		Route: capschedule.Route{
+			DeliverySessionID: "chat-api:default:t:conv_1",
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -358,14 +365,14 @@ func TestCronStopsOnCancellation(t *testing.T) {
 	t.Parallel()
 
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir())})
+		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir()), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	rt, err := pluginschedule.NewCron(pluginschedule.CronConfig{
 		Jobs:        []pluginschedule.CronJobSpec{{ID: "daily", Cron: "0 0 1 1 *", Prompt: "daily"}},
 		PollSeconds: 3600,
-	}, pluginschedule.CronDeps{Schedule: registry})
+	}, pluginschedule.CronDeps{Schedule: registry, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}

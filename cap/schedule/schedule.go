@@ -1,10 +1,11 @@
-// Package schedule defines the calendar-scheduling capability: a durable set of
-// cron jobs that schedule/cron fires and a tool can edit.
+// Package schedule defines the calendar-scheduling capability: Registry,
+// Runtime, Engine, and the Job DTO shared by schedule/cron and tool/schedule.
 package schedule
 
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -30,38 +31,79 @@ const (
 
 // Job is one scheduled task.
 type Job struct {
-	ID     string `json:"id"`
-	Kind   string `json:"kind,omitempty"`
-	Cron   string `json:"cron,omitempty"`
-	In     string `json:"in,omitempty"`
+	ID     string    `json:"id"`
+	Kind   string    `json:"kind,omitempty"`
+	Cron   string    `json:"cron,omitempty"`
 	FireAt time.Time `json:"fireAt,omitzero"`
 	Prompt string    `json:"prompt,omitempty"`
 	// Script is a workspace-relative bash script. When set, the job runs the
 	// script directly instead of starting an agent turn.
 	Script string `json:"script,omitempty"`
 	Source string `json:"source"`
-	// Disabled jobs stay in the registry but never fire.
-	Disabled bool `json:"disabled,omitempty"`
-	CreatedAt time.Time `json:"createdAt,omitzero"`
 	// LastRun anchors the schedule. A new job is stamped at creation time so its
 	// first fire is the next real boundary rather than immediately.
 	LastRun time.Time `json:"lastRun,omitzero"`
 	Fired   bool      `json:"fired,omitempty"`
-	FiredAt time.Time `json:"firedAt,omitzero"`
-	// InFlight marks a one-shot job claimed by Due but not yet MarkFired.
-	InFlight   bool      `json:"inFlight,omitempty"`
+	// InFlightAt marks a one-shot job claimed by Due but not yet MarkFired;
+	// the zero time means unclaimed.
 	InFlightAt time.Time `json:"inFlightAt,omitzero"`
-	LastError  string    `json:"lastError,omitempty"`
 	// Note is free-form context the agent can leave for its future self.
 	Note string `json:"note,omitempty"`
-	// DeliverySessionID is the platform inbox to route outbound messages (e.g. send)
-	// when the job fires. Captured automatically when tool/schedule creates the job.
+	// Route is the delivery context captured when tool/schedule creates the job,
+	// so a fire can route outbound messages (e.g. send) back to the origin inbox.
+	Route      Route  `json:"route,omitzero"`
+	ChannelKey string `json:"channelKey,omitempty"`
+}
+
+// Route is the delivery context a fired job restores onto its inbound event.
+type Route struct {
 	DeliverySessionID string `json:"deliverySessionId,omitempty"`
 	PlatformID        string `json:"platformId,omitempty"`
 	UserID            string `json:"userId,omitempty"`
 	AgentID           string `json:"agentId,omitempty"`
-	ChannelKey        string `json:"channelKey,omitempty"`
 }
+
+// NormalizedKind returns the job kind, inferring it from FireAt/Cron when
+// the Kind field is empty.
+func (j Job) NormalizedKind() string {
+	kind := strings.TrimSpace(j.Kind)
+	if kind != "" {
+		return kind
+	}
+	if !j.FireAt.IsZero() {
+		return KindDelay
+	}
+	if strings.TrimSpace(j.Cron) != "" {
+		return KindCron
+	}
+	return ""
+}
+
+// IsOneShot reports whether the job fires once at an absolute time.
+func (j Job) IsOneShot() bool {
+	switch j.NormalizedKind() {
+	case KindDelay, KindAt:
+		return true
+	default:
+		return false
+	}
+}
+
+// InFlightExpired reports whether a claimed one-shot should be reclaimed.
+func (j Job) InFlightExpired(now time.Time) bool {
+	if j.InFlightAt.IsZero() {
+		return false
+	}
+	return now.Sub(j.InFlightAt) >= InFlightTimeout
+}
+
+// Session modes for schedule-fired inbound turns.
+const (
+	SessionModeStateless = "stateless"
+	SessionModeReuse     = "reuse"
+	SessionModeFresh     = "fresh"
+	SessionModeFixed     = "fixed"
+)
 
 // Registry is the durable job set. Implementations must be safe for concurrent
 // use: the firing runtime and the agent's tool touch it from different
@@ -81,5 +123,5 @@ type Registry interface {
 	Due(ctx context.Context, now time.Time) ([]Job, error)
 	// MarkFired records that a one-shot job has been handled while retaining it
 	// for audit/listing.
-	MarkFired(ctx context.Context, id string, firedAt time.Time, fireErr error) error
+	MarkFired(ctx context.Context, id string) error
 }

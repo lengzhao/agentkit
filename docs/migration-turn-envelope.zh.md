@@ -30,7 +30,7 @@
 | workspace | `Service`、`ScopeGlobal`/`ScopeLocal` | `ParseScoped`、`Resolve`、`ResolveRel`、`Static`… |
 | credentials | `Store`、`EnvPairResolver`、`Secret`、`GlobalScope` | `WithSecrets`、`SecretFromContext`、`EnvKey`、scope/manifest/密文；见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | permission | `Broker`、`Request`、`Reply`、DTO | `MatchReply`、`MarshalReply`、`EffectiveTimeout`、`CapabilityFrom`… |
-| schedule | `Registry`、`Runtime`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`、`JobKind`… |
+| schedule | `Registry`、`Runtime`、`Engine`、`Cron`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`… |
 | skill | `Registry`、`Descriptor`、`Content` | `RenderLoaded`、`SanitizeRelativePath`、`ReadFile`、`RunScript` |
 | learning | `cap/learning`（`SkillProposer`、`ReviewHost`、`DreamSweepScheduler`）；`cap/memory`（`Capture`、`Service`）；`runtime/learning.MemoryEntry` | `ParseMemory`、`RenderMemory`、`MemoryStore`、`RunReview`、`ApplyCapture` |
 | media | `ContentTypeAttachmentRef`（`runtime/media` 常量） | `IsImage`、`DataURL`、`LoadWorkspaceImage`、`FormatReadImageResult`… |

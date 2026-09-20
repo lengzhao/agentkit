@@ -213,6 +213,7 @@ learning.default:
         workshop:
             mode: propose
     deps:
+        engine: schedule.engine
         memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -451,15 +452,19 @@ schedule.cron:
         sessionID: schedule
         sessionMode: stateless
     deps:
+        engine: schedule.engine
         schedule: schedule.default
         workspace: workspace.default
     use: schedule/cron
 schedule.default:
     config:
-        path: global:schedules/schedule.json
+        path: global:schedule.json
     deps:
+        engine: schedule.engine
         workspace: workspace.default
     use: schedule/multi
+schedule.engine:
+    use: schedule/engine
 session.default:
     config:
         id: cli:default
@@ -579,6 +584,7 @@ tool.schedule.default:
     config:
         maxJobs: 32
     deps:
+        engine: schedule.engine
         schedule: schedule.default
     use: tool/schedule
 tool.send.default:

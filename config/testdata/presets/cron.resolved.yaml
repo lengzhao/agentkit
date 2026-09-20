@@ -114,16 +114,20 @@ compaction.token-limit.worker:
         services:
             - compaction.summary.default
     use: compaction/token-limit
+configfile.default:
+    use: configfile/writer
 credentials.default:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
+        configfile: configfile.default
         workspace: workspace.default
     use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
+        configfile: configfile.default
         workspace: workspace.default
     use: credentials/integrations
 hook.background-review.default:
@@ -191,6 +195,7 @@ learning.default:
         workshop:
             mode: propose
     deps:
+        engine: schedule.engine
         memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -421,6 +426,7 @@ schedule.cron:
         sessionID: cron
         sessionMode: fresh
     deps:
+        engine: schedule.engine
         schedule: schedule.default
         workspace: workspace.default
     use: schedule/cron
@@ -428,8 +434,11 @@ schedule.default:
     config:
         path: schedule.json
     deps:
+        engine: schedule.engine
         workspace: workspace.default
     use: schedule/multi
+schedule.engine:
+    use: schedule/engine
 sessionIndex.default:
     config:
         indexRel: sessions/.index.sqlite
@@ -542,6 +551,7 @@ tool.schedule.default:
     config:
         maxJobs: 16
     deps:
+        engine: schedule.engine
         schedule: schedule.default
     use: tool/schedule
 tool.send.default:

@@ -8,7 +8,7 @@
 Cron 和 Timer 不必拆成两个 agent 工具，也不必拆成两份持久化表。更合适的边界是：
 
 - 对 agent：只有一个 `schedule` 工具。
-- 对配置：全局一份 `global:schedules/schedule.json`（`schedule/multi`）。
+- 对配置：全局一份 `global:schedule.json`（`schedule/multi`）。
 - 对框架：一个 `Job` 模型，用 `kind` 区分 `cron`、`delay`、`at`。
 - 对运行时：`schedule/cron` 按 `kind` 分支；重复任务走 cron 计算，一次性任务用 `time.Timer` 精准唤醒。
 
@@ -113,7 +113,6 @@ type Job struct {
     ID     string `json:"id"`
     Kind   string `json:"kind"` // cron | delay | at
     Cron   string `json:"cron,omitempty"`
-    In     string `json:"in,omitempty"` // 仅用于展示原始输入，可选
     FireAt time.Time `json:"fireAt,omitzero"`
 
     Prompt string `json:"prompt,omitempty"`
@@ -121,13 +120,15 @@ type Job struct {
     Source string `json:"source"`
     Note   string `json:"note,omitempty"`
 
-    Disabled bool `json:"disabled,omitempty"`
-    CreatedAt time.Time `json:"createdAt,omitzero"`
-    LastRun   time.Time `json:"lastRun,omitzero"`
-    Fired     bool      `json:"fired,omitempty"`
-    FiredAt   time.Time `json:"firedAt,omitzero"`
-    LastError string    `json:"lastError,omitempty"`
+    LastRun    time.Time `json:"lastRun,omitzero"`
+    Fired      bool      `json:"fired,omitempty"`
+    InFlightAt time.Time `json:"inFlightAt,omitzero"` // 零值 = 未被认领
 
+    Route      Route  `json:"route,omitzero"` // 触发时还原的投递上下文
+    ChannelKey string `json:"channelKey,omitempty"`
+}
+
+type Route struct {
     DeliverySessionID string `json:"deliverySessionId,omitempty"`
     PlatformID        string `json:"platformId,omitempty"`
     UserID            string `json:"userId,omitempty"`
@@ -151,16 +152,16 @@ type Registry interface {
     Remove(ctx context.Context, id string) (bool, error)
     SyncSource(ctx context.Context, source string, jobs []Job) error
     Due(ctx context.Context, now time.Time) ([]Job, error)
-    MarkFired(ctx context.Context, id string, firedAt time.Time, err error) error
+    MarkFired(ctx context.Context, id string) error
 }
 ```
 
 `Due` 的规则：
 
-- `kind=cron`：按 `NextFire(job, job.LastRun)` 判断，到期后更新 `LastRun`。
-- `kind=delay|at`：到期时设置 `inFlight=true` 并返回；`MarkFired` 清除 `inFlight` 并标记 `fired`。`inFlight` 超过 `InFlightTimeout`（默认 30 分钟）可被 reclaim。
+- `kind=cron`：按 `Engine.NextFire(job, job.LastRun)` 判断，到期后更新 `LastRun`。
+- `kind=delay|at`：到期时写入 `inFlightAt=now` 并返回；`MarkFired` 清除 `inFlightAt` 并标记 `fired`。认领超过 `InFlightTimeout`（默认 30 分钟）可被 reclaim。
 
-`schedule/cron` 用 `time.Timer` 按最近 `NextFire` 精准唤醒；无待触发 job 时以 `pollSeconds` 空闲退避。
+`schedule/cron` 用 `time.Timer` 按最近 `Engine.NextFire` 精准唤醒；无待触发 job 时以 `pollSeconds` 空闲退避。
 
 ## 7. Runtime 语义
 
@@ -176,7 +177,7 @@ flowchart TB
   Start["Start"]
   Load["registry.List pending"]
   Split{"job.kind"}
-  Cron["cron: 计算 NextFire"]
+  Cron["cron: Engine.NextFire"]
   Timer["delay/at: 计算 FireAt"]
   Wait["等待最近一个触发点或 rescan"]
   Due["registry.Due(now)"]
@@ -203,33 +204,33 @@ flowchart TB
 过期处理：
 
 - 过期 ≤ `missedGraceSeconds`：立即触发。
-- 过期 > `missedGraceSeconds`：`MarkFired` + `LastError=stale`，不补跑。
+- 过期 > `missedGraceSeconds`：记 stale 日志并 `MarkFired`，不补跑。
 - cron 继续保持现有策略：错过 boundary 跳过，不 backfill。
 
 ## 8. 投递路由
 
-`tool/schedule` 创建 job 时自动保存当前 turn 的路由信息：
+`tool/schedule` 创建 job 时自动把当前 turn 的路由信息保存到 `job.Route`：
 
-- `deliverySessionId`
-- `platformId`
-- `userId`
-- `agentId`
+- `route.deliverySessionId`
+- `route.platformId`
+- `route.userId`
+- `route.agentId`
 
 runtime 触发时构造 inbound event：
 
 ```go
 event.Envelope.Conversation = string(sideSession(job.ID)) // 侧会话（stateless）或 delivery 会话（reuse）
-event.Envelope.Route = agentkit.SessionRoute(job.PlatformID, job.DeliverySessionID) // outbound/send 仍回原 inbox
-event.PlatformID = job.PlatformID
-event.UserID = job.UserID
-event.AgentID = job.AgentID
+event.Envelope.Route = agentkit.SessionRoute(job.Route.PlatformID, job.Route.DeliverySessionID) // outbound/send 仍回原 inbox
+event.PlatformID = job.Route.PlatformID
+event.UserID = job.Route.UserID
+event.AgentID = job.Route.AgentID
 event.Message = "[schedule kind=delay id=agent-1] ⏰ 吃饭\n\n这是一次定时任务触发..."
 event.Metadata = {"schedule": {"fired": true, "jobId": "agent-1", "kind": "delay", "sessionMode": "stateless"}}
 ```
 
 然后 runner 仍按现有逻辑处理：
 
-- `job.DeliverySessionID` 决定 outbound / send 往哪发（写入 `Envelope.Route`）。
+- `job.Route.DeliverySessionID` 决定 outbound / send 往哪发（写入 `Envelope.Route`）。
 - `Envelope.Conversation` 决定 loop 锁与历史：`stateless` 为独立侧会话，`reuse` 为原对话。
 - 若 turn 内已调用 `send`，框架抑制 turn-end 重复文本。
 - **Permission**：`metadata.schedule.fired=true` 时 runner 强制该 turn 为**非交互**（`ask_user` 降级为 `NoHuman`），避免 cron 在 chat-api 等交互平台上挂起等人；`send` 仍走 `Envelope.Route` 回原 inbox。
@@ -250,7 +251,7 @@ event.Metadata = {"schedule": {"fired": true, "jobId": "agent-1", "kind": "delay
 | `reuse` | `SessionID` 使用 delivery 会话，在原对话上执行 | 需要上下文延续的周期任务 |
 | `fixed` | 所有触发共享固定侧会话 `{sessionId}:default` | 跨触发累积记忆（需配合 compaction） |
 
-`fresh` 是 `stateless` 的别名。outbound / `send` 始终通过 `Envelope.Route`（源自 `job.DeliverySessionID`）回到原 inbox，与 sessionMode 无关。
+`fresh` 是 `stateless` 的别名。outbound / `send` 始终通过 `Envelope.Route`（源自 `job.Route.DeliverySessionID`）回到原 inbox，与 sessionMode 无关。
 
 ## 9. 配置
 
@@ -262,12 +263,16 @@ runner.default:
     schedules:
       - schedule.cron
 
+schedule.engine:
+  use: schedule/engine
+
 schedule.default:
   use: schedule/multi
   config:
-    path: global:schedules/schedule.json
+    path: global:schedule.json
   deps:
     workspace: workspace.default
+    engine: schedule.engine
 
 schedule.cron:
   use: schedule/cron
@@ -279,6 +284,7 @@ schedule.cron:
   deps:
     schedule: schedule.default
     workspace: workspace.default
+    engine: schedule.engine
 
 tool.schedule.default:
   use: tool/schedule
@@ -286,9 +292,10 @@ tool.schedule.default:
     maxJobs: 32
   deps:
     schedule: schedule.default
+    engine: schedule.engine
 ```
 
-所有 job（含各 channel 的 agent job 与 config job）写入同一份 `global:schedules/schedule.json`。`channelKey` 字段用于 list/remove 过滤；`schedule/cron` 的 `Due` 扫描全部 job。
+所有 job（含各 channel 的 agent job 与 config job）写入同一份 `global:schedule.json`。`channelKey` 字段用于 list/remove 过滤；`schedule/cron` 的 `Due` 扫描全部 job。
 
 ## 10. 与 cc-connect / 当前 agentkit 对照
 
@@ -299,12 +306,12 @@ tool.schedule.default:
 | 一次性延时 | `scheduled_at` + `AfterFunc` | `inMinutes` 伪 cron | `kind=delay/at` + `FireAt` |
 | 重复任务 | cron | cron | `kind=cron` |
 | 存储 | 两份 JSON | 一份 `schedule.json` | 全局一份 + `channelKey` 过滤 |
-| 路由 | `session_key` | `deliverySessionId` | `deliverySessionId` |
+| 路由 | `session_key` | `deliverySessionId` | `route.deliverySessionId` |
 | 一次性收尾 | `MarkFired` 保留 | `Remove` | `MarkFired` 保留 |
 
 ## 11. 迁移步骤
 
-1. 扩展 `cap/schedule.Job`：`Kind`、`FireAt`、`Fired`、`FiredAt`、`LastError`。
+1. 扩展 `cap/schedule.Job`：`Kind`、`FireAt`、`Fired`。
 2. 扩展 `schedule/file`：解析兼容旧 job；实现 `MarkFired`。
 3. 扩展 `tool/schedule`：新增 `kind`、`in`、`at`、`includeFired`；`kind` 必填。
 4. 升级 `schedule/cron`：内部处理 cron 与 one-shot；触发 one-shot 后 `MarkFired`。
@@ -343,7 +350,7 @@ tool.schedule.default:
 | `kind=cron` | 保持现有 cron 语义 |
 | 租户 workspace | job 写入 `global:schedule.json`，后台 runtime 能读到 |
 | 过期 3min | grace 内立即触发 |
-| 过期 10min | `MarkFired` + stale error，不触发 |
+| 过期 10min | 记 stale 日志并 `MarkFired`，不触发 |
 | 重启后 | pending one-shot 重新调度 |
 | delivery 路由 | 无 sessionId 的 `send` 回到原 chat-api 会话 |
 

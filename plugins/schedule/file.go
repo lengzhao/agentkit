@@ -20,7 +20,8 @@ type FileConfig struct {
 }
 
 type FileDeps struct {
-	Workspace workspace.Service `json:"workspace"`
+	Workspace workspace.Service  `json:"workspace"`
+	Engine    capschedule.Engine `json:"engine"`
 }
 
 // fileRegistry keeps jobs in a JSON file so an agent-created schedule survives a
@@ -30,6 +31,7 @@ type FileDeps struct {
 type fileRegistry struct {
 	relPath   string
 	workspace workspace.Service
+	engine    capschedule.Engine
 	absPath   string
 
 	now func() time.Time
@@ -49,11 +51,14 @@ func NewFile(cfg FileConfig, deps FileDeps) (capschedule.Registry, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("schedule/file requires workspace dependency")
 	}
+	if deps.Engine == nil {
+		return nil, fmt.Errorf("schedule/file requires engine dependency")
+	}
 	path := strings.TrimSpace(cfg.Path)
 	if path == "" {
 		path = "capschedule.json"
 	}
-	return &fileRegistry{relPath: path, workspace: deps.Workspace, now: time.Now}, nil
+	return &fileRegistry{relPath: path, workspace: deps.Workspace, engine: deps.Engine, now: time.Now}, nil
 }
 
 func (r *fileRegistry) List(ctx context.Context) ([]capschedule.Job, error) {
@@ -69,13 +74,13 @@ func (r *fileRegistry) List(ctx context.Context) ([]capschedule.Job, error) {
 }
 
 func (r *fileRegistry) Add(ctx context.Context, job capschedule.Job) (capschedule.Job, error) {
-	if err := validateJob(job, false); err != nil {
+	if err := r.validateJob(job, false); err != nil {
 		return capschedule.Job{}, err
 	}
 	if job.Source == "" {
 		job.Source = capschedule.SourceAgent
 	}
-	job.Kind = capschedule.JobKind(job)
+	job.Kind = job.NormalizedKind()
 
 	path, err := r.resolve(ctx)
 	if err != nil {
@@ -87,9 +92,6 @@ func (r *fileRegistry) Add(ctx context.Context, job capschedule.Job) (capschedul
 	}
 	if job.ID == "" {
 		job.ID = nextJobID(state.Jobs, job.Source)
-	}
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = r.now()
 	}
 	if job.Kind == capschedule.KindCron && job.LastRun.IsZero() {
 		// Anchor at creation time, otherwise the first Next() lands in the past
@@ -142,18 +144,18 @@ func (r *fileRegistry) Remove(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-func validateJob(job capschedule.Job, allowScript bool) error {
+func (r *fileRegistry) validateJob(job capschedule.Job, allowScript bool) error {
 	if strings.TrimSpace(job.Prompt) == "" && (!allowScript || strings.TrimSpace(job.Script) == "") {
 		return fmt.Errorf("job requires a prompt")
 	}
-	switch capschedule.JobKind(job) {
+	switch job.NormalizedKind() {
 	case capschedule.KindCron:
-		if _, err := capschedule.ParseCron(job.Cron); err != nil {
+		if _, err := r.engine.ParseCron(job.Cron); err != nil {
 			return err
 		}
 	case capschedule.KindDelay, capschedule.KindAt:
 		if job.FireAt.IsZero() {
-			return fmt.Errorf("%s job requires fireAt", capschedule.JobKind(job))
+			return fmt.Errorf("%s job requires fireAt", job.NormalizedKind())
 		}
 	default:
 		return fmt.Errorf("unknown schedule kind %q", job.Kind)
@@ -168,7 +170,7 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []cap
 		if jobs[i].Kind == "" {
 			jobs[i].Kind = capschedule.KindCron
 		}
-		if err := validateJob(jobs[i], true); err != nil {
+		if err := r.validateJob(jobs[i], true); err != nil {
 			return fmt.Errorf("job %q: %w", jobs[i].ID, err)
 		}
 		jobs[i].Source = source
@@ -194,9 +196,6 @@ func (r *fileRegistry) SyncSource(ctx context.Context, source string, jobs []cap
 	}
 	now := r.now()
 	for _, job := range jobs {
-		if job.CreatedAt.IsZero() {
-			job.CreatedAt = now
-		}
 		if old, ok := previous[job.ID]; ok && !old.LastRun.IsZero() {
 			job.LastRun = old.LastRun
 		} else if job.Kind == capschedule.KindCron && job.LastRun.IsZero() {
@@ -224,23 +223,22 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Jo
 	var due []capschedule.Job
 	changed := false
 	for i, job := range state.Jobs {
-		if job.Disabled || job.Fired {
+		if job.Fired {
 			continue
 		}
-		switch capschedule.JobKind(job) {
+		switch job.NormalizedKind() {
 		case capschedule.KindDelay, capschedule.KindAt:
 			if job.FireAt.After(now) {
 				continue
 			}
-			if job.InFlight && !capschedule.InFlightExpired(job, now) {
+			if !job.InFlightAt.IsZero() && !job.InFlightExpired(now) {
 				continue
 			}
-			state.Jobs[i].InFlight = true
 			state.Jobs[i].InFlightAt = now
 			changed = true
 			due = append(due, state.Jobs[i])
 		default:
-			next, ok := capschedule.NextFire(job, job.LastRun)
+			next, ok := r.engine.NextFire(job, job.LastRun)
 			if !ok || next.After(now) {
 				continue
 			}
@@ -259,7 +257,7 @@ func (r *fileRegistry) Due(ctx context.Context, now time.Time) ([]capschedule.Jo
 	return due, nil
 }
 
-func (r *fileRegistry) MarkFired(ctx context.Context, id string, firedAt time.Time, fireErr error) error {
+func (r *fileRegistry) MarkFired(ctx context.Context, id string) error {
 	path, err := r.resolve(ctx)
 	if err != nil {
 		return err
@@ -268,22 +266,12 @@ func (r *fileRegistry) MarkFired(ctx context.Context, id string, firedAt time.Ti
 	if err != nil {
 		return err
 	}
-	if firedAt.IsZero() {
-		firedAt = r.now()
-	}
 	for i := range state.Jobs {
 		if state.Jobs[i].ID != id {
 			continue
 		}
 		state.Jobs[i].Fired = true
-		state.Jobs[i].FiredAt = firedAt
-		state.Jobs[i].InFlight = false
 		state.Jobs[i].InFlightAt = time.Time{}
-		if fireErr != nil {
-			state.Jobs[i].LastError = fireErr.Error()
-		} else {
-			state.Jobs[i].LastError = ""
-		}
 		return saveStateAt(path, state)
 	}
 	return fmt.Errorf("%w: %q", capschedule.ErrJobNotFound, id)

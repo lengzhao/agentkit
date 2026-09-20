@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
@@ -69,6 +70,7 @@ type Service struct {
 	workspace   workspace.Service
 	sessions    agentkit.SessionStore
 	memory      capmemory.Service
+	engine      capschedule.Engine
 }
 
 type Config struct {
@@ -82,6 +84,7 @@ type Deps struct {
 	Workspace    workspace.Service     `json:"workspace"`
 	SessionStore agentkit.SessionStore `json:"sessionStore"`
 	Memory       capmemory.Service     `json:"memory"`
+	Engine       capschedule.Engine    `json:"engine"`
 }
 
 // New registers learning/default: dreaming, workshop, and /learn (memory via deps.Memory).
@@ -94,6 +97,9 @@ func New(cfg Config, deps Deps) (*Service, error) {
 	}
 	if deps.Memory == nil {
 		return nil, fmt.Errorf("learning/default requires memory")
+	}
+	if deps.Engine == nil {
+		return nil, fmt.Errorf("learning/default requires engine")
 	}
 	dreamCfg := cfg.Dreaming.Normalized()
 	wsCfg := cfg.Workshop.Normalized()
@@ -109,6 +115,7 @@ func New(cfg Config, deps Deps) (*Service, error) {
 		workspace:   deps.Workspace,
 		sessions:    deps.SessionStore,
 		memory:      deps.Memory,
+		engine:      deps.Engine,
 	}
 	if reg, ok := deps.Memory.(capmemory.CommitObserverRegistrar); ok {
 		reg.RegisterCommitObserver(svc)

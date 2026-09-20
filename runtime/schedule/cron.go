@@ -1,3 +1,5 @@
+// Package schedule implements cap/schedule.Engine (cron parsing and job
+// fire-time evaluation) and schedule fire-metadata helpers used by runner/loop.
 package schedule
 
 import (
@@ -5,7 +7,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 )
+
+var _ capschedule.Cron = Schedule{}
+
+var _ fmt.Stringer = Schedule{}
 
 // Field bounds, matching standard 5-field cron.
 const (

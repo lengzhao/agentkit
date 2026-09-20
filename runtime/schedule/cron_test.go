@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	rtschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 func mustParse(t *testing.T, expr string) rtschedule.Schedule {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -15,6 +16,7 @@ func TestPolicySkillsMode(t *testing.T) {
 		Workspace:    ws,
 		SessionStore: stubSessionStore{},
 		Memory:       newTestMemoryStub(ws),
+		Engine:       rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -25,7 +26,7 @@ func newMultiRegistry(t *testing.T) (capschedule.Registry, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := schedule.NewMulti(schedule.MultiConfig{}, schedule.MultiDeps{Workspace: ws})
+	reg, err := schedule.NewMulti(schedule.MultiConfig{}, schedule.MultiDeps{Workspace: ws, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,6 @@ func TestMultiIsolatesJobsPerChannel(t *testing.T) {
 
 	if _, err := reg.Add(ch1, capschedule.Job{
 		Kind:   capschedule.KindDelay,
-		In:     "1m",
 		FireAt: time.Now().Add(time.Minute),
 		Prompt: "channel one",
 	}); err != nil {
@@ -51,7 +51,6 @@ func TestMultiIsolatesJobsPerChannel(t *testing.T) {
 	}
 	if _, err := reg.Add(ch2, capschedule.Job{
 		Kind:   capschedule.KindDelay,
-		In:     "1m",
 		FireAt: time.Now().Add(time.Minute),
 		Prompt: "channel two",
 	}); err != nil {
@@ -73,7 +72,7 @@ func TestMultiIsolatesJobsPerChannel(t *testing.T) {
 		t.Fatalf("channel2 = %+v", list2)
 	}
 
-	schedulePath := filepath.Join(globalRoot, "schedules", "schedule.json")
+	schedulePath := filepath.Join(globalRoot, "schedule.json")
 	if _, err := os.Stat(schedulePath); err != nil {
 		t.Fatalf("shared schedule file: %v", err)
 	}

@@ -11,15 +11,16 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-const defaultGlobalSchedulePath = "global:schedules/schedule.json"
+const defaultGlobalSchedulePath = "global:schedule.json"
 
 type MultiConfig struct {
-	// Path is the shared schedule file, default global:schedules/schedule.json.
+	// Path is the shared schedule file, default global:schedule.json.
 	Path string `json:"path"`
 }
 
 type MultiDeps struct {
 	Workspace workspace.Service `json:"workspace"`
+	Engine    schedule.Engine   `json:"engine"`
 }
 
 // multiRegistry stores every job in one schedule file. List and Remove filter by
@@ -33,11 +34,14 @@ func NewMulti(cfg MultiConfig, deps MultiDeps) (schedule.Registry, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("schedule/multi requires workspace dependency")
 	}
+	if deps.Engine == nil {
+		return nil, fmt.Errorf("schedule/multi requires engine dependency")
+	}
 	path := strings.TrimSpace(cfg.Path)
 	if path == "" {
 		path = defaultGlobalSchedulePath
 	}
-	inner, err := NewFile(FileConfig{Path: path}, FileDeps{Workspace: deps.Workspace})
+	inner, err := NewFile(FileConfig{Path: path}, FileDeps{Workspace: deps.Workspace, Engine: deps.Engine})
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +111,6 @@ func (r *multiRegistry) Due(ctx context.Context, now time.Time) ([]schedule.Job,
 	return r.inner.Due(ctx, now)
 }
 
-func (r *multiRegistry) MarkFired(ctx context.Context, id string, firedAt time.Time, fireErr error) error {
-	return r.inner.MarkFired(ctx, id, firedAt, fireErr)
+func (r *multiRegistry) MarkFired(ctx context.Context, id string) error {
+	return r.inner.MarkFired(ctx, id)
 }

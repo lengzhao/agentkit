@@ -13,17 +13,18 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func newScheduleTool(t *testing.T, cfg schedule.ScheduleConfig) (agentkit.Tool, capschedule.Registry) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir())})
+		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir()), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tl, err := schedule.NewSchedule(cfg, schedule.ScheduleDeps{Schedule: registry})
+	tl, err := schedule.NewSchedule(cfg, schedule.ScheduleDeps{Schedule: registry, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,10 +214,10 @@ func TestScheduleCapturesDeliveryFromContext(t *testing.T) {
 		t.Fatalf("jobs = %+v", stored)
 	}
 	job := stored[0]
-	if job.DeliverySessionID != "chat-api:ch:t:conv" {
-		t.Fatalf("delivery = %q", job.DeliverySessionID)
+	if job.Route.DeliverySessionID != "chat-api:ch:t:conv" {
+		t.Fatalf("delivery = %q", job.Route.DeliverySessionID)
 	}
-	if job.PlatformID != "chat-api" || job.UserID != "u1" || job.AgentID != "assistant" {
+	if job.Route.PlatformID != "chat-api" || job.Route.UserID != "u1" || job.Route.AgentID != "assistant" {
 		t.Fatalf("routing = %+v", job)
 	}
 	if job.Kind != capschedule.KindDelay || job.FireAt.IsZero() {

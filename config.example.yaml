@@ -211,7 +211,7 @@ prompt.custom.default:
 # schedule.default:
 #   use: schedule/multi
 #   config:
-#     path: global:schedules/schedule.json
+#     path: global:schedule.json
 #   deps:
 #     workspace: workspace.default
 
@@ -229,6 +229,7 @@ prompt.custom.default:
 #   deps:
 #     schedule: schedule.default
 #     workspace: workspace.default
+#     engine: schedule.engine
 #
 # 无人值守 headless 守护进程（platform/worker + 启动 task）见 presets/cron.yaml：
 #   go run ./cmd/agent -config presets/autonomous.yaml,presets/cron.yaml

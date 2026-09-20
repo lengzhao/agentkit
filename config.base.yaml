@@ -296,15 +296,20 @@ sessionCommands.default:
   deps:
     sessionStore: sessionStore.default
 
+# cron 表达式与下次触发时间的求值引擎；schedule/file、schedule/cron、tool/schedule、learning 共用。
+schedule.engine:
+  use: schedule/engine
+
 # cron job 表持久化；schedule/cron 与 tool/schedule 共用此 registry。
 # 写入走临时文件 + rename，进程写一半被杀不会留下截断的 job 表。
 schedule.default:
   use: schedule/multi
   config:
     # 全局一份 schedule.json；list/remove 按 channel 过滤。
-    path: global:schedules/schedule.json
+    path: global:schedule.json
   deps:
     workspace: workspace.default
+    engine: schedule.engine
 
 # 常驻日历调度：与 tool/schedule 共用 registry，agent 排的 job 跨重启存活。
 schedule.cron:
@@ -317,6 +322,7 @@ schedule.cron:
   deps:
     schedule: schedule.default
     workspace: workspace.default
+    engine: schedule.engine
 
 # 子 agent 委派：定义在 local:agents / global:agents 下的 agents/*.md。
 # 子 agent 必须用不含 tool/subagent 的兄弟 tools/prompt 实例，既断依赖环，也让"只有主 agent 能委派"成为结构性事实。
@@ -686,6 +692,7 @@ learning.default:
     workspace: workspace.default
     sessionStore: sessionStore.default
     memory: memory.default
+    engine: schedule.engine
 
 # 后台 dreaming sweep（与 schedule/cron 并列由 runner 启动；多租户下按 local 根枚举）
 learning.dreamSweep:
@@ -869,6 +876,7 @@ tool.schedule.default:
     maxJobs: 32
   deps:
     schedule: schedule.default
+    engine: schedule.engine
 
 tool.subagent.default:
   use: tool/subagent

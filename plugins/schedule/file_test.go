@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -21,6 +22,7 @@ func newRegistry(t *testing.T) (capschedule.Registry, string) {
 	dir := t.TempDir()
 	reg, err := schedule.NewFile(schedule.FileConfig{Path: "schedule.json"}, schedule.FileDeps{
 		Workspace: rtworkspace.Static(dir),
+		Engine:    rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +43,7 @@ func TestGlobalPathSharedAcrossTenantContexts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := schedule.NewFile(schedule.FileConfig{Path: "global:schedule.json"}, schedule.FileDeps{Workspace: ws})
+	reg, err := schedule.NewFile(schedule.FileConfig{Path: "global:schedule.json"}, schedule.FileDeps{Workspace: ws, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +102,7 @@ func TestAddValidatesAndPersists(t *testing.T) {
 	// agent-created schedule survive a restart.
 	reopened, err := schedule.NewFile(schedule.FileConfig{Path: "schedule.json"}, schedule.FileDeps{
 		Workspace: rtworkspace.Static(filepath.Dir(path)),
+		Engine:    rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -151,8 +154,7 @@ func TestAddDelayJobAndMarkFired(t *testing.T) {
 		t.Fatalf("due = %+v, want delay job", due)
 	}
 
-	firedAt := fireAt.Add(100 * time.Millisecond)
-	if err := reg.MarkFired(ctx, job.ID, firedAt, nil); err != nil {
+	if err := reg.MarkFired(ctx, job.ID); err != nil {
 		t.Fatalf("mark fired: %v", err)
 	}
 	jobs, err := reg.List(ctx)
@@ -162,7 +164,7 @@ func TestAddDelayJobAndMarkFired(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatalf("jobs = %+v, want fired history retained", jobs)
 	}
-	if !jobs[0].Fired || !jobs[0].FiredAt.Equal(firedAt) {
+	if !jobs[0].Fired {
 		t.Fatalf("fired state = %+v", jobs[0])
 	}
 
@@ -319,27 +321,6 @@ func TestDueFiresOnceAndSkipsMissedBoundaries(t *testing.T) {
 	}
 }
 
-func TestDueSkipsDisabledJobs(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	reg, _ := newRegistry(t)
-	anchor := time.Date(2026, 8, 24, 8, 0, 0, 0, time.UTC)
-	if err := reg.SyncSource(ctx, capschedule.SourceConfig, []capschedule.Job{
-		{ID: "on", Cron: "* * * * *", Prompt: "runs", LastRun: anchor},
-		{ID: "off", Cron: "* * * * *", Prompt: "paused", LastRun: anchor, Disabled: true},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	due, err := reg.Due(ctx, anchor.Add(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(due) != 1 || due[0].ID != "on" {
-		t.Fatalf("due = %+v, want only the enabled job", due)
-	}
-}
-
 func TestListSurvivesAMissingOrEmptyFile(t *testing.T) {
 	t.Parallel()
 
@@ -390,7 +371,7 @@ func TestDueClaimsOneShotInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(due) != 1 || !due[0].InFlight {
+	if len(due) != 1 || due[0].InFlightAt.IsZero() {
 		t.Fatalf("first due = %+v, want in-flight claim", due)
 	}
 	jobID := due[0].ID
@@ -403,7 +384,7 @@ func TestDueClaimsOneShotInFlight(t *testing.T) {
 		t.Fatalf("second due = %+v, want none while in-flight", due)
 	}
 
-	if err := reg.MarkFired(ctx, jobID, now, nil); err != nil {
+	if err := reg.MarkFired(ctx, jobID); err != nil {
 		t.Fatal(err)
 	}
 }

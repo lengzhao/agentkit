@@ -3,7 +3,7 @@ package schedule_test
 import (
 	"testing"
 
-	rtschedule "github.com/lengzhao/agentkit/cap/schedule"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 )
 
 func TestIsStatelessSessionMode(t *testing.T) {

@@ -1,12 +1,9 @@
 package schedule
 
-import "strings"
+import (
+	"strings"
 
-const (
-	SessionModeStateless = "stateless"
-	SessionModeReuse     = "reuse"
-	SessionModeFresh     = "fresh"
-	SessionModeFixed     = "fixed"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 )
 
 // FireMeta returns schedule fire metadata when present on an inbound event.
@@ -34,7 +31,7 @@ func SessionModeFromMeta(meta map[string]any) string {
 // the delivery conversation's active session history.
 func IsStatelessSessionMode(mode string) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", SessionModeStateless, SessionModeFresh:
+	case "", capschedule.SessionModeStateless, capschedule.SessionModeFresh:
 		return true
 	default:
 		return false

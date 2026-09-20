@@ -462,8 +462,9 @@ cap/<domain>/
   *.go               # 可替换能力接口与 DTO（workspace、compaction、permission…）
   doc.go             # 接口文档（可选）
 
-runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、skill、media、telemetry…）
-cap/schedule/        # Registry/Runtime 契约 + cron 算法（ParseCron/NextFire/JobKind，cron 表达式的领域语义）
+runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、skill、media、telemetry、schedule…）
+cap/schedule/        # Registry/Runtime/Engine 契约；cron 求值实现见 runtime/schedule（schedule/engine）
+runtime/schedule/    # ParseCron/NextFire、fire metadata；schedule/engine kind
 cap/configfile/      # Writer 接口（/env add、/mcp add、/openapi add 的原子写与回滚）+ PeelGlobalFlag；实现见 runtime/configfile（configfile/writer kind，deps 注入）
 cap/memory/          # Service、Tool、Capture、Reader（memory/default 实现）
 cap/learning/        # SkillProposer、ReviewHost、DreamSweepScheduler（learning/default）；memory 见 cap/memory
@@ -497,7 +498,7 @@ plugins/
 
 **规则**：
 
-- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` 之于 Scope 常量、`schedule.Schedule.Next` 之于 cron 表达式、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `configfile.Writer`）。
+- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` 之于 Scope 常量、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `configfile.Writer`、`schedule.Engine`）。
 - 文件/Shell 等模型工具优先单插件内聚；共享 deps 通常是 `workspace.Service`，不是 `filesystem.Service`。
 - 只有 workspace、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
 - 换 workspace Provider（如 `workspace/default` → `workspace/tenant`）不换 tool kind：修改 deps 指向即可。

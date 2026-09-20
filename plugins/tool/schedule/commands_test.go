@@ -11,6 +11,7 @@ import (
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	toolschedule "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -19,6 +20,7 @@ func TestCronSlashListsChannelJobs(t *testing.T) {
 
 	reg, err := pluginschedule.NewMulti(pluginschedule.MultiConfig{Path: "schedule.json"}, pluginschedule.MultiDeps{
 		Workspace: rtworkspace.Static(t.TempDir()),
+		Engine:    rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +35,7 @@ func TestCronSlashListsChannelJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tool, err := toolschedule.NewSchedule(toolschedule.ScheduleConfig{}, toolschedule.ScheduleDeps{Schedule: reg})
+	tool, err := toolschedule.NewSchedule(toolschedule.ScheduleConfig{}, toolschedule.ScheduleDeps{Schedule: reg, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +71,7 @@ func TestCronSlashRemove(t *testing.T) {
 
 	reg, err := pluginschedule.NewMulti(pluginschedule.MultiConfig{Path: "schedule.json"}, pluginschedule.MultiDeps{
 		Workspace: rtworkspace.Static(t.TempDir()),
+		Engine:    rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +84,7 @@ func TestCronSlashRemove(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	tool, err := toolschedule.NewSchedule(toolschedule.ScheduleConfig{}, toolschedule.ScheduleDeps{Schedule: reg})
+	tool, err := toolschedule.NewSchedule(toolschedule.ScheduleConfig{}, toolschedule.ScheduleDeps{Schedule: reg, Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}

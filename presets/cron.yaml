@@ -58,6 +58,7 @@ schedule.cron:
   deps:
     schedule: schedule.default
     workspace: workspace.default
+    engine: schedule.engine
 
 # job 表落在工作区里，agent 加的 job 因此能跨重启存活。
 # 写入走临时文件 + rename：进程在写一半时被杀，回来不会读到截断的 job 表。
@@ -67,6 +68,7 @@ schedule.default:
     path: schedule.json
   deps:
     workspace: workspace.default
+    engine: schedule.engine
 
 # 把 tool/schedule 挂给 agent —— 与 schedule/cron 共用同一个 registry，
 # 所以 agent 新加的 job 不重启就会被拾起，且跨重启存活。
@@ -100,3 +102,4 @@ tool.schedule.default:
     maxJobs: 16
   deps:
     schedule: schedule.default
+    engine: schedule.engine
