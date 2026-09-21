@@ -19,7 +19,6 @@ import (
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 type sessionUpdateConsumer interface {
@@ -166,7 +165,7 @@ func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
 	if b.cfg.Cwd != "" {
 		return b.workspace.Resolve(ctx, b.cfg.Cwd)
 	}
-	workDir, _ := workpath.WorkLayout(b.workspace)
+	workDir, _ := workspace.WorkLayout(b.workspace)
 	if workDir == "" {
 		workDir = "work"
 	}

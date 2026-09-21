@@ -1,4 +1,4 @@
-package common
+package rctx_test
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ func TestWithDeliveryRouteSetsEnvelope(t *testing.T) {
 	t.Parallel()
 
 	delivery := agentkit.SessionID("slack:C001:t:1:u:U1")
-	event := WithDeliverySession(agentkit.MessageEvent{
+	event := rctx.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: "slack",
 		UserID:     "U1",
 	}, "slack", delivery)
@@ -31,7 +31,7 @@ func TestWithDeliveryRouteSetsEnvelope(t *testing.T) {
 func TestWithInboundRoutePreservesReplyTo(t *testing.T) {
 	t.Parallel()
 
-	event := WithInboundRoute(agentkit.MessageEvent{
+	event := rctx.WithInboundRoute(agentkit.MessageEvent{
 		PlatformID: "slack",
 		UserID:     "U1",
 	}, agentkit.SessionRouteInput{
@@ -52,18 +52,5 @@ func TestWithInboundRoutePreservesReplyTo(t *testing.T) {
 	}
 	if target.ReplyTo != "msg-42" {
 		t.Fatalf("replyTo = %q", target.ReplyTo)
-	}
-}
-
-func TestInboundMessageSetsDeliveryRoute(t *testing.T) {
-	t.Parallel()
-
-	event := InboundMessage("coder", agentkit.SessionID("slack:C001"), "slack", "u1", "hi")
-	if event.AgentID != "coder" {
-		t.Fatalf("AgentID = %q, want coder", event.AgentID)
-	}
-	id, ok := rctx.RouteSessionID(event.Envelope.Route)
-	if !ok || id != "slack:C001" {
-		t.Fatalf("route id = %v", event.Envelope.Route)
 	}
 }

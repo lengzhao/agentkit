@@ -73,7 +73,9 @@ flowchart TB
   - 落地：`cap/credentials` 仅 `Store` / `EnvPairResolver` / `Secret` / `GlobalScope`；密文、manifest、scoped 查找在 `plugins/credentials`；mcp / openapi / shell 经 `deps.credentials` 注入 `Store`（shell 另断言 `EnvPairResolver`），各自拼 `mcp.` / `openapi.` / `shell-bash.` scope。
   - 验收：上述插件非测试源码不再 import `runtime/credentials`（该包已删除）。
 - [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`；`learning` 背景审阅信号去重经 `Reader.PreviewAddOutcome`，非测试源码不再 import `runtime/memory`）
-- [ ] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
+- [x] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
+  - 落地：`cap/skill` 仅 `Registry` / `Descriptor` / `Content`；`skill/filesystem` 实现 Registry；`prompt/section/skills`、`tool/skill` 经 `deps.skills` 注入；`tool/skill` 经 `sessionEvents` 做 `RenderSkillContent` / `AppendSkillLoad`，非测试源码不再 import `runtime/skill`。
+  - 验收：`plugins/tool/skill` 非测试源码不再 import `runtime/skill`（解析留在 `plugins/skill` → `runtime/skill`）。
 - [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
 - [ ] **`cap/permission`**：`tool/askuser`、`agent/acpremote` → 注入
 - [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize` → 注入
@@ -87,8 +89,9 @@ flowchart TB
 - [ ] **ToolRuntime 构造**：`plugins/tools/deferred`（`NewRuntime`）、`learning`；接口已在根包，构造收归 runtime 装配层
 - [ ] **`cap/bind`（空目录）**：`mcp`、`openapi` 的 `ResolveCtxValue` / `In` / `Key`
 - [ ] **`cap/media`（空目录）**：`fs`、`recognize` 的媒体路径 / MIME 助手；补齐或并入根包
-- [ ] **`runtime/workspace/workpath`**：`acpremote`（`WorkLayout`）、`fs`（`TrimRedundantFSRootPrefix`）归入 `cap/workspace`
-- [ ] **投递会话约定**：`plugins/schedule` 的 `runtime/platform/common.WithDeliverySession`；并入 rctx 上移或 `cap/delivery`
+- [x] **`runtime/workspace/workpath`**：已删除；路径纯函数在 `cap/workspace`（`NormalizeAgentRel`、`UploadWorkRel` 等），模型/附件落盘统一 `runtime/workspace.ResolveFile`；`TrimRedundantFSRootPrefix` 在 `runtime/filesystem`（`filesystem/local` 用）。
+- [x] **投递会话约定**：`plugins/schedule` 的 `runtime/platform/common.WithDeliverySession`；并入 rctx 上移或 `cap/delivery`
+  - 落地：`WithInboundRoute` / `WithDeliveryRoute` / `WithDeliverySession` 在 `runtime/rctx`；平台与 `plugins/schedule` 直调 rctx；`runtime/platform/common` 不再提供上述 helper。
 
 ### A4 已完成（契约 + 注入）
 
@@ -151,6 +154,6 @@ flowchart TB
 
 ## 暂不处理
 
-`runtime/rctx`（session / envelope / route / workspace key / outbound emit）上移根包或 cap，待单独评估。`runtime/platform/common` 的投递路由约定可在该项一并收口。
+`runtime/rctx`（session / envelope / route / workspace key / outbound emit）上移根包或 cap，待单独评估。
 
 每完成一项：`go build ./... && scripts/check-plugin-imports`，并确认 `config/testdata/presets/*.resolved.yaml` 无意外 diff。

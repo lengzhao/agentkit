@@ -1,15 +1,14 @@
-package common
+package rctx
 
 import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // WithInboundRoute attaches a structured session route to an inbound event.
 func WithInboundRoute(event agentkit.MessageEvent, route agentkit.SessionRouteInput) agentkit.MessageEvent {
-	return WithDeliveryRoute(event, rctx.BuildSessionRoute(route))
+	return WithDeliveryRoute(event, BuildSessionRoute(route))
 }
 
 // WithDeliveryRoute attaches the platform return address to an inbound event.

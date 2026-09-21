@@ -11,7 +11,6 @@ import (
 
 	capfs "github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -83,7 +82,7 @@ func (s *localFS) resolve(ctx context.Context, path string) (string, error) {
 		return clean, nil
 	}
 	clean := filepath.Clean(path)
-	clean = workpath.TrimRedundantFSRootPrefix(s.relRoot, clean)
+	clean = TrimRedundantFSRootPrefix(s.relRoot, clean)
 	root, err := s.rootDir(ctx)
 	if err != nil {
 		return "", err

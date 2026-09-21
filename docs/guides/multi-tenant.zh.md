@@ -32,11 +32,11 @@ Platform 侧：
 
 ```go
 delivery := rctx.BuildDeliverySessionID("slack", channelID, threadTS, userID)
-event := common.WithInboundRoute(agentkit.MessageEvent{
+event := rctx.WithInboundRoute(agentkit.MessageEvent{
     PlatformID: "slack",
     UserID:     userID,
     // Message ...
-}, session.SessionRouteInput{
+}, agentkit.SessionRouteInput{
     Platform:    "slack",
     DeliveryID:  delivery,
     ChannelID:   channelID,
@@ -47,7 +47,7 @@ event := common.WithInboundRoute(agentkit.MessageEvent{
 // Runner SyncMessageEvent 后 Envelope 含 Conversation / Workspace / Route
 ```
 
-或 `common.InboundFromContent(agentID, route, userID, ...)`；仅需 delivery id 时用 `common.WithDeliverySession`。
+或 `common.InboundFromContent(agentID, route, userID, ...)`；仅需 delivery id 时用 `rctx.WithDeliverySession`。
 
 Runner 侧（`config.base.yaml` 或 preset）：
 
@@ -230,7 +230,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 `presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就三件：
 
-1. 用 `rctx.BuildDeliverySessionID` 生成 delivery，并通过 `common.WithInboundRoute`（推荐，含 `ReplyTo`）或 `common.WithDeliverySession` / `InboundFromContent` / `InboundMessage` 写入 `MessageEvent.Envelope.Route`；
+1. 用 `rctx.BuildDeliverySessionID` 生成 delivery，并通过 `rctx.WithInboundRoute`（推荐，含 `ReplyTo`）或 `rctx.WithDeliverySession` / `common.InboundFromContent` / `common.InboundMessage` 写入 `MessageEvent.Envelope.Route`；
 2. 在 `MessageEvent.UserID` 填上发言人；
 3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。`x-task-id` 默认已纳入白名单；`X-Chat-API-User-Name`（或配置的 `userNameHeader`）会自动写入 Metadata，无需重复配置。
 

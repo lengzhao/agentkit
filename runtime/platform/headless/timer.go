@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const timerPlatformID = "timer"
@@ -126,7 +126,7 @@ func (t *Timer) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 
 	slog.Info("timer tick", "run", run+1, "interval", t.interval.String())
 	sessionID := t.naming.forRun(run)
-	return common.WithDeliverySession(agentkit.MessageEvent{
+	return rctx.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: timerPlatformID,
 		Message:    userMessage(t.prompt),
 	}, timerPlatformID, sessionID), nil

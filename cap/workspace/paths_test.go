@@ -1,10 +1,17 @@
 package workspace_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
+
+type stubLayout struct{}
+
+func (stubLayout) Resolve(_ context.Context, rel string) (string, error) { return rel, nil }
+func (stubLayout) WorkDirRel() string                                       { return "work" }
+func (stubLayout) UploadDirRel() string                                     { return "work/upload" }
 
 func TestParseScoped(t *testing.T) {
 	t.Parallel()
@@ -58,3 +65,51 @@ func TestFirstScoped(t *testing.T) {
 		t.Fatal("URL must not count as a bare local path")
 	}
 }
+
+func TestCanonicalWorkPath(t *testing.T) {
+	t.Parallel()
+
+	workDir := "work"
+	cases := map[string]string{
+		"upload/a.jpg":           "work/upload/a.jpg",
+		"work/upload/a.jpg":      "work/upload/a.jpg",
+		"work/work/upload/a.jpg": "work/upload/a.jpg",
+		"/work/upload/a.jpg":     "work/upload/a.jpg",
+		"local:skills/foo.md":    "local:skills/foo.md",
+	}
+	for in, want := range cases {
+		if got := workspace.CanonicalWorkPath(workDir, in); got != want {
+			t.Fatalf("%q => %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestNormalizeAgentRel(t *testing.T) {
+	t.Parallel()
+	workDir := "work"
+	if got := workspace.NormalizeAgentRel(workDir, "work/upload/a.jpg"); got != "upload/a.jpg" {
+		t.Fatalf("got %q", got)
+	}
+	if got := workspace.NormalizeAgentRel(workDir, "upload/a.jpg"); got != "upload/a.jpg" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestUploadWorkRel(t *testing.T) {
+	t.Parallel()
+	ws := stubLayout{}
+	if got := workspace.UploadWorkRel(ws); got != "upload" {
+		t.Fatalf("got %q", got)
+	}
+	if got := workspace.AttachFSRel(ws, "a.png"); got != "upload/a.png" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestLocalPath(t *testing.T) {
+	t.Parallel()
+	if got := workspace.LocalPath("work/upload/a.jpg"); got != "local:work/upload/a.jpg" {
+		t.Fatalf("got %q", got)
+	}
+}
+

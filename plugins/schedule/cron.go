@@ -12,7 +12,6 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -363,7 +362,7 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 		},
 	}
 	if deliverySessionID != "" {
-		evt = common.WithDeliverySession(evt, platformID, deliverySessionID)
+		evt = rctx.WithDeliverySession(evt, platformID, deliverySessionID)
 	}
 	if agent := strings.TrimSpace(job.Route.AgentID); agent != "" {
 		evt.AgentID = agentkit.AgentID(agent)

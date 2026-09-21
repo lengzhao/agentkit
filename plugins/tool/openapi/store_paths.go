@@ -6,14 +6,14 @@ import (
 	"fmt"
 
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func storeAbsPath(ctx context.Context, ws workspace.Service, path string) (string, error) {
 	if ws == nil {
 		return path, nil
 	}
-	return workpath.AbsolutePath(ctx, ws, path)
+	return rtws.ResolveFile(ctx, ws, path)
 }
 
 func normalizeAPIEntryPaths(ctx context.Context, ws workspace.Service, entry *rawAPIEntry) error {

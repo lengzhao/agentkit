@@ -8,3 +8,14 @@ type Layout interface {
 	WorkDirRel() string
 	UploadDirRel() string
 }
+
+// WorkLayout reads agent work layout from the workspace service.
+func WorkLayout(ws Service) (workDir, uploadDir string) {
+	if ws == nil {
+		return "", ""
+	}
+	if l, ok := ws.(Layout); ok {
+		return l.WorkDirRel(), l.UploadDirRel()
+	}
+	return "", ""
+}

@@ -138,7 +138,7 @@ type SessionEvent struct {
 
 // MessageEvent is the inbound envelope from Platform to Loop.
 //
-// Platforms should set Envelope.Route on ingress (e.g. common.WithInboundRoute).
+// Platforms should set Envelope.Route on ingress (e.g. rctx.WithInboundRoute).
 // Runner normalizes into TurnEnvelope before Dispatch: Conversation for
 // history/lock, Workspace for tenant resources, Route for outbound return path.
 type MessageEvent struct {

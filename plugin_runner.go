@@ -17,7 +17,7 @@ type Runner interface {
 }
 
 // Platform adapts external transports into AgentKit message events. Platforms
-// should populate Envelope.Route on ingress (e.g. common.WithDeliveryRoute);
+// should populate Envelope.Route on ingress (e.g. rctx.WithDeliveryRoute);
 // runner normalizes TurnEnvelope before Loop.Dispatch. OutboundEvent.Route is
 // the return address.
 //

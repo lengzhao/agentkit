@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // CanonicalStoredPath normalizes attachment paths for session JSONL: work-relative, no scope prefixes.
@@ -14,12 +14,12 @@ import (
 func CanonicalStoredPath(ws cw.Service, rel string) string {
 	rel = strings.TrimSpace(rel)
 	if filepath.IsAbs(rel) {
-		workDir, _ := workpath.WorkLayout(ws)
+		workDir, _ := cw.WorkLayout(ws)
 		if workDir == "" {
 			return filepath.ToSlash(rel)
 		}
 		if ctx := context.Background(); ws != nil {
-			workAbs, err := workpath.ResolveFile(ctx, ws, workDir)
+			workAbs, err := rtws.ResolveFile(ctx, ws, workDir)
 			if err == nil {
 				if r, err := filepath.Rel(workAbs, filepath.Clean(rel)); err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
 					return filepath.ToSlash(r)
@@ -29,8 +29,8 @@ func CanonicalStoredPath(ws cw.Service, rel string) string {
 		return filepath.ToSlash(rel)
 	}
 	rel = stripScopedPrefixes(rel)
-	workDir, _ := workpath.WorkLayout(ws)
-	return filepath.ToSlash(workpath.StripWorkPrefix(workDir, rel))
+	workDir, _ := cw.WorkLayout(ws)
+	return filepath.ToSlash(cw.NormalizeAgentRel(workDir, rel))
 }
 
 // NormalizeWorkRel strips the configured work-dir prefix from a tenant-local relative path.
@@ -40,8 +40,8 @@ func NormalizeWorkRel(ws cw.Service, rel string) string {
 	if filepath.IsAbs(rel) {
 		return filepath.Clean(rel)
 	}
-	workDir, _ := workpath.WorkLayout(ws)
-	return workpath.StripWorkPrefix(workDir, stripScopedPrefixes(rel))
+	workDir, _ := cw.WorkLayout(ws)
+	return cw.NormalizeAgentRel(workDir, stripScopedPrefixes(rel))
 }
 
 // CanonicalWorkPath returns the agent-facing absolute path.
@@ -54,5 +54,5 @@ func stripLocalPrefix(path string) string {
 }
 
 func resolveFileAbs(ctx context.Context, ws cw.Service, path string) (string, error) {
-	return workpath.ResolveFile(ctx, ws, path)
+	return rtws.ResolveFile(ctx, ws, path)
 }

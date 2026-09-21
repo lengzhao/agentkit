@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 var scopedPathInText = regexp.MustCompile(`(?i)(?:local|global):[^\s\]\)\"'<>]+`)
@@ -26,7 +26,7 @@ func AgentLLMPath(ctx context.Context, ws cw.Service, path string) string {
 	if ws == nil {
 		return filepath.Clean(stripScopedPrefixes(path))
 	}
-	abs, err := workpath.ResolveFile(ctx, ws, path)
+	abs, err := rtws.ResolveFile(ctx, ws, path)
 	if err != nil {
 		if abs, err = ws.Resolve(ctx, stripScopedPrefixes(path)); err != nil {
 			return stripScopedPrefixes(path)

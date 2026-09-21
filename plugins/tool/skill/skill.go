@@ -9,7 +9,6 @@ import (
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
 type SkillConfig struct{}
@@ -44,21 +43,22 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return "", err
 		}
+		if deps.SessionEvents == nil {
+			return "", fmt.Errorf("tool/skill requires sessionEvents dependency")
+		}
 		sessionID := rctx.SessionIDFromContext(ctx)
 		agentID := rctx.AgentIDFromContext(ctx)
 		if sessionID != "" {
-			if store == nil || deps.SessionEvents == nil {
-				return "", fmt.Errorf("tool/skill requires sessionStore and sessionEvents dependencies")
+			if store == nil {
+				return "", fmt.Errorf("tool/skill requires sessionStore dependency")
 			}
 			sess, err := store.Get(ctx, sessionID)
 			if err != nil {
 				return "", err
 			}
-			if err := deps.SessionEvents.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
-				return "", err
-			}
+			return deps.SessionEvents.AppendSkillLoad(ctx, sess, agentID, content)
 		}
-		return rtskill.RenderLoaded(content), nil
+		return deps.SessionEvents.RenderSkillContent(content), nil
 	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Use absolute paths with read and bash (skill base directory is absolute in the load result).").Build()
 	if err != nil {
 		return nil, err

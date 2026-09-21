@@ -1248,7 +1248,7 @@ Policy Plane 判定已可见调用以及能力操作：
 
 **配置层 vs 运行时 / 模型面**
 
-- `local:` / `global:` **只出现在配置**（preset、YAML、插件 `config` 字段）。装配/初始化或每次 `workspace.Resolve` / `workpath.AbsolutePath` 之后，运行态与模型面一律使用**宿主机绝对路径**；业务代码、工具回显、telemetry、session 派生历史不得再出现 `global:`/`local:`（`cap/workspace.IsScoped` 可检测泄漏）。
+- `local:` / `global:` **只出现在配置**（preset、YAML、插件 `config` 字段）。装配/初始化或每次 `workspace.Resolve` / `runtime/workspace.ResolveFile` 之后，运行态与模型面一律使用**宿主机绝对路径**；业务代码、工具回显、telemetry、session 派生历史不得再出现 `global:`/`local:`（`cap/workspace.IsScoped` 可检测泄漏）。
 - **Session、入站附件、工具回显、LLM 历史、skill 资源根目录**对模型一律为 **宿主机绝对路径**（`runtime/media.AgentLLMPath`）；`local:`/`global:` 仅存在于配置与插件内部，不出现在模型可见文本中。工具入参仍接受 work 下相对路径（解析后与绝对路径等价）；**bash / 脚本执行**在绝对 cwd 与绝对路径上操作。
 - **持久化索引**（如 `api.json` 的 `apis.*.path`）在 `/openapi add` 写入时经 `workspace` 解析为绝对路径；`filesystem.local.state` 开启 `unrestricted` 以便读取 global 与 local 两侧的绝对 spec 路径。
 - `tool/fs-workspace` 的 `root` 仍为 `work`；模型与工具回显使用相对该根的 `upload/foo` 等形式（`work/` 前缀仅存在于租户磁盘布局，不出现在模型可见文本中）。

@@ -36,7 +36,10 @@ type Compaction interface {
 
 // Skills records skill injections during tool execution.
 type Skills interface {
-	AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) error
+	// RenderSkillContent formats loaded skill instructions for the model (tool result and event payload).
+	RenderSkillContent(content skill.Content) string
+	// AppendSkillLoad persists skill/load and returns the same rendered text.
+	AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) (string, error)
 }
 
 // Conversation is transcript plus turn bracketing, used by remote agents that

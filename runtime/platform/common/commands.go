@@ -77,7 +77,7 @@ func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash 
 	if len(slash.Metadata) > 0 {
 		event.Metadata = slash.Metadata
 	}
-	env := rctx.ResolveEnvelope(WithDeliveryRoute(event, slash.Route), policy)
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(event, slash.Route), policy)
 	env = rctx.WithMetadataScope(env, slash.SessionScope)
 	cmdCtx := rctx.ApplyEnvelopeToContext(ctx, env)
 	if enricher, ok := commands.(agentkit.SlashAdminContext); ok {

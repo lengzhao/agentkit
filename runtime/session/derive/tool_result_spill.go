@@ -12,7 +12,6 @@ import (
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 // AuditSpillPath records the workspace-relative spill file for a truncated tool result.
@@ -84,8 +83,8 @@ func toolSpillRelPath(ws cw.Service, sessionID agentkit.SessionID, callID agentk
 	if call == "" || call == "_" {
 		call = "call"
 	}
-	workRel, _ := workpath.WorkLayout(ws)
-	return workpath.JoinWork(workRel, "tool-spill/"+sess+"/"+call+".txt")
+	workRel, _ := cw.WorkLayout(ws)
+	return cw.JoinWork(workRel, "tool-spill/"+sess+"/"+call+".txt")
 }
 
 // SpillPathAbs resolves a stored spill_path audit entry to an absolute path.

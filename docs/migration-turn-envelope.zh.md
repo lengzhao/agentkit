@@ -31,7 +31,7 @@
 | credentials | `Store`、`EnvPairResolver`、`Secret`、`GlobalScope` | 实现在 `plugins/credentials`（密文 / manifest / scoped 查找）；见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | permission | `Broker`、`Request`、`Reply`、DTO | `MatchReply`、`MarshalReply`、`EffectiveTimeout`、`CapabilityFrom`… |
 | schedule | `Registry`、`Runtime`、`Engine`、`Cron`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`… |
-| skill | `Registry`、`Descriptor`、`Content` | `RenderLoaded`、`SanitizeRelativePath`、`ReadFile`、`RunScript` |
+| skill | `Registry`、`Descriptor`、`Content` | `RenderSkillLoaded`（`runtime/session/derive`）；`SanitizeRelativePath`、`ReadFile`、`RunScript`（`runtime/skill`） |
 | learning | `cap/learning`（`SkillProposer`、`ReviewHost`、`DreamSweepScheduler`）；`cap/memory`（`Capture`、`Service`）；`runtime/learning.MemoryEntry` | `ParseMemory`、`RenderMemory`、`MemoryStore`、`RunReview`、`ApplyCapture` |
 | media | `ContentTypeAttachmentRef`（`runtime/media` 常量） | `IsImage`、`DataURL`、`LoadWorkspaceImage`、`FormatReadImageResult`… |
 
@@ -55,11 +55,11 @@ route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: in
 
 ```go
 delivery := session.BuildDeliverySessionID("slack", channelID, threadTS, userID)
-event := common.WithInboundRoute(agentkit.MessageEvent{
+event := rctx.WithInboundRoute(agentkit.MessageEvent{
     PlatformID: "slack",
     UserID:     userID,
     Message:    msg,
-}, session.SessionRouteInput{
+}, agentkit.SessionRouteInput{
     Platform:    "slack",
     DeliveryID:  delivery,
     ChannelID:   channelID,
@@ -70,7 +70,7 @@ event := common.WithInboundRoute(agentkit.MessageEvent{
 // Runner 会填充 Envelope.Conversation、Workspace
 ```
 
-仅需 delivery id、无 ReplyTo 时可用 `common.WithDeliverySession`（内部仍走 `BuildSessionRoute`）。
+仅需 delivery id、无 ReplyTo 时可用 `rctx.WithDeliverySession`（内部仍走 `BuildSessionRoute`）。
 
 ## 出站
 

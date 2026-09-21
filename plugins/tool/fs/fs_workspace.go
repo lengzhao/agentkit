@@ -9,7 +9,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type FSWorkspaceConfig struct {
@@ -336,7 +336,7 @@ func (a *fsAdapter) resolveToolPath(ctx context.Context, path string) (string, e
 	if a.workspace == nil {
 		return rtmedia.AgentLLMPath(ctx, nil, path), nil
 	}
-	return workpath.AbsolutePath(ctx, a.workspace, path)
+	return rtws.ResolveFile(ctx, a.workspace, path)
 }
 
 func (a *fsAdapter) readText(ctx context.Context, path string, maxBytes int) (string, error) {

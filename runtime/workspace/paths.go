@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
 )
 
 // defaultWorkDir and defaultUploadSubdir match L0 workspace.config defaults when fields are omitted.
@@ -34,5 +34,5 @@ func normalizeUploadSub(sub string) string {
 }
 
 func joinWorkUpload(workDir, uploadSub string) string {
-	return workpath.JoinWork(workDir, uploadSub)
+	return cw.JoinWork(workDir, uploadSub)
 }

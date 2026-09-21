@@ -9,7 +9,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type agentBridge struct {
@@ -111,7 +111,7 @@ func (a *agentBridge) Prompt(ctx context.Context, params acp.PromptRequest) (acp
 	sess.setTurnWait(turnCh)
 
 	msg := promptToModelMessage(params.Prompt)
-	event := common.WithDeliverySession(agentkit.MessageEvent{
+	event := rctx.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: platformID,
 		Message:    msg,
 	}, platformID, sess.deliveryID)
