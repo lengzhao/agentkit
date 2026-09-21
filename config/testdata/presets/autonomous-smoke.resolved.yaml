@@ -117,13 +117,10 @@ compaction.token-limit.worker:
         services:
             - compaction.summary.default
     use: compaction/token-limit
-configfile.default:
-    use: configfile/writer
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
-        configfile: configfile.default
         fs: filesystem.local.state
     use: credentials/integrations
 filesystem.local.default:
@@ -136,6 +133,7 @@ filesystem.local.default:
 filesystem.local.state:
     config:
         root: .
+        unrestricted: true
     deps:
         workspace: workspace.default
     use: filesystem/local
@@ -235,6 +233,7 @@ openapi.default:
     deps:
         credentials: credentials.integrations
         fs: filesystem.local.state
+        workspace: workspace.default
     use: tool/openapi
 platform.default:
     config:
@@ -470,6 +469,7 @@ skills.default:
             - global:skills
     deps:
         fs: filesystem.local.state
+        workspace: workspace.default
     use: skill/filesystem
 subagent.default:
     deps:

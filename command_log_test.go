@@ -26,3 +26,20 @@ func TestRedactSlashAddNamePayload(t *testing.T) {
 		t.Fatal("expected -u unchanged")
 	}
 }
+
+func TestPeelGlobalFlag(t *testing.T) {
+	t.Parallel()
+
+	global, rest := PeelGlobalFlag([]string{"-g", "add", "name"})
+	if !global || len(rest) != 2 || rest[0] != "add" {
+		t.Fatalf("global=%v rest=%v", global, rest)
+	}
+	global, rest = PeelGlobalFlag([]string{"--global", "use", "coding"})
+	if !global || len(rest) != 2 || rest[0] != "use" {
+		t.Fatalf("--global: global=%v rest=%v", global, rest)
+	}
+	global, rest = PeelGlobalFlag([]string{"use", "coding"})
+	if global || len(rest) != 2 {
+		t.Fatalf("no flag: global=%v rest=%v", global, rest)
+	}
+}

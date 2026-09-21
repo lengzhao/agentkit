@@ -39,10 +39,12 @@ func TestFilesystemRegistryDiscoversBundleSkills(t *testing.T) {
 	}
 	writeSkill(t, filepath.Join(mismatchDir, "SKILL.md"), "---\nname: other-name\ndescription: mismatch\n---\n\nBody.\n")
 
+	ws := rtworkspace.Static(root)
 	reg, err := skillplugin.New(skillplugin.Config{
 		Dirs: []string{"."},
 	}, skillplugin.Deps{
-		FS: testFS(t, root),
+		FS:        testFS(t, root),
+		Workspace: ws,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,8 +70,9 @@ func TestFilesystemRegistryDiscoversBundleSkills(t *testing.T) {
 	if content.Body != "Bundle body." {
 		t.Fatalf("body = %q", content.Body)
 	}
-	if content.Path != "./bundle-skill" {
-		t.Fatalf("path = %q", content.Path)
+	wantPath := filepath.Join(root, "bundle-skill")
+	if content.Path != wantPath {
+		t.Fatalf("path = %q, want %q", content.Path, wantPath)
 	}
 }
 

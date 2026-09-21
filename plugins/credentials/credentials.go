@@ -12,9 +12,9 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/config"
 	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/pluginkit"
@@ -42,8 +42,6 @@ type Config struct {
 type EnvDeps struct {
 	// FS reads/writes dotenv and encrypted secrets files (scope prefixes allowed).
 	FS filesystem.Service `json:"fs"`
-	// ConfigFile picks the /env add target file; without it the add command fails fast.
-	ConfigFile configfile.Writer `json:"configfile,omitempty"`
 }
 
 type envStore struct {
@@ -53,7 +51,6 @@ type envStore struct {
 	filePaths       []string
 	encryptedRel    string
 	fs              filesystem.Service
-	configFile      configfile.Writer
 	processEnv      bool
 	mu              sync.RWMutex
 	files           map[string]string
@@ -94,7 +91,6 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 		filePaths:       append([]string(nil), files...),
 		encryptedRel:    encRel,
 		fs:              deps.FS,
-		configFile:      deps.ConfigFile,
 		processEnv:      processEnv,
 		files:           make(map[string]string),
 		encrypted:       make(map[string]string),
@@ -163,7 +159,7 @@ func (s *envStore) writeTarget(ctx context.Context) (string, error) {
 	if s.encryptedRel != "" && s.encryptedRel != EncryptedFileDisabled {
 		return s.resolveEncryptedPath(ctx)
 	}
-	return s.configFile.WriteTarget(s.filePaths)
+	return workspace.FirstScoped(s.filePaths, workspace.ScopeLocal)
 }
 
 func (s *envStore) resolveEncryptedPath(context.Context) (string, error) {
@@ -254,9 +250,6 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 type verifyRefFunc func(ctx context.Context, ref string) error
 
 func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, refs []string, verify verifyRefFunc) (string, int, error) {
-	if s.configFile == nil {
-		return "", 0, fmt.Errorf("credentials requires configFile dependency for /env add")
-	}
 	if verify == nil {
 		verify = func(ctx context.Context, ref string) error {
 			value, err := s.lookupValue(ctx, ref)

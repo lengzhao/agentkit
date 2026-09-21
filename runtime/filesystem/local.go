@@ -67,13 +67,22 @@ func (s *localFS) resolve(ctx context.Context, path string) (string, error) {
 	if _, _, scoped := workspace.ParseScoped(path); scoped {
 		return s.workspace.Resolve(ctx, path)
 	}
-	if s.unrestricted && filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
+	if filepath.IsAbs(path) {
+		clean := filepath.Clean(path)
+		if s.unrestricted {
+			return clean, nil
+		}
+		root, err := s.rootDir(ctx)
+		if err != nil {
+			return "", err
+		}
+		rel, err := filepath.Rel(root, clean)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("path escapes workspace: %s", path)
+		}
+		return clean, nil
 	}
 	clean := filepath.Clean(path)
-	if filepath.IsAbs(clean) {
-		clean = strings.TrimPrefix(clean, string(filepath.Separator))
-	}
 	clean = workpath.TrimRedundantFSRootPrefix(s.relRoot, clean)
 	root, err := s.rootDir(ctx)
 	if err != nil {
@@ -115,32 +124,7 @@ func (s *localFS) Write(ctx context.Context, path string, data []byte, opts ...c
 			perm = 0o644
 		}
 	}
-	dir := filepath.Dir(full)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	// Atomic write: temp file in the same directory, then rename.
-	tmp, err := os.CreateTemp(dir, filepath.Base(full)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, full)
+	return WriteAtomic(full, data, perm)
 }
 
 func (s *localFS) Append(ctx context.Context, path string, data []byte) error {

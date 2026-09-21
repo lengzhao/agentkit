@@ -22,8 +22,7 @@ func TestSmokeMCPDynamicToolsAgentTurn(t *testing.T) {
 			EnableLocal: true,
 			Files:       []string{configPath},
 		}, mcpplugin.MCPDeps{
-			FS:         smokeFS(t, workspaceRoot),
-			ConfigFile: newTestConfigFileWriter(),
+			FS: smokeFS(t, workspaceRoot),
 		})
 	})
 	ctx := context.Background()

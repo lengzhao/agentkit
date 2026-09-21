@@ -1,16 +1,19 @@
 package telemetry
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const maxMetaFieldRunes = 512
 
 // ToolObservationAttrs extracts filter-friendly metadata from a tool call.
-func ToolObservationAttrs(call agentkit.ToolCall) map[string]string {
+func ToolObservationAttrs(ctx context.Context, call agentkit.ToolCall) map[string]string {
 	out := map[string]string{
 		"tool_call_id": string(call.ID),
 	}
@@ -21,7 +24,7 @@ func ToolObservationAttrs(call agentkit.ToolCall) map[string]string {
 		}
 		if json.Unmarshal(call.Input, &in) == nil {
 			if p := strings.TrimSpace(in.Path); p != "" {
-				out["read_path"] = p
+				out["read_path"] = rtmedia.AgentLLMPath(ctx, rctx.WorkspaceServiceFromContext(ctx), p)
 			}
 		}
 	case "delegate":

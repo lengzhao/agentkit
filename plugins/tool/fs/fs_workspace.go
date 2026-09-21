@@ -3,11 +3,13 @@ package fs
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
+	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 type FSWorkspaceConfig struct {
@@ -81,6 +83,7 @@ type workspaceFSOps interface {
 	grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error)
 	find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error)
 	llmPath(ctx context.Context, path string) string
+	resolveToolPath(ctx context.Context, path string) (string, error)
 	rewritePathsInText(ctx context.Context, text string) string
 }
 
@@ -205,13 +208,13 @@ func filterToolPack(pack agentkit.ToolPack, only []string) agentkit.ToolPack {
 }
 
 type ReadInput struct {
-	Path   string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
+	Path   string `json:"path" jsonschema:"Absolute filesystem path; paths under the agent work directory may be given relative to work (tool output always uses absolute paths)"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Line number to start reading from (1-indexed)"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of lines to read"`
 }
 
 type WriteInput struct {
-	Path    string `json:"path" jsonschema:"File path: global:..., local:..., absolute /..., relative ./..., or workspace-relative"`
+	Path    string `json:"path" jsonschema:"Absolute filesystem path; paths under the agent work directory may be given relative to work (tool output always uses absolute paths)"`
 	Content string `json:"content" jsonschema:"Full file content to write"`
 }
 
@@ -254,7 +257,11 @@ func applyWorkspaceEdits(fs workspaceFSOps) func(context.Context, EditInput) (st
 		if len(input.Edits) == 0 {
 			return "", fmt.Errorf("at least one edit is required")
 		}
-		content, err := fs.readText(ctx, input.Path, 0)
+		resolved, err := fs.resolveToolPath(ctx, input.Path)
+		if err != nil {
+			return "", err
+		}
+		content, err := fs.readText(ctx, resolved, 0)
 		if err != nil {
 			return "", err
 		}
@@ -263,12 +270,12 @@ func applyWorkspaceEdits(fs workspaceFSOps) func(context.Context, EditInput) (st
 			return "", err
 		}
 		if updated == content {
-			return formatEditResult(fs.llmPath(ctx, input.Path), false), nil
+			return formatEditResult(fs.llmPath(ctx, resolved), false), nil
 		}
-		if err := fs.writeText(ctx, input.Path, updated); err != nil {
+		if err := fs.writeText(ctx, resolved, updated); err != nil {
 			return "", err
 		}
-		return formatEditResult(fs.llmPath(ctx, input.Path), true), nil
+		return formatEditResult(fs.llmPath(ctx, resolved), true), nil
 	}
 }
 
@@ -287,22 +294,30 @@ func (a *fsAdapter) rewritePathsInText(ctx context.Context, text string) string 
 }
 
 func (a *fsAdapter) readImage(ctx context.Context, path string) (string, error) {
-	display := a.llmPath(ctx, path)
-	if display == "" {
-		display = path
+	resolved, err := a.resolveToolPath(ctx, path)
+	if err != nil {
+		return "", err
 	}
-	return readImageToolResult(ctx, a.store, path, display)
+	display := a.llmPath(ctx, resolved)
+	if display == "" {
+		display = resolved
+	}
+	return readImageToolResult(ctx, a.store, resolved, display)
 }
 
 func (a *fsAdapter) pathMayBeImage(ctx context.Context, path string) bool {
 	if rtmedia.IsImagePath(path) {
 		return true
 	}
-	info, err := a.store.Stat(ctx, path)
+	resolved, err := a.resolveToolPath(ctx, path)
+	if err != nil {
+		return false
+	}
+	info, err := a.store.Stat(ctx, resolved)
 	if err != nil || info.IsDir {
 		return false
 	}
-	data, err := a.store.Read(ctx, path)
+	data, err := a.store.Read(ctx, resolved)
 	if err != nil {
 		return false
 	}
@@ -313,7 +328,22 @@ func (a *fsAdapter) pathMayBeImage(ctx context.Context, path string) bool {
 	return rtmedia.LooksLikeImageData(head)
 }
 
+func (a *fsAdapter) resolveToolPath(ctx context.Context, path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if a.workspace == nil {
+		return rtmedia.AgentLLMPath(ctx, nil, path), nil
+	}
+	return workpath.AbsolutePath(ctx, a.workspace, path)
+}
+
 func (a *fsAdapter) readText(ctx context.Context, path string, maxBytes int) (string, error) {
+	path, err := a.resolveToolPath(ctx, path)
+	if err != nil {
+		return "", err
+	}
 	data, err := a.store.Read(ctx, path)
 	if err != nil {
 		return "", err
@@ -328,17 +358,42 @@ func (a *fsAdapter) writeText(ctx context.Context, path, content string) error {
 	if a.readOnly {
 		return fmt.Errorf("read-only filesystem")
 	}
+	path, err := a.resolveToolPath(ctx, path)
+	if err != nil {
+		return err
+	}
 	return a.store.Write(ctx, path, []byte(content))
 }
 
 func (a *fsAdapter) listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error) {
+	if strings.TrimSpace(path) != "" {
+		resolved, err := a.resolveToolPath(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		path = resolved
+	}
 	return a.store.List(ctx, path)
 }
 
 func (a *fsAdapter) grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
+	if strings.TrimSpace(req.Path) != "" {
+		resolved, err := a.resolveToolPath(ctx, req.Path)
+		if err != nil {
+			return filesystem.GrepResult{}, err
+		}
+		req.Path = resolved
+	}
 	return a.store.Grep(ctx, req)
 }
 
 func (a *fsAdapter) find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
+	if strings.TrimSpace(req.Path) != "" {
+		resolved, err := a.resolveToolPath(ctx, req.Path)
+		if err != nil {
+			return filesystem.FindResult{}, err
+		}
+		req.Path = resolved
+	}
 	return a.store.Find(ctx, req)
 }

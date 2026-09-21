@@ -28,8 +28,8 @@ func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit
 		Files:       []string{"api.json", "local:api.json"},
 	}, openapiplugin.OpenAPIDeps{
 		FS:          fs,
+		Workspace:   ws,
 		Credentials: creds,
-		ConfigFile:  newTestConfigFileWriter(),
 	})
 }
 

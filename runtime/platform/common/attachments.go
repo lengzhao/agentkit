@@ -99,10 +99,10 @@ func SaveInboundAttachments(deliveryID agentkit.SessionID, files []FileAttachmen
 	return out
 }
 
-// InboundFromContent builds a MessageEvent from text and optional rtmedia.
+// InboundFromContent builds a MessageEvent from text and optional media.
 // extraContent is prepended (e.g. quoted reply context). Attachments are saved
-// under work/upload/ and described in the user text (path, mime, size) so
-// Paths are relative to the agent work dir (e.g. upload/…); vision paths are also in image_url parts when present.
+// under work/upload/. User text and image_url Source use host-absolute paths
+// (AgentLLMPath); event.Attachments.Path stays work-relative (upload/…).
 func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
 	if route.ScopeUserID == "" {
 		route.ScopeUserID = strings.TrimSpace(userID)

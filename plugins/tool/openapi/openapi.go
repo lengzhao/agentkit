@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
@@ -33,19 +32,18 @@ type OpenAPIConfig struct {
 }
 
 type OpenAPIDeps struct {
-	// FS reads/writes api.json and spec files (scope prefixes allowed).
+	// FS reads/writes api.json and spec files.
 	FS          filesystem.Service `json:"fs"`
-	Credentials credentials.Store `json:"credentials,omitempty"`
-	// ConfigFile picks the /openapi add target file; without it the add command fails fast.
-	ConfigFile configfile.Writer `json:"configfile,omitempty"`
+	Workspace   workspace.Service  `json:"workspace"`
+	Credentials credentials.Store  `json:"credentials,omitempty"`
 }
 
 type openapiProvider struct {
 	files       []string
 	enableLocal bool
 	fs          filesystem.Service
+	workspace   workspace.Service
 	credentials credentials.Store
-	configFile  configfile.Writer
 	client      *http.Client
 
 	mu     sync.RWMutex
@@ -72,13 +70,16 @@ func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, err
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/openapi requires fs")
 	}
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("tool/openapi requires workspace")
+	}
 	files := resolveAPIFiles(cfg)
 	return &openapiProvider{
 		files:       files,
 		enableLocal: cfg.EnableLocal,
 		fs:          deps.FS,
+		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
-		configFile:  deps.ConfigFile,
 		client:      &http.Client{},
 	}, nil
 }
@@ -183,13 +184,6 @@ func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 	return apis, nil
 }
 
-func (p *openapiProvider) writeTarget(ctx context.Context, global bool) (string, error) {
-	if p.configFile == nil {
-		return "", fmt.Errorf("tool/openapi requires configFile dependency for /openapi add")
-	}
-	return p.configFile.WriteTargetForAdd(p.files, global)
-}
-
 func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, global bool) (string, error) {
 	if !global && !p.enableLocal {
 		return "", fmt.Errorf("local openapi is disabled; use /openapi add -g or set enableLocal")
@@ -204,14 +198,24 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 		return "", err
 	}
 	if global {
-		rewritten, err := rewriteAPIEntryPathsForGlobalAdd(ctx, p.fs, raw)
+		rewritten, err := rewriteAPIEntryPathsForGlobalAdd(ctx, p.fs, p.workspace, raw)
+		if err != nil {
+			return "", err
+		}
+		raw = rewritten
+	} else {
+		rewritten, err := normalizeAPIEntryRaw(ctx, p.workspace, raw)
 		if err != nil {
 			return "", err
 		}
 		raw = rewritten
 	}
 
-	target, err := p.writeTarget(ctx, global)
+	scope := workspace.ScopeLocal
+	if global {
+		scope = workspace.ScopeGlobal
+	}
+	target, err := workspace.FirstScoped(p.files, scope)
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +227,7 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 	if err == nil {
 		prevBytes = append([]byte(nil), prev...)
 	}
-	merged, err := upsertAPIJSON(prevBytes, name, raw)
+	merged, err := upsertAPIJSON(ctx, p.workspace, prevBytes, name, raw)
 	if err != nil {
 		return "", err
 	}
@@ -296,11 +300,11 @@ func openapiHelp() string {
 
 JSON format matches one apis entry in api.json, e.g.:
   {"baseUrl":"https://api.example.com","paths":{"/ping":{"get":{"operationId":"ping"}}}}
-  {"path":"api/petstore.json","baseUrl":"https://api.example.com","auth":{"type":"bearer","token":"env:TOKEN"}}
+  {"path":"/abs/path/to/petstore.json","baseUrl":"https://api.example.com","auth":{"type":"bearer","token":"env:TOKEN"}}
 
 Notes:
-  add writes to local api.json by default; -g writes to global:api.json
-  -g copies local spec files to global: (same relative path) and updates path in the index
+  add writes to local api.json by default; -g writes to global api.json
+  path fields in api.json are stored as absolute host paths; -g copies local spec files to global and updates path
   when enableLocal is off, only -g is allowed
   See docs/guides/tools.zh.md for full api.json format`
 }
@@ -370,7 +374,7 @@ func (c *openapiSyncCommand) CommandExec(ctx context.Context, args string) (stri
 		}
 		return c.provider.summarizeReload(ctx, apis), nil
 	case len(rest) >= 1 && rest[0] == "add":
-		global, addRest := configfile.PeelGlobalFlag(rest[1:])
+		global, addRest := agentkit.PeelGlobalFlag(rest[1:])
 		if len(addRest) < 2 {
 			return "", fmt.Errorf("usage: /openapi add [-g] <name> <json>")
 		}

@@ -527,7 +527,7 @@ func testFS(t *testing.T, dir string) filesystem.Service {
 
 func testFSOver(t *testing.T, ws workspace.Service) filesystem.Service {
 	t.Helper()
-	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: ws})
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}

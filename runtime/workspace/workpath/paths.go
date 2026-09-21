@@ -120,12 +120,21 @@ func LocalPath(rel string) string {
 	return ScopedPath(cw.ScopeLocal, rel)
 }
 
+// AbsolutePath resolves a path after configuration boundaries to a host absolute path.
+// Scoped global:/local: prefixes, work-relative paths, and absolute inputs are accepted.
+func AbsolutePath(ctx context.Context, ws cw.Service, path string) (string, error) {
+	return ResolveFile(ctx, ws, path)
+}
+
 // ResolveFile maps a stored or model path to an absolute filesystem path.
 // Accepts local:/global: scoped paths or tenant-root-relative paths (work/upload/…).
 func ResolveFile(ctx context.Context, ws cw.Service, path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", ErrEmptyPath
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
 	}
 	lower := strings.ToLower(path)
 	if strings.HasPrefix(lower, cw.ScopeLocal+":") || strings.HasPrefix(lower, cw.ScopeGlobal+":") {

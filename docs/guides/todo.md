@@ -4,7 +4,7 @@
 
 ## 目标
 
-1. **契约层**：根包 `agentkit` 与 `cap/*` 只定义能力接口（接口 + DTO + 常量；允许与接口语义一体的纯函数，如 `workspace.ParseScoped`、`configfile.PeelGlobalFlag`）。
+1. **契约层**：根包 `agentkit` 与 `cap/*` 只定义能力接口（接口 + DTO + 常量；允许与接口语义一体的纯函数，如 `workspace.ParseScoped` / `FirstScoped`、`agentkit.PeelGlobalFlag`）。
 2. **实现层**：`runtime/*` 与 `plugins/*` 是具体实现。`runtime` 放标准/默认实现（含部分 kind 自注册）；`plugins` 放可插拔 kind。
 3. **插件只依赖契约**：`plugins/*` 之间不互相 import；跨插件协作只通过配置图 `deps` 注入根包 / `cap` 接口。插件非测试源码不 import 其他插件，也不 import `runtime/*` 实现细节。
 
@@ -92,7 +92,7 @@ flowchart TB
 
 - [x] **`cap/schedule`**：接口在 cap，cron / fire metadata 在 `runtime/schedule`；插件经 `Engine` deps 注入
 - [x] **`cap/workspace.ParseScoped`**：Scope 前缀语法作为契约词汇；`CopyLocalToGlobal` 下沉 `plugins/tool/openapi`
-- [x] **`cap/configfile.Writer`**：`credentials` / `mcp` / `openapi` 经 deps 注入；`configfile/writer` kind 在 runtime 自注册
+- [x] **slash / 配置路径词汇**：`agentkit.PeelGlobalFlag`；`workspace.FirstScoped`（基于 `ParseScoped`）；`/add` 字节读写走 `filesystem.Service`；session sidecar 的宿主机绝对路径走 `runtime/filesystem.WriteAtomic`
 
 ---
 

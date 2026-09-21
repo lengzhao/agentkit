@@ -5,6 +5,20 @@ import "strings"
 // SlashLogRedacted is the placeholder for sanitized slash command args in dispatch logs.
 const SlashLogRedacted = "<redacted>"
 
+// PeelGlobalFlag removes -g/--global from args: the shared flag vocabulary of
+// slash commands (/mcp add, /openapi add, /agent, /model).
+func PeelGlobalFlag(args []string) (global bool, rest []string) {
+	for _, arg := range args {
+		switch arg {
+		case "-g", "--global":
+			global = true
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return global, rest
+}
+
 // RedactSlashArgsForLog replaces non-empty args with SlashLogRedacted.
 func RedactSlashArgsForLog(args string) string {
 	args = strings.TrimSpace(args)

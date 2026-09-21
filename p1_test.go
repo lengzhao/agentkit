@@ -111,7 +111,8 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 											"dirs": []string{"."},
 										},
 										"deps": map[string]any{
-											"fs": fsCfg,
+											"fs":        fsCfg,
+											"workspace": workspaceCfg,
 										},
 									},
 								},

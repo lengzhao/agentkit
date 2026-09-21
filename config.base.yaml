@@ -382,10 +382,6 @@ subagent.loop.default:
       - agent.cursor.default
       - agent.claude.default
 
-# 插件 /add 命令（/env add、/mcp add、/openapi add）的配置文件原子写入与回滚。
-configfile.default:
-  use: configfile/writer
-
 # Static refs (apiKeyRef, botTokenRef, web search keys): process env + optional encrypted file.
 credentials.default:
   use: credentials/env
@@ -393,7 +389,6 @@ credentials.default:
     encryptedFile: global:secrets.enc.json
   deps:
     fs: filesystem.local.state
-    configfile: configfile.default
 
 # MCP / OpenAPI env: refs: scoped manifest allowlist, /env slash, no process env.
 credentials.integrations:
@@ -404,7 +399,6 @@ credentials.integrations:
     # Set AGENTKIT_SECRETS_KEY in L1 config.yaml credentials.integrations.config.env for /env add.
   deps:
     fs: filesystem.local.state
-    configfile: configfile.default
 
 llm.default:
   use: llm/openai-compatible
@@ -733,6 +727,7 @@ skills.default:
       - global:skills
   deps:
     fs: filesystem.local.state
+    workspace: workspace.default
 
 tool.session-query.default:
   use: tool/session-query
@@ -849,6 +844,8 @@ filesystem.local.state:
   use: filesystem/local
   config:
     root: "."
+    # State plugins (api.json paths, global skills, memory) use absolute paths after resolve.
+    unrestricted: true
   deps:
     workspace: workspace.default
 
@@ -997,6 +994,7 @@ openapi.default:
       - global:api.json
   deps:
     fs: filesystem.local.state
+    workspace: workspace.default
     credentials: credentials.integrations
 
 policy.dangerous-shell.default:

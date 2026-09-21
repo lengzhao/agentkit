@@ -55,7 +55,7 @@ func TestOpenAPIAddGlobalCopiesLocalSpec(t *testing.T) {
 
 	provider, err := NewOpenAPI(OpenAPIConfig{
 		Files: []string{"global:api.json"},
-	}, OpenAPIDeps{FS: testFSOver(t, ws), ConfigFile: testConfigFileWriter})
+	}, OpenAPIDeps{FS: testFSOver(t, ws), Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,11 +82,12 @@ func TestOpenAPIAddGlobalCopiesLocalSpec(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Apis["petstore"].Path != "global:api/petstore.json" {
-		t.Fatalf("written path = %q, want global:api/petstore.json", doc.Apis["petstore"].Path)
+	wantPath := filepath.Join(globalRoot, "api", "petstore.json")
+	if doc.Apis["petstore"].Path != wantPath {
+		t.Fatalf("written path = %q, want %q", doc.Apis["petstore"].Path, wantPath)
 	}
 
-	globalSpec := filepath.Join(globalRoot, "api", "petstore.json")
+	globalSpec := wantPath
 	if _, err := os.Stat(globalSpec); err != nil {
 		t.Fatalf("global spec not copied: %v", err)
 	}

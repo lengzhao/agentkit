@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
@@ -40,9 +39,7 @@ type MCPConfig struct {
 type MCPDeps struct {
 	// FS reads/writes mcp.json files (scope prefixes allowed).
 	FS          filesystem.Service `json:"fs"`
-	Credentials credentials.Store `json:"credentials,omitempty"`
-	// ConfigFile picks the /mcp add target file; without it the add command fails fast.
-	ConfigFile configfile.Writer `json:"configfile,omitempty"`
+	Credentials credentials.Store  `json:"credentials,omitempty"`
 }
 
 type mcpProvider struct {
@@ -50,7 +47,6 @@ type mcpProvider struct {
 	enableLocal bool
 	fs          filesystem.Service
 	credentials credentials.Store
-	configFile  configfile.Writer
 	pool        *clientPool
 
 	mu      sync.RWMutex
@@ -81,7 +77,6 @@ func NewMCP(cfg MCPConfig, deps MCPDeps) (agentkit.ToolProvider, error) {
 		enableLocal: cfg.EnableLocal,
 		fs:          deps.FS,
 		credentials: deps.Credentials,
-		configFile:  deps.ConfigFile,
 		pool:        newClientPool(idleTimeoutFromConfig(cfg.IdleTimeoutSeconds)),
 	}, nil
 }
@@ -218,13 +213,6 @@ func (p *mcpProvider) discoverTools(ctx context.Context, servers []serverConfig)
 	return defs, nil
 }
 
-func (p *mcpProvider) writeTarget(ctx context.Context, global bool) (string, error) {
-	if p.configFile == nil {
-		return "", fmt.Errorf("tool/mcp requires configFile dependency for /mcp add")
-	}
-	return p.configFile.WriteTargetForAdd(p.files, global)
-}
-
 func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, global bool) (string, error) {
 	if !global && !p.enableLocal {
 		return "", fmt.Errorf("local mcp is disabled; use /mcp add -g or set enableLocal")
@@ -234,7 +222,11 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, gl
 		return "", err
 	}
 
-	target, err := p.writeTarget(ctx, global)
+	scope := workspace.ScopeLocal
+	if global {
+		scope = workspace.ScopeGlobal
+	}
+	target, err := workspace.FirstScoped(p.files, scope)
 	if err != nil {
 		return "", err
 	}
@@ -450,7 +442,7 @@ func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, 
 		}
 		return formatMCPStatus(defs) + formatMCPToolCatalog(defs), nil
 	case len(rest) >= 1 && rest[0] == "add":
-		global, addRest := configfile.PeelGlobalFlag(rest[1:])
+		global, addRest := agentkit.PeelGlobalFlag(rest[1:])
 		if len(addRest) < 2 {
 			return "", fmt.Errorf("usage: /mcp add [-g] <name> <json>")
 		}

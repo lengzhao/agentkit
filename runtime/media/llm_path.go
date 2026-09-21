@@ -12,10 +12,9 @@ import (
 
 var scopedPathInText = regexp.MustCompile(`(?i)(?:local|global):[^\s\]\)\"'<>]+`)
 
-// AgentLLMPath formats a path for model-facing text and session storage.
-// local:/global: appear only in configuration. Paths under the agent work directory
-// are relative to that directory (e.g. upload/foo, same as shell cwd and fs root);
-// global and out-of-work files use absolute paths.
+// AgentLLMPath formats a path for model-facing text (tool results, prompts, history).
+// local:/global: appear only in configuration and are never shown to the model.
+// Resolved paths are always absolute host paths (bash, read/write, skill bundles).
 func AgentLLMPath(ctx context.Context, ws cw.Service, path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -25,19 +24,15 @@ func AgentLLMPath(ctx context.Context, ws cw.Service, path string) string {
 		return filepath.Clean(path)
 	}
 	if ws == nil {
-		return stripWorkPrefixFromPath(stripScopedPrefixes(path))
+		return filepath.Clean(stripScopedPrefixes(path))
 	}
 	abs, err := workpath.ResolveFile(ctx, ws, path)
 	if err != nil {
-		inner := stripScopedPrefixes(path)
-		workDir, _ := workpath.WorkLayout(ws)
-		if workDir != "" {
-			canon := workpath.CanonicalWorkPath(workDir, inner)
-			return workpath.StripWorkPrefix(workDir, canon)
+		if abs, err = ws.Resolve(ctx, stripScopedPrefixes(path)); err != nil {
+			return stripScopedPrefixes(path)
 		}
-		return workpath.StripWorkPrefix("work", stripWorkPrefixFromPath(inner))
 	}
-	return agentPathFromAbs(ctx, ws, abs)
+	return filepath.Clean(abs)
 }
 
 // AgentDisplayPath is AgentLLMPath without request context; prefer AgentLLMPath when ctx carries tenant workspace.
@@ -53,41 +48,6 @@ func RewritePathsInText(ctx context.Context, ws cw.Service, text string) string 
 	return scopedPathInText.ReplaceAllStringFunc(text, func(match string) string {
 		return AgentLLMPath(ctx, ws, match)
 	})
-}
-
-func agentPathFromAbs(ctx context.Context, ws cw.Service, abs string) string {
-	abs = filepath.Clean(abs)
-	workDir, _ := workpath.WorkLayout(ws)
-	if workDir == "" {
-		return abs
-	}
-	workAbs, err := workpath.ResolveFile(ctx, ws, workDir)
-	if err != nil {
-		return abs
-	}
-	rel, err := filepath.Rel(workAbs, abs)
-	if err != nil {
-		return abs
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return abs
-	}
-	if rel == "." {
-		return "."
-	}
-	return filepath.ToSlash(rel)
-}
-
-// stripWorkPrefixFromPath drops a leading work/ segment when workspace layout is unknown.
-func stripWorkPrefixFromPath(path string) string {
-	path = filepath.ToSlash(strings.TrimSpace(path))
-	if strings.HasPrefix(path, "work/") {
-		return path[len("work/"):]
-	}
-	if path == "work" {
-		return "."
-	}
-	return path
 }
 
 func isAbsPath(path string) bool {

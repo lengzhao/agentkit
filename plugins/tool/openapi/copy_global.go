@@ -10,12 +10,11 @@ import (
 )
 
 // copyLocalToGlobal copies the file at rel (local-scoped or bare local-relative) into the
-// global workspace at the same relative path (local:api/foo.yaml → global:api/foo.yaml).
-// Already-global paths are returned unchanged.
-func copyLocalToGlobal(ctx context.Context, fs filesystem.Service, rel string) (string, error) {
+// global workspace at the same relative path, then returns the global file's absolute path.
+func copyLocalToGlobal(ctx context.Context, fs filesystem.Service, ws workspace.Service, rel string) (string, error) {
 	localRel, globalRel, unchanged := localToGlobalRels(rel)
 	if unchanged {
-		return strings.TrimSpace(rel), nil
+		return storeAbsPath(ctx, ws, rel)
 	}
 
 	data, err := fs.Read(ctx, localRel)
@@ -25,7 +24,7 @@ func copyLocalToGlobal(ctx context.Context, fs filesystem.Service, rel string) (
 	if err := fs.Write(ctx, globalRel, data); err != nil {
 		return "", fmt.Errorf("copy %s to global: %w", rel, err)
 	}
-	return globalRel, nil
+	return storeAbsPath(ctx, ws, globalRel)
 }
 
 // localToGlobalRels maps a workspace path to local/global scoped pairs.

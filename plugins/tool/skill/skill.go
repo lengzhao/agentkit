@@ -29,7 +29,7 @@ type SkillInput struct {
 // Best practices:
 //   - Load a skill once per task, then follow its instructions.
 //   - Read supporting files with fs tools (tenant skills live under skills/<name>/).
-//   - Run bundled scripts with bash from the skill directory named in the load result.
+//   - Run bundled scripts with bash using the absolute skill directory from the load result.
 func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("tool/skill requires skills dependency")
@@ -59,7 +59,7 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 			}
 		}
 		return rtskill.RenderLoaded(content), nil
-	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Read supporting files with read; run bundled scripts with bash.").Build()
+	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Use absolute paths with read and bash (skill base directory is absolute in the load result).").Build()
 	if err != nil {
 		return nil, err
 	}

@@ -198,7 +198,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 		Kind:  captelemetry.KindTool,
 		Input: string(call.Input),
 		Attributes: telemetry.MergeStringMaps(
-			telemetry.ToolObservationAttrs(call),
+			telemetry.ToolObservationAttrs(ctx, call),
 			map[string]string{"tool_name": call.Name},
 		),
 	}))

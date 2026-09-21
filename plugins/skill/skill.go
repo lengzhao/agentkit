@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/skill"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 	"github.com/lengzhao/pluginkit"
 )
@@ -18,12 +21,14 @@ type Config struct {
 }
 
 type Deps struct {
-	FS filesystem.Service `json:"fs"`
+	FS        filesystem.Service `json:"fs"`
+	Workspace workspace.Service  `json:"workspace"`
 }
 
 type Registry struct {
-	relDirs []string
-	fs      filesystem.Service
+	relDirs   []string
+	fs        filesystem.Service
+	workspace workspace.Service
 }
 
 func init() {
@@ -35,11 +40,14 @@ func New(cfg Config, deps Deps) (skill.Registry, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("skill/filesystem requires fs")
 	}
+	if deps.Workspace == nil {
+		return nil, fmt.Errorf("skill/filesystem requires workspace")
+	}
 	dirs := cfg.Dirs
 	if len(dirs) == 0 {
 		dirs = []string{"global:.cursor/skills", "global:.agents/skills", "global:skills"}
 	}
-	return &Registry{relDirs: dirs, fs: deps.FS}, nil
+	return &Registry{relDirs: dirs, fs: deps.FS, workspace: deps.Workspace}, nil
 }
 
 func (r *Registry) List(ctx context.Context) ([]skill.Descriptor, error) {
@@ -54,7 +62,7 @@ func (r *Registry) List(ctx context.Context) ([]skill.Descriptor, error) {
 			out = append(out, skill.Descriptor{
 				Name:          candidate.Name,
 				Description:   candidate.Description,
-				Path:          candidate.ResourceDir,
+				Path:          r.agentPath(ctx, candidate.ResourceDir),
 				License:       candidate.License,
 				Compatibility: candidate.Compatibility,
 			})
@@ -73,7 +81,9 @@ func (r *Registry) Load(ctx context.Context, name string) (skill.Content, error)
 			if candidate.Name != name {
 				continue
 			}
-			return candidate.Content, nil
+			c := candidate.Content
+			c.Path = r.agentPath(ctx, candidate.ResourceDir)
+			return c, nil
 		}
 	}
 	return skill.Content{}, fmt.Errorf("skill %q not found", name)
@@ -89,8 +99,7 @@ type discoveredSkill struct {
 }
 
 // discoverDir scans one fs-relative directory (may carry a global:/local: scope
-// prefix). Descriptor paths stay fs-relative so a non-local backend still
-// serves SKILL.md bodies; script execution needs a local backend.
+// prefix). Agent-facing paths are absolute host paths via workspace.Resolve.
 func (r *Registry) discoverDir(ctx context.Context, root string) []discoveredSkill {
 	entries, err := r.fs.List(ctx, root)
 	if err != nil {
@@ -139,4 +148,16 @@ func (r *Registry) discoverDir(ctx context.Context, root string) []discoveredSki
 		})
 	}
 	return out
+}
+
+func (r *Registry) agentPath(ctx context.Context, logical string) string {
+	logical = strings.TrimSpace(logical)
+	if logical == "" {
+		return logical
+	}
+	abs, err := r.workspace.Resolve(ctx, logical)
+	if err != nil {
+		return rtmedia.AgentLLMPath(ctx, r.workspace, logical)
+	}
+	return filepath.Clean(abs)
 }

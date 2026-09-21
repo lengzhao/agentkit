@@ -307,8 +307,8 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/send` | `sender`, `workspace?`, `fs?` | `send` | 经 delivery.Sender 主动发送文本或工作区文件；`/send [-r\|--raw] <chatId> <message>` 管理面投递（同平台裸 chat/channel id，消息可多行；`-r` 跳过平台 Markdown 转换）；L0 `tools.default` 已启用 |
 | `tool/chat-history` | `history`（`agentkit.Platform`，运行时适配为 `chathistory.Router`） | `chat_history` | 读取 IM 传输层群/会话历史；平台未实现 Provider 时返回空；`thread` 默认 true；L0 `tools.default` 已启用 |
 | `tool/recognize` | `llm`, `workspace` | `recognize_image` | 对 `work/` 下图片做视觉理解并返回文本；`config.model` 指定视觉模型（可与主 Agent 模型不同）。L0 `tools.default` 已启用 |
-| `tool/mcp` | `fs`, `credentials?`, `configfile?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
-| `tool/openapi` | `fs`, `credentials?`, `configfile?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/mcp` | `fs`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/openapi` | `fs`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
 
 **`filesystem/local` 插件 config**（kind 在 `runtime/filesystem`）：
 
@@ -380,7 +380,7 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md（deps `fs`，dirs 支持 `global:`/`local:` 前缀） |
+| `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md（deps `fs` + `workspace`；dirs 配置可用 `global:`/`local:`，对模型暴露绝对路径） |
 | `skill/badge` | `skill.Registry` | Badge 元数据（roadmap） |
 | `memory/default` | `CommandProvider` + `cap/memory.Service` | 租户 `memory.md`、ledger、staged、`/memory` 命令；`tool/memory` 与 prompt 注入；存储走 deps `fs` |
 | `learning/default` | `CommandProvider` | Grounded Dreaming、Skill Workshop；`/learn` 巩固与技能（记忆见 `/memory`）；sidecar（dreaming state/diary/report、review nudge/quota、skills policy、workshop proposals）走 deps `fs` |
@@ -476,7 +476,7 @@ cap/<domain>/
 runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、skill、media、telemetry、schedule…）
 cap/schedule/        # Registry/Runtime/Engine 契约；cron 求值实现见 runtime/schedule（schedule/engine）
 runtime/schedule/    # ParseCron/NextFire、fire metadata；schedule/engine kind
-cap/configfile/      # Writer 接口（/env add、/mcp add、/openapi add 的原子写与回滚）+ PeelGlobalFlag；实现见 runtime/configfile（configfile/writer kind，deps 注入）
+cap/workspace/       # Service + ParseScoped / FirstScoped / Layout；实现见 runtime/workspace
 cap/memory/          # Service、Tool、Capture、Reader（memory/default 实现）
 cap/learning/        # SkillProposer、ReviewHost、DreamSweepScheduler（learning/default）；memory 见 cap/memory
 runtime/memory/      # MemoryStore、ledger、staged、parse/render memory.md
@@ -486,7 +486,7 @@ runtime/session/derive/    # FormatSessionRecall
 
 cap/telemetry/       # Exporter 接口与 DTO；实现见 runtime/telemetry
 
-cap/filesystem/      # Service + grep/find DTO；标准实现 filesystem/local 见 runtime/filesystem
+cap/filesystem/      # Service + grep/find DTO；标准实现 filesystem/local 见 runtime/filesystem（含宿主绝对路径 WriteAtomic）
 
 plugins/
   tool/fs/           # tool/fs-workspace（注入 filesystem.Service）、tool/fs-memory（内存实现）
@@ -509,7 +509,7 @@ plugins/
 
 **规则**：
 
-- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` 之于 Scope 常量、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `configfile.Writer`、`schedule.Engine`、`filesystem.Service`）。
+- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` / `FirstScoped` 之于 Scope 常量、`agentkit.PeelGlobalFlag` 之于 slash `-g`；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `schedule.Engine`、`filesystem.Service`）。
 - 文件工具的模型面在 `tool/fs-workspace`；共享 deps 是 `filesystem.Service`（换本地盘 / S3 / 远程不换 tool kind）。
 - 只有 workspace、filesystem、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
 - 换 filesystem Provider（如 `filesystem/local` → `filesystem/s3`）不换 tool kind：修改 `deps.fs` 即可。

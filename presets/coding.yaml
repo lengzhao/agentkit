@@ -37,3 +37,4 @@ skills.default:
       - global:skills
   deps:
     fs: filesystem.local.state
+    workspace: workspace.default

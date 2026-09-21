@@ -27,7 +27,7 @@ func writeResourceHint(b *strings.Builder, resourceBase string) {
 	}
 	b.WriteString("Base directory for this skill: ")
 	b.WriteString(base)
-	b.WriteString("\nResolve relative paths mentioned by this skill against the base directory. Read supporting files with read; run bundled scripts with bash.\n")
+	b.WriteString("\nResolve relative paths in this skill against the base directory (absolute path). Read supporting files with read using absolute paths; run bundled scripts with bash (cd to the base path first).\n")
 }
 
 func escapeAttr(value string) string {
