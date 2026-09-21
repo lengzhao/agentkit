@@ -340,7 +340,6 @@ platform.feishu:
         appSecret: REPLACE_ME
         asyncSubagentProgressCard: true
         groupReplyAll: false
-        progressStyle: card
         showThinking: true
         showToolProgress: true
     deps:

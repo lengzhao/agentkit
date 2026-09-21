@@ -74,7 +74,6 @@ platform.feishu:
     # reactionEmoji: OnIt # 默认 OnIt；none 关闭
     # doneEmoji: CheckMark # 默认 CheckMark；none 关闭
     # enableFeishuCard: true
-    # progressStyle: card # legacy | card
     # showThinking: false
     # showToolProgress: true
     # encryptKey: ""

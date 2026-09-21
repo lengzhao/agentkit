@@ -306,7 +306,6 @@ prompt.custom.default:
 #     # agentId: assistant                 # 可选：该平台默认 Agent；留空使用 loop.defaultAgent
 #     # domain: "https://open.feishu.cn"    # 可省略，platform/feishu 默认值
 #     enableFeishuCard: true
-#     progressStyle: card
 #     showThinking: false
 #     showToolProgress: true
 #     asyncSubagentProgressCard: true    # async delegate 时单独后台过程卡
@@ -330,7 +329,6 @@ prompt.custom.default:
 #     port: "8080"
 #     callbackPath: /feishu/webhook        # 需在 Lark 控制台填回调 URL
 #     enableFeishuCard: true
-#     progressStyle: card
 #     showThinking: false
 #     showToolProgress: true
 #     asyncSubagentProgressCard: true

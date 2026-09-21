@@ -28,7 +28,7 @@ type asyncSubagentCard struct {
 }
 
 func (p *Platform) asyncSubagentCardEnabled() bool {
-	return p.asyncSubagentProgressCard && p.showToolProgress && p.useRichStream() && p.useInteractiveCard
+	return p.asyncSubagentProgressCard && p.showToolProgress && p.useInteractiveCard
 }
 
 func (p *Platform) asyncSubagentForStream(streamKey agentkit.SessionID) *asyncSubagentCard {

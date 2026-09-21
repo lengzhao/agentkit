@@ -8,13 +8,9 @@ import (
 )
 
 func TestRichStreamSkipsBotReplyReactionEmojis(t *testing.T) {
-	card := &Platform{progressStyle: "card", useInteractiveCard: true}
-	if card.useBotReplyReactionEmojis() {
-		t.Fatal("card progress should not add emoji on bot reply card")
-	}
-	legacy := &Platform{progressStyle: "legacy", useInteractiveCard: true}
-	if !legacy.useBotReplyReactionEmojis() {
-		t.Fatal("legacy should add emoji on bot reply when applicable")
+	p := &Platform{useInteractiveCard: true}
+	if p.useBotReplyReactionEmojis() {
+		t.Fatal("rich card reply should not add emoji on bot reply card")
 	}
 }
 
