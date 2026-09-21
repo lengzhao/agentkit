@@ -67,7 +67,7 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: creds})
+	}, plugintelemetry.LangfuseDeps{Credentials: creds, Telemetry: integrationTelemetry(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

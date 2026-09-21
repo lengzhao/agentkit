@@ -31,7 +31,8 @@ func TestIntegrationMCPEndToEndHotReload(t *testing.T) {
 	}
 
 	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{Files: []string{configPath}}, mcpplugin.MCPDeps{
-		FS: integrationFS(t, dir),
+		FS:        integrationFS(t, dir),
+		Telemetry: integrationTelemetry(t),
 	})
 	if err != nil {
 		t.Fatal(err)

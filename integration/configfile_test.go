@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -25,4 +27,13 @@ func integrationFSOver(t *testing.T, ws workspace.Service) filesystem.Service {
 		t.Fatal(err)
 	}
 	return fs
+}
+
+func integrationTelemetry(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
 }

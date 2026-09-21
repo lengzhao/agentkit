@@ -31,6 +31,7 @@ func TestIntegrationOpenAPIAgentTurn(t *testing.T) {
 			FS:          integrationFSOver(t, ws),
 			Workspace:   ws,
 			Credentials: creds,
+			Telemetry:   integrationTelemetry(t),
 		})
 	})
 	ctx := openapitest.TurnContext(agentkit.SessionID("it:openapi"), agentkit.AgentID("smoke"), "user-42", nil)
