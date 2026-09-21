@@ -52,9 +52,8 @@ hooks.default:
 hook.before-step.default:
   use: hook/before-step
   deps:
+    compaction: compaction.pipeline.default
     sessionStore: sessionStore.default
-    services:
-      - compaction.pipeline.default
 
 compaction.token-limit.default:
   use: compaction/token-limit
@@ -67,6 +66,7 @@ compaction.token-limit.default:
     # 估低了会导致压缩太晚。
     charsPerToken: 3
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.summary.default
 

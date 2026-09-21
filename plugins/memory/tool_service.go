@@ -39,14 +39,14 @@ func (s *Service) memoryToolAdd(ctx context.Context, text, source string) (capme
 		return capmemory.MemoryToolOutput{Success: false, Error: err.Error()}, nil
 	}
 	if addRes.Outcome == capmemory.AddOutcomeDuplicate {
-		usage, _ := memoryToolSnapshot(store)
+		usage, _ := memoryToolSnapshot(ctx, store)
 		return capmemory.MemoryToolOutput{Success: true, Message: "no duplicate added", Usage: usage}, nil
 	}
 	if commitErr != nil {
 		return capmemory.MemoryToolOutput{}, commitErr
 	}
-	usage, _ := memoryToolSnapshot(store)
-	return memoryToolOKf(store, "memory updated [%s]", usage), nil
+	usage, _ := memoryToolSnapshot(ctx, store)
+	return memoryToolOKf(ctx, store, "memory updated [%s]", usage), nil
 }
 
 func (s *Service) memoryToolReplace(ctx context.Context, oldText, content, source string) (capmemory.MemoryToolOutput, error) {
@@ -57,8 +57,8 @@ func (s *Service) memoryToolReplace(ctx context.Context, oldText, content, sourc
 	if err != nil {
 		return capmemory.MemoryToolOutput{Success: false, Error: err.Error()}, nil
 	}
-	usage, _ := memoryToolSnapshot(store)
-	return memoryToolOKf(store, "memory entry replaced [%s]", usage), nil
+	usage, _ := memoryToolSnapshot(ctx, store)
+	return memoryToolOKf(ctx, store, "memory entry replaced [%s]", usage), nil
 }
 
 func (s *Service) memoryToolRemove(ctx context.Context, oldText string) (capmemory.MemoryToolOutput, error) {
@@ -73,7 +73,7 @@ func (s *Service) memoryToolRemove(ctx context.Context, oldText string) (capmemo
 	if err != nil {
 		return capmemory.MemoryToolOutput{}, err
 	}
-	return memoryToolOK(store, msg), nil
+	return memoryToolOK(ctx, store, msg), nil
 }
 
 func (s *Service) replaceMemory(ctx context.Context, oldText, content, source string) (*rtmem.MemoryStore, error) {
@@ -89,7 +89,7 @@ func (s *Service) replaceMemory(ctx context.Context, oldText, content, source st
 	if err != nil {
 		return nil, err
 	}
-	if _, err = store.Replace(oldText, content); err != nil {
+	if _, err = store.Replace(ctx, oldText, content); err != nil {
 		return store, err
 	}
 	s.commitAfterMemoryReplace(ctx, content, source)
@@ -101,7 +101,7 @@ func (s *Service) removeMemory(ctx context.Context, text, source string) (string
 	if err != nil {
 		return "", err
 	}
-	removed, err := store.Remove(text)
+	removed, err := store.Remove(ctx, text)
 	if err != nil {
 		return "", err
 	}
@@ -109,8 +109,8 @@ func (s *Service) removeMemory(ctx context.Context, text, source string) (string
 	return "personal memory entry removed", nil
 }
 
-func memoryToolSnapshot(store *rtmem.MemoryStore) (usage string, entries []string) {
-	loaded, err := store.Load()
+func memoryToolSnapshot(ctx context.Context, store *rtmem.MemoryStore) (usage string, entries []string) {
+	loaded, err := store.Load(ctx)
 	if err != nil {
 		return rtmem.FormatMemoryUsage(0, store.CharLimit), nil
 	}
@@ -119,8 +119,8 @@ func memoryToolSnapshot(store *rtmem.MemoryStore) (usage string, entries []strin
 	return usage, rtmem.EntryContents(loaded)
 }
 
-func memoryToolOK(store *rtmem.MemoryStore, message string) capmemory.MemoryToolOutput {
-	usage, entries := memoryToolSnapshot(store)
+func memoryToolOK(ctx context.Context, store *rtmem.MemoryStore, message string) capmemory.MemoryToolOutput {
+	usage, entries := memoryToolSnapshot(ctx, store)
 	return capmemory.MemoryToolOutput{
 		Success:        true,
 		Message:        message,
@@ -129,8 +129,8 @@ func memoryToolOK(store *rtmem.MemoryStore, message string) capmemory.MemoryTool
 	}
 }
 
-func memoryToolOKf(store *rtmem.MemoryStore, format string, args ...any) capmemory.MemoryToolOutput {
-	return memoryToolOK(store, fmt.Sprintf(format, args...))
+func memoryToolOKf(ctx context.Context, store *rtmem.MemoryStore, format string, args ...any) capmemory.MemoryToolOutput {
+	return memoryToolOK(ctx, store, fmt.Sprintf(format, args...))
 }
 
 func memoryCapacityOutput(store *rtmem.MemoryStore, err error) *capmemory.MemoryToolOutput {

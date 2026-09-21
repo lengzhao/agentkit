@@ -28,6 +28,7 @@ func TestLearnCommandHelp(t *testing.T) {
 	ws := rtworkspace.Static(t.TempDir())
 	svc, err := New(Config{}, Deps{
 		Workspace:    ws,
+		FS:           testFS(t, ws),
 		SessionStore: stubSessionStore{},
 		Memory:       newTestMemoryStub(ws),
 		Engine:       rtschedule.Engine{},
@@ -97,7 +98,7 @@ func TestLearnCommandSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: store, Memory: newTestMemoryStub(ws), Engine: rtschedule.Engine{}})
+	svc, err := New(Config{}, Deps{Workspace: ws, FS: testFS(t, ws), SessionStore: store, Memory: newTestMemoryStub(ws), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +136,7 @@ func TestLearnCommandSessionDreamingBlockedPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "memory", "dreaming"), []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Config{}, Deps{Workspace: ws, SessionStore: stubSessionStore{}, Memory: newTestMemoryStub(ws), Engine: rtschedule.Engine{}})
+	svc, err := New(Config{}, Deps{Workspace: ws, FS: testFS(t, ws), SessionStore: stubSessionStore{}, Memory: newTestMemoryStub(ws), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}

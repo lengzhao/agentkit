@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
-	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
 // ReviewSignalCandidates builds a digest block from dreaming short-term signals for background review.
@@ -20,15 +19,11 @@ func (s *Service) ReviewSignalCandidates(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil || st == nil || len(st.Signals) == 0 {
 		return ""
 	}
-	capEntries, _, _, err := s.memory.LoadEntries(ctx)
-	if err != nil {
-		return ""
-	}
-	filtered := filterSignalsNotInMemory(st.Signals, capEntries)
+	filtered := s.filterSignalsNotInMemory(ctx, st.Signals)
 	if len(filtered) == 0 {
 		return ""
 	}
@@ -42,13 +37,9 @@ func (s *Service) ReviewSignalCandidates(ctx context.Context) string {
 	return dreaming.FormatReviewCandidateBlock(top)
 }
 
-func filterSignalsNotInMemory(signals []dreaming.Signal, capEntries []capmemory.MemoryEntry) []dreaming.Signal {
+func (s *Service) filterSignalsNotInMemory(ctx context.Context, signals []dreaming.Signal) []dreaming.Signal {
 	if len(signals) == 0 {
 		return nil
-	}
-	entries := make([]rtmem.MemoryEntry, len(capEntries))
-	for i, e := range capEntries {
-		entries[i] = rtmem.MemoryEntry{Content: e.Content}
 	}
 	out := make([]dreaming.Signal, 0, len(signals))
 	for _, sig := range signals {
@@ -56,8 +47,8 @@ func filterSignalsNotInMemory(signals []dreaming.Signal, capEntries []capmemory.
 		if text == "" {
 			continue
 		}
-		_, outcome := rtmem.MergeMemoryAdd(entries, text)
-		if outcome == capmemory.AddOutcomeDuplicate {
+		outcome, err := s.memory.PreviewAddOutcome(ctx, text)
+		if err != nil || outcome == capmemory.AddOutcomeDuplicate {
 			continue
 		}
 		out = append(out, sig)
@@ -74,10 +65,10 @@ func (s *Service) pruneDreamingSignals(ctx context.Context, text string) {
 	if err != nil {
 		return
 	}
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil || st == nil {
 		return
 	}
 	st.PruneByText(text)
-	_ = stateStore.Save(st)
+	_ = stateStore.Save(ctx, st)
 }

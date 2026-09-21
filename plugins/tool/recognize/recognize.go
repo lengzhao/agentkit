@@ -8,9 +8,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	rtllm "github.com/lengzhao/agentkit/runtime/llm"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 const (
@@ -27,8 +27,9 @@ type RecognizeConfig struct {
 }
 
 type RecognizeDeps struct {
-	LLM       agentkit.LLMProvider `json:"llm"`
-	Workspace workspace.Service    `json:"workspace"`
+	LLM       agentkit.LLMProvider   `json:"llm"`
+	Workspace workspace.Service      `json:"workspace"`
+	Telemetry captelemetry.Toolkit   `json:"telemetry"`
 }
 
 type RecognizeImageInput struct {
@@ -44,6 +45,9 @@ func NewRecognize(cfg RecognizeConfig, deps RecognizeDeps) (agentkit.ToolPack, e
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("tool/recognize requires workspace dependency")
 	}
+	if deps.Telemetry == nil {
+		return nil, fmt.Errorf("tool/recognize requires telemetry dependency")
+	}
 	sysPrompt := strings.TrimSpace(cfg.ImageSystemPrompt)
 	if sysPrompt == "" {
 		sysPrompt = defaultImageSystemPrompt
@@ -52,6 +56,7 @@ func NewRecognize(cfg RecognizeConfig, deps RecognizeDeps) (agentkit.ToolPack, e
 		model:     strings.TrimSpace(cfg.Model),
 		llm:       deps.LLM,
 		ws:        deps.Workspace,
+		telemetry: deps.Telemetry,
 		sysPrompt: sysPrompt,
 	}
 
@@ -68,6 +73,7 @@ type service struct {
 	model     string
 	llm       agentkit.LLMProvider
 	ws        workspace.Service
+	telemetry captelemetry.Toolkit
 	sysPrompt string
 }
 
@@ -88,7 +94,7 @@ func (s *service) recognizeImage(ctx context.Context, input RecognizeImageInput)
 		userText = "Describe this image."
 	}
 	slog.Info("recognize_image", "path", path, "mime", mime, "bytes", len(data))
-	rttelemetry.RecordEvent(ctx, "vision.hydrate", map[string]string{
+	s.telemetry.RecordEvent(ctx, "vision.hydrate", map[string]string{
 		"path":      path,
 		"mime":      mime,
 		"out_bytes": fmt.Sprint(len(data)),

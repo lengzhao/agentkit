@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,11 +13,10 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 const defaultGlobalMCPFile = "global:mcp.json"
@@ -36,18 +36,18 @@ type MCPConfig struct {
 }
 
 type MCPDeps struct {
-	Workspace   workspace.Service      `json:"workspace"`
-	Credentials credentials.Store `json:"credentials,omitempty"`
-	// ConfigFile powers /mcp add writes; without it the add command fails fast.
-	ConfigFile configfile.Writer `json:"configfile,omitempty"`
+	// FS reads/writes mcp.json files (scope prefixes allowed).
+	FS          filesystem.Service      `json:"fs"`
+	Credentials credentials.Store       `json:"credentials,omitempty"`
+	Telemetry   captelemetry.Toolkit    `json:"telemetry"`
 }
 
 type mcpProvider struct {
 	files       []string
 	enableLocal bool
-	workspace   workspace.Service
+	fs          filesystem.Service
 	credentials credentials.Store
-	configFile  configfile.Writer
+	telemetry   captelemetry.Toolkit
 	pool        *clientPool
 
 	mu      sync.RWMutex
@@ -69,16 +69,19 @@ type mcpTool struct {
 //   - Server configs and their tool lists are loaded once and cached; run the "mcp" command to reload mcp.json and rediscover tools after editing it or restarting a server.
 //   - Pooled connections are closed after idleTimeoutSeconds (default 300) without use; the next call reconnects.
 func NewMCP(cfg MCPConfig, deps MCPDeps) (agentkit.ToolProvider, error) {
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("tool/mcp requires workspace")
+	if deps.FS == nil {
+		return nil, fmt.Errorf("tool/mcp requires fs")
+	}
+	if deps.Telemetry == nil {
+		return nil, fmt.Errorf("tool/mcp requires telemetry dependency")
 	}
 	files := resolveMCPFiles(cfg)
 	return &mcpProvider{
 		files:       files,
 		enableLocal: cfg.EnableLocal,
-		workspace:   deps.Workspace,
+		fs:          deps.FS,
 		credentials: deps.Credentials,
-		configFile:  deps.ConfigFile,
+		telemetry:   deps.Telemetry,
 		pool:        newClientPool(idleTimeoutFromConfig(cfg.IdleTimeoutSeconds)),
 	}, nil
 }
@@ -163,7 +166,7 @@ func (p *mcpProvider) cached(ctx context.Context) ([]serverConfig, []toolDefinit
 func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinition, error) {
 	servers, err := p.loadServers(ctx)
 	if err != nil {
-		_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+		_, endObservation := p.telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 			Name: "mcp.init",
 			Kind: captelemetry.KindSpan,
 		})
@@ -179,7 +182,7 @@ func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinit
 		return nil, nil, nil
 	}
 
-	ctx, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+	ctx, endObservation := p.telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name: "mcp.init",
 		Kind: captelemetry.KindSpan,
 	})
@@ -215,17 +218,6 @@ func (p *mcpProvider) discoverTools(ctx context.Context, servers []serverConfig)
 	return defs, nil
 }
 
-func (p *mcpProvider) writeTarget(ctx context.Context, global bool) (string, error) {
-	if p.configFile == nil {
-		return "", fmt.Errorf("tool/mcp requires configFile dependency for /mcp add")
-	}
-	rel, err := p.configFile.WriteTargetForAdd(p.files, global)
-	if err != nil {
-		return "", err
-	}
-	return p.workspace.Resolve(ctx, rel)
-}
-
 func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, global bool) (string, error) {
 	if !global && !p.enableLocal {
 		return "", fmt.Errorf("local mcp is disabled; use /mcp add -g or set enableLocal")
@@ -235,12 +227,16 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, gl
 		return "", err
 	}
 
-	target, err := p.writeTarget(ctx, global)
+	scope := workspace.ScopeLocal
+	if global {
+		scope = workspace.ScopeGlobal
+	}
+	target, err := workspace.FirstScoped(p.files, scope)
 	if err != nil {
 		return "", err
 	}
-	prev, err := os.ReadFile(target)
-	if err != nil && !os.IsNotExist(err) {
+	prev, err := p.fs.Read(ctx, target)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("read %s: %w", target, err)
 	}
 	var prevBytes []byte
@@ -251,7 +247,7 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, gl
 	if err != nil {
 		return "", err
 	}
-	if err := p.configFile.WriteAtomic(target, merged, 0o644); err != nil {
+	if err := p.fs.Write(ctx, target, merged); err != nil {
 		return "", fmt.Errorf("write %s: %w", target, err)
 	}
 
@@ -260,16 +256,16 @@ func (p *mcpProvider) addServer(ctx context.Context, name string, raw []byte, gl
 		if hints := formatEnvAddHintsForServer(ctx, cfg, p.credentials); hints != "" {
 			return "", fmt.Errorf("mcp server %q probe failed: %w\n\n%s", name, err, hints)
 		}
-		_ = p.configFile.Restore(target, prevBytes, 0o644)
+		_ = p.fs.Write(ctx, target, prevBytes)
 		_, _, _ = p.reload(ctx)
 		return "", fmt.Errorf("mcp server %q probe failed: %w", name, err)
 	}
 	if _, defs, err := p.reload(ctx); err != nil {
-		_ = p.configFile.Restore(target, prevBytes, 0o644)
+		_ = p.fs.Write(ctx, target, prevBytes)
 		_, _, _ = p.reload(ctx)
 		return "", err
 	} else if !serverToolsPresent(defs, name, len(tools)) {
-		_ = p.configFile.Restore(target, prevBytes, 0o644)
+		_ = p.fs.Write(ctx, target, prevBytes)
 		_, _, _ = p.reload(ctx)
 		return "", fmt.Errorf("mcp server %q failed validation after reload", name)
 	}
@@ -391,21 +387,17 @@ func (p *mcpProvider) loadServers(ctx context.Context) ([]serverConfig, error) {
 	for _, rel := range p.files {
 		scope, _, scoped := workspace.ParseScoped(rel)
 		fromGlobal := scoped && scope == workspace.ScopeGlobal
-		path, err := p.workspace.Resolve(ctx, rel)
+		raw, err := p.fs.Read(ctx, rel)
 		if err != nil {
-			continue
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			slogWarnMCPFile(path, err)
+			slogWarnMCPFile(rel, err)
 			continue
 		}
-		servers, err := parseConfigFile(path, raw)
+		servers, err := parseConfigFile(rel, raw)
 		if err != nil {
-			slogWarnMCPFile(path, err)
+			slogWarnMCPFile(rel, err)
 			continue
 		}
 		for _, server := range servers {
@@ -455,7 +447,7 @@ func (c *mcpSyncCommand) CommandExec(ctx context.Context, args string) (string, 
 		}
 		return formatMCPStatus(defs) + formatMCPToolCatalog(defs), nil
 	case len(rest) >= 1 && rest[0] == "add":
-		global, addRest := configfile.PeelGlobalFlag(rest[1:])
+		global, addRest := agentkit.PeelGlobalFlag(rest[1:])
 		if len(addRest) < 2 {
 			return "", fmt.Errorf("usage: /mcp add [-g] <name> <json>")
 		}

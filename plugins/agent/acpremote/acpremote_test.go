@@ -17,6 +17,15 @@ import (
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
+func mustToolkit(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
+}
+
 func mustEvents(t *testing.T) capsession.Events {
 	t.Helper()
 	events, err := sessevents.New()
@@ -71,7 +80,7 @@ func TestUpdateEmitterStreamsText(t *testing.T) {
 		events = append(events, ev)
 		return nil
 	}
-	e := newUpdateEmitter(t.Context(), "sess-1", "acp", emit, agentkit.ModelMessage{
+	e := newUpdateEmitter(mustToolkit(t), t.Context(), "sess-1", "acp", emit, agentkit.ModelMessage{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
 	})
@@ -114,7 +123,7 @@ func TestUpdateEmitterStreamsText(t *testing.T) {
 func TestUpdateEmitterRecordsGenerationAndToolObservations(t *testing.T) {
 	rec := &rttelemetry.RecordingExporter{}
 	ctx := rttelemetry.WithExporter(t.Context(), rec)
-	e := newUpdateEmitter(ctx, "sess-1", "acp", func(context.Context, agentkit.OutboundEvent) error {
+	e := newUpdateEmitter(mustToolkit(t), ctx, "sess-1", "acp", func(context.Context, agentkit.OutboundEvent) error {
 		return nil
 	}, agentkit.ModelMessage{
 		Role:    "user",
@@ -207,7 +216,7 @@ func TestUpdateEmitterRecordsGenerationAndToolObservations(t *testing.T) {
 func TestUpdateEmitterIncludesThoughtInGenerationOutput(t *testing.T) {
 	rec := &rttelemetry.RecordingExporter{}
 	ctx := rttelemetry.WithExporter(t.Context(), rec)
-	e := newUpdateEmitter(ctx, "sess-1", "cursor", func(context.Context, agentkit.OutboundEvent) error {
+	e := newUpdateEmitter(mustToolkit(t), ctx, "sess-1", "cursor", func(context.Context, agentkit.OutboundEvent) error {
 		return nil
 	}, agentkit.ModelMessage{
 		Role:    "user",
@@ -252,7 +261,7 @@ func TestUpdateEmitterEmitsToolResultOnCompletion(t *testing.T) {
 		events = append(events, ev)
 		return nil
 	}
-	e := newUpdateEmitter(t.Context(), "sess-1", "cursor", emit, agentkit.ModelMessage{})
+	e := newUpdateEmitter(mustToolkit(t), t.Context(), "sess-1", "cursor", emit, agentkit.ModelMessage{})
 
 	if err := e.consume(acp.SessionNotification{
 		Update: acp.SessionUpdate{
@@ -351,8 +360,10 @@ func TestRunTurnUsesResolvedSessionID(t *testing.T) {
 		Command: []string{"/nonexistent/agent-acp-test-binary"},
 	}, Deps{
 		Workspace:     &stubWorkspace{},
+		FS:            bindTestFS(t, t.TempDir()),
 		SessionStore:  rec,
 		SessionEvents: mustEvents(t),
+		Telemetry:     mustToolkit(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -388,7 +399,7 @@ func (r *recordingStore) Get(_ context.Context, id agentkit.SessionID) (agentkit
 }
 
 func TestNewRequiresCommand(t *testing.T) {
-	_, err := New(Config{}, Deps{Workspace: &stubWorkspace{}})
+	_, err := New(Config{}, Deps{Workspace: &stubWorkspace{}, FS: bindTestFS(t, t.TempDir()), Telemetry: mustToolkit(t)})
 	if err == nil {
 		t.Fatal("expected error")
 	}

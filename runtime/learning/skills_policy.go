@@ -1,13 +1,14 @@
 package learning
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // SkillsPolicy is tenant-local skill workshop capture mode.
@@ -21,17 +22,19 @@ func (p SkillsPolicy) Normalized() SkillsPolicy {
 }
 
 // SkillsPolicyStore persists learning/policy.json (relative to memory root).
+// Path is a filesystem.Service-relative path.
 type SkillsPolicyStore struct {
+	FS   filesystem.Service
 	Path string
 }
 
-func (s *SkillsPolicyStore) Load() (SkillsPolicy, error) {
+func (s *SkillsPolicyStore) Load(ctx context.Context) (SkillsPolicy, error) {
 	if s.Path == "" {
 		return SkillsPolicy{}, fmt.Errorf("policy path is required")
 	}
-	data, err := os.ReadFile(s.Path)
+	data, err := s.FS.Read(ctx, s.Path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return SkillsPolicy{}, nil
 		}
 		return SkillsPolicy{}, err
@@ -43,19 +46,16 @@ func (s *SkillsPolicyStore) Load() (SkillsPolicy, error) {
 	return p.Normalized(), nil
 }
 
-func (s *SkillsPolicyStore) Save(p SkillsPolicy) error {
+func (s *SkillsPolicyStore) Save(ctx context.Context, p SkillsPolicy) error {
 	if s.Path == "" {
 		return fmt.Errorf("policy path is required")
 	}
 	p = p.Normalized()
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
 	}
-	return configfile.WriteAtomic(s.Path, []byte(raw), 0o644)
+	return s.FS.Write(ctx, s.Path, raw)
 }
 
 // FormatSkillsPolicyStatus renders /learn policy output.

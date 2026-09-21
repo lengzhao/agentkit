@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -144,10 +143,10 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 				if event.Envelope.Route.Platform == "" {
 					route := event.Envelope.Route
 					route.Platform = id
-					event = common.WithDeliveryRoute(event, route)
+					event = rctx.WithDeliveryRoute(event, route)
 				}
 			} else {
-				event = common.WithDeliverySession(event, id, delivery)
+				event = rctx.WithDeliverySession(event, id, delivery)
 			}
 		}
 		m.inbox <- incoming{id: id, event: event}

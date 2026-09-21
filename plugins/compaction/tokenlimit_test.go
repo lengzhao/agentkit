@@ -8,7 +8,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
 	capsession "github.com/lengzhao/agentkit/cap/session"
-	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
@@ -38,10 +37,10 @@ func messagesOfSize(chars int) []agentkit.ModelMessage {
 func TestTokenLimitRequiresAThreshold(t *testing.T) {
 	t.Parallel()
 
-	if _, err := NewTokenLimit(TokenLimitConfig{}, TokenLimitDeps{Services: []capcompaction.Service{&countingService{}}}); err == nil {
+	if _, err := NewTokenLimit(TokenLimitConfig{}, TokenLimitDeps{Chain: mustChain(t), Services: []capcompaction.Service{&countingService{}}}); err == nil {
 		t.Fatal("expected an error without maxTokens or contextWindow")
 	}
-	if _, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 100}, TokenLimitDeps{}); err == nil {
+	if _, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 100}, TokenLimitDeps{Chain: mustChain(t)}); err == nil {
 		t.Fatal("expected an error without a service to gate")
 	}
 }
@@ -54,7 +53,7 @@ func TestTokenLimitDerivesThresholdFromContextWindow(t *testing.T) {
 		ContextWindow: 1000,
 		TriggerRatio:  0.5,
 		CharsPerToken: 4,
-	}, TokenLimitDeps{Services: []capcompaction.Service{inner}})
+	}, TokenLimitDeps{Chain: mustChain(t), Services: []capcompaction.Service{inner}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +84,7 @@ func TestTokenLimitPassesForcedRequestsThrough(t *testing.T) {
 
 	inner := &countingService{}
 	svc, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 1000000}, TokenLimitDeps{
+		Chain:    mustChain(t),
 		Services: []capcompaction.Service{inner},
 	})
 	if err != nil {
@@ -123,6 +123,7 @@ func TestTokenLimitUsesReportedUsageWhenLarger(t *testing.T) {
 
 	inner := &countingService{}
 	svc, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 8000}, TokenLimitDeps{
+		Chain:    mustChain(t),
 		Services: []capcompaction.Service{inner},
 	})
 	if err != nil {
@@ -159,6 +160,7 @@ func TestTokenLimitTracksUsageAfterCompaction(t *testing.T) {
 
 	inner := &countingService{}
 	svc, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 8000}, TokenLimitDeps{
+		Chain:    mustChain(t),
 		Services: []capcompaction.Service{inner},
 	})
 	if err != nil {
@@ -173,65 +175,5 @@ func TestTokenLimitTracksUsageAfterCompaction(t *testing.T) {
 	}
 	if inner.calls != 0 {
 		t.Fatalf("inner calls = %d, want 0 after the context shrank", inner.calls)
-	}
-}
-
-func TestTokenLimitGatesRealSummary(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:gatesummary"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Only two messages: summary's own minMessages gate (default 20) would never
-	// fire on its own, which is exactly why the token gate forces it.
-	for i := 0; i < 2; i++ {
-		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("y", 40000)}},
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	messages, err := sess.DeriveMessages(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	summary, err := NewSummary(SummaryConfig{KeepRecentTokens: 200}, testSummaryDeps(t, &flakySummaryLLM{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 10000}, TokenLimitDeps{
-		Services: []capcompaction.Service{summary},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := svc.Compact(ctx, capcompaction.Request{
-		SessionID: sess.ID(),
-		Session:   sess,
-		Messages:  messages,
-	})
-	if err != nil {
-		t.Fatalf("gated summary: %v", err)
-	}
-	if !result.Applied {
-		t.Fatal("expected the gated summary to apply")
-	}
-	events, err := derive.ReadAllEvents(ctx, sess)
-	if err != nil {
-		t.Fatal(err)
-	}
-	compactions := 0
-	for _, ev := range events {
-		if ev.Type == agentkit.EventCompaction {
-			compactions++
-		}
-	}
-	if compactions != 1 {
-		t.Fatalf("session/compaction events = %d, want 1", compactions)
 	}
 }

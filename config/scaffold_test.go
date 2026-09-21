@@ -39,6 +39,7 @@ func TestScaffoldToolsFragmentDefault(t *testing.T) {
 		"tool.memory.default",
 		"tool.schedule.default",
 		"tool.fs-workspace.default",
+		"filesystem.local.default",
 		"mcp.default",
 		"openapi.default",
 	} {

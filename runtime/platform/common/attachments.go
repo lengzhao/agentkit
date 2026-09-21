@@ -13,7 +13,7 @@ import (
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // ImageAttachment is an inbound image from an IM platform.
@@ -38,18 +38,6 @@ type AudioAttachment struct {
 	Data     []byte
 	Format   string
 	Duration int
-}
-
-// UploadWorkRel is the upload directory relative to the agent work dir (e.g. upload).
-func UploadWorkRel(ws cw.Service) string {
-	workDir, upload := workpath.WorkLayout(ws)
-	return workpath.StripWorkPrefix(workDir, upload)
-}
-
-// AttachFSRel is the agent-facing path for an inbound file under upload (e.g. upload/foo).
-func AttachFSRel(ws cw.Service, name string) string {
-	workDir, _ := workpath.WorkLayout(ws)
-	return workpath.StripWorkPrefix(workDir, workpath.AttachRel(ws, name))
 }
 
 // PresavedAttachment is an attachment already saved to disk by the platform
@@ -99,10 +87,10 @@ func SaveInboundAttachments(deliveryID agentkit.SessionID, files []FileAttachmen
 	return out
 }
 
-// InboundFromContent builds a MessageEvent from text and optional rtmedia.
+// InboundFromContent builds a MessageEvent from text and optional media.
 // extraContent is prepended (e.g. quoted reply context). Attachments are saved
-// under work/upload/ and described in the user text (path, mime, size) so
-// Paths are relative to the agent work dir (e.g. upload/…); vision paths are also in image_url parts when present.
+// under work/upload/. User text and image_url Source use host-absolute paths
+// (AgentLLMPath); event.Attachments.Path stays work-relative (upload/…).
 func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
 	if route.ScopeUserID == "" {
 		route.ScopeUserID = strings.TrimSpace(userID)
@@ -223,7 +211,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 	if len(parts) == 0 {
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: ""})
 	}
-	event := WithInboundRoute(agentkit.MessageEvent{
+	event := rctx.WithInboundRoute(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: strings.TrimSpace(route.Platform),
 		UserID:     userID,
@@ -314,7 +302,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 		Conversation: string(deliveryID),
 		Workspace:    rctx.WorkspaceKey(string(deliveryID)),
 	})
-	attachDir, err := workpath.ResolveFile(ctx, opts.Workspace, UploadWorkRel(opts.Workspace))
+	attachDir, err := rtws.ResolveFile(ctx, opts.Workspace, cw.UploadWorkRel(opts.Workspace))
 	if err != nil {
 		slog.Warn("common: resolve inbound upload dir failed", "error", err)
 		return nil
@@ -339,7 +327,7 @@ func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opt
 			slog.Error("common: write inbound attachment failed", "path", fpath, "error", err)
 			continue
 		}
-		workPath := AttachFSRel(opts.Workspace, fname)
+		workPath := cw.AttachFSRel(opts.Workspace, fname)
 		out = append(out, inboundSavedAttachment{
 			path:     workPath,
 			mime:     strings.TrimSpace(f.MimeType),

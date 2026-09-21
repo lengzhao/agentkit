@@ -317,23 +317,27 @@ func consumeResultAfter(positions map[agentkit.ToolCallID][]int, id agentkit.Too
 	return false
 }
 
-func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) error {
+func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) (string, error) {
+	rendered := RenderSkillLoaded(content)
 	raw, err := json.Marshal(skillLoadEvent{
 		Name:         content.Name,
 		Description:  content.Description,
 		Body:         content.Body,
 		ResourceBase: content.Path,
-		Rendered:     renderSkillLoaded(content),
+		Rendered:     rendered,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	_, err = s.Append(ctx, agentkit.SessionEvent{
 		AgentID: agentID,
 		Type:    agentkit.EventSkillLoad,
 		Data:    raw,
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return rendered, nil
 }
 
 func ReadAllEvents(ctx context.Context, s agentkit.Session) ([]agentkit.SessionEvent, error) {

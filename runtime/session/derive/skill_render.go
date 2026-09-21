@@ -15,7 +15,8 @@ type skillLoadEvent struct {
 	Rendered     string `json:"rendered,omitempty"`
 }
 
-func renderSkillLoaded(content skill.Content) string {
+// RenderSkillLoaded formats a loaded skill for the model, including resource-base guidance.
+func RenderSkillLoaded(content skill.Content) string {
 	var b strings.Builder
 	b.WriteString("<skill_content name=\"")
 	b.WriteString(escapeSkillAttr(content.Name))
@@ -30,7 +31,7 @@ func renderSkillLoaded(content skill.Content) string {
 func skillLoadMessage(load skillLoadEvent) agentkit.ModelMessage {
 	text := strings.TrimSpace(load.Rendered)
 	if text == "" {
-		text = renderSkillLoaded(skill.Content{
+		text = RenderSkillLoaded(skill.Content{
 			Name:        load.Name,
 			Description: load.Description,
 			Body:        load.Body,
@@ -51,7 +52,7 @@ func writeSkillResourceHint(b *strings.Builder, resourceBase string) {
 	}
 	b.WriteString("Base directory for this skill: ")
 	b.WriteString(base)
-	b.WriteString("\nResolve relative paths mentioned by this skill against the base directory. Read supporting files with read; run bundled scripts with bash.\n")
+	b.WriteString("\nResolve relative paths in this skill against the base directory (absolute path). Read supporting files with read using absolute paths; run bundled scripts with bash (cd to the base path first).\n")
 }
 
 func escapeSkillAttr(value string) string {

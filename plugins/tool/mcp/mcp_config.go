@@ -11,23 +11,23 @@ type configDocument struct {
 }
 
 type rawServerConfig struct {
-	Command        string            `json:"command"`
-	Args           []string          `json:"args"`
-	Env            map[string]string `json:"env"`
-	URL            string            `json:"url"`
-	Type           string            `json:"type"`
-	Transport      string            `json:"transport"`
-	Headers        map[string]string `json:"headers"`
-	Prefix         string            `json:"prefix"`
-	AllowTools     []string          `json:"allowTools"`
-	DenyTools      []string          `json:"denyTools"`
-	TimeoutSeconds int               `json:"timeoutSeconds"`
+	Command        string             `json:"command"`
+	Args           []string           `json:"args"`
+	Env            map[string]string  `json:"env"`
+	URL            string             `json:"url"`
+	Type           string             `json:"type"`
+	Transport      string             `json:"transport"`
+	Headers        map[string]string  `json:"headers"`
+	Prefix         string             `json:"prefix"`
+	AllowTools     []string           `json:"allowTools"`
+	DenyTools      []string           `json:"denyTools"`
+	TimeoutSeconds int                `json:"timeoutSeconds"`
 	Bind           map[string]rawBind `json:"bind,omitempty"`
 }
 
 type serverConfig struct {
-	Name           string
-	Source         string
+	Name   string
+	Source string
 	// Global is true when the server was loaded from a global:-scoped config file
 	// (e.g. global:mcp.json). Global servers share one pooled client across tenants.
 	Global         bool

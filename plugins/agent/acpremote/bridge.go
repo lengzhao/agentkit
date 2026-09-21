@@ -14,11 +14,11 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 type sessionUpdateConsumer interface {
@@ -40,7 +40,9 @@ type acpPromptResponse struct {
 type bridge struct {
 	cfg        Config
 	workspace  workspace.Service
+	fs         filesystem.Service
 	sessionMCP capacp.SessionMCPProvider
+	telemetry  captelemetry.Toolkit
 
 	connOps chan connOp
 	// proc is the current subprocess snapshot. It is written exclusively by
@@ -76,11 +78,13 @@ func (proc *subprocess) alive() bool {
 	}
 }
 
-func newBridge(cfg Config, ws workspace.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
+func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit) *bridge {
 	b := &bridge{
 		cfg:        cfg,
 		workspace:  ws,
+		fs:         fs,
 		sessionMCP: sessionMCP,
+		telemetry:  telemetry,
 		connOps:    make(chan connOp),
 	}
 	go b.connLoop()
@@ -101,11 +105,11 @@ func (b *bridge) resolveSessionMCP(ctx context.Context) ([]acp.McpServer, error)
 
 func (b *bridge) recordSessionMCP(ctx context.Context, servers []acp.McpServer) {
 	names := acpclient.MCPServerNames(servers)
-	if len(names) == 0 {
+	if len(names) == 0 || b.telemetry == nil {
 		return
 	}
 	slog.Info("acp-remote: session mcp servers", "count", len(names), "servers", names)
-	rttelemetry.RecordEvent(ctx, "acp.session_mcp", map[string]string{
+	b.telemetry.RecordEvent(ctx, "acp.session_mcp", map[string]string{
 		"count":   fmt.Sprintf("%d", len(names)),
 		"servers": strings.Join(names, ","),
 	})
@@ -125,8 +129,9 @@ func (b *bridge) currentTurn() *turnState {
 	return b.turn.Load()
 }
 
-func (b *bridge) bindDir(ctx context.Context) (string, error) {
-	return b.workspace.Resolve(ctx, defaultBindDir)
+// bindDir is the fs-relative dir holding ACP session resume binds.
+func (b *bridge) bindDir(context.Context) (string, error) {
+	return defaultBindDir, nil
 }
 
 func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID acp.SessionId, state *sessionState) {
@@ -162,7 +167,7 @@ func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
 	if b.cfg.Cwd != "" {
 		return b.workspace.Resolve(ctx, b.cfg.Cwd)
 	}
-	workDir, _ := workpath.WorkLayout(b.workspace)
+	workDir, _ := workspace.WorkLayout(b.workspace)
 	if workDir == "" {
 		workDir = "work"
 	}
@@ -197,7 +202,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	}
 	b.recordSessionMCP(ctx, mcpServers)
 
-	if bind, ok, err := loadACPSessionBind(bindPath); err != nil {
+	if bind, ok, err := loadACPSessionBind(ctx, b.fs, bindPath); err != nil {
 		return "", err
 	} else if ok && bind.Cwd == cwd {
 		resp, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
@@ -225,7 +230,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	state := newSessionState()
 	state.applyBootstrap(resp.ConfigOptions, resp.Modes)
 	proc.trackSession(sessionID, resp.SessionId, state)
-	if err := saveACPSessionBind(bindPath, acpSessionBind{
+	if err := saveACPSessionBind(ctx, b.fs, bindPath, acpSessionBind{
 		AgentID:      agentID,
 		ACPSessionID: resp.SessionId,
 		Cwd:          cwd,

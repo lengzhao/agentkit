@@ -12,7 +12,7 @@ import (
 func TestResolveSessionMCPWithoutProviderIsEmptyArray(t *testing.T) {
 	t.Parallel()
 
-	b := newBridge(Config{}, nil, nil)
+	b := newBridge(Config{}, nil, nil, nil, nil)
 	got, err := b.resolveSessionMCP(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestResolveCwdDefaultsToWork(t *testing.T) {
 
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	b := newBridge(Config{}, ws, nil)
+	b := newBridge(Config{}, ws, nil, nil, nil)
 
 	cwd, err := b.resolveCwd(context.Background())
 	if err != nil {
@@ -47,7 +47,7 @@ func TestResolveCwdExplicitOverride(t *testing.T) {
 
 	root := t.TempDir()
 	ws := rtworkspace.Static(root)
-	b := newBridge(Config{Cwd: "work/agent-harness"}, ws, nil)
+	b := newBridge(Config{Cwd: "work/agent-harness"}, ws, nil, nil, nil)
 
 	cwd, err := b.resolveCwd(context.Background())
 	if err != nil {
@@ -83,7 +83,7 @@ func TestTerminateAndWaitSubprocessNoDeadlock(t *testing.T) {
 func TestReleaseSubprocessNoDeadlock(t *testing.T) {
 	t.Parallel()
 
-	b := newBridge(Config{}, nil, nil)
+	b := newBridge(Config{}, nil, nil, nil, nil)
 	done := make(chan struct{})
 	go func() {
 		time.Sleep(20 * time.Millisecond)

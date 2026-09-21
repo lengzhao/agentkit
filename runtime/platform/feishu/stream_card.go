@@ -89,10 +89,6 @@ func subagentToolLabel(agent string) string {
 	return "子Agent:" + strings.TrimSpace(agent)
 }
 
-func (p *Platform) useRichStream() bool {
-	return p.progressStyle == "card"
-}
-
 func (p *Platform) bumpRichCardPanel(st *streamState) {
 	st.richCardPanelVersion++
 }
@@ -237,23 +233,6 @@ func (p *Platform) richStreamState(sessionID agentkit.SessionID) *streamState {
 	return st
 }
 
-func (p *Platform) bodyStreamInterval() time.Duration {
-	if p.useCardKitStream() {
-		return streamCardKitInterval
-	}
-	return streamUpdateInterval
-}
-
-func (p *Platform) finalizeBodyCard(ctx context.Context, handle any, bodyText string) error {
-	if strings.TrimSpace(bodyText) == "" {
-		return nil
-	}
-	if h, ok := handle.(*feishuPreviewHandle); ok && h.cardID != "" && h.elementID != "" {
-		return p.finalizeStreamingBodyCard(ctx, h, bodyText)
-	}
-	return p.UpdateMessage(ctx, handle, buildFinalPreviewCardJSON(bodyText))
-}
-
 func (p *Platform) handleRichStreamMessageStart(ctx context.Context, streamKey agentkit.SessionID) error {
 	p.cancelBodyFlushTimer(streamKey)
 	st := p.richStreamState(streamKey)
@@ -338,13 +317,6 @@ func (p *Platform) cancelBodyFlushTimer(sessionID agentkit.SessionID) {
 	st.unlock()
 }
 
-func (p *Platform) cancelLegacyFlushTimer(sessionID agentkit.SessionID) {
-	st := p.streamState(sessionID)
-	st.lock()
-	stopStreamTimer(&st.legacyFlushTimer)
-	st.unlock()
-}
-
 func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
 	st := p.streamState(sessionID)
 	st.lock()
@@ -372,33 +344,6 @@ func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
 		}
 		if err := p.flushRichCard(context.Background(), sid, true); err != nil {
 			slog.Debug(p.tag()+": debounced patch rich card flush failed", "session_id", sid, "error", err)
-		}
-	})
-	st.unlock()
-}
-
-func (p *Platform) scheduleLegacyFlush(sessionID agentkit.SessionID) {
-	st := p.streamState(sessionID)
-	st.lock()
-	if st.legacyFlushTimer != nil {
-		st.unlock()
-		return
-	}
-	delay := streamFlushDelay(st.lastUpdate, p.bodyStreamInterval())
-	sid := sessionID
-	st.legacyFlushTimer = time.AfterFunc(delay, func() {
-		st.lock()
-		stopStreamTimer(&st.legacyFlushTimer)
-		st.unlock()
-		st = p.streamState(sid)
-		st.lock()
-		text := st.accumulated
-		st.unlock()
-		if strings.TrimSpace(text) == "" {
-			return
-		}
-		if err := p.flushStream(context.Background(), sid, text); err != nil {
-			slog.Debug(p.tag()+": debounced legacy flush failed", "session_id", sid, "error", err)
 		}
 	})
 	st.unlock()
@@ -903,9 +848,6 @@ func appendCancelledProgressFooter(progressMD, reason string) string {
 }
 
 func (p *Platform) bootstrapReplyCard(ctx context.Context, streamKey agentkit.SessionID) error {
-	if !p.useRichStream() {
-		return nil
-	}
 	return p.flushRichCard(ctx, streamKey, true)
 }
 

@@ -8,8 +8,19 @@ import (
 	"github.com/lengzhao/agentkit"
 	caphistory "github.com/lengzhao/agentkit/cap/chathistory"
 	"github.com/lengzhao/agentkit/plugins/tool/chathistory"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
+
+func mustDelivery(t *testing.T) capsdelivery.Assistant {
+	t.Helper()
+	a, err := rtdelivery.NewAssistant(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
 
 type stubProvider struct {
 	lastReq caphistory.Request
@@ -39,7 +50,8 @@ func TestChatHistoryReturnsEmptyWithoutProvider(t *testing.T) {
 	t.Parallel()
 
 	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{
-		History: &stubHistoryPlatform{providers: map[string]caphistory.Provider{}},
+		History:  &stubHistoryPlatform{providers: map[string]caphistory.Provider{}},
+		Delivery: mustDelivery(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +92,7 @@ func TestChatHistoryRoutesThroughMultiplex(t *testing.T) {
 	}
 	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": provider}}
 
-	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router, Delivery: mustDelivery(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +130,7 @@ func TestChatHistoryThreadCanBeDisabled(t *testing.T) {
 	provider := &stubProvider{result: caphistory.Result{Source: "feishu"}}
 	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": provider}}
 
-	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router, Delivery: mustDelivery(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

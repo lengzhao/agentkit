@@ -25,7 +25,7 @@ func (s *Service) ReviewNudgeLoad(ctx context.Context, sessionID string) (caplea
 	if err != nil {
 		return caplearning.NudgeSessionState{}, false, err
 	}
-	return store.LoadSession(sessionID)
+	return store.LoadSession(ctx, sessionID)
 }
 
 func (s *Service) ReviewNudgeSave(ctx context.Context, sessionID string, state caplearning.NudgeSessionState) error {
@@ -33,7 +33,7 @@ func (s *Service) ReviewNudgeSave(ctx context.Context, sessionID string, state c
 	if err != nil {
 		return err
 	}
-	return store.SaveSession(sessionID, state)
+	return store.SaveSession(ctx, sessionID, state)
 }
 
 func (s *Service) RunScheduledDreamSweep(ctx context.Context) error {
@@ -46,7 +46,7 @@ func (s *Service) DreamSweepDue(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	st, err := store.Load()
+	st, err := store.Load(ctx)
 	if err != nil || st == nil || !st.Enabled {
 		return false
 	}

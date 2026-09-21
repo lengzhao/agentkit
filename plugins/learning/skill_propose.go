@@ -3,7 +3,6 @@ package learning
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
@@ -24,10 +23,7 @@ func (s *Service) createSkillProposal(ctx context.Context, p skillProposeParams)
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(wsStore.Root, 0o755); err != nil {
-		return "", err
-	}
-	pending, err := wsStore.PendingCount()
+	pending, err := wsStore.PendingCount(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -44,12 +40,12 @@ func (s *Service) createSkillProposal(ctx context.Context, p skillProposeParams)
 	if name == "" {
 		name = workshop.SuggestSkillName(p.Focus, body)
 	}
-	proposal, err := wsStore.Create(name, body, p.Source, p.SessionID, p.Focus, p.Autonomous)
+	proposal, err := wsStore.Create(ctx, name, body, p.Source, p.SessionID, p.Focus, p.Autonomous)
 	if err != nil {
 		return "", err
 	}
 	if s.skillsAutoApply(ctx, p.Source) {
-		if err := proposal.Apply(skillsDir); err != nil {
+		if err := proposal.Apply(ctx, skillsDir); err != nil {
 			return fmt.Sprintf("proposal %s created (auto-apply failed: %v)", proposal.Meta.ID, err), nil
 		}
 		return fmt.Sprintf("skill %q applied from proposal %s", name, proposal.Meta.ID), nil

@@ -3,15 +3,37 @@
 package integration_test
 
 import (
-	capconfigfile "github.com/lengzhao/agentkit/cap/configfile"
-	rtconfigfile "github.com/lengzhao/agentkit/runtime/configfile"
+	"testing"
+
+	"github.com/lengzhao/agentkit/cap/filesystem"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
-// newTestConfigFileWriter 返回 /add 命令测试用的标准原子写实现（test-only 依赖 runtime 实现）。
-func newTestConfigFileWriter() capconfigfile.Writer {
-	w, err := rtconfigfile.New(struct{}{}, struct{}{})
+// integrationFS builds an unrestricted filesystem/local over a static root.
+func integrationFS(t *testing.T, root string) filesystem.Service {
+	t.Helper()
+	return integrationFSOver(t, rtworkspace.Static(root))
+}
+
+// integrationFSOver builds an unrestricted filesystem/local delegating to ws.
+func integrationFSOver(t *testing.T, ws workspace.Service) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: ws})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	return w
+	return fs
+}
+
+func integrationTelemetry(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
 }

@@ -9,22 +9,41 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	openapiplugin "github.com/lengzhao/agentkit/plugins/tool/openapi"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/openapitest"
 )
 
+func openapiTelemetry() (captelemetry.Toolkit, error) {
+	return rttelemetry.NewToolkit(struct{}{}, struct{}{})
+}
+
 // newOpenAPIProvider injects the real tool/openapi constructor into openapitest,
 // keeping the helper package plugin-agnostic.
 func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit.ToolProvider, error) {
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: ws})
+	if err != nil {
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	tk, err := openapiTelemetry()
+	if err != nil {
+		return nil, err
+	}
 	return openapiplugin.NewOpenAPI(openapiplugin.OpenAPIConfig{
 		EnableLocal: true,
 		Files:       []string{"api.json", "local:api.json"},
 	}, openapiplugin.OpenAPIDeps{
+		FS:          fs,
 		Workspace:   ws,
 		Credentials: creds,
-		ConfigFile:  newTestConfigFileWriter(),
+		Telemetry:   tk,
 	})
 }
 

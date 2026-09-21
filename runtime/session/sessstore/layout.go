@@ -6,7 +6,6 @@ import (
 	"os"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
 )
 
 // ensureTenantLayout resolves the sessions dir and the tenant work subtree
@@ -19,7 +18,7 @@ func ensureTenantLayout(ctx context.Context, ws cw.Service, relSessionsDir strin
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		return "", err
 	}
-	workRel, _ := workpath.WorkLayout(ws)
+	workRel, _ := cw.WorkLayout(ws)
 	if workRel != "" {
 		workDir, err := ws.Resolve(ctx, workRel)
 		if err != nil {

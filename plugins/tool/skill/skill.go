@@ -9,7 +9,6 @@ import (
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 )
 
 type SkillConfig struct{}
@@ -29,7 +28,7 @@ type SkillInput struct {
 // Best practices:
 //   - Load a skill once per task, then follow its instructions.
 //   - Read supporting files with fs tools (tenant skills live under skills/<name>/).
-//   - Run bundled scripts with bash from the skill directory named in the load result.
+//   - Run bundled scripts with bash using the absolute skill directory from the load result.
 func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 	if deps.Skills == nil {
 		return nil, fmt.Errorf("tool/skill requires skills dependency")
@@ -44,22 +43,23 @@ func NewSkill(_ SkillConfig, deps SkillDeps) (agentkit.Tool, error) {
 		if err != nil {
 			return "", err
 		}
+		if deps.SessionEvents == nil {
+			return "", fmt.Errorf("tool/skill requires sessionEvents dependency")
+		}
 		sessionID := rctx.SessionIDFromContext(ctx)
 		agentID := rctx.AgentIDFromContext(ctx)
 		if sessionID != "" {
-			if store == nil || deps.SessionEvents == nil {
-				return "", fmt.Errorf("tool/skill requires sessionStore and sessionEvents dependencies")
+			if store == nil {
+				return "", fmt.Errorf("tool/skill requires sessionStore dependency")
 			}
 			sess, err := store.Get(ctx, sessionID)
 			if err != nil {
 				return "", err
 			}
-			if err := deps.SessionEvents.AppendSkillLoad(ctx, sess, agentID, content); err != nil {
-				return "", err
-			}
+			return deps.SessionEvents.AppendSkillLoad(ctx, sess, agentID, content)
 		}
-		return rtskill.RenderLoaded(content), nil
-	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Read supporting files with read; run bundled scripts with bash.").Build()
+		return deps.SessionEvents.RenderSkillContent(content), nil
+	}).Description("Load a skill by name and inject its SKILL.md instructions into the session. Use absolute paths with read and bash (skill base directory is absolute in the load result).").Build()
 	if err != nil {
 		return nil, err
 	}

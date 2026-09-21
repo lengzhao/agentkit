@@ -1,14 +1,16 @@
 package workshop
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 const (
@@ -41,30 +43,34 @@ type Proposal struct {
 	Meta Meta
 	Body string
 	Dir  string
+
+	fs filesystem.Service
 }
 
 // Store manages proposals under work/skills/.workshop/.
+// Root is a filesystem.Service-relative directory; paths are slash-joined.
 type Store struct {
+	FS   filesystem.Service
 	Root string
 }
 
-func (s *Store) List() ([]Proposal, error) {
+func (s *Store) List(ctx context.Context) ([]Proposal, error) {
 	if s.Root == "" {
 		return nil, fmt.Errorf("workshop root is required")
 	}
-	entries, err := os.ReadDir(s.Root)
+	entries, err := s.FS.List(ctx, s.Root)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	out := make([]Proposal, 0)
 	for _, ent := range entries {
-		if !ent.IsDir() {
+		if !ent.IsDir {
 			continue
 		}
-		p, err := s.Load(ent.Name())
+		p, err := s.Load(ctx, ent.Name)
 		if err != nil {
 			continue
 		}
@@ -73,10 +79,9 @@ func (s *Store) List() ([]Proposal, error) {
 	return out, nil
 }
 
-func (s *Store) Load(id string) (Proposal, error) {
-	dir := filepath.Join(s.Root, id)
-	metaPath := filepath.Join(dir, "meta.json")
-	data, err := os.ReadFile(metaPath)
+func (s *Store) Load(ctx context.Context, id string) (Proposal, error) {
+	dir := s.Root + "/" + id
+	data, err := s.FS.Read(ctx, dir+"/meta.json")
 	if err != nil {
 		return Proposal{}, err
 	}
@@ -84,15 +89,15 @@ func (s *Store) Load(id string) (Proposal, error) {
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return Proposal{}, err
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "PROPOSAL.md"))
+	body, err := s.FS.Read(ctx, dir+"/PROPOSAL.md")
 	if err != nil {
 		return Proposal{}, err
 	}
-	return Proposal{Meta: meta, Body: string(body), Dir: dir}, nil
+	return Proposal{Meta: meta, Body: string(body), Dir: dir, fs: s.FS}, nil
 }
 
-func (s *Store) PendingCount() (int, error) {
-	all, err := s.List()
+func (s *Store) PendingCount(ctx context.Context) (int, error) {
+	all, err := s.List(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -106,7 +111,7 @@ func (s *Store) PendingCount() (int, error) {
 }
 
 // Create stores a new pending proposal.
-func (s *Store) Create(skillName, body, source, sessionID, focus string, autonomous bool) (Proposal, error) {
+func (s *Store) Create(ctx context.Context, skillName, body, source, sessionID, focus string, autonomous bool) (Proposal, error) {
 	skillName = strings.TrimSpace(strings.ToLower(skillName))
 	body = strings.TrimSpace(body)
 	scan := Scan(skillName, body)
@@ -125,21 +130,18 @@ func (s *Store) Create(skillName, body, source, sessionID, focus string, autonom
 		Autonomous: autonomous,
 		CreatedAt:  time.Now().UTC(),
 	}
-	dir := filepath.Join(s.Root, id)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir := s.Root + "/" + id
+	if err := s.FS.Write(ctx, dir+"/meta.json", mustJSON(meta)); err != nil {
 		return Proposal{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "meta.json"), mustJSON(meta), 0o644); err != nil {
+	if err := s.FS.Write(ctx, dir+"/PROPOSAL.md", []byte(body)); err != nil {
 		return Proposal{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "PROPOSAL.md"), []byte(body), 0o644); err != nil {
-		return Proposal{}, err
-	}
-	return Proposal{Meta: meta, Body: body, Dir: dir}, nil
+	return Proposal{Meta: meta, Body: body, Dir: dir, fs: s.FS}, nil
 }
 
-func (s *Store) saveMeta(dir string, meta Meta) error {
-	return os.WriteFile(filepath.Join(dir, "meta.json"), mustJSON(meta), 0o644)
+func (s *Store) saveMeta(ctx context.Context, dir string, meta Meta) error {
+	return s.FS.Write(ctx, dir+"/meta.json", mustJSON(meta))
 }
 
 func mustJSON(v any) []byte {
@@ -151,7 +153,7 @@ func mustJSON(v any) []byte {
 }
 
 // Apply writes SKILL.md to targetDir and marks proposal applied.
-func (p *Proposal) Apply(targetDir string) error {
+func (p *Proposal) Apply(ctx context.Context, targetDir string) error {
 	if p.Meta.Status != StatusPending {
 		return fmt.Errorf("proposal %s is %s", p.Meta.ID, p.Meta.Status)
 	}
@@ -159,34 +161,31 @@ func (p *Proposal) Apply(targetDir string) error {
 	if !scan.OK {
 		return fmt.Errorf("apply blocked: %s", strings.Join(scan.Critical, "; "))
 	}
-	skillDir := filepath.Join(targetDir, p.Meta.SkillName)
-	skillPath := filepath.Join(skillDir, "SKILL.md")
+	skillDir := strings.TrimSuffix(targetDir, "/") + "/" + p.Meta.SkillName
+	skillPath := skillDir + "/SKILL.md"
 	if p.Meta.Kind == KindCreate {
-		if _, err := os.Stat(skillDir); err == nil {
+		if _, err := p.fs.Stat(ctx, skillDir); err == nil {
 			return fmt.Errorf("skill %q already exists", p.Meta.SkillName)
-		} else if !os.IsNotExist(err) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(skillPath, []byte(p.Body), 0o644); err != nil {
+	if err := p.fs.Write(ctx, skillPath, []byte(p.Body)); err != nil {
 		return err
 	}
 	p.Meta.Status = StatusApplied
 	p.Meta.AppliedAt = time.Now().UTC()
-	return os.WriteFile(filepath.Join(p.Dir, "meta.json"), mustJSON(p.Meta), 0o644)
+	return p.fs.Write(ctx, p.Dir+"/meta.json", mustJSON(p.Meta))
 }
 
 // Reject marks a proposal rejected.
-func (p *Proposal) Reject() error {
+func (p *Proposal) Reject(ctx context.Context) error {
 	if p.Meta.Status != StatusPending {
 		return fmt.Errorf("proposal %s is %s", p.Meta.ID, p.Meta.Status)
 	}
 	p.Meta.Status = StatusRejected
 	p.Meta.RejectedAt = time.Now().UTC()
-	return os.WriteFile(filepath.Join(p.Dir, "meta.json"), mustJSON(p.Meta), 0o644)
+	return p.fs.Write(ctx, p.Dir+"/meta.json", mustJSON(p.Meta))
 }
 
 // FormatList renders pending proposals for CLI.

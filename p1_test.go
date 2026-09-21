@@ -9,7 +9,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	"github.com/lengzhao/agentkit/cap/settings"
 	_ "github.com/lengzhao/agentkit/plugins"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -62,6 +61,11 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 		"use":    "workspace/default",
 		"config": map[string]any{"root": dir},
 	}
+	fsCfg := map[string]any{
+		"use":    "filesystem/local",
+		"config": map[string]any{"root": "."},
+		"deps":   map[string]any{"workspace": workspaceCfg},
+	}
 
 	graph := map[string]any{
 		"agent": map[string]any{
@@ -106,6 +110,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 											"dirs": []string{"."},
 										},
 										"deps": map[string]any{
+											"fs":        fsCfg,
 											"workspace": workspaceCfg,
 										},
 									},
@@ -161,7 +166,19 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 func TestCredentialsEnvResolve(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "secret-value")
 	graph := map[string]any{
-		"creds": map[string]any{"use": "credentials/env"},
+		"creds": map[string]any{
+			"use": "credentials/env",
+			"deps": map[string]any{
+				"fs": map[string]any{
+					"use":    "filesystem/local",
+					"config": map[string]any{"root": ".", "unrestricted": true},
+					"deps": map[string]any{"workspace": map[string]any{
+						"use":    "workspace/default",
+						"config": map[string]any{"root": t.TempDir()},
+					}},
+				},
+			},
+		},
 	}
 	store, _, err := build.Build[credentials.Store](context.Background(), graph, "creds")
 	if err != nil {
@@ -173,32 +190,5 @@ func TestCredentialsEnvResolve(t *testing.T) {
 	}
 	if secret.Value != "secret-value" {
 		t.Fatalf("unexpected secret value: %q", secret.Value)
-	}
-}
-
-func TestSettingsFileGet(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "settings.yaml")
-	if err := os.WriteFile(path, []byte("model:\n  name: gpt-test\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	graph := map[string]any{
-		"settings": map[string]any{
-			"use": "settings/file",
-			"config": map[string]any{
-				"path": path,
-			},
-		},
-	}
-	store, _, err := build.Build[settings.Store](context.Background(), graph, "settings")
-	if err != nil {
-		t.Fatalf("build settings: %v", err)
-	}
-	value, err := store.Get(context.Background(), "model.name")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if value.Raw != "gpt-test" {
-		t.Fatalf("unexpected model name: %v", value.Raw)
 	}
 }

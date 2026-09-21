@@ -11,7 +11,7 @@ func (s *Service) reviewNudgeStore(ctx context.Context) (*rtlearning.NudgeStore,
 	if err != nil {
 		return nil, err
 	}
-	return &rtlearning.NudgeStore{Path: path}, nil
+	return &rtlearning.NudgeStore{FS: s.fs, Path: path}, nil
 }
 
 func (s *Service) reviewQuotaStore(ctx context.Context) (*rtlearning.QuotaStore, error) {
@@ -19,5 +19,5 @@ func (s *Service) reviewQuotaStore(ctx context.Context) (*rtlearning.QuotaStore,
 	if err != nil {
 		return nil, err
 	}
-	return &rtlearning.QuotaStore{Path: path}, nil
+	return &rtlearning.QuotaStore{FS: s.fs, Path: path}, nil
 }

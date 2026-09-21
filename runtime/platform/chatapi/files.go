@@ -19,8 +19,7 @@ import (
 	"time"
 
 	cw "github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 const (
@@ -71,7 +70,7 @@ func (p *Platform) uploadDir(ctx context.Context, channelKey string) (string, er
 	if p.workspace == nil {
 		return "", errWorkspaceRequired
 	}
-	dir, err := workpath.ResolveFile(p.channelCtx(ctx, channelKey), p.workspace, common.UploadWorkRel(p.workspace))
+	dir, err := rtws.ResolveFile(p.channelCtx(ctx, channelKey), p.workspace, cw.UploadWorkRel(p.workspace))
 	if err != nil {
 		return "", err
 	}
@@ -107,9 +106,8 @@ func (p *Platform) workRelPath(ctx context.Context, channelKey, absPath string) 
 	if strings.HasPrefix(rel, "..") {
 		return "", fmt.Errorf("path outside workspace")
 	}
-	workDir, _ := workpath.WorkLayout(p.workspace)
-	canon := workpath.CanonicalWorkPath(workDir, filepath.ToSlash(rel))
-	return workpath.StripWorkPrefix(workDir, canon), nil
+	workDir, _ := cw.WorkLayout(p.workspace)
+	return cw.NormalizeAgentRel(workDir, filepath.ToSlash(rel)), nil
 }
 
 func (p *Platform) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -617,17 +615,17 @@ func (p *Platform) normalizeWorkspaceFilePath(raw string) (string, error) {
 	if strings.Contains(workRel, "..") {
 		return "", errInvalidPath
 	}
-	workDir, _ := workpath.WorkLayout(p.workspace)
+	workDir, _ := cw.WorkLayout(p.workspace)
 	if workRel == "upload" || strings.HasPrefix(workRel, "upload/") ||
 		workRel == "download" || strings.HasPrefix(workRel, "download/") {
-		workRel = workpath.JoinWork(workDir, workRel)
+		workRel = cw.JoinWork(workDir, workRel)
 	}
 	return workRel, nil
 }
 
 func (p *Platform) validateWorkspaceFileAPIPath(workRel string) error {
 	workRel = filepath.ToSlash(workRel)
-	workDir, _ := workpath.WorkLayout(p.workspace)
+	workDir, _ := cw.WorkLayout(p.workspace)
 	if workRel != workDir && !strings.HasPrefix(workRel, workDir+"/") {
 		return errPathOutsideWork
 	}

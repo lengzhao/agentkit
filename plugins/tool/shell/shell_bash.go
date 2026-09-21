@@ -85,7 +85,7 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error
 
 	tool, err := agentkit.NewTool[ShellInput, ShellOutput]("bash", func(ctx context.Context, input ShellInput) (ShellOutput, error) {
 		return exec.run(ctx, input.Command)
-	}).Description("Execute a bash command in the workspace.").Build()
+	}).Description("Execute a bash command in the workspace (default cwd is the absolute agent work directory). Prefer absolute paths in commands and when cd-ing to skill or global directories.").Build()
 	if err != nil {
 		return nil, err
 	}

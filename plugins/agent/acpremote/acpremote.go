@@ -9,7 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	capsession "github.com/lengzhao/agentkit/cap/session"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/pluginkit"
@@ -43,10 +45,13 @@ type Config struct {
 // Deps holds injected capabilities for the ACP client side.
 type Deps struct {
 	Workspace     workspace.Service       `json:"workspace"`
+	// FS stores ACP session resume binds (tenant-relative acp/ dir).
+	FS            filesystem.Service      `json:"fs"`
 	SessionStore  agentkit.SessionStore   `json:"sessionStore,omitempty"`
 	SessionEvents capsession.Conversation `json:"sessionEvents,omitempty"`
 	// SessionMCP supplies harness MCP servers for session/new (not project mcp.json).
 	SessionMCP capacp.SessionMCPProvider `json:"sessionMcp,omitempty"`
+	Telemetry  captelemetry.Toolkit        `json:"telemetry"`
 }
 
 // Runtime proxies turns to an external ACP agent over stdio.
@@ -54,9 +59,11 @@ type Runtime struct {
 	id            agentkit.AgentID
 	cfg           Config
 	workspace     workspace.Service
+	fs            filesystem.Service
 	sessionStore  agentkit.SessionStore
 	sessionEvents capsession.Conversation
 	sessionMCP    capacp.SessionMCPProvider
+	telemetry     captelemetry.Toolkit
 	bridges       sync.Map // agentkit.SessionID -> *bridge
 }
 
@@ -71,6 +78,12 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	}
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("agent/acp-remote requires workspace")
+	}
+	if deps.FS == nil {
+		return nil, fmt.Errorf("agent/acp-remote requires fs")
+	}
+	if deps.Telemetry == nil {
+		return nil, fmt.Errorf("agent/acp-remote requires telemetry dependency")
 	}
 	id := cfg.ID
 	if id == "" {
@@ -90,14 +103,16 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		id:            id,
 		cfg:           cfg,
 		workspace:     deps.Workspace,
+		fs:            deps.FS,
 		sessionStore:  deps.SessionStore,
 		sessionEvents: deps.SessionEvents,
 		sessionMCP:    deps.SessionMCP,
+		telemetry:     deps.Telemetry,
 	}, nil
 }
 
 func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.sessionMCP))
+	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.telemetry))
 	return v.(*bridge)
 }
 
@@ -171,7 +186,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		return err
 	}
 
-	emitter := newUpdateEmitter(ctx, sessionID, a.id, emit, input.Message)
+	emitter := newUpdateEmitter(a.telemetry, ctx, sessionID, a.id, emit, input.Message)
 	brid.setTurn(turnState{
 		ctx:       ctx,
 		emitter:   emitter,

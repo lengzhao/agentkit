@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -68,6 +68,7 @@ type Service struct {
 	dreaming    dreaming.Config
 	workshop    workshop.Config
 	workspace   workspace.Service
+	fs          filesystem.Service
 	sessions    agentkit.SessionStore
 	memory      capmemory.Service
 	engine      capschedule.Engine
@@ -82,6 +83,7 @@ type Config struct {
 
 type Deps struct {
 	Workspace    workspace.Service     `json:"workspace"`
+	FS           filesystem.Service    `json:"fs"`
 	SessionStore agentkit.SessionStore `json:"sessionStore"`
 	Memory       capmemory.Service     `json:"memory"`
 	Engine       capschedule.Engine    `json:"engine"`
@@ -91,6 +93,9 @@ type Deps struct {
 func New(cfg Config, deps Deps) (*Service, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("learning/default requires workspace")
+	}
+	if deps.FS == nil {
+		return nil, fmt.Errorf("learning/default requires fs")
 	}
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("learning/default requires sessionStore")
@@ -113,6 +118,7 @@ func New(cfg Config, deps Deps) (*Service, error) {
 		dreaming:    dreamCfg,
 		workshop:    wsCfg,
 		workspace:   deps.Workspace,
+		fs:          deps.FS,
 		sessions:    deps.SessionStore,
 		memory:      deps.Memory,
 		engine:      deps.Engine,
@@ -136,7 +142,7 @@ func (s *Service) dreamingStore(ctx context.Context) (*dreaming.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &dreaming.Store{Path: path}, nil
+	return &dreaming.Store{FS: s.fs, Path: path}, nil
 }
 
 func (s *Service) diaryPath(ctx context.Context) (string, error) {
@@ -147,17 +153,13 @@ func (s *Service) deepReportDir(ctx context.Context) (string, error) {
 	return s.memory.ResolveRel(ctx, DefaultDreamingSubdir, "deep")
 }
 
-func (s *Service) sessionsPath(ctx context.Context) (string, error) {
-	return s.workspace.Resolve(ctx, s.sessionsDir)
+func (s *Service) sessionsPath(context.Context) (string, error) {
+	return s.sessionsDir, nil
 }
 
-func (s *Service) workshopStore(ctx context.Context) (*workshop.Store, string, error) {
-	skillsDir, err := s.workspace.Resolve(ctx, s.workshopCfg().SkillsDir)
-	if err != nil {
-		return nil, "", err
-	}
-	root := filepath.Join(skillsDir, ".workshop")
-	return &workshop.Store{Root: root}, skillsDir, nil
+func (s *Service) workshopStore(context.Context) (*workshop.Store, string, error) {
+	skillsDir := strings.TrimSuffix(s.workshopCfg().SkillsDir, "/")
+	return &workshop.Store{FS: s.fs, Root: skillsDir + "/.workshop"}, skillsDir, nil
 }
 
 func (s *Service) loadDreamingState(ctx context.Context) (*dreaming.State, error) {
@@ -165,7 +167,7 @@ func (s *Service) loadDreamingState(ctx context.Context) (*dreaming.State, error
 	if err != nil {
 		return nil, err
 	}
-	return store.Load()
+	return store.Load(ctx)
 }
 
 func (s *Service) Commands() []agentkit.Command {
@@ -218,7 +220,7 @@ func (s *Service) recordMemorySignal(ctx context.Context, text, source string) e
 	if err != nil {
 		return err
 	}
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil {
 		return err
 	}
@@ -226,7 +228,7 @@ func (s *Service) recordMemorySignal(ctx context.Context, text, source string) e
 		return nil
 	}
 	st.UpsertSignal(dreaming.Signal{Text: text, Source: source}, time.Now().UTC())
-	return stateStore.Save(st)
+	return stateStore.Save(ctx, st)
 }
 
 func (s *Service) learnSession(ctx context.Context) (string, error) {
@@ -237,7 +239,7 @@ func (s *Service) learnSession(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -293,12 +295,12 @@ func (s *Service) setDreaming(ctx context.Context, enabled bool) (string, error)
 	if err != nil {
 		return "", err
 	}
-	st, err := store.Load()
+	st, err := store.Load(ctx)
 	if err != nil {
 		return "", err
 	}
 	st.Enabled = enabled
-	if err := store.Save(st); err != nil {
+	if err := store.Save(ctx, st); err != nil {
 		return "", err
 	}
 	if enabled {
@@ -324,7 +326,7 @@ func (s *Service) runDreamSweep(ctx context.Context) (*dreaming.SweepResult, err
 	if err != nil {
 		return nil, err
 	}
-	return dreaming.Run(s.dreamingCfg(), stateStore, &dreaming.Diary{Path: diaryPath}, deepDir, sessionsDir, time.Now().UTC())
+	return dreaming.Run(ctx, s.dreamingCfg(), stateStore, &dreaming.Diary{FS: s.fs, Path: diaryPath}, deepDir, sessionsDir, time.Now().UTC())
 }
 
 func (s *Service) learnSkill(ctx context.Context, focus string) (string, error) {
@@ -362,7 +364,7 @@ func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, er
 	}
 	switch strings.ToLower(args[0]) {
 	case "list":
-		all, err := wsStore.List()
+		all, err := wsStore.List(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -371,7 +373,7 @@ func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, er
 		if len(args) < 2 {
 			return "", fmt.Errorf("usage: /learn workshop show <id>")
 		}
-		p, err := wsStore.Load(args[1])
+		p, err := wsStore.Load(ctx, args[1])
 		if err != nil {
 			return "", err
 		}
@@ -380,11 +382,11 @@ func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, er
 		if len(args) < 2 {
 			return "", fmt.Errorf("usage: /learn workshop apply <id>")
 		}
-		p, err := wsStore.Load(args[1])
+		p, err := wsStore.Load(ctx, args[1])
 		if err != nil {
 			return "", err
 		}
-		if err := p.Apply(skillsDir); err != nil {
+		if err := p.Apply(ctx, skillsDir); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("applied proposal %s to skill %q", p.Meta.ID, p.Meta.SkillName), nil
@@ -392,11 +394,11 @@ func (s *Service) handleWorkshop(ctx context.Context, args []string) (string, er
 		if len(args) < 2 {
 			return "", fmt.Errorf("usage: /learn workshop reject <id>")
 		}
-		p, err := wsStore.Load(args[1])
+		p, err := wsStore.Load(ctx, args[1])
 		if err != nil {
 			return "", err
 		}
-		if err := p.Reject(); err != nil {
+		if err := p.Reject(ctx); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("rejected proposal %s", p.Meta.ID), nil

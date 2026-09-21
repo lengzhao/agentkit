@@ -7,17 +7,26 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
-// envSecretRefsFromAPI returns env: credential refs from auth and static headers.
-func envSecretRefsFromAPI(api apiConfig) []string {
-	var refs []string
+// envSecretKeysFromAPI returns deduplicated env var names declared as env: refs in api config.
+func envSecretKeysFromAPI(api apiConfig) []string {
+	seen := make(map[string]struct{})
+	var keys []string
 	add := func(v string) {
-		v = strings.TrimSpace(v)
-		if strings.HasPrefix(v, "env:") {
-			refs = append(refs, v)
+		s := strings.TrimSpace(v)
+		if !strings.HasPrefix(s, "env:") {
+			return
 		}
+		k := envKey(s)
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		keys = append(keys, k)
 	}
 	add(api.BaseURL)
 	if api.Auth != nil {
@@ -28,7 +37,7 @@ func envSecretRefsFromAPI(api apiConfig) []string {
 	for _, v := range api.Headers {
 		add(v)
 	}
-	return refs
+	return keys
 }
 
 func formatOpenAPICredentialStatus(ctx context.Context, apis []apiConfig, creds credentials.Store) string {
@@ -41,17 +50,8 @@ func formatOpenAPICredentialStatus(ctx context.Context, apis []apiConfig, creds 
 	}
 	var lines []line
 	for _, api := range apis {
-		seen := make(map[string]struct{})
-		for _, ref := range envSecretRefsFromAPI(api) {
-			k := rtcredentials.EnvKey(ref)
-			if k == "" {
-				continue
-			}
-			if _, ok := seen[k]; ok {
-				continue
-			}
-			seen[k] = struct{}{}
-			lines = append(lines, line{apiName: api.Name, key: k})
+		for _, key := range envSecretKeysFromAPI(api) {
+			lines = append(lines, line{apiName: api.Name, key: key})
 		}
 	}
 	var b strings.Builder
@@ -68,7 +68,7 @@ func formatOpenAPICredentialStatus(ctx context.Context, apis []apiConfig, creds 
 	})
 	lastAPI := ""
 	for _, ln := range lines {
-		scope := CredentialScope(ln.apiName)
+		scope := credentialScope(ln.apiName)
 		if ln.apiName != lastAPI {
 			b.WriteString("\n  ")
 			b.WriteString(scope)
@@ -97,19 +97,14 @@ func openapiCredentialKeyStatus(ctx context.Context, creds credentials.Store, sc
 func (p *openapiProvider) credentialWarningSuffix(ctx context.Context, apis []apiConfig) string {
 	type pair struct {
 		apiName string
-		ref     string
+		key     string
 	}
 	var missing []pair
-	seen := make(map[string]struct{})
 	for _, api := range apis {
-		for _, ref := range envSecretRefsFromAPI(api) {
-			key := api.Name + "\x00" + ref
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			if _, err := resolveSecret(ctx, CredentialScope(api.Name), ref, p.credentials); err != nil {
-				missing = append(missing, pair{apiName: api.Name, ref: ref})
+		scope := credentialScope(api.Name)
+		for _, key := range envSecretKeysFromAPI(api) {
+			if _, err := resolveSecret(ctx, scope, "env:"+key, p.credentials); err != nil {
+				missing = append(missing, pair{apiName: api.Name, key: key})
 			}
 		}
 	}
@@ -119,10 +114,8 @@ func (p *openapiProvider) credentialWarningSuffix(ctx context.Context, apis []ap
 	parts := make([]string, 0, len(missing))
 	hintParts := make([]string, 0, len(missing))
 	for _, m := range missing {
-		parts = append(parts, fmt.Sprintf("%s %s", m.apiName, m.ref))
-		if k := rtcredentials.EnvKey(m.ref); k != "" {
-			hintParts = append(hintParts, fmt.Sprintf("/env add %s %s=<value>", CredentialScope(m.apiName), k))
-		}
+		parts = append(parts, fmt.Sprintf("%s env:%s", m.apiName, m.key))
+		hintParts = append(hintParts, fmt.Sprintf("/env add %s %s=<value>", credentialScope(m.apiName), m.key))
 	}
 	sort.Strings(hintParts)
 	return "\nwarning: missing credentials: " + strings.Join(parts, ", ") +

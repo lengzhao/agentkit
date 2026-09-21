@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 type chatInput struct {
@@ -156,22 +156,8 @@ func (p *Platform) resolveUploadedInput(ctx context.Context, channelKey string, 
 }
 
 func (p *Platform) readWorkFile(ctx context.Context, channelKey, workRel string) ([]byte, error) {
-	rel := filepath.ToSlash(strings.TrimSpace(workRel))
-	rel = strings.TrimPrefix(rel, "/")
-	abs, err := p.workspace.Resolve(p.channelCtx(ctx, channelKey), rel)
+	abs, err := rtws.ResolveFile(p.channelCtx(ctx, channelKey), p.workspace, workRel)
 	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(abs)
-	if err == nil {
-		return data, nil
-	}
-	workDir, _ := workpath.WorkLayout(p.workspace)
-	if strings.HasPrefix(rel, workDir+"/") || rel == workDir {
-		return nil, err
-	}
-	abs, err2 := p.workspace.Resolve(p.channelCtx(ctx, channelKey), workpath.JoinWork(workDir, rel))
-	if err2 != nil {
 		return nil, err
 	}
 	return os.ReadFile(abs)

@@ -12,7 +12,6 @@ import (
 
 func TestAsyncSubagentRoutesChildToolEventsNotParent(t *testing.T) {
 	p := &Platform{
-		progressStyle:             "card",
 		showToolProgress:          true,
 		useInteractiveCard:        true,
 		asyncSubagentProgressCard: true,
@@ -42,7 +41,6 @@ func TestAsyncSubagentRoutesChildToolEventsNotParent(t *testing.T) {
 
 func TestHandleRichSubagentAsyncStartRegistersCard(t *testing.T) {
 	p := &Platform{
-		progressStyle:             "card",
 		showToolProgress:          true,
 		useInteractiveCard:        true,
 		asyncSubagentProgressCard: true,
@@ -76,7 +74,6 @@ func TestHandleRichSubagentAsyncStartRegistersCard(t *testing.T) {
 
 func TestAsyncSubagentCardAppliesToolStart(t *testing.T) {
 	p := &Platform{
-		progressStyle:             "card",
 		showToolProgress:          true,
 		showThinking:              true,
 		useInteractiveCard:        true,

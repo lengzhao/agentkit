@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
 )
 
 func TestParseConfigFile(t *testing.T) {
@@ -127,7 +126,7 @@ func TestResolveMCPFiles(t *testing.T) {
 
 	got = resolveMCPFiles(MCPConfig{
 		EnableLocal: true,
-		Files:     []string{"local:mcp.json", "global:mcp.json"},
+		Files:       []string{"local:mcp.json", "global:mcp.json"},
 	})
 	if len(got) != 2 {
 		t.Fatalf("explicit with enableLocal = %v", got)
@@ -151,9 +150,10 @@ func TestLoadServersPrecedence(t *testing.T) {
 	}
 
 	provider := &mcpProvider{
-		files: []string{".cursor/mcp.json", "global:mcp.json"},
-		workspace: &testWorkspace{root: dir},
-		pool: newClientPool(0),
+		telemetry: mustTelemetry(t),
+		files: []string{project, "global:mcp.json"},
+		fs:    testFSForWorkspace(t, &testWorkspace{root: dir}),
+		pool:  newClientPool(0),
 	}
 	servers, err := provider.loadServers(context.Background())
 	if err != nil {

@@ -119,7 +119,8 @@ func TestHydrateLocalAttachmentsInjectsReadToolVision(t *testing.T) {
 	if out[0].Role != "user" || len(out[0].Content) != 2 {
 		t.Fatalf("user message = %#v", out[0].Content)
 	}
-	if out[0].Content[1].Type != "image_url" || out[0].Content[1].Source != "upload/shot.png" {
+	wantSrc := filepath.Join(root, "work", "upload", "shot.png")
+	if out[0].Content[1].Type != "image_url" || out[0].Content[1].Source != wantSrc {
 		t.Fatalf("image part = %#v", out[0].Content[1])
 	}
 }
@@ -278,8 +279,9 @@ func TestHydrateLocalAttachmentsRecordsVisionHydrateEvent(t *testing.T) {
 	if evt == nil {
 		t.Fatalf("no vision.hydrate event recorded; events = %#v", events)
 	}
-	if evt.Attrs["path"] != "upload/big.jpg" {
-		t.Fatalf("path = %q", evt.Attrs["path"])
+	wantPath := filepath.Join(root, "work", "upload", "big.jpg")
+	if evt.Attrs["path"] != wantPath {
+		t.Fatalf("path = %q, want %q", evt.Attrs["path"], wantPath)
 	}
 	if evt.Attrs["source"] != "attachment_ref" {
 		t.Fatalf("source = %q, want attachment_ref", evt.Attrs["source"])

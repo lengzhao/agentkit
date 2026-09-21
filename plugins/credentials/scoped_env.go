@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 func buildConfigScoped(cfgPrefix string, scopedEnv map[string]map[string]string) (map[string]string, error) {
@@ -15,7 +13,7 @@ func buildConfigScoped(cfgPrefix string, scopedEnv map[string]map[string]string)
 	out := make(map[string]string)
 	for scope, kv := range scopedEnv {
 		scope = strings.TrimSpace(scope)
-		if err := rtcredentials.ValidateIntegrationScope(scope); err != nil {
+		if err := validateIntegrationScope(scope); err != nil {
 			return nil, fmt.Errorf("scopedEnv[%q]: %w", scope, err)
 		}
 		for envKey, value := range kv {
@@ -27,7 +25,7 @@ func buildConfigScoped(cfgPrefix string, scopedEnv map[string]map[string]string)
 			if p := strings.TrimSpace(cfgPrefix); p != "" {
 				storageKey = p + envKey
 			}
-			scoped := rtcredentials.ScopedStorageKey(scope, storageKey)
+			scoped := scopedStorageKey(scope, storageKey)
 			out[scoped] = strings.TrimSpace(value)
 		}
 	}
@@ -49,7 +47,7 @@ func (s *envStore) listEnvKeysForScope(scope string) []string {
 	if scope == "" {
 		return nil
 	}
-	prefix := rtcredentials.ScopedStorageKey(scope, "")
+	prefix := scopedStorageKey(scope, "")
 	seen := make(map[string]struct{})
 	s.mu.RLock()
 	defer s.mu.RUnlock()

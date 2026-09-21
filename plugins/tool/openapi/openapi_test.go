@@ -14,7 +14,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -25,7 +24,7 @@ type mapScopedStore struct {
 }
 
 func (m mapScopedStore) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if vals, ok := m.scopes[scope]; ok {
 		if v, ok := vals[key]; ok && v != "" {
 			return credentials.Secret{Ref: ref, Value: v}, nil
@@ -39,7 +38,7 @@ func scopedCredsForAPI(apiName string, env map[string]string) credentials.Store 
 		return nil
 	}
 	return mapScopedStore{scopes: map[string]map[string]string{
-		CredentialScope(apiName): env,
+		credentialScope(apiName): env,
 	}}
 }
 
@@ -48,6 +47,15 @@ func localOpenAPIConfig() OpenAPIConfig {
 		EnableLocal: true,
 		Files:       []string{"api.json", "global:api.json"},
 	}
+}
+
+func mustTelemetry(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := telemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
 }
 
 func TestOpenAPIToolEndToEnd(t *testing.T) {
@@ -120,7 +128,7 @@ func TestOpenAPIToolEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter, Credentials: creds})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: creds})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -194,7 +202,7 @@ func TestOpenAPIToolMissingRequiredPathParam(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -238,7 +246,7 @@ func TestOpenAPIToolSpecFileEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -300,7 +308,7 @@ func TestOpenAPIToolBindFromContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -380,7 +388,7 @@ func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -422,7 +430,7 @@ func TestOpenAPIToolBindMissingContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -457,7 +465,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 	}
 	writeAPI("a")
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -505,7 +513,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 func TestOpenAPIAddCommand(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, t.TempDir()), Workspace: &testWorkspace{root: t.TempDir()}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -533,7 +541,7 @@ func TestOpenAPIAddCommand(t *testing.T) {
 func TestOpenAPIAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{Workspace: &testWorkspace{root: t.TempDir()}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, t.TempDir()), Workspace: &testWorkspace{root: t.TempDir()}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -567,7 +575,7 @@ func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
 	ctx := telemetry.WithExporter(context.Background(), rec)
 	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Workspace: &testWorkspace{root: dir}, ConfigFile: testConfigFileWriter})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

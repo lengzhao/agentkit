@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
 )
 
 func TestFormatMCPCredentialStatus(t *testing.T) {

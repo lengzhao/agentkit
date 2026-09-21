@@ -38,8 +38,10 @@ agent.cursor.default:
         id: cursor
         releaseSubprocessAfterTurn: true
     deps:
+        fs: filesystem.local.state
         sessionEvents: session.events
         sessionStore: sessionStore.default
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: agent/acp-remote
 agent.worker.default:
@@ -69,14 +71,18 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
+compaction.chain.default:
+    use: compaction/chain
 compaction.pipeline.default:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.default
     use: compaction/pipeline
 compaction.pipeline.worker:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.worker
@@ -104,6 +110,7 @@ compaction.token-limit.default:
         contextWindow: 1048576
         triggerRatio: 0.92
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
@@ -113,25 +120,38 @@ compaction.token-limit.worker:
         contextWindow: 1048576
         triggerRatio: 0.7
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
-configfile.default:
-    use: configfile/writer
 credentials.default:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
-        configfile: configfile.default
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
-        configfile: configfile.default
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: credentials/integrations
+delivery.default:
+    use: delivery/assistant
+filesystem.local.default:
+    config:
+        root: work
+        unrestricted: true
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
+filesystem.local.state:
+    config:
+        root: .
+        unrestricted: true
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
 hook.background-review.default:
     config:
         maxDigestMessages: 24
@@ -142,6 +162,7 @@ hook.background-review.default:
         minTurnTokens: 0
         skipSlashOnly: true
     deps:
+        delivery: delivery.default
         learning: learning.default
         llm: llm.review
         memory: memory.default
@@ -152,14 +173,12 @@ hook.before-step.default:
     config:
         contributeCommands: true
     deps:
-        services:
-            - compaction.pipeline.default
+        compaction: compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.before-step.worker:
     deps:
-        services:
-            - compaction.pipeline.worker
+        compaction: compaction.pipeline.worker
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:
@@ -198,6 +217,7 @@ learning.default:
             mode: propose
     deps:
         engine: schedule.engine
+        fs: filesystem.local.state
         memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -272,14 +292,15 @@ mcp.default:
         idleTimeoutSeconds: 300
     deps:
         credentials: credentials.integrations
-        workspace: workspace.default
+        fs: filesystem.local.state
+        telemetry: telemetry.toolkit
     use: tool/mcp
 memory.default:
     config:
         review:
             writeApproval: false
     deps:
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: memory/default
 openapi.default:
     config:
@@ -287,6 +308,8 @@ openapi.default:
             - global:api.json
     deps:
         credentials: credentials.integrations
+        fs: filesystem.local.state
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/openapi
 platform.default:
@@ -297,6 +320,7 @@ policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: prompt/section/agents-md
 prompt.default:
@@ -433,7 +457,7 @@ schedule.default:
         path: global:schedule.json
     deps:
         engine: schedule.engine
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: schedule/multi
 schedule.engine:
     use: schedule/engine
@@ -462,6 +486,7 @@ skills.default:
             - local:skills
             - global:skills
     deps:
+        fs: filesystem.local.state
         workspace: workspace.default
     use: skill/filesystem
 subagent.default:
@@ -508,10 +533,13 @@ subagent.loop.default:
     use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none
+telemetry.toolkit:
+    use: telemetry/toolkit
 tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
+        delivery: delivery.default
         history: platform.default
     use: tool/chat-history
 tool.finish.default:
@@ -522,23 +550,21 @@ tool.finish.default:
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: work
-        unrestricted: true
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
 tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: work
         tools:
             - read
             - grep
             - find
             - ls
-        unrestricted: true
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
 tool.memory.default:
@@ -550,6 +576,7 @@ tool.recognize.default:
         model: gpt-5.4-mini
     deps:
         llm: llm.openai
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/recognize
 tool.schedule.default:
@@ -561,6 +588,8 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
+        delivery: delivery.default
+        fs: filesystem.local.default
         sender: platform.default
         workspace: workspace.default
     use: tool/send

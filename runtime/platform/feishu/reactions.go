@@ -78,7 +78,7 @@ func (p *Platform) finishTurnReactions(sessionID agentkit.SessionID) []replyCont
 }
 
 func botReplyMessageID(st *streamState) string {
-	// progressStyle:card 单卡回复时，机器人卡片挂在 progressHandle。
+	// 单卡回复时，机器人卡片挂在 progressHandle。
 	if h, ok := st.progressHandle.(*feishuPreviewHandle); ok && h != nil {
 		if id := strings.TrimSpace(h.messageID); id != "" {
 			return id
@@ -103,7 +103,7 @@ func botReplyMessageID(st *streamState) string {
 // useBotReplyReactionEmojis reports whether to add done/cancel/error emoji on the bot reply card message.
 // Rich stream cards already show ☑️ 用时 (etc.) in the card body.
 func (p *Platform) useBotReplyReactionEmojis() bool {
-	return !p.useRichStream()
+	return false
 }
 
 func (p *Platform) addBotReplyEndReaction(messageID string, endData capsession.TurnEndData, clearProcessingReactionID string) {

@@ -11,14 +11,16 @@ import (
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
-func TestAgentLLMPathWorkRelative(t *testing.T) {
+func TestAgentLLMPathWorkResolvesAbsolute(t *testing.T) {
 	t.Parallel()
-	ws := rtworkspace.Static(t.TempDir())
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
 	ctx := context.Background()
+	wantUpload := filepath.Join(root, "work", "upload", "a.png")
 	cases := map[string]string{
-		"local:work/upload/a.png": "upload/a.png",
-		"work/upload/a.png":       "upload/a.png",
-		"upload/a.png":            "upload/a.png",
+		"local:work/upload/a.png": wantUpload,
+		"work/upload/a.png":       wantUpload,
+		"upload/a.png":            wantUpload,
 	}
 	for in, want := range cases {
 		if got := rtmedia.AgentLLMPath(ctx, ws, in); got != want {
@@ -45,14 +47,16 @@ func TestAgentLLMPathGlobalResolvesAbsolute(t *testing.T) {
 
 func TestRewritePathsInTextStripsLocalPrefix(t *testing.T) {
 	t.Parallel()
-	ws := rtworkspace.Static(t.TempDir())
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
 	ctx := context.Background()
+	want := filepath.Join(root, "work", "upload", "a.png")
 	out := rtmedia.RewritePathsInText(ctx, ws, "file local:work/upload/a.png here")
 	if strings.Contains(out, "local:") {
 		t.Fatalf("got %q", out)
 	}
-	if !strings.Contains(out, "upload/a.png") {
-		t.Fatalf("got %q", out)
+	if !strings.Contains(out, want) {
+		t.Fatalf("got %q, want substring %q", out, want)
 	}
 }
 

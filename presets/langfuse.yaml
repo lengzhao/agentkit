@@ -21,3 +21,4 @@ telemetry.default:
     redactOutputs: true
   deps:
     credentials: credentials.default
+    telemetry: telemetry.toolkit

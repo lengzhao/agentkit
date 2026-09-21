@@ -39,7 +39,6 @@ type Platform struct {
 	domain                     string
 	appID                      string
 	appSecret                  string
-	progressStyle              string
 	showThinking               bool
 	showToolProgress           bool
 	asyncSubagentProgressCard  bool

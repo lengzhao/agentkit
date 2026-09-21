@@ -11,7 +11,6 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 func modelMessageToPrompt(msg agentkit.ModelMessage) []acp.ContentBlock {
@@ -149,9 +148,9 @@ func mapPermissionResultToACP(params acp.RequestPermissionRequest, result permis
 }
 
 func requestPermissionViaBroker(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
-	broker, ok := rtpermission.BrokerFrom(ctx)
+	broker, ok := permission.BrokerFrom(ctx)
 	if !ok {
-		return mapPermissionResultToACP(params, rtpermission.NoHuman(permission.Request{
+		return mapPermissionResultToACP(params, permission.NoHuman(permission.Request{
 			Kind: permission.KindAllowDeny,
 		}, "no permission broker on this session")), nil
 	}

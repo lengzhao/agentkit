@@ -7,15 +7,14 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/chathistory"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 )
 
-func Dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
+func dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
 	if deps.router == nil {
 		return ChatHistoryOutput{}, fmt.Errorf("tool/chat-history requires history dependency")
 	}
 
-	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{
+	route, err := deps.delivery.ResolveRoute(ctx, capsdelivery.RouteInput{
 		SessionID: input.SessionID,
 		UserID:    input.UserID,
 	})

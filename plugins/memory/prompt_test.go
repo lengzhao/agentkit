@@ -31,7 +31,7 @@ func TestPromptBodyGlobalAndLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := New(Config{}, Deps{Workspace: ws})
+	mem, err := New(Config{}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestPromptBodyMemoryRootSubdir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mem, err := New(Config{MemoryRoot: "tenant-memory"}, Deps{Workspace: ws})
+	mem, err := New(Config{MemoryRoot: "tenant-memory"}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}

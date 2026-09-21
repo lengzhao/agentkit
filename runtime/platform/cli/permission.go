@@ -9,7 +9,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type permissionPrompt struct {
@@ -70,7 +70,7 @@ func decodePermissionRequest(data json.RawMessage) (permission.RequestPayload, e
 }
 
 func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) agentkit.MessageEvent {
-	return common.WithDeliverySession(agentkit.MessageEvent{
+	return rctx.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: platformID,
 		Envelope: agentkit.TurnEnvelope{
 			Conversation: string(p.deliveryID),

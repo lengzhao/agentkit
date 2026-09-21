@@ -394,7 +394,7 @@ tools.default:
       - openapi.default
 ```
 
-先命中的文件赢（按 `apis` 里的 name 去重）。默认只加载 `global:api.json`；需要 local 时设 `enableLocal: true`。`/openapi add` 默认写 local，`-g` 写全局；`enableLocal` 关闭时只能用 `/openapi add -g`。`-g` 会把 `path` / `specFile` 指向的 **local spec 复制到 global 根下相同相对路径**（如 `local:api/foo.yaml` → `global:api/foo.yaml`），并改写索引中的路径；仅复制主文件，同级 `$ref` 需自行保证 global 侧可解析。解析结果**只加载一次并缓存在内存里**：`ListTools` 读缓存，不会每次都重读 `api.json` 或它引用的 OpenAPI 文档。编辑 `api.json`（或它指向的文档）之后，运行 **`/openapi -u`** 强制重新读取磁盘并刷新动态工具；也可用 **`/openapi add [-g] <name> <json>`** 写入索引（先校验，失败回滚）。`tool/openapi` 通过 `agentkit.CommandProvider` 贡献 slash command，与模型可见的 Tool 是两套机制。**单个 API 条目解析或 spec 加载失败只跳过该 API 并 `slog.Warn`，不会 panic 或拖垮整轮 turn**（与同文件内其它 API 并存时仍加载成功的条目）。维护指南见 Skill **`openapi-manager`**。
+先命中的文件赢（按 `apis` 里的 name 去重）。默认只加载 `global:api.json`；需要 local 时设 `enableLocal: true`。`/openapi add` 默认写 local，`-g` 写全局；`enableLocal` 关闭时只能用 `/openapi add -g`。`-g` 会把 `path` / `specFile` 指向的 **local spec 复制到 global 根下相同相对路径**，并把索引里写入的 `path` 规范为**宿主机绝对路径**（`local:`/`global:` 仅出现在插件 `config.files` 等配置项，不出现在 `apis.*.path` 字段）；仅复制主文件，同级 `$ref` 需自行保证 global 侧可解析。旧索引里仍带作用域前缀的 `path` 在加载时可读，下次 `/openapi add` 写入时会自动改成绝对路径。解析结果**只加载一次并缓存在内存里**：`ListTools` 读缓存，不会每次都重读 `api.json` 或它引用的 OpenAPI 文档。编辑 `api.json`（或它指向的文档）之后，运行 **`/openapi -u`** 强制重新读取磁盘并刷新动态工具；也可用 **`/openapi add [-g] <name> <json>`** 写入索引（先校验，失败回滚）。`tool/openapi` 通过 `agentkit.CommandProvider` 贡献 slash command，与模型可见的 Tool 是两套机制。**单个 API 条目解析或 spec 加载失败只跳过该 API 并 `slog.Warn`，不会 panic 或拖垮整轮 turn**（与同文件内其它 API 并存时仍加载成功的条目）。维护指南见 Skill **`openapi-manager`**。
 
 ### Agent 维护（Skill + `/openapi`）
 

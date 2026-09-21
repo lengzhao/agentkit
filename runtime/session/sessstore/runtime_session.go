@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/runtime/filesystem"
 )
 
 const sessionRuntimeFileName = "runtime.json"
@@ -66,7 +66,7 @@ func saveSessionRuntime(storeDir string, id agentkit.SessionID, data sessionRunt
 	if err != nil {
 		return err
 	}
-	return configfile.WriteAtomic(path, raw, 0o644)
+	return filesystem.WriteAtomic(path, raw, 0o644)
 }
 
 func setSessionRuntimeAgent(storeDir string, id agentkit.SessionID, agent agentkit.AgentID) error {

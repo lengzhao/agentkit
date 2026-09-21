@@ -14,13 +14,12 @@ import (
 	"github.com/lengzhao/agentkit/plugins/tool/testutil"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func newScheduleTool(t *testing.T, cfg schedule.ScheduleConfig) (agentkit.Tool, capschedule.Registry) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir()), Engine: rtschedule.Engine{}})
+		pluginschedule.FileDeps{FS: testScheduleFS(t), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}

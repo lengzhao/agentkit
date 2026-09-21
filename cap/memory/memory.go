@@ -43,6 +43,8 @@ type Tool interface {
 type Reader interface {
 	LoadEntries(ctx context.Context) ([]MemoryEntry, int, int, error)
 	PromptBody(ctx context.Context) (string, error)
+	// PreviewAddOutcome classifies how text would merge into memory.md without writing.
+	PreviewAddOutcome(ctx context.Context, text string) (AddOutcome, error)
 }
 
 // Capture applies learn_capture memory actions during background review.
@@ -50,13 +52,6 @@ type Capture interface {
 	CaptureMemoryAdd(ctx context.Context, text, source string) (string, error)
 	CaptureMemoryReplace(ctx context.Context, oldText, content, source string) (string, error)
 	CaptureMemoryRemove(ctx context.Context, oldText string) (string, error)
-}
-
-// Staging lists and resolves staged memory awaiting approval.
-type Staging interface {
-	ListStaged(ctx context.Context) ([]StagedEntry, error)
-	ApproveStaged(ctx context.Context, id string) (string, error)
-	RejectStaged(ctx context.Context, id string) (string, error)
 }
 
 // StagedEntry is one pending memory write.
@@ -83,7 +78,10 @@ type Service interface {
 	Tool
 	Reader
 	Capture
-	Staging
+	// Staging: lists and resolves staged memory awaiting approval.
+	ListStaged(ctx context.Context) ([]StagedEntry, error)
+	ApproveStaged(ctx context.Context, id string) (string, error)
+	RejectStaged(ctx context.Context, id string) (string, error)
 	Disabled() bool
 	// BackgroundReviewRequiresStaging is true when review memory_add should stage instead of writing memory.md.
 	BackgroundReviewRequiresStaging(ctx context.Context) bool

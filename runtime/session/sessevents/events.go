@@ -12,8 +12,7 @@ import (
 
 // events is the standard capsession.Events implementation: stateless, all
 // conventions applied at call time from the request context. The same value
-// satisfies Transcript, Lifecycle, RunLog, Compaction, Skills, and
-// Conversation.
+// satisfies Conversation, RunLog, Compaction, and Skills.
 type events struct{}
 
 // Default is the shared stateless instance. Runtime code appends contract
@@ -26,7 +25,11 @@ func New() (capsession.Events, error) {
 	return Default, nil
 }
 
-func (events) AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) error {
+func (events) RenderSkillContent(content skill.Content) string {
+	return derive.RenderSkillLoaded(content)
+}
+
+func (events) AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) (string, error) {
 	return derive.AppendSkillLoad(ctx, s, agentID, content)
 }
 

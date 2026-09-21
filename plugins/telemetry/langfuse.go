@@ -16,7 +16,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -51,7 +50,8 @@ type LangfuseConfig struct {
 }
 
 type LangfuseDeps struct {
-	Credentials credentials.Store `json:"credentials"`
+	Credentials credentials.Store    `json:"credentials"`
+	Telemetry   captelemetry.Toolkit `json:"telemetry"`
 }
 
 type Langfuse struct {
@@ -66,6 +66,7 @@ type Langfuse struct {
 	sampleRate             float64
 	environment            string
 	release                string
+	telemetry              captelemetry.Toolkit
 	mu                     sync.Mutex
 	rng                    *rand.Rand
 }
@@ -89,6 +90,9 @@ func init() {
 func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, error) {
 	if deps.Credentials == nil {
 		return nil, fmt.Errorf("telemetry/langfuse requires credentials dependency")
+	}
+	if deps.Telemetry == nil {
+		return nil, fmt.Errorf("telemetry/langfuse requires telemetry dependency")
 	}
 	publicKey, err := resolveCredential(context.Background(), deps.Credentials, cfg.PublicKeyRef, "LANGFUSE_PUBLIC_KEY")
 	if err != nil {
@@ -158,6 +162,7 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 		sampleRate:             sampleRate,
 		environment:            env,
 		release:                strings.TrimSpace(cfg.Release),
+		telemetry:              deps.Telemetry,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
 }
@@ -186,7 +191,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 	if traceID == "" {
 		traceID = uuid.NewString()
 	}
-	ctx = rttelemetry.WithTurnID(ctx, traceID)
+	ctx = l.telemetry.WithTurnID(ctx, traceID)
 	ctx = context.WithValue(ctx, langfuseKeyTraceID, traceID)
 
 	trace := &model.Trace{
@@ -202,7 +207,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 		slog.Warn("telemetry/langfuse trace create failed", "trace_id", traceID, "err", err)
 	}
 
-	ctx = rttelemetry.WithExporter(ctx, l)
+	ctx = l.telemetry.WithExporter(ctx, l)
 	l.clearGenerationState(traceID)
 	return ctx, func(end captelemetry.TurnEnd) {
 		l.clearGenerationState(traceID)
@@ -258,7 +263,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
 		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
-		ctx = rttelemetry.WithToolParent(ctx, created.ID)
+		ctx = l.telemetry.WithToolParent(ctx, created.ID)
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
 			update := &model.Generation{
@@ -300,9 +305,9 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
 		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
-		ctx = rttelemetry.WithToolParent(ctx, created.ID)
+		ctx = l.telemetry.WithToolParent(ctx, created.ID)
 		if meta.Scope {
-			ctx = rttelemetry.WithScopeParent(ctx, created.ID)
+			ctx = l.telemetry.WithScopeParent(ctx, created.ID)
 		}
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
@@ -337,7 +342,7 @@ func (l *Langfuse) RecordEvent(ctx context.Context, name string, attrs map[strin
 		TraceID:   traceID,
 		Name:      name,
 		StartTime: &now,
-		Metadata:  stringMapToM(rttelemetry.EnrichEventAttrs(ctx, attrs)),
+		Metadata:  stringMapToM(l.telemetry.EnrichEventAttrs(ctx, attrs)),
 	}
 	if _, err := l.client.Event(event, l.scopeParentPtr(ctx)); err != nil {
 		slog.Warn("telemetry/langfuse event failed", "trace_id", traceID, "name", name, "err", err)
@@ -367,7 +372,7 @@ func (l *Langfuse) preparePayload(value string, redact bool) any {
 	if value == "" {
 		return nil
 	}
-	return rttelemetry.PreparePayload(value, l.maxPayloadBytes, redact)
+	return l.telemetry.PreparePayload(value, l.maxPayloadBytes, redact)
 }
 
 func (l *Langfuse) prepareGenerationInput(traceID string, meta captelemetry.ObservationMeta) any {
@@ -381,12 +386,12 @@ func (l *Langfuse) prepareGenerationInput(traceID string, meta captelemetry.Obse
 
 	l.mu.Lock()
 	prev := l.genMessages[traceID]
-	formatted := rttelemetry.FormatGenerationInputForExport(prev, messages, l.maxFieldBytes, l.dedupeGenerationPrefix)
+	formatted := l.telemetry.FormatGenerationInputForExport(prev, messages, l.maxFieldBytes, l.dedupeGenerationPrefix)
 	l.genMessages[traceID] = cloneMessages(messages)
 	l.mu.Unlock()
 
 	if l.redactInputs {
-		formatted = rttelemetry.RedactJSON(formatted)
+		formatted = l.telemetry.RedactJSON(formatted)
 	}
 	if formatted == "" {
 		return nil
@@ -450,7 +455,7 @@ func (l *Langfuse) traceMetadata(meta captelemetry.TurnMeta) map[string]string {
 }
 
 func (l *Langfuse) buildObservationMetadata(ctx context.Context, meta captelemetry.ObservationMeta) map[string]string {
-	out := rttelemetry.ContextObservationAttrs(ctx)
+	out := l.telemetry.ContextObservationAttrs(ctx)
 	if meta.AgentID != "" {
 		out["agent_id"] = meta.AgentID
 	}
@@ -551,7 +556,7 @@ func (l *Langfuse) turnEndMetadata(end captelemetry.TurnEnd) map[string]string {
 }
 
 func (l *Langfuse) toolParentPtr(ctx context.Context) *string {
-	parentID := rttelemetry.ToolParentFrom(ctx)
+	parentID := l.telemetry.ToolParentFrom(ctx)
 	if parentID == "" {
 		return nil
 	}
@@ -559,7 +564,7 @@ func (l *Langfuse) toolParentPtr(ctx context.Context) *string {
 }
 
 func (l *Langfuse) scopeParentPtr(ctx context.Context) *string {
-	parentID := rttelemetry.ScopeParentFrom(ctx)
+	parentID := l.telemetry.ScopeParentFrom(ctx)
 	if parentID == "" {
 		return nil
 	}

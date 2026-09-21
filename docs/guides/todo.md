@@ -4,7 +4,7 @@
 
 ## 目标
 
-1. **契约层**：根包 `agentkit` 与 `cap/*` 只定义能力接口（接口 + DTO + 常量；允许与接口语义一体的纯函数，如 `workspace.ParseScoped`、`configfile.PeelGlobalFlag`）。
+1. **契约层**：根包 `agentkit` 与 `cap/*` 只定义能力接口（接口 + DTO + 常量；允许与接口语义一体的纯函数，如 `workspace.ParseScoped` / `FirstScoped`、`agentkit.PeelGlobalFlag`）。
 2. **实现层**：`runtime/*` 与 `plugins/*` 是具体实现。`runtime` 放标准/默认实现（含部分 kind 自注册）；`plugins` 放可插拔 kind。
 3. **插件只依赖契约**：`plugins/*` 之间不互相 import；跨插件协作只通过配置图 `deps` 注入根包 / `cap` 接口。插件非测试源码不 import 其他插件，也不 import `runtime/*` 实现细节。
 
@@ -45,18 +45,18 @@ flowchart TB
 - 不放工作流 / 多步 IO。单一消费者下沉到消费方包内；多消费者做成接口 + `runtime` 实现 + `deps` 注入。
 - 需要 runtime 内部设施的 kind，可把注册迁入对应 `runtime` 包自注册（先例：`runtime/llm`、`runtime/workspace`、`runtime/agent`）。
 
-排查：`go list -f '{{.ImportPath}}|{{join .Imports "|"}}' ./plugins/...` + 符号级 grep。已符合「非测试源码不碰 runtime」的参照包：`bootstrap`、`policy`、`settings`、`tool/web`、`tool/sessionquery`。
+排查：`go list -f '{{.ImportPath}}|{{join .Imports "|"}}' ./plugins/...` + 符号级 grep。已符合「非测试源码不碰 runtime」的参照包：`bootstrap`、`policy`、`tool/web`、`tool/sessionquery`。
 
 ---
 
 ## A — 插件改走 cap / 根包接口（消除 `plugins → runtime`）
 
-每项验收：对应插件**非测试源码**不再 import 该 `runtime` 包；能力经 `deps` 注入 cap / 根包接口；`scripts/refresh-preset-goldens` 无意外 diff。
+每项验收：对应插件**非测试源码**不再 import 该 `runtime` 包；能力经 `deps` 注入 cap / 根包接口；改 `config.base.yaml` 后 `cd config && go run regen_presets_golden.go` 无意外 diff。
 
 ### A1 会话读写（缺 cap，插件仍调包级函数）
 
 - [x] **事件追加 / 派生读取 / 运行状态 → `cap/session`**
-  - 落地：`cap/session` 承载事件载荷 DTO（`Todo`/`RunFinishData`/`UsageData` 等）、纯函数投影（`LatestTodos`/`RunStateFromEvents`/`EstimateMessagesChars`/`FlattenTextParts`/`ResolveActiveSessionID`）与按事件域拆分的写接口（`Transcript`/`Lifecycle`/`RunLog`/`Compaction`/`Skills`，组合为 `Events`，恢复标记方法直接挂在 `Events` 上；远程 agent 用 `Conversation`）；`runtime/session/sessevents` 以方法为唯一追加入口（runtime 经 `sessevents.Default` 单例调用）并自注册 `session/events` kind；`ContentTypeAttachmentRef` 常量上移至根包。
+  - 落地：`cap/session` 承载事件载荷 DTO（`Todo`/`RunFinishData`/`UsageData` 等）、纯函数投影（`LatestTodos`/`RunStateFromEvents`/`EstimateMessagesChars`/`FlattenTextParts`/`ResolveActiveSessionID`）与按事件域拆分的写接口（`Conversation`——含原 transcript 与 turn/step 括号方法——/`RunLog`/`Compaction`/`Skills`，组合为 `Events`，恢复标记方法直接挂在 `Events` 上；远程 agent 单独用 `Conversation`）；`runtime/session/sessevents` 以方法为唯一追加入口（runtime 经 `sessevents.Default` 单例调用）并自注册 `session/events` kind；`ContentTypeAttachmentRef` 常量上移至根包。
   - 接线：`tool/todo`、`tool/finish`（`RunLog`）、`tool/skill`（`Skills`）、`compaction/summary`（`Compaction`）、`agent/acpremote`（`Conversation`）经 `sessionEvents: session.events` 注入同一实例；`hook/turn-continue`、`hook/before-step`、`learning`、`compaction/token-limit` 只用根包 `Session.Read` + cap 纯函数，无需新 dep。
   - 验收：上述插件非测试源码不再 import `runtime/session/sessevents`、`derive`、`sessbind`（`plugins/all.go` 聚合器除外）。
 
@@ -65,19 +65,31 @@ flowchart TB
 
 ### A2 cap 已有接口、插件仍 import 构造 / 助手
 
-下列 cap 包已存在，缺的是**插件停止 new 实现、改为注入接口**（必要时补齐 cap 方法面）。
+下列 cap 包已存在。被其他 plugin 非测试源码 import 的，停止 new 实现、改为注入接口；没被其他 plugin import 的，只把该 plugin 里包外无引用的公共函数改小写。
 
-- [ ] **`cap/compaction`**：`plugins/hook`（`NewPrune` / `PruneConfig`）、`plugins/compaction`（pipeline / tokenlimit 调 `runtime/compaction`）
-- [ ] **`cap/chathistory`**：`plugins/tool/chathistory`（`NewChatHistory`）
-- [ ] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell`（`Store` / `Secret` / `EnvPairResolver` 的 runtime 实现类型）
-- [ ] **`cap/memory`**：`plugins/memory`、`learning`、`prompt`（`Service` / `LoadEntries` / `ResolveRel` / `PromptBody`）；`learning` 的 `BackgroundReviewRequiresStaging` 一并收口
-- [ ] **`cap/skill`**：`plugins/skill`、`tool/skill`（`Registry` / `Descriptor` / `Content`）
-- [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send`（路由 ID 等仍走 `runtime/delivery`）
-- [ ] **`cap/permission`**：`tool/askuser`、`agent/acpremote`（`Broker` / `Request` / `Result`）
-- [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize`（`BeginObservation` / `WithExporter` 等助手仍在 runtime）
-- [ ] **`cap/learning`**：`plugins/learning` 仍 import `runtime/learning`（`ReviewNudge*` / `TryConsumeReviewQuota` 等）
-- [ ] **`cap/acp`**：`agent/acpremote` 的 `runtime/acpclient`（`MCPServerNames` / `ToMCPServers`）评估并入现有 `cap/acp`
-- [ ] **`cap/filesystem`**：`tool/fs` 的 Grep/Find 统一到 cap DTO（gitignore 匹配留在 `runtime/filesystem`）
+- [x] **`cap/compaction`**：`plugins/hook`、`plugins/compaction` 均调 `runtime/compaction` → 注入
+- [x] **`cap/chathistory`**：仅 `tool/chathistory` → 公共函数改小写
+- [x] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell` → 注入
+  - 落地：`cap/credentials` 仅 `Store` / `EnvPairResolver` / `Secret` / `GlobalScope`；密文、manifest、scoped 查找在 `plugins/credentials`；mcp / openapi / shell 经 `deps.credentials` 注入 `Store`（shell 另断言 `EnvPairResolver`），各自拼 `mcp.` / `openapi.` / `shell-bash.` scope。
+  - 验收：上述插件非测试源码不再 import `runtime/credentials`（该包已删除）。
+- [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`；`learning` 背景审阅信号去重经 `Reader.PreviewAddOutcome`，非测试源码不再 import `runtime/memory`）
+- [x] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
+  - 落地：`cap/skill` 仅 `Registry` / `Descriptor` / `Content`；`skill/filesystem` 实现 Registry；`prompt/section/skills`、`tool/skill` 经 `deps.skills` 注入；`tool/skill` 经 `sessionEvents` 做 `RenderSkillContent` / `AppendSkillLoad`，非测试源码不再 import `runtime/skill`。
+  - 验收：`plugins/tool/skill` 非测试源码不再 import `runtime/skill`（解析留在 `plugins/skill` → `runtime/skill`）。
+- [x] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
+  - 落地：`cap/delivery.Assistant`（ResolveRoute / SendAssistantMessage / SendProactiveInboxText）+ `AssistantMessageOptions`；`runtime/delivery` 自注册 `delivery/assistant`；上述插件经 `deps.delivery` 注入（sender 仍用 `cap/delivery.Sender`）。
+  - 验收：上述插件非测试源码不再 import `runtime/delivery`。
+- [x] **`cap/permission`**：`tool/askuser`、`agent/acpremote` → 注入
+  - 落地：`BrokerFrom` / `CapabilityFrom` 与 `NoHuman`/`TimedOut`/… 纯结果构造上移至 `cap/permission`；`runtime/permission` 薄包装保留；插件直调 cap。
+  - 验收：`tool/askuser`、`agent/acpremote` 非测试源码不再 import `runtime/permission`。
+- [x] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize` → 注入
+  - 落地：`cap/telemetry.Toolkit`（ctx 观测 + 导出助手）；`runtime/telemetry` 自注册 `telemetry/toolkit`；`cap/telemetry.Noop`；各消费者经 `deps.telemetry` 注入；`telemetry/langfuse` 实现 Exporter 仍用 Toolkit 做 ctx 父子 span。
+  - 验收：上述插件非测试源码不再 import `runtime/telemetry`。
+- [x] **`cap/learning`**：仅 `plugins/learning` → 公共函数改小写
+  - 现状：cap 仅接口/DTO，无多余导出函数；learning 编排仍经 `deps.learning` 注入 `ReviewHost` 等。
+- [x] **`cap/acp`**：仅 `agent/acpremote` → 公共函数改小写
+  - 现状：cap 仅 `SessionMCPProvider` 与 MCP DTO；经 `deps.sessionMcp` 注入。
+- [x] **`cap/filesystem`**：`Service`（Read/Write/Append/Stat/List/Grep/Find）+ Grep/Find DTO + `WriteOption`（`WithPerm`）+ `DirEntry/Info.ModTime`；not-found 约定 `errors.Is(err, os.ErrNotExist)`，Write 原子（local=temp+rename），`global:`/`local:` 前缀委托 workspace 双根路由。`filesystem/local` 在 `runtime/filesystem`（gitignore 匹配留在此）。**全部状态插件经 `deps.fs` 注入**：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials（含 `/env add` 0600）、mcp、openapi（含 local→global 复制）、agent/acp-remote（session bind）接 `filesystem.local.state`（root="."）；prompt/agents-md、tool/send（绝对路径）接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP fs 协议、shell 类插件的子进程 cwd。S3/远程另注册 `filesystem/<name>` 即可。
 
 ### A3 契约尚未成型
 
@@ -85,14 +97,15 @@ flowchart TB
 - [ ] **ToolRuntime 构造**：`plugins/tools/deferred`（`NewRuntime`）、`learning`；接口已在根包，构造收归 runtime 装配层
 - [ ] **`cap/bind`（空目录）**：`mcp`、`openapi` 的 `ResolveCtxValue` / `In` / `Key`
 - [ ] **`cap/media`（空目录）**：`fs`、`recognize` 的媒体路径 / MIME 助手；补齐或并入根包
-- [ ] **`runtime/workspace/workpath`**：`acpremote`（`WorkLayout`）、`fs`（`TrimRedundantFSRootPrefix`）归入 `cap/workspace`
-- [ ] **投递会话约定**：`plugins/schedule` 的 `runtime/platform/common.WithDeliverySession`；并入 rctx 上移或 `cap/delivery`
+- [x] **`runtime/workspace/workpath`**：已删除；路径纯函数在 `cap/workspace`（`NormalizeAgentRel`、`UploadWorkRel` 等），模型/附件落盘统一 `runtime/workspace.ResolveFile`；`TrimRedundantFSRootPrefix` 在 `runtime/filesystem`（`filesystem/local` 用）。
+- [x] **投递会话约定**：`plugins/schedule` 的 `runtime/platform/common.WithDeliverySession`；并入 rctx 上移或 `cap/delivery`
+  - 落地：`WithInboundRoute` / `WithDeliveryRoute` / `WithDeliverySession` 在 `runtime/rctx`；平台与 `plugins/schedule` 直调 rctx；`runtime/platform/common` 不再提供上述 helper。
 
 ### A4 已完成（契约 + 注入）
 
 - [x] **`cap/schedule`**：接口在 cap，cron / fire metadata 在 `runtime/schedule`；插件经 `Engine` deps 注入
 - [x] **`cap/workspace.ParseScoped`**：Scope 前缀语法作为契约词汇；`CopyLocalToGlobal` 下沉 `plugins/tool/openapi`
-- [x] **`cap/configfile.Writer`**：`credentials` / `mcp` / `openapi` 经 deps 注入；`configfile/writer` kind 在 runtime 自注册
+- [x] **slash / 配置路径词汇**：`agentkit.PeelGlobalFlag`；`workspace.FirstScoped`（基于 `ParseScoped`）；`/add` 字节读写走 `filesystem.Service`；session sidecar 的宿主机绝对路径走 `runtime/filesystem.WriteAtomic`
 
 ---
 
@@ -149,6 +162,6 @@ flowchart TB
 
 ## 暂不处理
 
-`runtime/rctx`（session / envelope / route / workspace key / outbound emit）上移根包或 cap，待单独评估。`runtime/platform/common` 的投递路由约定可在该项一并收口。
+`runtime/rctx`（session / envelope / route / workspace key / outbound emit）上移根包或 cap，待单独评估。
 
 每完成一项：`go build ./... && scripts/check-plugin-imports`，并确认 `config/testdata/presets/*.resolved.yaml` 无意外 diff。

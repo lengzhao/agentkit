@@ -46,7 +46,6 @@ type Config struct {
 	ReplyToTrigger             *bool             `json:"replyToTrigger"`
 	ResolveMentions            bool              `json:"resolveMentions"`
 	PeerBots                   map[string]string `json:"peerBots"`
-	ProgressStyle              string            `json:"progressStyle"`
 	ShowThinking               *bool             `json:"showThinking"`
 	ShowToolProgress           *bool             `json:"showToolProgress"`
 	AsyncSubagentProgressCard  *bool             `json:"asyncSubagentProgressCard"`
@@ -187,16 +186,6 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		errorEmoji = ""
 	}
 
-	progressStyle := "legacy"
-	if v := strings.TrimSpace(cfg.ProgressStyle); v != "" {
-		switch strings.ToLower(v) {
-		case "legacy", "card":
-			progressStyle = strings.ToLower(v)
-		default:
-			return nil, fmt.Errorf("platform/%s: invalid progressStyle %q (want legacy or card)", name, v)
-		}
-	}
-
 	useInteractiveCard := true
 	if cfg.EnableFeishuCard != nil {
 		useInteractiveCard = *cfg.EnableFeishuCard
@@ -206,7 +195,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	if cfg.ShowThinking != nil {
 		showThinking = *cfg.ShowThinking
 	}
-	showToolProgress := progressStyle == "card"
+	showToolProgress := true
 	if cfg.ShowToolProgress != nil {
 		showToolProgress = *cfg.ShowToolProgress
 	}
@@ -250,7 +239,6 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		domain:                     domain,
 		appID:                      cfg.AppID,
 		appSecret:                  cfg.AppSecret,
-		progressStyle:              progressStyle,
 		showThinking:               showThinking,
 		showToolProgress:           showToolProgress,
 		asyncSubagentProgressCard:  asyncSubagentProgressCard,
@@ -323,7 +311,7 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	case agentkit.EventTurnEnd:
 		endData := parseTurnEndData(event)
 		p.applyTurnEndReactions(delivery, endData)
-		if p.useInteractiveCard && p.useRichStream() {
+		if p.useInteractiveCard {
 			return p.handleRichTurnEnd(ctx, streamKey, endData)
 		}
 		return nil
@@ -337,41 +325,23 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	switch event.Type {
 	case agentkit.EventTurnStart:
 		p.clearStream(streamKey)
-		if p.useRichStream() {
-			p.richStreamState(streamKey)
-			if err := p.bootstrapReplyCard(ctx, streamKey); err != nil {
-				slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", streamKey, "error", err)
-			}
+		p.richStreamState(streamKey)
+		if err := p.bootstrapReplyCard(ctx, streamKey); err != nil {
+			slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", streamKey, "error", err)
 		}
 		return nil
 	case agentkit.EventMessageStart:
-		if p.useRichStream() {
-			return p.handleRichStreamMessageStart(ctx, streamKey)
-		}
-		p.clearStream(streamKey)
-		return nil
+		return p.handleRichStreamMessageStart(ctx, streamKey)
 	case agentkit.EventMessageUpdate:
 		return p.handleStreamUpdate(ctx, event)
 	case agentkit.EventMessageEnd:
-		if p.useRichStream() {
-			return p.handleRichStreamMessageEnd(ctx, event)
-		}
-		return p.handleStreamEnd(ctx, event)
+		return p.handleRichStreamMessageEnd(ctx, event)
 	case agentkit.EventToolResult:
-		if p.useRichStream() {
-			return p.handleRichToolResult(ctx, event)
-		}
-		return nil
+		return p.handleRichToolResult(ctx, event)
 	case agentkit.EventSubagentStart, agentkit.EventSubagentEnd:
-		if p.useRichStream() {
-			return p.handleRichSubagentEvent(ctx, event)
-		}
-		return nil
+		return p.handleRichSubagentEvent(ctx, event)
 	case agentkit.EventAssistantMessage:
-		if p.useRichStream() {
-			return p.handleRichProactiveAssistant(ctx, event)
-		}
-		return p.outbound.Handle(ctx, event)
+		return p.handleRichProactiveAssistant(ctx, event)
 	default:
 		return p.outbound.Handle(ctx, event)
 	}
@@ -653,7 +623,6 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 		st := raw.(*streamState)
 		st.lock()
 		stopStreamTimer(&st.bodyFlushTimer)
-		stopStreamTimer(&st.legacyFlushTimer)
 		st.unlock()
 	}
 }
@@ -664,100 +633,7 @@ func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.Outbou
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err
 	}
-	if p.useRichStream() {
-		return p.handleRichStreamUpdate(ctx, streamKey, event, payload.AssistantMessageEvent)
-	}
-	delta := ""
-	switch payload.AssistantMessageEvent.Type {
-	case agentkit.AssistantEventTextDelta:
-		delta = payload.AssistantMessageEvent.Delta
-	case agentkit.AssistantEventThinkingDelta:
-		if p.showThinking {
-			delta = payload.AssistantMessageEvent.Delta
-		}
-	}
-	if delta == "" {
-		return nil
-	}
-
-	st := p.streamState(streamKey)
-	st.lock()
-	st.accumulated += delta
-	accumulated := st.accumulated
-	shouldFlushNow := st.handle == nil || time.Since(st.lastUpdate) >= p.bodyStreamInterval()
-	st.unlock()
-
-	if shouldFlushNow {
-		p.cancelLegacyFlushTimer(streamKey)
-		return p.flushStream(ctx, streamKey, accumulated)
-	}
-	p.scheduleLegacyFlush(streamKey)
-	return nil
-}
-
-func (p *Platform) handleStreamEnd(ctx context.Context, event agentkit.OutboundEvent) error {
-	streamKey := outboundStreamKey(event)
-	delivery := rctx.OutboundRouteID(event)
-	st := p.streamState(streamKey)
-	st.lock()
-	text := st.accumulated
-	handle := st.handle
-	st.unlock()
-
-	if event.Type == agentkit.EventMessageEnd {
-		var payload agentkit.MessageEndPayload
-		if err := json.Unmarshal(event.Data, &payload); err == nil {
-			if t := assistantText(payload.Message); t != "" {
-				text = t
-			}
-		}
-	} else if event.Type == agentkit.EventAssistantMessage {
-		var msg agentkit.ModelMessage
-		if err := json.Unmarshal(event.Data, &msg); err == nil {
-			if t := assistantText(msg); t != "" {
-				text = t
-			}
-		}
-	}
-	p.clearStream(streamKey)
-	if strings.TrimSpace(text) == "" {
-		return nil
-	}
-
-	rc, ok := p.replyContextForStreamKey(streamKey)
-	if !ok {
-		return fmt.Errorf("%s: unknown session %s", p.tag(), delivery)
-	}
-
-	if handle != nil {
-		return p.finalizeBodyCard(ctx, handle, text)
-	}
-	return p.sendIMContent(ctx, rc, text)
-}
-
-func (p *Platform) flushStream(ctx context.Context, streamKey agentkit.SessionID, text string) error {
-	rc, ok := p.replyContextForStreamKey(streamKey)
-	if !ok {
-		return nil
-	}
-	st := p.streamState(streamKey)
-	st.lock()
-	defer st.unlock()
-
-	if st.handle == nil {
-		handle, err := p.SendPreviewStart(ctx, rc, text)
-		if err != nil {
-			return err
-		}
-		st.handle = handle
-		st.lastUpdate = time.Now()
-		return nil
-	}
-	if err := p.UpdateMessage(ctx, st.handle, text); err != nil {
-		return err
-	}
-	st.lastUpdate = time.Now()
-	return nil
+	return p.handleRichStreamUpdate(ctx, streamKey, event, payload.AssistantMessageEvent)
 }
 
 func assistantText(msg agentkit.ModelMessage) string {

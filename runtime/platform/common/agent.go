@@ -6,6 +6,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // AgentRoutingConfig optionally pins inbound messages to a Loop agent.
@@ -22,7 +23,7 @@ func (c AgentRoutingConfig) ResolveAgentID() agentkit.AgentID {
 }
 
 func InboundMessage(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, text string) agentkit.MessageEvent {
-	return WithDeliverySession(agentkit.MessageEvent{
+	return rctx.WithDeliverySession(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,
@@ -38,7 +39,7 @@ func PermissionReplyEvent(agentID agentkit.AgentID, sessionID agentkit.SessionID
 }
 
 func PermissionReplyEventWithConversation(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, conversation string, reply permission.Reply) agentkit.MessageEvent {
-	event := WithDeliverySession(agentkit.MessageEvent{
+	event := rctx.WithDeliverySession(agentkit.MessageEvent{
 		AgentID:    agentID,
 		PlatformID: platformID,
 		UserID:     userID,

@@ -26,7 +26,7 @@ func newMultiRegistry(t *testing.T) (capschedule.Registry, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := schedule.NewMulti(schedule.MultiConfig{}, schedule.MultiDeps{Workspace: ws, Engine: rtschedule.Engine{}})
+	reg, err := schedule.NewMulti(schedule.MultiConfig{}, schedule.MultiDeps{FS: testFS(t, ws), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}

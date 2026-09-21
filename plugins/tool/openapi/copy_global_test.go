@@ -34,6 +34,7 @@ func TestCopyLocalToGlobal(t *testing.T) {
 	t.Parallel()
 
 	svc := fakeService{global: t.TempDir(), local: t.TempDir()}
+	fs := testFSOver(t, svc)
 	ctx := context.Background()
 
 	localAbs, err := svc.Resolve(ctx, "local:api/pet.json")
@@ -47,18 +48,19 @@ func TestCopyLocalToGlobal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := copyLocalToGlobal(ctx, svc, "local:api/pet.json")
+	wantGlobal, err := svc.Resolve(ctx, "global:api/pet.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "global:api/pet.json" {
-		t.Fatalf("copyLocalToGlobal = %q, want global:api/pet.json", got)
+	got, err := copyLocalToGlobal(ctx, fs, svc, "local:api/pet.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != wantGlobal {
+		t.Fatalf("copyLocalToGlobal = %q, want %q", got, wantGlobal)
 	}
 
-	globalAbs, err := svc.Resolve(ctx, got)
-	if err != nil {
-		t.Fatal(err)
-	}
+	globalAbs := got
 	body, err := os.ReadFile(globalAbs)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +74,7 @@ func TestCopyLocalToGlobalBarePath(t *testing.T) {
 	t.Parallel()
 
 	svc := fakeService{global: t.TempDir(), local: t.TempDir()}
+	fs := testFSOver(t, svc)
 	ctx := context.Background()
 
 	localAbs, err := svc.Resolve(ctx, "local:api/pet.json")
@@ -85,12 +88,16 @@ func TestCopyLocalToGlobalBarePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := copyLocalToGlobal(ctx, svc, "api/pet.json")
+	wantGlobal, err := svc.Resolve(ctx, "global:api/pet.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "global:api/pet.json" {
-		t.Fatalf("copyLocalToGlobal = %q", got)
+	got, err := copyLocalToGlobal(ctx, fs, svc, "api/pet.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != wantGlobal {
+		t.Fatalf("copyLocalToGlobal = %q, want %q", got, wantGlobal)
 	}
 }
 
@@ -98,11 +105,16 @@ func TestCopyLocalToGlobalAlreadyGlobal(t *testing.T) {
 	t.Parallel()
 
 	svc := fakeService{global: t.TempDir(), local: t.TempDir()}
-	got, err := copyLocalToGlobal(context.Background(), svc, "global:api/pet.json")
+	fs := testFSOver(t, svc)
+	want, err := svc.Resolve(context.Background(), "global:api/pet.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "global:api/pet.json" {
-		t.Fatalf("copyLocalToGlobal = %q, want unchanged", got)
+	got, err := copyLocalToGlobal(context.Background(), fs, svc, "global:api/pet.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("copyLocalToGlobal = %q, want %q", got, want)
 	}
 }

@@ -32,11 +32,11 @@ Platform 侧：
 
 ```go
 delivery := rctx.BuildDeliverySessionID("slack", channelID, threadTS, userID)
-event := common.WithInboundRoute(agentkit.MessageEvent{
+event := rctx.WithInboundRoute(agentkit.MessageEvent{
     PlatformID: "slack",
     UserID:     userID,
     // Message ...
-}, session.SessionRouteInput{
+}, agentkit.SessionRouteInput{
     Platform:    "slack",
     DeliveryID:  delivery,
     ChannelID:   channelID,
@@ -47,7 +47,7 @@ event := common.WithInboundRoute(agentkit.MessageEvent{
 // Runner SyncMessageEvent 后 Envelope 含 Conversation / Workspace / Route
 ```
 
-或 `common.InboundFromContent(agentID, route, userID, ...)`；仅需 delivery id 时用 `common.WithDeliverySession`。
+或 `common.InboundFromContent(agentID, route, userID, ...)`；仅需 delivery id 时用 `rctx.WithDeliverySession`。
 
 Runner 侧（`config.base.yaml` 或 preset）：
 
@@ -230,7 +230,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 
 `presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就三件：
 
-1. 用 `rctx.BuildDeliverySessionID` 生成 delivery，并通过 `common.WithInboundRoute`（推荐，含 `ReplyTo`）或 `common.WithDeliverySession` / `InboundFromContent` / `InboundMessage` 写入 `MessageEvent.Envelope.Route`；
+1. 用 `rctx.BuildDeliverySessionID` 生成 delivery，并通过 `rctx.WithInboundRoute`（推荐，含 `ReplyTo`）或 `rctx.WithDeliverySession` / `common.InboundFromContent` / `common.InboundMessage` 写入 `MessageEvent.Envelope.Route`；
 2. 在 `MessageEvent.UserID` 填上发言人；
 3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。`x-task-id` 默认已纳入白名单；`X-Chat-API-User-Name`（或配置的 `userNameHeader`）会自动写入 Metadata，无需重复配置。
 
@@ -249,7 +249,7 @@ messages API / 调试页直接读取 agent 写入的 per-conversation session JS
 
 ### 文件上传
 
-chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根）。**发给 LLM 的路径与 fs 工具入参一致，不含 `local:`/`global:` 前缀**：落在 `work/` 下的为相对 work 的路径（如 `upload/<filename>`，与 `tool/shell-bash` cwd 一致）；其余 workspace 位置展示为解析后的**绝对路径**。入站 user 文本会标明**用户在本条消息中上传的文件**及 workspace 路径列表（`upload/…`、`mime`、`size`、原名、图片为 `type=image`）；是否 `read` / `delegate` vision 由主 Agent system prompt（如 `prompt/section/subagents`）决定，不在入站正文重复说明。多模态主 LLM 另保留 `image_url`/`attachment_ref` 供 hydrate；text-only 主 LLM 落盘后多为 `attachment_ref`。非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。hydrate 从 workspace 读取原图（单文件读取上限 10MB），优先经 `FitForVision` 缩放/重编码（默认载荷 ≤1MB、长边 ≤2048px）后注入 vision；解码或压缩失败则原样转发；磁盘上的原图仍保留在 `work/upload/`。IM 入站图片若无原始文件名，会按 MIME/内容保存为 `file_<ts>_<n>.jpg`（等）；历史上无扩展名的 `file_*` 仍可通过文件头魔数识别。带 `.json`、`.txt` 等明确扩展名的文件会保留原名，不会因平台 MIME 误判追加 `.png`。`hook/before-step` 的 token 估算对 `data:` 图片使用占位长度，避免 hydrate 后误触发压缩。
+chat-api 与 IM 平台共用租户 `work/upload/` 目录（相对租户 local 根）。**发给 LLM 的路径一律为宿主机绝对路径**（`AgentLLMPath`），不含 `local:`/`global:` 前缀；fs 工具入参仍可用 work 下相对路径（如 `upload/<filename>`），回显与 session 历史会规范为绝对路径。`tool/shell-bash` 默认 cwd 为解析后的绝对 `work/` 目录。入站 user 文本会标明**用户在本条消息中上传的文件**及 workspace 路径列表（`upload/…`、`mime`、`size`、原名、图片为 `type=image`）；是否 `read` / `delegate` vision 由主 Agent system prompt（如 `prompt/section/subagents`）决定，不在入站正文重复说明。多模态主 LLM 另保留 `image_url`/`attachment_ref` 供 hydrate；text-only 主 LLM 落盘后多为 `attachment_ref`。非图片文件可被 `read` / `find` 命中。`read` 读取图片时只返回路径与元数据，不含 base64；Agent 在调用 LLM 前会从 workspace 重载为 vision（与入站 `attachment_ref` 共用 hydrate 管道）。hydrate 从 workspace 读取原图（单文件读取上限 10MB），优先经 `FitForVision` 缩放/重编码（默认载荷 ≤1MB、长边 ≤2048px）后注入 vision；解码或压缩失败则原样转发；磁盘上的原图仍保留在 `work/upload/`。IM 入站图片若无原始文件名，会按 MIME/内容保存为 `file_<ts>_<n>.jpg`（等）；历史上无扩展名的 `file_*` 仍可通过文件头魔数识别。带 `.json`、`.txt` 等明确扩展名的文件会保留原名，不会因平台 MIME 误判追加 `.png`。`hook/before-step` 的 token 估算对 `data:` 图片使用占位长度，避免 hydrate 后误触发压缩。
 
 历史 session 落盘时图片存为 `attachment_ref`（`Source` 指向 `work/upload/...`），不含 base64；Agent 在调用 LLM 前会对**最近一条 user 消息**的 `attachment_ref`，以及**当前轮次 read 工具读到的图片路径**，从 workspace 重载并注入 vision。
 

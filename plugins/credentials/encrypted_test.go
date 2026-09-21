@@ -1,0 +1,78 @@
+package credentials
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"testing"
+)
+
+func testMasterKey(t *testing.T) []byte {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+func TestParseSecretsMasterKeyPassphrase(t *testing.T) {
+	pass := "my-long-passphrase"
+	got, err := parseSecretsMasterKey(pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256([]byte(pass))
+	if string(got) != string(want[:]) {
+		t.Fatal("key mismatch")
+	}
+}
+
+func TestEncryptDecryptRoundTrip(t *testing.T) {
+	key := testMasterKey(t)
+	updates := map[string]string{
+		"OPENAI_API_KEY": "sk-test",
+		"GITHUB_TOKEN":   "ghp_x",
+	}
+	data, err := encryptSecretsFile(updates, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decryptSecretsFile(data, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range updates {
+		if got[k] != want {
+			t.Fatalf("%s=%q, want %q", k, got[k], want)
+		}
+	}
+}
+
+func TestMergeEncryptedSecretsFile(t *testing.T) {
+	key := testMasterKey(t)
+	first, err := encryptSecretsFile(map[string]string{"A": "1"}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := mergeEncryptedSecretsFile(first, key, map[string]string{"B": "2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decryptSecretsFile(merged, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["A"] != "1" || got["B"] != "2" {
+		t.Fatalf("got %#v", got)
+	}
+	merged, err = mergeEncryptedSecretsFile(merged, key, map[string]string{"A": "3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = decryptSecretsFile(merged, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["A"] != "3" {
+		t.Fatalf("A=%q, want 3", got["A"])
+	}
+}

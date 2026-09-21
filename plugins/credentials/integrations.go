@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 const (
@@ -60,7 +60,7 @@ func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string
 	if err := s.ensureManifestFresh(ctx); err != nil {
 		return credentials.Secret{}, err
 	}
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if key == "" {
 		return credentials.Secret{}, fmt.Errorf("credential ref %q is invalid", ref)
 	}
@@ -68,7 +68,7 @@ func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string
 		return credentials.Secret{Ref: ref, Value: value}, nil
 	}
 	if !s.scopeAllows(scope, key) {
-		if rtcredentials.IsIntegrationScope(scope) {
+		if isIntegrationScope(scope) {
 			return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q (/env add %s %s=<value>)", key, scope, scope, key)
 		}
 		return credentials.Secret{}, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
@@ -81,10 +81,10 @@ func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string
 }
 
 func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, ref string) (string, bool) {
-	if secret, ok := rtcredentials.SecretFromContext(ctx, ref); ok && secret.Value != "" {
+	if secret, ok := secretFromContext(ctx, ref); ok && secret.Value != "" {
 		return secret.Value, true
 	}
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if key == "" {
 		return "", false
 	}
@@ -92,14 +92,14 @@ func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, 
 	if s.prefix != "" {
 		storageKey = s.prefix + key
 	}
-	scoped := rtcredentials.ScopedStorageKey(scope, storageKey)
+	scoped := scopedStorageKey(scope, storageKey)
 	value, ok := s.lookupStorageValue(scoped)
 	return value, ok
 }
 
 func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pairs []string) (string, int, error) {
 	scope = strings.TrimSpace(scope)
-	if err := rtcredentials.ValidateIntegrationScope(scope); err != nil {
+	if err := validateIntegrationScope(scope); err != nil {
 		return "", 0, err
 	}
 	if err := s.ensureManifestFresh(ctx); err != nil {
@@ -119,7 +119,7 @@ func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pai
 		if s.prefix != "" {
 			storageKey = s.prefix + key
 		}
-		updates[rtcredentials.ScopedStorageKey(scope, storageKey)] = value
+		updates[scopedStorageKey(scope, storageKey)] = value
 		refs = append(refs, "env:"+key)
 	}
 	verify := func(ctx context.Context, ref string) error {
@@ -180,7 +180,7 @@ func (s *integrationStore) EnvPairs(ctx context.Context, scope string, opts cred
 	if len(keys) == 0 {
 		return nil, nil
 	}
-	return rtcredentials.InjectScopedEnv(ctx, nil, scope, keys, s), nil
+	return injectScopedEnv(ctx, nil, scope, keys, s), nil
 }
 
 func (s *integrationStore) ensureManifestFresh(ctx context.Context) error {
@@ -197,16 +197,8 @@ func (s *integrationStore) ensureManifestFresh(ctx context.Context) error {
 	return s.reloadManifest(ctx)
 }
 
-func (s *integrationStore) resolveManifestPath(ctx context.Context, rel string) (string, error) {
-	path := rel
-	if s.workspace != nil {
-		resolved, err := s.workspace.Resolve(ctx, rel)
-		if err != nil {
-			return "", fmt.Errorf("resolve manifest %q: %w", rel, err)
-		}
-		path = resolved
-	}
-	return path, nil
+func (s *integrationStore) resolveManifestPath(_ context.Context, rel string) (string, error) {
+	return rel, nil
 }
 
 func (s *integrationStore) manifestsMaxModTime(ctx context.Context) (int64, error) {
@@ -220,14 +212,14 @@ func (s *integrationStore) manifestsMaxModTime(ctx context.Context) (int64, erro
 		if err != nil {
 			return 0, err
 		}
-		info, err := os.Stat(path)
+		info, err := s.fs.Stat(ctx, path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return 0, fmt.Errorf("stat manifest %q: %w", path, err)
 		}
-		if mod := info.ModTime().UnixNano(); mod > maxMod {
+		if mod := info.ModTime.UnixNano(); mod > maxMod {
 			maxMod = mod
 		}
 	}
@@ -249,9 +241,9 @@ func (s *integrationStore) reloadManifest(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := s.fs.Read(ctx, path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return fmt.Errorf("read manifest %q: %w", path, err)
@@ -264,7 +256,7 @@ func (s *integrationStore) reloadManifest(ctx context.Context) error {
 			parts = append(parts, part)
 		}
 	}
-	merged := rtcredentials.MergeManifests(parts...)
+	merged := mergeManifests(parts...)
 	s.mu.Lock()
 	s.allow = merged
 	s.manifestMaxMod = maxMod
@@ -278,13 +270,13 @@ func manifestFromFile(data []byte) (map[string]map[string]struct{}, error) {
 		return nil, nil
 	}
 	if strings.Contains(trimmed, `"mcpServers"`) {
-		return rtcredentials.ManifestFromMCPFile(data)
+		return manifestFromMCPFile(data)
 	}
 	if strings.Contains(trimmed, `"apis"`) {
-		return rtcredentials.ManifestFromAPIIndex(data)
+		return manifestFromAPIIndex(data)
 	}
 	if strings.Contains(trimmed, `"commands"`) {
-		return rtcredentials.ManifestFromShellBashFile(data)
+		return manifestFromShellBashFile(data)
 	}
 	return nil, fmt.Errorf("unsupported manifest shape")
 }
@@ -378,8 +370,8 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 }
 
 var (
-	_ credentials.Store         = (*integrationStore)(nil)
-	_ credentials.EnvPairResolver = (*integrationStore)(nil)
-	_ agentkit.CommandProvider         = (*integrationStore)(nil)
-	_ agentkit.CommandLogSanitizer     = (*integrationEnvCommand)(nil)
+	_ credentials.Store            = (*integrationStore)(nil)
+	_ credentials.EnvPairResolver  = (*integrationStore)(nil)
+	_ agentkit.CommandProvider     = (*integrationStore)(nil)
+	_ agentkit.CommandLogSanitizer = (*integrationEnvCommand)(nil)
 )

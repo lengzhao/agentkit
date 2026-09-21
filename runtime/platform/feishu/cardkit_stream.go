@@ -14,59 +14,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-const (
-	bodyStreamElementID   = "body_md"
-	streamCardKitInterval = 100 * time.Millisecond
-)
-
-func (p *Platform) useCardKitStream() bool {
-	return p.useInteractiveCard
-}
-
-// useCardKitElementStream is legacy single-element body streaming (not full rich-card Patch).
-func (p *Platform) useCardKitElementStream() bool {
-	return p.useInteractiveCard && p.progressStyle == "legacy"
-}
-
-func streamingCardConfig() map[string]any {
-	return map[string]any{
-		"streaming_mode": true,
-		"update_multi":   true,
-		"streaming_config": map[string]any{
-			"print_frequency_ms": map[string]any{
-				"default": 70,
-				"android": 70,
-				"ios":     70,
-				"pc":      70,
-			},
-			"print_step": map[string]any{
-				"default": 2,
-				"android": 2,
-				"ios":     2,
-				"pc":      2,
-			},
-			"print_strategy": "fast",
-		},
-	}
-}
-
-func buildStreamingBodyCardEntityJSON() string {
-	card := map[string]any{
-		"schema": "2.0",
-		"config": streamingCardConfig(),
-		"body": map[string]any{
-			"elements": []map[string]any{
-				{
-					"tag":        "markdown",
-					"element_id": bodyStreamElementID,
-					"content":    "",
-				},
-			},
-		},
-	}
-	b, _ := json.Marshal(card)
-	return string(b)
-}
+const streamCardKitInterval = 100 * time.Millisecond
 
 func buildIMCardEntityContent(cardID string) string {
 	payload := map[string]any{
@@ -182,24 +130,6 @@ func (p *Platform) sendCardEntityIM(ctx context.Context, rc replyContext, cardID
 	return msgID, nil
 }
 
-func (p *Platform) createAndSendCardEntity(ctx context.Context, rc replyContext, cardJSON string, streamElementID string) (*feishuPreviewHandle, error) {
-	cardID, err := p.createCardEntity(ctx, cardJSON)
-	if err != nil {
-		return nil, err
-	}
-	msgID, err := p.sendCardEntityIM(ctx, rc, cardID)
-	if err != nil {
-		return nil, err
-	}
-	return &feishuPreviewHandle{
-		messageID: msgID,
-		chatID:    rc.chatID,
-		cardID:    cardID,
-		elementID: streamElementID,
-		streaming: streamElementID != "",
-	}, nil
-}
-
 // patchRichCard closes CardKit streaming (when needed) then replaces the full card JSON.
 func (p *Platform) patchRichCard(ctx context.Context, handle any, cardJSON string) error {
 	h, ok := handle.(*feishuPreviewHandle)
@@ -242,10 +172,6 @@ func (p *Platform) updateCardEntity(ctx context.Context, h *feishuPreviewHandle,
 			return nil
 		})
 	})
-}
-
-func (p *Platform) streamCardElementContent(ctx context.Context, h *feishuPreviewHandle, content string) error {
-	return p.streamCardElementByID(ctx, h, h.elementID, content)
 }
 
 func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHandle, elementID, content string) error {
@@ -320,24 +246,3 @@ func (p *Platform) closeCardStreaming(ctx context.Context, h *feishuPreviewHandl
 	})
 }
 
-func (p *Platform) finalizeStreamingBodyCard(ctx context.Context, h *feishuPreviewHandle, text string) error {
-	processed := text
-	if containsMarkdown(text) {
-		processed = preprocessFeishuMarkdown(text)
-	}
-	processed = sanitizeMarkdownURLs(processed)
-
-	if h.elementID != "" {
-		if err := p.streamCardElementContent(ctx, h, processed); err != nil {
-			return err
-		}
-	}
-	if err := p.closeCardStreaming(ctx, h); err != nil {
-		return err
-	}
-	h.mu.Lock()
-	h.elementID = ""
-	h.streaming = false
-	h.mu.Unlock()
-	return p.updateCardEntity(ctx, h, buildFinalPreviewCardJSON(text))
-}

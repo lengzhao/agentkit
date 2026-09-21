@@ -9,7 +9,7 @@ workspace.default:
     global: ~/.agentkit
     local: .agentkit
     scope: local
-    # Agent 工作子树：与 tool.fs-workspace.config.root、tool.shell-bash.config.workDir 保持一致。
+    # Agent 工作子树：与 filesystem.local.default.config.root、tool.shell-bash.config.workDir 保持一致。
     workDir: work
     uploadSubdir: upload
 
@@ -98,7 +98,6 @@ platform.feishu:
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
     allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
-    progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch（thinking/tool/正文同卡）
     showToolProgress: true
     showThinking: true
     asyncSubagentProgressCard: true  # async delegate 时单独一张后台过程卡
@@ -116,7 +115,6 @@ platform.lark:
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
     allowChat: "" # 群聊 chat_id 白名单，逗号分隔（如 oc_xxx,oc_yyy）；空或 * = 全部；仅群聊生效
     groupReplyAll: false
-    progressStyle: card      # legacy=仅正文；card=cc-connect 单卡 Patch（thinking/tool/正文同卡）
     showToolProgress: true
     showThinking: true
     asyncSubagentProgressCard: true
@@ -191,6 +189,12 @@ agent.catalogCommands.default:
 telemetry.default:
   use: telemetry/none
 
+telemetry.toolkit:
+  use: telemetry/toolkit
+
+delivery.default:
+  use: delivery/assistant
+
 agent.assistant.default:
   use: agent/coding
   config:
@@ -252,8 +256,10 @@ agent.cursor.default:
     autoApprove: false
   deps:
     workspace: workspace.default
+    fs: filesystem.local.state
     sessionStore: sessionStore.default
     sessionEvents: session.events
+    telemetry: telemetry.toolkit
 
 # 通过 ACP 调用 claude-agent-acp（Claude Agent SDK）。需 Node.js ≥ 22；凭证经子进程 env 注入（见 docs/plugin-catalog.zh.md §3.2）。
 agent.claude.default:
@@ -272,8 +278,10 @@ agent.claude.default:
     autoApprove: false
   deps:
     workspace: workspace.default
+    fs: filesystem.local.state
     sessionStore: sessionStore.default
     sessionEvents: session.events
+    telemetry: telemetry.toolkit
 
 sessionStore.default:
   use: session/store
@@ -314,7 +322,7 @@ schedule.default:
     # 全局一份 schedule.json；list/remove 按 channel 过滤。
     path: global:schedule.json
   deps:
-    workspace: workspace.default
+    fs: filesystem.local.state
     engine: schedule.engine
 
 # 常驻日历调度：与 tool/schedule 共用 registry，agent 排的 job 跨重启存活。
@@ -380,18 +388,13 @@ subagent.loop.default:
       - agent.cursor.default
       - agent.claude.default
 
-# 插件 /add 命令（/env add、/mcp add、/openapi add）的配置文件原子写入与回滚。
-configfile.default:
-  use: configfile/writer
-
 # Static refs (apiKeyRef, botTokenRef, web search keys): process env + optional encrypted file.
 credentials.default:
   use: credentials/env
   config:
     encryptedFile: global:secrets.enc.json
   deps:
-    workspace: workspace.default
-    configfile: configfile.default
+    fs: filesystem.local.state
 
 # MCP / OpenAPI env: refs: scoped manifest allowlist, /env slash, no process env.
 credentials.integrations:
@@ -401,8 +404,7 @@ credentials.integrations:
     # MCP/OpenAPI allowlist：实现内默认读 workspace mcp.json/api.json（勿在 L1 配 manifestFiles）
     # Set AGENTKIT_SECRETS_KEY in L1 config.yaml credentials.integrations.config.env for /env add.
   deps:
-    workspace: workspace.default
-    configfile: configfile.default
+    fs: filesystem.local.state
 
 llm.default:
   use: llm/openai-compatible
@@ -471,6 +473,7 @@ hook.background-review.default:
     llm: llm.review
     sessionIndex: sessionIndex.default
     sender: platform.default
+    delivery: delivery.default
 
 memory.default:
   use: memory/default
@@ -480,7 +483,7 @@ memory.default:
     review:
       writeApproval: false
   deps:
-    workspace: workspace.default
+    fs: filesystem.local.state
 
 tool.memory.default:
   use: tool/memory
@@ -513,16 +516,14 @@ hook.before-step.default:
   config:
     contributeCommands: true
   deps:
+    compaction: compaction.pipeline.default
     sessionStore: sessionStore.default
-    services:
-      - compaction.pipeline.default
 
 hook.before-step.worker:
   use: hook/before-step
   deps:
+    compaction: compaction.pipeline.worker
     sessionStore: sessionStore.default
-    services:
-      - compaction.pipeline.worker
 
 hook.turn-continue.default:
   use: hook/turn-continue
@@ -534,9 +535,13 @@ hook.turn-continue.default:
   deps:
     sessionStore: sessionStore.default
 
+compaction.chain.default:
+  use: compaction/chain
+
 compaction.pipeline.default:
   use: compaction/pipeline
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.prune.default
       - compaction.token-limit.default
@@ -544,6 +549,7 @@ compaction.pipeline.default:
 compaction.pipeline.worker:
   use: compaction/pipeline
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.prune.default
       - compaction.token-limit.worker
@@ -575,6 +581,7 @@ compaction.token-limit.default:
     triggerRatio: 0.92
     charsPerToken: 3
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.summary.default
 
@@ -585,6 +592,7 @@ compaction.token-limit.worker:
     triggerRatio: 0.7
     charsPerToken: 3
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.summary.default
 
@@ -685,6 +693,8 @@ prompt.agents-md.default:
   use: prompt/section/agents-md
   deps:
     workspace: workspace.default
+    # 向上遍历传宿主机绝对路径，需 unrestricted 实例；非本地后端静默 miss。
+    fs: filesystem.local.default
 
 learning.default:
   use: learning/default
@@ -697,6 +707,7 @@ learning.default:
       mode: propose
   deps:
     workspace: workspace.default
+    fs: filesystem.local.state
     sessionStore: sessionStore.default
     memory: memory.default
     engine: schedule.engine
@@ -727,6 +738,7 @@ skills.default:
       - local:skills
       - global:skills
   deps:
+    fs: filesystem.local.state
     workspace: workspace.default
 
 tool.session-query.default:
@@ -827,15 +839,34 @@ tools.subagent.default:
     policies:
       - policy.dangerous-shell.default
 
-# fs 默认 root 为 work/；unrestricted 时可读 global:/local:、绝对路径与 ..（含 global skill reference）。
-# shell 默认 cwd 同为 work/。更强隔离交给 sandbox 或单独建 unrestricted: false 的 fs 实例。
-tool.fs-workspace.default:
-  use: tool/fs-workspace
+# filesystem/local 默认 root 为 work/；unrestricted 时可读 global:/local:、绝对路径与 ..（含 global skill reference）。
+# shell 默认 cwd 同为 work/。更强隔离交给 sandbox 或单独建 unrestricted: false 的 filesystem/local。
+# 换 S3/远程后端：另注册 filesystem/<name>，把 tool.fs-workspace.deps.fs 指过去即可。
+filesystem.local.default:
+  use: filesystem/local
   config:
     root: work
     unrestricted: true
+  deps:
+    workspace: workspace.default
+
+# 状态/配置文件存储（memory、learning sidecar、skills、schedule、credentials、mcp.json、api.json、ACP bind）：
+# root 为 workspace 根，global:/local: 前缀经 workspace 双根路由。换 S3/远程后端：替换此实例的实现即可。
+filesystem.local.state:
+  use: filesystem/local
+  config:
+    root: "."
+    # State plugins (api.json paths, global skills, memory) use absolute paths after resolve.
+    unrestricted: true
+  deps:
+    workspace: workspace.default
+
+tool.fs-workspace.default:
+  use: tool/fs-workspace
+  config:
     maxBytes: 1048576
   deps:
+    fs: filesystem.local.default
     workspace: workspace.default
 
 tool.recognize.default:
@@ -845,12 +876,11 @@ tool.recognize.default:
   deps:
     llm: llm.openai
     workspace: workspace.default
+    telemetry: telemetry.toolkit
 
 tool.fs-workspace.readonly.default:
   use: tool/fs-workspace
   config:
-    root: work
-    unrestricted: true
     maxBytes: 1048576
     readOnly: true
     tools:
@@ -859,6 +889,7 @@ tool.fs-workspace.readonly.default:
       - find
       - ls
   deps:
+    fs: filesystem.local.default
     workspace: workspace.default
 
 tool.shell-bash.default:
@@ -950,12 +981,16 @@ tool.send.default:
   use: tool/send
   deps:
     sender: platform.default
+    delivery: delivery.default
     workspace: workspace.default
+    # 附件路径为宿主机绝对路径，需 unrestricted 实例做存在性校验。
+    fs: filesystem.local.default
 
 tool.chat-history.default:
   use: tool/chat-history
   deps:
     history: platform.default
+    delivery: delivery.default
 
 mcp.default:
   use: tool/mcp
@@ -964,8 +999,9 @@ mcp.default:
       - global:mcp.json
     idleTimeoutSeconds: 300
   deps:
-    workspace: workspace.default
+    fs: filesystem.local.state
     credentials: credentials.integrations
+    telemetry: telemetry.toolkit
 
 openapi.default:
   use: tool/openapi
@@ -973,8 +1009,10 @@ openapi.default:
     files:
       - global:api.json
   deps:
+    fs: filesystem.local.state
     workspace: workspace.default
     credentials: credentials.integrations
+    telemetry: telemetry.toolkit
 
 policy.dangerous-shell.default:
   use: policy/deny-dangerous-shell

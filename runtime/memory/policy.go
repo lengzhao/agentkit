@@ -1,13 +1,14 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // MemoryWritePolicy is tenant-local background-review memory write mode.
@@ -21,17 +22,19 @@ func (p MemoryWritePolicy) Normalized() MemoryWritePolicy {
 }
 
 // MemoryPolicyStore persists memory/policy.json under memoryRoot.
+// Path is a filesystem.Service-relative path.
 type MemoryPolicyStore struct {
+	FS   filesystem.Service
 	Path string
 }
 
-func (s *MemoryPolicyStore) Load() (MemoryWritePolicy, error) {
+func (s *MemoryPolicyStore) Load(ctx context.Context) (MemoryWritePolicy, error) {
 	if s.Path == "" {
 		return MemoryWritePolicy{}, fmt.Errorf("policy path is required")
 	}
-	data, err := os.ReadFile(s.Path)
+	data, err := s.FS.Read(ctx, s.Path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return MemoryWritePolicy{}, nil
 		}
 		return MemoryWritePolicy{}, err
@@ -43,19 +46,16 @@ func (s *MemoryPolicyStore) Load() (MemoryWritePolicy, error) {
 	return p.Normalized(), nil
 }
 
-func (s *MemoryPolicyStore) Save(p MemoryWritePolicy) error {
+func (s *MemoryPolicyStore) Save(ctx context.Context, p MemoryWritePolicy) error {
 	if s.Path == "" {
 		return fmt.Errorf("policy path is required")
 	}
 	p = p.Normalized()
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
 	}
-	return configfile.WriteAtomic(s.Path, []byte(raw), 0o644)
+	return s.FS.Write(ctx, s.Path, raw)
 }
 
 // FormatMemoryPolicyStatus renders /memory policy output.

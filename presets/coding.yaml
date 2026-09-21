@@ -36,4 +36,5 @@ skills.default:
       - local:../.cursor/skills
       - global:skills
   deps:
+    fs: filesystem.local.state
     workspace: workspace.default

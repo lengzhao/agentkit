@@ -58,7 +58,6 @@ flowchart TB
 
   subgraph infra ["Infrastructure"]
     Credentials["credentials/*"]
-    Settings["settings/*"]
     Storage["storage/*"]
     Telemetry["telemetry/*"]
   end
@@ -96,7 +95,7 @@ flowchart TB
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop + `schedule.Runtime`，管理 StartStop；`sessionScope` 折叠 delivery SessionID（默认 channel）；`maxConcurrentTurns` 控制跨 session 并发（默认 64，同 session 内始终保序）；`config.inject` 在 dispatch 前 prepend `[meta ...]`（sender_id / timestamp / task_id 等，对齐 cc-connect）；per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
 | `platform/cli` | `agentkit.Platform` + `permission.Capable` | 终端 stdin/stdout；稳定 delivery `cli:default`，经 `session/store` active-session 映射恢复 conversation；slash 走 `common.ProcessSlash`（含 `/new`、`/help`）；allow/deny 与 ask 经 Permission 协议读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` + `chathistory.Provider` | Slack Socket Mode；生成 cc-connect 风格 SessionID；供 `tool/chat-history` 读取频道/线程历史 | cc-connect `platform/slack` |
-| `platform/feishu` | `agentkit.Platform` + `chathistory.Provider` | 飞书 WebSocket；生成 cc-connect 风格 SessionID；`progressStyle: card` 时 thinking / tool / 正文同卡刷新，`legacy` 仅流式正文；`showThinking` / `showToolProgress` 控制过程卡展示；供 `tool/chat-history` 读取 IM 群/话题历史 | cc-connect `platform/feishu` |
+| `platform/feishu` | `agentkit.Platform` + `chathistory.Provider` | 飞书 WebSocket；生成 cc-connect 风格 SessionID；rich 单卡 Patch（thinking / tool / 正文同卡刷新）；`showThinking` / `showToolProgress` 控制过程卡展示；供 `tool/chat-history` 读取 IM 群/话题历史 | cc-connect `platform/feishu` |
 | `platform/lark` | `agentkit.Platform` + `chathistory.Provider` | 国际版 Lark（`platform/feishu` 的 domain 预设）；流式卡片配置同 feishu | cc-connect `platform/feishu` |
 | `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API（可选 `deps.sessionIndex` 与 `session-query` 共用 SQLite 索引列会话）；SSE 断线重连（`POST /chat-messages` + `run_id`）；`POST /runs/{id}/cancel`；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | `sessionIndex` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 精确回写（`PlatformID` 为空则拒绝，不广播） |
@@ -141,14 +140,14 @@ platform.http:
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
 | `session/store` | `agentkit.SessionStore` | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；LRU 热缓存 + 内存 tail 窗口（`maxLoadedEvents`）；压缩后裁剪内存；完整历史 `Read(0)` 读盘 | cc-connect SessionKey |
-| `session/events` | `cap/session.Events`（组合 `Transcript` / `Lifecycle` / `RunLog` / `Compaction` / `Skills`，另含恢复标记方法） | 会话事件追加/索引契约的标准实现（无状态）；插件经 `sessionEvents` 注入同一实例，deps 类型取最小面（todo/finish→`RunLog`，skill→`Skills`，compaction/summary→`Compaction`，acp-remote→`Conversation`）；runtime 经 `sessevents.Default` 单例追加契约事件 | — |
+| `session/events` | `cap/session.Events`（组合 `Conversation` / `RunLog` / `Compaction` / `Skills`，另含恢复标记方法） | 会话事件追加/索引契约的标准实现（无状态）；插件经 `sessionEvents` 注入同一实例，deps 类型取最小面（todo/finish→`RunLog`，skill→`Skills`，compaction/summary→`Compaction`，acp-remote→`Conversation`）；runtime 经 `sessevents.Default` 单例追加契约事件 | — |
 | `session/commands` | `agentkit.CommandProvider` | `/new`、`/session` 会话生命周期 slash；deps 注入 `sessionStore` | — |
 | `session/sqlite-index` | `cap/sessionindex.Service` | 租户内 session JSONL 的 SQLite FTS5 索引（`sessions/.index.sqlite`）；`Sync(ctx)` 自行按 `sessionsRel`（默认 `sessions`）解析会话目录 | DSH session-query-sqlite |
 | `hook/session-index` | `agentkit.HookProvider` | 每轮成功后异步刷新 session FTS | — |
 | `tool/session-query` | `agentkit.Tool` | `session_search`：`mode=search`（FTS）、`list`、`scroll`（同租户） | DSH session-query |
 | `tool/memory` | `agentkit.Tool` | 主 agent `memory`：`add` / `replace` / `remove`（`memory.md`）；Hermes 式 WHEN/HOW/SKIP 说明（`MemoryToolDescription`） | memory.default |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
-| `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载 | DSH `agent-instructions` / Pi AGENTS.md |
+| `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载（deps `fs` 接 unrestricted 实例；向上遍历传宿主机绝对路径，非本地后端静默 miss） | DSH `agent-instructions` / Pi AGENTS.md |
 | `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
 | `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
@@ -222,7 +221,7 @@ sequenceDiagram
 - **登录**：`agent login`（配置注入 `NO_OPEN_BROWSER=1`），由 Cursor CLI 阻塞等待浏览器授权；stdout/stderr 原样透传到对话。
 - **不要混用**：`authenticate` 返回的链接与 `agent login` 的 challenge 不是同一次 OAuth；登录只走 `agent login`。
 - **API Key 路径**（可选）：`agent -p` 用 `CURSOR_API_KEY`；ACP 用 `CURSOR_AUTH_TOKEN`（`--auth-token`），与 `cursor_login` 互斥。
-- **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 写入 `acp/<session>/acp-session.<agentId>.json`（插件自有目录，与 session 存储后端无关；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
+- **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 经 deps `fs` 写入 `acp/<session>/acp-session.<agentId>.json`（插件自有目录，与 session 存储后端无关；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
 - **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 `session/resume` 均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
 - **出站工具结果**：ACP `ToolCallUpdate` 在 `completed` / `failed` 时除 `toolcall_end` 外还会发 harness `tool/result`（输出取自 `rawOutput` / `content`），供飞书过程卡与 `forwardParentEmit` 转发的 async 子 Agent 进度展示；不写入 harness session 事件流（与 Loop 内 `tool.Execute` 路径不同）。
 - **Langfuse**：每个 ACP `Prompt` 对应一条 `acp.generation` observation（input 为本 turn 用户消息；output 含 `AgentThoughtChunk` 与最终回复）；ACP 上报的 `ToolCall` 导出为嵌套 span。Cursor 在进程内执行且未通过 ACP 推送的工具调用不会出现在 Langfuse；token/model 以远端 Agent 为准，harness 不补全。
@@ -288,8 +287,8 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 依赖 | 模型工具名 | 职责 |
 |---|---|---|---|
-| `tool/fs-workspace` | `workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` / `config.unrestricted` 可限制能力 |
-| `tool/fs-memory` | — | 同上 | 内存 FS，测试与冒烟 |
+| `tool/fs-workspace` | `fs`（`filesystem.Service`）、`workspace?` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力。路径根与 gitignore 在 `deps.fs`（默认 `filesystem/local`） |
+| `tool/fs-memory` | — | 同上 | 内存 `filesystem.Service`，测试与冒烟 |
 | `tool/shell-bash` | `workspace`, `credentials`（L0 默认 `integrations`） | `bash` | Shell；L1 `scopedEnv` 或 `/env add` 注入 gh/npm 等 token，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/web-search-auto` | `credentials?` | `web_search` | 可选：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
 | `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索 |
@@ -304,20 +303,29 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
-| `tool/send` | `sender`, `workspace?` | `send` | 经 delivery.Sender 主动发送文本或工作区文件；`/send [-r\|--raw] <chatId> <message>` 管理面投递（同平台裸 chat/channel id，消息可多行；`-r` 跳过平台 Markdown 转换）；L0 `tools.default` 已启用 |
+| `tool/send` | `sender`, `workspace?`, `fs?` | `send` | 经 delivery.Sender 主动发送文本或工作区文件；`/send [-r\|--raw] <chatId> <message>` 管理面投递（同平台裸 chat/channel id，消息可多行；`-r` 跳过平台 Markdown 转换）；L0 `tools.default` 已启用 |
 | `tool/chat-history` | `history`（`agentkit.Platform`，运行时适配为 `chathistory.Router`） | `chat_history` | 读取 IM 传输层群/会话历史；平台未实现 Provider 时返回空；`thread` 默认 true；L0 `tools.default` 已启用 |
 | `tool/recognize` | `llm`, `workspace` | `recognize_image` | 对 `work/` 下图片做视觉理解并返回文本；`config.model` 指定视觉模型（可与主 Agent 模型不同）。L0 `tools.default` 已启用 |
-| `tool/mcp` | `workspace`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
-| `tool/openapi` | `workspace`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/mcp` | `fs`, `credentials?` | *(动态)* | 读取 `mcpServers` JSON 并暴露 MCP 工具；维护指南见 Skill `mcp-manager`（`skills/mcp-manager/SKILL.md`）。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+| `tool/openapi` | `fs`, `credentials?` | *(动态)* | 读取 `api.json` 索引并暴露 HTTP 工具；维护指南见 Skill `openapi-manager`；`/openapi -u` 重载。详见 [guides/tools.zh.md](guides/tools.zh.md)。 |
+
+**`filesystem/local` 插件 config**（kind 在 `runtime/filesystem`）：
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `root` | `.` | 相对 workspace 根的读写根 |
+| `unrestricted` | `false` | 为 `true` 时关闭路径权限控制，不将路径限制在 `root` 内（含 `../`、绝对路径等） |
+
+L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work`、`unrestricted: true`，fs 工具与 agents-md/send 的绝对路径读取）与 `filesystem.local.state`（`root: "."`，memory/learning/skills/schedule/credentials/mcp/openapi/acp-remote 的状态与配置文件）。`global:`/`local:` 前缀一律委托 workspace 双根路由，不受 `root` 限制。
 
 **`tool/fs-workspace` 插件 config**（另有 `maxBytes` / `maxMatches` / `maxResults` / `maxListEntries` 上限）：
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `root` | `work` | 相对 workspace 根的读写根（L0 `config.base.yaml`） |
-| `unrestricted` | `false` | 为 `true` 时关闭路径权限控制，不将路径限制在 `root` 内（含 `../`、绝对路径等） |
 | `readOnly` | `false` | 拒绝 `write` / `edit` |
 | `tools` | 全部 | 限制注册的模型工具子集 |
+
+`root` / `unrestricted` 若仍写在 tool 上会被忽略，请配在 `filesystem/local`。换对象存储或远程盘：实现 `cap/filesystem.Service` 并注册 `filesystem/<name>`，将 `deps.fs` 指向该实例。
 
 **`tool/fs-workspace` 模型参数**：
 
@@ -371,10 +379,10 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md |
+| `skill/filesystem` | `skill.Registry` | 目录扫描 SKILL.md（deps `fs` + `workspace`；dirs 配置可用 `global:`/`local:`，对模型暴露绝对路径） |
 | `skill/badge` | `skill.Registry` | Badge 元数据（roadmap） |
-| `memory/default` | `CommandProvider` + `cap/memory.Service` | 租户 `memory.md`、ledger、staged、`/memory` 命令；`tool/memory` 与 prompt 注入 |
-| `learning/default` | `CommandProvider` | Grounded Dreaming、Skill Workshop；`/learn` 巩固与技能（记忆见 `/memory`） |
+| `memory/default` | `CommandProvider` + `cap/memory.Service` | 租户 `memory.md`、ledger、staged、`/memory` 命令；`tool/memory` 与 prompt 注入；存储走 deps `fs` |
+| `learning/default` | `CommandProvider` | Grounded Dreaming、Skill Workshop；`/learn` 巩固与技能（记忆见 `/memory`）；sidecar（dreaming state/diary/report、review nudge/quota、skills policy、workshop proposals）走 deps `fs` |
 | `learning/dream-sweep` | `schedule.Runtime` | 后台三阶段 dreaming sweep（默认每天 03:00） |
 | `subagent/inprocess` | `subagent.Spawner` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/loop-agent` | `subagent.Spawner` + `subagent.SubmitBinder` | 委派到 Loop 里已注册的 agent（如 `agent/acp-remote` 的 `cursor`）。可委派名单来自实例 `config.agents`；支持 `async: true`：立即返回 `status=running`，完成后经 runner 向父 session 投递 follow-up turn。deps 可注入 `telemetry`（通常 `telemetry.default`），为每次子 agent 运行导出独立 Langfuse trace |
@@ -385,7 +393,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 返回类型 | 说明 |
 |---|---|---|
-| `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表；临时文件 + rename 原子替换，无进程内互斥锁，并发靠读完整快照 + 原子写 |
+| `schedule/file` | `schedule.Registry` | JSON 文件持久化的 cron job 表（deps `fs`）；原子写由 `filesystem.Service.Write` 保证，无进程内互斥锁，并发靠读完整快照 + 原子写 |
 | `schedule/cron` | `schedule.Runtime` | 常驻日历调度：轮询 registry、到期后 submit inbound turn；由 runner 启动，与 `tool/schedule` 共用 registry |
 
 #### Compaction & Context
@@ -403,11 +411,11 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|
 | `workspace/default` | `workspace.Service` | 双根工作区：`global`（默认 `~/.agentkit`）+ `local`（默认 `.agentkit`）；`scope` 选默认根；路径可用 `global:rel` / `local:rel` 前缀 |
 | `workspace/tenant` | `workspace.Service` | 多租户工作区：`global` 全租户共享，`local` 根按 `TurnEnvelope.Workspace`（默认 `localBase/<键>`，可用 `tenants` 钉到已有目录，`omitPlatformPrefix` 去掉目录名里的 platform 段）；`..` 一律不解析 |
+| `filesystem/local` | `filesystem.Service` | 本地盘文件存储：`workspace.Resolve` + `.gitignore`；`root` / `unrestricted`；`global:`/`local:` 前缀委托 workspace 双根路由（不受 root 限制）；`Write` 原子（temp+rename，`WithPerm` 可指定 mode），`Append` 追加 |
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
-| `credentials/env` | `credentials.Store` | YAML 级 `env:` ref；dotenv / 加密 secrets / 进程 env；`Resolve(ctx, GlobalScope, ref)`。详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
-| `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`、`EnvPairs`（shell env）、manifest allowlist、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
+| `credentials/env` | `credentials.Store` | YAML 级 `env:` ref；dotenv / 加密 secrets / 进程 env（deps `fs`，`/env add` 写 0600）；`Resolve(ctx, GlobalScope, ref)`。详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
+| `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`、`EnvPairs`（shell env）、manifest allowlist（经 deps `fs` 读 mcp.json/api.json）、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
-| `settings/file` | `settings.Store` | YAML/JSON 设置 |
 | `storage/json` | `storage.Store` | 通用 KV 存储（roadmap） |
 | `telemetry/langfuse` | `telemetry.Exporter` | Langfuse Go SDK（ingestion API）导出 |
 | `telemetry/none` | `telemetry.Exporter` | 无遥测 |
@@ -463,10 +471,11 @@ cap/<domain>/
   *.go               # 可替换能力接口与 DTO（workspace、compaction、permission…）
   doc.go             # 接口文档（可选）
 
-runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、skill、media、telemetry、schedule…）
+runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、permission、skill、media、telemetry、schedule…）
+cap/credentials/     # Store / EnvPairResolver；实现见 plugins/credentials
 cap/schedule/        # Registry/Runtime/Engine 契约；cron 求值实现见 runtime/schedule（schedule/engine）
 runtime/schedule/    # ParseCron/NextFire、fire metadata；schedule/engine kind
-cap/configfile/      # Writer 接口（/env add、/mcp add、/openapi add 的原子写与回滚）+ PeelGlobalFlag；实现见 runtime/configfile（configfile/writer kind，deps 注入）
+cap/workspace/       # Service + ParseScoped / FirstScoped / Layout；实现见 runtime/workspace
 cap/memory/          # Service、Tool、Capture、Reader（memory/default 实现）
 cap/learning/        # SkillProposer、ReviewHost、DreamSweepScheduler（learning/default）；memory 见 cap/memory
 runtime/memory/      # MemoryStore、ledger、staged、parse/render memory.md
@@ -476,10 +485,10 @@ runtime/session/derive/    # FormatSessionRecall
 
 cap/telemetry/       # Exporter 接口与 DTO；实现见 runtime/telemetry
 
-cap/filesystem/      # grep/find DTO；gitignore 实现见 runtime/filesystem
+cap/filesystem/      # Service + grep/find DTO；标准实现 filesystem/local 见 runtime/filesystem（含宿主绝对路径 WriteAtomic）
 
 plugins/
-  tool/fs/           # tool/fs-workspace、tool/fs-memory（内聚实现，共用 cap/filesystem 类型）
+  tool/fs/           # tool/fs-workspace（注入 filesystem.Service）、tool/fs-memory（内存实现）
   tool/              # shell、web、skill、subagent…
   compaction/        # summary、prune-tool-results
   approval/          # cli、auto-deny、auto-allow
@@ -490,19 +499,18 @@ plugins/
   hook/              # before-step
   credentials/       # env
   schedule/          # file、cron
-  settings/          # file
   memory/            # memory/default、tool/memory
   learning/          # learning/default、learning/dream-sweep、hook/background-review
 ```
 
-`workspace/default`、`workspace/tenant` 在 **`runtime/workspace`**，不在 `plugins/`。
+`workspace/default`、`workspace/tenant` 在 **`runtime/workspace`**；`filesystem/local` 在 **`runtime/filesystem`**，均不在 `plugins/`。
 
 **规则**：
 
-- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` 之于 Scope 常量、`configfile.PeelGlobalFlag` 之于 /add 命令的 `-g` 约定；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `configfile.Writer`、`schedule.Engine`）。
-- 文件/Shell 等模型工具优先单插件内聚；共享 deps 通常是 `workspace.Service`，不是 `filesystem.Service`。
-- 只有 workspace、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
-- 换 workspace Provider（如 `workspace/default` → `workspace/tenant`）不换 tool kind：修改 deps 指向即可。
+- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `cap/delivery.Assistant` 经 `delivery/assistant` 注入；`cap/telemetry.Toolkit` 经 `telemetry/toolkit` 注入）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` / `FirstScoped` 之于 Scope 常量、`agentkit.PeelGlobalFlag` 之于 slash `-g`、`cap/permission.BrokerFrom`；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `schedule.Engine`、`filesystem.Service`）。
+- 文件工具的模型面在 `tool/fs-workspace`；共享 deps 是 `filesystem.Service`（换本地盘 / S3 / 远程不换 tool kind）。
+- 只有 workspace、filesystem、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
+- 换 filesystem Provider（如 `filesystem/local` → `filesystem/s3`）不换 tool kind：修改 `deps.fs` 即可。
 
 ## 5. 配置示例：Coding Agent 最小 Preset
 

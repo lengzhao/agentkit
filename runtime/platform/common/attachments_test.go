@@ -134,8 +134,9 @@ func TestInboundFromContentSavesImageWorkPath(t *testing.T) {
 	if strings.Contains(event.Message.Content[1].Source, "local:") || strings.Contains(event.Message.Content[1].Source, "global:") {
 		t.Fatalf("image source should not use scope prefixes, got %q", event.Message.Content[1].Source)
 	}
-	if !strings.HasPrefix(event.Message.Content[1].Source, "upload/") {
-		t.Fatalf("image source = %q", event.Message.Content[1].Source)
+	want := filepath.Join(root, "work", "upload", "shot.png")
+	if event.Message.Content[1].Source != want {
+		t.Fatalf("image source = %q, want %q", event.Message.Content[1].Source, want)
 	}
 }
 

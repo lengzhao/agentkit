@@ -43,7 +43,7 @@ func (c *fakeClock) Sleep(_ context.Context, d time.Duration) error {
 func newCronRuntime(t *testing.T, cfg pluginschedule.CronConfig) (capschedule.Runtime, capschedule.Registry, *fakeClock) {
 	t.Helper()
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir()), Engine: rtschedule.Engine{}})
+		pluginschedule.FileDeps{FS: testFS(t, rtworkspace.Static(t.TempDir())), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestCronStopsOnCancellation(t *testing.T) {
 	t.Parallel()
 
 	registry, err := pluginschedule.NewFile(pluginschedule.FileConfig{Path: "schedule.json"},
-		pluginschedule.FileDeps{Workspace: rtworkspace.Static(t.TempDir()), Engine: rtschedule.Engine{}})
+		pluginschedule.FileDeps{FS: testFS(t, rtworkspace.Static(t.TempDir())), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}

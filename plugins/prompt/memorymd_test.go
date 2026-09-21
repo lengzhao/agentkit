@@ -42,6 +42,10 @@ func (s stubMemoryReader) PromptBody(context.Context) (string, error) {
 	return s.body, nil
 }
 
+func (s stubMemoryReader) PreviewAddOutcome(context.Context, string) (capmemory.AddOutcome, error) {
+	return capmemory.AddOutcomeAdded, nil
+}
+
 func TestMemoryMDUsesReader(t *testing.T) {
 	provider, err := NewMemoryMD(MemoryMDConfig{}, MemoryMDDeps{
 		Memory: stubMemoryReader{body: "injected fact"},

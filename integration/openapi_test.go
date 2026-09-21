@@ -28,9 +28,10 @@ func TestIntegrationOpenAPIAgentTurn(t *testing.T) {
 			EnableLocal: true,
 			Files:       []string{"api.json", "local:api.json"},
 		}, openapiplugin.OpenAPIDeps{
+			FS:          integrationFSOver(t, ws),
 			Workspace:   ws,
 			Credentials: creds,
-			ConfigFile:  newTestConfigFileWriter(),
+			Telemetry:   integrationTelemetry(t),
 		})
 	})
 	ctx := openapitest.TurnContext(agentkit.SessionID("it:openapi"), agentkit.AgentID("smoke"), "user-42", nil)

@@ -33,7 +33,7 @@ type TenantConfig struct {
 	// slack:C123 -> C123 instead of slack_C123; chat-api:slack_x -> slack_x.
 	// Tenant map keys are unchanged; only the default localBase/<dir> layout moves.
 	OmitPlatformPrefix bool `json:"omitPlatformPrefix,omitempty"`
-	// WorkDir is the tenant-local agent work subtree (align with tool/fs-workspace root and shell workDir).
+	// WorkDir is the tenant-local agent work subtree (align with filesystem/local root and shell workDir).
 	WorkDir string `json:"workDir,omitempty"`
 	// UploadSubdir is the inbound upload folder under WorkDir (default upload).
 	UploadSubdir string `json:"uploadSubdir,omitempty"`

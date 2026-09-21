@@ -41,3 +41,4 @@ config.yaml
 .claude/
 .cursor/
 .DS_Store
+.codegraph/

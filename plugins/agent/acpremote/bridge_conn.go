@@ -171,74 +171,72 @@ func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 }
 
 func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*subprocess, error) {
-	for {
-		if st.proc != nil && st.proc.alive() && (st.proc.authenticated || b.cfg.AuthMethod == "") {
-			return st.proc, nil
-		}
-		if st.proc != nil {
-			old, cancel := detachSubprocess(st)
-			b.proc.Store(nil)
-			terminateAndWaitSubprocess(old, cancel)
-		}
-
-		cwd, err := b.resolveCwd(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
-		cmd.Dir = cwd
-		configureCmdProcessGroup(cmd)
-		cmd.Env = commandEnv(b.cfg.Env)
-		cmd.Stderr = os.Stderr
-
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			return nil, fmt.Errorf("acp stdin pipe: %w", err)
-		}
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, fmt.Errorf("acp stdout pipe: %w", err)
-		}
-		if err := cmd.Start(); err != nil {
-			return nil, fmt.Errorf("acp start %v: %w", b.cfg.Command, err)
-		}
-
-		client := &bridgeClient{bridge: b}
-		conn := acp.NewClientSideConnection(client, stdin, stdout)
-		conn.SetLogger(slog.Default())
-
-		initResp, err := conn.Initialize(ctx, acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
-				Fs: acp.FileSystemCapabilities{
-					ReadTextFile:  true,
-					WriteTextFile: true,
-				},
-			},
-			ClientInfo: &acp.Implementation{
-				Name:    b.cfg.ClientName,
-				Version: b.cfg.ClientVersion,
-			},
-		})
-		if err != nil {
-			terminateProcessGroup(cmd)
-			_ = cmd.Wait()
-			return nil, fmt.Errorf("acp initialize: %w", err)
-		}
-		slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
-
-		done := make(chan struct{})
-		proc := &subprocess{cmd: cmd, conn: conn, client: client, done: done}
-		st.proc = proc
-		go b.waitSubprocess(proc)
-		if err := b.authenticateSubprocess(ctx, proc); err != nil {
-			old, cancel := detachSubprocess(st)
-			terminateAndWaitSubprocess(old, cancel)
-			return nil, err
-		}
-		return proc, nil
+	if st.proc != nil && st.proc.alive() && (st.proc.authenticated || b.cfg.AuthMethod == "") {
+		return st.proc, nil
 	}
+	if st.proc != nil {
+		old, cancel := detachSubprocess(st)
+		b.proc.Store(nil)
+		terminateAndWaitSubprocess(old, cancel)
+	}
+
+	cwd, err := b.resolveCwd(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
+	cmd.Dir = cwd
+	configureCmdProcessGroup(cmd)
+	cmd.Env = commandEnv(b.cfg.Env)
+	cmd.Stderr = os.Stderr
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("acp stdin pipe: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("acp stdout pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("acp start %v: %w", b.cfg.Command, err)
+	}
+
+	client := &bridgeClient{bridge: b}
+	conn := acp.NewClientSideConnection(client, stdin, stdout)
+	conn.SetLogger(slog.Default())
+
+	initResp, err := conn.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+		ClientCapabilities: acp.ClientCapabilities{
+			Fs: acp.FileSystemCapabilities{
+				ReadTextFile:  true,
+				WriteTextFile: true,
+			},
+		},
+		ClientInfo: &acp.Implementation{
+			Name:    b.cfg.ClientName,
+			Version: b.cfg.ClientVersion,
+		},
+	})
+	if err != nil {
+		terminateProcessGroup(cmd)
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("acp initialize: %w", err)
+	}
+	slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
+
+	done := make(chan struct{})
+	proc := &subprocess{cmd: cmd, conn: conn, client: client, done: done}
+	st.proc = proc
+	go b.waitSubprocess(proc)
+	if err := b.authenticateSubprocess(ctx, proc); err != nil {
+		old, cancel := detachSubprocess(st)
+		terminateAndWaitSubprocess(old, cancel)
+		return nil, err
+	}
+	return proc, nil
 }
 
 func (b *bridge) authenticateSubprocess(ctx context.Context, proc *subprocess) error {

@@ -3,38 +3,28 @@ package openapi
 import (
 	"context"
 	"fmt"
-	"github.com/lengzhao/agentkit/cap/workspace"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
 // copyLocalToGlobal copies the file at rel (local-scoped or bare local-relative) into the
-// global workspace at the same relative path (local:api/foo.yaml → global:api/foo.yaml).
-// Already-global paths are returned unchanged.
-func copyLocalToGlobal(ctx context.Context, ws workspace.Service, rel string) (string, error) {
+// global workspace at the same relative path, then returns the global file's absolute path.
+func copyLocalToGlobal(ctx context.Context, fs filesystem.Service, ws workspace.Service, rel string) (string, error) {
 	localRel, globalRel, unchanged := localToGlobalRels(rel)
 	if unchanged {
-		return strings.TrimSpace(rel), nil
+		return storeAbsPath(ctx, ws, rel)
 	}
 
-	src, err := ws.Resolve(ctx, localRel)
+	data, err := fs.Read(ctx, localRel)
 	if err != nil {
-		return "", err
-	}
-	dst, err := ws.Resolve(ctx, globalRel)
-	if err != nil {
-		return "", err
-	}
-	if filepath.Clean(src) == filepath.Clean(dst) {
-		return globalRel, nil
-	}
-
-	if err := copyRegularFile(src, dst); err != nil {
 		return "", fmt.Errorf("copy %s to global: %w", rel, err)
 	}
-	return globalRel, nil
+	if err := fs.Write(ctx, globalRel, data); err != nil {
+		return "", fmt.Errorf("copy %s to global: %w", rel, err)
+	}
+	return storeAbsPath(ctx, ws, globalRel)
 }
 
 // localToGlobalRels maps a workspace path to local/global scoped pairs.
@@ -58,32 +48,4 @@ func localToGlobalRels(rel string) (localRel, globalRel string, unchanged bool) 
 		localRel = rel
 	}
 	return localRel, workspace.ScopeGlobal + ":" + path, false
-}
-
-func copyRegularFile(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("not a regular file: %s", src)
-	}
-
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
 }

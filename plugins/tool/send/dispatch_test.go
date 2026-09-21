@@ -68,7 +68,7 @@ func TestSendSlashCommandBareFeishuChat(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,10 +11,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
-	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/mcptest"
 )
@@ -32,8 +31,8 @@ func TestIntegrationMCPEndToEndHotReload(t *testing.T) {
 	}
 
 	provider, err := mcpplugin.NewMCP(mcpplugin.MCPConfig{Files: []string{configPath}}, mcpplugin.MCPDeps{
-		Workspace:  rtworkspace.Static(dir),
-		ConfigFile: newTestConfigFileWriter(),
+		FS:        integrationFS(t, dir),
+		Telemetry: integrationTelemetry(t),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -11,7 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/runtime/filesystem"
 )
 
 const globalRuntimeRel = "global:runtime.json"
@@ -119,7 +119,7 @@ func saveGlobalRuntime(ctx context.Context, ws workspace.Service, data GlobalRun
 	if err != nil {
 		return err
 	}
-	if err := configfile.WriteAtomic(path, raw, 0o644); err != nil {
+	if err := filesystem.WriteAtomic(path, raw, 0o644); err != nil {
 		return err
 	}
 	globalRuntimeCache.Delete(path)

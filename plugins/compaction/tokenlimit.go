@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit/cap/compaction"
 	capsession "github.com/lengzhao/agentkit/cap/session"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 )
 
 type TokenLimitConfig struct {
@@ -22,6 +21,7 @@ type TokenLimitConfig struct {
 }
 
 type TokenLimitDeps struct {
+	Chain compaction.Chain `json:"chain"`
 	// Services run only once the threshold is crossed, with Force set.
 	Services []compaction.Service `json:"services"`
 }
@@ -34,6 +34,7 @@ const (
 type tokenLimitService struct {
 	threshold     int
 	charsPerToken int
+	chain         compaction.Chain
 	services      []compaction.Service
 }
 
@@ -43,6 +44,9 @@ type tokenLimitService struct {
 //   - A decorator, not a strategy: it decides when, the services dep decides how.
 //   - The estimate is max(character estimate, reported usage), so it errs toward compacting early.
 func NewTokenLimit(cfg TokenLimitConfig, deps TokenLimitDeps) (compaction.Service, error) {
+	if deps.Chain == nil {
+		return nil, fmt.Errorf("compaction/token-limit requires chain dependency")
+	}
 	ratio := cfg.TriggerRatio
 	if ratio <= 0 || ratio >= 1 {
 		ratio = defaultTriggerRatio
@@ -70,6 +74,7 @@ func NewTokenLimit(cfg TokenLimitConfig, deps TokenLimitDeps) (compaction.Servic
 	return &tokenLimitService{
 		threshold:     threshold,
 		charsPerToken: charsPerToken,
+		chain:         deps.Chain,
 		services:      services,
 	}, nil
 }
@@ -90,7 +95,7 @@ func (s *tokenLimitService) Compact(ctx context.Context, req compaction.Request)
 
 	inner := req
 	inner.Force = true
-	messages, applied, err := rtcompaction.ApplyAll(ctx, s.services, inner)
+	messages, applied, err := s.chain.ApplyAll(ctx, s.services, inner)
 	if err != nil {
 		return compaction.Result{}, err
 	}

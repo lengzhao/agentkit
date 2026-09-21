@@ -14,6 +14,7 @@ func TestPolicySkillsMode(t *testing.T) {
 	ws := rtworkspace.Static(dir)
 	svc, err := New(Config{Workshop: workshop.Config{Mode: "propose"}}, Deps{
 		Workspace:    ws,
+		FS:           testFS(t, ws),
 		SessionStore: stubSessionStore{},
 		Memory:       newTestMemoryStub(ws),
 		Engine:       rtschedule.Engine{},

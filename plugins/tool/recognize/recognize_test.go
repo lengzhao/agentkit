@@ -10,9 +10,20 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	recognizeplugin "github.com/lengzhao/agentkit/plugins/tool/recognize"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/llm"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+func mustTelemetry(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
+}
 
 func TestRecognizeImageScripted(t *testing.T) {
 	t.Parallel()
@@ -38,6 +49,7 @@ func TestRecognizeImageScripted(t *testing.T) {
 	pack, err := recognizeplugin.NewRecognize(recognizeplugin.RecognizeConfig{}, recognizeplugin.RecognizeDeps{
 		LLM:       provider,
 		Workspace: ws,
+		Telemetry: mustTelemetry(t),
 	})
 	if err != nil {
 		t.Fatal(err)

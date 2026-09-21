@@ -9,10 +9,20 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/tool/send"
-	"github.com/lengzhao/agentkit/runtime/delivery"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+func mustAssistant(t *testing.T) capsdelivery.Assistant {
+	t.Helper()
+	a, err := rtdelivery.NewAssistant(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
 
 type recordingPlatform struct {
 	sent []agentkit.OutboundEvent
@@ -31,7 +41,7 @@ func TestSendUsesEmitForCurrentInbox(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +75,7 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +90,8 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
-	if delivery.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
-		t.Fatalf("route=%q", delivery.OutboundRouteID(platform.sent[0]))
+	if rtdelivery.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("route=%q", rtdelivery.OutboundRouteID(platform.sent[0]))
 	}
 }
 
@@ -89,7 +99,7 @@ func TestSendUserIDTarget(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,8 +116,8 @@ func TestSendUserIDTarget(t *testing.T) {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
 	want := rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U222")
-	if delivery.OutboundRouteID(platform.sent[0]) != want {
-		t.Fatalf("route=%q want %q", delivery.OutboundRouteID(platform.sent[0]), want)
+	if rtdelivery.OutboundRouteID(platform.sent[0]) != want {
+		t.Fatalf("route=%q want %q", rtdelivery.OutboundRouteID(platform.sent[0]), want)
 	}
 	if platform.sent[0].UserID != "U222" {
 		t.Fatalf("user=%q", platform.sent[0].UserID)
@@ -127,7 +137,7 @@ func TestSendFilePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := rtworkspace.Static(root)
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Workspace: ws})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Delivery: mustAssistant(t), Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +174,7 @@ func TestSendTextAndPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := rtworkspace.Static(root)
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Workspace: ws})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Delivery: mustAssistant(t), Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +209,7 @@ func TestSendInboundAttachmentPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := rtworkspace.Static(root)
-	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Workspace: ws})
+	tool, err := send.NewSend(send.SendConfig{}, send.SendDeps{Sender: platform, Delivery: mustAssistant(t), Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}

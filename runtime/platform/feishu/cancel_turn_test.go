@@ -11,7 +11,7 @@ import (
 )
 
 func TestCancelledTurnEndProgressFooter(t *testing.T) {
-	p := &Platform{progressStyle: "card", showToolProgress: true}
+	p := &Platform{showToolProgress: true}
 	st := p.streamState(agentkit.SessionID("session-cancel"))
 	st.startedAt = time.Now().Add(-2 * time.Second)
 	st.progressStartedAt = st.startedAt

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,11 +12,10 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/config"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -39,9 +39,8 @@ type Config struct {
 }
 
 type EnvDeps struct {
-	Workspace workspace.Service `json:"workspace,omitempty"`
-	// ConfigFile powers /env add writes; without it the add command fails fast.
-	ConfigFile configfile.Writer `json:"configfile,omitempty"`
+	// FS reads/writes dotenv and encrypted secrets files (scope prefixes allowed).
+	FS filesystem.Service `json:"fs"`
 }
 
 type envStore struct {
@@ -50,8 +49,7 @@ type envStore struct {
 	masterKeyConfig string
 	filePaths       []string
 	encryptedRel    string
-	workspace       workspace.Service
-	configFile      configfile.Writer
+	fs              filesystem.Service
 	processEnv      bool
 	mu              sync.RWMutex
 	files           map[string]string
@@ -66,6 +64,9 @@ func init() {
 }
 
 func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv bool) (*envStore, error) {
+	if deps.FS == nil {
+		return nil, fmt.Errorf("credentials requires fs dependency")
+	}
 	encRel := strings.TrimSpace(cfg.EncryptedFile)
 	if encRel == "" {
 		encRel = defaultEnc
@@ -80,7 +81,7 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 	}
 	masterKeyConfig := ""
 	if cfg.Env != nil {
-		masterKeyConfig = strings.TrimSpace(cfg.Env[rtcredentials.SecretsMasterKeyEnv])
+		masterKeyConfig = strings.TrimSpace(cfg.Env[SecretsMasterKeyEnv])
 	}
 	s := &envStore{
 		prefix:          cfg.Prefix,
@@ -88,8 +89,7 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 		masterKeyConfig: masterKeyConfig,
 		filePaths:       append([]string(nil), files...),
 		encryptedRel:    encRel,
-		workspace:       deps.Workspace,
-		configFile:      deps.ConfigFile,
+		fs:              deps.FS,
 		processEnv:      processEnv,
 		files:           make(map[string]string),
 		encrypted:       make(map[string]string),
@@ -99,10 +99,10 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 }
 
 func (s *envStore) lookupValue(ctx context.Context, ref string) (string, error) {
-	if secret, ok := rtcredentials.SecretFromContext(ctx, ref); ok {
+	if secret, ok := secretFromContext(ctx, ref); ok {
 		return secret.Value, nil
 	}
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if s.prefix != "" {
 		key = s.prefix + key
 	}
@@ -142,19 +142,11 @@ func (s *envStore) lookupStorageValue(storageKey string) (string, bool) {
 	return "", false
 }
 
-func (s *envStore) resolvePaths(ctx context.Context) ([]string, error) {
+func (s *envStore) resolvePaths(context.Context) ([]string, error) {
 	var out []string
 	for _, rel := range s.filePaths {
 		rel = strings.TrimSpace(rel)
 		if rel == "" {
-			continue
-		}
-		if s.workspace != nil {
-			path, err := s.workspace.Resolve(ctx, rel)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, path)
 			continue
 		}
 		out = append(out, rel)
@@ -166,33 +158,23 @@ func (s *envStore) writeTarget(ctx context.Context) (string, error) {
 	if s.encryptedRel != "" && s.encryptedRel != EncryptedFileDisabled {
 		return s.resolveEncryptedPath(ctx)
 	}
-	rel, err := s.configFile.WriteTarget(s.filePaths)
-	if err != nil {
-		return "", err
-	}
-	if s.workspace != nil {
-		return s.workspace.Resolve(ctx, rel)
-	}
-	return rel, nil
+	return workspace.FirstScoped(s.filePaths, workspace.ScopeLocal)
 }
 
-func (s *envStore) resolveEncryptedPath(ctx context.Context) (string, error) {
+func (s *envStore) resolveEncryptedPath(context.Context) (string, error) {
 	rel := strings.TrimSpace(s.encryptedRel)
 	if rel == "" || rel == EncryptedFileDisabled {
 		return "", fmt.Errorf("encrypted secrets file is not configured")
-	}
-	if s.workspace != nil {
-		return s.workspace.Resolve(ctx, rel)
 	}
 	return rel, nil
 }
 
 func (s *envStore) masterKey() ([]byte, error) {
-	raw := strings.TrimSpace(os.Getenv(rtcredentials.SecretsMasterKeyEnv))
+	raw := strings.TrimSpace(os.Getenv(SecretsMasterKeyEnv))
 	if raw == "" {
 		raw = s.masterKeyConfig
 	}
-	return rtcredentials.ParseSecretsMasterKey(raw)
+	return parseSecretsMasterKey(raw)
 }
 
 func (s *envStore) reload(ctx context.Context) (int, error) {
@@ -206,9 +188,9 @@ func (s *envStore) reload(ctx context.Context) (int, error) {
 	}
 	values := make(map[string]string)
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		data, err := s.fs.Read(ctx, path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return 0, fmt.Errorf("read env file %q: %w", path, err)
@@ -234,9 +216,9 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := s.fs.Read(ctx, path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			s.mu.Lock()
 			s.encrypted = make(map[string]string)
 			s.mu.Unlock()
@@ -254,7 +236,7 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("load %s: %w", path, err)
 	}
-	values, err := rtcredentials.DecryptSecretsFile(data, key)
+	values, err := decryptSecretsFile(data, key)
 	if err != nil {
 		return 0, fmt.Errorf("decrypt secrets file %q: %w", path, err)
 	}
@@ -267,9 +249,6 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 type verifyRefFunc func(ctx context.Context, ref string) error
 
 func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, refs []string, verify verifyRefFunc) (string, int, error) {
-	if s.configFile == nil {
-		return "", 0, fmt.Errorf("credentials requires configFile dependency for /env add")
-	}
 	if verify == nil {
 		verify = func(ctx context.Context, ref string) error {
 			value, err := s.lookupValue(ctx, ref)
@@ -286,8 +265,8 @@ func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, re
 	if err != nil {
 		return "", 0, err
 	}
-	prev, err := os.ReadFile(target)
-	if err != nil && !os.IsNotExist(err) {
+	prev, err := s.fs.Read(ctx, target)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", 0, fmt.Errorf("read %s: %w", target, err)
 	}
 	var prevBytes []byte
@@ -300,7 +279,7 @@ func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, re
 		if err != nil {
 			return "", 0, fmt.Errorf("write encrypted secrets: %w", err)
 		}
-		merged, err = rtcredentials.MergeEncryptedSecretsFile(prevBytes, master, updates)
+		merged, err = mergeEncryptedSecretsFile(prevBytes, master, updates)
 		if err != nil {
 			return "", 0, err
 		}
@@ -310,17 +289,17 @@ func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, re
 			return "", 0, err
 		}
 	}
-	if err := s.configFile.WriteAtomic(target, merged, 0o600); err != nil {
+	if err := s.fs.Write(ctx, target, merged, filesystem.WithPerm(0o600)); err != nil {
 		return "", 0, fmt.Errorf("write %s: %w", target, err)
 	}
 	if _, err := s.reload(ctx); err != nil {
-		_ = s.configFile.Restore(target, prevBytes, 0o600)
+		_ = s.fs.Write(ctx, target, prevBytes, filesystem.WithPerm(0o600))
 		_, _ = s.reload(ctx)
 		return "", 0, err
 	}
 	for _, ref := range refs {
 		if err := verify(ctx, ref); err != nil {
-			_ = s.configFile.Restore(target, prevBytes, 0o600)
+			_ = s.fs.Write(ctx, target, prevBytes, filesystem.WithPerm(0o600))
 			_, _ = s.reload(ctx)
 			return "", 0, fmt.Errorf("verify %s: %w", ref, err)
 		}

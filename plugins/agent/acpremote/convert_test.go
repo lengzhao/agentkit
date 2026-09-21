@@ -5,7 +5,6 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit/cap/permission"
-	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 )
 
 func permissionRequestWithReject() acp.RequestPermissionRequest {
@@ -18,7 +17,7 @@ func permissionRequestWithReject() acp.RequestPermissionRequest {
 }
 
 func TestMapPermissionResultToACPTimeoutUsesRejectWithMeta(t *testing.T) {
-	result := rtpermission.TimedOut(permission.Request{Kind: permission.KindAllowDeny})
+	result := permission.TimedOut(permission.Request{Kind: permission.KindAllowDeny})
 	resp := mapPermissionResultToACP(permissionRequestWithReject(), result)
 
 	if resp.Outcome.Selected == nil || resp.Outcome.Selected.OptionId != "reject-once" {
@@ -36,7 +35,7 @@ func TestMapPermissionResultToACPTimeoutUsesRejectWithMeta(t *testing.T) {
 }
 
 func TestMapPermissionResultToACPTurnCancelUsesCancelled(t *testing.T) {
-	result := rtpermission.Cancelled(permission.Request{Kind: permission.KindAllowDeny}, "permission abandoned: context canceled")
+	result := permission.Cancelled(permission.Request{Kind: permission.KindAllowDeny}, "permission abandoned: context canceled")
 	resp := mapPermissionResultToACP(permissionRequestWithReject(), result)
 
 	if resp.Outcome.Cancelled == nil {

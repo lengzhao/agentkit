@@ -1,22 +1,30 @@
 package telemetry_test
 
 import (
+	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestToolObservationAttrsReadPath(t *testing.T) {
 	t.Parallel()
-	attrs := telemetry.ToolObservationAttrs(agentkit.ToolCall{
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	ctx := rctx.WithWorkspaceService(context.Background(), ws)
+	attrs := telemetry.ToolObservationAttrs(ctx, agentkit.ToolCall{
 		ID:    "call-1",
 		Name:  "read",
 		Input: json.RawMessage(`{"path":"local:work/upload/a.jpg"}`),
 	})
-	if attrs["read_path"] != "local:work/upload/a.jpg" {
-		t.Fatalf("read_path = %q", attrs["read_path"])
+	want := filepath.Join(root, "work", "upload", "a.jpg")
+	if attrs["read_path"] != want {
+		t.Fatalf("read_path = %q, want %q", attrs["read_path"], want)
 	}
 }
 

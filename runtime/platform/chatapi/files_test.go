@@ -15,14 +15,14 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	cw "github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtws "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 func TestUploadAndChatWithLocalFile(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	p, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 		t.Fatalf("prompt missing upload ref: %q", text)
 	}
 
-	uploadDir, err := workpath.ResolveFile(context.Background(), ws, common.UploadWorkRel(ws))
+	uploadDir, err := rtws.ResolveFile(context.Background(), ws, cw.UploadWorkRel(ws))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 
 func TestUploadAndChatWithLocalImageFile(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	p, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestUploadAndChatWithLocalImageFile(t *testing.T) {
 
 func TestInputsToCoreLocalPathUsesDataField(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	workDir := filepath.Join(root, "work", "upload")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestInputsToCoreLocalPathUsesDataField(t *testing.T) {
 
 func TestInputsToCoreLocalPathImage(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	workDir := filepath.Join(root, "work", "upload")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -264,7 +264,7 @@ func TestInputsToCoreLocalPathImage(t *testing.T) {
 
 func TestDownloadUploadedFile(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func TestDownloadUploadedFile(t *testing.T) {
 
 func TestDownloadUploadedFileChannelQueryOnly(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{APIToken: "secret"}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -314,7 +314,7 @@ func TestDownloadUploadedFileChannelQueryOnly(t *testing.T) {
 
 func TestFileDownloadSkipsAPIToken(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{APIToken: "secret", Path: "/v1/"}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -336,7 +336,7 @@ func TestFileDownloadSkipsAPIToken(t *testing.T) {
 
 func TestEmitAssistantMediaFileReady(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -386,7 +386,7 @@ func TestEmitAssistantMediaFileReady(t *testing.T) {
 
 func TestUploadRejectsOversize(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{MaxUploadSize: 16}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -412,7 +412,7 @@ func TestUploadRejectsOversize(t *testing.T) {
 
 func TestUploadToSpecifiedPath(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -477,7 +477,7 @@ func TestUploadToSpecifiedPath(t *testing.T) {
 
 func TestDownloadByPath(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -507,7 +507,7 @@ func TestDownloadByPath(t *testing.T) {
 
 func TestUploadRejectsTraversalPath(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -534,7 +534,7 @@ func TestUploadRejectsTraversalPath(t *testing.T) {
 
 func TestUploadRejectsPathOutsideWork(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -562,7 +562,7 @@ func TestUploadRejectsPathOutsideWork(t *testing.T) {
 func TestAdminUploadAbsolutePath(t *testing.T) {
 	root := t.TempDir()
 	absTarget := filepath.Join(root, "managed", "config.txt")
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{Admins: []string{"admin1"}}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -596,7 +596,7 @@ func TestAdminUploadAbsolutePath(t *testing.T) {
 
 func TestNonAdminRejectedForAbsolutePath(t *testing.T) {
 	root := t.TempDir()
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{Admins: []string{"admin1"}}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
@@ -630,7 +630,7 @@ func TestAdminDownloadAbsolutePath(t *testing.T) {
 	if err := os.WriteFile(absTarget, []byte("admin read"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ws := rtworkspace.Static(root)
+	ws := rtws.Static(root)
 	plat, err := New(Config{Admins: []string{"admin1"}}, Deps{Workspace: ws})
 	if err != nil {
 		t.Fatal(err)

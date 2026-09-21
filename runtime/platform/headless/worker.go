@@ -14,7 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const workerPlatformID = "worker"
@@ -236,7 +236,7 @@ func (w *Worker) runScript(ctx context.Context, scriptPath string) error {
 
 func (w *Worker) event(run int, prompt string) agentkit.MessageEvent {
 	sessionID := w.naming.forRun(run)
-	return common.WithDeliverySession(agentkit.MessageEvent{
+	return rctx.WithDeliverySession(agentkit.MessageEvent{
 		PlatformID: workerPlatformID,
 		Message:    userMessage(prompt),
 	}, workerPlatformID, sessionID)

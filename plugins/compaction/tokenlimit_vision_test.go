@@ -14,6 +14,7 @@ func TestTokenLimitIgnoresHydratedVisionDataURLSize(t *testing.T) {
 
 	inner := &countingService{}
 	svc, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 10_000}, TokenLimitDeps{
+		Chain:    mustChain(t),
 		Services: []capcompaction.Service{inner},
 	})
 	if err != nil {

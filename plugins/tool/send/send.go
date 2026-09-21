@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -22,8 +23,12 @@ type SendConfig struct {
 }
 
 type SendDeps struct {
-	Sender    capsdelivery.Sender `json:"sender"`
-	Workspace workspace.Service `json:"workspace,omitempty"`
+	Sender    capsdelivery.Sender     `json:"sender"`
+	Delivery  capsdelivery.Assistant  `json:"delivery"`
+	Workspace workspace.Service       `json:"workspace,omitempty"`
+	// FS verifies attachment existence (wire an unrestricted filesystem/local
+	// instance; the resolved path is also handed to the platform as a local URL).
+	FS        filesystem.Service `json:"fs,omitempty"`
 }
 
 type SendInput struct {
@@ -48,6 +53,9 @@ type SendOutput struct {
 func NewSend(cfg SendConfig, deps SendDeps) (agentkit.Tool, error) {
 	if deps.Sender == nil {
 		return nil, fmt.Errorf("tool/send requires sender dependency")
+	}
+	if deps.Delivery == nil {
+		return nil, fmt.Errorf("tool/send requires delivery dependency")
 	}
 	tool, err := agentkit.NewTool[SendInput, SendOutput]("send", func(ctx context.Context, input SendInput) (SendOutput, error) {
 		if err := Dispatch(ctx, deps, cfg, input); err != nil {

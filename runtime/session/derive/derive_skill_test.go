@@ -14,6 +14,28 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
+func TestRenderSkillLoadedIncludesResourceBase(t *testing.T) {
+	t.Parallel()
+
+	text := derive.RenderSkillLoaded(skill.Content{
+		Name: "demo",
+		Body: "Do the thing.",
+		Path: "/tmp/skills/demo",
+	})
+	if !strings.Contains(text, `<skill_content name="demo">`) {
+		t.Fatalf("text = %q", text)
+	}
+	if !strings.Contains(text, "Base directory for this skill: /tmp/skills/demo") {
+		t.Fatalf("text = %q", text)
+	}
+	if !strings.Contains(text, "Read supporting files with read") {
+		t.Fatalf("text = %q", text)
+	}
+	if !strings.Contains(text, "Do the thing.") {
+		t.Fatalf("text = %q", text)
+	}
+}
+
 func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	t.Parallel()
 
@@ -37,7 +59,7 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := derive.AppendSkillLoad(ctx, sess, "assistant", skill.Content{
+	if _, err := derive.AppendSkillLoad(ctx, sess, "assistant", skill.Content{
 		Name:        "feedback-ticket-intake",
 		Description: "Triage feedback",
 		Body:        "Follow these steps.",

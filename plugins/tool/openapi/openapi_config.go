@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
@@ -174,7 +175,7 @@ func buildAPIConfigSafe(name, path string, entry rawAPIEntry, loadSpec specLoade
 	return buildAPIConfig(name, path, entry, loadSpec)
 }
 
-func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service, raw []byte) ([]byte, error) {
+func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, fs filesystem.Service, ws workspace.Service, raw []byte) ([]byte, error) {
 	var entry rawAPIEntry
 	if err := json.Unmarshal(raw, &entry); err != nil {
 		return nil, fmt.Errorf("parse api json: %w", err)
@@ -186,7 +187,7 @@ func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service,
 	if doc == "" {
 		return raw, nil
 	}
-	globalDoc, err := copyLocalToGlobal(ctx, ws, doc)
+	globalDoc, err := copyLocalToGlobal(ctx, fs, ws, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +203,7 @@ func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service,
 	return out, nil
 }
 
-func upsertAPIJSON(existing []byte, name string, raw json.RawMessage) ([]byte, error) {
+func upsertAPIJSON(ctx context.Context, ws workspace.Service, existing []byte, name string, raw json.RawMessage) ([]byte, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("api name is required")
@@ -220,6 +221,9 @@ func upsertAPIJSON(existing []byte, name string, raw json.RawMessage) ([]byte, e
 	}
 	if doc.Apis == nil {
 		doc.Apis = make(map[string]rawAPIEntry)
+	}
+	if err := normalizeAPIEntryPaths(ctx, ws, &entry); err != nil {
+		return nil, err
 	}
 	doc.Apis[name] = entry
 	out, err := json.MarshalIndent(doc, "", "  ")

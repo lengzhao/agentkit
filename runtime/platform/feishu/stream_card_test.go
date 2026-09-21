@@ -13,7 +13,6 @@ import (
 
 func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
 	p := &Platform{
-		progressStyle:    "card",
 		showThinking:     true,
 		showToolProgress: true,
 	}
@@ -40,7 +39,7 @@ func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
 }
 
 func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
-	p := &Platform{progressStyle: "card", showToolProgress: true}
+	p := &Platform{showToolProgress: true}
 	st := streamStateLiteral(streamStateData{
 		startedAt:         time.Now().Add(-2 * time.Second),
 		progressStartedAt: time.Now().Add(-2 * time.Second),
@@ -60,7 +59,6 @@ func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
 
 func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 	p := &Platform{
-		progressStyle:      "card",
 		showThinking:       true,
 		showToolProgress:   true,
 		useInteractiveCard: true,
@@ -102,7 +100,6 @@ func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 
 func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 	p := &Platform{
-		progressStyle:    "card",
 		showThinking:     true,
 		showToolProgress: true,
 	}
@@ -168,19 +165,19 @@ func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 	}
 }
 
-func TestLegacyStreamUpdateIgnoresThinkingByDefault(t *testing.T) {
-	p := &Platform{progressStyle: "legacy", showThinking: false}
+func TestRichStreamUpdateIgnoresThinkingWhenDisabled(t *testing.T) {
+	p := &Platform{showThinking: false}
 	st := streamStateLiteral(streamStateData{})
 	if p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
 		Type:  agentkit.AssistantEventThinkingDelta,
 		Delta: "secret",
 	}) {
-		t.Fatal("legacy mode should ignore thinking when disabled")
+		t.Fatal("should ignore thinking when showThinking is false")
 	}
 }
 
 func TestRichCardMessageStartPreservesToolSteps(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: true, showToolProgress: true}
+	p := &Platform{useInteractiveCard: true, showToolProgress: true}
 	sessionID := agentkit.SessionID("session-unified-steps")
 	st := p.streamState(sessionID)
 	st.lock()
@@ -236,7 +233,7 @@ func TestOutboundStreamKeyUsesReplyTo(t *testing.T) {
 }
 
 func TestEvictStreamCardsDropsOldestProgress(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: false}
+	p := &Platform{useInteractiveCard: false}
 	p1 := &feishuPreviewHandle{messageID: "p1"}
 	st := streamStateLiteral(streamStateData{
 		cards: []streamCard{
@@ -263,7 +260,7 @@ func TestEvictStreamCardsDropsOldestProgress(t *testing.T) {
 }
 
 func TestRemovePriorProgressCardsKeepsLatestOnly(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: false}
+	p := &Platform{useInteractiveCard: false}
 	p1 := &feishuPreviewHandle{messageID: "p1"}
 	p2 := &feishuPreviewHandle{messageID: "p2"}
 	st := streamStateLiteral(streamStateData{
@@ -288,7 +285,7 @@ func TestRemovePriorProgressCardsKeepsLatestOnly(t *testing.T) {
 }
 
 func TestEvictStreamCardsPopsBodyWithoutDelete(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: false}
+	p := &Platform{useInteractiveCard: false}
 	st := streamStateLiteral(streamStateData{
 		cards: []streamCard{
 			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
@@ -325,7 +322,7 @@ func TestStreamFlushDelay(t *testing.T) {
 }
 
 func TestHandleRichTurnEndDoesNotDeadlockWithBodyFlushTimer(t *testing.T) {
-	p := &Platform{progressStyle: "card", useInteractiveCard: true}
+	p := &Platform{useInteractiveCard: true}
 	sessionID := agentkit.SessionID("session-turn-end-deadlock")
 	p.richStreamState(sessionID)
 	p.scheduleBodyFlush(sessionID)
@@ -343,7 +340,7 @@ func TestHandleRichTurnEndDoesNotDeadlockWithBodyFlushTimer(t *testing.T) {
 }
 
 func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
-	p := &Platform{progressStyle: "card"}
+	p := &Platform{}
 	sessionID := agentkit.SessionID("session-body-timer")
 	st := p.streamState(sessionID)
 	st.lock()

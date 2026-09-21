@@ -28,7 +28,7 @@ func (s *Service) stageMemory(ctx context.Context, action, oldText, content, sou
 	if entry.Action == "" {
 		return "", fmt.Errorf("staged action is required")
 	}
-	if err := store.Add(entry); err != nil {
+	if err := store.Add(ctx, entry); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("memory staged for approval (id %s)", id), nil
@@ -39,7 +39,7 @@ func (s *Service) ListStaged(ctx context.Context) ([]capmemory.StagedEntry, erro
 	if err != nil {
 		return nil, err
 	}
-	entries, err := store.List()
+	entries, err := store.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *Service) ApproveStaged(ctx context.Context, id string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	entry, err := store.Remove(id)
+	entry, err := store.Remove(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -85,19 +85,19 @@ func (s *Service) RejectStaged(ctx context.Context, id string) (string, error) {
 		return "", err
 	}
 	if strings.EqualFold(id, "all") {
-		entries, err := store.List()
+		entries, err := store.List(ctx)
 		if err != nil {
 			return "", err
 		}
 		if len(entries) == 0 {
 			return "no staged memory to reject", nil
 		}
-		if err := store.Clear(); err != nil {
+		if err := store.Clear(ctx); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("rejected %d staged memory entries", len(entries)), nil
 	}
-	if _, err := store.Remove(id); err != nil {
+	if _, err := store.Remove(ctx, id); err != nil {
 		return "", err
 	}
 	return "staged memory rejected", nil
@@ -108,7 +108,7 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	entries, err := store.List()
+	entries, err := store.List(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -122,7 +122,7 @@ func (s *Service) approveAllStaged(ctx context.Context) (string, error) {
 		}
 		n++
 	}
-	if err := store.Clear(); err != nil {
+	if err := store.Clear(ctx); err != nil {
 		return fmt.Sprintf("approved %d entries but failed to clear staged file: %v", n, err), nil
 	}
 	return fmt.Sprintf("approved %d staged memory entries", n), nil

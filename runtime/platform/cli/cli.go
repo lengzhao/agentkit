@@ -158,7 +158,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 		p.done = true
 	}
 	p.beginTurnWait()
-	return common.WithInboundRoute(agentkit.MessageEvent{
+	return rctx.WithInboundRoute(agentkit.MessageEvent{
 		PlatformID: platformID,
 		UserID:     cliUserID(),
 		Message: agentkit.ModelMessage{

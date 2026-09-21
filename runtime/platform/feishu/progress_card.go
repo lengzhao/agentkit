@@ -466,7 +466,6 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 	}
 
 	var cardJSON string
-	streamElementID := ""
 	sendContent := ""
 	cardEntityID := ""
 	if isCardJSON(content) {
@@ -478,30 +477,9 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 			slog.Debug(p.tag()+": create card entity failed, falling back to inline card JSON", "error", err)
 			sendContent = cardJSON
 		}
-	} else if p.useCardKitElementStream() {
-		cardJSON = buildStreamingBodyCardEntityJSON()
-		streamElementID = bodyStreamElementID
 	} else {
 		cardJSON = buildPreviewCardJSON(content)
 		sendContent = cardJSON
-	}
-
-	if p.useCardKitElementStream() && !isCardJSON(content) {
-		handle, err := p.createAndSendCardEntity(ctx, rc, cardJSON, streamElementID)
-		if err != nil {
-			slog.Debug(p.tag()+": cardkit preview start failed, falling back to patch", "error", err)
-		} else {
-			if streamElementID != "" && strings.TrimSpace(content) != "" {
-				processed := content
-				if containsMarkdown(content) {
-					processed = preprocessFeishuMarkdown(content)
-				}
-				if streamErr := p.streamCardElementContent(ctx, handle, sanitizeMarkdownURLs(processed)); streamErr != nil {
-					slog.Debug(p.tag()+": initial cardkit body stream failed", "error", streamErr)
-				}
-			}
-			return handle, nil
-		}
 	}
 
 	if sendContent == "" {
@@ -583,13 +561,6 @@ func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content
 	}
 
 	if h.cardID != "" {
-		if h.elementID != "" && !isCardJSON(content) {
-			processed := content
-			if containsMarkdown(content) {
-				processed = preprocessFeishuMarkdown(content)
-			}
-			return p.streamCardElementContent(ctx, h, sanitizeMarkdownURLs(processed))
-		}
 		cardJSON := content
 		if !isCardJSON(content) {
 			cardJSON = buildFinalPreviewCardJSON(content)

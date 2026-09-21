@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessbind"
@@ -19,7 +18,7 @@ type catalogRoutingDeps struct {
 
 func parseCatalogSlashArgs(args string) (global bool, payload string, rest []string) {
 	fields := strings.Fields(strings.TrimSpace(args))
-	global, rest = configfile.PeelGlobalFlag(fields)
+	global, rest = agentkit.PeelGlobalFlag(fields)
 	payload = strings.TrimSpace(strings.Join(rest, " "))
 	return global, payload, rest
 }
