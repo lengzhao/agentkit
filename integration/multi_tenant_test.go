@@ -91,7 +91,7 @@ func TestIntegrationMultiTenantWorkDirIsolation(t *testing.T) {
 		t.Fatalf("tenant B path = %q, want %q", pathB, wantB)
 	}
 
-	skillA, err := svc.Resolve(ctxA, "skills/note.md")
+	skillA, err := svc.Resolve(ctxA, "work/skills/note.md")
 	if err != nil {
 		t.Fatal(err)
 	}

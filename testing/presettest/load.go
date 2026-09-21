@@ -2,6 +2,8 @@ package presettest
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,7 +103,13 @@ func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult 
 }
 
 func injectIsolatedSession(graph map[string]any, suffix string) agentkit.SessionID {
-	id := agentkit.SessionID("cli:it-" + suffix)
+	// File-backed sessionStore persists under workspace; reuse a fixed id across
+	// local reruns would accumulate events and break exact-count assertions.
+	var nonce [4]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		panic(fmt.Sprintf("session id nonce: %v", err))
+	}
+	id := agentkit.SessionID("cli:it-" + suffix + "-" + hex.EncodeToString(nonce[:]))
 	patchSessionDefault(graph, id)
 	platform := resolvePlatformNode(graph)
 	if platform != nil && platformUse(platform) == "platform/cli" {

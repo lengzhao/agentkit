@@ -11,7 +11,7 @@ agent.assistant.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.fallback
+        llm: llm.default
         prompt: prompt.default
         sessionStore: sessionStore.default
         tools: tools.default
@@ -517,7 +517,7 @@ subagent.inprocess.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.openai
+        llm: llm.default
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default
