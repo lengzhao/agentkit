@@ -52,13 +52,6 @@ type Capture interface {
 	CaptureMemoryRemove(ctx context.Context, oldText string) (string, error)
 }
 
-// Staging lists and resolves staged memory awaiting approval.
-type Staging interface {
-	ListStaged(ctx context.Context) ([]StagedEntry, error)
-	ApproveStaged(ctx context.Context, id string) (string, error)
-	RejectStaged(ctx context.Context, id string) (string, error)
-}
-
 // StagedEntry is one pending memory write.
 type StagedEntry struct {
 	ID      string
@@ -83,7 +76,10 @@ type Service interface {
 	Tool
 	Reader
 	Capture
-	Staging
+	// Staging: lists and resolves staged memory awaiting approval.
+	ListStaged(ctx context.Context) ([]StagedEntry, error)
+	ApproveStaged(ctx context.Context, id string) (string, error)
+	RejectStaged(ctx context.Context, id string) (string, error)
 	Disabled() bool
 	// BackgroundReviewRequiresStaging is true when review memory_add should stage instead of writing memory.md.
 	BackgroundReviewRequiresStaging(ctx context.Context) bool

@@ -12,24 +12,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/skill"
 )
 
-// Transcript records model-visible conversation events.
-type Transcript interface {
-	// AppendMessage sanitizes and appends a user/assistant message event.
-	AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, typ agentkit.EventType, msg agentkit.ModelMessage) error
-	// AppendToolCall sanitizes and appends a tool call event.
-	AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, call agentkit.ToolCall) error
-	// AppendToolResult appends a tool result event.
-	AppendToolResult(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, result agentkit.ToolResult) error
-}
-
-// Lifecycle records turn and step bracketing.
-type Lifecycle interface {
-	AppendTurnStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID) error
-	AppendTurnEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data TurnEndData) error
-	AppendStepStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error
-	AppendStepEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error
-}
-
 // RunLog records agent-run control events (todo, finish, continue, usage).
 type RunLog interface {
 	AppendTodoUpdate(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, items []Todo) error
@@ -60,8 +42,16 @@ type Skills interface {
 // Conversation is transcript plus turn bracketing, used by remote agents that
 // persist inbound/outbound messages without owning the local tool loop.
 type Conversation interface {
-	Transcript
-	Lifecycle
+	// AppendMessage sanitizes and appends a user/assistant message event.
+	AppendMessage(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, typ agentkit.EventType, msg agentkit.ModelMessage) error
+	// AppendToolCall sanitizes and appends a tool call event.
+	AppendToolCall(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, call agentkit.ToolCall) error
+	// AppendToolResult appends a tool result event.
+	AppendToolResult(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, result agentkit.ToolResult) error
+	AppendTurnStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID) error
+	AppendTurnEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, data TurnEndData) error
+	AppendStepStart(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error
+	AppendStepEnd(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, step int) error
 }
 
 // Events is the full session event log write contract. The standard
@@ -69,8 +59,7 @@ type Conversation interface {
 // Plugins should depend on the smallest interface they need; the same
 // session.events instance satisfies all of them.
 type Events interface {
-	Transcript
-	Lifecycle
+	Conversation
 	RunLog
 	Compaction
 	Skills

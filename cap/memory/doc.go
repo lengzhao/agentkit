@@ -1,6 +1,6 @@
 // Package memory defines injectable boundaries for memory/default and related plugins.
 //
-// memory/default (*plugins/memory.Service) implements Service, Tool, Capture, Reader, Staging,
+// memory/default (*plugins/memory.Service) implements Service, Tool, Capture, Reader,
 // and CommitObserverRegistrar (learning/default registers CommitObserver in New).
 //
 // tool/memory requires cap/memory.Tool (typically memory.default).

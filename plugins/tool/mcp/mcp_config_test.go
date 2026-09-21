@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
 )
 
 func TestParseConfigFile(t *testing.T) {
@@ -127,7 +126,7 @@ func TestResolveMCPFiles(t *testing.T) {
 
 	got = resolveMCPFiles(MCPConfig{
 		EnableLocal: true,
-		Files:     []string{"local:mcp.json", "global:mcp.json"},
+		Files:       []string{"local:mcp.json", "global:mcp.json"},
 	})
 	if len(got) != 2 {
 		t.Fatalf("explicit with enableLocal = %v", got)

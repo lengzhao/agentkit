@@ -12,8 +12,7 @@ import (
 
 // events is the standard capsession.Events implementation: stateless, all
 // conventions applied at call time from the request context. The same value
-// satisfies Transcript, Lifecycle, RunLog, Compaction, Skills, and
-// Conversation.
+// satisfies Conversation, RunLog, Compaction, and Skills.
 type events struct{}
 
 // Default is the shared stateless instance. Runtime code appends contract
