@@ -15,6 +15,7 @@ import (
 	plugincompaction "github.com/lengzhao/agentkit/plugins/compaction"
 	pluginhook "github.com/lengzhao/agentkit/plugins/hook"
 	"github.com/lengzhao/agentkit/runtime/agent"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/hooks"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
@@ -117,9 +118,9 @@ func mustSummaryService(t *testing.T, keepRecentTokens int, summaryLLM agentkit.
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := plugincompaction.NewSummary(plugincompaction.SummaryConfig{
+	svc, err := rtcompaction.NewSummary(rtcompaction.SummaryConfig{
 		KeepRecentTokens: keepRecentTokens,
-	}, plugincompaction.SummaryDeps{LLM: summaryLLM, SessionEvents: events})
+	}, rtcompaction.SummaryDeps{LLM: summaryLLM, SessionEvents: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +129,7 @@ func mustSummaryService(t *testing.T, keepRecentTokens int, summaryLLM agentkit.
 
 func mustPruneService(t *testing.T, maxBytes int) capcompaction.Service {
 	t.Helper()
-	svc, err := plugincompaction.NewPrune(plugincompaction.PruneConfig{MaxToolResultBytes: maxBytes})
+	svc, err := rtcompaction.NewPrune(rtcompaction.PruneConfig{MaxToolResultBytes: maxBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,15 +396,19 @@ func TestSmokeBeforeStepTokenLimitCompacts(t *testing.T) {
 	// tokens estimated) and lands the cut on a user message, so the summary
 	// path is a single call (no split turn).
 	summary := mustSummaryService(t, 100, summaryLLM)
+	chain, err := rtcompaction.NewChain(struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	gated, err := plugincompaction.NewTokenLimit(plugincompaction.TokenLimitConfig{
 		MaxTokens: 100, // seeded history estimates ~300 tokens
-	}, plugincompaction.TokenLimitDeps{Services: []capcompaction.Service{summary}})
+	}, plugincompaction.TokenLimitDeps{Chain: chain, Services: []capcompaction.Service{summary}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	provider, err := pluginhook.New(pluginhook.Config{}, pluginhook.Deps{
+		Compaction:   gated,
 		SessionStore: store,
-		Services:     []capcompaction.Service{gated},
 	})
 	if err != nil {
 		t.Fatal(err)

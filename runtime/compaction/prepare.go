@@ -42,12 +42,12 @@ func Prepare(indexed []capscompaction.IndexedMessage, boundaryStart int, keepRec
 	return &capscompaction.Preparation{
 		FirstKeptSeq:        firstKeptSeq,
 		FirstKeptIndex:      cut.FirstKeptIndex,
-		MessagesToSummarize: toSummarize,
-		TurnPrefixMessages:  turnPrefix,
-		RetainedTail:        retained,
-		PreviousSummary:     previousSummary,
-		TokensBefore:        tokensBefore,
-		IsSplitTurn:         cut.IsSplitTurn,
+		MessagesToSummarize:   toSummarize,
+		TurnPrefixMessages:    turnPrefix,
+		RetainedTail:          retained,
+		PreviousSummary:       previousSummary,
+		TokensBefore:          tokensBefore,
+		IsSplitTurn:           cut.IsSplitTurn,
 	}
 }
 

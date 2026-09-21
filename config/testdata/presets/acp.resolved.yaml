@@ -51,8 +51,11 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
+compaction.chain.default:
+    use: compaction/chain
 compaction.pipeline.default:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.default
@@ -80,6 +83,7 @@ compaction.token-limit.default:
         contextWindow: 1048576
         triggerRatio: 0.92
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
@@ -129,8 +133,7 @@ hook.before-step.default:
     config:
         contributeCommands: true
     deps:
-        services:
-            - compaction.pipeline.default
+        compaction: compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:

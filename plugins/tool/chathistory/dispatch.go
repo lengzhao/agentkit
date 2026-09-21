@@ -10,7 +10,7 @@ import (
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 )
 
-func Dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
+func dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
 	if deps.router == nil {
 		return ChatHistoryOutput{}, fmt.Errorf("tool/chat-history requires history dependency")
 	}

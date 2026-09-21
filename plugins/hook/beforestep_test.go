@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
-	"github.com/lengzhao/agentkit/plugins/compaction"
 	"github.com/lengzhao/agentkit/plugins/hook"
+	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -42,13 +41,13 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prune, err := compaction.NewPrune(compaction.PruneConfig{MaxToolResultBytes: 20})
+	prune, err := rtcompaction.NewPrune(rtcompaction.PruneConfig{MaxToolResultBytes: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
 	provider, err := hook.New(hook.Config{ContributeCommands: true}, hook.Deps{
+		Compaction:   prune,
 		SessionStore: store,
-		Services:     []capcompaction.Service{prune},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +66,7 @@ func TestCompactCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "applied 1 service") {
+	if !strings.Contains(out, "compaction: applied") {
 		t.Fatalf("unexpected output: %q", out)
 	}
 }

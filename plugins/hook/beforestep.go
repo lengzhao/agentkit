@@ -8,7 +8,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
 	capsession "github.com/lengzhao/agentkit/cap/session"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/pluginkit"
 )
@@ -20,13 +19,14 @@ type Config struct {
 }
 
 type Deps struct {
-	Services     []compaction.Service  `json:"services"`
+	// Compaction is typically compaction.pipeline.* (chain + inner services wired in config).
+	Compaction   compaction.Service    `json:"compaction"`
 	SessionStore agentkit.SessionStore `json:"sessionStore"`
 }
 
 type Provider struct {
 	contributeCommands bool
-	services           []compaction.Service
+	compaction         compaction.Service
 	sessionStore       agentkit.SessionStore
 }
 
@@ -38,14 +38,17 @@ func init() {
 // New registers hook/before-step: Run compaction services before each model step; contributes /compact.
 //
 // Best practices:
-//   - Attach the same services here and to the agent's compaction dep: this hook covers the periodic check, the agent covers overflow recovery.
+//   - Point compaction at the same pipeline instance the agent uses for overflow recovery.
 func New(cfg Config, deps Deps) (agentkit.HookProvider, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/before-step requires sessionStore dependency")
 	}
+	if deps.Compaction == nil {
+		return nil, fmt.Errorf("hook/before-step requires compaction dependency")
+	}
 	return &Provider{
 		contributeCommands: cfg.ContributeCommands,
-		services:           deps.Services,
+		compaction:         deps.Compaction,
 		sessionStore:       deps.SessionStore,
 	}, nil
 }
@@ -57,18 +60,18 @@ func (p *Provider) Hooks() []agentkit.Hook {
 }
 
 func (p *Provider) Commands() []agentkit.Command {
-	if !p.contributeCommands || len(p.services) == 0 {
+	if !p.contributeCommands || p.compaction == nil {
 		return nil
 	}
 	return []agentkit.Command{compactCommand{
 		sessionStore: p.sessionStore,
-		services:     p.services,
+		compaction:   p.compaction,
 	}}
 }
 
 type compactCommand struct {
 	sessionStore agentkit.SessionStore
-	services     []compaction.Service
+	compaction   compaction.Service
 }
 
 func (compactCommand) Name() string        { return "compact" }
@@ -96,7 +99,7 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if err != nil {
 		return "", err
 	}
-	_, applied, err := rtcompaction.ApplyAll(ctx, c.services, compaction.Request{
+	result, err := c.compaction.Compact(ctx, compaction.Request{
 		SessionID: sessionID,
 		AgentID:   agentID,
 		Session:   sess,
@@ -106,10 +109,10 @@ func (c compactCommand) CommandExec(ctx context.Context, args string) (string, e
 	if err != nil {
 		return "", err
 	}
-	if applied == 0 {
+	if !result.Applied {
 		return "compaction: nothing to compact", nil
 	}
-	return fmt.Sprintf("compaction: applied %d service(s)", applied), nil
+	return "compaction: applied", nil
 }
 
 func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) error {
@@ -124,7 +127,7 @@ func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) er
 		}
 	}
 
-	messages, _, err := rtcompaction.ApplyAll(ctx, p.services, compaction.Request{
+	result, err := p.compaction.Compact(ctx, compaction.Request{
 		SessionID: sessionID,
 		AgentID:   agentID,
 		Session:   sess,
@@ -133,6 +136,8 @@ func (p *Provider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) er
 	if err != nil {
 		return err
 	}
-	step.Messages = messages
+	if len(result.Messages) > 0 {
+		step.Messages = result.Messages
+	}
 	return nil
 }

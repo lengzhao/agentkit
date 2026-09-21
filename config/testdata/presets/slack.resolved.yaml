@@ -74,14 +74,18 @@ commands.default:
     deps:
         sessionCommands: sessionCommands.default
     use: commands/registry
+compaction.chain.default:
+    use: compaction/chain
 compaction.pipeline.default:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.default
     use: compaction/pipeline
 compaction.pipeline.worker:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.worker
@@ -109,6 +113,7 @@ compaction.token-limit.default:
         contextWindow: 1048576
         triggerRatio: 0.92
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
@@ -118,6 +123,7 @@ compaction.token-limit.worker:
         contextWindow: 1048576
         triggerRatio: 0.7
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
@@ -167,14 +173,12 @@ hook.before-step.default:
     config:
         contributeCommands: true
     deps:
-        services:
-            - compaction.pipeline.default
+        compaction: compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.before-step.worker:
     deps:
-        services:
-            - compaction.pipeline.worker
+        compaction: compaction.pipeline.worker
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:

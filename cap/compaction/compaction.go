@@ -10,6 +10,11 @@ type Service interface {
 	Compact(context.Context, Request) (Result, error)
 }
 
+// Chain runs an ordered list of compaction services (orchestration, not a compaction pass itself).
+type Chain interface {
+	ApplyAll(context.Context, []Service, Request) ([]agentkit.ModelMessage, int, error)
+}
+
 type Request struct {
 	SessionID agentkit.SessionID
 	AgentID   agentkit.AgentID

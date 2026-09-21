@@ -10,7 +10,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
 	capsession "github.com/lengzhao/agentkit/cap/session"
-	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
 	"github.com/lengzhao/agentkit/runtime/llm"
 )
 
@@ -106,8 +105,8 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 		previousSummary = prevData.PreviousSummaryText()
 	}
 
-	tokensBefore := rtcompaction.EstimateMessagesTokens(req.Messages)
-	prep := rtcompaction.Prepare(indexed, boundaryStart, s.cfg.KeepRecentTokens, previousSummary, tokensBefore)
+	tokensBefore := EstimateMessagesTokens(req.Messages)
+	prep := Prepare(indexed, boundaryStart, s.cfg.KeepRecentTokens, previousSummary, tokensBefore)
 	if prep == nil {
 		if req.Force {
 			// Include a previous summary (indexed[0]) so an oversized checkpoint
@@ -121,13 +120,13 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 	// post-compaction history oversized; bound it in the model-visible view.
 	// Attachments whose recorded size exceeds the budget are neutralized into
 	// text hints so hydration cannot re-inflate the retained tail.
-	if bounded, ok := rtcompaction.BoundOversizedIndexedMessages(indexed[prep.FirstKeptIndex:], s.maxRetainedChars()); ok {
+	if bounded, ok := BoundOversizedIndexedMessages(indexed[prep.FirstKeptIndex:], s.maxRetainedChars()); ok {
 		prep.RetainedTail = bounded
 	}
 
-	policy := rtcompaction.ResolveRetrySettings(s.cfg.Retry)
+	policy := ResolveRetrySettings(s.cfg.Retry)
 	var summaryText string
-	err = rtcompaction.RetryCall(ctx, policy, llm.IsRetryableError, func() error {
+	err = RetryCall(ctx, policy, llm.IsRetryableError, func() error {
 		text, err := s.summarizePrepared(ctx, prep)
 		if err != nil {
 			return err
@@ -200,7 +199,7 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 	if boundaryStart > len(indexed) {
 		boundaryStart = len(indexed)
 	}
-	bounded, ok := rtcompaction.FitIndexedMessagesToBudget(indexed, s.maxRetainedChars())
+	bounded, ok := FitIndexedMessagesToBudget(indexed, s.maxRetainedChars())
 	if !ok {
 		slog.Warn("forced compaction did not apply: nothing to summarize and no oversized retained content",
 			"session_id", req.SessionID,
@@ -298,7 +297,7 @@ func (s *summaryService) summarizePrepared(ctx context.Context, prep *capcompact
 }
 
 func (s *summaryService) summarizeOnce(ctx context.Context, messages []agentkit.ModelMessage, previousSummary string, turnPrefix bool) (string, error) {
-	conversationText := rtcompaction.SerializeConversationWithBudget(messages, s.maxInputChars())
+	conversationText := SerializeConversationWithBudget(messages, s.maxInputChars())
 	prompt := s.cfg.SummaryPrompt
 	if previousSummary != "" {
 		prompt = updateSummarizationPrompt
@@ -357,7 +356,7 @@ func (s *summaryService) boundSummaryText(text string) string {
 	if reserveChars <= 0 || len(text) <= reserveChars {
 		return text
 	}
-	msgs, _ := rtcompaction.TruncateOversizedMessageTexts([]agentkit.ModelMessage{{
+	msgs, _ := TruncateOversizedMessageTexts([]agentkit.ModelMessage{{
 		Role:    "user",
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	}}, reserveChars)

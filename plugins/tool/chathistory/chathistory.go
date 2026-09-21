@@ -49,7 +49,7 @@ func NewChatHistory(cfg ChatHistoryConfig, deps ChatHistoryDeps) (agentkit.Tool,
 	}
 	rt := runtimeDeps{router: rtchathistory.RouterFromPlatform(deps.History)}
 	return agentkit.NewTool[ChatHistoryInput, ChatHistoryOutput]("chat_history", func(ctx context.Context, input ChatHistoryInput) (ChatHistoryOutput, error) {
-		return Dispatch(ctx, rt, cfg, input)
+		return dispatch(ctx, rt, cfg, input)
 	}).
 		Description("Read recent chat history from the current conversation or a specified session. Use when you need context from messages the bot has not processed yet, such as earlier group discussion.").
 		Build()

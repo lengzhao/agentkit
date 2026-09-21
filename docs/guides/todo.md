@@ -65,18 +65,18 @@ flowchart TB
 
 ### A2 cap 已有接口、插件仍 import 构造 / 助手
 
-下列 cap 包已存在，缺的是**插件停止 new 实现、改为注入接口**（必要时补齐 cap 方法面）。
+下列 cap 包已存在。被其他 plugin 非测试源码 import 的，停止 new 实现、改为注入接口；没被其他 plugin import 的，只把该 plugin 里包外无引用的公共函数改小写。
 
-- [ ] **`cap/compaction`**：`plugins/hook`（`NewPrune` / `PruneConfig`）、`plugins/compaction`（pipeline / tokenlimit 调 `runtime/compaction`）
-- [ ] **`cap/chathistory`**：`plugins/tool/chathistory`（`NewChatHistory`）
-- [ ] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell`（`Store` / `Secret` / `EnvPairResolver` 的 runtime 实现类型）
-- [ ] **`cap/memory`**：`plugins/memory`、`learning`、`prompt`（`Service` / `LoadEntries` / `ResolveRel` / `PromptBody`）；`learning` 的 `BackgroundReviewRequiresStaging` 一并收口
-- [ ] **`cap/skill`**：`plugins/skill`、`tool/skill`（`Registry` / `Descriptor` / `Content`）
-- [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send`（路由 ID 等仍走 `runtime/delivery`）
-- [ ] **`cap/permission`**：`tool/askuser`、`agent/acpremote`（`Broker` / `Request` / `Result`）
-- [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize`（`BeginObservation` / `WithExporter` 等助手仍在 runtime）
-- [ ] **`cap/learning`**：`plugins/learning` 仍 import `runtime/learning`（`ReviewNudge*` / `TryConsumeReviewQuota` 等）
-- [ ] **`cap/acp`**：`agent/acpremote` 的 `runtime/acpclient`（`MCPServerNames` / `ToMCPServers`）评估并入现有 `cap/acp`
+- [x] **`cap/compaction`**：`plugins/hook`、`plugins/compaction` 均调 `runtime/compaction` → 注入
+- [x] **`cap/chathistory`**：仅 `tool/chathistory` → 公共函数改小写
+- [ ] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell` → 注入
+- [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`）
+- [ ] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
+- [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
+- [ ] **`cap/permission`**：`tool/askuser`、`agent/acpremote` → 注入
+- [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize` → 注入
+- [ ] **`cap/learning`**：仅 `plugins/learning` → 公共函数改小写
+- [ ] **`cap/acp`**：仅 `agent/acpremote` → 公共函数改小写
 - [x] **`cap/filesystem`**：`Service`（Read/Write/Append/Stat/List/Grep/Find）+ Grep/Find DTO + `WriteOption`（`WithPerm`）+ `DirEntry/Info.ModTime`；not-found 约定 `errors.Is(err, os.ErrNotExist)`，Write 原子（local=temp+rename），`global:`/`local:` 前缀委托 workspace 双根路由。`filesystem/local` 在 `runtime/filesystem`（gitignore 匹配留在此）。**全部状态插件经 `deps.fs` 注入**：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials（含 `/env add` 0600）、mcp、openapi（含 local→global 复制）、settings、agent/acp-remote（session bind）接 `filesystem.local.state`（root="."）；prompt/agents-md、tool/send（绝对路径）接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP fs 协议、shell 类插件的子进程 cwd。S3/远程另注册 `filesystem/<name>` 即可。
 
 ### A3 契约尚未成型

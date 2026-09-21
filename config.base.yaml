@@ -509,16 +509,14 @@ hook.before-step.default:
   config:
     contributeCommands: true
   deps:
+    compaction: compaction.pipeline.default
     sessionStore: sessionStore.default
-    services:
-      - compaction.pipeline.default
 
 hook.before-step.worker:
   use: hook/before-step
   deps:
+    compaction: compaction.pipeline.worker
     sessionStore: sessionStore.default
-    services:
-      - compaction.pipeline.worker
 
 hook.turn-continue.default:
   use: hook/turn-continue
@@ -530,9 +528,13 @@ hook.turn-continue.default:
   deps:
     sessionStore: sessionStore.default
 
+compaction.chain.default:
+  use: compaction/chain
+
 compaction.pipeline.default:
   use: compaction/pipeline
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.prune.default
       - compaction.token-limit.default
@@ -540,6 +542,7 @@ compaction.pipeline.default:
 compaction.pipeline.worker:
   use: compaction/pipeline
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.prune.default
       - compaction.token-limit.worker
@@ -571,6 +574,7 @@ compaction.token-limit.default:
     triggerRatio: 0.92
     charsPerToken: 3
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.summary.default
 
@@ -581,6 +585,7 @@ compaction.token-limit.worker:
     triggerRatio: 0.7
     charsPerToken: 3
   deps:
+    chain: compaction.chain.default
     services:
       - compaction.summary.default
 
