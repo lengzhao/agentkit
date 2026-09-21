@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lengzhao/agentkit/cap/filesystem"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 )
 
 func noSpecLoader(rel string) ([]byte, error) {
@@ -492,8 +496,8 @@ func TestLoadAPIsPrecedence(t *testing.T) {
 	}
 
 	provider := &openapiProvider{
-		files:     []string{"api.json", "global:api.json", "global:extra-api.json"},
-		workspace: &testWorkspace{root: dir},
+		files: []string{"api.json", "global:api.json", "global:extra-api.json"},
+		fs:    testFS(t, dir),
 	}
 	apis, err := provider.loadAPIs(context.Background())
 	if err != nil {
@@ -512,6 +516,22 @@ func TestLoadAPIsPrecedence(t *testing.T) {
 	if byName["extra"] != "https://c.example.com" {
 		t.Fatalf("extra baseUrl = %q", byName["extra"])
 	}
+}
+
+// testFS builds a filesystem/local over the test workspace (root "." resolves
+// to the workspace root; scoped paths use the workspace's global:/local: mapping).
+func testFS(t *testing.T, dir string) filesystem.Service {
+	t.Helper()
+	return testFSOver(t, &testWorkspace{root: dir})
+}
+
+func testFSOver(t *testing.T, ws workspace.Service) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
 }
 
 type testWorkspace struct {

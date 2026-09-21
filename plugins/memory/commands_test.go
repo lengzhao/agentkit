@@ -18,7 +18,7 @@ func TestMemoryCommandAddAndShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Config{}, Deps{Workspace: ws})
+	svc, err := New(Config{}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestMemoryAddWritesLedgerNotSourceInMarkdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Config{}, Deps{Workspace: ws})
+	svc, err := New(Config{}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestMemoryAddWritesLedgerNotSourceInMarkdown(t *testing.T) {
 func TestPolicyMemoryApproveAndAuto(t *testing.T) {
 	dir := t.TempDir()
 	ws := rtworkspace.Static(dir)
-	svc, err := New(Config{Review: ReviewConfig{}}, Deps{Workspace: ws})
+	svc, err := New(Config{Review: ReviewConfig{}}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}

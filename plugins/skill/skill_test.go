@@ -6,18 +6,20 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/skill"
 	skillplugin "github.com/lengzhao/agentkit/plugins/skill"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
-type staticWorkspace map[string]string
-
-func (w staticWorkspace) Resolve(_ context.Context, rel string) (string, error) {
-	dir, ok := w[rel]
-	if !ok {
-		return "", os.ErrNotExist
+func testFS(t *testing.T, dir string) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
 	}
-	return dir, nil
+	return fs
 }
 
 func TestFilesystemRegistryDiscoversBundleSkills(t *testing.T) {
@@ -38,9 +40,9 @@ func TestFilesystemRegistryDiscoversBundleSkills(t *testing.T) {
 	writeSkill(t, filepath.Join(mismatchDir, "SKILL.md"), "---\nname: other-name\ndescription: mismatch\n---\n\nBody.\n")
 
 	reg, err := skillplugin.New(skillplugin.Config{
-		Dirs: []string{"local:skills"},
+		Dirs: []string{"."},
 	}, skillplugin.Deps{
-		Workspace: staticWorkspace{"local:skills": root},
+		FS: testFS(t, root),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +68,7 @@ func TestFilesystemRegistryDiscoversBundleSkills(t *testing.T) {
 	if content.Body != "Bundle body." {
 		t.Fatalf("body = %q", content.Body)
 	}
-	if content.Path != bundleDir {
+	if content.Path != "./bundle-skill" {
 		t.Fatalf("path = %q", content.Path)
 	}
 }

@@ -14,7 +14,17 @@ func TestNewResolvesTokenRefs(t *testing.T) {
 	t.Setenv("SLACK_APP_TOKEN", "xapp-test-app")
 
 	graph := map[string]any{
-		"credentials": map[string]any{"use": "credentials/env"},
+		"credentials": map[string]any{
+		"use": "credentials/env",
+		"deps": map[string]any{"fs": map[string]any{
+			"use":    "filesystem/local",
+			"config": map[string]any{"root": ".", "unrestricted": true},
+			"deps": map[string]any{"workspace": map[string]any{
+				"use":    "workspace/default",
+				"config": map[string]any{"root": t.TempDir()},
+			}},
+		}},
+	},
 		"slack": map[string]any{
 			"use": "platform/slack",
 			"config": map[string]any{

@@ -17,7 +17,7 @@ type Config struct {
 	Local string `json:"local"`
 	// Scope is which root an unprefixed path resolves against: global or local.
 	Scope string `json:"scope"` // global | local
-	// WorkDir is the tenant-local agent work subtree (align with tool/fs-workspace root and shell workDir).
+	// WorkDir is the tenant-local agent work subtree (align with filesystem/local root and shell workDir).
 	WorkDir string `json:"workDir,omitempty"`
 	// UploadSubdir is the inbound upload folder under WorkDir (default upload).
 	UploadSubdir string `json:"uploadSubdir,omitempty"`

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	fsplugin "github.com/lengzhao/agentkit/plugins/tool/fs"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 func TestReadImageReturnsMetadataOnly(t *testing.T) {

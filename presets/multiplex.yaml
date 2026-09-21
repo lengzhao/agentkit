@@ -139,12 +139,19 @@ sessionStore.default:
   deps:
     workspace: workspace.default
 
+filesystem.local.default:
+  use: filesystem/local
+  config:
+    root: .
+  deps:
+    workspace: workspace.default
+
 tool.fs-workspace.default:
   use: tool/fs-workspace
   config:
-    root: .
     maxBytes: 40960
   deps:
+    fs: filesystem.local.default
     workspace: workspace.default
 
 tool.shell-bash.default:

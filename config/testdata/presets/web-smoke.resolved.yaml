@@ -38,6 +38,8 @@ agent.cursor.default:
         id: cursor
         releaseSubprocessAfterTurn: true
     deps:
+        fs: filesystem.local.state
+        sessionEvents: session.events
         sessionStore: sessionStore.default
         workspace: workspace.default
     use: agent/acp-remote
@@ -99,6 +101,7 @@ compaction.summary.default:
         summaryModel: gpt-5.4
     deps:
         llm: llm.fallback
+        sessionEvents: session.events
     use: compaction/summary
 compaction.token-limit.default:
     config:
@@ -125,15 +128,28 @@ credentials.default:
         encryptedFile: global:secrets.enc.json
     deps:
         configfile: configfile.default
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
         configfile: configfile.default
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: credentials/integrations
+filesystem.local.default:
+    config:
+        root: work
+        unrestricted: true
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
+filesystem.local.state:
+    config:
+        root: .
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
 hook.background-review.default:
     config:
         maxDigestMessages: 24
@@ -200,6 +216,7 @@ learning.default:
             mode: propose
     deps:
         engine: schedule.engine
+        fs: filesystem.local.state
         memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -284,14 +301,14 @@ mcp.default:
         idleTimeoutSeconds: 300
     deps:
         credentials: credentials.integrations
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: tool/mcp
 memory.default:
     config:
         review:
             writeApproval: false
     deps:
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: memory/default
 openapi.default:
     config:
@@ -299,7 +316,7 @@ openapi.default:
             - global:api.json
     deps:
         credentials: credentials.integrations
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: tool/openapi
 platform.default:
     config:
@@ -311,6 +328,7 @@ policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: prompt/section/agents-md
 prompt.default:
@@ -447,10 +465,12 @@ schedule.default:
         path: global:schedule.json
     deps:
         engine: schedule.engine
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: schedule/multi
 schedule.engine:
     use: schedule/engine
+session.events:
+    use: session/events
 sessionCommands.default:
     deps:
         sessionStore: sessionStore.default
@@ -478,7 +498,7 @@ skills.default:
             - local:skills
             - global:skills
     deps:
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: skill/filesystem
 subagent.default:
     deps:
@@ -532,28 +552,27 @@ tool.chat-history.default:
     use: tool/chat-history
 tool.finish.default:
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
     use: tool/finish
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: work
-        unrestricted: true
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
 tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: work
         tools:
             - read
             - grep
             - find
             - ls
-        unrestricted: true
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
 tool.memory.default:
@@ -576,6 +595,7 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
+        fs: filesystem.local.default
         sender: platform.default
         workspace: workspace.default
     use: tool/send
@@ -593,6 +613,7 @@ tool.shell-bash.default:
     use: tool/shell-bash
 tool.skill.default:
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
         skills: skills.default
     use: tool/skill
@@ -602,6 +623,7 @@ tool.subagent.default:
     use: tool/subagent
 tool.todo.default:
     deps:
+        sessionEvents: session.events
         sessionStore: sessionStore.default
     use: tool/todo
 tool.web-fetch-http.default:

@@ -57,5 +57,5 @@ func (s *Service) appendMemoryLedger(ctx context.Context, ev rtmem.MemoryLedgerE
 	if err != nil {
 		return
 	}
-	_ = ledger.Append(ev)
+	_ = ledger.Append(ctx, ev)
 }

@@ -34,6 +34,7 @@ func TestCopyLocalToGlobal(t *testing.T) {
 	t.Parallel()
 
 	svc := fakeService{global: t.TempDir(), local: t.TempDir()}
+	fs := testFSOver(t, svc)
 	ctx := context.Background()
 
 	localAbs, err := svc.Resolve(ctx, "local:api/pet.json")
@@ -47,7 +48,7 @@ func TestCopyLocalToGlobal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := copyLocalToGlobal(ctx, svc, "local:api/pet.json")
+	got, err := copyLocalToGlobal(ctx, fs, "local:api/pet.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +73,7 @@ func TestCopyLocalToGlobalBarePath(t *testing.T) {
 	t.Parallel()
 
 	svc := fakeService{global: t.TempDir(), local: t.TempDir()}
+	fs := testFSOver(t, svc)
 	ctx := context.Background()
 
 	localAbs, err := svc.Resolve(ctx, "local:api/pet.json")
@@ -85,7 +87,7 @@ func TestCopyLocalToGlobalBarePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := copyLocalToGlobal(ctx, svc, "api/pet.json")
+	got, err := copyLocalToGlobal(ctx, fs, "api/pet.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +100,8 @@ func TestCopyLocalToGlobalAlreadyGlobal(t *testing.T) {
 	t.Parallel()
 
 	svc := fakeService{global: t.TempDir(), local: t.TempDir()}
-	got, err := copyLocalToGlobal(context.Background(), svc, "global:api/pet.json")
+	fs := testFSOver(t, svc)
+	got, err := copyLocalToGlobal(context.Background(), fs, "global:api/pet.json")
 	if err != nil {
 		t.Fatal(err)
 	}

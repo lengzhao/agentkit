@@ -1,12 +1,13 @@
 package dreaming
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // SweepResult summarizes one dreaming run.
@@ -21,9 +22,10 @@ type SweepResult struct {
 }
 
 // Run executes Light → REM → Deep and appends Dream Diary blocks.
-func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sessionsDir string, now time.Time) (*SweepResult, error) {
+// deepReportDir and sessionsDir are filesystem.Service-relative (via stateStore.FS).
+func Run(ctx context.Context, cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sessionsDir string, now time.Time) (*SweepResult, error) {
 	cfg = cfg.Normalized()
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -36,13 +38,13 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sess
 
 	res := &SweepResult{}
 	if sessionsDir != "" {
-		sc, sig, err := IngestSessions(sessionsDir, stateStore, cfg.SessionScanLimit, now)
+		sc, sig, err := IngestSessions(ctx, stateStore.FS, sessionsDir, stateStore, cfg.SessionScanLimit, now)
 		if err != nil {
 			return nil, err
 		}
 		res.SessionsIngested = sc
 		res.SignalsIngested = sig
-		st, _ = stateStore.Load()
+		st, _ = stateStore.Load(ctx)
 	}
 
 	// Light
@@ -56,7 +58,7 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sess
 		fmt.Sprintf("staged %d candidates", staged),
 	}
 	if diary != nil {
-		if err := diary.AppendPhase("Light Sleep", now, lightLines); err != nil {
+		if err := diary.AppendPhase(ctx, "Light Sleep", now, lightLines); err != nil {
 			return res, err
 		}
 	}
@@ -72,7 +74,7 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sess
 		remLines = []string{"no strong themes this sweep"}
 	}
 	if diary != nil {
-		if err := diary.AppendPhase("REM Sleep", now, remLines); err != nil {
+		if err := diary.AppendPhase(ctx, "REM Sleep", now, remLines); err != nil {
 			return res, err
 		}
 	}
@@ -95,7 +97,7 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sess
 	res.Staged = staged
 
 	st.LastSweep = now
-	if err := stateStore.Save(st); err != nil {
+	if err := stateStore.Save(ctx, st); err != nil {
 		return res, err
 	}
 
@@ -104,12 +106,12 @@ func Run(cfg Config, stateStore *Store, diary *Diary, deepReportDir string, sess
 		fmt.Sprintf("skipped %d below threshold", skipped),
 	}
 	if diary != nil {
-		if err := diary.AppendPhase("Deep Sleep", now, deepLines); err != nil {
+		if err := diary.AppendPhase(ctx, "Deep Sleep", now, deepLines); err != nil {
 			return res, err
 		}
 	}
 	if deepReportDir != "" {
-		if err := writeDeepReport(deepReportDir, now, eligibleTexts(scored, cfg), skipped); err != nil {
+		if err := writeDeepReport(ctx, stateStore.FS, deepReportDir, now, eligibleTexts(scored, cfg), skipped); err != nil {
 			return res, err
 		}
 	}
@@ -190,11 +192,8 @@ func eligibleTexts(scored []scored, cfg Config) []string {
 	return out
 }
 
-func writeDeepReport(dir string, now time.Time, lines []string, skipped int) error {
-	path := filepath.Join(dir, now.UTC().Format("2006-01-02")+".md")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
+func writeDeepReport(ctx context.Context, fs filesystem.Service, dir string, now time.Time, lines []string, skipped int) error {
+	path := strings.TrimSuffix(dir, "/") + "/" + now.UTC().Format("2006-01-02") + ".md"
 	var b strings.Builder
 	b.WriteString("# Deep Sleep Report\n\n")
 	b.WriteString(fmt.Sprintf("eligible for review: %d\nskipped: %d\n\n", len(lines), skipped))
@@ -203,7 +202,7 @@ func writeDeepReport(dir string, now time.Time, lines []string, skipped int) err
 		b.WriteString(p)
 		b.WriteByte('\n')
 	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return fs.Write(ctx, path, []byte(b.String()))
 }
 
 // FormatStatus renders dreaming state for /learn dream status.

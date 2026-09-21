@@ -13,7 +13,7 @@ func (s *Service) applyMemoryAdd(ctx context.Context, text, source string) (*rtm
 	if err != nil {
 		return nil, rtmem.MemoryAddResult{}, nil, err
 	}
-	addRes, err := store.Add(text)
+	addRes, err := store.Add(ctx, text)
 	if err != nil {
 		return store, rtmem.MemoryAddResult{}, nil, err
 	}
@@ -36,7 +36,7 @@ func (s *Service) addMemory(ctx context.Context, text, source string) (string, e
 	if commitErr != nil {
 		warning = fmt.Sprintf("\nwarning: post-commit hook failed: %v", commitErr)
 	}
-	entries, err := store.Load()
+	entries, err := store.Load(ctx)
 	if err != nil {
 		return "", err
 	}

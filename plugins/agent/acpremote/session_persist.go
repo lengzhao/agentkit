@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // defaultBindDir is the tenant-relative dir holding ACP session resume binds.
@@ -34,7 +34,7 @@ func acpSessionBindPath(bindDir string, sessionID agentkit.SessionID, agentID ag
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(bindDir, sessName, "acp-session."+agentName+".json"), nil
+	return strings.TrimSuffix(bindDir, "/") + "/" + sessName + "/acp-session." + agentName + ".json", nil
 }
 
 func safeNameForFile(raw string) (string, error) {
@@ -56,8 +56,8 @@ func safeNameForFile(raw string) (string, error) {
 	return b.String(), nil
 }
 
-func loadACPSessionBind(path string) (acpSessionBind, bool, error) {
-	data, err := os.ReadFile(path)
+func loadACPSessionBind(ctx context.Context, fs filesystem.Service, path string) (acpSessionBind, bool, error) {
+	data, err := fs.Read(ctx, path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return acpSessionBind{}, false, nil
@@ -74,15 +74,12 @@ func loadACPSessionBind(path string) (acpSessionBind, bool, error) {
 	return bind, true, nil
 }
 
-func saveACPSessionBind(path string, bind acpSessionBind) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
+func saveACPSessionBind(ctx context.Context, fs filesystem.Service, path string, bind acpSessionBind) error {
 	raw, err := json.Marshal(bind)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o644)
+	return fs.Write(ctx, path, raw)
 }
 
 func priorMessages(messages []agentkit.ModelMessage) []agentkit.ModelMessage {

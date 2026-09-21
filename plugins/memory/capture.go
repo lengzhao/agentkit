@@ -23,7 +23,7 @@ func (s *Service) CaptureMemoryReplace(ctx context.Context, oldText, content, so
 	if err != nil {
 		return "", err
 	}
-	usage, _ := memoryToolSnapshot(store)
+	usage, _ := memoryToolSnapshot(ctx, store)
 	return fmt.Sprintf("memory entry replaced [%s]", usage), nil
 }
 

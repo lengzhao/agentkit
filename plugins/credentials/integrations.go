@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -197,16 +198,8 @@ func (s *integrationStore) ensureManifestFresh(ctx context.Context) error {
 	return s.reloadManifest(ctx)
 }
 
-func (s *integrationStore) resolveManifestPath(ctx context.Context, rel string) (string, error) {
-	path := rel
-	if s.workspace != nil {
-		resolved, err := s.workspace.Resolve(ctx, rel)
-		if err != nil {
-			return "", fmt.Errorf("resolve manifest %q: %w", rel, err)
-		}
-		path = resolved
-	}
-	return path, nil
+func (s *integrationStore) resolveManifestPath(_ context.Context, rel string) (string, error) {
+	return rel, nil
 }
 
 func (s *integrationStore) manifestsMaxModTime(ctx context.Context) (int64, error) {
@@ -220,14 +213,14 @@ func (s *integrationStore) manifestsMaxModTime(ctx context.Context) (int64, erro
 		if err != nil {
 			return 0, err
 		}
-		info, err := os.Stat(path)
+		info, err := s.fs.Stat(ctx, path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return 0, fmt.Errorf("stat manifest %q: %w", path, err)
 		}
-		if mod := info.ModTime().UnixNano(); mod > maxMod {
+		if mod := info.ModTime.UnixNano(); mod > maxMod {
 			maxMod = mod
 		}
 	}
@@ -249,9 +242,9 @@ func (s *integrationStore) reloadManifest(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := s.fs.Read(ctx, path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return fmt.Errorf("read manifest %q: %w", path, err)

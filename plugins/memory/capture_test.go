@@ -16,7 +16,7 @@ func TestCaptureMemoryAddStagesWhenApprovePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	approve := true
-	mem, err := New(Config{Review: ReviewConfig{WriteApproval: &approve}}, Deps{Workspace: ws})
+	mem, err := New(Config{Review: ReviewConfig{WriteApproval: &approve}}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestCaptureMemoryRemoveStagesWhenApprovePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	approve := true
-	mem, err := New(Config{Review: ReviewConfig{WriteApproval: &approve}}, Deps{Workspace: ws})
+	mem, err := New(Config{Review: ReviewConfig{WriteApproval: &approve}}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestApproveStagedRemoveAndReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := New(Config{}, Deps{Workspace: ws})
+	mem, err := New(Config{}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestApproveLegacyEncodedStagedAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := New(Config{}, Deps{Workspace: ws})
+	mem, err := New(Config{}, Deps{FS: testFS(t, ws)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestApproveLegacyEncodedStagedAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Add(rtmem.StagedMemory{
+	if err := store.Add(context.Background(), rtmem.StagedMemory{
 		ID:      "legacy-1",
 		Content: "legacy add fact",
 		Source:  "background-review",

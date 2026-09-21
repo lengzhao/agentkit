@@ -151,9 +151,9 @@ func TestLoadServersPrecedence(t *testing.T) {
 	}
 
 	provider := &mcpProvider{
-		files: []string{".cursor/mcp.json", "global:mcp.json"},
-		workspace: &testWorkspace{root: dir},
-		pool: newClientPool(0),
+		files: []string{project, "global:mcp.json"},
+		fs:    testFSForWorkspace(t, &testWorkspace{root: dir}),
+		pool:  newClientPool(0),
 	}
 	servers, err := provider.loadServers(context.Background())
 	if err != nil {

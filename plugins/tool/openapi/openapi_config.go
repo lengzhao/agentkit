@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 type rawServer struct {
@@ -174,7 +174,7 @@ func buildAPIConfigSafe(name, path string, entry rawAPIEntry, loadSpec specLoade
 	return buildAPIConfig(name, path, entry, loadSpec)
 }
 
-func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service, raw []byte) ([]byte, error) {
+func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, fs filesystem.Service, raw []byte) ([]byte, error) {
 	var entry rawAPIEntry
 	if err := json.Unmarshal(raw, &entry); err != nil {
 		return nil, fmt.Errorf("parse api json: %w", err)
@@ -186,7 +186,7 @@ func rewriteAPIEntryPathsForGlobalAdd(ctx context.Context, ws workspace.Service,
 	if doc == "" {
 		return raw, nil
 	}
-	globalDoc, err := copyLocalToGlobal(ctx, ws, doc)
+	globalDoc, err := copyLocalToGlobal(ctx, fs, doc)
 	if err != nil {
 		return nil, err
 	}

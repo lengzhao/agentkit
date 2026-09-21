@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 )
@@ -22,7 +23,7 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	if deps.Sender == nil {
 		return fmt.Errorf("tool/send requires sender dependency")
 	}
-	parts, err := buildParts(ctx, input, deps.Workspace, root)
+	parts, err := buildParts(ctx, input, deps.Workspace, deps.FS, root)
 	if err != nil {
 		return err
 	}
@@ -103,7 +104,7 @@ func isChatID(token string) bool {
 	return hasUnderscore || (hasUpper && hasDigit)
 }
 
-func buildParts(ctx context.Context, input SendInput, ws workspace.Service, root string) ([]agentkit.ContentPart, error) {
+func buildParts(ctx context.Context, input SendInput, ws workspace.Service, fs filesystem.Service, root string) ([]agentkit.ContentPart, error) {
 	text := strings.TrimSpace(input.Text)
 	path := strings.TrimSpace(input.Path)
 	if text == "" && path == "" {
@@ -125,7 +126,11 @@ func buildParts(ctx context.Context, input SendInput, ws workspace.Service, root
 		if err != nil {
 			return nil, err
 		}
-		if _, err := os.Stat(url); err != nil {
+		if fs != nil {
+			if _, err := fs.Stat(ctx, url); err != nil {
+				return nil, fmt.Errorf("file not found: %s", path)
+			}
+		} else if _, err := os.Stat(url); err != nil {
 			return nil, fmt.Errorf("file not found: %s", path)
 		}
 		if isImagePath(path) {

@@ -1,12 +1,15 @@
 package dreaming
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // Signal is one grounded short-term memory candidate.
@@ -33,17 +36,19 @@ type State struct {
 }
 
 // Store reads and writes dreaming state.json.
+// Path is a filesystem.Service-relative path.
 type Store struct {
+	FS   filesystem.Service
 	Path string
 }
 
-func (s *Store) Load() (*State, error) {
+func (s *Store) Load(ctx context.Context) (*State, error) {
 	if s.Path == "" {
 		return nil, fmt.Errorf("dreaming state path is required")
 	}
-	data, err := os.ReadFile(s.Path)
+	data, err := s.FS.Read(ctx, s.Path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return &State{Enabled: true, ProcessedEvents: map[string]time.Time{}}, nil
 		}
 		return nil, err
@@ -61,19 +66,13 @@ func (s *Store) Load() (*State, error) {
 	return &st, nil
 }
 
-func (s *Store) Save(st *State) error {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
-		return err
-	}
+// Save writes state atomically (the filesystem backend guarantees atomic replace).
+func (s *Store) Save(ctx context.Context, st *State) error {
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := s.Path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.Path)
+	return s.FS.Write(ctx, s.Path, data)
 }
 
 // UpsertSignal merges one grounded signal into state.

@@ -1,19 +1,22 @@
 package dreaming
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // Diary appends human-readable phase blocks to DREAMS.md.
+// Path is a filesystem.Service-relative path.
 type Diary struct {
+	FS   filesystem.Service
 	Path string
 }
 
-func (d *Diary) AppendPhase(phase string, now time.Time, lines []string) error {
+func (d *Diary) AppendPhase(ctx context.Context, phase string, now time.Time, lines []string) error {
 	if d.Path == "" {
 		return fmt.Errorf("dream diary path is required")
 	}
@@ -29,19 +32,10 @@ func (d *Diary) AppendPhase(phase string, now time.Time, lines []string) error {
 		b.WriteByte('\n')
 	}
 	b.WriteByte('\n')
-	if err := os.MkdirAll(filepath.Dir(d.Path), 0o755); err != nil {
-		return err
+	// Prepend the document header when the diary is missing or empty.
+	header := ""
+	if st, err := d.FS.Stat(ctx, d.Path); err != nil || st.Size == 0 {
+		header = "# DREAMS.md\n\n"
 	}
-	f, err := os.OpenFile(d.Path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if st, err := f.Stat(); err == nil && st.Size() == 0 {
-		if _, err := f.WriteString("# DREAMS.md\n\n"); err != nil {
-			return err
-		}
-	}
-	_, err = f.WriteString(b.String())
-	return err
+	return d.FS.Append(ctx, d.Path, []byte(header+b.String()))
 }

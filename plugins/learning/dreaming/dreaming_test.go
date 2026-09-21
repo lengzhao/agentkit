@@ -1,6 +1,7 @@
 package dreaming_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,19 +9,31 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/plugins/learning/dreaming"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+func testFS(t *testing.T, dir string) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
 
 func TestSweepEligibleCandidates(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	statePath := filepath.Join(dir, "state.json")
-	diaryPath := filepath.Join(dir, "DREAMS.md")
+	fs := testFS(t, dir)
+	ctx := context.Background()
 	now := time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)
 
-	store := &dreaming.Store{Path: statePath}
-	st, err := store.Load()
+	store := &dreaming.Store{FS: fs, Path: "state.json"}
+	st, err := store.Load(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +53,7 @@ func TestSweepEligibleCandidates(t *testing.T) {
 			SessionID: sid,
 		}, now)
 	}
-	if err := store.Save(st); err != nil {
+	if err := store.Save(ctx, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,14 +61,14 @@ func TestSweepEligibleCandidates(t *testing.T) {
 	cfg.MinRecallCount = 3
 	cfg.MinUniqueSessions = 2
 	cfg.MinScore = 0.5
-	res, err := dreaming.Run(cfg, store, &dreaming.Diary{Path: diaryPath}, "", "", now)
+	res, err := dreaming.Run(ctx, cfg, store, &dreaming.Diary{FS: fs, Path: "DREAMS.md"}, "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Eligible == 0 {
 		t.Fatalf("expected eligible candidates, result=%+v", res)
 	}
-	data, err := os.ReadFile(diaryPath)
+	data, err := os.ReadFile(filepath.Join(dir, "DREAMS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,22 +81,24 @@ func TestIngestSessionsDoesNotRecountProcessedEvents(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	fs := testFS(t, dir)
+	ctx := context.Background()
 	sessionsDir := filepath.Join(dir, "sessions")
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeUserEvent(t, filepath.Join(sessionsDir, "cli_default.jsonl"), 1, "remember I prefer small focused patches")
 
-	store := &dreaming.Store{Path: filepath.Join(dir, "state.json")}
+	store := &dreaming.Store{FS: fs, Path: "state.json"}
 	now := time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)
-	_, first, err := dreaming.IngestSessions(sessionsDir, store, 8, now)
+	_, first, err := dreaming.IngestSessions(ctx, fs, "sessions", store, 8, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first != 1 {
 		t.Fatalf("first ingest signals=%d, want 1", first)
 	}
-	_, second, err := dreaming.IngestSessions(sessionsDir, store, 8, now.Add(time.Hour))
+	_, second, err := dreaming.IngestSessions(ctx, fs, "sessions", store, 8, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,21 +111,24 @@ func TestSweepReturnsDiaryWriteError(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	fs := testFS(t, dir)
+	ctx := context.Background()
 	blockingFile := filepath.Join(dir, "not-a-dir")
 	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	store := &dreaming.Store{Path: filepath.Join(dir, "state.json")}
-	st, err := store.Load()
+	store := &dreaming.Store{FS: fs, Path: "state.json"}
+	st, err := store.Load(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st.Enabled = true
-	if err := store.Save(st); err != nil {
+	if err := store.Save(ctx, st); err != nil {
 		t.Fatal(err)
 	}
-	_, err = dreaming.Run(dreaming.Defaults(), store, &dreaming.Diary{
-		Path: filepath.Join(blockingFile, "DREAMS.md"),
+	_, err = dreaming.Run(ctx, dreaming.Defaults(), store, &dreaming.Diary{
+		FS:   fs,
+		Path: "not-a-dir/DREAMS.md",
 	}, "", "", time.Now())
 	if err == nil {
 		t.Fatal("expected diary write error")

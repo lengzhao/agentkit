@@ -1,27 +1,30 @@
 package dreaming
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // IngestSessions scans recent session JSONL files for grounded signals.
-func IngestSessions(sessionsDir string, store *Store, limit int, now time.Time) (int, int, error) {
-	st, err := store.Load()
+// sessionsDir is a filesystem.Service-relative directory.
+func IngestSessions(ctx context.Context, fs filesystem.Service, sessionsDir string, store *Store, limit int, now time.Time) (int, int, error) {
+	st, err := store.Load(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
-	entries, err := os.ReadDir(sessionsDir)
+	entries, err := fs.List(ctx, sessionsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, 0, store.Save(st)
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, 0, store.Save(ctx, st)
 		}
 		return 0, 0, err
 	}
@@ -31,20 +34,16 @@ func IngestSessions(sessionsDir string, store *Store, limit int, now time.Time) 
 	}
 	var files []fileInfo
 	for _, ent := range entries {
-		if ent.IsDir() {
+		if ent.IsDir {
 			continue
 		}
-		name := ent.Name()
+		name := ent.Name
 		if !strings.HasSuffix(name, ".jsonl") {
 			continue
 		}
-		info, err := ent.Info()
-		if err != nil {
-			continue
-		}
 		files = append(files, fileInfo{
-			path: filepath.Join(sessionsDir, name),
-			mod:  info.ModTime(),
+			path: strings.TrimSuffix(sessionsDir, "/") + "/" + name,
+			mod:  ent.ModTime,
 		})
 	}
 	// newest first
@@ -62,11 +61,11 @@ func IngestSessions(sessionsDir string, store *Store, limit int, now time.Time) 
 	sessionCount := 0
 	signalCount := 0
 	for _, fi := range files {
-		sid := strings.TrimSuffix(filepath.Base(fi.path), ".jsonl")
+		sid := strings.TrimSuffix(fi.path[strings.LastIndex(fi.path, "/")+1:], ".jsonl")
 		if shouldSkipSessionID(sid) {
 			continue
 		}
-		n, err := ingestSessionFile(fi.path, sid, st, now)
+		n, err := ingestSessionFile(ctx, fs, fi.path, sid, st, now)
 		if err != nil {
 			continue
 		}
@@ -75,7 +74,7 @@ func IngestSessions(sessionsDir string, store *Store, limit int, now time.Time) 
 			signalCount += n
 		}
 	}
-	if err := store.Save(st); err != nil {
+	if err := store.Save(ctx, st); err != nil {
 		return sessionCount, signalCount, err
 	}
 	return sessionCount, signalCount, nil
@@ -92,8 +91,8 @@ func shouldSkipSessionID(id string) bool {
 	return false
 }
 
-func ingestSessionFile(path, sessionID string, st *State, now time.Time) (int, error) {
-	data, err := os.ReadFile(path)
+func ingestSessionFile(ctx context.Context, fs filesystem.Service, path, sessionID string, st *State, now time.Time) (int, error) {
+	data, err := fs.Read(ctx, path)
 	if err != nil {
 		return 0, err
 	}

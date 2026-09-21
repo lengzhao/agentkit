@@ -258,7 +258,7 @@ func (s *Service) TryConsumeReviewQuota(ctx context.Context, maxPerDay int) (boo
 	if err != nil {
 		return false, err
 	}
-	return store.TryConsume(maxPerDay, time.Now().UTC())
+	return store.TryConsume(ctx, maxPerDay, time.Now().UTC())
 }
 
 func backgroundReviewEnabled(cfg BackgroundReviewConfig) bool {

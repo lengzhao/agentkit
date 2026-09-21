@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -12,13 +13,9 @@ import (
 func (s *Service) PromptBody(ctx context.Context) (string, error) {
 	var merged []rtmem.MemoryEntry
 	for _, rel := range s.promptMemoryRelPaths() {
-		path, err := s.workspace.Resolve(ctx, rel)
+		data, err := s.fs.Read(ctx, rel)
 		if err != nil {
-			return "", err
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return "", err

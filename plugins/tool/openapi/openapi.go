@@ -3,6 +3,7 @@ package openapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/configfile"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
@@ -31,16 +33,17 @@ type OpenAPIConfig struct {
 }
 
 type OpenAPIDeps struct {
-	Workspace   workspace.Service `json:"workspace"`
+	// FS reads/writes api.json and spec files (scope prefixes allowed).
+	FS          filesystem.Service `json:"fs"`
 	Credentials credentials.Store `json:"credentials,omitempty"`
-	// ConfigFile powers /openapi add writes; without it the add command fails fast.
+	// ConfigFile picks the /openapi add target file; without it the add command fails fast.
 	ConfigFile configfile.Writer `json:"configfile,omitempty"`
 }
 
 type openapiProvider struct {
 	files       []string
 	enableLocal bool
-	workspace   workspace.Service
+	fs          filesystem.Service
 	credentials credentials.Store
 	configFile  configfile.Writer
 	client      *http.Client
@@ -66,14 +69,14 @@ type openapiTool struct {
 //   - Definitions are loaded once and cached; run the "openapi" command to reload api.json (and any specFile) from disk after editing it.
 //   - Secrets in auth (token/value/password) accept "env:NAME" and resolve through credentials, same as tool/mcp.
 func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, error) {
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("tool/openapi requires workspace")
+	if deps.FS == nil {
+		return nil, fmt.Errorf("tool/openapi requires fs")
 	}
 	files := resolveAPIFiles(cfg)
 	return &openapiProvider{
 		files:       files,
 		enableLocal: cfg.EnableLocal,
-		workspace:   deps.Workspace,
+		fs:          deps.FS,
 		credentials: deps.Credentials,
 		configFile:  deps.ConfigFile,
 		client:      &http.Client{},
@@ -184,11 +187,7 @@ func (p *openapiProvider) writeTarget(ctx context.Context, global bool) (string,
 	if p.configFile == nil {
 		return "", fmt.Errorf("tool/openapi requires configFile dependency for /openapi add")
 	}
-	rel, err := p.configFile.WriteTargetForAdd(p.files, global)
-	if err != nil {
-		return "", err
-	}
-	return p.workspace.Resolve(ctx, rel)
+	return p.configFile.WriteTargetForAdd(p.files, global)
 }
 
 func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, global bool) (string, error) {
@@ -205,7 +204,7 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 		return "", err
 	}
 	if global {
-		rewritten, err := rewriteAPIEntryPathsForGlobalAdd(ctx, p.workspace, raw)
+		rewritten, err := rewriteAPIEntryPathsForGlobalAdd(ctx, p.fs, raw)
 		if err != nil {
 			return "", err
 		}
@@ -216,8 +215,8 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 	if err != nil {
 		return "", err
 	}
-	prev, err := os.ReadFile(target)
-	if err != nil && !os.IsNotExist(err) {
+	prev, err := p.fs.Read(ctx, target)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("read %s: %w", target, err)
 	}
 	var prevBytes []byte
@@ -228,12 +227,12 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 	if err != nil {
 		return "", err
 	}
-	if err := p.configFile.WriteAtomic(target, merged, 0o644); err != nil {
+	if err := p.fs.Write(ctx, target, merged); err != nil {
 		return "", fmt.Errorf("write %s: %w", target, err)
 	}
 	apis, err := p.reload(ctx)
 	if err != nil {
-		_ = p.configFile.Restore(target, prevBytes, 0o644)
+		_ = p.fs.Write(ctx, target, prevBytes)
 		_, _ = p.reload(ctx)
 		return "", err
 	}
@@ -245,7 +244,7 @@ func (p *openapiProvider) addAPI(ctx context.Context, name string, raw []byte, g
 		}
 	}
 	if loaded == nil || len(loaded.Operations) != len(cfg.Operations) {
-		_ = p.configFile.Restore(target, prevBytes, 0o644)
+		_ = p.fs.Write(ctx, target, prevBytes)
 		_, _ = p.reload(ctx)
 		return "", fmt.Errorf("api %q failed validation after reload", name)
 	}
@@ -308,11 +307,7 @@ Notes:
 
 func (p *openapiProvider) specLoader(ctx context.Context) specLoader {
 	return func(rel string) ([]byte, error) {
-		path, err := p.workspace.Resolve(ctx, rel)
-		if err != nil {
-			return nil, err
-		}
-		return os.ReadFile(path)
+		return p.fs.Read(ctx, rel)
 	}
 }
 
@@ -322,21 +317,17 @@ func (p *openapiProvider) loadAPIs(ctx context.Context) ([]apiConfig, error) {
 	seen := make(map[string]struct{})
 	var out []apiConfig
 	for _, rel := range p.files {
-		path, err := p.workspace.Resolve(ctx, rel)
+		raw, err := p.fs.Read(ctx, rel)
 		if err != nil {
-			continue
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			slog.Warn("api.json ignored", "path", path, "error", err)
+			slog.Warn("api.json ignored", "path", rel, "error", err)
 			continue
 		}
-		apis, err := parseIndexFile(path, raw, loadSpec)
+		apis, err := parseIndexFile(rel, raw, loadSpec)
 		if err != nil {
-			slog.Warn("api.json ignored", "path", path, "error", err)
+			slog.Warn("api.json ignored", "path", rel, "error", err)
 			continue
 		}
 		for _, api := range apis {

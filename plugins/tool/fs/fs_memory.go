@@ -3,6 +3,7 @@ package fs
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 type FSMemoryConfig struct {
@@ -34,11 +34,13 @@ type memoryFS struct {
 	files map[string]string
 }
 
+var _ filesystem.Service = (*memoryFS)(nil)
+
 // NewFSMemory registers tool/fs-memory: In-memory workspace file tools for tests and smoke runs.
 func NewFSMemory(cfg FSMemoryConfig) (agentkit.ToolPack, error) {
 	files := make(map[string]string, len(cfg.Files))
 	for k, v := range cfg.Files {
-		files[k] = v
+		files[normalizeMemPath(k)] = v
 	}
 	maxBytes := cfg.MaxBytes
 	if maxBytes <= 0 {
@@ -56,73 +58,80 @@ func NewFSMemory(cfg FSMemoryConfig) (agentkit.ToolPack, error) {
 	if maxListEntries <= 0 {
 		maxListEntries = defaultListLimit
 	}
-	fs := &memoryWorkspaceFS{inner: &memoryFS{files: files}}
-	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
+	return buildWorkspaceTools(&fsAdapter{store: &memoryFS{files: files}}, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
 }
 
-// memoryWorkspaceFS adapts memoryFS to workspaceFS operations.
-type memoryWorkspaceFS struct {
-	inner *memoryFS
-}
-
-func (s *memoryWorkspaceFS) readText(_ context.Context, path string, maxBytes int) (string, error) {
-	s.inner.mu.RLock()
-	defer s.inner.mu.RUnlock()
-	content, ok := s.inner.files[normalizeMemPath(path)]
+func (s *memoryFS) Read(_ context.Context, path string) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	content, ok := s.files[normalizeMemPath(path)]
 	if !ok {
-		return "", fmt.Errorf("file not found: %s", path)
+		return nil, fmt.Errorf("%w: %s", os.ErrNotExist, path)
 	}
-	if maxBytes > 0 && len(content) > maxBytes {
-		content = content[:maxBytes]
-	}
-	return content, nil
+	return []byte(content), nil
 }
 
-func (s *memoryWorkspaceFS) pathMayBeImage(_ context.Context, path string) bool {
-	if rtmedia.IsImagePath(path) {
-		return true
+func (s *memoryFS) Write(_ context.Context, path string, data []byte, _ ...filesystem.WriteOption) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.files == nil {
+		s.files = make(map[string]string)
 	}
-	s.inner.mu.RLock()
-	defer s.inner.mu.RUnlock()
-	content, ok := s.inner.files[normalizeMemPath(path)]
-	if !ok {
-		return false
-	}
-	return rtmedia.LooksLikeImageData([]byte(content))
-}
-
-func (s *memoryWorkspaceFS) readImage(_ context.Context, path string) (string, error) {
-	s.inner.mu.RLock()
-	defer s.inner.mu.RUnlock()
-	content, ok := s.inner.files[normalizeMemPath(path)]
-	if !ok {
-		return "", fmt.Errorf("file not found: %s", path)
-	}
-	data := []byte(content)
-	if len(data) > rtmedia.DefaultMaxWorkspaceImageReadBytes {
-		return rtmedia.FormatReadImageTooLarge(path, int64(len(data)), rtmedia.DefaultMaxWorkspaceImageReadBytes), nil
-	}
-	return rtmedia.FormatReadImageResult(path, rtmedia.DetectMIME(path, data), int64(len(data))), nil
-}
-
-func (s *memoryWorkspaceFS) writeText(_ context.Context, path, content string) error {
-	s.inner.mu.Lock()
-	defer s.inner.mu.Unlock()
-	if s.inner.files == nil {
-		s.inner.files = make(map[string]string)
-	}
-	s.inner.files[normalizeMemPath(path)] = content
+	s.files[normalizeMemPath(path)] = string(data)
 	return nil
 }
 
-func (s *memoryWorkspaceFS) listDir(_ context.Context, path string) ([]filesystem.DirEntry, error) {
+func (s *memoryFS) Append(_ context.Context, path string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.files == nil {
+		s.files = make(map[string]string)
+	}
+	key := normalizeMemPath(path)
+	s.files[key] += string(data)
+	return nil
+}
+
+func (s *memoryFS) Stat(_ context.Context, path string) (filesystem.Info, error) {
+	p := normalizeMemPath(path)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if content, ok := s.files[p]; ok {
+		name := p
+		if i := strings.LastIndex(p, "/"); i >= 0 {
+			name = p[i+1:]
+		}
+		if name == "" {
+			name = p
+		}
+		return filesystem.Info{Name: name, Path: p, Size: int64(len(content))}, nil
+	}
+	prefix := p
+	if prefix != "" {
+		prefix += "/"
+	}
+	for key := range s.files {
+		if p == "" || strings.HasPrefix(key, prefix) {
+			name := p
+			if name == "" {
+				name = "."
+			} else if i := strings.LastIndex(name, "/"); i >= 0 {
+				name = name[i+1:]
+			}
+			return filesystem.Info{Name: name, Path: p, IsDir: true}, nil
+		}
+	}
+	return filesystem.Info{}, os.ErrNotExist
+}
+
+func (s *memoryFS) List(_ context.Context, path string) ([]filesystem.DirEntry, error) {
 	dir := normalizeMemPath(path)
-	s.inner.mu.RLock()
-	defer s.inner.mu.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	seen := make(map[string]struct{})
 	var entries []filesystem.DirEntry
-	for key := range s.inner.files {
+	for key := range s.files {
 		rel, ok := childMemEntry(dir, key)
 		if !ok {
 			continue
@@ -152,7 +161,7 @@ func (s *memoryWorkspaceFS) listDir(_ context.Context, path string) ([]filesyste
 	return entries, nil
 }
 
-func (s *memoryWorkspaceFS) grep(_ context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
+func (s *memoryFS) Grep(_ context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
 	if req.Pattern == "" {
 		return filesystem.GrepResult{}, fmt.Errorf("pattern is required")
 	}
@@ -175,11 +184,11 @@ func (s *memoryWorkspaceFS) grep(_ context.Context, req filesystem.GrepRequest) 
 		re = compiled
 	}
 
-	s.inner.mu.RLock()
-	defer s.inner.mu.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	collector := newGrepCollector(limit)
-	for path, content := range s.inner.files {
+	for path, content := range s.files {
 		if !pathUnderMem(searchPath, path) {
 			continue
 		}
@@ -202,15 +211,7 @@ func (s *memoryWorkspaceFS) grep(_ context.Context, req filesystem.GrepRequest) 
 	return collector.Result(), nil
 }
 
-func (s *memoryWorkspaceFS) llmPath(_ context.Context, path string) string {
-	return path
-}
-
-func (s *memoryWorkspaceFS) rewritePathsInText(_ context.Context, text string) string {
-	return text
-}
-
-func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
+func (s *memoryFS) Find(_ context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
 	if req.Pattern == "" {
 		return filesystem.FindResult{}, fmt.Errorf("pattern is required")
 	}
@@ -220,11 +221,11 @@ func (s *memoryWorkspaceFS) find(_ context.Context, req filesystem.FindRequest) 
 		limit = defaultFindLimit
 	}
 
-	s.inner.mu.RLock()
-	defer s.inner.mu.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	result := filesystem.FindResult{Paths: []string{}}
-	for path := range s.inner.files {
+	for path := range s.files {
 		if !pathUnderMem(searchPath, path) {
 			continue
 		}

@@ -39,6 +39,7 @@ agent.acp.default:
     autoApprove: false
   deps:
     workspace: workspace.default
+    fs: filesystem.local.state
     sessionStore: sessionStore.default
     sessionEvents: session.events
 

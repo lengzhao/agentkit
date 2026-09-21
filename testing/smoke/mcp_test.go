@@ -11,7 +11,6 @@ import (
 	mcpplugin "github.com/lengzhao/agentkit/plugins/tool/mcp"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/tools"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/mcptest"
 )
@@ -23,7 +22,7 @@ func TestSmokeMCPDynamicToolsAgentTurn(t *testing.T) {
 			EnableLocal: true,
 			Files:       []string{configPath},
 		}, mcpplugin.MCPDeps{
-			Workspace:  rtworkspace.Static(workspaceRoot),
+			FS:         smokeFS(t, workspaceRoot),
 			ConfigFile: newTestConfigFileWriter(),
 		})
 	})

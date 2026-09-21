@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/skill"
-	"github.com/lengzhao/agentkit/cap/workspace"
 	rtskill "github.com/lengzhao/agentkit/runtime/skill"
 	"github.com/lengzhao/pluginkit"
 )
@@ -20,12 +18,12 @@ type Config struct {
 }
 
 type Deps struct {
-	Workspace workspace.Service `json:"workspace"`
+	FS filesystem.Service `json:"fs"`
 }
 
 type Registry struct {
-	relDirs   []string
-	workspace workspace.Service
+	relDirs []string
+	fs      filesystem.Service
 }
 
 func init() {
@@ -34,25 +32,21 @@ func init() {
 
 // New registers skill/filesystem: Scan skill bundle directories for SKILL.md definitions.
 func New(cfg Config, deps Deps) (skill.Registry, error) {
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("skill/filesystem requires workspace")
+	if deps.FS == nil {
+		return nil, fmt.Errorf("skill/filesystem requires fs")
 	}
 	dirs := cfg.Dirs
 	if len(dirs) == 0 {
 		dirs = []string{"global:.cursor/skills", "global:.agents/skills", "global:skills"}
 	}
-	return &Registry{relDirs: dirs, workspace: deps.Workspace}, nil
+	return &Registry{relDirs: dirs, fs: deps.FS}, nil
 }
 
 func (r *Registry) List(ctx context.Context) ([]skill.Descriptor, error) {
 	seen := make(map[string]struct{})
 	var out []skill.Descriptor
 	for _, rel := range r.relDirs {
-		dir, err := r.workspace.Resolve(ctx, rel)
-		if err != nil {
-			continue
-		}
-		for _, candidate := range r.discoverDir(dir) {
+		for _, candidate := range r.discoverDir(ctx, rel) {
 			if _, ok := seen[candidate.Name]; ok {
 				continue
 			}
@@ -75,11 +69,7 @@ func (r *Registry) Load(ctx context.Context, name string) (skill.Content, error)
 		return skill.Content{}, fmt.Errorf("skill name is required")
 	}
 	for _, rel := range r.relDirs {
-		dir, err := r.workspace.Resolve(ctx, rel)
-		if err != nil {
-			continue
-		}
-		for _, candidate := range r.discoverDir(dir) {
+		for _, candidate := range r.discoverDir(ctx, rel) {
 			if candidate.Name != name {
 				continue
 			}
@@ -98,25 +88,29 @@ type discoveredSkill struct {
 	Content       skill.Content
 }
 
-func (r *Registry) discoverDir(root string) []discoveredSkill {
-	entries, err := os.ReadDir(root)
+// discoverDir scans one fs-relative directory (may carry a global:/local: scope
+// prefix). Descriptor paths stay fs-relative so a non-local backend still
+// serves SKILL.md bodies; script execution needs a local backend.
+func (r *Registry) discoverDir(ctx context.Context, root string) []discoveredSkill {
+	entries, err := r.fs.List(ctx, root)
 	if err != nil {
 		return nil
 	}
+	base := strings.TrimSuffix(root, "/")
 	var out []discoveredSkill
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			if strings.HasSuffix(entry.Name(), ".md") {
-				slog.Warn("skill ignored: flat markdown files are not part of the Agent Skills directory layout", "path", filepath.Join(root, entry.Name()))
+		if !entry.IsDir {
+			if strings.HasSuffix(entry.Name, ".md") {
+				slog.Warn("skill ignored: flat markdown files are not part of the Agent Skills directory layout", "path", base+"/"+entry.Name)
 			}
 			continue
 		}
-		skillPath := filepath.Join(root, entry.Name(), "SKILL.md")
-		raw, err := os.ReadFile(skillPath)
+		skillPath := base + "/" + entry.Name + "/SKILL.md"
+		raw, err := r.fs.Read(ctx, skillPath)
 		if err != nil {
 			continue
 		}
-		parsed, err := rtskill.ParseFile(string(raw), rtskill.ParseOptions{DirName: entry.Name()})
+		parsed, err := rtskill.ParseFile(string(raw), rtskill.ParseOptions{DirName: entry.Name})
 		if err != nil {
 			slog.Warn("skill ignored", "path", skillPath, "error", err)
 			continue
@@ -125,7 +119,7 @@ func (r *Registry) discoverDir(root string) []discoveredSkill {
 			slog.Warn("skill ignored", "path", skillPath, "error", "empty body")
 			continue
 		}
-		resourceDir := filepath.Join(root, entry.Name())
+		resourceDir := base + "/" + entry.Name
 		out = append(out, discoveredSkill{
 			Name:          parsed.Name,
 			Description:   parsed.Description,

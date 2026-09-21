@@ -351,6 +351,7 @@ func TestRunTurnUsesResolvedSessionID(t *testing.T) {
 		Command: []string{"/nonexistent/agent-acp-test-binary"},
 	}, Deps{
 		Workspace:     &stubWorkspace{},
+		FS:            bindTestFS(t, t.TempDir()),
 		SessionStore:  rec,
 		SessionEvents: mustEvents(t),
 	})
@@ -388,7 +389,7 @@ func (r *recordingStore) Get(_ context.Context, id agentkit.SessionID) (agentkit
 }
 
 func TestNewRequiresCommand(t *testing.T) {
-	_, err := New(Config{}, Deps{Workspace: &stubWorkspace{}})
+	_, err := New(Config{}, Deps{Workspace: &stubWorkspace{}, FS: bindTestFS(t, t.TempDir())})
 	if err == nil {
 		t.Fatal("expected error")
 	}

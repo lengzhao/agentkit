@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/schedule"
-	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -19,8 +19,8 @@ type MultiConfig struct {
 }
 
 type MultiDeps struct {
-	Workspace workspace.Service `json:"workspace"`
-	Engine    schedule.Engine   `json:"engine"`
+	FS     filesystem.Service `json:"fs"`
+	Engine schedule.Engine    `json:"engine"`
 }
 
 // multiRegistry stores every job in one schedule file. List and Remove filter by
@@ -31,8 +31,8 @@ type multiRegistry struct {
 
 // NewMulti registers schedule/multi: One shared schedule.json with per-channel list/remove filtering.
 func NewMulti(cfg MultiConfig, deps MultiDeps) (schedule.Registry, error) {
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("schedule/multi requires workspace dependency")
+	if deps.FS == nil {
+		return nil, fmt.Errorf("schedule/multi requires fs dependency")
 	}
 	if deps.Engine == nil {
 		return nil, fmt.Errorf("schedule/multi requires engine dependency")
@@ -41,7 +41,7 @@ func NewMulti(cfg MultiConfig, deps MultiDeps) (schedule.Registry, error) {
 	if path == "" {
 		path = defaultGlobalSchedulePath
 	}
-	inner, err := NewFile(FileConfig{Path: path}, FileDeps{Workspace: deps.Workspace, Engine: deps.Engine})
+	inner, err := NewFile(FileConfig{Path: path}, FileDeps{FS: deps.FS, Engine: deps.Engine})
 	if err != nil {
 		return nil, err
 	}

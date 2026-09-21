@@ -89,7 +89,7 @@ func newTestMCPProvider(t *testing.T) (*mcpProvider, string) {
 
 	return &mcpProvider{
 		files:      []string{configPath},
-		workspace:  &testWorkspace{root: dir},
+		fs:         testFSForWorkspace(t, &testWorkspace{root: dir}),
 		configFile: testConfigFileWriter,
 		pool:       newClientPool(0),
 	}, mcpRoot
@@ -196,7 +196,7 @@ func TestMCPServerAddCommand(t *testing.T) {
 	provider := &mcpProvider{
 		files:       []string{filepath.Join(dir, "mcp.json")},
 		enableLocal: true,
-		workspace:   &testWorkspace{root: dir},
+		fs:         testFSForWorkspace(t, &testWorkspace{root: dir}),
 		configFile:  testConfigFileWriter,
 		pool:        newClientPool(0),
 	}

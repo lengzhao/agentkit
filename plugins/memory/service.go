@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
@@ -24,7 +24,7 @@ type Config struct {
 }
 
 type Deps struct {
-	Workspace workspace.Service `json:"workspace"`
+	FS filesystem.Service `json:"fs"`
 }
 
 // Service owns tenant memory.md, ledger, staged review, and /memory commands.
@@ -34,14 +34,14 @@ type Service struct {
 	memoryRoot string
 	memoryFile string
 	review     ReviewConfig
-	workspace  workspace.Service
+	fs         filesystem.Service
 	observers  []capmemory.CommitObserver
 }
 
 // New registers memory/default.
 func New(cfg Config, deps Deps) (*Service, error) {
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("memory/default requires workspace")
+	if deps.FS == nil {
+		return nil, fmt.Errorf("memory/default requires fs dependency")
 	}
 	root := strings.TrimSpace(cfg.MemoryRoot)
 	if root == "" {
@@ -57,7 +57,7 @@ func New(cfg Config, deps Deps) (*Service, error) {
 		memoryRoot: root,
 		memoryFile: file,
 		review:     cfg.Review,
-		workspace:  deps.Workspace,
+		fs:         deps.FS,
 	}, nil
 }
 
@@ -71,9 +71,10 @@ func (s *Service) RegisterCommitObserver(o capmemory.CommitObserver) {
 	s.observers = append(s.observers, o)
 }
 
-func (s *Service) ResolveRel(ctx context.Context, parts ...string) (string, error) {
-	rel := rtmem.JoinUnderRoot(s.memoryRoot, parts...)
-	return s.workspace.Resolve(ctx, rel)
+// ResolveRel returns the filesystem-relative path under memoryRoot (may carry a
+// global:/local: scope prefix). Callers read/write it through the injected fs.
+func (s *Service) ResolveRel(_ context.Context, parts ...string) (string, error) {
+	return rtmem.JoinUnderRoot(s.memoryRoot, parts...), nil
 }
 
 func (s *Service) memoryStore(ctx context.Context) (*rtmem.MemoryStore, error) {
@@ -85,25 +86,17 @@ func (s *Service) memoryStore(ctx context.Context) (*rtmem.MemoryStore, error) {
 	if limit <= 0 {
 		limit = rtmem.DefaultMemoryCharLimit
 	}
-	store := rtmem.NewMemoryStore(path, limit)
+	store := rtmem.NewMemoryStore(s.fs, path, limit)
 	store.DocName = "memory.md"
 	return store, nil
 }
 
-func (s *Service) memoryLedger(ctx context.Context) (*rtmem.MemoryLedger, error) {
-	path, err := s.workspace.Resolve(ctx, rtmem.LedgerRel(s.memoryRoot))
-	if err != nil {
-		return nil, err
-	}
-	return &rtmem.MemoryLedger{Path: path}, nil
+func (s *Service) memoryLedger(_ context.Context) (*rtmem.MemoryLedger, error) {
+	return &rtmem.MemoryLedger{FS: s.fs, Path: rtmem.LedgerRel(s.memoryRoot)}, nil
 }
 
-func (s *Service) stagedStore(ctx context.Context) (*rtmem.StagedStore, error) {
-	dir, err := s.workspace.Resolve(ctx, rtmem.StagedDirRel(s.memoryRoot))
-	if err != nil {
-		return nil, err
-	}
-	return &rtmem.StagedStore{Dir: dir}, nil
+func (s *Service) stagedStore(_ context.Context) (*rtmem.StagedStore, error) {
+	return &rtmem.StagedStore{FS: s.fs, Dir: rtmem.StagedDirRel(s.memoryRoot)}, nil
 }
 
 func (s *Service) LoadEntries(ctx context.Context) ([]capmemory.MemoryEntry, int, int, error) {
@@ -111,7 +104,7 @@ func (s *Service) LoadEntries(ctx context.Context) ([]capmemory.MemoryEntry, int
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	entries, err := store.Load()
+	entries, err := store.Load(ctx)
 	if err != nil {
 		return nil, 0, 0, err
 	}

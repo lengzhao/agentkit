@@ -28,7 +28,7 @@ func TestIntegrationOpenAPIAgentTurn(t *testing.T) {
 			EnableLocal: true,
 			Files:       []string{"api.json", "local:api.json"},
 		}, openapiplugin.OpenAPIDeps{
-			Workspace:   ws,
+			FS:          integrationFSOver(t, ws),
 			Credentials: creds,
 			ConfigFile:  newTestConfigFileWriter(),
 		})

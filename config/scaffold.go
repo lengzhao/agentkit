@@ -106,6 +106,14 @@ func ScaffoldToolsFragment(profile ToolProfile, opts ToolsScaffoldOptions) (map[
 	}
 	runtimeNode["deps"] = deps
 	out[runtimeID] = runtimeNode
+	out["filesystem.local.default"] = map[string]any{
+		"use": "filesystem/local",
+		"config": map[string]any{
+			"root":         "work",
+			"unrestricted": true,
+		},
+		"deps": map[string]any{"workspace": "workspace.default"},
+	}
 	return out, nil
 }
 
@@ -157,10 +165,12 @@ func defaultToolInstanceSpecs() map[string]toolInstanceSpec {
 		"tool/fs-workspace": {
 			ID: "tool.fs-workspace.default",
 			Config: map[string]any{
-				"root":     "work",
 				"maxBytes": 1048576,
 			},
-			Deps: map[string]any{"workspace": "workspace.default"},
+			Deps: map[string]any{
+				"fs":        "filesystem.local.default",
+				"workspace": "workspace.default",
+			},
 		},
 		"tool/shell-bash": {
 			ID: "tool.shell-bash.default",
@@ -267,12 +277,14 @@ func subagentToolInstanceSpecs() map[string]toolInstanceSpec {
 	specs["tool/fs-workspace"] = toolInstanceSpec{
 		ID: "tool.fs-workspace.readonly.default",
 		Config: map[string]any{
-			"root":     ".",
 			"maxBytes": 1048576,
 			"readOnly": true,
 			"tools":    []any{"read", "grep", "find", "ls"},
 		},
-		Deps: map[string]any{"workspace": "workspace.default"},
+		Deps: map[string]any{
+			"fs":        "filesystem.local.default",
+			"workspace": "workspace.default",
+		},
 	}
 	return specs
 }

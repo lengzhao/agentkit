@@ -13,7 +13,7 @@ func (s *Service) skillsPolicyStore(ctx context.Context) (*rtlearning.SkillsPoli
 	if err != nil {
 		return nil, err
 	}
-	return &rtlearning.SkillsPolicyStore{Path: path}, nil
+	return &rtlearning.SkillsPolicyStore{FS: s.fs, Path: path}, nil
 }
 
 func (s *Service) effectiveSkillsMode(ctx context.Context) (string, bool) {
@@ -21,7 +21,7 @@ func (s *Service) effectiveSkillsMode(ctx context.Context) (string, bool) {
 	if err != nil {
 		return s.workshopCfg().Mode, false
 	}
-	p, err := store.Load()
+	p, err := store.Load(ctx)
 	if err != nil {
 		return s.workshopCfg().Mode, false
 	}
@@ -60,7 +60,7 @@ func (s *Service) handlePolicy(ctx context.Context, args []string) (string, erro
 		if err != nil {
 			return "", err
 		}
-		if err := store.Save(rtlearning.SkillsPolicy{}); err != nil {
+		if err := store.Save(ctx, rtlearning.SkillsPolicy{}); err != nil {
 			return "", err
 		}
 		return "skills policy reset; using config defaults again", nil
@@ -85,7 +85,7 @@ func (s *Service) setSkillsPolicy(ctx context.Context, args []string) (string, e
 	if err != nil {
 		return "", err
 	}
-	if err := store.Save(rtlearning.SkillsPolicy{SkillsMode: mode}); err != nil {
+	if err := store.Save(ctx, rtlearning.SkillsPolicy{SkillsMode: mode}); err != nil {
 		return "", err
 	}
 	switch mode {

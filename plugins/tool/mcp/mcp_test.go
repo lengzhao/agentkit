@@ -10,9 +10,23 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/cap/workspace"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
+
+// testFSForWorkspace builds an unrestricted filesystem/local delegating scoped
+// paths to ws (test workspaces resolve to absolute temp paths).
+func testFSForWorkspace(t *testing.T, ws workspace.Service) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
 
 type hintCredentials struct{}
 
@@ -21,17 +35,17 @@ func (hintCredentials) Resolve(_ context.Context, scope string, ref string) (cre
 	return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q (/env add %s %s=<value>)", key, scope, scope, key)
 }
 
-// countingWorkspace wraps testWorkspace to count Resolve calls, so tests can
+// countingFS wraps filesystem.Service to count Read calls, so tests can
 // tell whether a config file was actually re-read from disk or served from
 // the in-memory cache.
-type countingWorkspace struct {
-	inner testWorkspace
+type countingFS struct {
+	filesystem.Service
 	count int
 }
 
-func (w *countingWorkspace) Resolve(ctx context.Context, rel string) (string, error) {
-	w.count++
-	return w.inner.Resolve(ctx, rel)
+func (f *countingFS) Read(ctx context.Context, path string) ([]byte, error) {
+	f.count++
+	return f.Service.Read(ctx, path)
 }
 
 // TestMCPProviderCachingAndSyncCommand verifies that ListTools does not
@@ -46,10 +60,10 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := &countingWorkspace{inner: testWorkspace{root: dir}}
+	fs := &countingFS{Service: testFSForWorkspace(t, &testWorkspace{root: dir})}
 	provider := &mcpProvider{
 		files:      []string{configPath},
-		workspace:  ws,
+		fs:         fs,
 		configFile: testConfigFileWriter,
 		pool:       newClientPool(0),
 	}
@@ -62,8 +76,8 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 	if len(tools) != 0 {
 		t.Fatalf("tools = %d, want 0", len(tools))
 	}
-	if ws.count != 1 {
-		t.Fatalf("resolve count after first list = %d, want 1", ws.count)
+	if fs.count != 1 {
+		t.Fatalf("resolve count after first list = %d, want 1", fs.count)
 	}
 
 	// Change the file on disk; ListTools should keep serving the cached result
@@ -79,8 +93,8 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 	if len(tools) != 0 {
 		t.Fatalf("tools after edit (pre-sync) = %d, want cache to still report 0", len(tools))
 	}
-	if ws.count != 1 {
-		t.Fatalf("resolve count after cached list = %d, want still 1", ws.count)
+	if fs.count != 1 {
+		t.Fatalf("resolve count after cached list = %d, want still 1", fs.count)
 	}
 
 	cp, ok := agentkit.ToolProvider(provider).(agentkit.CommandProvider)
@@ -94,8 +108,8 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 	if _, err := cmds[0].CommandExec(ctx, "-u"); err != nil {
 		t.Fatalf("sync command: %v", err)
 	}
-	if ws.count != 2 {
-		t.Fatalf("resolve count after sync = %d, want 2 (file re-read)", ws.count)
+	if fs.count != 2 {
+		t.Fatalf("resolve count after sync = %d, want 2 (file re-read)", fs.count)
 	}
 
 	// The flaky server's command doesn't exist, so it contributes no tools,
@@ -107,8 +121,8 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 	if len(tools) != 0 {
 		t.Fatalf("tools after sync = %d, want 0 (flaky server unreachable)", len(tools))
 	}
-	if ws.count != 2 {
-		t.Fatalf("resolve count after post-sync list = %d, want still 2 (cached again)", ws.count)
+	if fs.count != 2 {
+		t.Fatalf("resolve count after post-sync list = %d, want still 2 (cached again)", fs.count)
 	}
 }
 
@@ -119,7 +133,7 @@ func TestMCPAddCommand(t *testing.T) {
 	provider := &mcpProvider{
 		files:       []string{filepath.Join(dir, "mcp.json")},
 		enableLocal: true,
-		workspace:   &testWorkspace{root: dir},
+		fs:         testFSForWorkspace(t, &testWorkspace{root: dir}),
 		configFile:  testConfigFileWriter,
 		pool:        newClientPool(0),
 	}
@@ -163,7 +177,7 @@ func TestMCPAddKeepsConfigWhenCredentialsMissing(t *testing.T) {
 	provider := &mcpProvider{
 		files:       []string{configPath},
 		enableLocal: true,
-		workspace:   &testWorkspace{root: dir},
+		fs:         testFSForWorkspace(t, &testWorkspace{root: dir}),
 		configFile:  testConfigFileWriter,
 		pool:        newClientPool(0),
 		credentials: hintCredentials{},
@@ -193,7 +207,7 @@ func TestMCPAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
 	dir := t.TempDir()
 	provider := &mcpProvider{
 		files:      []string{"global:mcp.json"},
-		workspace:  &testWorkspace{root: dir},
+		fs:         testFSForWorkspace(t, &testWorkspace{root: dir}),
 		configFile: testConfigFileWriter,
 		pool:       newClientPool(0),
 	}
@@ -226,7 +240,7 @@ func TestMCPReloadRecordsInitObservation(t *testing.T) {
 
 	provider := &mcpProvider{
 		files:      []string{configPath},
-		workspace:  &testWorkspace{root: dir},
+		fs:         testFSForWorkspace(t, &testWorkspace{root: dir}),
 		configFile: testConfigFileWriter,
 		pool:       newClientPool(0),
 	}

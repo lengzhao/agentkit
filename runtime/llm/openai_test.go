@@ -14,7 +14,17 @@ func TestOpenAIResolvesAPIKeyRef(t *testing.T) {
 	t.Setenv("AGENTKIT_OPENAI_KEY", "resolved-key")
 
 	graph := map[string]any{
-		"credentials": map[string]any{"use": "credentials/env"},
+		"credentials": map[string]any{
+		"use": "credentials/env",
+		"deps": map[string]any{"fs": map[string]any{
+			"use":    "filesystem/local",
+			"config": map[string]any{"root": ".", "unrestricted": true},
+			"deps": map[string]any{"workspace": map[string]any{
+				"use":    "workspace/default",
+				"config": map[string]any{"root": t.TempDir()},
+			}},
+		}},
+	},
 		"llm": map[string]any{
 			"use": "llm/openai-compatible",
 			"config": map[string]any{
@@ -41,7 +51,17 @@ func TestOpenAIResolvesAPIKeyRef(t *testing.T) {
 
 func TestOpenAIBuildFailsWhenAPIKeyRefMissing(t *testing.T) {
 	graph := map[string]any{
-		"credentials": map[string]any{"use": "credentials/env"},
+		"credentials": map[string]any{
+		"use": "credentials/env",
+		"deps": map[string]any{"fs": map[string]any{
+			"use":    "filesystem/local",
+			"config": map[string]any{"root": ".", "unrestricted": true},
+			"deps": map[string]any{"workspace": map[string]any{
+				"use":    "workspace/default",
+				"config": map[string]any{"root": t.TempDir()},
+			}},
+		}},
+	},
 		"llm": map[string]any{
 			"use": "llm/openai-compatible",
 			"config": map[string]any{

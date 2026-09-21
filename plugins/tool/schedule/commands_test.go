@@ -10,17 +10,28 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	pluginschedule "github.com/lengzhao/agentkit/plugins/schedule"
 	toolschedule "github.com/lengzhao/agentkit/plugins/tool/schedule"
+	"github.com/lengzhao/agentkit/cap/filesystem"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
+func testScheduleFS(t *testing.T) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: rtworkspace.Static(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
+
 func TestCronSlashListsChannelJobs(t *testing.T) {
 	t.Parallel()
 
 	reg, err := pluginschedule.NewMulti(pluginschedule.MultiConfig{Path: "schedule.json"}, pluginschedule.MultiDeps{
-		Workspace: rtworkspace.Static(t.TempDir()),
-		Engine:    rtschedule.Engine{},
+		FS:     testScheduleFS(t),
+		Engine: rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +81,8 @@ func TestCronSlashRemove(t *testing.T) {
 	t.Parallel()
 
 	reg, err := pluginschedule.NewMulti(pluginschedule.MultiConfig{Path: "schedule.json"}, pluginschedule.MultiDeps{
-		Workspace: rtworkspace.Static(t.TempDir()),
-		Engine:    rtschedule.Engine{},
+		FS:     testScheduleFS(t),
+		Engine: rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)

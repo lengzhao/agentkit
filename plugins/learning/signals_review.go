@@ -20,7 +20,7 @@ func (s *Service) ReviewSignalCandidates(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil || st == nil || len(st.Signals) == 0 {
 		return ""
 	}
@@ -74,10 +74,10 @@ func (s *Service) pruneDreamingSignals(ctx context.Context, text string) {
 	if err != nil {
 		return
 	}
-	st, err := stateStore.Load()
+	st, err := stateStore.Load(ctx)
 	if err != nil || st == nil {
 		return
 	}
 	st.PruneByText(text)
-	_ = stateStore.Save(st)
+	_ = stateStore.Save(ctx, st)
 }

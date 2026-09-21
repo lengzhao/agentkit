@@ -9,20 +9,31 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/plugins/schedule"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	workspaceplugin "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
+func testFS(t *testing.T, ws workspace.Service) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
+
 func newRegistry(t *testing.T) (capschedule.Registry, string) {
 	t.Helper()
 	dir := t.TempDir()
 	reg, err := schedule.NewFile(schedule.FileConfig{Path: "schedule.json"}, schedule.FileDeps{
-		Workspace: rtworkspace.Static(dir),
-		Engine:    rtschedule.Engine{},
+		FS:     testFS(t, rtworkspace.Static(dir)),
+		Engine: rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +54,7 @@ func TestGlobalPathSharedAcrossTenantContexts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := schedule.NewFile(schedule.FileConfig{Path: "global:schedule.json"}, schedule.FileDeps{Workspace: ws, Engine: rtschedule.Engine{}})
+	reg, err := schedule.NewFile(schedule.FileConfig{Path: "global:schedule.json"}, schedule.FileDeps{FS: testFS(t, ws), Engine: rtschedule.Engine{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,8 +112,8 @@ func TestAddValidatesAndPersists(t *testing.T) {
 	// A fresh registry over the same file sees the job: this is what makes an
 	// agent-created schedule survive a restart.
 	reopened, err := schedule.NewFile(schedule.FileConfig{Path: "schedule.json"}, schedule.FileDeps{
-		Workspace: rtworkspace.Static(filepath.Dir(path)),
-		Engine:    rtschedule.Engine{},
+		FS:     testFS(t, rtworkspace.Static(filepath.Dir(path))),
+		Engine: rtschedule.Engine{},
 	})
 	if err != nil {
 		t.Fatal(err)

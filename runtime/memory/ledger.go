@@ -1,13 +1,12 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // MemoryLedgerEvent is one append-only audit row for memory.md changes.
@@ -20,11 +19,13 @@ type MemoryLedgerEvent struct {
 }
 
 // MemoryLedger appends JSON lines under memory/ledger.jsonl (not injected into prompts).
+// Path is a filesystem.Service-relative path.
 type MemoryLedger struct {
+	FS   filesystem.Service
 	Path string
 }
 
-func (l *MemoryLedger) Append(ev MemoryLedgerEvent) error {
+func (l *MemoryLedger) Append(ctx context.Context, ev MemoryLedgerEvent) error {
 	if l.Path == "" {
 		return fmt.Errorf("ledger path is required")
 	}
@@ -35,27 +36,13 @@ func (l *MemoryLedger) Append(ev MemoryLedgerEvent) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(l.Path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(l.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		return err
-	}
-	return nil
+	return l.FS.Append(ctx, l.Path, append(line, '\n'))
 }
 
 // Rewrite truncates and rewrites the ledger (tests).
-func (l *MemoryLedger) Rewrite(events []MemoryLedgerEvent) error {
+func (l *MemoryLedger) Rewrite(ctx context.Context, events []MemoryLedgerEvent) error {
 	if l.Path == "" {
 		return fmt.Errorf("ledger path is required")
-	}
-	if err := os.MkdirAll(filepath.Dir(l.Path), 0o755); err != nil {
-		return err
 	}
 	var b []byte
 	for _, ev := range events {
@@ -69,5 +56,5 @@ func (l *MemoryLedger) Rewrite(events []MemoryLedgerEvent) error {
 		b = append(b, line...)
 		b = append(b, '\n')
 	}
-	return configfile.WriteAtomic(l.Path, b, 0o644)
+	return l.FS.Write(ctx, l.Path, b)
 }

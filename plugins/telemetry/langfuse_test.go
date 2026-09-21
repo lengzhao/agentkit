@@ -12,11 +12,25 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
 	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+// testCredentialsFS builds an unrestricted filesystem/local over a temp dir for
+// credentials/env (tests resolve process env only; the fs is never touched).
+func testCredentialsFS(t *testing.T) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: rtworkspace.Static(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
 
 func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
 	var gotAuth string
@@ -34,7 +48,7 @@ func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +103,7 @@ func TestLangfuseExporterPrefersFirstTextTimeForTTFT(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +173,7 @@ func TestLangfuseExporterSendsCompletionStartTime(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +238,7 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +321,7 @@ func TestLangfuseExporterDedupesGenerationPrefix(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +406,7 @@ func TestLangfuseExporterNestsSubagentGeneration(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +486,7 @@ func TestLangfuseExporterRecordsTurnUsageAndOutput(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +533,7 @@ func TestLangfuseMissingCredentialFailsAtBuild(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "")
 	t.Setenv("LANGFUSE_SECRET_KEY", "")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +569,7 @@ func TestLangfuseExporterRecordsAttachmentsAsDedicatedSpan(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

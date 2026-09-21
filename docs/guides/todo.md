@@ -77,7 +77,7 @@ flowchart TB
 - [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize`（`BeginObservation` / `WithExporter` 等助手仍在 runtime）
 - [ ] **`cap/learning`**：`plugins/learning` 仍 import `runtime/learning`（`ReviewNudge*` / `TryConsumeReviewQuota` 等）
 - [ ] **`cap/acp`**：`agent/acpremote` 的 `runtime/acpclient`（`MCPServerNames` / `ToMCPServers`）评估并入现有 `cap/acp`
-- [ ] **`cap/filesystem`**：`tool/fs` 的 Grep/Find 统一到 cap DTO（gitignore 匹配留在 `runtime/filesystem`）
+- [x] **`cap/filesystem`**：`Service`（Read/Write/Append/Stat/List/Grep/Find）+ Grep/Find DTO + `WriteOption`（`WithPerm`）+ `DirEntry/Info.ModTime`；not-found 约定 `errors.Is(err, os.ErrNotExist)`，Write 原子（local=temp+rename），`global:`/`local:` 前缀委托 workspace 双根路由。`filesystem/local` 在 `runtime/filesystem`（gitignore 匹配留在此）。**全部状态插件经 `deps.fs` 注入**：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials（含 `/env add` 0600）、mcp、openapi（含 local→global 复制）、settings、agent/acp-remote（session bind）接 `filesystem.local.state`（root="."）；prompt/agents-md、tool/send（绝对路径）接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP fs 协议、shell 类插件的子进程 cwd。S3/远程另注册 `filesystem/<name>` 即可。
 
 ### A3 契约尚未成型
 

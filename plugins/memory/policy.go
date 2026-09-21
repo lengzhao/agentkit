@@ -8,12 +8,8 @@ import (
 	rtmem "github.com/lengzhao/agentkit/runtime/memory"
 )
 
-func (s *Service) memoryPolicyStore(ctx context.Context) (*rtmem.MemoryPolicyStore, error) {
-	path, err := s.workspace.Resolve(ctx, rtmem.MemoryPolicyRel(s.memoryRoot))
-	if err != nil {
-		return nil, err
-	}
-	return &rtmem.MemoryPolicyStore{Path: path}, nil
+func (s *Service) memoryPolicyStore(_ context.Context) (*rtmem.MemoryPolicyStore, error) {
+	return &rtmem.MemoryPolicyStore{FS: s.fs, Path: rtmem.MemoryPolicyRel(s.memoryRoot)}, nil
 }
 
 func (s *Service) effectiveMemoryWrite(ctx context.Context) (string, bool) {
@@ -21,7 +17,7 @@ func (s *Service) effectiveMemoryWrite(ctx context.Context) (string, bool) {
 	if err != nil {
 		return defaultMemoryWriteMode(s.review), false
 	}
-	p, err := store.Load()
+	p, err := store.Load(ctx)
 	if err != nil {
 		return defaultMemoryWriteMode(s.review), false
 	}
@@ -64,7 +60,7 @@ func (s *Service) handleMemoryPolicy(ctx context.Context, args []string) (string
 		if err != nil {
 			return "", err
 		}
-		if err := store.Save(rtmem.MemoryWritePolicy{}); err != nil {
+		if err := store.Save(ctx, rtmem.MemoryWritePolicy{}); err != nil {
 			return "", err
 		}
 		return "memory policy reset; using config defaults again", nil
@@ -88,7 +84,7 @@ func (s *Service) setMemoryPolicy(ctx context.Context, args []string) (string, e
 	if err != nil {
 		return "", err
 	}
-	if err := store.Save(rtmem.MemoryWritePolicy{MemoryWrite: mode}); err != nil {
+	if err := store.Save(ctx, rtmem.MemoryWritePolicy{MemoryWrite: mode}); err != nil {
 		return "", err
 	}
 	if mode == "approve" {

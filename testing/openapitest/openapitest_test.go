@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	openapiplugin "github.com/lengzhao/agentkit/plugins/tool/openapi"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/openapitest"
 )
@@ -18,11 +19,15 @@ import (
 // newOpenAPIProvider injects the real tool/openapi constructor into openapitest,
 // keeping the helper package plugin-agnostic.
 func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit.ToolProvider, error) {
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: ws})
+	if err != nil {
+		return nil, err
+	}
 	return openapiplugin.NewOpenAPI(openapiplugin.OpenAPIConfig{
 		EnableLocal: true,
 		Files:       []string{"api.json", "local:api.json"},
 	}, openapiplugin.OpenAPIDeps{
-		Workspace:   ws,
+		FS:          fs,
 		Credentials: creds,
 		ConfigFile:  newTestConfigFileWriter(),
 	})

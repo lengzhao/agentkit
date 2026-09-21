@@ -62,6 +62,11 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 		"use":    "workspace/default",
 		"config": map[string]any{"root": dir},
 	}
+	fsCfg := map[string]any{
+		"use":    "filesystem/local",
+		"config": map[string]any{"root": "."},
+		"deps":   map[string]any{"workspace": workspaceCfg},
+	}
 
 	graph := map[string]any{
 		"agent": map[string]any{
@@ -106,7 +111,7 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 											"dirs": []string{"."},
 										},
 										"deps": map[string]any{
-											"workspace": workspaceCfg,
+											"fs": fsCfg,
 										},
 									},
 								},
@@ -161,7 +166,19 @@ func TestSkillToolLoadsSkill(t *testing.T) {
 func TestCredentialsEnvResolve(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "secret-value")
 	graph := map[string]any{
-		"creds": map[string]any{"use": "credentials/env"},
+		"creds": map[string]any{
+			"use": "credentials/env",
+			"deps": map[string]any{
+				"fs": map[string]any{
+					"use":    "filesystem/local",
+					"config": map[string]any{"root": ".", "unrestricted": true},
+					"deps": map[string]any{"workspace": map[string]any{
+						"use":    "workspace/default",
+						"config": map[string]any{"root": t.TempDir()},
+					}},
+				},
+			},
+		},
 	}
 	store, _, err := build.Build[credentials.Store](context.Background(), graph, "creds")
 	if err != nil {
@@ -187,6 +204,16 @@ func TestSettingsFileGet(t *testing.T) {
 			"use": "settings/file",
 			"config": map[string]any{
 				"path": path,
+			},
+			"deps": map[string]any{
+				"fs": map[string]any{
+					"use":    "filesystem/local",
+					"config": map[string]any{"root": ".", "unrestricted": true},
+					"deps": map[string]any{"workspace": map[string]any{
+						"use":    "workspace/default",
+						"config": map[string]any{"root": dir},
+					}},
+				},
 			},
 		},
 	}

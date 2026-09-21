@@ -67,7 +67,7 @@ schedule.default:
   config:
     path: schedule.json
   deps:
-    workspace: workspace.default
+    fs: filesystem.local.state
     engine: schedule.engine
 
 # 把 tool/schedule 挂给 agent —— 与 schedule/cron 共用同一个 registry，

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/tool/fs"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rw "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -32,10 +33,13 @@ func TestIntegrationMultiTenantWorkDirIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	store, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: svc})
+	if err != nil {
+		t.Fatal(err)
+	}
 	pack, err := fs.NewFSWorkspace(fs.FSWorkspaceConfig{
-		Root:  ".",
 		Tools: []string{"write"},
-	}, fs.FSWorkspaceDeps{Workspace: svc})
+	}, fs.FSWorkspaceDeps{FS: store, Workspace: svc})
 	if err != nil {
 		t.Fatal(err)
 	}

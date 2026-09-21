@@ -1,20 +1,24 @@
 package memory
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"unicode/utf8"
 
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // DefaultMemoryCharLimit is the default memory.md body size budget (runes).
 const DefaultMemoryCharLimit = 2200
 
 // MemoryStore reads and writes a §-delimited memory.md file with capacity limits.
+// Path is a filesystem.Service-relative path (may carry a global:/local: scope prefix).
 type MemoryStore struct {
+	FS        filesystem.Service
 	Path      string
 	CharLimit int
 	// DocName is the file title in the on-disk header (default memory.md).
@@ -22,21 +26,21 @@ type MemoryStore struct {
 }
 
 // NewMemoryStore opens a store at path with the given char limit.
-func NewMemoryStore(path string, charLimit int) *MemoryStore {
+func NewMemoryStore(fs filesystem.Service, path string, charLimit int) *MemoryStore {
 	if charLimit <= 0 {
 		charLimit = DefaultMemoryCharLimit
 	}
-	return &MemoryStore{Path: path, CharLimit: charLimit}
+	return &MemoryStore{FS: fs, Path: path, CharLimit: charLimit}
 }
 
-// Load reads all entries from disk.
-func (s *MemoryStore) Load() ([]MemoryEntry, error) {
+// Load reads all entries from the store.
+func (s *MemoryStore) Load(ctx context.Context) ([]MemoryEntry, error) {
 	if s.Path == "" {
 		return nil, fmt.Errorf("memory path is required")
 	}
-	data, err := os.ReadFile(s.Path)
+	data, err := s.FS.Read(ctx, s.Path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -58,8 +62,8 @@ type MemoryAddResult struct {
 	Outcome capmemory.AddOutcome
 }
 
-// Add merges one fact into memory.md on disk.
-func (s *MemoryStore) Add(content string) (MemoryAddResult, error) {
+// Add merges one fact into memory.md.
+func (s *MemoryStore) Add(ctx context.Context, content string) (MemoryAddResult, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return MemoryAddResult{}, fmt.Errorf("memory content is empty")
@@ -67,7 +71,7 @@ func (s *MemoryStore) Add(content string) (MemoryAddResult, error) {
 	if LooksLikeSecret(content) {
 		return MemoryAddResult{}, fmt.Errorf("refusing to store content that looks like a secret")
 	}
-	entries, err := s.Load()
+	entries, err := s.Load(ctx)
 	if err != nil {
 		return MemoryAddResult{}, err
 	}
@@ -83,14 +87,14 @@ func (s *MemoryStore) Add(content string) (MemoryAddResult, error) {
 			Entries: entries,
 		}
 	}
-	if err := s.Save(candidate); err != nil {
+	if err := s.Save(ctx, candidate); err != nil {
 		return MemoryAddResult{}, err
 	}
 	return MemoryAddResult{Outcome: outcome}, nil
 }
 
 // Replace updates the entry whose body contains oldText.
-func (s *MemoryStore) Replace(oldText, content string) (MemoryAddResult, error) {
+func (s *MemoryStore) Replace(ctx context.Context, oldText, content string) (MemoryAddResult, error) {
 	oldText = strings.TrimSpace(oldText)
 	content = strings.TrimSpace(content)
 	if oldText == "" {
@@ -102,7 +106,7 @@ func (s *MemoryStore) Replace(oldText, content string) (MemoryAddResult, error) 
 	if LooksLikeSecret(content) {
 		return MemoryAddResult{}, fmt.Errorf("refusing to store content that looks like a secret")
 	}
-	entries, err := s.Load()
+	entries, err := s.Load(ctx)
 	if err != nil {
 		return MemoryAddResult{}, err
 	}
@@ -129,19 +133,19 @@ func (s *MemoryStore) Replace(oldText, content string) (MemoryAddResult, error) 
 			Entries: entries,
 		}
 	}
-	if err := s.Save(next); err != nil {
+	if err := s.Save(ctx, next); err != nil {
 		return MemoryAddResult{}, err
 	}
 	return MemoryAddResult{Outcome: capmemory.AddOutcomeReplaced}, nil
 }
 
 // Remove deletes the entry whose body contains oldText.
-func (s *MemoryStore) Remove(oldText string) (string, error) {
+func (s *MemoryStore) Remove(ctx context.Context, oldText string) (string, error) {
 	oldText = strings.TrimSpace(oldText)
 	if oldText == "" {
 		return "", fmt.Errorf("text is required")
 	}
-	entries, err := s.Load()
+	entries, err := s.Load(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -160,20 +164,20 @@ func (s *MemoryStore) Remove(oldText string) (string, error) {
 	removed := entries[idx].Content
 	next := append([]MemoryEntry{}, entries[:idx]...)
 	next = append(next, entries[idx+1:]...)
-	if err := s.Save(next); err != nil {
+	if err := s.Save(ctx, next); err != nil {
 		return "", err
 	}
 	return removed, nil
 }
 
-// Save writes entries atomically.
-func (s *MemoryStore) Save(entries []MemoryEntry) error {
+// Save writes entries atomically (the filesystem backend guarantees atomic replace).
+func (s *MemoryStore) Save(ctx context.Context, entries []MemoryEntry) error {
 	doc := strings.TrimSpace(s.DocName)
 	if doc == "" {
 		doc = "memory.md"
 	}
 	body := RenderMemoryDocument(entries, doc)
-	return configfile.WriteAtomic(s.Path, []byte(body), 0o644)
+	return s.FS.Write(ctx, s.Path, []byte(body))
 }
 
 // LooksLikeSecret rejects content that may contain credentials.

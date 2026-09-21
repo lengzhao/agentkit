@@ -3,18 +3,24 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/settings"
 	"github.com/lengzhao/pluginkit"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	// Path is settings file, resolved through the workspace.
+	// Path is settings file, resolved through the injected filesystem (scope prefixes allowed).
 	Path string `json:"path"`
+}
+
+type Deps struct {
+	FS filesystem.Service `json:"fs"`
 }
 
 type Store struct {
@@ -27,19 +33,22 @@ func init() {
 }
 
 // New registers settings/file: Load persistent settings from a YAML or JSON file.
-func New(cfg Config) (settings.Store, error) {
+func New(cfg Config, deps Deps) (settings.Store, error) {
+	if deps.FS == nil {
+		return nil, fmt.Errorf("settings/file requires fs dependency")
+	}
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("settings/file requires path")
 	}
 	store := &Store{path: cfg.Path}
-	if err := store.load(); err != nil && !os.IsNotExist(err) {
+	if err := store.load(context.Background(), deps.FS); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	return store, nil
 }
 
-func (s *Store) load() error {
-	raw, err := os.ReadFile(s.path)
+func (s *Store) load(ctx context.Context, fs filesystem.Service) error {
+	raw, err := fs.Read(ctx, s.path)
 	if err != nil {
 		return err
 	}

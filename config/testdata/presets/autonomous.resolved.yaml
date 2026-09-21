@@ -38,6 +38,7 @@ agent.cursor.default:
         id: cursor
         releaseSubprocessAfterTurn: true
     deps:
+        fs: filesystem.local.state
         sessionEvents: session.events
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -131,15 +132,28 @@ credentials.default:
         encryptedFile: global:secrets.enc.json
     deps:
         configfile: configfile.default
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: credentials/env
 credentials.integrations:
     config:
         encryptedFile: global:secrets.enc.json
     deps:
         configfile: configfile.default
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: credentials/integrations
+filesystem.local.default:
+    config:
+        root: work
+        unrestricted: true
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
+filesystem.local.state:
+    config:
+        root: .
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
 hook.before-step.default:
     config:
         contributeCommands: true
@@ -185,6 +199,7 @@ learning.default:
             mode: propose
     deps:
         engine: schedule.engine
+        fs: filesystem.local.state
         memory: memory.default
         sessionStore: sessionStore.default
         workspace: workspace.default
@@ -248,14 +263,14 @@ mcp.default:
         idleTimeoutSeconds: 300
     deps:
         credentials: credentials.integrations
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: tool/mcp
 memory.default:
     config:
         review:
             writeApproval: false
     deps:
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: memory/default
 openapi.default:
     config:
@@ -263,7 +278,7 @@ openapi.default:
             - global:api.json
     deps:
         credentials: credentials.integrations
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: tool/openapi
 platform.default:
     config:
@@ -320,6 +335,7 @@ policy.shell-allowlist.default:
     use: policy/shell-allowlist
 prompt.agents-md.default:
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: prompt/section/agents-md
 prompt.default:
@@ -456,7 +472,7 @@ schedule.default:
         path: global:schedule.json
     deps:
         engine: schedule.engine
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: schedule/multi
 schedule.engine:
     use: schedule/engine
@@ -482,7 +498,7 @@ skills.default:
             - local:skills
             - global:skills
     deps:
-        workspace: workspace.default
+        fs: filesystem.local.state
     use: skill/filesystem
 subagent.default:
     deps:
@@ -542,23 +558,21 @@ tool.finish.default:
 tool.fs-workspace.default:
     config:
         maxBytes: 1048576
-        root: work
-        unrestricted: true
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
 tool.fs-workspace.readonly.default:
     config:
         maxBytes: 1048576
         readOnly: true
-        root: work
         tools:
             - read
             - grep
             - find
             - ls
-        unrestricted: true
     deps:
+        fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
 tool.recognize.default:
@@ -577,6 +591,7 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
+        fs: filesystem.local.default
         sender: platform.default
         workspace: workspace.default
     use: tool/send

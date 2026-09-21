@@ -71,10 +71,18 @@ func multiTenantGraph(localBase string, pinned map[string]any, steps []any) map[
 							map[string]any{
 								"use": "tool/fs-workspace",
 								"config": map[string]any{
-									"root":     ".",
 									"maxBytes": 1048576,
 								},
-								"deps": map[string]any{"workspace": workspaceNode},
+								"deps": map[string]any{
+									"workspace": workspaceNode,
+									"fs": map[string]any{
+										"use": "filesystem/local",
+										"config": map[string]any{
+											"root": ".",
+										},
+										"deps": map[string]any{"workspace": workspaceNode},
+									},
+								},
 							},
 						},
 						"approval": map[string]any{"use": "approval/auto-allow"},

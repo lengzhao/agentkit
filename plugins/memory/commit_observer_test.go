@@ -19,7 +19,7 @@ func (c *countingObserver) OnMemoryCommitted(context.Context, string, string, ca
 func TestRegisterCommitObserverMultiple(t *testing.T) {
 	t.Parallel()
 
-	svc, err := New(Config{}, Deps{Workspace: rtworkspace.Static(t.TempDir())})
+	svc, err := New(Config{}, Deps{FS: testFS(t, rtworkspace.Static(t.TempDir()))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestRegisterCommitObserverMultiple(t *testing.T) {
 func TestRemoveMemoryNotifiesObservers(t *testing.T) {
 	t.Parallel()
 
-	svc, err := New(Config{}, Deps{Workspace: rtworkspace.Static(t.TempDir())})
+	svc, err := New(Config{}, Deps{FS: testFS(t, rtworkspace.Static(t.TempDir()))})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -63,17 +63,26 @@ func New(cfg Config, deps Deps) (T, error)
 
 ### 3.1 工具插件
 
-文件类工具内聚实现读写逻辑，只依赖 `workspace.Service` 解析路径；`cap/filesystem` 仅提供 grep/find 等共享 DTO，`.gitignore` 匹配在 `runtime/filesystem`，均不是可替换 Provider。
+文件类工具只做模型面（分页、edit 匹配、输出格式），字节读写经 `deps.fs` 注入 `cap/filesystem.Service`。标准实现是 `filesystem/local`（workspace 路径 + `.gitignore`）；换 S3 或远程盘时另注册 `filesystem/<name>`，工具 kind 不变。
+
+`cap/filesystem.Service` 契约要点：
+
+- 路径 slash 分隔、相对后端根；`global:`/`local:` 前缀由实现支持（`filesystem/local` 委托 `workspace.Resolve` 做双根路由，且不受自身 root confinement 限制）。
+- not-found 统一约定 `errors.Is(err, os.ErrNotExist)`，实现不得包成不透明错误。
+- `Write` 必须原子（local=temp+rename；对象存储=单次 PUT），父前缀按需创建；`WithPerm(0o600)` 仅供 secrets 类文件，对象存储可忽略。
+- `Append` 供 diary/ledger 等追加流；对象存储可以读改写实现。
+- `DirEntry.ModTime` / `Info.ModTime` 供 ingest 排序与 manifest 新鲜度检查。
+
+状态插件全部经 `deps.fs` 注入：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials、mcp、openapi、settings、agent/acp-remote 接 `filesystem.local.state`（root="."，workspace 根）；prompt/agents-md、tool/send 因传宿主机绝对路径而接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP `fs/read|write_text_file` 协议面、shell 类插件的子进程 cwd `MkdirAll`。
 
 ```go
 package fs
 
 import (
     "context"
-    "os"
 
     "github.com/lengzhao/agentkit"
-    "github.com/lengzhao/agentkit/cap/workspace"
+    "github.com/lengzhao/agentkit/cap/filesystem"
     "github.com/lengzhao/pluginkit"
 )
 
@@ -82,11 +91,11 @@ type Config struct {
 }
 
 type Deps struct {
-    Workspace workspace.Service `json:"workspace"`
+    FS filesystem.Service `json:"fs"`
 }
 
 type ReadInput struct {
-    Path string `json:"path" jsonschema:"File path relative to the workspace"`
+    Path string `json:"path" jsonschema:"File path relative to the filesystem root"`
 }
 
 func init() {
@@ -95,17 +104,12 @@ func init() {
 
 func New(cfg Config, deps Deps) (agentkit.Tool, error) {
     read, err := agentkit.NewTool[ReadInput, string]("read", func(ctx context.Context, input ReadInput) (string, error) {
-        abs, err := deps.Workspace.Resolve(ctx, input.Path)
+        data, err := deps.FS.Read(ctx, input.Path)
         if err != nil {
             return "", err
         }
-        data, err := os.ReadFile(abs)
-        if err != nil {
-            return "", err
-        }
-        // truncate, line numbers, etc. omitted
         return string(data), nil
-    }).Description("Read a text file from the workspace.").Build()
+    }).Description("Read a text file.").Build()
     if err != nil {
         return nil, err
     }
@@ -1173,7 +1177,7 @@ plugins/tool/
 
 | 插件 kind | 模型工具名 | 说明 |
 |---|---|---|
-| `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`read` 分页、`grep`/`find`/`ls` 可调 `limit`，`grep` 支持 `literal`/`context`，`find` 支持 `**`，`grep`/`find` 尊重 `.gitignore`；`edit` 对原文批量匹配；详见 [plugin-catalog.zh.md](plugin-catalog.zh.md) |
+| `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 模型面文件工具组；IO 走 `deps.fs`。`filesystem/local` 下 `grep`/`find` 尊重 `.gitignore`；详见 [plugin-catalog.zh.md](plugin-catalog.zh.md) |
 | `tool/fs-memory` | 同上 | 内存 FS，测试与冒烟 |
 | `tool/shell-bash` | `bash` | bash 执行；L0 默认 `deps.credentials.integrations`，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/web-fetch-http` | `web_fetch` | HTTP 抓取，无需凭据 |
@@ -1186,12 +1190,12 @@ plugins/tool/
 
 `tools/runtime` 按工具来源分开挂载：`deps.tools` 接收单个 `agentkit.Tool`，`deps.toolPacks` 接收 `agentkit.ToolPack`（一个插件实例暴露多个模型工具），`deps.dynamicTools` 接收运行时动态发现的 `agentkit.ToolProvider`。聚合后可通过 `config.allowTools` / `config.denyTools` 按模型可见工具名再做统一 restriction（与 MCP/OpenAPI 来源侧过滤可叠加）。
 
-`cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`compaction.Service`、`telemetry.Exporter`）；`cap/filesystem` 仅是 grep/find 共享 DTO，**不是 Provider 边界**（`.gitignore` 在 `runtime/filesystem`）。Tool 内聚实现为主，只有 workspace、credentials、session 等运行时共享能力继续作为 deps 注入。
+`cap/*` 保留真正可替换的能力接口（如 `workspace.Service`、`filesystem.Service`、`compaction.Service`、`telemetry.Exporter`）。`filesystem/local` 是本地盘标准实现（`.gitignore` 在 `runtime/filesystem`）；S3 / 远程等另注册 `filesystem/<name>`。Tool 内聚模型面，字节 IO 经 deps 注入。
 
 设计规则：
 
 - 优先单插件完成模型可见功能；出现多个真实实现或多个消费者时再拆分。
-- 只有 workspace、credentials、session、approval 等运行时共享能力继续作为 deps 注入。
+- 只有 workspace、filesystem、credentials、session、approval 等运行时共享能力继续作为 deps 注入。
 - 安全策略挂在执行路径上（Policy Plane + provider 内硬约束），不能只靠 prompt 隐藏工具。
 
 ### 7.1 Policy Plane

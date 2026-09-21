@@ -12,13 +12,27 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
 	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
+
+// testCredentialsFS builds an unrestricted filesystem/local over a temp dir for
+// credentials/env (tests resolve process env only; the fs is never touched).
+func testCredentialsFS(t *testing.T) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: rtworkspace.Static(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
 
 // E2E-402: Langfuse exporter flushes after a loop-driven agent turn.
 func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
@@ -44,7 +58,7 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
-	creds, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{})
+	creds, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

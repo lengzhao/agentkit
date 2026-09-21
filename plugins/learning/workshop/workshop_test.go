@@ -1,31 +1,46 @@
 package workshop_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/plugins/learning/workshop"
+	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+func testFS(t *testing.T, dir string) filesystem.Service {
+	t.Helper()
+	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: "."}, rtfilesystem.Deps{Workspace: rtworkspace.Static(dir)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fs
+}
 
 func TestWorkshopCreateApply(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	skillsDir := filepath.Join(root, "skills")
-	store := &workshop.Store{Root: filepath.Join(skillsDir, ".workshop")}
+	fs := testFS(t, root)
+	ctx := context.Background()
+	skillsDir := "skills"
+	store := &workshop.Store{FS: fs, Root: "skills/.workshop"}
 	body := workshop.DraftSkillBody("deploy-check", "Deployment checklist", "1. run tests\n2. deploy staging")
-	p, err := store.Create("deploy-check", body, "test", "cli:default", "", false)
+	p, err := store.Create(ctx, "deploy-check", body, "test", "cli:default", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.Meta.Status != workshop.StatusPending {
 		t.Fatalf("status=%s", p.Meta.Status)
 	}
-	if err := p.Apply(skillsDir); err != nil {
+	if err := p.Apply(ctx, skillsDir); err != nil {
 		t.Fatal(err)
 	}
-	skillPath := filepath.Join(skillsDir, "deploy-check", "SKILL.md")
+	skillPath := filepath.Join(root, "skills", "deploy-check", "SKILL.md")
 	data, err := os.ReadFile(skillPath)
 	if err != nil {
 		t.Fatal(err)
@@ -46,13 +61,13 @@ func TestWorkshopCreateDoesNotWriteIntoExistingDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "deploy-check", "README.md"), []byte("handwritten"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	store := &workshop.Store{Root: filepath.Join(skillsDir, ".workshop")}
+	store := &workshop.Store{FS: testFS(t, root), Root: "skills/.workshop"}
 	body := workshop.DraftSkillBody("deploy-check", "Deployment checklist", "1. run tests")
-	p, err := store.Create("deploy-check", body, "test", "cli:default", "", false)
+	p, err := store.Create(context.Background(), "deploy-check", body, "test", "cli:default", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Apply(skillsDir); err == nil {
+	if err := p.Apply(context.Background(), "skills"); err == nil {
 		t.Fatal("expected apply to reject existing skill directory")
 	}
 }

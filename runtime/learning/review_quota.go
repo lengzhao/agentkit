@@ -1,31 +1,34 @@
 package learning
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
-	"github.com/lengzhao/agentkit/runtime/configfile"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 )
 
 // ReviewQuota tracks per-day background review runs for throttling.
 type ReviewQuota struct {
-	Date string `json:"date"`
-	Count int   `json:"count"`
+	Date  string `json:"date"`
+	Count int    `json:"count"`
 }
 
 // QuotaStore persists review_quota.json under memory/dreaming/.
+// Path is a filesystem.Service-relative path.
 type QuotaStore struct {
+	FS   filesystem.Service
 	Path string
 }
 
-func (q *QuotaStore) TryConsume(maxPerDay int, now time.Time) (bool, error) {
+func (q *QuotaStore) TryConsume(ctx context.Context, maxPerDay int, now time.Time) (bool, error) {
 	if maxPerDay <= 0 {
 		return true, nil
 	}
-	st, err := q.load()
+	st, err := q.load(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -37,16 +40,16 @@ func (q *QuotaStore) TryConsume(maxPerDay int, now time.Time) (bool, error) {
 		return false, nil
 	}
 	st.Count++
-	return true, q.save(st)
+	return true, q.save(ctx, st)
 }
 
-func (q *QuotaStore) load() (ReviewQuota, error) {
+func (q *QuotaStore) load(ctx context.Context) (ReviewQuota, error) {
 	if q.Path == "" {
 		return ReviewQuota{}, fmt.Errorf("quota path is required")
 	}
-	data, err := os.ReadFile(q.Path)
+	data, err := q.FS.Read(ctx, q.Path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return ReviewQuota{}, nil
 		}
 		return ReviewQuota{}, err
@@ -58,13 +61,10 @@ func (q *QuotaStore) load() (ReviewQuota, error) {
 	return st, nil
 }
 
-func (q *QuotaStore) save(st ReviewQuota) error {
-	if err := os.MkdirAll(filepath.Dir(q.Path), 0o755); err != nil {
-		return err
-	}
+func (q *QuotaStore) save(ctx context.Context, st ReviewQuota) error {
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return configfile.WriteAtomic(q.Path, data, 0o644)
+	return q.FS.Write(ctx, q.Path, data)
 }

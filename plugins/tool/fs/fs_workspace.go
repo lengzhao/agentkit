@@ -3,23 +3,16 @@ package fs
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
-	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
-	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/workspace/workpath"
+	rtmedia "github.com/lengzhao/agentkit/runtime/media"
 )
 
 type FSWorkspaceConfig struct {
-	// Root is directory relative to the workspace root; may use the global: or local: scope prefix.
-	Root string `json:"root"`
+	// Root is accepted for older configs; path confinement lives on filesystem/local.
+	Root string `json:"root,omitempty"`
 	// MaxBytes is read truncation limit; defaults to 1 MiB.
 	MaxBytes int `json:"maxBytes,omitempty"`
 	// MaxMatches is grep cap per call; defaults to 100.
@@ -30,33 +23,29 @@ type FSWorkspaceConfig struct {
 	MaxListEntries int `json:"maxListEntries,omitempty"`
 	// ReadOnly rejects write and edit operations.
 	ReadOnly bool `json:"readOnly,omitempty"`
-	// Unrestricted disables path permission checks; paths are not confined to root.
+	// Unrestricted is accepted for older configs; belongs on filesystem/local.
 	Unrestricted bool `json:"unrestricted,omitempty"`
 	// Tools limits which model tools are registered; empty means all six (read, write, edit, grep, find, ls).
 	Tools []string `json:"tools,omitempty"`
 }
 
 type FSWorkspaceDeps struct {
-	Workspace workspace.Service `json:"workspace"`
+	FS        filesystem.Service `json:"fs"`
+	Workspace workspace.Service  `json:"workspace,omitempty"`
 }
 
-type workspaceFS struct {
-	relRoot      string
-	workspace    workspace.Service
-	readOnly     bool
-	unrestricted bool
+type fsAdapter struct {
+	store     filesystem.Service
+	workspace workspace.Service
+	readOnly  bool
 }
 
-var _ workspaceFSOps = (*workspaceFS)(nil)
+var _ workspaceFSOps = (*fsAdapter)(nil)
 
-// NewFSWorkspace registers tool/fs-workspace: Workspace file tools (read, write, edit, grep, find, ls).
+// NewFSWorkspace registers tool/fs-workspace: model file tools over an injected filesystem.Service.
 func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolPack, error) {
-	if deps.Workspace == nil {
-		return nil, fmt.Errorf("tool/fs-workspace requires workspace")
-	}
-	root := cfg.Root
-	if root == "" {
-		root = "."
+	if deps.FS == nil {
+		return nil, fmt.Errorf("tool/fs-workspace requires fs (filesystem/local or another filesystem.Service)")
 	}
 	maxBytes := cfg.MaxBytes
 	if maxBytes <= 0 {
@@ -74,11 +63,10 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 	if maxListEntries <= 0 {
 		maxListEntries = defaultListLimit
 	}
-	fs := &workspaceFS{
-		relRoot:      root,
-		workspace:    deps.Workspace,
-		readOnly:     cfg.ReadOnly,
-		unrestricted: cfg.Unrestricted,
+	fs := &fsAdapter{
+		store:     deps.FS,
+		workspace: deps.Workspace,
+		readOnly:  cfg.ReadOnly,
 	}
 	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
 }
@@ -284,71 +272,49 @@ func applyWorkspaceEdits(fs workspaceFSOps) func(context.Context, EditInput) (st
 	}
 }
 
-func (s *workspaceFS) rootDir(ctx context.Context) (string, error) {
-	return s.workspace.Resolve(ctx, s.relRoot)
+func (a *fsAdapter) llmPath(ctx context.Context, path string) string {
+	if a.workspace == nil {
+		return path
+	}
+	return rtmedia.AgentLLMPath(ctx, a.workspace, path)
 }
 
-func (s *workspaceFS) resolve(ctx context.Context, path string) (string, error) {
-	if s.unrestricted && filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
+func (a *fsAdapter) rewritePathsInText(ctx context.Context, text string) string {
+	if a.workspace == nil {
+		return text
 	}
-	clean := filepath.Clean(path)
-	if filepath.IsAbs(clean) {
-		clean = strings.TrimPrefix(clean, string(filepath.Separator))
-	}
-	clean = workpath.TrimRedundantFSRootPrefix(s.relRoot, clean)
-	root, err := s.rootDir(ctx)
-	if err != nil {
-		return "", err
-	}
-	full := filepath.Join(root, clean)
-	if !s.unrestricted {
-		rel, err := filepath.Rel(root, full)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			return "", fmt.Errorf("path escapes workspace: %s", path)
-		}
-	}
-	return full, nil
+	return rtmedia.RewritePathsInText(ctx, a.workspace, text)
 }
 
-func (s *workspaceFS) llmPath(ctx context.Context, path string) string {
-	return rtmedia.AgentLLMPath(ctx, s.workspace, path)
-}
-
-func (s *workspaceFS) rewritePathsInText(ctx context.Context, text string) string {
-	return rtmedia.RewritePathsInText(ctx, s.workspace, text)
-}
-
-func (s *workspaceFS) readImage(ctx context.Context, path string) (string, error) {
-	full, err := s.resolve(ctx, path)
-	if err != nil {
-		return "", err
-	}
-	display := s.llmPath(ctx, path)
+func (a *fsAdapter) readImage(ctx context.Context, path string) (string, error) {
+	display := a.llmPath(ctx, path)
 	if display == "" {
 		display = path
 	}
-	return readImageToolResult(full, display)
+	return readImageToolResult(ctx, a.store, path, display)
 }
 
-func (s *workspaceFS) pathMayBeImage(ctx context.Context, path string) bool {
+func (a *fsAdapter) pathMayBeImage(ctx context.Context, path string) bool {
 	if rtmedia.IsImagePath(path) {
 		return true
 	}
-	full, err := s.resolve(ctx, path)
+	info, err := a.store.Stat(ctx, path)
+	if err != nil || info.IsDir {
+		return false
+	}
+	data, err := a.store.Read(ctx, path)
 	if err != nil {
 		return false
 	}
-	head, err := rtmedia.ReadFileHead(full, 512)
-	return err == nil && rtmedia.LooksLikeImageData(head)
+	head := data
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	return rtmedia.LooksLikeImageData(head)
 }
 
-func (s *workspaceFS) readText(ctx context.Context, path string, maxBytes int) (string, error) {
-	full, err := s.resolve(ctx, path)
-	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(full)
+func (a *fsAdapter) readText(ctx context.Context, path string, maxBytes int) (string, error) {
+	data, err := a.store.Read(ctx, path)
 	if err != nil {
 		return "", err
 	}
@@ -358,262 +324,21 @@ func (s *workspaceFS) readText(ctx context.Context, path string, maxBytes int) (
 	return string(data), nil
 }
 
-func (s *workspaceFS) writeText(ctx context.Context, path, content string) error {
-	if s.readOnly {
+func (a *fsAdapter) writeText(ctx context.Context, path, content string) error {
+	if a.readOnly {
 		return fmt.Errorf("read-only filesystem")
 	}
-	full, err := s.resolve(ctx, path)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(full, []byte(content), 0o644)
+	return a.store.Write(ctx, path, []byte(content))
 }
 
-func (s *workspaceFS) listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error) {
-	full, err := s.resolve(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(full)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", path)
-	}
-	entries, err := os.ReadDir(full)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]filesystem.DirEntry, 0, len(entries))
-	for _, entry := range entries {
-		rel := filepath.ToSlash(filepath.Join(path, entry.Name()))
-		if path == "" || path == "." {
-			rel = entry.Name()
-		}
-		out = append(out, filesystem.DirEntry{
-			Name:  entry.Name(),
-			Path:  rel,
-			IsDir: entry.IsDir(),
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].IsDir != out[j].IsDir {
-			return out[i].IsDir
-		}
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
-	})
-	return out, nil
+func (a *fsAdapter) listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error) {
+	return a.store.List(ctx, path)
 }
 
-func (s *workspaceFS) grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
-	if req.Pattern == "" {
-		return filesystem.GrepResult{}, fmt.Errorf("pattern is required")
-	}
-	searchPath := req.Path
-	if searchPath == "" {
-		searchPath = "."
-	}
-	limit := req.MaxMatches
-	if limit <= 0 {
-		limit = defaultGrepLimit
-	}
-
-	var re *regexp.Regexp
-	if !req.Literal {
-		pattern := req.Pattern
-		if req.IgnoreCase {
-			pattern = "(?i)" + pattern
-		}
-		compiled, err := regexp.Compile(pattern)
-		if err != nil {
-			return filesystem.GrepResult{}, fmt.Errorf("invalid pattern: %w", err)
-		}
-		re = compiled
-	}
-
-	root, err := s.resolve(ctx, searchPath)
-	if err != nil {
-		return filesystem.GrepResult{}, err
-	}
-	workspaceRoot, err := s.rootDir(ctx)
-	if err != nil {
-		return filesystem.GrepResult{}, err
-	}
-	ignore, err := rtfilesystem.LoadIgnoreMatcher(workspaceRoot)
-	if err != nil {
-		return filesystem.GrepResult{}, err
-	}
-	rootInfo, err := os.Stat(root)
-	if err != nil {
-		return filesystem.GrepResult{}, err
-	}
-
-	collector := newGrepCollector(limit)
-	scanFile := func(fullPath, rel string) error {
-		data, err := os.ReadFile(fullPath)
-		if err != nil {
-			return err
-		}
-		return grepFileBytes(data, rel, req.Pattern, req.IgnoreCase, req.Literal, re, req.Context, collector)
-	}
-
-	if !rootInfo.IsDir() {
-		if req.Glob != "" {
-			matched, err := filepath.Match(req.Glob, filepath.Base(root))
-			if err != nil {
-				return filesystem.GrepResult{}, fmt.Errorf("invalid glob: %w", err)
-			}
-			if !matched {
-				return collector.Result(), nil
-			}
-		}
-		rel, err := filepath.Rel(workspaceRoot, root)
-		if err != nil {
-			return filesystem.GrepResult{}, err
-		}
-		if err := scanFile(root, filepath.ToSlash(rel)); err != nil {
-			return filesystem.GrepResult{}, err
-		}
-		return collector.Result(), nil
-	}
-
-	err = filepath.WalkDir(root, func(fullPath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(workspaceRoot, fullPath)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if ignore.Ignored(rel, entry.IsDir()) {
-			if entry.IsDir() && fullPath != root {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if req.Glob != "" {
-			matched, err := filepath.Match(req.Glob, entry.Name())
-			if err != nil {
-				return fmt.Errorf("invalid glob: %w", err)
-			}
-			if !matched {
-				return nil
-			}
-		}
-		if collector.Truncated {
-			return filepath.SkipAll
-		}
-		return scanFile(fullPath, rel)
-	})
-	if err != nil {
-		return filesystem.GrepResult{}, err
-	}
-	return collector.Result(), nil
+func (a *fsAdapter) grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
+	return a.store.Grep(ctx, req)
 }
 
-func (s *workspaceFS) find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
-	if req.Pattern == "" {
-		return filesystem.FindResult{}, fmt.Errorf("pattern is required")
-	}
-	searchPath := req.Path
-	if searchPath == "" {
-		searchPath = "."
-	}
-	limit := req.MaxResults
-	if limit <= 0 {
-		limit = defaultFindLimit
-	}
-
-	root, err := s.resolve(ctx, searchPath)
-	if err != nil {
-		return filesystem.FindResult{}, err
-	}
-	workspaceRoot, err := s.rootDir(ctx)
-	if err != nil {
-		return filesystem.FindResult{}, err
-	}
-	ignore, err := rtfilesystem.LoadIgnoreMatcher(workspaceRoot)
-	if err != nil {
-		return filesystem.FindResult{}, err
-	}
-	rootInfo, err := os.Stat(root)
-	if err != nil {
-		return filesystem.FindResult{}, err
-	}
-
-	result := filesystem.FindResult{Paths: []string{}}
-	appendPath := func(rel string) bool {
-		result.Paths = append(result.Paths, rel)
-		if len(result.Paths) >= limit {
-			result.Truncated = true
-			return false
-		}
-		return true
-	}
-
-	if !rootInfo.IsDir() {
-		rel, err := filepath.Rel(workspaceRoot, root)
-		if err != nil {
-			return filesystem.FindResult{}, err
-		}
-		rel = filepath.ToSlash(rel)
-		matched, err := matchFilePattern(req.Pattern, rel)
-		if err != nil {
-			return filesystem.FindResult{}, fmt.Errorf("invalid pattern: %w", err)
-		}
-		if matched {
-			appendPath(rel)
-		}
-		text, hint := formatFindPaths(result.Paths, result.Truncated, limit)
-		result.Text = text
-		result.Hint = hint
-		return result, nil
-	}
-
-	err = filepath.WalkDir(root, func(fullPath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(workspaceRoot, fullPath)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if ignore.Ignored(rel, entry.IsDir()) {
-			if entry.IsDir() && fullPath != root {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		matched, err := matchFilePattern(req.Pattern, rel)
-		if err != nil {
-			return fmt.Errorf("invalid pattern: %w", err)
-		}
-		if matched {
-			if !appendPath(rel) {
-				return filepath.SkipAll
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return filesystem.FindResult{}, err
-	}
-	sort.Strings(result.Paths)
-	text, hint := formatFindPaths(result.Paths, result.Truncated, limit)
-	result.Text = text
-	result.Hint = hint
-	return result, nil
+func (a *fsAdapter) find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
+	return a.store.Find(ctx, req)
 }
-

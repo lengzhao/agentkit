@@ -14,6 +14,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -40,6 +41,7 @@ type acpPromptResponse struct {
 type bridge struct {
 	cfg        Config
 	workspace  workspace.Service
+	fs         filesystem.Service
 	sessionMCP capacp.SessionMCPProvider
 
 	connOps chan connOp
@@ -76,10 +78,11 @@ func (proc *subprocess) alive() bool {
 	}
 }
 
-func newBridge(cfg Config, ws workspace.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
+func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
 	b := &bridge{
 		cfg:        cfg,
 		workspace:  ws,
+		fs:         fs,
 		sessionMCP: sessionMCP,
 		connOps:    make(chan connOp),
 	}
@@ -125,8 +128,9 @@ func (b *bridge) currentTurn() *turnState {
 	return b.turn.Load()
 }
 
-func (b *bridge) bindDir(ctx context.Context) (string, error) {
-	return b.workspace.Resolve(ctx, defaultBindDir)
+// bindDir is the fs-relative dir holding ACP session resume binds.
+func (b *bridge) bindDir(context.Context) (string, error) {
+	return defaultBindDir, nil
 }
 
 func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID acp.SessionId, state *sessionState) {
@@ -197,7 +201,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	}
 	b.recordSessionMCP(ctx, mcpServers)
 
-	if bind, ok, err := loadACPSessionBind(bindPath); err != nil {
+	if bind, ok, err := loadACPSessionBind(ctx, b.fs, bindPath); err != nil {
 		return "", err
 	} else if ok && bind.Cwd == cwd {
 		resp, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
@@ -225,7 +229,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	state := newSessionState()
 	state.applyBootstrap(resp.ConfigOptions, resp.Modes)
 	proc.trackSession(sessionID, resp.SessionId, state)
-	if err := saveACPSessionBind(bindPath, acpSessionBind{
+	if err := saveACPSessionBind(ctx, b.fs, bindPath, acpSessionBind{
 		AgentID:      agentID,
 		ACPSessionID: resp.SessionId,
 		Cwd:          cwd,
