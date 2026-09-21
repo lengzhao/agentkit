@@ -43,6 +43,8 @@ type Tool interface {
 type Reader interface {
 	LoadEntries(ctx context.Context) ([]MemoryEntry, int, int, error)
 	PromptBody(ctx context.Context) (string, error)
+	// PreviewAddOutcome classifies how text would merge into memory.md without writing.
+	PreviewAddOutcome(ctx context.Context, text string) (AddOutcome, error)
 }
 
 // Capture applies learn_capture memory actions during background review.

@@ -73,7 +73,7 @@ func New(cfg Config, deps Deps) (T, error)
 - `Append` 供 diary/ledger 等追加流；对象存储可以读改写实现。
 - `DirEntry.ModTime` / `Info.ModTime` 供 ingest 排序与 manifest 新鲜度检查。
 
-状态插件全部经 `deps.fs` 注入：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials、mcp、openapi、settings、agent/acp-remote 接 `filesystem.local.state`（root="."，workspace 根）；prompt/agents-md、tool/send 因传宿主机绝对路径而接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP `fs/read|write_text_file` 协议面、shell 类插件的子进程 cwd `MkdirAll`。
+状态插件全部经 `deps.fs` 注入：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials、mcp、openapi、agent/acp-remote 接 `filesystem.local.state`（root="."，workspace 根）；prompt/agents-md、tool/send 因传宿主机绝对路径而接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP `fs/read|write_text_file` 协议面、shell 类插件的子进程 cwd `MkdirAll`。
 
 ```go
 package fs

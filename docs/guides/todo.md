@@ -51,7 +51,7 @@ flowchart TB
 
 ## A — 插件改走 cap / 根包接口（消除 `plugins → runtime`）
 
-每项验收：对应插件**非测试源码**不再 import 该 `runtime` 包；能力经 `deps` 注入 cap / 根包接口；`scripts/refresh-preset-goldens` 无意外 diff。
+每项验收：对应插件**非测试源码**不再 import 该 `runtime` 包；能力经 `deps` 注入 cap / 根包接口；改 `config.base.yaml` 后 `cd config && go run regen_presets_golden.go` 无意外 diff。
 
 ### A1 会话读写（缺 cap，插件仍调包级函数）
 
@@ -72,7 +72,7 @@ flowchart TB
 - [x] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell` → 注入
   - 落地：`cap/credentials` 仅 `Store` / `EnvPairResolver` / `Secret` / `GlobalScope`；密文、manifest、scoped 查找在 `plugins/credentials`；mcp / openapi / shell 经 `deps.credentials` 注入 `Store`（shell 另断言 `EnvPairResolver`），各自拼 `mcp.` / `openapi.` / `shell-bash.` scope。
   - 验收：上述插件非测试源码不再 import `runtime/credentials`（该包已删除）。
-- [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`）
+- [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`；`learning` 背景审阅信号去重经 `Reader.PreviewAddOutcome`，非测试源码不再 import `runtime/memory`）
 - [ ] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
 - [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
 - [ ] **`cap/permission`**：`tool/askuser`、`agent/acpremote` → 注入

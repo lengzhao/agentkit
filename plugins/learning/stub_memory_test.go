@@ -46,6 +46,10 @@ func (m *testMemoryStub) PromptBody(ctx context.Context) (string, error) {
 	return "", nil
 }
 
+func (m *testMemoryStub) PreviewAddOutcome(context.Context, string) (capmemory.AddOutcome, error) {
+	return capmemory.AddOutcomeAdded, nil
+}
+
 func (m *testMemoryStub) MemoryTool(ctx context.Context, in capmemory.MemoryToolInput) (capmemory.MemoryToolOutput, error) {
 	return capmemory.MemoryToolOutput{}, fmt.Errorf("stub memory tool")
 }
