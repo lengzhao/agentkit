@@ -88,6 +88,7 @@ func newTestMCPProvider(t *testing.T) (*mcpProvider, string) {
 	}
 
 	return &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files: []string{configPath},
 		fs:    testFSForWorkspace(t, &testWorkspace{root: dir}),
 		pool:  newClientPool(0),
@@ -193,6 +194,7 @@ func TestMCPServerAddCommand(t *testing.T) {
 	}
 
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files:       []string{filepath.Join(dir, "mcp.json")},
 		enableLocal: true,
 		fs:          testFSForWorkspace(t, &testWorkspace{root: dir}),

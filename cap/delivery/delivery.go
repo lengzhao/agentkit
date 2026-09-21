@@ -24,3 +24,20 @@ type RouteInput struct {
 	SessionID string
 	UserID    string
 }
+
+// AssistantMessageOptions configures proactive assistant outbound delivery.
+type AssistantMessageOptions struct {
+	Route RouteInput
+	// Raw skips platform markdown conversion when the transport supports it.
+	Raw bool
+	// UseContextEmit delivers through the per-turn OutboundEmit hook when the route
+	// is the current inbox (empty SessionID and UserID).
+	UseContextEmit bool
+}
+
+// Assistant resolves delivery routes and sends proactive assistant messages.
+type Assistant interface {
+	ResolveRoute(context.Context, RouteInput) (Route, error)
+	SendAssistantMessage(context.Context, Sender, []agentkit.ContentPart, AssistantMessageOptions) error
+	SendProactiveInboxText(context.Context, Sender, string) error
+}

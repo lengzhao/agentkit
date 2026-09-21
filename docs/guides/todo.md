@@ -76,11 +76,19 @@ flowchart TB
 - [x] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
   - 落地：`cap/skill` 仅 `Registry` / `Descriptor` / `Content`；`skill/filesystem` 实现 Registry；`prompt/section/skills`、`tool/skill` 经 `deps.skills` 注入；`tool/skill` 经 `sessionEvents` 做 `RenderSkillContent` / `AppendSkillLoad`，非测试源码不再 import `runtime/skill`。
   - 验收：`plugins/tool/skill` 非测试源码不再 import `runtime/skill`（解析留在 `plugins/skill` → `runtime/skill`）。
-- [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
-- [ ] **`cap/permission`**：`tool/askuser`、`agent/acpremote` → 注入
-- [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize` → 注入
-- [ ] **`cap/learning`**：仅 `plugins/learning` → 公共函数改小写
-- [ ] **`cap/acp`**：仅 `agent/acpremote` → 公共函数改小写
+- [x] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
+  - 落地：`cap/delivery.Assistant`（ResolveRoute / SendAssistantMessage / SendProactiveInboxText）+ `AssistantMessageOptions`；`runtime/delivery` 自注册 `delivery/assistant`；上述插件经 `deps.delivery` 注入（sender 仍用 `cap/delivery.Sender`）。
+  - 验收：上述插件非测试源码不再 import `runtime/delivery`。
+- [x] **`cap/permission`**：`tool/askuser`、`agent/acpremote` → 注入
+  - 落地：`BrokerFrom` / `CapabilityFrom` 与 `NoHuman`/`TimedOut`/… 纯结果构造上移至 `cap/permission`；`runtime/permission` 薄包装保留；插件直调 cap。
+  - 验收：`tool/askuser`、`agent/acpremote` 非测试源码不再 import `runtime/permission`。
+- [x] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize` → 注入
+  - 落地：`cap/telemetry.Toolkit`（ctx 观测 + 导出助手）；`runtime/telemetry` 自注册 `telemetry/toolkit`；`cap/telemetry.Noop`；各消费者经 `deps.telemetry` 注入；`telemetry/langfuse` 实现 Exporter 仍用 Toolkit 做 ctx 父子 span。
+  - 验收：上述插件非测试源码不再 import `runtime/telemetry`。
+- [x] **`cap/learning`**：仅 `plugins/learning` → 公共函数改小写
+  - 现状：cap 仅接口/DTO，无多余导出函数；learning 编排仍经 `deps.learning` 注入 `ReviewHost` 等。
+- [x] **`cap/acp`**：仅 `agent/acpremote` → 公共函数改小写
+  - 现状：cap 仅 `SessionMCPProvider` 与 MCP DTO；经 `deps.sessionMcp` 注入。
 - [x] **`cap/filesystem`**：`Service`（Read/Write/Append/Stat/List/Grep/Find）+ Grep/Find DTO + `WriteOption`（`WithPerm`）+ `DirEntry/Info.ModTime`；not-found 约定 `errors.Is(err, os.ErrNotExist)`，Write 原子（local=temp+rename），`global:`/`local:` 前缀委托 workspace 双根路由。`filesystem/local` 在 `runtime/filesystem`（gitignore 匹配留在此）。**全部状态插件经 `deps.fs` 注入**：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials（含 `/env add` 0600）、mcp、openapi（含 local→global 复制）、agent/acp-remote（session bind）接 `filesystem.local.state`（root="."）；prompt/agents-md、tool/send（绝对路径）接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP fs 协议、shell 类插件的子进程 cwd。S3/远程另注册 `filesystem/<name>` 即可。
 
 ### A3 契约尚未成型

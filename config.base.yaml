@@ -189,6 +189,12 @@ agent.catalogCommands.default:
 telemetry.default:
   use: telemetry/none
 
+telemetry.toolkit:
+  use: telemetry/toolkit
+
+delivery.default:
+  use: delivery/assistant
+
 agent.assistant.default:
   use: agent/coding
   config:
@@ -253,6 +259,7 @@ agent.cursor.default:
     fs: filesystem.local.state
     sessionStore: sessionStore.default
     sessionEvents: session.events
+    telemetry: telemetry.toolkit
 
 # 通过 ACP 调用 claude-agent-acp（Claude Agent SDK）。需 Node.js ≥ 22；凭证经子进程 env 注入（见 docs/plugin-catalog.zh.md §3.2）。
 agent.claude.default:
@@ -274,6 +281,7 @@ agent.claude.default:
     fs: filesystem.local.state
     sessionStore: sessionStore.default
     sessionEvents: session.events
+    telemetry: telemetry.toolkit
 
 sessionStore.default:
   use: session/store
@@ -465,6 +473,7 @@ hook.background-review.default:
     llm: llm.review
     sessionIndex: sessionIndex.default
     sender: platform.default
+    delivery: delivery.default
 
 memory.default:
   use: memory/default
@@ -867,6 +876,7 @@ tool.recognize.default:
   deps:
     llm: llm.openai
     workspace: workspace.default
+    telemetry: telemetry.toolkit
 
 tool.fs-workspace.readonly.default:
   use: tool/fs-workspace
@@ -971,6 +981,7 @@ tool.send.default:
   use: tool/send
   deps:
     sender: platform.default
+    delivery: delivery.default
     workspace: workspace.default
     # 附件路径为宿主机绝对路径，需 unrestricted 实例做存在性校验。
     fs: filesystem.local.default
@@ -979,6 +990,7 @@ tool.chat-history.default:
   use: tool/chat-history
   deps:
     history: platform.default
+    delivery: delivery.default
 
 mcp.default:
   use: tool/mcp
@@ -989,6 +1001,7 @@ mcp.default:
   deps:
     fs: filesystem.local.state
     credentials: credentials.integrations
+    telemetry: telemetry.toolkit
 
 openapi.default:
   use: tool/openapi
@@ -999,6 +1012,7 @@ openapi.default:
     fs: filesystem.local.state
     workspace: workspace.default
     credentials: credentials.integrations
+    telemetry: telemetry.toolkit
 
 policy.dangerous-shell.default:
   use: policy/deny-dangerous-shell

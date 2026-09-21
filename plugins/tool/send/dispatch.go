@@ -11,7 +11,6 @@ import (
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 )
 
 // Dispatch sends a proactive message through the delivery sender.
@@ -23,11 +22,14 @@ func Dispatch(ctx context.Context, deps SendDeps, cfg SendConfig, input SendInpu
 	if deps.Sender == nil {
 		return fmt.Errorf("tool/send requires sender dependency")
 	}
+	if deps.Delivery == nil {
+		return fmt.Errorf("tool/send requires delivery dependency")
+	}
 	parts, err := buildParts(ctx, input, deps.Workspace, deps.FS, root)
 	if err != nil {
 		return err
 	}
-	return rtdelivery.SendAssistantMessage(ctx, deps.Sender, parts, rtdelivery.AssistantMessageOptions{
+	return deps.Delivery.SendAssistantMessage(ctx, deps.Sender, parts, capsdelivery.AssistantMessageOptions{
 		Route: capsdelivery.RouteInput{
 			SessionID: input.SessionID,
 			UserID:    input.UserID,

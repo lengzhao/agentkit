@@ -27,7 +27,7 @@ func TestOpenAPICredentialWarningOnReload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestOpenAPIStatusListsCredentialScopes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: scopedCredsForAPI("petstore", nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +96,7 @@ func TestOpenAPICredentialWarningAbsentWhenEnvSet(t *testing.T) {
 	}
 
 	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{
+		Telemetry:   mustTelemetry(t),
 		FS:          testFS(t, dir),
 		Workspace:   &testWorkspace{root: dir},
 		Credentials: scopedCredsForAPI("petstore", map[string]string{key: "secret"}),

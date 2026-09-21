@@ -150,6 +150,7 @@ func TestLoadServersPrecedence(t *testing.T) {
 	}
 
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files: []string{project, "global:mcp.json"},
 		fs:    testFSForWorkspace(t, &testWorkspace{root: dir}),
 		pool:  newClientPool(0),

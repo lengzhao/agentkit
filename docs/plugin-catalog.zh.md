@@ -507,7 +507,7 @@ plugins/
 
 **规则**：
 
-- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `runtime/delivery.ResolveRoute`）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` / `FirstScoped` 之于 Scope 常量、`agentkit.PeelGlobalFlag` 之于 slash `-g`；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `schedule.Engine`、`filesystem.Service`）。
+- **`cap/*` 只放接口与类型，函数实现放在 `runtime/*`**（如 `cap/delivery.Sender` + `cap/delivery.Assistant` 经 `delivery/assistant` 注入；`cap/telemetry.Toolkit` 经 `telemetry/toolkit` 注入）。唯一例外是与接口语义一体的纯函数（契约词汇），如 `workspace.ParseScoped` / `FirstScoped` 之于 Scope 常量、`agentkit.PeelGlobalFlag` 之于 slash `-g`、`cap/permission.BrokerFrom`；工作流/多步逻辑不下放 cap——单一消费者并入消费方包内，多消费者抽象成接口经 deps 注入（如 `schedule.Engine`、`filesystem.Service`）。
 - 文件工具的模型面在 `tool/fs-workspace`；共享 deps 是 `filesystem.Service`（换本地盘 / S3 / 远程不换 tool kind）。
 - 只有 workspace、filesystem、credentials、session、compaction 等跨插件能力保留 Provider + `cap/*` 接口。
 - 换 filesystem Provider（如 `filesystem/local` → `filesystem/s3`）不换 tool kind：修改 `deps.fs` 即可。

@@ -36,6 +36,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/agent"
 	_ "github.com/lengzhao/agentkit/runtime/command"
 	_ "github.com/lengzhao/agentkit/runtime/compaction"
+	_ "github.com/lengzhao/agentkit/runtime/delivery"
 	_ "github.com/lengzhao/agentkit/runtime/filesystem"
 	_ "github.com/lengzhao/agentkit/runtime/hooks"
 	_ "github.com/lengzhao/agentkit/runtime/llm"
@@ -55,6 +56,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/session/sessindex"
 	_ "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	_ "github.com/lengzhao/agentkit/runtime/subagent"
+	_ "github.com/lengzhao/agentkit/runtime/telemetry"
 	_ "github.com/lengzhao/agentkit/runtime/tools"
 	_ "github.com/lengzhao/agentkit/runtime/workspace"
 )

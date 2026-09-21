@@ -12,6 +12,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 	openapiplugin "github.com/lengzhao/agentkit/plugins/tool/openapi"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/openapitest"
 )
@@ -23,6 +24,13 @@ func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit
 	if err != nil {
 		return nil, err
 	}
+	if err != nil {
+		return nil, err
+	}
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		return nil, err
+	}
 	return openapiplugin.NewOpenAPI(openapiplugin.OpenAPIConfig{
 		EnableLocal: true,
 		Files:       []string{"api.json", "local:api.json"},
@@ -30,6 +38,7 @@ func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit
 		FS:          fs,
 		Workspace:   ws,
 		Credentials: creds,
+		Telemetry:   tk,
 	})
 }
 

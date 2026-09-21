@@ -21,8 +21,6 @@ import (
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
-// testCredentialsFS builds an unrestricted filesystem/local over a temp dir for
-// credentials/env (tests resolve process env only; the fs is never touched).
 func testCredentialsFS(t *testing.T) filesystem.Service {
 	t.Helper()
 	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: rtworkspace.Static(t.TempDir())})
@@ -30,6 +28,15 @@ func testCredentialsFS(t *testing.T) filesystem.Service {
 		t.Fatal(err)
 	}
 	return fs
+}
+
+func mustToolkit(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
 }
 
 func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
@@ -58,7 +65,7 @@ func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatalf("new exporter: %v", err)
 	}
@@ -112,7 +119,7 @@ func TestLangfuseExporterPrefersFirstTextTimeForTTFT(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +189,7 @@ func TestLangfuseExporterSendsCompletionStartTime(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +254,7 @@ func TestLangfuseExporterSendsGenerationAndTool(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +337,7 @@ func TestLangfuseExporterDedupesGenerationPrefix(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +422,7 @@ func TestLangfuseExporterNestsSubagentGeneration(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +502,7 @@ func TestLangfuseExporterRecordsTurnUsageAndOutput(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +547,7 @@ func TestLangfuseMissingCredentialFailsAtBuild(t *testing.T) {
 	_, err = plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
 		PublicKeyRef: "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef: "env:LANGFUSE_SECRET_KEY",
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err == nil || !strings.Contains(err.Error(), "LANGFUSE_PUBLIC_KEY") {
 		t.Fatalf("expected missing key error, got %v", err)
 	}
@@ -578,7 +585,7 @@ func TestLangfuseExporterRecordsAttachmentsAsDedicatedSpan(t *testing.T) {
 		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
 		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
 		FlushIntervalSeconds: 1,
-	}, plugintelemetry.LangfuseDeps{Credentials: store})
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

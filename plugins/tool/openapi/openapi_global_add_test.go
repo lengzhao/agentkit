@@ -55,7 +55,7 @@ func TestOpenAPIAddGlobalCopiesLocalSpec(t *testing.T) {
 
 	provider, err := NewOpenAPI(OpenAPIConfig{
 		Files: []string{"global:api.json"},
-	}, OpenAPIDeps{FS: testFSOver(t, ws), Workspace: ws})
+	}, OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFSOver(t, ws), Workspace: ws})
 	if err != nil {
 		t.Fatal(err)
 	}

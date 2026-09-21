@@ -17,7 +17,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 const defaultGlobalAPIFile = "global:api.json"
@@ -33,9 +32,10 @@ type OpenAPIConfig struct {
 
 type OpenAPIDeps struct {
 	// FS reads/writes api.json and spec files.
-	FS          filesystem.Service `json:"fs"`
-	Workspace   workspace.Service  `json:"workspace"`
-	Credentials credentials.Store  `json:"credentials,omitempty"`
+	FS          filesystem.Service   `json:"fs"`
+	Workspace   workspace.Service    `json:"workspace"`
+	Credentials credentials.Store    `json:"credentials,omitempty"`
+	Telemetry   captelemetry.Toolkit `json:"telemetry"`
 }
 
 type openapiProvider struct {
@@ -44,6 +44,7 @@ type openapiProvider struct {
 	fs          filesystem.Service
 	workspace   workspace.Service
 	credentials credentials.Store
+	telemetry   captelemetry.Toolkit
 	client      *http.Client
 
 	mu     sync.RWMutex
@@ -73,6 +74,9 @@ func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, err
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("tool/openapi requires workspace")
 	}
+	if deps.Telemetry == nil {
+		return nil, fmt.Errorf("tool/openapi requires telemetry dependency")
+	}
 	files := resolveAPIFiles(cfg)
 	return &openapiProvider{
 		files:       files,
@@ -80,6 +84,7 @@ func NewOpenAPI(cfg OpenAPIConfig, deps OpenAPIDeps) (agentkit.ToolProvider, err
 		fs:          deps.FS,
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
+		telemetry:   deps.Telemetry,
 		client:      &http.Client{},
 	}, nil
 }
@@ -150,7 +155,7 @@ func (p *openapiProvider) cachedAPIs(ctx context.Context) ([]apiConfig, error) {
 func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 	apis, err := p.loadAPIs(ctx)
 	if err != nil {
-		_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+		_, endObservation := p.telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 			Name: "openapi.init",
 			Kind: captelemetry.KindSpan,
 		})
@@ -165,7 +170,7 @@ func (p *openapiProvider) reload(ctx context.Context) ([]apiConfig, error) {
 		return nil, nil
 	}
 
-	_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+	_, endObservation := p.telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name: "openapi.init",
 		Kind: captelemetry.KindSpan,
 	})

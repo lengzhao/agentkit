@@ -49,6 +49,15 @@ func localOpenAPIConfig() OpenAPIConfig {
 	}
 }
 
+func mustTelemetry(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := telemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
+}
+
 func TestOpenAPIToolEndToEnd(t *testing.T) {
 	creds := scopedCredsForAPI("petstore", map[string]string{"TESTAPI_TOKEN": "s3cr3t"})
 
@@ -119,7 +128,7 @@ func TestOpenAPIToolEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: creds})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}, Credentials: creds})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -193,7 +202,7 @@ func TestOpenAPIToolMissingRequiredPathParam(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "api.json"), []byte(apiJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -237,7 +246,7 @@ func TestOpenAPIToolSpecFileEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -299,7 +308,7 @@ func TestOpenAPIToolBindFromContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -379,7 +388,7 @@ func TestOpenAPIToolBindOnlyHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -421,7 +430,7 @@ func TestOpenAPIToolBindMissingContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -456,7 +465,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 	}
 	writeAPI("a")
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -504,7 +513,7 @@ func TestOpenAPIToolCachingAndSyncCommand(t *testing.T) {
 func TestOpenAPIAddCommand(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, t.TempDir()), Workspace: &testWorkspace{root: t.TempDir()}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, t.TempDir()), Workspace: &testWorkspace{root: t.TempDir()}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -532,7 +541,7 @@ func TestOpenAPIAddCommand(t *testing.T) {
 func TestOpenAPIAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
 	t.Parallel()
 
-	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{FS: testFS(t, t.TempDir()), Workspace: &testWorkspace{root: t.TempDir()}})
+	provider, err := NewOpenAPI(OpenAPIConfig{Files: []string{"global:api.json"}}, OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, t.TempDir()), Workspace: &testWorkspace{root: t.TempDir()}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -566,7 +575,7 @@ func TestOpenAPIReloadRecordsInitObservation(t *testing.T) {
 	ctx := telemetry.WithExporter(context.Background(), rec)
 	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
-	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
+	provider, err := NewOpenAPI(localOpenAPIConfig(), OpenAPIDeps{Telemetry: mustTelemetry(t), FS: testFS(t, dir), Workspace: &testWorkspace{root: dir}})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

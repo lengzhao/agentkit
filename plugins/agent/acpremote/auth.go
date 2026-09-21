@@ -86,7 +86,7 @@ func (a *Runtime) runCursorLogin(ctx context.Context, emit agentkit.OutboundEmit
 	}
 	agentBin := a.cfg.Command[0]
 
-	emitter := newUpdateEmitter(ctx, sessionID, a.id, emit, agentkit.ModelMessage{})
+	emitter := newUpdateEmitter(a.telemetry, ctx, sessionID, a.id, emit, agentkit.ModelMessage{})
 	if err := emitter.ensureStarted(); err != nil {
 		return err
 	}

@@ -28,6 +28,15 @@ func testFSForWorkspace(t *testing.T, ws workspace.Service) filesystem.Service {
 	return fs
 }
 
+func mustTelemetry(t *testing.T) captelemetry.Toolkit {
+	t.Helper()
+	tk, err := telemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
+}
+
 type hintCredentials struct{}
 
 func (hintCredentials) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
@@ -62,6 +71,7 @@ func TestMCPProviderCachingAndSyncCommand(t *testing.T) {
 
 	fs := &countingFS{Service: testFSForWorkspace(t, &testWorkspace{root: dir})}
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files: []string{configPath},
 		fs:    fs,
 		pool:  newClientPool(0),
@@ -130,6 +140,7 @@ func TestMCPAddCommand(t *testing.T) {
 
 	dir := t.TempDir()
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files:       []string{filepath.Join(dir, "mcp.json")},
 		enableLocal: true,
 		fs:          testFSForWorkspace(t, &testWorkspace{root: dir}),
@@ -173,6 +184,7 @@ func TestMCPAddKeepsConfigWhenCredentialsMissing(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "mcp.json")
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files:       []string{configPath},
 		enableLocal: true,
 		fs:          testFSForWorkspace(t, &testWorkspace{root: dir}),
@@ -203,6 +215,7 @@ func TestMCPAddRequiresGlobalWhenLocalDisabled(t *testing.T) {
 
 	dir := t.TempDir()
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files: []string{"global:mcp.json"},
 		fs:    testFSForWorkspace(t, &testWorkspace{root: dir}),
 		pool:  newClientPool(0),
@@ -235,6 +248,7 @@ func TestMCPReloadRecordsInitObservation(t *testing.T) {
 	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-1"})
 
 	provider := &mcpProvider{
+		telemetry: mustTelemetry(t),
 		files: []string{configPath},
 		fs:    testFSForWorkspace(t, &testWorkspace{root: dir}),
 		pool:  newClientPool(0),

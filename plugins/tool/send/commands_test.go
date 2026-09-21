@@ -76,7 +76,7 @@ func TestSendSlashCommandRequiresTarget(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestSendSlashCommandTargetChat(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestSendSlashCommandRejectsCrossPlatformSession(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestSendSlashCommandRequiresPlatformID(t *testing.T) {
 	t.Parallel()
 
 	platform := &recordingPlatform{}
-	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform})
+	tool, err := NewSend(SendConfig{}, SendDeps{Sender: platform, Delivery: mustAssistant(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,6 @@ import (
 	capmemory "github.com/lengzhao/agentkit/cap/memory"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rttools "github.com/lengzhao/agentkit/runtime/tools"
@@ -50,6 +49,7 @@ type backgroundReviewDeps struct {
 	LLM          agentkit.LLMProvider    `json:"llm"`
 	SessionIndex capsessionindex.Service `json:"sessionIndex,omitempty"`
 	Sender       capsdelivery.Sender     `json:"sender,omitempty"`
+	Delivery     capsdelivery.Assistant  `json:"delivery,omitempty"`
 }
 
 type backgroundReviewProvider struct {
@@ -59,6 +59,7 @@ type backgroundReviewProvider struct {
 	tools    agentkit.ToolRuntime
 	index    capsessionindex.Service
 	sender   capsdelivery.Sender
+	delivery capsdelivery.Assistant
 	idle     sync.Map // sessionID -> last turn complete time
 }
 
@@ -97,6 +98,7 @@ func NewBackgroundReview(cfg BackgroundReviewConfig, deps backgroundReviewDeps) 
 		tools:    rt,
 		index:    deps.SessionIndex,
 		sender:   deps.Sender,
+		delivery: deps.Delivery,
 	}
 	return p, nil
 }
@@ -246,8 +248,10 @@ func (p *backgroundReviewProvider) runBackgroundReview(parent context.Context, t
 		line := FormatBackgroundReviewNotification(notifyMode, notices)
 		if line != "" {
 			slog.Info("learning notification", "message", line)
-			if err := rtdelivery.SendProactiveInboxText(runCtx, p.sender, line); err != nil {
-				slog.Debug("learning notification delivery skipped", "err", err)
+			if p.sender != nil && p.delivery != nil {
+				if err := p.delivery.SendProactiveInboxText(runCtx, p.sender, line); err != nil {
+					slog.Debug("learning notification delivery skipped", "err", err)
+				}
 			}
 		}
 	})

@@ -11,10 +11,10 @@ import (
 	"github.com/lengzhao/agentkit"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type updateEmitter struct {
+	telemetry captelemetry.Toolkit
 	ctx       context.Context
 	sessionID agentkit.SessionID
 	agentID   agentkit.AgentID
@@ -37,8 +37,9 @@ type acpToolMeta struct {
 	input string
 }
 
-func newUpdateEmitter(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit, userMsg agentkit.ModelMessage) *updateEmitter {
+func newUpdateEmitter(telemetry captelemetry.Toolkit, ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, emit agentkit.OutboundEmit, userMsg agentkit.ModelMessage) *updateEmitter {
 	return &updateEmitter{
+		telemetry: telemetry,
 		ctx:       ctx,
 		sessionID: sessionID,
 		agentID:   agentID,
@@ -139,7 +140,7 @@ func (e *updateEmitter) finalize() error {
 	}
 	if e.endGeneration != nil {
 		e.endGeneration(captelemetry.ObservationEnd{
-			Output:              rttelemetry.FormatMessage(msg),
+			Output:              e.telemetry.FormatMessage(msg),
 			FirstTextTime:       e.firstTextAt,
 			CompletionStartTime: e.firstTextAt,
 		})
@@ -176,10 +177,10 @@ func (e *updateEmitter) ensureStarted() error {
 	}
 	if e.userMsg.Role != "" || len(e.userMsg.Content) > 0 || len(e.userMsg.ToolCalls) > 0 {
 		genMeta.GenerationMessages = []agentkit.ModelMessage{e.userMsg}
-		genMeta.Input = rttelemetry.FormatMessage(e.userMsg)
+		genMeta.Input = e.telemetry.FormatMessage(e.userMsg)
 	}
-	e.generationCtx, e.endGeneration = rttelemetry.BeginObservation(e.ctx,
-		rttelemetry.ObservationMetaFromContext(e.ctx, genMeta))
+	e.generationCtx, e.endGeneration = e.telemetry.BeginObservation(e.ctx,
+		e.telemetry.ObservationMetaFromContext(e.ctx, genMeta))
 	return e.sendOutbound(agentkit.EventMessageStart, agentkit.MessageStartPayload{
 		Message: agentkit.ModelMessage{Role: "assistant"},
 	})
@@ -222,8 +223,8 @@ func (e *updateEmitter) beginTool(call *acp.SessionUpdateToolCall) {
 		name:  toolName(call),
 		input: input,
 	}
-	_, end := rttelemetry.BeginObservation(e.generationCtx,
-		rttelemetry.ObservationMetaFromContext(e.generationCtx, captelemetry.ObservationMeta{
+	_, end := e.telemetry.BeginObservation(e.generationCtx,
+		e.telemetry.ObservationMetaFromContext(e.generationCtx, captelemetry.ObservationMeta{
 			Name:  "tool." + toolName(call),
 			Kind:  captelemetry.KindTool,
 			Input: input,

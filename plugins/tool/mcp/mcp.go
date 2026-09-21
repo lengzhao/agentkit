@@ -17,7 +17,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 const defaultGlobalMCPFile = "global:mcp.json"
@@ -38,8 +37,9 @@ type MCPConfig struct {
 
 type MCPDeps struct {
 	// FS reads/writes mcp.json files (scope prefixes allowed).
-	FS          filesystem.Service `json:"fs"`
-	Credentials credentials.Store  `json:"credentials,omitempty"`
+	FS          filesystem.Service      `json:"fs"`
+	Credentials credentials.Store       `json:"credentials,omitempty"`
+	Telemetry   captelemetry.Toolkit    `json:"telemetry"`
 }
 
 type mcpProvider struct {
@@ -47,6 +47,7 @@ type mcpProvider struct {
 	enableLocal bool
 	fs          filesystem.Service
 	credentials credentials.Store
+	telemetry   captelemetry.Toolkit
 	pool        *clientPool
 
 	mu      sync.RWMutex
@@ -71,12 +72,16 @@ func NewMCP(cfg MCPConfig, deps MCPDeps) (agentkit.ToolProvider, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/mcp requires fs")
 	}
+	if deps.Telemetry == nil {
+		return nil, fmt.Errorf("tool/mcp requires telemetry dependency")
+	}
 	files := resolveMCPFiles(cfg)
 	return &mcpProvider{
 		files:       files,
 		enableLocal: cfg.EnableLocal,
 		fs:          deps.FS,
 		credentials: deps.Credentials,
+		telemetry:   deps.Telemetry,
 		pool:        newClientPool(idleTimeoutFromConfig(cfg.IdleTimeoutSeconds)),
 	}, nil
 }
@@ -161,7 +166,7 @@ func (p *mcpProvider) cached(ctx context.Context) ([]serverConfig, []toolDefinit
 func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinition, error) {
 	servers, err := p.loadServers(ctx)
 	if err != nil {
-		_, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+		_, endObservation := p.telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 			Name: "mcp.init",
 			Kind: captelemetry.KindSpan,
 		})
@@ -177,7 +182,7 @@ func (p *mcpProvider) reload(ctx context.Context) ([]serverConfig, []toolDefinit
 		return nil, nil, nil
 	}
 
-	ctx, endObservation := telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
+	ctx, endObservation := p.telemetry.BeginObservation(ctx, captelemetry.ObservationMeta{
 		Name: "mcp.init",
 		Kind: captelemetry.KindSpan,
 	})

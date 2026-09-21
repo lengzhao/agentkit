@@ -41,6 +41,7 @@ agent.cursor.default:
         fs: filesystem.local.state
         sessionEvents: session.events
         sessionStore: sessionStore.default
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: agent/acp-remote
 agent.worker.default:
@@ -139,6 +140,8 @@ credentials.integrations:
     deps:
         fs: filesystem.local.state
     use: credentials/integrations
+delivery.default:
+    use: delivery/assistant
 filesystem.local.default:
     config:
         root: work
@@ -163,6 +166,7 @@ hook.background-review.default:
         minTurnTokens: 0
         skipSlashOnly: true
     deps:
+        delivery: delivery.default
         learning: learning.default
         llm: llm.review
         memory: memory.default
@@ -273,6 +277,7 @@ mcp.default:
     deps:
         credentials: credentials.integrations
         fs: filesystem.local.state
+        telemetry: telemetry.toolkit
     use: tool/mcp
 memory.default:
     config:
@@ -288,6 +293,7 @@ openapi.default:
     deps:
         credentials: credentials.integrations
         fs: filesystem.local.state
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/openapi
 platform.chat-api:
@@ -583,10 +589,13 @@ subagent.loop.default:
     use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none
+telemetry.toolkit:
+    use: telemetry/toolkit
 tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
+        delivery: delivery.default
         history: platform.default
     use: tool/chat-history
 tool.finish.default:
@@ -623,6 +632,7 @@ tool.recognize.default:
         model: gpt-5.4-mini
     deps:
         llm: llm.openai
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/recognize
 tool.schedule.default:
@@ -634,6 +644,7 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
+        delivery: delivery.default
         fs: filesystem.local.default
         sender: platform.default
         workspace: workspace.default

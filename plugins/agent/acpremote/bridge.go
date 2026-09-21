@@ -16,9 +16,9 @@ import (
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type sessionUpdateConsumer interface {
@@ -42,6 +42,7 @@ type bridge struct {
 	workspace  workspace.Service
 	fs         filesystem.Service
 	sessionMCP capacp.SessionMCPProvider
+	telemetry  captelemetry.Toolkit
 
 	connOps chan connOp
 	// proc is the current subprocess snapshot. It is written exclusively by
@@ -77,12 +78,13 @@ func (proc *subprocess) alive() bool {
 	}
 }
 
-func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider) *bridge {
+func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit) *bridge {
 	b := &bridge{
 		cfg:        cfg,
 		workspace:  ws,
 		fs:         fs,
 		sessionMCP: sessionMCP,
+		telemetry:  telemetry,
 		connOps:    make(chan connOp),
 	}
 	go b.connLoop()
@@ -103,11 +105,11 @@ func (b *bridge) resolveSessionMCP(ctx context.Context) ([]acp.McpServer, error)
 
 func (b *bridge) recordSessionMCP(ctx context.Context, servers []acp.McpServer) {
 	names := acpclient.MCPServerNames(servers)
-	if len(names) == 0 {
+	if len(names) == 0 || b.telemetry == nil {
 		return
 	}
 	slog.Info("acp-remote: session mcp servers", "count", len(names), "servers", names)
-	rttelemetry.RecordEvent(ctx, "acp.session_mcp", map[string]string{
+	b.telemetry.RecordEvent(ctx, "acp.session_mcp", map[string]string{
 		"count":   fmt.Sprintf("%d", len(names)),
 		"servers": strings.Join(names, ","),
 	})

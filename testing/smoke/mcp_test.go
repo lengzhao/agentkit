@@ -22,7 +22,8 @@ func TestSmokeMCPDynamicToolsAgentTurn(t *testing.T) {
 			EnableLocal: true,
 			Files:       []string{configPath},
 		}, mcpplugin.MCPDeps{
-			FS: smokeFS(t, workspaceRoot),
+			FS:        smokeFS(t, workspaceRoot),
+			Telemetry: mustTelemetry(t),
 		})
 	})
 	ctx := context.Background()
