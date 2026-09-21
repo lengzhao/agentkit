@@ -16,7 +16,6 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/config"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -82,7 +81,7 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 	}
 	masterKeyConfig := ""
 	if cfg.Env != nil {
-		masterKeyConfig = strings.TrimSpace(cfg.Env[rtcredentials.SecretsMasterKeyEnv])
+		masterKeyConfig = strings.TrimSpace(cfg.Env[SecretsMasterKeyEnv])
 	}
 	s := &envStore{
 		prefix:          cfg.Prefix,
@@ -100,10 +99,10 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 }
 
 func (s *envStore) lookupValue(ctx context.Context, ref string) (string, error) {
-	if secret, ok := rtcredentials.SecretFromContext(ctx, ref); ok {
+	if secret, ok := secretFromContext(ctx, ref); ok {
 		return secret.Value, nil
 	}
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if s.prefix != "" {
 		key = s.prefix + key
 	}
@@ -171,11 +170,11 @@ func (s *envStore) resolveEncryptedPath(context.Context) (string, error) {
 }
 
 func (s *envStore) masterKey() ([]byte, error) {
-	raw := strings.TrimSpace(os.Getenv(rtcredentials.SecretsMasterKeyEnv))
+	raw := strings.TrimSpace(os.Getenv(SecretsMasterKeyEnv))
 	if raw == "" {
 		raw = s.masterKeyConfig
 	}
-	return rtcredentials.ParseSecretsMasterKey(raw)
+	return parseSecretsMasterKey(raw)
 }
 
 func (s *envStore) reload(ctx context.Context) (int, error) {
@@ -237,7 +236,7 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("load %s: %w", path, err)
 	}
-	values, err := rtcredentials.DecryptSecretsFile(data, key)
+	values, err := decryptSecretsFile(data, key)
 	if err != nil {
 		return 0, fmt.Errorf("decrypt secrets file %q: %w", path, err)
 	}
@@ -280,7 +279,7 @@ func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, re
 		if err != nil {
 			return "", 0, fmt.Errorf("write encrypted secrets: %w", err)
 		}
-		merged, err = rtcredentials.MergeEncryptedSecretsFile(prevBytes, master, updates)
+		merged, err = mergeEncryptedSecretsFile(prevBytes, master, updates)
 		if err != nil {
 			return "", 0, err
 		}

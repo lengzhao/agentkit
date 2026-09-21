@@ -473,7 +473,8 @@ cap/<domain>/
   *.go               # 可替换能力接口与 DTO（workspace、compaction、permission…）
   doc.go             # 接口文档（可选）
 
-runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、credentials、permission、skill、media、telemetry、schedule…）
+runtime/<domain>/    # cap 对应实现（session、delivery、bind、chathistory、compaction、workspace、permission、skill、media、telemetry、schedule…）
+cap/credentials/     # Store / EnvPairResolver；实现见 plugins/credentials
 cap/schedule/        # Registry/Runtime/Engine 契约；cron 求值实现见 runtime/schedule（schedule/engine）
 runtime/schedule/    # ParseCron/NextFire、fire metadata；schedule/engine kind
 cap/workspace/       # Service + ParseScoped / FirstScoped / Layout；实现见 runtime/workspace

@@ -7,24 +7,21 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 func envKeysFromServer(server serverConfig) []string {
 	keys := make(map[string]struct{})
-	rtcredentials.CollectEnvKeys(server.URL, keys)
+	collectEnvKey(server.URL, keys)
 	for _, v := range server.Env {
-		rtcredentials.CollectEnvKeys(v, keys)
+		collectEnvKey(v, keys)
 	}
 	for _, v := range server.Headers {
-		rtcredentials.CollectEnvKeys(v, keys)
+		collectEnvKey(v, keys)
 	}
 	for _, arg := range server.Args {
-		rtcredentials.CollectEnvKeys(arg, keys)
+		collectEnvKey(arg, keys)
 	}
-	for _, v := range server.Command {
-		rtcredentials.CollectEnvKeys(v, keys)
-	}
+	collectEnvKey(server.Command, keys)
 	out := make([]string, 0, len(keys))
 	for k := range keys {
 		out = append(out, k)
@@ -56,7 +53,7 @@ func formatMCPCredentialStatus(ctx context.Context, servers []serverConfig, cred
 			continue
 		}
 		any = true
-		scope := CredentialScope(name)
+		scope := credentialScope(name)
 		b.WriteString("\n  ")
 		b.WriteString(scope)
 		b.WriteString(":")
@@ -93,7 +90,7 @@ func formatEnvAddHintsForServer(ctx context.Context, server serverConfig, creds 
 	if len(keys) == 0 {
 		return ""
 	}
-	scope := CredentialScope(server.Name)
+	scope := credentialScope(server.Name)
 	var lines []string
 	for _, key := range keys {
 		if _, err := creds.Resolve(ctx, scope, "env:"+key); err != nil {

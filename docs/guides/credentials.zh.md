@@ -15,7 +15,7 @@ AgentKit 在运行期通过 `cap/credentials.Store` 解析 `env:NAME` 引用。�
 | 对外稳定 | 插件只依赖 `Store.Resolve`；shell 额外可选 `EnvPairResolver`。 |
 | 配置优先 | L0/L1 **config.yaml** 提供 **`scopedEnv`**、主密钥；`/env add` 为运行期补充/覆盖。 |
 | cap 极简 | `Store` + `EnvPairResolver`；**不**引入 Writer/Catalog/Backend/ProviderChain 等 cap 接口。 |
-| 实现内聚 | 链式查找、scoped 存储留在 `plugins/credentials` + `runtime/credentials` 纯函数。 |
+| 实现内聚 | 链式查找、scoped 存储、密文、manifest 留在 `plugins/credentials`；scope 字符串由各 tool 插件自行拼接；shell 基线 env 留在 `tool/shell`。 |
 
 ### 1.2 读路径（语义，不必拆成多个 Go 接口）
 
@@ -73,9 +73,9 @@ type EnvPairResolver interface {
 ```
 
 - **`EnvPairResolver`**：`tool/shell-bash` 经 `subprocessEnv` 调用；键顺序：`opts.Keys` → 该 scope **已存储键**（`scopedEnv`/enc/`/env add`）。  
-- **子进程基线 env**：有注入时用 `BaseProcessExecEnv` + pairs；无注入时用全量 `os.Environ()`。
+- **子进程基线 env**：有注入时 `tool/shell` 使用裁剪后的宿主 env + pairs；无注入时用全量 `os.Environ()`。
 
-Scope 命名：`runtime/credentials/scope.go` 统一 `mcp.*` / `openapi.*` / `shell-bash.*`；`tool/mcp`、`tool/openapi` 的 `CredentialScope` 委托 runtime；bash 用 `ShellBashScopeForCommand`（首 token 取 `filepath.Base`）。
+Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool 插件拼出；`credentials/integrations` 校验并存储 `SCOPE::KEY`。bash 取命令首 token 的 `filepath.Base`。
 
 ### 1.5 配置图
 
@@ -96,7 +96,7 @@ Scope 命名：`runtime/credentials/scope.go` 统一 `mcp.*` / `openapi.*` / `sh
 | L1 scoped | **`scopedEnv`** 加载；enc `/env add` 覆盖同键 |
 | shell-bash L0 | `workspace` + **`credentials.integrations`**；有 scoped 注入时裁剪 env + token，否则全量 `os.Environ()` |
 | MCP/OpenAPI allowlist | 实现内读 workspace `mcp.json` / `api.json`（默认路径），**无** L1 `manifestFiles` 用户面 |
-| Global 链顺序 | context → process → config → encrypted → dotenv（与 cap 注释可能不一致） |
+| Global 链顺序 | context → process → config → encrypted → dotenv |
 
 Shell：`subprocessEnv` → `EnvPairs`；`config.commands` 仅少见 override。
 
@@ -123,7 +123,7 @@ credentials.integrations:
     workspace: workspace.default
 ```
 
-Context：`rtcredentials.WithSecrets(ctx, map[string]string{"env:KEY": "value"})`。
+Context override 由 `credentials/env` 与 `credentials/integrations` 在 `Resolve` 内读取，不是 cap 公共 API。
 
 ---
 
@@ -131,8 +131,8 @@ Context：`rtcredentials.WithSecrets(ctx, map[string]string{"env:KEY": "value"})
 
 ### Phase 1（低风险）
 
-- [ ] cap 注释与链顺序对齐  
-- [x] `tool/mcp`、`tool/openapi` → `CredentialScope` 委托 runtime  
+- [x] cap 注释与链顺序对齐（context → process → config → encrypted → dotenv）
+- [x] `tool/mcp`、`tool/openapi`、`tool/shell` 自行拼接 scope，经 `deps.credentials` 注入 Store
 - [x] **`EnvPairResolver` + integrations + shell**  
 
 ### Phase 2

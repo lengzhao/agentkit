@@ -72,7 +72,7 @@ func (p *openapiProvider) call(ctx context.Context, api apiConfig, op operationC
 	}
 
 	headers := http.Header{}
-	scope := CredentialScope(api.Name)
+	scope := credentialScope(api.Name)
 	for k, v := range api.Headers {
 		resolved, err := resolveSecret(ctx, scope, v, p.credentials)
 		if err != nil {

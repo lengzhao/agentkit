@@ -64,3 +64,31 @@ func TestSubprocessEnvInjectionUsesTrimmedBase(t *testing.T) {
 		t.Fatal("host secret leaked into subprocess env when scoped injection is active")
 	}
 }
+
+func TestFirstShellCommandToken(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"gh pr list":    "gh",
+		"  npm install": "npm",
+		"'my tool' run": "my tool",
+		"echo hello":    "echo",
+		"":              "",
+	}
+	for cmd, want := range cases {
+		if got := firstShellCommandToken(cmd); got != want {
+			t.Fatalf("firstShellCommandToken(%q)=%q want %q", cmd, got, want)
+		}
+	}
+}
+
+func TestShellScopeForCommand(t *testing.T) {
+	t.Parallel()
+	cmd, scope := shellScopeForCommand("gh auth status")
+	if cmd != "gh" || scope != "shell-bash.gh" {
+		t.Fatalf("got cmd=%q scope=%q", cmd, scope)
+	}
+	cmd, scope = shellScopeForCommand("/usr/bin/gh auth status")
+	if cmd != "gh" || scope != "shell-bash.gh" {
+		t.Fatalf("path cmd=%q scope=%q", cmd, scope)
+	}
+}

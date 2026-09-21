@@ -20,8 +20,8 @@ const SecretsMasterKeyEnv = "AGENTKIT_SECRETS_KEY"
 const encryptedSecretsVersion = 1
 
 type encryptedSecretsFile struct {
-	Version int                               `json:"version"`
-	Entries map[string]encryptedSecretEntry   `json:"entries"`
+	Version int                             `json:"version"`
+	Entries map[string]encryptedSecretEntry `json:"entries"`
 }
 
 type encryptedSecretEntry struct {
@@ -29,8 +29,7 @@ type encryptedSecretEntry struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
-// ParseSecretsMasterKey derives a 32-byte AES key via SHA-256(passphrase).
-func ParseSecretsMasterKey(raw string) ([]byte, error) {
+func parseSecretsMasterKey(raw string) ([]byte, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, errors.New("master key is empty")
@@ -39,8 +38,7 @@ func ParseSecretsMasterKey(raw string) ([]byte, error) {
 	return sum[:], nil
 }
 
-// DecryptSecretsFile parses and decrypts all entries in data.
-func DecryptSecretsFile(data []byte, key []byte) (map[string]string, error) {
+func decryptSecretsFile(data []byte, key []byte) (map[string]string, error) {
 	if len(data) == 0 {
 		return map[string]string{}, nil
 	}
@@ -65,8 +63,7 @@ func DecryptSecretsFile(data []byte, key []byte) (map[string]string, error) {
 	return out, nil
 }
 
-// EncryptSecretsFile serializes entries to encrypted JSON.
-func EncryptSecretsFile(entries map[string]string, key []byte) ([]byte, error) {
+func encryptSecretsFile(entries map[string]string, key []byte) ([]byte, error) {
 	file := encryptedSecretsFile{
 		Version: encryptedSecretsVersion,
 		Entries: make(map[string]encryptedSecretEntry, len(entries)),
@@ -85,16 +82,15 @@ func EncryptSecretsFile(entries map[string]string, key []byte) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-// MergeEncryptedSecretsFile decrypts existing (if any), applies updates, and re-encrypts.
-func MergeEncryptedSecretsFile(existing []byte, key []byte, updates map[string]string) ([]byte, error) {
-	entries, err := DecryptSecretsFile(existing, key)
+func mergeEncryptedSecretsFile(existing []byte, key []byte, updates map[string]string) ([]byte, error) {
+	entries, err := decryptSecretsFile(existing, key)
 	if err != nil {
 		return nil, err
 	}
 	for k, v := range updates {
 		entries[k] = v
 	}
-	return EncryptSecretsFile(entries, key)
+	return encryptSecretsFile(entries, key)
 }
 
 func encryptEntry(key []byte, plaintext string) (encryptedSecretEntry, error) {

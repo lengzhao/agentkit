@@ -10,7 +10,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 func TestResolvePrefersContextOverEnvironment(t *testing.T) {
@@ -20,7 +19,7 @@ func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := rtcredentials.WithSecrets(context.Background(), map[string]string{
+	ctx := withSecrets(context.Background(), map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-ctx",
 	})
 	secret, err := store.Resolve(ctx, credentials.GlobalScope, "env:AGENTKIT_TEST_SECRET")
@@ -317,7 +316,7 @@ func TestEncryptedOverridesScopedEnv(t *testing.T) {
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
 		ManifestFiles: []string{manifestPath},
 		Env: map[string]string{
-			rtcredentials.SecretsMasterKeyEnv: secretsPass,
+			SecretsMasterKeyEnv: secretsPass,
 		},
 		ScopedEnv: map[string]map[string]string{
 			"shell-bash.gh": {"GH_TOKEN": "from-config"},
@@ -455,7 +454,7 @@ func TestEnvAddCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scopedKey := rtcredentials.ScopedStorageKey(integrationTestScope, "AGENTKIT_TEST_SECRET")
+	scopedKey := scopedStorageKey(integrationTestScope, "AGENTKIT_TEST_SECRET")
 	if !strings.Contains(string(data), scopedKey+"=injected") {
 		t.Fatalf(".env=%q, want scoped injected key", data)
 	}
@@ -524,7 +523,7 @@ func TestEnvAddBeforeManifest(t *testing.T) {
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
 		ManifestFiles: []string{manifestPath},
 		Env: map[string]string{
-			rtcredentials.SecretsMasterKeyEnv: secretsPass,
+			SecretsMasterKeyEnv: secretsPass,
 		},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
@@ -593,7 +592,7 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 		EncryptedFile: path,
 		ManifestFiles: []string{manifestPath},
 		Env: map[string]string{
-			rtcredentials.SecretsMasterKeyEnv: secretsPass,
+			SecretsMasterKeyEnv: secretsPass,
 		},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
@@ -634,11 +633,11 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 		t.Fatal(err)
 	}
 	const secretsPass = "agentkit-test-secrets-passphrase"
-	key, err := rtcredentials.ParseSecretsMasterKey(secretsPass)
+	key, err := parseSecretsMasterKey(secretsPass)
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, err := rtcredentials.EncryptSecretsFile(map[string]string{
+	enc, err := encryptSecretsFile(map[string]string{
 		"AGENTKIT_TEST_SECRET": "from-encrypted",
 	}, key)
 	if err != nil {
@@ -651,7 +650,7 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 		EncryptedFile: secretsPath,
 		Files:         []string{dotenv},
 		Env: map[string]string{
-			rtcredentials.SecretsMasterKeyEnv: secretsPass,
+			SecretsMasterKeyEnv: secretsPass,
 		},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {

@@ -1,20 +1,18 @@
-package credentials_test
+package credentials
 
 import (
 	"context"
 	"testing"
-
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 )
 
 func TestSecretFromContextMatchesRefAndEnvKey(t *testing.T) {
 	t.Parallel()
 
-	ctx := rtcredentials.WithSecrets(context.Background(), map[string]string{
+	ctx := withSecrets(context.Background(), map[string]string{
 		"OPENAI_API_KEY": "from-ctx",
 	})
 
-	secret, ok := rtcredentials.SecretFromContext(ctx, "env:OPENAI_API_KEY")
+	secret, ok := secretFromContext(ctx, "env:OPENAI_API_KEY")
 	if !ok {
 		t.Fatal("expected secret in context")
 	}
@@ -29,7 +27,7 @@ func TestSecretFromContextMatchesRefAndEnvKey(t *testing.T) {
 func TestSecretFromContextMissing(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := rtcredentials.SecretFromContext(context.Background(), "env:MISSING"); ok {
+	if _, ok := secretFromContext(context.Background(), "env:MISSING"); ok {
 		t.Fatal("expected no secret")
 	}
 }

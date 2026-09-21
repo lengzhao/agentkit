@@ -10,7 +10,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -19,7 +18,7 @@ type stubScopedCredentials struct {
 }
 
 func (s stubScopedCredentials) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if vals, ok := s.byScope[scope]; ok {
 		if v, ok := vals[key]; ok {
 			return credentials.Secret{Ref: ref, Value: v}, nil

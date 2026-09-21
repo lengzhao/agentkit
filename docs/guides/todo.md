@@ -45,7 +45,7 @@ flowchart TB
 - 不放工作流 / 多步 IO。单一消费者下沉到消费方包内；多消费者做成接口 + `runtime` 实现 + `deps` 注入。
 - 需要 runtime 内部设施的 kind，可把注册迁入对应 `runtime` 包自注册（先例：`runtime/llm`、`runtime/workspace`、`runtime/agent`）。
 
-排查：`go list -f '{{.ImportPath}}|{{join .Imports "|"}}' ./plugins/...` + 符号级 grep。已符合「非测试源码不碰 runtime」的参照包：`bootstrap`、`policy`、`settings`、`tool/web`、`tool/sessionquery`。
+排查：`go list -f '{{.ImportPath}}|{{join .Imports "|"}}' ./plugins/...` + 符号级 grep。已符合「非测试源码不碰 runtime」的参照包：`bootstrap`、`policy`、`tool/web`、`tool/sessionquery`。
 
 ---
 
@@ -56,7 +56,7 @@ flowchart TB
 ### A1 会话读写（缺 cap，插件仍调包级函数）
 
 - [x] **事件追加 / 派生读取 / 运行状态 → `cap/session`**
-  - 落地：`cap/session` 承载事件载荷 DTO（`Todo`/`RunFinishData`/`UsageData` 等）、纯函数投影（`LatestTodos`/`RunStateFromEvents`/`EstimateMessagesChars`/`FlattenTextParts`/`ResolveActiveSessionID`）与按事件域拆分的写接口（`Transcript`/`Lifecycle`/`RunLog`/`Compaction`/`Skills`，组合为 `Events`，恢复标记方法直接挂在 `Events` 上；远程 agent 用 `Conversation`）；`runtime/session/sessevents` 以方法为唯一追加入口（runtime 经 `sessevents.Default` 单例调用）并自注册 `session/events` kind；`ContentTypeAttachmentRef` 常量上移至根包。
+  - 落地：`cap/session` 承载事件载荷 DTO（`Todo`/`RunFinishData`/`UsageData` 等）、纯函数投影（`LatestTodos`/`RunStateFromEvents`/`EstimateMessagesChars`/`FlattenTextParts`/`ResolveActiveSessionID`）与按事件域拆分的写接口（`Conversation`——含原 transcript 与 turn/step 括号方法——/`RunLog`/`Compaction`/`Skills`，组合为 `Events`，恢复标记方法直接挂在 `Events` 上；远程 agent 单独用 `Conversation`）；`runtime/session/sessevents` 以方法为唯一追加入口（runtime 经 `sessevents.Default` 单例调用）并自注册 `session/events` kind；`ContentTypeAttachmentRef` 常量上移至根包。
   - 接线：`tool/todo`、`tool/finish`（`RunLog`）、`tool/skill`（`Skills`）、`compaction/summary`（`Compaction`）、`agent/acpremote`（`Conversation`）经 `sessionEvents: session.events` 注入同一实例；`hook/turn-continue`、`hook/before-step`、`learning`、`compaction/token-limit` 只用根包 `Session.Read` + cap 纯函数，无需新 dep。
   - 验收：上述插件非测试源码不再 import `runtime/session/sessevents`、`derive`、`sessbind`（`plugins/all.go` 聚合器除外）。
 
@@ -69,7 +69,9 @@ flowchart TB
 
 - [x] **`cap/compaction`**：`plugins/hook`、`plugins/compaction` 均调 `runtime/compaction` → 注入
 - [x] **`cap/chathistory`**：仅 `tool/chathistory` → 公共函数改小写
-- [ ] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell` → 注入
+- [x] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell` → 注入
+  - 落地：`cap/credentials` 仅 `Store` / `EnvPairResolver` / `Secret` / `GlobalScope`；密文、manifest、scoped 查找在 `plugins/credentials`；mcp / openapi / shell 经 `deps.credentials` 注入 `Store`（shell 另断言 `EnvPairResolver`），各自拼 `mcp.` / `openapi.` / `shell-bash.` scope。
+  - 验收：上述插件非测试源码不再 import `runtime/credentials`（该包已删除）。
 - [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`）
 - [ ] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入
 - [ ] **`cap/delivery`**：`learning`、`tool/chathistory`、`tool/send` → 注入
@@ -77,7 +79,7 @@ flowchart TB
 - [ ] **`cap/telemetry`**：`telemetry`、`acpremote`、`mcp`、`openapi`、`recognize` → 注入
 - [ ] **`cap/learning`**：仅 `plugins/learning` → 公共函数改小写
 - [ ] **`cap/acp`**：仅 `agent/acpremote` → 公共函数改小写
-- [x] **`cap/filesystem`**：`Service`（Read/Write/Append/Stat/List/Grep/Find）+ Grep/Find DTO + `WriteOption`（`WithPerm`）+ `DirEntry/Info.ModTime`；not-found 约定 `errors.Is(err, os.ErrNotExist)`，Write 原子（local=temp+rename），`global:`/`local:` 前缀委托 workspace 双根路由。`filesystem/local` 在 `runtime/filesystem`（gitignore 匹配留在此）。**全部状态插件经 `deps.fs` 注入**：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials（含 `/env add` 0600）、mcp、openapi（含 local→global 复制）、settings、agent/acp-remote（session bind）接 `filesystem.local.state`（root="."）；prompt/agents-md、tool/send（绝对路径）接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP fs 协议、shell 类插件的子进程 cwd。S3/远程另注册 `filesystem/<name>` 即可。
+- [x] **`cap/filesystem`**：`Service`（Read/Write/Append/Stat/List/Grep/Find）+ Grep/Find DTO + `WriteOption`（`WithPerm`）+ `DirEntry/Info.ModTime`；not-found 约定 `errors.Is(err, os.ErrNotExist)`，Write 原子（local=temp+rename），`global:`/`local:` 前缀委托 workspace 双根路由。`filesystem/local` 在 `runtime/filesystem`（gitignore 匹配留在此）。**全部状态插件经 `deps.fs` 注入**：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials（含 `/env add` 0600）、mcp、openapi（含 local→global 复制）、agent/acp-remote（session bind）接 `filesystem.local.state`（root="."）；prompt/agents-md、tool/send（绝对路径）接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP fs 协议、shell 类插件的子进程 cwd。S3/远程另注册 `filesystem/<name>` 即可。
 
 ### A3 契约尚未成型
 

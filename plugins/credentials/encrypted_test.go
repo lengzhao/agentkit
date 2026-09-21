@@ -16,7 +16,7 @@ func testMasterKey(t *testing.T) []byte {
 
 func TestParseSecretsMasterKeyPassphrase(t *testing.T) {
 	pass := "my-long-passphrase"
-	got, err := ParseSecretsMasterKey(pass)
+	got, err := parseSecretsMasterKey(pass)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,11 +32,11 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 		"OPENAI_API_KEY": "sk-test",
 		"GITHUB_TOKEN":   "ghp_x",
 	}
-	data, err := EncryptSecretsFile(updates, key)
+	data, err := encryptSecretsFile(updates, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := DecryptSecretsFile(data, key)
+	got, err := decryptSecretsFile(data, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,26 +49,26 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestMergeEncryptedSecretsFile(t *testing.T) {
 	key := testMasterKey(t)
-	first, err := EncryptSecretsFile(map[string]string{"A": "1"}, key)
+	first, err := encryptSecretsFile(map[string]string{"A": "1"}, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	merged, err := MergeEncryptedSecretsFile(first, key, map[string]string{"B": "2"})
+	merged, err := mergeEncryptedSecretsFile(first, key, map[string]string{"B": "2"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := DecryptSecretsFile(merged, key)
+	got, err := decryptSecretsFile(merged, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got["A"] != "1" || got["B"] != "2" {
 		t.Fatalf("got %#v", got)
 	}
-	merged, err = MergeEncryptedSecretsFile(merged, key, map[string]string{"A": "3"})
+	merged, err = mergeEncryptedSecretsFile(merged, key, map[string]string{"A": "3"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err = DecryptSecretsFile(merged, key)
+	got, err = decryptSecretsFile(merged, key)
 	if err != nil {
 		t.Fatal(err)
 	}

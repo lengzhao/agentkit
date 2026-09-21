@@ -4,10 +4,10 @@ import "testing"
 
 func TestCredentialScope(t *testing.T) {
 	t.Parallel()
-	if got := CredentialScope("example1"); got != "openapi.example1" {
+	if got := credentialScope("example1"); got != "openapi.example1" {
 		t.Fatalf("got %q", got)
 	}
-	if CredentialScope("  pet  ") != "openapi.pet" {
+	if credentialScope("  pet  ") != "openapi.pet" {
 		t.Fatal("should trim api name")
 	}
 }

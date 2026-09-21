@@ -14,7 +14,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -25,7 +24,7 @@ type mapScopedStore struct {
 }
 
 func (m mapScopedStore) Resolve(_ context.Context, scope string, ref string) (credentials.Secret, error) {
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if vals, ok := m.scopes[scope]; ok {
 		if v, ok := vals[key]; ok && v != "" {
 			return credentials.Secret{Ref: ref, Value: v}, nil
@@ -39,7 +38,7 @@ func scopedCredsForAPI(apiName string, env map[string]string) credentials.Store 
 		return nil
 	}
 	return mapScopedStore{scopes: map[string]map[string]string{
-		CredentialScope(apiName): env,
+		credentialScope(apiName): env,
 	}}
 }
 

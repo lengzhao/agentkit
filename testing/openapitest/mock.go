@@ -15,7 +15,6 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	rtcredentials "github.com/lengzhao/agentkit/runtime/credentials"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -172,16 +171,24 @@ func (s scopedCredentialStore) Resolve(_ context.Context, scope string, ref stri
 	if scope != s.scope {
 		return credentials.Secret{}, fmt.Errorf("credential scope %q does not match %q", scope, s.scope)
 	}
-	key := rtcredentials.EnvKey(ref)
+	key := envKey(ref)
 	if v, ok := s.env[key]; ok && v != "" {
 		return credentials.Secret{Ref: ref, Value: v}, nil
 	}
 	return credentials.Secret{}, fmt.Errorf("credential %q not found for scope %q", ref, scope)
 }
 
+func envKey(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if after, ok := strings.CutPrefix(ref, "env:"); ok {
+		return after
+	}
+	return ref
+}
+
 func credentialsForAPI(apiName string) credentials.Store {
 	return scopedCredentialStore{
-		scope: rtcredentials.OpenAPICredentialScope(apiName),
+		scope: "openapi." + strings.TrimSpace(apiName),
 		env:   map[string]string{"OPENAPITEST_TOKEN": DefaultToken},
 	}
 }

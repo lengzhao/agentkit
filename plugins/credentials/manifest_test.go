@@ -16,7 +16,7 @@ func TestManifestFromMCPFile(t *testing.T) {
     "plain": {"command": "echo", "args": ["hi"]}
   }
 }`)
-	got, err := ManifestFromMCPFile(raw)
+	got, err := manifestFromMCPFile(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,12 +47,32 @@ func TestManifestFromAPIIndex(t *testing.T) {
     }
   }
 }`)
-	got, err := ManifestFromAPIIndex(raw)
+	got, err := manifestFromAPIIndex(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keys := got["openapi.petstore"]
 	if len(keys) != 2 {
 		t.Fatalf("keys=%v", keys)
+	}
+}
+
+func TestManifestFromShellBashFile(t *testing.T) {
+	t.Parallel()
+	data := []byte(`{
+  "commands": {
+    "gh": {"env": ["GH_TOKEN", "GITHUB_TOKEN"]},
+    "npm": {"env": ["NPM_TOKEN"]}
+  }
+}`)
+	got, err := manifestFromShellBashFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got["shell-bash.gh"]) != 2 {
+		t.Fatalf("gh keys=%v", got["shell-bash.gh"])
+	}
+	if _, ok := got["shell-bash.gh"]["GH_TOKEN"]; !ok {
+		t.Fatal("missing GH_TOKEN")
 	}
 }
