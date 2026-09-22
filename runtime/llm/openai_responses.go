@@ -87,7 +87,11 @@ func (s *responsesStream) Recv() (agentkit.LLMEvent, error) {
 			// Provider-side search; no local tool execution needed.
 		case openai.ResponseStreamEventWebSearchCompleted:
 			s.acc.appendThinkingDelta("\n")
-		case openai.ResponseStreamEventCompleted, openai.ResponseStreamEventIncomplete:
+		case openai.ResponseStreamEventCompleted:
+			s.acc.finalize()
+			return s.Recv()
+		case openai.ResponseStreamEventIncomplete:
+			s.acc.setStopReason(agentkit.AssistantStopReasonError)
 			s.acc.finalize()
 			return s.Recv()
 		case openai.ResponseStreamEventFailed, openai.ResponseStreamEventError:

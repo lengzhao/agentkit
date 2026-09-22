@@ -160,6 +160,7 @@ mindmap
 | ID | 场景 | 输入 | 断言 | 状态 | 层级 |
 |---|---|---|---|---|---|
 | SMK-040 | orphan tool call 恢复 | seed 崩溃 | `session/recovery`；synthetic interrupted result | ✅ | recovery_test |
+| SMK-041 | derive tool 配对 | orphan tool/压缩断 tail | 不以 tool 开头；call 均有 result | ✅ | `derive_pairing_test.go` |
 | SMK-041 | 干净 session 不触发 recovery | 正常 turn | recovery = 0 | ✅ | recovery_test |
 | SMK-042 | 同 session 串行 | 并发 dispatch | 无交错 turn | ✅ | loop_test |
 | SMK-043 | 跨 session 隔离 | 两 session 并行 | 事件不混 | ✅ | loop_test |

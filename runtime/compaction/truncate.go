@@ -80,7 +80,11 @@ func dropOldestMessagesToFit(messages []agentkit.ModelMessage, maxChars int) ([]
 		total -= estimateMessageChars(messages[drop])
 		drop++
 	}
-	return messages[drop:], true
+	out := messages[drop:]
+	for len(out) > 0 && len(out[0].ToolResults) > 0 {
+		out = out[1:]
+	}
+	return out, true
 }
 
 // neutralizeAttachmentParts replaces hydratable attachment parts (and inline

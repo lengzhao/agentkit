@@ -50,7 +50,7 @@ func TestSmokeRecoverySynthesizesOrphanToolResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agenttest.AssertDeriveMessagesToolCallsAnswered(t, sess, ctx)
+	agenttest.AssertDeriveMessagesReplayPairing(t, sess, ctx)
 }
 
 func TestSmokeCleanSessionSkipsRecovery(t *testing.T) {

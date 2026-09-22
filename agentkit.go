@@ -93,6 +93,12 @@ type EventID string
 type EventType string
 type EventSeq int64
 
+// Assistant stopReason values persisted on assistant/message events (pi-ai).
+const (
+	AssistantStopReasonError   = "error"
+	AssistantStopReasonAborted = "aborted"
+)
+
 // ModelMessage is model-visible content only. Session routing lives on event
 // envelopes and context keys, not on ModelMessage.
 type ModelMessage struct {
@@ -100,6 +106,9 @@ type ModelMessage struct {
 	Content     []ContentPart
 	ToolCalls   []ToolCall
 	ToolResults []ToolResult
+	// StopReason mirrors pi assistant stopReason. error/aborted assistants are
+	// omitted from DeriveMessages replay (transformMessages in pi-ai).
+	StopReason string `json:"stopReason,omitempty"`
 }
 
 type ContentPart struct {

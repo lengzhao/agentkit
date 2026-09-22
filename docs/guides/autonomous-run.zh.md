@@ -148,7 +148,7 @@ agent.assistant.default:
 
 | 层 | 位置 | 作用 |
 |---|---|---|
-| 运行时安全网 | `DeriveMessages` | 任何没有回复的 tool call 都补一条"被中断"的 stand-in 结果。派生历史是模型可见内容的唯一出口，所以补在这里，全部消费方（含 `/compact`、summary）都安全 |
+| 运行时安全网 | `DeriveMessages` | `repairToolPairing`（同 pi `transformMessages`）：边界上补未答 tool call、跳过 error/aborted assistant、丢弃无 round 的悬空 tool。stand-in 文案仍为 interrupted（recovery 语义）。派生历史是模型可见唯一出口 |
 | 持久化修复 | Agent 每个 turn 开始前 | 补齐 orphan `tool/result`、关掉悬空 `step/end`、写 `turn/end`，最后记一条 `session/recovery` 事件 |
 
 补出来的 tool 结果是**模型可见**的，内容明确写着"被中断，需要的话重跑" —— 模型需要知道那次调用是被切断而不是静默成功了。

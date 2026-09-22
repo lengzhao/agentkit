@@ -32,6 +32,26 @@ func CountEvents(events []agentkit.SessionEvent, typ agentkit.EventType) int {
 	return n
 }
 
+// AssertDeriveMessagesReplayPairing checks derive replay invariants for LLM providers
+// (answered tool calls, no leading orphan tool messages).
+func AssertDeriveMessagesReplayPairing(t *testing.T, sess agentkit.Session, ctx context.Context) {
+	t.Helper()
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	AssertModelMessagesReplayPairing(t, messages)
+}
+
+// AssertModelMessagesReplayPairing applies replay invariants to an already-derived slice.
+func AssertModelMessagesReplayPairing(t *testing.T, messages []agentkit.ModelMessage) {
+	t.Helper()
+	if len(messages) > 0 && len(messages[0].ToolResults) > 0 {
+		t.Fatalf("derived history must not start with tool message: %#v", messages[0])
+	}
+	AssertDeriveMessagesToolCallsAnsweredMessages(t, messages)
+}
+
 // AssertDeriveMessagesToolCallsAnswered checks provider replay invariants.
 func AssertDeriveMessagesToolCallsAnswered(t *testing.T, sess agentkit.Session, ctx context.Context) {
 	t.Helper()
@@ -39,6 +59,11 @@ func AssertDeriveMessagesToolCallsAnswered(t *testing.T, sess agentkit.Session, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	AssertDeriveMessagesToolCallsAnsweredMessages(t, messages)
+}
+
+func AssertDeriveMessagesToolCallsAnsweredMessages(t *testing.T, messages []agentkit.ModelMessage) {
+	t.Helper()
 	for i, msg := range messages {
 		for _, call := range msg.ToolCalls {
 			answered := false

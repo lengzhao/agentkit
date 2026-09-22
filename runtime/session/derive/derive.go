@@ -28,7 +28,7 @@ func DeriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 	view := resolveCompactionView(events, agentID)
 	out := plainCompactionPrefix(view)
 	out = append(out, walkPlainEvents(events, agentID, view.AfterSeq)...)
-	out = answerOrphanToolCalls(out)
+	out = repairToolPairing(out)
 	if maxToolBytes > 0 {
 		out = PruneToolResults(out, maxToolBytes)
 	}
@@ -258,63 +258,6 @@ func eventForAgent(ev agentkit.SessionEvent, agentID agentkit.AgentID) bool {
 		return true
 	}
 	return ev.AgentID == agentID
-}
-
-// answerOrphanToolCalls inserts a stand-in result for every tool call the
-// history never answers. Providers reject an assistant message whose tool calls
-// have no replies, so without this a session interrupted mid-tool could never be
-// replayed — not even to summarize or repair it.
-func answerOrphanToolCalls(messages []agentkit.ModelMessage) []agentkit.ModelMessage {
-	// Result positions per call ID, consumed in order: an ID may legitimately
-	// repeat across steps, and only a later result answers a given call.
-	positions := make(map[agentkit.ToolCallID][]int)
-	for i, msg := range messages {
-		for _, result := range msg.ToolResults {
-			positions[result.ID] = append(positions[result.ID], i)
-		}
-	}
-
-	var orphansAt map[int][]agentkit.ToolResult
-	for i, msg := range messages {
-		if len(msg.ToolCalls) == 0 {
-			continue
-		}
-		for _, call := range msg.ToolCalls {
-			if consumeResultAfter(positions, call.ID, i) {
-				continue
-			}
-			if orphansAt == nil {
-				orphansAt = make(map[int][]agentkit.ToolResult)
-			}
-			orphansAt[i] = append(orphansAt[i], InterruptedToolResult(call))
-		}
-	}
-	if len(orphansAt) == 0 {
-		return messages
-	}
-
-	out := make([]agentkit.ModelMessage, 0, len(messages)+len(orphansAt))
-	for i, msg := range messages {
-		out = append(out, msg)
-		if results, ok := orphansAt[i]; ok {
-			out = append(out, agentkit.ModelMessage{Role: "tool", ToolResults: results})
-		}
-	}
-	return out
-}
-
-// consumeResultAfter claims the earliest unconsumed result for id that sits
-// after index, reporting whether the call is answered.
-func consumeResultAfter(positions map[agentkit.ToolCallID][]int, id agentkit.ToolCallID, index int) bool {
-	indexes := positions[id]
-	for i, pos := range indexes {
-		if pos <= index {
-			continue
-		}
-		positions[id] = append(indexes[:i:i], indexes[i+1:]...)
-		return true
-	}
-	return false
 }
 
 func AppendSkillLoad(ctx context.Context, s agentkit.Session, agentID agentkit.AgentID, content skill.Content) (string, error) {

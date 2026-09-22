@@ -34,6 +34,29 @@ func TestChatStreamFinalizeAfterTrailingUsage(t *testing.T) {
 	}
 }
 
+func TestStreamAccumulatorCarriesStopReason(t *testing.T) {
+	t.Parallel()
+
+	acc := newStreamAccumulator()
+	acc.appendTextDelta("partial")
+	acc.setStopReason(agentkit.AssistantStopReasonError)
+	acc.finalize()
+
+	var final *agentkit.ModelMessage
+	for {
+		ev, ok := acc.recvPending()
+		if !ok {
+			break
+		}
+		if ev.Type == agentkit.LLMEventMessage && ev.Message != nil {
+			final = ev.Message
+		}
+	}
+	if final == nil || final.StopReason != agentkit.AssistantStopReasonError {
+		t.Fatalf("final message = %#v", final)
+	}
+}
+
 func TestChatStreamUsageOnlyChunkPattern(t *testing.T) {
 	t.Parallel()
 

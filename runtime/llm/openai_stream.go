@@ -124,6 +124,13 @@ func (a *streamAccumulator) appendToolCallDelta(idx int, id, name, args string) 
 	}
 }
 
+func (a *streamAccumulator) setStopReason(reason string) {
+	if reason == "" {
+		return
+	}
+	a.acc.StopReason = reason
+}
+
 func (a *streamAccumulator) finalize() {
 	for idx, call := range a.toolBuf {
 		cp := *call

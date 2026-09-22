@@ -6,13 +6,13 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	openapiplugin "github.com/lengzhao/agentkit/plugins/tool/openapi"
-	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
-	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/llm"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/agentkit/testing/openapitest"
@@ -26,9 +26,6 @@ func openapiTelemetry() (captelemetry.Toolkit, error) {
 // keeping the helper package plugin-agnostic.
 func newOpenAPIProvider(ws workspace.Service, creds credentials.Store) (agentkit.ToolProvider, error) {
 	fs, err := rtfilesystem.New(rtfilesystem.Config{Root: ".", Unrestricted: true}, rtfilesystem.Deps{Workspace: ws})
-	if err != nil {
-		return nil, err
-	}
 	if err != nil {
 		return nil, err
 	}

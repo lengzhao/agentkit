@@ -42,6 +42,7 @@ flowchart TB
 | `NewSubagentDelegateEnv` | 父→delegate→子 冒烟栈 |
 | `AssertSubagentParentSession` | 委派回归断言（无 recovery、单条 delegate result） |
 | `AssertDeriveMessagesToolCallsAnswered` | derive 后 tool call 均有 result |
+| `AssertDeriveMessagesReplayPairing` | 上述 + 派生历史不得以悬空 `tool` 开头（`repairToolPairing`） |
 | `NewScriptedAgent` / `SeedCrashedToolCall` | 通用 agent 与崩溃 seed |
 | `DenyAllToolsPolicy` | 策略层 deny 场景 |
 | `AssertToolResultContains` / `AssertEventAtLeast` | 事件与 tool result 断言 |

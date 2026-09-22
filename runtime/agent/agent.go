@@ -536,6 +536,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	for {
 		if err := ctx.Err(); err != nil {
 			observationEnd.Err = err
+			_ = persistAssistantWithStopReason(ctx, sess, a.id, assistant, agentkit.AssistantStopReasonAborted)
 			return stepOutcome{}, err
 		}
 		ev, err := stream.Recv()
@@ -562,6 +563,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		}
 		if err != nil {
 			observationEnd.Err = err
+			_ = persistAssistantWithStopReason(ctx, sess, a.id, assistant, agentkit.AssistantStopReasonError)
 			return stepOutcome{}, err
 		}
 	}
@@ -573,7 +575,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		return stepOutcome{}, err
 	}
 
-	if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, assistant); err != nil {
+	if err := appendAssistantMessage(ctx, sess, a.id, assistant); err != nil {
 		observationEnd.Err = err
 		return stepOutcome{}, err
 	}
@@ -727,6 +729,33 @@ func withToolContext(ctx context.Context, sess agentkit.Session, agentID agentki
 func EncodeEventData(v any) json.RawMessage {
 	raw, _ := json.Marshal(v)
 	return raw
+}
+
+func appendAssistantMessage(ctx context.Context, sess agentkit.Session, agentID agentkit.AgentID, msg agentkit.ModelMessage) error {
+	if msg.Role == "" {
+		msg.Role = "assistant"
+	}
+	return sessevents.Default.AppendMessage(ctx, sess, agentID, agentkit.EventAssistantMessage, msg)
+}
+
+func assistantMessageWorthPersisting(msg agentkit.ModelMessage) bool {
+	if len(msg.ToolCalls) > 0 {
+		return true
+	}
+	for _, part := range msg.Content {
+		if strings.TrimSpace(part.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func persistAssistantWithStopReason(ctx context.Context, sess agentkit.Session, agentID agentkit.AgentID, msg agentkit.ModelMessage, stopReason string) error {
+	if !assistantMessageWorthPersisting(msg) {
+		return nil
+	}
+	msg.StopReason = stopReason
+	return appendAssistantMessage(context.WithoutCancel(ctx), sess, agentID, msg)
 }
 
 func cancelReasonFromError(err error) (string, bool) {
