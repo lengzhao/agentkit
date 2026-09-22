@@ -19,6 +19,7 @@ type openAIBackend interface {
 
 type chatBackend struct {
 	client        *openai.Client
+	reasoning     *OpenAIReasoningConfig
 	providerRetry ProviderRetrySettings
 }
 
@@ -32,7 +33,7 @@ type responsesBackend struct {
 func (p *OpenAI) backend() (openAIBackend, error) {
 	switch p.api {
 	case openAIAPIChat:
-		return &chatBackend{client: p.client, providerRetry: p.providerRetry}, nil
+		return &chatBackend{client: p.client, reasoning: p.reasoning, providerRetry: p.providerRetry}, nil
 	case openAIAPIResponses:
 		return &responsesBackend{
 			client:        p.client,

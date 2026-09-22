@@ -34,6 +34,10 @@ tools.default:
 - 与 `mcp.json` 的 `allowTools` / `api.json` 的 `allowOperations` 可叠加：先在来源侧收窄，再在 runtime 侧统一裁剪。
 - 更细粒度仍可用 deps 选择（不挂载插件）或各动态工具源自己的 allow/deny。
 
+### 模型可见工具名清洗（Responses / function tools）
+
+`tools/runtime`（`tools/deferred` 透传内层）在组 catalog 时对**整段**插件 `Tool.Name()` 做清洗：仅保留 `A-Za-z0-9_`，其余字符（含 `.`、`-`）变为 `_`，以满足 OpenAI Responses 等对 `function_call.name` 的 `^[a-zA-Z0-9_-]+$` 约束。`Visible` 与 `Execute` 均使用清洗后的名称。`allowTools` / `denyTools`、`toolTimeouts` 在加载时会做同一套清洗（仍可直接写 MCP/OpenAPI 的 canonical 原名）；`tools/deferred` 的 `eagerTools` / `deferTools` 亦按清洗名匹配。依赖 `ToolCall.Name` 的 **policy**（如 `policy/path-denylist` 的 `tools`）应写模型侧清洗后的名称。若清洗后重名，按静态工具 → 动态 provider 顺序、同层按 canonical 名字典序，**先注册者保留、后者丢弃** 并 `slog.Warn`。
+
 ## 网络工具
 
 ### 插件一览
@@ -262,7 +266,7 @@ tools.default:
 
 已建立的 MCP 连接在**空闲**超过 `idleTimeoutSeconds`（默认 300 秒）后会被主动关闭；下次调用时自动重连。设为 `0` 可关闭空闲回收。
 
-不带参数的 **`/mcp`** 会列出已加载 server、**各 server 下模型可见的工具名**（`prefix__tool`），以及各 `mcp.<server>` 在配置里声明的 `env:` 键和是否已通过 `credentials.integrations` 解析（缺省时提示 `/env add mcp.<server> KEY=<value>`）。仅需工具清单时可用 **`/mcp list`**；改配置后 **`/mcp -u`** 会重载并在输出末尾附带同样清单。
+不带参数的 **`/mcp`** 会列出已加载 server、**各 server 下插件侧工具名**（`prefix__` + MCP 原名，未做 Responses 清洗）；**模型实际看到的名称**由 `tools/runtime`（及 `tools/deferred`）统一清洗：整段工具名仅保留 `A-Za-z0-9_`，`.`、`-` 等变为 `_`，以满足 OpenAI Responses `function_call.name` 的 `^[a-zA-Z0-9_-]+$`；清洗后重名时 **先注册者保留、后者丢弃** 并 `slog.Warn`。`/mcp` 清单与模型名可能不一致（例如 `codegraph.explore` → `codegraph_explore`）。以及各 `mcp.<server>` 在配置里声明的 `env:` 键和是否已通过 `credentials.integrations` 解析（缺省时提示 `/env add mcp.<server> KEY=<value>`）。仅需工具清单时可用 **`/mcp list`**；改配置后 **`/mcp -u`** 会重载并在输出末尾附带同样清单。
 
 **配置约定与维护流程**见 Skill **`mcp-manager`**（`skills/mcp-manager/SKILL.md`，经 `skill(name="mcp-manager")` 加载）。Agent 用 read/edit 改配置后，需请用户执行 `/mcp -u` 刷新动态工具。
 

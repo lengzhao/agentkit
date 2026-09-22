@@ -15,6 +15,15 @@ func TestToolNameFilterAllowList(t *testing.T) {
 	}
 }
 
+func TestToolNameFilterAllowListNormalizesCanonicalName(t *testing.T) {
+	t.Parallel()
+
+	f := newToolNameFilter([]string{"ah__codegraph.explore"}, nil)
+	if !f.allows("ah__codegraph_explore") {
+		t.Fatal("allow list should match model-visible name after ExposedToolName")
+	}
+}
+
 func TestToolNameFilterDenyList(t *testing.T) {
 	t.Parallel()
 

@@ -23,11 +23,11 @@ type RuntimeConfig struct {
 	DefaultTimeoutSeconds int `json:"defaultTimeoutSeconds"`
 	// MaxResultBytes is deprecated and ignored; spill/truncation happens in session.PrepareToolResultForStorage.
 	MaxResultBytes int `json:"maxResultBytes"`
-	// ToolTimeouts are per-tool timeout overrides, keyed by tool name.
+	// ToolTimeouts are per-tool timeout overrides, keyed by tool name (canonical or model-visible; normalized like ExposedToolName).
 	ToolTimeouts map[string]int `json:"toolTimeouts,omitempty"`
-	// AllowTools is a model-visible tool name whitelist. When non-empty, only listed tools are exposed.
+	// AllowTools is a model-visible tool name whitelist. When non-empty, only listed tools are exposed (names normalized like ExposedToolName).
 	AllowTools []string `json:"allowTools,omitempty"`
-	// DenyTools is a model-visible tool name blacklist. Ignored when AllowTools is set.
+	// DenyTools is a model-visible tool name blacklist. Ignored when AllowTools is set (names normalized like ExposedToolName).
 	DenyTools []string `json:"denyTools,omitempty"`
 }
 
@@ -43,6 +43,7 @@ type RuntimeDeps struct {
 // Runtime executes tools through the policy and approval pipeline.
 type Runtime struct {
 	tools            map[string]agentkit.Tool
+	exposed          map[string]agentkit.Tool
 	dynamicProviders []agentkit.ToolProvider
 	dynamicTools     map[string]agentkit.Tool
 	dynamicMu        sync.Mutex
@@ -79,13 +80,13 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		if seconds <= 0 {
 			continue
 		}
-		toolTimeouts[name] = time.Duration(seconds) * time.Second
+		toolTimeouts[ExposedToolName(name)] = time.Duration(seconds) * time.Second
 	}
 	var defaultTimeout time.Duration
 	if cfg.DefaultTimeoutSeconds > 0 {
 		defaultTimeout = time.Duration(cfg.DefaultTimeoutSeconds) * time.Second
 	}
-	return &Runtime{
+	r := &Runtime{
 		tools:            tools,
 		dynamicProviders: deps.DynamicTools,
 		dynamicTools:     make(map[string]agentkit.Tool),
@@ -95,7 +96,9 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		defaultTimeout:   defaultTimeout,
 		toolTimeouts:     toolTimeouts,
 		filter:           newToolNameFilter(cfg.AllowTools, cfg.DenyTools),
-	}, nil
+	}
+	r.rebuildExposedCatalog()
+	return r, nil
 }
 
 // StaticToolNames returns tool names from deps.tools and deps.toolPacks only (not dynamic providers).
@@ -103,7 +106,7 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 func (r *Runtime) StaticToolNames() []string {
 	names := make([]string, 0, len(r.tools))
 	for name := range r.tools {
-		names = append(names, name)
+		names = append(names, ExposedToolName(name))
 	}
 	sort.Strings(names)
 	return names
@@ -126,6 +129,7 @@ func (r *Runtime) refreshDynamic(ctx context.Context) error {
 		r.dynamicMu.Lock()
 		r.dynamicTools = make(map[string]agentkit.Tool)
 		r.dynamicMu.Unlock()
+		r.rebuildExposedCatalog()
 		return nil
 	}
 	dynamic := make(map[string]agentkit.Tool)
@@ -144,10 +148,16 @@ func (r *Runtime) refreshDynamic(ctx context.Context) error {
 			}
 			name := tool.Name()
 			if _, ok := r.tools[name]; ok {
-				return fmt.Errorf("duplicate tool name %q", name)
+				slog.Warn("tools/runtime: skipped dynamic tool; canonical name collides with static tool",
+					"canonical_name", name,
+				)
+				continue
 			}
 			if _, ok := dynamic[name]; ok {
-				return fmt.Errorf("duplicate tool name %q", name)
+				slog.Warn("tools/runtime: skipped dynamic tool; duplicate canonical name",
+					"canonical_name", name,
+				)
+				continue
 			}
 			dynamic[name] = tool
 		}
@@ -155,35 +165,36 @@ func (r *Runtime) refreshDynamic(ctx context.Context) error {
 	r.dynamicMu.Lock()
 	r.dynamicTools = dynamic
 	r.dynamicMu.Unlock()
+	r.rebuildExposedCatalog()
 	return nil
+}
+
+func (r *Runtime) rebuildExposedCatalog() {
+	r.dynamicMu.Lock()
+	dynamic := r.dynamicTools
+	r.dynamicMu.Unlock()
+	exposed, dropped := buildExposedCatalog(r.tools, dynamic)
+	if dropped > 0 {
+		slog.Warn("tools/runtime: dropped tools with duplicate model-visible names", "count", dropped)
+	}
+	r.exposed = exposed
 }
 
 func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 	if err := r.refreshDynamic(ctx); err != nil {
 		return nil, err
 	}
-	specs := make([]agentkit.ToolSpec, 0, len(r.tools)+len(r.dynamicTools))
+	specs := make([]agentkit.ToolSpec, 0, len(r.exposed))
 	available := make(map[string]bool)
-	for _, tool := range r.tools {
-		name := tool.Name()
-		available[name] = true
+	for _, exposedName := range sortedKeys(r.exposed) {
+		tool := r.exposed[exposedName]
+		available[exposedName] = true
 		specs = append(specs, agentkit.ToolSpec{
-			Name:        name,
+			Name:        exposedName,
 			Description: tool.Description(),
 			InputSchema: tool.InputSchema(),
 		})
 	}
-	r.dynamicMu.Lock()
-	for _, tool := range r.dynamicTools {
-		name := tool.Name()
-		available[name] = true
-		specs = append(specs, agentkit.ToolSpec{
-			Name:        name,
-			Description: tool.Description(),
-			InputSchema: tool.InputSchema(),
-		})
-	}
-	r.dynamicMu.Unlock()
 	r.filter.warnUnknownAllowNames(available, &r.filterWarnOnce)
 	return filterToolSpecs(specs, r.filter), nil
 }
@@ -221,14 +232,12 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 		return filteredOutResult(call), nil
 	}
 
-	tool, ok := r.tools[call.Name]
+	tool, ok := r.lookupTool(call.Name)
 	if !ok {
 		if err := r.refreshDynamic(ctx); err != nil {
 			return agentkit.ToolResult{}, err
 		}
-		r.dynamicMu.Lock()
-		tool, ok = r.dynamicTools[call.Name]
-		r.dynamicMu.Unlock()
+		tool, ok = r.lookupTool(call.Name)
 		if !ok {
 			return deniedResult(call, "tool not found", "", nil), nil
 		}
@@ -310,8 +319,24 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 	return result, nil
 }
 
+func (r *Runtime) lookupTool(callName string) (agentkit.Tool, bool) {
+	if t, ok := r.exposed[callName]; ok {
+		return t, true
+	}
+	if t, ok := r.tools[callName]; ok {
+		return t, true
+	}
+	r.dynamicMu.Lock()
+	t, ok := r.dynamicTools[callName]
+	r.dynamicMu.Unlock()
+	return t, ok
+}
+
 func (r *Runtime) timeoutFor(name string) time.Duration {
 	if timeout, ok := r.toolTimeouts[name]; ok {
+		return timeout
+	}
+	if timeout, ok := r.toolTimeouts[ExposedToolName(name)]; ok {
 		return timeout
 	}
 	return r.defaultTimeout

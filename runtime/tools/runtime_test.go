@@ -491,6 +491,77 @@ func TestRuntimeVisibleFiltersByAllowTools(t *testing.T) {
 	}
 }
 
+func TestRuntimeSanitizedToolNameVisibleAndExecute(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		DynamicTools: []agentkit.ToolProvider{&stubProvider{tools: []agentkit.Tool{
+			stubTool{
+				name: "ah__codegraph.explore",
+				fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+					return "ok", nil
+				},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	specs, err := rt.Visible(context.Background())
+	if err != nil {
+		t.Fatalf("visible: %v", err)
+	}
+	if len(specs) != 1 || specs[0].Name != "ah__codegraph_explore" {
+		t.Fatalf("specs = %#v", specs)
+	}
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: "ah__codegraph_explore"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "ok" {
+		t.Fatalf("result = %q", tools.ResultText(result))
+	}
+}
+
+func TestRuntimeToolTimeoutsUsesCanonicalConfigKey(t *testing.T) {
+	t.Parallel()
+
+	const exposed = "ah__codegraph_explore"
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		ToolTimeouts: map[string]int{
+			"ah__codegraph.explore": 1,
+		},
+	}, tools.RuntimeDeps{
+		DynamicTools: []agentkit.ToolProvider{&stubProvider{tools: []agentkit.Tool{
+			stubTool{
+				name: "ah__codegraph.explore",
+				fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+					select {
+					case <-time.After(200 * time.Millisecond):
+						return "done", nil
+					case <-ctx.Done():
+						return "", ctx.Err()
+					}
+				},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	result, err := rt.Execute(ctx, agentkit.ToolCall{ID: "1", Name: exposed})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "tool execution timed out" {
+		t.Fatalf("unexpected result: %q", tools.ResultText(result))
+	}
+}
+
 func TestRuntimeVisibleIncludesDynamicTools(t *testing.T) {
 	t.Parallel()
 

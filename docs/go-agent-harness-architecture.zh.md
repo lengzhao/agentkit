@@ -854,7 +854,7 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 
 ### 5.11 MCP 动态工具
 
-MCP server 使用与 Cursor 等项目相同的 `mcpServers` JSON（默认 `.cursor/mcp.json` + `global:mcp.json`），由 `tool/mcp` 加载并作为动态工具源，经 `tools/runtime` 的 `deps.dynamicTools` 暴露给模型。每次工具发现前重读配置并重连变更的 server；模型看到的是带 prefix 的原生 MCP 工具 schema，而不是泛化 `mcp_call`。使用手册见 [guides/tools.zh.md](guides/tools.zh.md)。
+MCP server 使用与 Cursor 等项目相同的 `mcpServers` JSON（默认 `.cursor/mcp.json` + `global:mcp.json`），由 `tool/mcp` 加载并作为动态工具源，经 `tools/runtime` 的 `deps.dynamicTools` 暴露给模型。每次工具发现前重读配置并重连变更的 server；模型看到的是经 `tools/runtime` 清洗后的工具名（整段名仅 `A-Za-z0-9_`；与 OpenAPI/静态工具共用同一套暴露规则；重名时先注册者保留），MCP 调用仍按远端原名转发，而不是泛化 `mcp_call`。使用手册见 [guides/tools.zh.md](guides/tools.zh.md)。
 
 ## 6. Agent Spine
 

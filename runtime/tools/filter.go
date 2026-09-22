@@ -27,7 +27,7 @@ func newToolNameFilter(allow, deny []string) toolNameFilter {
 		if f.allow == nil {
 			f.allow = make(map[string]struct{})
 		}
-		f.allow[name] = struct{}{}
+		f.allow[ExposedToolName(name)] = struct{}{}
 	}
 	f.allowMode = len(f.allow) > 0
 	for _, name := range deny {
@@ -38,7 +38,7 @@ func newToolNameFilter(allow, deny []string) toolNameFilter {
 		if f.deny == nil {
 			f.deny = make(map[string]struct{})
 		}
-		f.deny[name] = struct{}{}
+		f.deny[ExposedToolName(name)] = struct{}{}
 	}
 	return f
 }

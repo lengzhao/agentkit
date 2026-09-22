@@ -16,15 +16,7 @@ type chatStream struct {
 
 func (b *chatBackend) stream(ctx context.Context, model string, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
 	return streamWithProviderRetry(ctx, b.providerRetry, func() (agentkit.LLMStream, error) {
-		stream, err := b.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
-			Model:    model,
-			Messages: toChatCompletionMessages(req.Messages),
-			Tools:    toOpenAITools(req.Tools),
-			Stream:   true,
-			// Token accounting is recorded on session usage events for hooks and /status.
-			// an autonomous run from going forever.
-			StreamOptions: &openai.StreamOptions{IncludeUsage: true},
-		})
+		stream, err := b.client.CreateChatCompletionStream(ctx, toChatCompletionRequest(model, req.Messages, req.Tools, b.reasoning))
 		if err != nil {
 			return nil, err
 		}

@@ -9,6 +9,34 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
+func toChatCompletionRequest(model string, messages []agentkit.ModelMessage, tools []agentkit.ToolSpec, reasoning *OpenAIReasoningConfig) openai.ChatCompletionRequest {
+	req := openai.ChatCompletionRequest{
+		Model:    model,
+		Messages: toChatCompletionMessages(messages),
+		Tools:    toOpenAITools(tools),
+		Stream:   true,
+		// Token accounting is recorded on session usage events for hooks and /status.
+		StreamOptions: &openai.StreamOptions{IncludeUsage: true},
+	}
+	if effort := chatReasoningEffort(reasoning, len(tools)); effort != "" {
+		req.ReasoningEffort = effort
+	}
+	return req
+}
+
+// chatReasoningEffort picks reasoning_effort for /v1/chat/completions.
+// Several gateways default reasoning models to a non-none effort; that combination
+// rejects function tools unless effort is explicitly "none" or the caller uses /v1/responses.
+func chatReasoningEffort(reasoning *OpenAIReasoningConfig, toolCount int) string {
+	if reasoning != nil && reasoning.Effort != "" {
+		return reasoning.Effort
+	}
+	if toolCount > 0 {
+		return "none"
+	}
+	return ""
+}
+
 func toChatCompletionMessages(messages []agentkit.ModelMessage) []openai.ChatCompletionMessage {
 	out := make([]openai.ChatCompletionMessage, 0, len(messages))
 	for _, msg := range messages {

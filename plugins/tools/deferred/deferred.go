@@ -70,14 +70,14 @@ func (d *Runtime) buildEagerSets() {
 	for _, name := range d.cfg.EagerTools {
 		name = strings.TrimSpace(name)
 		if name != "" {
-			eager[name] = true
+			eager[tools.ExposedToolName(name)] = true
 		}
 	}
 	deferForce := make(map[string]bool)
 	for _, name := range d.cfg.DeferTools {
 		name = strings.TrimSpace(name)
 		if name != "" {
-			deferForce[name] = true
+			deferForce[tools.ExposedToolName(name)] = true
 		}
 	}
 	d.eager = eager
