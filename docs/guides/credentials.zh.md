@@ -34,7 +34,7 @@ AgentKit 在运行期通过 `cap/credentials.Store` 解析 `env:NAME` 引用。�
 |------|------|
 | **L0** `config.base.yaml` | `credentials.default` / `credentials.integrations`、`encryptedFile` |
 | **L1** `config.yaml` | `config.env`（`AGENTKIT_SECRETS_KEY` 等）、**`scopedEnv`**（gh/npm/MCP 等 token） |
-| **运行期** | `/env add` 写 scoped 密文；同键 enc 覆盖 L1 |
+| **运行期** | `/env add` 写 scoped 密文（**同键覆盖**）；写盘后 **reload + verify**；无法解开的条目 **保留密文并设 `abnormal: true`**（`/env` 状态列出），不阻断本次写入 |
 
 **加密库（推荐单文件）**：`credentials.default` 与 `credentials.integrations` 共用 `global:secrets.enc.json`（local 即 `.agentkit/secrets.enc.json`）。Flat 键与 scoped 键（`SCOPE::KEY`）在同一 `entries`。L1 **`scopedEnv`** 启动载入；同键以 enc `/env add` 为准。可选 `config.files`（dotenv）作 dev 补充。
 
@@ -84,7 +84,7 @@ Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool
 | LLM、telemetry、web-search | `credentials.default` |
 | tool/mcp、tool/openapi、tool/shell-bash（scoped env） | `credentials.integrations` |
 
-`/env`：integrations 插件 `CommandProvider`；配置图须 **实例化** `credentials.integrations`，由 `commands/registry` 聚合。
+`/env`：integrations 插件 `CommandProvider`；配置图须 **实例化** `credentials.integrations`，由 `commands/registry` 聚合。无参数时列出 **密钥名**（不含值）：loaded/abnormal 密文键、dotenv，以及按 scope 的 env 变量名与 `[manifest|loaded|config|abnormal]` 状态（不展示密文路径与 `config.env` 键名，如 `AGENTKIT_SECRETS_KEY`）。
 
 ---
 

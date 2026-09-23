@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -97,23 +98,23 @@ func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, 
 	return value, ok
 }
 
-func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pairs []string) (string, int, error) {
+func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pairs []string) (envAddOutcome, error) {
 	scope = strings.TrimSpace(scope)
 	if err := validateIntegrationScope(scope); err != nil {
-		return "", 0, err
+		return envAddOutcome{}, err
 	}
 	if err := s.ensureManifestFresh(ctx); err != nil {
-		return "", 0, err
+		return envAddOutcome{}, err
 	}
 	updates := make(map[string]string, len(pairs))
 	refs := make([]string, 0, len(pairs))
 	for _, pair := range pairs {
 		key, value, err := parseEnvPair(pair)
 		if err != nil {
-			return "", 0, err
+			return envAddOutcome{}, err
 		}
 		if value == "" {
-			return "", 0, fmt.Errorf("%s: value is required", key)
+			return envAddOutcome{}, fmt.Errorf("%s: value is required", key)
 		}
 		storageKey := key
 		if s.prefix != "" {
@@ -132,7 +133,37 @@ func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pai
 		}
 		return nil
 	}
-	return s.addUpdates(ctx, updates, refs, verify)
+	outcome, err := s.addUpdates(ctx, updates, refs, verify)
+	if err != nil {
+		return envAddOutcome{}, err
+	}
+	if err := s.reloadManifest(ctx); err != nil {
+		msg := fmt.Sprintf("manifest reload failed: %v", err)
+		slog.Warn("credentials: env add", "warning", msg)
+		outcome.Warnings = append(outcome.Warnings, msg)
+	}
+	return outcome, nil
+}
+
+func formatEnvAddOutcome(outcome envAddOutcome, scope string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "env: wrote %d key(s) for scope %s to %s, reloaded %d key(s), verified",
+		outcome.Wrote, strings.TrimSpace(scope), outcome.Path, outcome.Reloaded)
+	if len(outcome.Overwrites) > 0 {
+		b.WriteString("\noverwrote:")
+		for _, key := range outcome.Overwrites {
+			b.WriteString("\n  - ")
+			b.WriteString(key)
+		}
+	}
+	if len(outcome.Warnings) > 0 {
+		b.WriteString("\nwarnings:")
+		for _, w := range outcome.Warnings {
+			b.WriteString("\n  - ")
+			b.WriteString(w)
+		}
+	}
+	return b.String()
 }
 
 func (s *integrationStore) scopeAllows(scope string, key string) bool {
@@ -287,6 +318,8 @@ func (s *integrationStore) statusWithHelp() string {
 	s.mu.RUnlock()
 	var b strings.Builder
 	b.WriteString(s.formatStatus())
+	b.WriteString(s.formatFlatEncryptedKeys())
+	b.WriteString(s.formatScopedEnvKeyInventory())
 	fmt.Fprintf(&b, ", %d scoped manifest entr(y/ies)", scopes)
 	if len(s.manifestPaths) > 0 {
 		b.WriteString("\nmanifest files:")
@@ -306,14 +339,14 @@ func (s *integrationStore) statusWithHelp() string {
 
 func integrationEnvHelp() string {
 	return `Usage:
-  /env                                    show status and help
-  /env add SCOPE KEY=VALUE [KEY=VALUE ...]  write scoped secrets, reload, and verify
+  /env                                    show status, env key inventory, and help
+  /env add SCOPE KEY=VALUE [KEY=VALUE ...]  write scoped secrets (overwrites same key), reload, verify; lists overwrote keys when replacing existing entries
   /env -u                                 reload secrets, dotenv, and integration manifests
 
 Notes:
   SCOPE is mcp.<server>, openapi.<api>, or shell-bash.<cmd> (command basename after the dot)
   /env add does not require a manifest entry; mcp.json / api.json / shell-bash.json env entries declare keys for lookup after values are set
-  Scoped values live in secrets.enc.json (or dotenv) as SCOPE::KEY
+  Scoped values live in secrets.enc.json (or dotenv) as SCOPE::KEY; undecryptable enc entries are preserved with abnormal=true (see /env status)
   L1 credentials.integrations.config.scopedEnv preloads values at startup; same SCOPE::KEY in secrets.enc.json wins over scopedEnv
   Resolve: context > scoped store (encrypted/file, then L1 scopedEnv) > manifest allowlist > flat fallback
   Manifest allowlists refresh automatically when mcp.json / api.json change on disk`
@@ -357,11 +390,11 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 		if strings.Contains(scope, "=") {
 			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE ...; SCOPE must be mcp.<server>, openapi.<api>, or shell-bash.<cmd>")
 		}
-		path, count, err := c.store.addScopedPairs(ctx, scope, rest[2:])
+		outcome, err := c.store.addScopedPairs(ctx, scope, rest[2:])
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("env: wrote %d key(s) for scope %s to %s, verified", count, strings.TrimSpace(scope), path), nil
+		return formatEnvAddOutcome(outcome, scope), nil
 	case len(rest) == 0:
 		return c.store.statusWithHelp(), nil
 	default:

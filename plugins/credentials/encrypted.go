@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -27,6 +28,9 @@ type encryptedSecretsFile struct {
 type encryptedSecretEntry struct {
 	Nonce      string `json:"nonce"`
 	Ciphertext string `json:"ciphertext"`
+	// Abnormal marks entries that could not be decrypted with the current master
+	// key; ciphertext is preserved until the key is fixed or the entry is re-added.
+	Abnormal bool `json:"abnormal,omitempty"`
 }
 
 func parseSecretsMasterKey(raw string) ([]byte, error) {
@@ -38,41 +42,74 @@ func parseSecretsMasterKey(raw string) ([]byte, error) {
 	return sum[:], nil
 }
 
-func decryptSecretsFile(data []byte, key []byte) (map[string]string, error) {
+func parseEncryptedSecretsFile(data []byte) (encryptedSecretsFile, error) {
 	if len(data) == 0 {
-		return map[string]string{}, nil
+		return encryptedSecretsFile{Version: encryptedSecretsVersion, Entries: map[string]encryptedSecretEntry{}}, nil
 	}
 	var file encryptedSecretsFile
 	if err := json.Unmarshal(data, &file); err != nil {
-		return nil, fmt.Errorf("parse secrets file: %w", err)
+		return encryptedSecretsFile{}, fmt.Errorf("parse secrets file: %w", err)
 	}
 	if file.Version != encryptedSecretsVersion {
-		return nil, fmt.Errorf("unsupported secrets file version %d", file.Version)
+		return encryptedSecretsFile{}, fmt.Errorf("unsupported secrets file version %d", file.Version)
 	}
 	if file.Entries == nil {
-		return map[string]string{}, nil
+		file.Entries = map[string]encryptedSecretEntry{}
 	}
-	out := make(map[string]string, len(file.Entries))
+	return file, nil
+}
+
+// loadEncryptedSecretsFile loads decryptable values and lists abnormal entry names.
+// Decrypt failures do not return an error; those keys are reported as abnormal.
+func loadEncryptedSecretsFile(data []byte, key []byte) (map[string]string, []string, error) {
+	file, err := parseEncryptedSecretsFile(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	plain := make(map[string]string, len(file.Entries))
+	var abnormal []string
 	for name, entry := range file.Entries {
-		plain, err := decryptEntry(key, entry)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt %q: %w", name, err)
+		if entry.Abnormal {
+			abnormal = append(abnormal, name)
+			continue
 		}
-		out[name] = plain
+		value, err := decryptEntry(key, entry)
+		if err != nil {
+			abnormal = append(abnormal, name)
+			continue
+		}
+		plain[name] = value
 	}
-	return out, nil
+	sort.Strings(abnormal)
+	return plain, abnormal, nil
+}
+
+func decryptSecretsFile(data []byte, key []byte) (map[string]string, error) {
+	plain, _, err := loadEncryptedSecretsFile(data, key)
+	return plain, err
 }
 
 func encryptSecretsFile(entries map[string]string, key []byte) ([]byte, error) {
+	return writeEncryptedSecretsFile(entries, nil, key)
+}
+
+func writeEncryptedSecretsFile(plain map[string]string, abnormal map[string]encryptedSecretEntry, key []byte) ([]byte, error) {
 	file := encryptedSecretsFile{
 		Version: encryptedSecretsVersion,
-		Entries: make(map[string]encryptedSecretEntry, len(entries)),
+		Entries: make(map[string]encryptedSecretEntry, len(plain)+len(abnormal)),
 	}
-	for name, value := range entries {
+	for name, value := range plain {
 		entry, err := encryptEntry(key, value)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt %q: %w", name, err)
 		}
+		file.Entries[name] = entry
+	}
+	for name, entry := range abnormal {
+		if _, exists := file.Entries[name]; exists {
+			continue
+		}
+		entry.Abnormal = true
 		file.Entries[name] = entry
 	}
 	data, err := json.MarshalIndent(file, "", "  ")
@@ -83,14 +120,82 @@ func encryptSecretsFile(entries map[string]string, key []byte) ([]byte, error) {
 }
 
 func mergeEncryptedSecretsFile(existing []byte, key []byte, updates map[string]string) ([]byte, error) {
-	entries, err := decryptSecretsFile(existing, key)
+	merged, warnings, _, err := mergeEncryptedSecretsFileForAdd(existing, key, updates)
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range updates {
-		entries[k] = v
+	if len(warnings) > 0 {
+		return nil, fmt.Errorf("decrypt %q: %v", warnings[0].name, warnings[0].err)
 	}
-	return encryptSecretsFile(entries, key)
+	return merged, nil
+}
+
+type encryptMergeWarning struct {
+	name string
+	err  error
+}
+
+// mergeEncryptedSecretsFileForAdd merges updates (overwriting same keys). Entries
+// that cannot be decrypted are kept on disk with abnormal=true unless the same
+// key appears in updates (re-add replaces the entry).
+func mergeEncryptedSecretsFileForAdd(existing []byte, key []byte, updates map[string]string) ([]byte, []encryptMergeWarning, []string, error) {
+	file, err := parseEncryptedSecretsFile(existing)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var overwrites []string
+	for k := range updates {
+		if _, ok := file.Entries[k]; ok {
+			overwrites = append(overwrites, k)
+		}
+	}
+	sort.Strings(overwrites)
+
+	plain, abnormalEntries, warnings, err := classifyEncryptedSecretsFile(existing, key)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for k, v := range updates {
+		delete(abnormalEntries, k)
+		plain[k] = v
+	}
+	filtered := warnings[:0]
+	for _, w := range warnings {
+		if _, ok := updates[w.name]; ok {
+			continue
+		}
+		filtered = append(filtered, w)
+	}
+	merged, err := writeEncryptedSecretsFile(plain, abnormalEntries, key)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return merged, filtered, overwrites, nil
+}
+
+func classifyEncryptedSecretsFile(data []byte, key []byte) (map[string]string, map[string]encryptedSecretEntry, []encryptMergeWarning, error) {
+	file, err := parseEncryptedSecretsFile(data)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	plain := make(map[string]string, len(file.Entries))
+	abnormalEntries := make(map[string]encryptedSecretEntry)
+	var warnings []encryptMergeWarning
+	for name, entry := range file.Entries {
+		if entry.Abnormal {
+			abnormalEntries[name] = entry
+			continue
+		}
+		value, err := decryptEntry(key, entry)
+		if err != nil {
+			entry.Abnormal = true
+			abnormalEntries[name] = entry
+			warnings = append(warnings, encryptMergeWarning{name: name, err: err})
+			continue
+		}
+		plain[name] = value
+	}
+	return plain, abnormalEntries, warnings, nil
 }
 
 func encryptEntry(key []byte, plaintext string) (encryptedSecretEntry, error) {

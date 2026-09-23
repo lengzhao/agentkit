@@ -606,8 +606,8 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add command: %v", err)
 	}
-	if !strings.Contains(out, "verified") {
-		t.Fatalf("output=%q, want verified", out)
+	if !strings.Contains(out, "verified") || !strings.Contains(out, "reloaded") {
+		t.Fatalf("output=%q, want reloaded and verified", out)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -623,6 +623,80 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	if secret.Value != "injected" {
 		t.Fatalf("value=%q, want injected", secret.Value)
 	}
+}
+
+func TestEnvAddEncryptedSkipsUndecryptableEntries(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secrets.enc.json")
+	const secretsPass = "agentkit-test-secrets-passphrase"
+	goodKey, err := parseSecretsMasterKey(secretsPass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badKey, err := parseSecretsMasterKey("other-passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	badBlob, err := encryptSecretsFile(map[string]string{
+		"mcp.tool::STALE": "old",
+	}, badKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, badBlob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{"tool":{"command":"echo","env":{"K":"env:AGENTKIT_TEST_SECRET"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewIntegrations(Config{
+		EncryptedFile: path,
+		ManifestFiles: []string{manifestPath},
+		Env: map[string]string{
+			SecretsMasterKeyEnv: secretsPass,
+		},
+	}, EnvDeps{FS: testEnvFS(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cmd := store.(agentkit.CommandProvider).Commands()[0]
+	out, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_TEST_SECRET=fresh")
+	if err != nil {
+		t.Fatalf("add command: %v", err)
+	}
+	if !strings.Contains(out, "warnings:") || !strings.Contains(out, "abnormal") {
+		t.Fatalf("output=%q, want warning about abnormal entry", out)
+	}
+	secret, err := store.Resolve(ctx, "mcp.tool", "env:AGENTKIT_TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret.Value != "fresh" {
+		t.Fatalf("value=%q, want fresh", secret.Value)
+	}
+	raw := mustReadFile(t, path)
+	if !strings.Contains(string(raw), `"abnormal": true`) {
+		t.Fatalf("file should mark abnormal entry: %s", raw)
+	}
+	got, err := decryptSecretsFile(raw, goodKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["mcp.tool::STALE"]; ok {
+		t.Fatal("abnormal entry should not decrypt into cache")
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestResolveEncryptedOverridesDotenv(t *testing.T) {

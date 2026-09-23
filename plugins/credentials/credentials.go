@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -52,9 +53,10 @@ type envStore struct {
 	fs              filesystem.Service
 	processEnv      bool
 	mu              sync.RWMutex
-	files           map[string]string
-	encrypted       map[string]string
-	configScoped    map[string]string
+	files             map[string]string
+	encrypted         map[string]string
+	abnormalEncrypted []string
+	configScoped      map[string]string
 }
 
 func init() {
@@ -209,6 +211,7 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if s.encryptedRel == "" || s.encryptedRel == EncryptedFileDisabled {
 		s.mu.Lock()
 		s.encrypted = make(map[string]string)
+		s.abnormalEncrypted = nil
 		s.mu.Unlock()
 		return 0, nil
 	}
@@ -221,6 +224,7 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			s.mu.Lock()
 			s.encrypted = make(map[string]string)
+			s.abnormalEncrypted = nil
 			s.mu.Unlock()
 			return 0, nil
 		}
@@ -229,6 +233,7 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if len(data) == 0 {
 		s.mu.Lock()
 		s.encrypted = make(map[string]string)
+		s.abnormalEncrypted = nil
 		s.mu.Unlock()
 		return 0, nil
 	}
@@ -236,19 +241,31 @@ func (s *envStore) reloadEncrypted(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("load %s: %w", path, err)
 	}
-	values, err := decryptSecretsFile(data, key)
+	values, abnormal, err := loadEncryptedSecretsFile(data, key)
 	if err != nil {
 		return 0, fmt.Errorf("decrypt secrets file %q: %w", path, err)
 	}
+	if len(abnormal) > 0 {
+		slog.Warn("credentials: encrypted secrets file has abnormal entries", "count", len(abnormal), "path", path)
+	}
 	s.mu.Lock()
 	s.encrypted = values
+	s.abnormalEncrypted = abnormal
 	s.mu.Unlock()
-	return len(values), nil
+	return len(values) + len(abnormal), nil
 }
 
 type verifyRefFunc func(ctx context.Context, ref string) error
 
-func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, refs []string, verify verifyRefFunc) (string, int, error) {
+type envAddOutcome struct {
+	Path       string
+	Wrote      int
+	Reloaded   int
+	Overwrites []string
+	Warnings   []string
+}
+
+func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, refs []string, verify verifyRefFunc) (envAddOutcome, error) {
 	if verify == nil {
 		verify = func(ctx context.Context, ref string) error {
 			value, err := s.lookupValue(ctx, ref)
@@ -263,56 +280,72 @@ func (s *envStore) addUpdates(ctx context.Context, updates map[string]string, re
 	}
 	target, err := s.writeTarget(ctx)
 	if err != nil {
-		return "", 0, err
+		return envAddOutcome{}, err
 	}
 	prev, err := s.fs.Read(ctx, target)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", 0, fmt.Errorf("read %s: %w", target, err)
+		return envAddOutcome{}, fmt.Errorf("read %s: %w", target, err)
 	}
 	var prevBytes []byte
 	if err == nil {
 		prevBytes = append([]byte(nil), prev...)
 	}
+	var warnings []string
+	var overwrites []string
 	var merged []byte
 	if s.encryptedRel != "" && s.encryptedRel != EncryptedFileDisabled {
 		master, err := s.masterKey()
 		if err != nil {
-			return "", 0, fmt.Errorf("write encrypted secrets: %w", err)
+			return envAddOutcome{}, fmt.Errorf("write encrypted secrets: %w", err)
 		}
-		merged, err = mergeEncryptedSecretsFile(prevBytes, master, updates)
+		var marked []encryptMergeWarning
+		merged, marked, overwrites, err = mergeEncryptedSecretsFileForAdd(prevBytes, master, updates)
 		if err != nil {
-			return "", 0, err
+			return envAddOutcome{}, err
+		}
+		for _, item := range marked {
+			msg := fmt.Sprintf("marked entry %q abnormal (decrypt failed): %v", item.name, item.err)
+			warnings = append(warnings, msg)
+			slog.Warn("credentials: encrypted secrets merge", "entry", item.name, "abnormal", true, "err", item.err)
 		}
 	} else {
+		overwrites = detectEnvFileOverwrites(prevBytes, updates)
 		merged, err = mergeEnvFile(prevBytes, updates)
 		if err != nil {
-			return "", 0, err
+			return envAddOutcome{}, err
 		}
 	}
 	if err := s.fs.Write(ctx, target, merged, filesystem.WithPerm(0o600)); err != nil {
-		return "", 0, fmt.Errorf("write %s: %w", target, err)
+		return envAddOutcome{}, fmt.Errorf("write %s: %w", target, err)
 	}
-	if _, err := s.reload(ctx); err != nil {
+	reloaded, err := s.reload(ctx)
+	if err != nil {
 		_ = s.fs.Write(ctx, target, prevBytes, filesystem.WithPerm(0o600))
 		_, _ = s.reload(ctx)
-		return "", 0, err
+		return envAddOutcome{}, fmt.Errorf("reload after write: %w", err)
 	}
 	for _, ref := range refs {
 		if err := verify(ctx, ref); err != nil {
 			_ = s.fs.Write(ctx, target, prevBytes, filesystem.WithPerm(0o600))
 			_, _ = s.reload(ctx)
-			return "", 0, fmt.Errorf("verify %s: %w", ref, err)
+			return envAddOutcome{}, fmt.Errorf("verify %s: %w", ref, err)
 		}
 	}
-	return target, len(refs), nil
+	return envAddOutcome{
+		Path:       target,
+		Wrote:      len(refs),
+		Reloaded:   reloaded,
+		Overwrites: overwrites,
+		Warnings:   warnings,
+	}, nil
 }
 
 func (s *envStore) formatStatus() string {
 	s.mu.RLock()
 	fileKeys := len(s.files)
 	encKeys := len(s.encrypted)
+	abnormal := append([]string(nil), s.abnormalEncrypted...)
 	filePaths := append([]string(nil), s.filePaths...)
-	encRel := s.encryptedRel
 	s.mu.RUnlock()
 
 	configKeys := len(s.configEnv)
@@ -323,12 +356,12 @@ func (s *envStore) formatStatus() string {
 			files++
 		}
 	}
-	fmt.Fprintf(&b, "env: %d config key(s), %d encrypted key(s), %d dotenv key(s), %d configured file(s)", configKeys, encKeys, fileKeys, files)
-	if encRel != "" && encRel != EncryptedFileDisabled {
-		b.WriteString("\nencrypted file:")
-		b.WriteString("\n  - ")
-		b.WriteString(encRel)
+	fmt.Fprintf(&b, "env: %d config key(s), %d encrypted key(s)", configKeys, encKeys)
+	if len(abnormal) > 0 {
+		fmt.Fprintf(&b, ", %d abnormal encrypted key(s)", len(abnormal))
 	}
+	fmt.Fprintf(&b, ", %d dotenv key(s), %d configured file(s)", fileKeys, files)
+	s.appendKeyInventory(&b)
 	if files > 0 {
 		b.WriteString("\nconfigured files:")
 		for _, path := range filePaths {

@@ -6,6 +6,33 @@ import (
 	"strings"
 )
 
+func detectEnvFileOverwrites(existing []byte, updates map[string]string) []string {
+	if len(existing) == 0 || len(updates) == 0 {
+		return nil
+	}
+	present := make(map[string]struct{})
+	for _, line := range splitEnvLines(existing) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		body := strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
+		key, _, ok := strings.Cut(body, "=")
+		if !ok {
+			continue
+		}
+		present[strings.TrimSpace(key)] = struct{}{}
+	}
+	var overwrites []string
+	for k := range updates {
+		if _, ok := present[k]; ok {
+			overwrites = append(overwrites, k)
+		}
+	}
+	sort.Strings(overwrites)
+	return overwrites
+}
+
 func mergeEnvFile(existing []byte, updates map[string]string) ([]byte, error) {
 	lines := splitEnvLines(existing)
 	seen := make(map[string]struct{}, len(updates))
