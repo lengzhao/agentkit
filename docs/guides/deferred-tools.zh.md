@@ -265,7 +265,7 @@ runtime/tools/
 **Eager 集合来源（实现二选一，推荐 A）**：
 
 - **A**：`NewDeferred` 时调用 `inner.Visible` 一次，将当时可见且来自静态注册的工具名记入集合；动态名一律 deferrable。若静态工具也出现在 dynamic（重名），以内层 `tools` map 优先为准。
-- **B**：catalog 实例配置 `deferredEagerSnapshot: [...]` 由 scaffold 生成。维护成本高，不推荐。
+- **B**：catalog 实例配置 `deferredEagerSnapshot: [...]` 手写进 `config.base.yaml`。维护成本高，不推荐。
 
 ## 9. 检索实现（分阶段）
 

@@ -153,9 +153,12 @@ platform.http:
 | `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description。可选 `deps.llm`：主模型为 text-only 且存在**显式**声明 `modalities` 含 image 的子 Agent 时，追加委派看图提示 | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文（roadmap） | DSH `time-context` |
-| `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行） | Pi openai-responses |
+| `llm/router` | `agentkit.LLMProvider` | 按 `config.models[].id` 将 `LLMRequest.Model` 路由到 `deps.protocols` 中某一协议实例；未命中走 `deps.default`。Agent 只选模型名。设计 [plans/2026-09-23-llm-protocol-router-design.md](plans/2026-09-23-llm-protocol-router-design.md) | Pi `Models` 分发 / Hermes `api_mode` |
+| `llm/openai-chat` | `agentkit.LLMProvider` | OpenAI Chat Completions；`config.models[]` 供 router catalog | Pi openai-completions |
+| `llm/openai-responses` | `agentkit.LLMProvider` | OpenAI Responses API；`hostedTools`；`config.models[]` 供 router catalog | Pi openai-responses |
+| `llm/openai-compatible` | `agentkit.LLMProvider` | OpenAI 兼容 API；`api: responses` 时可配 `hostedTools`（如 `web_search`，服务端执行）。单协议简易配置；多协议推荐 router + chat/responses 实例 | Pi openai-responses |
 | `llm/fallback` | `agentkit.LLMProvider` | 主模型/主 provider 失败时按序切换备用 model 或 provider；同 endpoint 只需一份底层 provider | — |
-| `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API（roadmap） | Pi anthropic-messages |
+| `llm/anthropic` | `agentkit.LLMProvider` | Anthropic Messages API（roadmap）；`config.models[]` 供 router catalog | Pi anthropic-messages |
 | `llm/deepseek` | `agentkit.LLMProvider` | DeepSeek API（roadmap） | DSH llm-deepseek |
 | `llm/replay` | `agentkit.LLMProvider` | 录制回放（测试，roadmap） | DSH llm-replay |
 
@@ -172,7 +175,9 @@ llm.default:
 ```
 
 
-**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。同 provider 换 model 时只配一份 `llm/openai-compatible`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。实现 `ModalityAwareLLM` 时 **`Modalities()` 仅反映链上第一个 provider**（与 LLM 调用前 `PrepareMessagesForLLM` 的 hydrate/demote 一致）；若主候选 text-only、备用为多模态，不会为备用自动 hydrate 图片。
+**`llm/router`**：`deps.protocols` 列出协议插件实例；`deps.default` 为兜底实例（可不填 `models`，不参与精确匹配）。各协议在 `config.models[].id` 注册模型 id，**全局不可重复**。Agent `deps.llm` 指向 router 时仅配置 `config.model`；`/model` 只改模型名，下一 step 自动换协议。示例见设计 doc。
+
+**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。推荐 `deps.llm: llm/router`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`，协议由 router 按模型 id 选择。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。包装 router 时 **`ModalitiesForModel` 随当前 attempt 的 model 变化**（与 LLM 调用前 `PrepareMessagesForLLM` 一致）。
 
 ```yaml
 llm.default:
@@ -599,4 +604,4 @@ graph:
 - [ ] 加入 import 生成器 manifest
 - [ ] 补充 Preset 示例或 Feature 片段
 - [ ] 更新本文档对应分类表
-- [ ] **tool 插件**：主 agent 默认经 scaffold 黑名单排除测试/替身实现；子 agent 须加入 `DefaultSubagentToolWhitelist()` 才会进入子 agent 工具集（见 [guides/config-simplification.zh.md](guides/config-simplification.zh.md)）
+- [ ] **tool 插件**：主 agent 工具面以 `config.base.yaml` 的 `tools.default` / `tools.deferred` 为准；子 agent 以 `tools.subagent.default` 白名单为准（见 [guides/config-simplification.zh.md](guides/config-simplification.zh.md) §10）

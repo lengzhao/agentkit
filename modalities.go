@@ -21,6 +21,12 @@ type ModalityAwareLLM interface {
 	Modalities() []string
 }
 
+// ModelModalityAwareLLM is optional. When implemented, the agent runtime uses
+// ModalitiesForModel for the active agent model instead of Modalities().
+type ModelModalityAwareLLM interface {
+	ModalitiesForModel(model string) []string
+}
+
 // NormalizeModalities trims, lowercases, deduplicates, and drops unknown values.
 // Empty input returns DefaultLLMModalities.
 func NormalizeModalities(in []string) []string {

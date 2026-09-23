@@ -232,6 +232,23 @@ learning.dreamSweep:
     deps:
         learning: learning.default
     use: learning/dream-sweep
+llm.deepseek:
+    config:
+        apiKeyRef: env:DEEPSEEK_API_KEY
+        baseUrl: https://api.deepseek.com/v1
+        models:
+            - id: deepseek-v4-flash
+              modalities:
+                - text
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-chat
 llm.default:
     config:
         steps:
@@ -242,14 +259,37 @@ llm.fallback:
         fallbackModels:
             - gpt-5.4-mini
             - gpt-5.4-nano
+            - deepseek-v4-flash
     deps:
-        provider: llm.default
+        provider: llm.router
     use: llm/fallback
-llm.openai:
+llm.gpt:
     config:
-        steps:
-            - text: 'smoke: L0 llm.default placeholder（agent 内联 llm 优先）'
-    use: llm/scripted
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        models:
+            - id: gpt-5.4
+              modalities:
+                - text
+                - image
+            - id: gpt-5.4-mini
+              modalities:
+                - text
+                - image
+            - id: gpt-5.4-nano
+              modalities:
+                - text
+                - image
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 llm.review:
     config:
         api: chat
@@ -261,6 +301,13 @@ llm.review:
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
+llm.router:
+    deps:
+        default: llm.gpt
+        protocols:
+            - llm.gpt
+            - llm.deepseek
+    use: llm/router
 loop.default:
     deps:
         agents:
@@ -561,7 +608,7 @@ subagent.inprocess.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.openai
+        llm: llm.default
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default
@@ -631,7 +678,7 @@ tool.recognize.default:
     config:
         model: gpt-5.4-mini
     deps:
-        llm: llm.openai
+        llm: llm.default
         telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/recognize

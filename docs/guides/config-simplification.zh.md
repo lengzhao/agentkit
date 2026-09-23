@@ -322,23 +322,14 @@ prompt.persona.meetingbot:
 
 新用户的真实痛点是"第一份配置从哪来"，这个用 `agent init` 交互式生成 + 一等 preset 解，不需要新语法。它同时服务判据 2。
 
-## 9. 已落地：Scaffold（框架维护者）
+## 9. 工具图维护（L0 为准）
 
-`pluginkit` v0.1.2+ 提供 `Scaffold`；AgentKit 在 `config/scaffold.go` 用 `CompatibleKinds` 按返回类型分桶（避免 `build.Scaffold` 递归 deps 组合爆炸）。
+新增或调整 tool 插件时，直接改 **`config.base.yaml`**：
 
-```bash
-go run ./cmd/agent scaffold tools                          # 主 agent 工具段
-go run ./cmd/agent scaffold tools -profile subagent        # 子 agent（白名单）
-go run ./cmd/agent scaffold tools -blacklist tool/send
-go run ./cmd/agent scaffold tools -o tools.generated.yaml
-```
+- 主 agent：`tools.default`（及 `tools.worker.default` 等）的 `deps.tools` / `toolPacks` / `dynamicTools`
+- 进程内子 agent：`tools.subagent.default` 显式白名单（`finish`、`web-fetch-http`、`skill`、只读 `fs-workspace` 等）
 
-| Profile | 默认策略 | 含义 |
-|---|---|---|
-| `default`（主 agent） | `DefaultToolBlacklist()` | 新 tool 插件默认进 catalog，黑名单排除测试/替身/备选实现 |
-| `subagent` | `DefaultSubagentToolWhitelist()` | 仅 `finish`、`web-fetch-http`、`web-search-auto`、只读 `fs-workspace`；新插件**不会**自动进入 |
-
-Scaffold 产出的是**开发态**片段，用于维护 `config.base.yaml` 或 review diff，不是终端用户的运行时格式。这条与 §3～§5 正交：scaffold 缩短 L0 的维护成本，深合并缩短 L1 的编写成本。
+L1 用 `extends:`、`deps.tools+` / `deps.tools-` 做差异即可，不再维护单独的 scaffold 生成器。
 
 ## 10. 插件装配：用户要不要列 kind
 
@@ -346,11 +337,11 @@ Scaffold 产出的是**开发态**片段，用于维护 `config.base.yaml` 或 r
 
 | 类别 | 配置方式 | 用户要列 kind？ | 说明 |
 |---|---|---|---|
-| **tools** | `tools/runtime.deps.tools` / `toolPacks` / `dynamicTools` | 要（或 scaffold 生成 L0） | 主 agent 走黑名单 |
+| **tools** | `tools/runtime.deps.tools` / `toolPacks` / `dynamicTools` | 要（见 L0 `tools.default`） | 主 agent 在 base 里枚举；测试/替身 kind 不要挂进 L0 |
 | **子 agent tools** | `tools.subagent.default` | 要（白名单） | 新插件不会自动进入 |
 | **commands** | 单个 `commands/registry` | **不要** | 图里可达的 `CommandProvider` 由 `WireContributions` 自动汇总；用户只用 `allow`/`deny` 过滤命令名 |
-| **hooks** | `hooks/runtime.deps.providers[]` | 要 | 可 scaffold |
-| **policies** | `tools/runtime.deps.policies[]` | 要 | 可 scaffold |
+| **hooks** | `hooks/runtime.deps.providers[]` | 要 | 在 L0 / preset 显式列出 |
+| **policies** | `tools/runtime.deps.policies[]` | 要 | 在 L0 / preset 显式列出 |
 | **prompt sections** | `prompt/assembler.deps.sections[]` | 部分 | `static` 的正文用 `${file:}` 外置 |
 | **platform / llm / workspace** | 单值 deps | 选 preset | 不适合全量枚举 |
 
@@ -406,7 +397,6 @@ flowchart TB
   subgraph p3 ["阶段 3 — 上手体验"]
     G["用改动后语义简化 19 个 preset"]
     H["agent init 向导"]
-    I["scaffold hooks / policies"]
   end
   subgraph gate ["检查点 — §8.2 判据"]
     J{"四条判据全部成立？"}
@@ -422,7 +412,7 @@ flowchart TB
 |---|---|---|
 | **1** | 改动 A / B / C | 全部 preset 展开结果字节级不变；`config.yaml` 重写到 ~70 行且行为等价；YAML 里不再有明文 token |
 | **2** | roster 派生、compaction 单点、`config explain` | 加一个 bot 只改一处；`explain` 能指出任一字段的来源文件行号 |
-| **3** | 简化 preset、`agent init`、scaffold 扩展 | 一等 preset（`coding` / `chat-api` / `autonomous` / `worker`）各自只需用户覆盖密钥与入口 |
+| **3** | 简化 preset、`agent init` | 一等 preset（`coding` / `chat-api` / `autonomous` / `worker`）各自只需用户覆盖密钥与入口 |
 
 阶段 1 三条改动共约 120 行 loader 代码，无新概念、无新文档种类、无插件改动，且自带回归网。
 

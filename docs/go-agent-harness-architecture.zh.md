@@ -1139,8 +1139,8 @@ type LLMProvider interface {
 
 LLM Runtime 负责：
 
-- Provider 选择。
-- **`modalities` 声明**（`llm/openai-compatible` 的 `config.modalities`；未配置时默认 text+image）。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片；hydrate 从 workspace 读取图片（读取上限 10MB），优先经 `runtime/media.FitForVision` 压到默认 ≤1MB / 长边 2048px 后注入 `image_url`；失败则原样转发。token-limit 估算对 inline `data:` 视觉载荷使用占位字符数，与落盘 `logical_chars` 一致。
+- **Provider / 协议选择**：推荐 `deps.llm` 接 `llm/router`，由多个协议实例（`llm/openai-chat`、`llm/openai-responses`、`llm/anthropic` 等）各自声明 `config.models[].id`；Agent 只设 `config.model`，router 精确匹配模型 id，未命中则委托 `deps.default` 协议实例（模型名不改写）。设计见 [LLM 协议路由](../plans/2026-09-23-llm-protocol-router-design.md)。单协议部署可继续直接使用 `llm/openai-compatible`。
+- **`modalities` 声明**：协议实例在 `config.models[].modalities` 或实例级 `config.modalities` 声明输入能力；router 实现 `ModelModalityAwareLLM` 时 Agent 按**当前 model** 查询。未配置时默认 text+image。Agent 在 `PrepareMessagesForLLM` 中按 modalities 决定是否 hydrate 图片；hydrate 从 workspace 读取图片（读取上限 10MB），优先经 `runtime/media.FitForVision` 压到默认 ≤1MB / 长边 2048px 后注入 `image_url`；失败则原样转发。token-limit 估算对 inline `data:` 视觉载荷使用占位字符数，与落盘 `logical_chars` 一致。
 - 请求构造和 hook。
 - 流式 chunk 归一化。
 - 使用量统计。

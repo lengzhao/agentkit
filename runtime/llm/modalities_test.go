@@ -16,11 +16,11 @@ func TestOpenAIModalitiesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	aware, ok := p.(agentkit.ModalityAwareLLM)
+	aware, ok := p.(agentkit.ModelModalityAwareLLM)
 	if !ok {
-		t.Fatal("expected ModalityAwareLLM")
+		t.Fatal("expected ModelModalityAwareLLM")
 	}
-	if agentkit.SupportsModality(aware.Modalities(), agentkit.ModalityImage) {
-		t.Fatal("expected text-only")
+	if agentkit.SupportsModality(aware.ModalitiesForModel("anything"), agentkit.ModalityImage) {
+		t.Fatal("expected text-only instance default")
 	}
 }

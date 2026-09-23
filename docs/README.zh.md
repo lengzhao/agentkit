@@ -45,7 +45,6 @@ go run ./cmd/agent -config presets/feishu.yaml              # 飞书
 go run ./cmd/agent -config presets/chat-api.yaml            # HTTP 调试台
 go run ./cmd/agent -config presets/langfuse.yaml "hello"    # Langfuse
 go run ./cmd/agent -manager                                 # Web 工作台
-go run ./cmd/agent scaffold tools                           # 生成 tools 配置片段（维护者）
 ```
 
 新增插件后：`go generate ./...`

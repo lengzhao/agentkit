@@ -663,7 +663,7 @@ func (a *Runtime) prepareStepHistory(ctx context.Context, sess agentkit.Session,
 	}
 	mods := a.modalities
 	if len(mods) == 0 {
-		mods = rtllm.ProviderModalities(a.llm)
+		mods = rtllm.ProviderModalitiesForModel(a.llm, a.model)
 	}
 	history, err = derive.PrepareMessagesForLLM(ctx, history, a.workspace, 0, mods)
 	if err != nil {

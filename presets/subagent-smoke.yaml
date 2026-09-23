@@ -19,8 +19,7 @@ platform.default:
   deps:
     commands: commands.default
 
-# 父 agent（llm.fallback→llm.default）与子 inprocess 必须引用同一 graph 实例，
-# 才能共享 scripted 游标；llm.openai 虽 extends llm.default，但是独立实例，子 agent 会从 step 1 再 delegate。
+# 父 agent 与子 inprocess 必须引用同一 graph 实例（llm.default），才能共享 scripted 游标。
 agent.assistant.default:
   deps:
     llm: llm.default
