@@ -47,7 +47,6 @@ go run ./cmd/agent -config presets/feishu.yaml              # Feishu
 go run ./cmd/agent -config presets/chat-api.yaml            # HTTP debug API
 go run ./cmd/agent -config presets/langfuse.yaml "hello"    # Langfuse
 go run ./cmd/agent -manager                                 # Web manager
-go run ./cmd/agent scaffold tools                           # scaffold tools snippet (maintainers)
 ```
 
 After adding plugins: `go generate ./...`

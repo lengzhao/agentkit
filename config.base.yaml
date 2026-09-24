@@ -357,8 +357,8 @@ subagent.inprocess.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
-    # 多模态 provider（默认 [text, image]）；勿用 llm.fallback→llm.text，否则 vision 子 agent read 后无法 hydrate 图片
-    llm: llm.openai
+    # 与主 agent 共用 llm.default（→ router），按 model 选协议与 modalities；勿单独挂裸 llm.gpt 实例
+    llm: llm.default
     tools: tools.subagent.default
     prompt: prompt.subagent.default
     hooks: hooks.default
@@ -406,13 +406,20 @@ credentials.integrations:
   deps:
     fs: filesystem.local.state
 
-llm.default:
+# OpenAI GPT：router 精确匹配；默认 [text, image]（省略 modalities 时同此）。
+llm.gpt:
   use: llm/openai-compatible
   config:
-    model: gpt-5.4
     baseUrl: https://api.openai.com/v1
     apiKeyRef: env:OPENAI_API_KEY
     api: chat
+    models:
+      - id: gpt-5.4
+        modalities: [text, image]
+      - id: gpt-5.4-mini
+        modalities: [text, image]
+      - id: gpt-5.4-nano
+        modalities: [text, image]
     # 首 token（TTFB）上限；流式后续 token 不受此限制。reasoning 冷启动慢时可加大。
     timeoutSeconds: 180
     # 连接 + TLS + HTTP 响应头；与首 token 独立（流式常先 200 再等模型输出）。
@@ -421,7 +428,6 @@ llm.default:
     #   - type: web_search
     #     parameters:
     #       search_context_size: low
-    # modalities: [text]  # 纯文本模型；默认省略时为 [text, image]。纯文本时图片会变为 [attachment: path] 提示，可委派 vision 子 agent。
     retry:
       provider:
         maxRetries: 0
@@ -429,9 +435,35 @@ llm.default:
   deps:
     credentials: credentials.default
 
-# 与 L1 常见实例名对齐；默认多模态（省略 modalities 时为 [text, image]），供 inprocess 子 agent（vision）hydrate 图片。
-llm.openai:
-  extends: llm.default
+# DeepSeek：仅文本；带图消息会在 PrepareMessagesForLLM 降为 [attachment: …] 提示。
+llm.deepseek:
+  use: llm/openai-chat
+  config:
+    baseUrl: https://api.deepseek.com/v1
+    apiKeyRef: env:DEEPSEEK_API_KEY
+    models:
+      - id: deepseek-v4-flash
+        modalities: [text]
+    timeoutSeconds: 180
+    responseHeaderTimeoutSeconds: 60
+    retry:
+      provider:
+        maxRetries: 0
+        maxRetryDelayMs: 60000
+  deps:
+    credentials: credentials.default
+
+llm.router:
+  use: llm/router
+  deps:
+    protocols:
+      - llm.gpt
+      - llm.deepseek
+    default: llm.gpt
+
+# L1 常用覆盖名：与 llm.router 同一实例（extends 不另建 graph 节点）。主 agent 仍建议 llm.fallback → router。
+llm.default:
+  extends: llm.router
 
 llm.fallback:
   use: llm/fallback
@@ -439,8 +471,9 @@ llm.fallback:
     fallbackModels:
       - gpt-5.4-mini
       - gpt-5.4-nano
+      - deepseek-v4-flash
   deps:
-    provider: llm.default
+    provider: llm.router
 
 # Background review uses a dedicated LLM instance (cheaper model by default).
 llm.review:
@@ -874,7 +907,7 @@ tool.recognize.default:
   config:
     model: gpt-5.4-mini
   deps:
-    llm: llm.openai
+    llm: llm.gpt
     workspace: workspace.default
     telemetry: telemetry.toolkit
 

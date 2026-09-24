@@ -24,6 +24,7 @@ var presetsChainOnly = map[string]string{
 
 func TestPresetsBuild(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
 
@@ -54,6 +55,7 @@ func TestPresetsBuild(t *testing.T) {
 
 func TestPresetsChainedBuild(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
 
 	repoRoot, err := filepath.Abs("..")
 	if err != nil {

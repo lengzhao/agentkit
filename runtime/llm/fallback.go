@@ -102,10 +102,19 @@ func parseFallbackMode(raw string) (fallbackMode, error) {
 func (f *Fallback) Name() string { return "fallback" }
 
 func (f *Fallback) Modalities() []string {
-	if len(f.providers) > 0 {
-		return ProviderModalities(f.providers[0])
+	return f.ModalitiesForModel("")
+}
+
+func (f *Fallback) ModalitiesForModel(model string) []string {
+	targets := f.buildTargets(model)
+	if len(targets) == 0 {
+		if len(f.providers) > 0 {
+			return ProviderModalitiesForModel(f.providers[0], model)
+		}
+		return agentkit.NormalizeModalities(nil)
 	}
-	return agentkit.NormalizeModalities(nil)
+	t := targets[0]
+	return ProviderModalitiesForModel(t.provider, t.model)
 }
 
 func (f *Fallback) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
