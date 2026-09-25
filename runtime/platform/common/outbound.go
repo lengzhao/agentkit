@@ -62,17 +62,7 @@ func (o *Outbound) Handle(ctx context.Context, event agentkit.OutboundEvent) err
 				return err
 			}
 		}
-		if event.Type == agentkit.EventAssistantMessage && o.media != nil {
-			for _, part := range msg.Content {
-				if !isOutboundMediaPart(part.Type) {
-					continue
-				}
-				if err := o.media(ctx, delivery, part); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		return o.SendAssistantMedia(ctx, event, msg)
 	case agentkit.EventPermissionRequest:
 		// IM platforms send permission cards in Platform.Send; chat-api handles separately.
 		return nil
@@ -110,6 +100,24 @@ func (o *Outbound) take(id agentkit.SessionID) string {
 	delete(o.buf, id)
 	o.mu.Unlock()
 	return text
+}
+
+// SendAssistantMedia delivers image/document parts from an assistant message event
+// without sending text (for transports that already rendered text elsewhere).
+func (o *Outbound) SendAssistantMedia(ctx context.Context, event agentkit.OutboundEvent, msg agentkit.ModelMessage) error {
+	if event.Type != agentkit.EventAssistantMessage || o.media == nil {
+		return nil
+	}
+	delivery := rctx.OutboundRouteID(event)
+	for _, part := range msg.Content {
+		if !isOutboundMediaPart(part.Type) {
+			continue
+		}
+		if err := o.media(ctx, delivery, part); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isOutboundMediaPart(typ string) bool {

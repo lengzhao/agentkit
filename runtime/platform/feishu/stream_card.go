@@ -752,7 +752,10 @@ func (p *Platform) handleRichProactiveAssistant(ctx context.Context, event agent
 	st.bodyText = text
 	st.finalizedBodyText = text
 	st.unlock()
-	return p.flushRichCard(ctx, streamKey, false)
+	if err := p.flushRichCard(ctx, streamKey, false); err != nil {
+		return err
+	}
+	return p.outbound.SendAssistantMedia(ctx, event, msg)
 }
 
 // finalizeRichTurnEndAsync patches the CardKit entity without blocking turn/end teardown.

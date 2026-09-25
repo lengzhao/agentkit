@@ -59,6 +59,49 @@ func TestOutboundSendsTextAndDocument(t *testing.T) {
 	}
 }
 
+func TestOutboundSendAssistantMediaSkipsText(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "a.png")
+	if err := os.WriteFile(filePath, []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var texts []string
+	var media []agentkit.ContentPart
+	out := common.NewOutbound(
+		func(_ context.Context, _ agentkit.SessionID, text string) error {
+			texts = append(texts, text)
+			return nil
+		},
+		func(_ context.Context, _ agentkit.SessionID, part agentkit.ContentPart) error {
+			media = append(media, part)
+			return nil
+		},
+	)
+
+	msg := agentkit.ModelMessage{
+		Role: "assistant",
+		Content: []agentkit.ContentPart{
+			{Type: "text", Text: "caption"},
+			{Type: "image", URL: filePath},
+		},
+	}
+	event := agentkit.OutboundEvent{
+		Route: rctx.SessionRoute("lark", "lark:oc_test:u:ou_test"),
+		Type:  agentkit.EventAssistantMessage,
+	}
+
+	if err := out.SendAssistantMedia(context.Background(), event, msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 0 {
+		t.Fatalf("texts=%v want none", texts)
+	}
+	if len(media) != 1 || media[0].URL != filePath {
+		t.Fatalf("media=%v", media)
+	}
+}
+
 func TestOutboundDocumentOnly(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "only.pdf")
