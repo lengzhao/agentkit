@@ -33,7 +33,7 @@ type SendDeps struct {
 
 type SendInput struct {
 	Text      string `json:"text,omitempty" jsonschema:"Text message to send"`
-	Path      string `json:"path,omitempty" jsonschema:"Workspace-relative file to send (image or document)"`
+	Path      string `json:"path,omitempty" jsonschema:"Agent work-tree file to send (same paths as read/write, e.g. openapi/foo.json or work/foo.json; image or document)"`
 	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional delivery target; defaults to the current inbox"`
 	UserID    string `json:"userId,omitempty" jsonschema:"Optional user target when sessionId is omitted"`
 	Raw       bool   `json:"raw,omitempty" jsonschema:"Send plain text without platform markdown conversion"`

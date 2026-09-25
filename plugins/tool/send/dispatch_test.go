@@ -3,13 +3,63 @@ package send
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+func TestBuildPartsResolvesWorkRelativePath(t *testing.T) {
+	t.Parallel()
+
+	localRoot := filepath.Join(t.TempDir(), ".agentkit")
+	work := filepath.Join(localRoot, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wantFile := filepath.Join(work, "openapi", "api.json")
+	if err := os.MkdirAll(filepath.Dir(wantFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wantFile, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := rtworkspace.Static(localRoot)
+	parts, err := buildParts(context.Background(), SendInput{Path: "openapi/api.json"}, ws, nil, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parts) != 1 || parts[0].Type != contentDocument {
+		t.Fatalf("parts=%#v", parts)
+	}
+	if parts[0].URL != wantFile {
+		t.Fatalf("url=%q want %q", parts[0].URL, wantFile)
+	}
+}
+
+func TestBuildPartsAbsolutePathSkipsSendRoot(t *testing.T) {
+	t.Parallel()
+
+	wantFile := filepath.Join(t.TempDir(), "abs.txt")
+	if err := os.WriteFile(wantFile, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := rtworkspace.Static(t.TempDir())
+	parts, err := buildParts(context.Background(), SendInput{Path: wantFile}, ws, nil, "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parts) != 1 || parts[0].URL != wantFile {
+		t.Fatalf("parts=%#v", parts)
+	}
+}
 
 func TestNormalizeSessionIDBareChat(t *testing.T) {
 	t.Parallel()

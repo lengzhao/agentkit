@@ -11,6 +11,7 @@ import (
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
 // Dispatch sends a proactive message through the delivery sender.
@@ -121,10 +122,10 @@ func buildParts(ctx context.Context, input SendInput, ws workspace.Service, fs f
 			return nil, fmt.Errorf("path %q requires workspace dependency", path)
 		}
 		rel := path
-		if root != "." {
+		if root != "." && !filepath.IsAbs(path) && !workspace.IsScoped(path) {
 			rel = filepath.Join(root, path)
 		}
-		url, err := ws.Resolve(ctx, rel)
+		url, err := rtworkspace.ResolveFile(ctx, ws, rel)
 		if err != nil {
 			return nil, err
 		}
