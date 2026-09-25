@@ -3,6 +3,9 @@ package slack
 import (
 	"context"
 	"testing"
+
+	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 func TestRemoveReactionNoClient(t *testing.T) {
@@ -10,7 +13,7 @@ func TestRemoveReactionNoClient(t *testing.T) {
 	p.removeReaction(context.Background(), delivery{channel: "C1", msgTS: "1.0"}, reactionReceived)
 }
 
-func TestReactDoneMissingDelivery(t *testing.T) {
-	p := &Platform{}
-	p.reactDone(context.Background(), delivery{sessionID: "missing"}.sessionID)
+func TestApplyTurnEndReactionsMissingDelivery(t *testing.T) {
+	p := &Platform{doneEmoji: reactionDone}
+	p.applyTurnEndReactions(context.Background(), agentkit.SessionID("missing"), capsession.TurnEndData{Steps: 1})
 }

@@ -26,9 +26,12 @@ type Config struct {
 	AppToken      string `json:"appToken"`
 	AppTokenRef   string `json:"appTokenRef"`
 	Domain        string `json:"domain"` // optional Slack Web API base URL override
-	AllowFrom     string `json:"allowFrom"`
-	AllowChannels string `json:"allowChannels"`
-	GroupReplyAll bool   `json:"groupReplyAll"`
+	AllowFrom       string `json:"allowFrom"`
+	AllowChannels   string `json:"allowChannels"`
+	GroupReplyAll   bool   `json:"groupReplyAll"`
+	DoneEmoji       string `json:"doneEmoji"`
+	CancelledEmoji  string `json:"cancelledEmoji"`
+	ErrorEmoji      string `json:"errorEmoji"`
 }
 
 type Deps struct {
@@ -84,6 +87,12 @@ type Platform struct {
 	typingMu    sync.Mutex
 	typingStops map[agentkit.SessionID]func()
 
+	doneEmoji      string
+	cancelledEmoji string
+	errorEmoji     string
+	turnTriggers   sync.Map
+	turnReactions  sync.Map
+
 	startOnce sync.Once
 }
 
@@ -117,7 +126,13 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 			AllowFrom:          cfg.AllowFrom,
 			AllowChannels:      cfg.AllowChannels,
 			GroupReplyAll:      cfg.GroupReplyAll,
+			DoneEmoji:          cfg.DoneEmoji,
+			CancelledEmoji:     cfg.CancelledEmoji,
+			ErrorEmoji:         cfg.ErrorEmoji,
 		},
+		doneEmoji:      resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
+		cancelledEmoji: resolveSlackReactionEmoji(cfg.CancelledEmoji, reactionCancelled),
+		errorEmoji:     resolveSlackReactionEmoji(cfg.ErrorEmoji, reactionError),
 		agentID:          cfg.ResolveAgentID(),
 		apiURL:           apiURL,
 		commands:         deps.Commands,
@@ -211,6 +226,9 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
 	delivery := rctx.OutboundRouteID(event)
+	if event.Type == agentkit.EventTurnStart {
+		p.onTurnStartReactions(delivery)
+	}
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
@@ -224,7 +242,8 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 		return p.outbound.Handle(ctx, event)
 	case agentkit.EventTurnEnd:
 		p.stopTyping(delivery)
-		p.reactDone(ctx, delivery)
+		endData := parseTurnEndData(event)
+		p.applyTurnEndReactions(ctx, delivery, endData)
 		return nil
 	default:
 		return p.outbound.Handle(ctx, event)
@@ -455,6 +474,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 	}
 
 	if react {
+		p.appendTurnReactionIfActive(d.sessionID, d)
 		p.reactReceived(ctx, d)
 	}
 	event := common.InboundFromContent(p.agentID, d.inboundRoute(user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))

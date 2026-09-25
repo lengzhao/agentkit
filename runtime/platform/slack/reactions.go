@@ -5,13 +5,14 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/lengzhao/agentkit"
 	"github.com/slack-go/slack"
 )
 
 const (
-	reactionReceived = "eyes"
-	reactionDone     = "white_check_mark"
+	reactionReceived   = "eyes"
+	reactionDone       = "white_check_mark"
+	reactionCancelled  = "broken_heart"
+	reactionError      = "x"
 )
 
 func isDirectMessageChannel(channel, channelType string) bool {
@@ -64,17 +65,4 @@ func (p *Platform) removeReaction(ctx context.Context, d delivery, name string) 
 
 func (p *Platform) reactReceived(ctx context.Context, d delivery) {
 	go p.addReaction(context.WithoutCancel(ctx), d, reactionReceived)
-}
-
-func (p *Platform) reactDone(ctx context.Context, sessionID agentkit.SessionID) {
-	raw, ok := p.deliveries.Load(sessionID)
-	if !ok {
-		return
-	}
-	d := raw.(delivery)
-	go func() {
-		bg := context.WithoutCancel(ctx)
-		p.removeReaction(bg, d, reactionReceived)
-		p.addReaction(bg, d, reactionDone)
-	}()
 }
