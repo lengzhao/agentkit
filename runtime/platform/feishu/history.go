@@ -107,7 +107,7 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 	return result, nil
 }
 
-func (p *Platform) historyMessageFromAPI(ctx context.Context, item *larkim.Message) *chathistory.Message {
+func (p *Platform) historyMessageFromAPI(_ context.Context, item *larkim.Message) *chathistory.Message {
 	if item == nil {
 		return nil
 	}

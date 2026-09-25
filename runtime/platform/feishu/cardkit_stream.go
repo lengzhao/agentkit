@@ -6,15 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
-
-const streamCardKitInterval = 100 * time.Millisecond
 
 func buildIMCardEntityContent(cardID string) string {
 	payload := map[string]any{
@@ -64,70 +60,6 @@ func (p *Platform) createCardEntity(ctx context.Context, cardJSON string) (strin
 		return "", fmt.Errorf("%s: create card entity: empty card_id", p.tag())
 	}
 	return *resp.Data.CardId, nil
-}
-
-func (p *Platform) sendCardEntityIM(ctx context.Context, rc replyContext, cardID string) (string, error) {
-	content := buildIMCardEntityContent(cardID)
-	var msgID string
-
-	if p.shouldUseThreadOrReplyAPI(rc) {
-		req := larkim.NewReplyMessageReqBuilder().
-			MessageId(rc.messageID).
-			Body(p.buildReplyMessageReqBody(rc, larkim.MsgTypeInteractive, content)).
-			Build()
-		var resp *larkim.ReplyMessageResp
-		if err := p.withTransientRetry(ctx, "send card entity", func() error {
-			return p.withFreshTenantAccessTokenRetry(ctx, "send card entity", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
-				var callErr error
-				resp, callErr = client.Im.Message.Reply(ctx, req, options...)
-				if callErr != nil {
-					return fmt.Errorf("%s: send card entity (reply): %w", p.tag(), callErr)
-				}
-				if !resp.Success() {
-					return fmt.Errorf("%s: send card entity (reply) code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
-				}
-				return nil
-			})
-		}); err != nil {
-			return "", err
-		}
-		if resp.Data != nil && resp.Data.MessageId != nil {
-			msgID = *resp.Data.MessageId
-		}
-	} else {
-		req := larkim.NewCreateMessageReqBuilder().
-			ReceiveIdType("chat_id").
-			Body(larkim.NewCreateMessageReqBodyBuilder().
-				ReceiveId(rc.chatID).
-				MsgType(larkim.MsgTypeInteractive).
-				Content(content).
-				Build()).
-			Build()
-		var resp *larkim.CreateMessageResp
-		if err := p.withTransientRetry(ctx, "send card entity", func() error {
-			return p.withFreshTenantAccessTokenRetry(ctx, "send card entity", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
-				var callErr error
-				resp, callErr = client.Im.Message.Create(ctx, req, options...)
-				if callErr != nil {
-					return fmt.Errorf("%s: send card entity: %w", p.tag(), callErr)
-				}
-				if !resp.Success() {
-					return fmt.Errorf("%s: send card entity code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
-				}
-				return nil
-			})
-		}); err != nil {
-			return "", err
-		}
-		if resp.Data != nil && resp.Data.MessageId != nil {
-			msgID = *resp.Data.MessageId
-		}
-	}
-
-	if msgID == "" {
-		return "", fmt.Errorf("%s: send card entity: no message ID returned", p.tag())
-	}
-	return msgID, nil
 }
 
 // patchRichCard closes CardKit streaming (when needed) then replaces the full card JSON.
@@ -245,4 +177,3 @@ func (p *Platform) closeCardStreaming(ctx context.Context, h *feishuPreviewHandl
 		})
 	})
 }
-

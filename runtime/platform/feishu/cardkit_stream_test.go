@@ -40,7 +40,7 @@ func TestBuildRichCardDoneShowsStatusLine(t *testing.T) {
 }
 
 func TestRichCardBodyMarkdownDone(t *testing.T) {
-	got := richCardBodyMarkdown(cardStatusDone, "reply", 2*time.Second, false)
+	got := richCardBodyMarkdown(cardStatusDone, "reply", 2*time.Second)
 	if !strings.HasPrefix(got, "☑️ 用时") || !strings.Contains(got, "reply") {
 		t.Fatalf("unexpected body markdown: %q", got)
 	}

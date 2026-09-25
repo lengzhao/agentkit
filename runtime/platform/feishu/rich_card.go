@@ -224,7 +224,7 @@ func formatElapsedCN(d time.Duration) string {
 const richCardMainTextElementID = "main_text"
 
 // richCardStatusLine is the single user-facing status string (time + done emoji).
-func richCardStatusLine(status cardStatus, elapsed time.Duration, streaming bool) string {
+func richCardStatusLine(status cardStatus, elapsed time.Duration) string {
 	switch status {
 	case cardStatusDone:
 		if elapsed <= 0 {
@@ -252,9 +252,9 @@ func richCardShowElapsed(elapsed time.Duration) bool {
 	return elapsed >= richCardMinShowElapsed
 }
 
-func richCardBodyMarkdown(status cardStatus, markdown string, elapsed time.Duration, streaming bool) string {
+func richCardBodyMarkdown(status cardStatus, markdown string, elapsed time.Duration) string {
 	md := strings.TrimSpace(markdown)
-	line := richCardStatusLine(status, elapsed, streaming)
+	line := richCardStatusLine(status, elapsed)
 	if line == "" || !isTerminalCardStatus(status) {
 		return markdown
 	}
@@ -375,7 +375,7 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 		}
 	}
 
-	bodyMD := richCardBodyMarkdown(status, markdown, elapsed, streaming)
+	bodyMD := richCardBodyMarkdown(status, markdown, elapsed)
 	markdownMap := map[string]any{
 		"tag":        "markdown",
 		"element_id": richCardMainTextElementID,
