@@ -39,16 +39,16 @@ func PrepareToolResultForStorage(ctx context.Context, sessionID agentkit.Session
 	rel := toolSpillRelPath(ws, sessionID, result.ID)
 	abs, err := ws.Resolve(ctx, rel)
 	if err != nil {
-		slog.WarnContext(ctx, "tool result spill resolve failed", "path", rel, "error", err)
-		return agentkit.ToolResult{}, fmt.Errorf("tool result spill: resolve %s: %w", rel, err)
+		slog.WarnContext(ctx, "tool result spill resolve failed; truncating in event", "path", rel, "error", err)
+		return TruncateToolResult(result, maxViewBytes), nil
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		slog.WarnContext(ctx, "tool result spill mkdir failed", "path", abs, "error", err)
-		return agentkit.ToolResult{}, fmt.Errorf("tool result spill: mkdir: %w", err)
+		slog.WarnContext(ctx, "tool result spill mkdir failed; truncating in event", "path", abs, "error", err)
+		return TruncateToolResult(result, maxViewBytes), nil
 	}
 	if err := os.WriteFile(abs, []byte(result.Content), 0o644); err != nil {
-		slog.WarnContext(ctx, "tool result spill write failed", "path", abs, "error", err)
-		return agentkit.ToolResult{}, fmt.Errorf("tool result spill: write %s: %w", rel, err)
+		slog.WarnContext(ctx, "tool result spill write failed; truncating in event", "path", abs, "error", err)
+		return TruncateToolResult(result, maxViewBytes), nil
 	}
 
 	out := result

@@ -142,8 +142,12 @@ func RunReview(
 		var results []agentkit.ToolResult
 		for _, call := range assistant.ToolCalls {
 			result, err := tools.Execute(ctx, call)
+			result, err = agentkit.RecoverToolExecute(call, result, err)
 			if err != nil {
-				result = agentkit.ResultFromCall(call, "error: "+err.Error())
+				res.Summary = lastText
+				res.Steps = step
+				obsEnd.Err = err
+				return res, err
 			}
 			if call.Name == "learn_capture" {
 				appendCaptureNotice(res, result.Content)

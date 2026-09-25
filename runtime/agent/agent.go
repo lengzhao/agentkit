@@ -302,8 +302,9 @@ func (a *Runtime) runSegment(
 		if toolBaseCtx == nil {
 			toolBaseCtx = stepCtx
 		}
-		for _, call := range assistant.ToolCalls {
+		for i, call := range assistant.ToolCalls {
 			if reason := ctrl.PopCancelReason(); reason != "" {
+				_ = a.appendInterruptedToolCalls(context.WithoutCancel(ctx), sess, emit, a.id, assistant.ToolCalls[i:], false)
 				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", fmt.Errorf("cancelled: %s", reason)
@@ -315,7 +316,9 @@ func (a *Runtime) runSegment(
 			}
 			toolCtx := withToolContext(toolBaseCtx, sess, a.id)
 			result, err := a.tools.Execute(toolCtx, call)
+			result, err = agentkit.RecoverToolExecute(call, result, err)
 			if err != nil {
+				_ = a.appendInterruptedToolCalls(context.WithoutCancel(ctx), sess, emit, a.id, assistant.ToolCalls[i:], true)
 				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 				endStepOnce()
 				return "", err
@@ -756,6 +759,27 @@ func persistAssistantWithStopReason(ctx context.Context, sess agentkit.Session, 
 	}
 	msg.StopReason = stopReason
 	return appendAssistantMessage(context.WithoutCancel(ctx), sess, agentID, msg)
+}
+
+// appendInterruptedToolCalls closes an in-flight assistant tool batch when a
+// turn aborts mid-loop. When toolCallStored is true, the first call's tool/call
+// event is already persisted (AbortTurn after Execute).
+func (a *Runtime) appendInterruptedToolCalls(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, agentID agentkit.AgentID, calls []agentkit.ToolCall, toolCallStored bool) error {
+	for i, call := range calls {
+		if i > 0 || !toolCallStored {
+			if err := sessevents.Default.AppendToolCall(ctx, sess, agentID, call); err != nil {
+				return err
+			}
+		}
+		stored := derive.InterruptedToolResult(call)
+		if err := sessevents.Default.AppendToolResult(ctx, sess, agentID, stored); err != nil {
+			return err
+		}
+		if err := a.emitLifecycle(ctx, emit, agentkit.EventToolResult, stored); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func cancelReasonFromError(err error) (string, bool) {

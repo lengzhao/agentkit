@@ -3,6 +3,8 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -339,6 +341,74 @@ func TestRuntimeExecuteAutoAllowSkipsBroker(t *testing.T) {
 	}
 	if broker.awaited {
 		t.Fatal("broker should not run when auto-approval is configured")
+	}
+}
+
+func TestRuntimeExecutePropagatesContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{
+			name: "demo",
+			fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+				return "", context.Canceled
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	_, err = rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("execute: %v, want context.Canceled", err)
+	}
+}
+
+func TestRuntimeExecuteSurfacesCallErrorAsToolResult(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{
+			name: "demo",
+			fn: func(_ context.Context, _ json.RawMessage) (string, error) {
+				return "", fmt.Errorf("invalid tool input: json: cannot unmarshal number into Go struct field Demo.after of type string")
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	_, err = rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if err == nil {
+		t.Fatal("execute should return recoverable error for agent")
+	}
+	if !strings.Contains(err.Error(), "invalid tool input") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRuntimeExecutePropagatesAbortTurn(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{name: "demo", fn: func(context.Context, json.RawMessage) (string, error) {
+			return "ok", nil
+		}}},
+		Hooks: stubHooks{
+			beforeTool: func(context.Context, *agentkit.ToolCall) error {
+				return agentkit.AbortTurn(errors.New("hook failed"))
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	_, err = rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "demo"})
+	if !agentkit.IsTurnAbort(err) {
+		t.Fatalf("execute: %v, want turn abort", err)
 	}
 }
 

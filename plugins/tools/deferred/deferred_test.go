@@ -3,6 +3,7 @@ package deferred_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -74,6 +75,35 @@ func TestVisibleReplacesDynamicWithBridges(t *testing.T) {
 	}
 	if !names[deferred.ToolSearch] || !names[deferred.ToolDescribe] || !names[deferred.ToolCall] {
 		t.Fatalf("missing bridge tools: %v", names)
+	}
+}
+
+type abortBeforeToolHooks struct{}
+
+func (abortBeforeToolHooks) BeforeStep(context.Context, *agentkit.BeforeStep) error { return nil }
+func (abortBeforeToolHooks) BeforeTool(context.Context, *agentkit.ToolCall) error {
+	return agentkit.AbortTurn(errors.New("hook blocked"))
+}
+func (abortBeforeToolHooks) AfterTool(context.Context, *agentkit.ToolResult) error { return nil }
+func (abortBeforeToolHooks) TurnStopping(context.Context, *agentkit.TurnStopping) error { return nil }
+func (abortBeforeToolHooks) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
+
+func TestToolCallPropagatesAbortTurn(t *testing.T) {
+	t.Parallel()
+	deps := runtimeDeps()
+	deps.Hooks = abortBeforeToolHooks{}
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOn}}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"calls": []map[string]any{{"name": "mcp__ping", "arguments": map[string]any{}}},
+	})
+	_, err = outer.Execute(context.Background(), agentkit.ToolCall{
+		ID: "1", Name: deferred.ToolCall, Input: payload,
+	})
+	if !agentkit.IsTurnAbort(err) {
+		t.Fatalf("want turn abort, got %v", err)
 	}
 }
 

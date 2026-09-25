@@ -502,7 +502,7 @@ type Decision struct {
 }
 ```
 
-拒绝或审批拒绝若反馈给模型，必须能从 Session 日志重建。超时、取消和并发上限由 Tool Runtime 按该工具实例的 Config 实施，不把 signal 所有权交给插件。
+拒绝或审批拒绝若反馈给模型，必须能从 Session 日志重建。超时、取消和并发上限由 Tool Runtime 按该工具实例的 Config 实施，不把 signal 所有权交给插件。`ToolRuntime.Execute` 返回的普通 `error`（含 `Tool.Call` 入参解码失败、动态工具刷新失败等）由 **Agent 工具循环**经 `agentkit.RecoverToolExecute` 落成可 replay 的 `tool/result`，模型可据此自我纠正；仅 `agentkit.AbortTurn` 包装的错误与 `context.Canceled` 会中止当前 turn。单工具 `timeoutSeconds` 触发的超时落成 `audit.decision=timeout` 的 `tool/result`，**不**中断 turn。中止时 Agent 对当前 assistant 批次中尚未完成的 tool call 写入 `derive.InterruptedToolResult`，避免 replay 缺结果。
 
 ### 5.6 用户配置模型
 
@@ -879,7 +879,7 @@ Session backend 必须守住两条不变量，否则依赖 seq 的一切（compa
 |---|---|
 | **seq 单调递增** | 重新打开已有 session 后，编号必须从既有最大值之上继续，不能从 1 重新开始 |
 | **派生历史始终可回放** | `DeriveMessages` 经 `repairToolPairing`（对齐 pi `transformMessages` 第二遍）：`user`/新 `assistant` 前为未答 tool call 补 stand-in；跳过 `stopReason` 为 `error`/`aborted` 的 assistant；无 open round 的悬空 tool 结果丢弃。强制压缩 `dropOldest` 后剥首部 tool。`assistant/message` 落盘时写入 `ModelMessage.stopReason`（Responses `incomplete`、流错误为 `error`、step 取消为 `aborted`） |
-| **落盘消息瘦身** | 与 pi `SessionManager.appendMessage` 一致：**user/assistant 正文**完整落盘；`SanitizeModelMessageForStorage` 仅去掉 inline `data:` 媒体并改为 `attachment_ref`（`Source`/`URL`），若瘦身导致体积变小则记录 `logical_chars`。`tool/call` 参数完整落盘（仅空 input 规范为 `{}`、流式残缺 JSON 换占位对象）。**tool 结果**：在工具执行侧限长（对齐 pi 工具 truncate + spill）；`PrepareToolResultForStorage` 将超长正文写入 workspace `work/tool-spill/<session>/<call>.txt`，事件内保留截断视图与 `audit.spill_path`（文案 `[Output truncated. Full output: …]` 同 pi）；无 workspace 时仅截断。`DeriveMessages` / compaction 仍对模型可见历史做二次裁剪。LLM 调用前由 `PrepareMessagesForLLM` 按 provider `modalities` 处理附件：支持 `image` 时等同 `HydrateLocalAttachments`（最近 user 的 `attachment_ref` + 当前轮 `read` 图片）；仅 `text` 时将图片/attachment 降为 `[attachment: …]` 文本，避免纯文本模型收到 vision 载荷 |
+| **落盘消息瘦身** | 与 pi `SessionManager.appendMessage` 一致：**user/assistant 正文**完整落盘；`SanitizeModelMessageForStorage` 仅去掉 inline `data:` 媒体并改为 `attachment_ref`（`Source`/`URL`），若瘦身导致体积变小则记录 `logical_chars`。`tool/call` 参数完整落盘（仅空 input 规范为 `{}`、流式残缺 JSON 换占位对象）。**tool 结果**：在工具执行侧限长（对齐 pi 工具 truncate + spill）；`PrepareToolResultForStorage` 将超长正文写入 workspace `work/tool-spill/<session>/<call>.txt`，事件内保留截断视图与 `audit.spill_path`（文案 `[Output truncated. Full output: …]` 同 pi）；无 workspace 时仅截断；spill 写入失败时同样回退为事件内截断，不因磁盘/路径问题中断 turn。`DeriveMessages` / compaction 仍对模型可见历史做二次裁剪。LLM 调用前由 `PrepareMessagesForLLM` 按 provider `modalities` 处理附件：支持 `image` 时等同 `HydrateLocalAttachments`（最近 user 的 `attachment_ref` + 当前轮 `read` 图片）；仅 `text` 时将图片/attachment 降为 `[attachment: …]` 文本，避免纯文本模型收到 vision 载荷 |
 
 崩溃（SIGKILL / panic / 断电）会留下 `turn/start` 无 `turn/end`、tool call 无结果的日志。Agent 在每个 turn 开始前扫描并修复它，写 `session/recovery` 事件留痕；详见 [guides/autonomous-run.zh.md §6](guides/autonomous-run.zh.md#6-崩溃恢复)。
 
@@ -1127,7 +1127,7 @@ type ToolResult struct {
 }
 ```
 
-工具作者仍使用泛型输入输出；`agentkit.NewTool` 负责把 typed handler 包装为运行时接口。handler 返回 `string` 时直接作为 tool result；其他 Go 值 JSON 化为文本。`Tool.Call` 返回纯文本；Tool Runtime 补上 `ID`/`Name` 及可选 `Audit` 后写入 Session。Policy `Decision.Audit` 在 deny 时会合并进 `ToolResult.Audit`。
+工具作者仍使用泛型输入输出；`agentkit.NewTool` 负责把 typed handler 包装为运行时接口。handler 返回 `string` 时直接作为 tool result；其他 Go 值 JSON 化为文本；handler 的 `error` 返回值会转为模型可见的错误文本。`Tool.Call` 在入参解码等阶段失败时向 Execute 返回 `error`，由 Agent 侧 `RecoverToolExecute` 写入 `tool/result`（`audit.decision=error`）。Policy 评估失败、审批通道失败、以及 `OnBeforeTool`/`OnAfterTool` hook 失败应使用 `agentkit.AbortTurn` 返回。Tool Runtime 补上 `ID`/`Name` 及可选 `Audit` 后写入 Session。Policy `Decision.Audit` 在 deny 时会合并进 `ToolResult.Audit`。
 
 ### 6.8 LLM
 

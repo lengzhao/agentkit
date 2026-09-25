@@ -15,7 +15,7 @@ func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (ag
 	}
 	catalog, err := d.deferrableCatalog(ctx)
 	if err != nil {
-		return agentkit.ToolResult{}, err
+		return bridgeError(call, err.Error()), nil
 	}
 	type queryGroup struct {
 		Query   string   `json:"query"`
@@ -41,7 +41,7 @@ func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (ag
 	}
 	body, err := json.Marshal(out)
 	if err != nil {
-		return agentkit.ToolResult{}, err
+		return bridgeError(call, err.Error()), nil
 	}
 	return agentkit.ResultFromCall(call, string(body)), nil
 }
@@ -53,7 +53,7 @@ func (d *Runtime) executeDescribe(ctx context.Context, call agentkit.ToolCall) (
 	}
 	catalog, err := d.deferrableCatalog(ctx)
 	if err != nil {
-		return agentkit.ToolResult{}, err
+		return bridgeError(call, err.Error()), nil
 	}
 	found, notFound := describeCatalog(catalog, names)
 	tools := make(map[string]agentkit.ToolSpec, len(found))
@@ -67,7 +67,7 @@ func (d *Runtime) executeDescribe(ctx context.Context, call agentkit.ToolCall) (
 	}
 	body, err := json.Marshal(out)
 	if err != nil {
-		return agentkit.ToolResult{}, err
+		return bridgeError(call, err.Error()), nil
 	}
 	return agentkit.ResultFromCall(call, string(body)), nil
 }
@@ -79,7 +79,7 @@ func (d *Runtime) executeBridgeCall(ctx context.Context, call agentkit.ToolCall)
 	}
 	allowed, err := d.catalogNameSet(ctx)
 	if err != nil {
-		return agentkit.ToolResult{}, err
+		return bridgeError(call, err.Error()), nil
 	}
 	entry := entries[0]
 	if !allowed[entry.Name] {
@@ -92,7 +92,10 @@ func (d *Runtime) executeBridgeCall(ctx context.Context, call agentkit.ToolCall)
 	}
 	result, err := d.inner.Execute(ctx, innerCall)
 	if err != nil {
-		return result, err
+		if agentkit.IsTurnAbort(err) {
+			return result, err
+		}
+		return bridgeError(call, err.Error()), nil
 	}
 	// Session / UI show the real tool name after unwrap.
 	result.Name = entry.Name

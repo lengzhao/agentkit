@@ -220,7 +220,11 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 
 	result, err := r.execute(ctx, call, sessionID, agentID)
 	if err != nil {
-		observationEnd.Err = err
+		if agentkit.IsTurnAbort(err) {
+			observationEnd.Err = err
+			return result, err
+		}
+		observationEnd.Output = err.Error()
 		return result, err
 	}
 	observationEnd.Output = result.Content
@@ -235,7 +239,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 	tool, ok := r.lookupTool(call.Name)
 	if !ok {
 		if err := r.refreshDynamic(ctx); err != nil {
-			return agentkit.ToolResult{}, err
+			return agentkit.ToolResult{}, fmt.Errorf("refresh dynamic tools: %w", err)
 		}
 		tool, ok = r.lookupTool(call.Name)
 		if !ok {
@@ -245,7 +249,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 
 	decision, err := r.evaluatePolicies(ctx, call)
 	if err != nil {
-		return agentkit.ToolResult{}, err
+		return agentkit.ToolResult{}, agentkit.AbortTurn(err)
 	}
 	switch decision.Kind {
 	case agentkit.DecisionDeny:
@@ -253,7 +257,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 	case agentkit.DecisionAsk:
 		allowed, reason, guidance, err := r.resolveAskDecision(ctx, &call, decision.Reason)
 		if err != nil {
-			return agentkit.ToolResult{}, err
+			return agentkit.ToolResult{}, agentkit.AbortTurn(err)
 		}
 		if !allowed {
 			if reason == "" {
@@ -265,7 +269,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 
 	if r.hooks != nil {
 		if err := r.hooks.BeforeTool(ctx, &call); err != nil {
-			return agentkit.ToolResult{}, err
+			return agentkit.ToolResult{}, agentkit.AbortTurn(err)
 		}
 	}
 
@@ -313,7 +317,7 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 
 	if r.hooks != nil {
 		if err := r.hooks.AfterTool(ctx, &result); err != nil {
-			return agentkit.ToolResult{}, err
+			return agentkit.ToolResult{}, agentkit.AbortTurn(err)
 		}
 	}
 	return result, nil
@@ -440,12 +444,7 @@ func denialContent(reason, guidance string) string {
 }
 
 func timeoutResult(call agentkit.ToolCall) agentkit.ToolResult {
-	return agentkit.ToolResult{
-		ID:      call.ID,
-		Name:    call.Name,
-		Content: "tool execution timed out",
-		Audit:   map[string]string{"decision": "timeout"},
-	}
+	return agentkit.ToolResultFromTimeout(call)
 }
 
 func ResultText(result agentkit.ToolResult) string {

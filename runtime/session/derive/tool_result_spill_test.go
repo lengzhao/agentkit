@@ -96,12 +96,18 @@ func TestPrepareToolResultForStorageSpillWriteFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = derive.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-b"), agentkit.ToolResult{
+	stored, err := derive.PrepareToolResultForStorage(ctx, agentkit.SessionID("sess-b"), agentkit.ToolResult{
 		ID:      "call-2",
 		Name:    "bash",
 		Content: strings.Repeat("x", 500),
 	}, 100)
-	if err == nil {
-		t.Fatal("expected spill write error")
+	if err != nil {
+		t.Fatalf("spill failure should fall back to truncation: %v", err)
+	}
+	if len(stored.Content) >= 500 {
+		t.Fatalf("expected truncated content, got len=%d", len(stored.Content))
+	}
+	if !strings.HasSuffix(stored.Content, "\n...[truncated]") {
+		t.Fatalf("content not truncated: len=%d", len(stored.Content))
 	}
 }
