@@ -113,6 +113,20 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 | `platform/slack` | 同上 | Block Kit 卡片 + 按钮 | 交互 payload |
 
 飞书 / Lark 确认卡（`ask_user` 选项、工具 allow/deny 的列表项）短选项仍是「文案 | 按钮」一行；**选项文案换行或超过约 16 字**时改为通栏说明 + 通栏按钮，避免窄列把长文本挤乱。确认后的静态卡标题只放短选项，长选项进正文「已选择」。
+
+### 未知来源的交互卡回调
+
+除内置 `perm:` / `nav:` / `act:` / `cmd:` 外，用户点击**任意机器人应用发出的交互卡**（含 Agent 经 lark-cli / Open API 自定义发卡）时，Platform 可将回调整理为一条带 `[card_action] … [/card_action]` 标记的入站文本并 **新开 turn** 交给 Agent，无需额外 tool。
+
+| 步骤 | 行为 |
+|---|---|
+| 拉取卡片 | 有 `open_message_id` 时调用 `Im.Message.Get`，用 `extractInteractiveCardText` 转成可读 markdown |
+| 拉取失败 | 仅格式化回调载荷（`action` / `option` / `form_value` / `value` 等） |
+| 会话 | 优先按钮 `value.session_key`，否则 `chat_id + user_id` delivery |
+| 去重 | `message_id + 控件名 + action + form` 60s 内不重复入队 |
+| 回执 | 向用户返回 toast「已提交」 |
+
+配置 `unknownCardAction`：`forward`（默认）或 `ignore`（静默丢弃未识别回调）。仍受 `allowFrom` / `allowChat` 约束。
 | `platform/chat-api` | 默认 `Interactive=true`；`config.interactive: false` 降级为 headless | SSE `question_request` / debug 弹窗 | `POST /runs/.../respond` |
 | `platform/acp` | `Interactive`, `DefaultTimeout=10m`, `ScopeAnyone` | ACP `session/update` 流式 chunk | ACP `request_permission`（Send 内同步） |
 | `platform/headless` | `Interactive=false` | 无 | 直接 `NoHuman` |

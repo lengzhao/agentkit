@@ -53,6 +53,7 @@ type Config struct {
 	EncryptKey                 string            `json:"encryptKey"`
 	Port                       string            `json:"port"`
 	CallbackPath               string            `json:"callbackPath"`
+	UnknownCardAction          string            `json:"unknownCardAction"` // forward (default) | ignore
 }
 
 type Deps struct {
@@ -257,6 +258,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		replyInThread:              replyInThread,
 		resolveMentions:            cfg.ResolveMentions,
 		noReplyToTrigger:           noReplyToTrigger,
+		unknownCardAction:          normalizeUnknownCardAction(cfg.UnknownCardAction),
 		client:                     lark.NewClient(cfg.AppID, cfg.AppSecret, clientOpts...),
 		replayClient:               newFeishuReplayClient(cfg.AppID, cfg.AppSecret, domain),
 		dedup:                      &common.MessageDedup{},

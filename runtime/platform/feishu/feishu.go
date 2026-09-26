@@ -56,6 +56,7 @@ type Platform struct {
 	threadIsolation            bool
 	replyInThread              bool
 	noReplyToTrigger           bool
+	unknownCardAction          string
 	resolveMentions            bool
 	cfg                        Config
 	agentID                    agentkit.AgentID
@@ -278,9 +279,10 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 			content:   cmdText,
 			rctx:      rctx,
 		})
+		return nil, nil
 	}
 
-	return nil, nil
+	return p.forwardUnknownCardAction(context.Background(), event, sessionKey, chatID, messageID, userID, actionVal)
 }
 
 func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
