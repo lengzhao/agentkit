@@ -1,0 +1,17 @@
+# L1 overlay：会话与 FTS 索引均落在单文件 SQLite（与 config.base 注释块等价）。
+# 用法：agent -preset sql-session -preset feishu（或其它 L1）
+# Docker：将 file:.agentkit/sessions.db 挂卷，或改用 postgres 注释块中的 PG 组合。
+
+sessionStore.default:
+  use: session/sqlite
+  config:
+    dsn: file:.agentkit/sessions.db
+    maxCachedSessions: 64
+    cacheIdleTTL: 30m
+    maxLoadedEvents: 256
+
+sessionIndex.default:
+  use: session/sql-index
+  config:
+    driver: sqlite
+    dsn: file:.agentkit/sessions.db

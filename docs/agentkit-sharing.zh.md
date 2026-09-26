@@ -255,7 +255,7 @@ mindmap
 
 **已落地**（可开箱用）：Coding 闭环、自主运行、多租户 workspace、Slack/飞书/chat-api、子 Agent 委派、MCP/OpenAPI 动态工具、Langfuse、ACP 远程 Agent、定时任务等。
 
-**已知缺口**（见 [roadmap.zh.md](roadmap.zh.md)）：`StartStop` 关停收尾、follow-up 持久化、`session/sqlite` 检索、`policy/network-deny` 独立插件、子 Agent 并行 fan-out 等。
+**已知缺口**（见 [roadmap.zh.md](roadmap.zh.md)）：`StartStop` 关停收尾、follow-up 持久化、`session/sql-index` 的 PG `tsvector` 全文检索（当前为 `LIKE`）、`policy/network-deny` 独立插件、子 Agent 并行 fan-out 等。
 
 ---
 

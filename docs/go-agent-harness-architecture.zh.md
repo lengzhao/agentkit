@@ -922,6 +922,7 @@ type RouteRef struct {
 | **Loop** | 按 `TurnEnvelope.Conversation` 串行调度；不调用 `SessionStore` |
 | **Agent** | `RunTurn` 从 `session.SessionIDFromContext` 读取 conversation，并通过 `deps.sessionStore.Get` 加载 Session |
 | **`session/store`** | 按不透明 SessionID 懒加载 `{safe_id}.jsonl`；进程内 LRU 缓存最近活跃的 session；内存只保留 compaction 标记 + 最近 `maxLoadedEvents` 条事件，压缩后裁剪已折叠历史；完整审计读盘 |
+| **`session/sql`** | 与 `session/store` 相同的 Session / ActiveSession / runtime 语义，事件与 sidecar 写入 SQL（PostgreSQL 或 SQLite 等 `database/sql` 后端）；**不**在 workspace 写 JSONL |
 
 所有入口（含 CLI）必须在 `MessageEvent.Envelope.Route` 上设置 delivery。CLI 使用稳定 delivery `cli:default`，Runner 经 `session/store` 的 active-session 映射（`sessions/<stable>/current.json`）解析当前 conversation；`/new` 创建新 logical session 并更新该映射。配置示例：
 
@@ -947,6 +948,32 @@ agent.coder:
     llm: llm
     tools: tools
 ```
+
+**PostgreSQL 会话库**（不落 workspace JSONL）：
+
+```yaml
+sessionStore.default:
+  use: session/postgres
+  config:
+    dsn: postgres://user:pass@db.example.com:5432/agentkit?sslmode=require
+    maxCachedSessions: 64
+    cacheIdleTTL: 30m
+    maxLoadedEvents: 256
+
+# 检索索引与会话同库：从 ak_session_events 增量派生，替代扫 JSONL 的 session/sqlite-index。
+sessionIndex.default:
+  use: session/sql-index
+  config:
+    driver: pgx
+    dsn: postgres://user:pass@db.example.com:5432/agentkit?sslmode=require
+
+agent.coder:
+  use: agent/coding
+  deps:
+    sessionStore: sessionStore.default
+```
+
+> 使用 `session/sql` / `session/postgres` 时，应把 `session/sqlite-index` 换成 `session/sql-index`（索引与会话同库同 DSN，Docker 只需持久化一个卷/一个 PG）；继续用 `session/sqlite-index` 会扫 workspace 下不存在的 `sessions/*.jsonl`，检索结果为空。
 
 ```mermaid
 flowchart LR

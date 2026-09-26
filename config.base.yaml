@@ -283,6 +283,7 @@ agent.claude.default:
     sessionEvents: session.events
     telemetry: telemetry.toolkit
 
+# 默认：workspace JSONL（L0 preset / golden 基线）。Docker 生产可改用下方 SQL 组合。
 sessionStore.default:
   use: session/store
   config:
@@ -292,6 +293,36 @@ sessionStore.default:
     maxLoadedEvents: 256
   deps:
     workspace: workspace.default
+
+# 本地 / 单文件 SQL 会话（与 sessionIndex 的 session/sql-index 成对启用）：
+# sessionStore.default:
+#   use: session/sqlite
+#   config:
+#     dsn: file:.agentkit/sessions.db
+#     maxCachedSessions: 64
+#     cacheIdleTTL: 30m
+#     maxLoadedEvents: 256
+#
+# sessionIndex.default:
+#   use: session/sql-index
+#   config:
+#     driver: sqlite
+#     dsn: file:.agentkit/sessions.db
+
+# PostgreSQL 会话 + 同库索引（Docker 推荐：只持久化 PG，不挂 tenants/…/jsonl）：
+# sessionStore.default:
+#   use: session/postgres
+#   config:
+#     dsn: postgres://user:pass@host:5432/agentkit?sslmode=require
+#     maxCachedSessions: 64
+#     cacheIdleTTL: 30m
+#     maxLoadedEvents: 256
+#
+# sessionIndex.default:
+#   use: session/sql-index
+#   config:
+#     driver: pgx
+#     dsn: postgres://user:pass@host:5432/agentkit?sslmode=require
 
 # 会话事件追加/索引契约（cap/session.Events）的标准实现；tool/todo、tool/finish、tool/skill、compaction/summary、agent/acp-remote 共用。
 session.events:

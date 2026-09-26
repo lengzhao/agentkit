@@ -31,14 +31,7 @@ func ScanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent,
 	}
 	defer f.Close()
 
-	var (
-		compactions       []agentkit.SessionEvent
-		ring              eventRing
-		maxSeq            agentkit.EventSeq
-		nonCompactionSeen int
-	)
-	ring.max = maxLoadedEvents
-
+	var events []agentkit.SessionEvent
 	dec := newJSONLDecoder(f)
 	for {
 		var ev agentkit.SessionEvent
@@ -48,6 +41,22 @@ func ScanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent,
 			}
 			return nil, 0, false, err
 		}
+		events = append(events, ev)
+	}
+	return FoldLoadedSessionEvents(events, maxLoadedEvents)
+}
+
+// FoldLoadedSessionEvents applies the same compaction + tail window rules as
+// session/store when loading durable history (JSONL file or SQL rows).
+func FoldLoadedSessionEvents(all []agentkit.SessionEvent, maxLoadedEvents int) ([]agentkit.SessionEvent, agentkit.EventSeq, bool, error) {
+	var (
+		compactions       []agentkit.SessionEvent
+		ring              eventRing
+		maxSeq            agentkit.EventSeq
+		nonCompactionSeen int
+	)
+	ring.max = maxLoadedEvents
+	for _, ev := range all {
 		if ev.Seq > maxSeq {
 			maxSeq = ev.Seq
 		}
@@ -58,7 +67,6 @@ func ScanSessionFile(path string, maxLoadedEvents int) ([]agentkit.SessionEvent,
 		nonCompactionSeen++
 		ring.add(ev)
 	}
-
 	cutoffs := cutoffsFromCompactions(compactions)
 	events := mergeLoadedEvents(compactions, ring.buf, cutoffs)
 	trimmed := len(cutoffs) > 0 || (maxLoadedEvents > 0 && nonCompactionSeen > maxLoadedEvents)

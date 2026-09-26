@@ -678,7 +678,7 @@ tool.recognize.default:
     config:
         model: gpt-5.4-mini
     deps:
-        llm: llm.default
+        llm: llm.gpt
         telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/recognize

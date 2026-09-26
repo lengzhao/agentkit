@@ -527,20 +527,16 @@ sessionCommands.default:
     use: session/commands
 sessionIndex.default:
     config:
-        indexRel: sessions/.index.sqlite
-        sessionsRel: sessions
-    deps:
-        workspace: workspace.default
-    use: session/sqlite-index
+        driver: sqlite
+        dsn: file:.agentkit/sessions.db
+    use: session/sql-index
 sessionStore.default:
     config:
         cacheIdleTTL: 30m
-        dir: sessions
+        dsn: file:.agentkit/sessions.db
         maxCachedSessions: 64
         maxLoadedEvents: 256
-    deps:
-        workspace: workspace.default
-    use: session/store
+    use: session/sqlite
 skills.default:
     config:
         dirs:
@@ -594,20 +590,7 @@ subagent.loop.default:
         telemetry: telemetry.default
     use: subagent/loop-agent
 telemetry.default:
-    config:
-        baseUrl: https://cloud.langfuse.com
-        deduplicateGenerationPrefix: true
-        environment: development
-        maxFieldBytes: 8192
-        maxPayloadBytes: 1048576
-        publicKeyRef: env:LANGFUSE_PUBLIC_KEY
-        redactInputs: true
-        redactOutputs: true
-        secretKeyRef: env:LANGFUSE_SECRET_KEY
-    deps:
-        credentials: credentials.default
-        telemetry: telemetry.toolkit
-    use: telemetry/langfuse
+    use: telemetry/none
 telemetry.toolkit:
     use: telemetry/toolkit
 tool.ask-user.default:

@@ -9,7 +9,7 @@ import (
 
 type cacheItem struct {
 	id       agentkit.SessionID
-	sess     *JSONL
+	sess     agentkit.Session
 	lastUsed time.Time
 }
 
@@ -40,7 +40,7 @@ func (c *sessionCache) len() int {
 	return len(c.items)
 }
 
-func (c *sessionCache) get(id agentkit.SessionID) (*JSONL, bool) {
+func (c *sessionCache) get(id agentkit.SessionID) (agentkit.Session, bool) {
 	el, ok := c.items[id]
 	if !ok {
 		return nil, false
@@ -53,7 +53,7 @@ func (c *sessionCache) get(id agentkit.SessionID) (*JSONL, bool) {
 	return item.sess, true
 }
 
-func (c *sessionCache) put(id agentkit.SessionID, sess *JSONL) {
+func (c *sessionCache) put(id agentkit.SessionID, sess agentkit.Session) {
 	now := c.now()
 	if el, ok := c.items[id]; ok {
 		item := el.Value.(*cacheItem)
