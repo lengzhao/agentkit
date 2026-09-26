@@ -30,8 +30,9 @@ type Config struct {
 	AllowChannels   string `json:"allowChannels"`
 	GroupReplyAll   bool   `json:"groupReplyAll"`
 	DoneEmoji       string `json:"doneEmoji"`
-	CancelledEmoji  string `json:"cancelledEmoji"`
-	ErrorEmoji      string `json:"errorEmoji"`
+	CancelledEmoji      string `json:"cancelledEmoji"`
+	ErrorEmoji          string `json:"errorEmoji"`
+	UnknownCardAction   string `json:"unknownCardAction"` // forward (default) | ignore
 }
 
 type Deps struct {
@@ -89,9 +90,11 @@ type Platform struct {
 
 	doneEmoji      string
 	cancelledEmoji string
-	errorEmoji     string
-	turnTriggers   sync.Map
-	turnReactions  sync.Map
+	errorEmoji        string
+	unknownCardAction string
+	dedup             *common.MessageDedup
+	turnTriggers      sync.Map
+	turnReactions     sync.Map
 
 	startOnce sync.Once
 }
@@ -129,7 +132,10 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 			DoneEmoji:          cfg.DoneEmoji,
 			CancelledEmoji:     cfg.CancelledEmoji,
 			ErrorEmoji:         cfg.ErrorEmoji,
+			UnknownCardAction:  cfg.UnknownCardAction,
 		},
+		unknownCardAction: common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
+		dedup:             &common.MessageDedup{},
 		doneEmoji:      resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
 		cancelledEmoji: resolveSlackReactionEmoji(cfg.CancelledEmoji, reactionCancelled),
 		errorEmoji:     resolveSlackReactionEmoji(cfg.ErrorEmoji, reactionError),

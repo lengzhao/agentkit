@@ -38,17 +38,6 @@ func TestFormatUnknownCardActionMessage_fetchFailed(t *testing.T) {
 	}
 }
 
-func TestNormalizeUnknownCardAction(t *testing.T) {
-	if normalizeUnknownCardAction("") != unknownCardActionForward {
-		t.Fatal("empty should forward")
-	}
-	if normalizeUnknownCardAction("ignore") != unknownCardActionIgnore {
-		t.Fatal("ignore")
-	}
-	if normalizeUnknownCardAction("bogus") != unknownCardActionForward {
-		t.Fatal("invalid defaults to forward")
-	}
-}
 
 func TestCardActionDedupKey_stable(t *testing.T) {
 	k1 := cardActionDedupKey("m1", "btn", "go", map[string]interface{}{"a": "1"})

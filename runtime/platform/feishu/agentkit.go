@@ -258,7 +258,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		replyInThread:              replyInThread,
 		resolveMentions:            cfg.ResolveMentions,
 		noReplyToTrigger:           noReplyToTrigger,
-		unknownCardAction:          normalizeUnknownCardAction(cfg.UnknownCardAction),
+		unknownCardAction:          common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
 		client:                     lark.NewClient(cfg.AppID, cfg.AppSecret, clientOpts...),
 		replayClient:               newFeishuReplayClient(cfg.AppID, cfg.AppSecret, domain),
 		dedup:                      &common.MessageDedup{},

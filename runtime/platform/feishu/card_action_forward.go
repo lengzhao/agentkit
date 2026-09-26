@@ -16,50 +16,17 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
-const (
-	unknownCardActionForward = "forward"
-	unknownCardActionIgnore  = "ignore"
-)
-
-func normalizeUnknownCardAction(mode string) string {
-	mode = strings.TrimSpace(strings.ToLower(mode))
-	if mode == "" {
-		return unknownCardActionForward
-	}
-	if mode == unknownCardActionIgnore {
-		return unknownCardActionIgnore
-	}
-	return unknownCardActionForward
-}
-
 func cardActionDedupKey(messageID, actionName, actionVal string, form map[string]interface{}) string {
 	parts := []string{messageID, actionName, actionVal}
 	if len(form) > 0 {
 		b, _ := json.Marshal(form)
 		parts = append(parts, string(b))
 	}
-	return strings.Join(parts, "\x1e")
+	return common.InteractionDedupKey(parts...)
 }
 
-// formatUnknownCardActionMessage builds inbound text for unrecognized card callbacks.
 func formatUnknownCardActionMessage(cardText string, fetchedCard bool, action *callback.CallBackAction, actionVal, userID string) string {
-	var b strings.Builder
-	b.WriteString("[card_action]\n")
-	if strings.TrimSpace(cardText) != "" {
-		b.WriteString("卡片内容:\n")
-		b.WriteString(strings.TrimSpace(cardText))
-		b.WriteByte('\n')
-	} else if fetchedCard {
-		b.WriteString("卡片内容: (空)\n")
-	}
-	b.WriteString("\n用户操作:\n")
-	b.WriteString(formatCardActionOperation(action, actionVal))
-	if strings.TrimSpace(userID) != "" {
-		b.WriteString("\n操作人: ")
-		b.WriteString(userID)
-	}
-	b.WriteString("\n[/card_action]")
-	return b.String()
+	return common.FormatCardActionInbound(cardText, fetchedCard, formatCardActionOperation(action, actionVal), userID)
 }
 
 func formatCardActionOperation(action *callback.CallBackAction, actionVal string) string {
@@ -207,7 +174,7 @@ func (p *Platform) fetchCardMessageText(ctx context.Context, messageID string) (
 }
 
 func (p *Platform) forwardUnknownCardAction(ctx context.Context, event *callback.CardActionTriggerEvent, sessionKey, chatID, messageID, userID, actionVal string) (*callback.CardActionTriggerResponse, error) {
-	if p.unknownCardAction != unknownCardActionForward {
+	if p.unknownCardAction != common.UnknownInteractionForward {
 		return nil, nil
 	}
 	if !common.AllowList(p.allowFrom, userID) {

@@ -35,17 +35,13 @@ func (p *Platform) handleBlockAction(callback slack.InteractionCallback, action 
 	if action == nil {
 		return
 	}
-	actionVal := strings.TrimSpace(action.Value)
-	if actionVal == "" {
-		return
+	rawValue := strings.TrimSpace(action.Value)
+	if rawValue == "" {
+		rawValue = strings.TrimSpace(action.SelectedOption.Value)
 	}
-	actionVal, sessionKey, extra := decodeActionValue(actionVal)
+	actionVal, sessionKey, extra := decodeActionValue(rawValue)
 	if sessionKey == "" {
 		sessionKey = p.buildSessionKey(callback.Channel.ID, callback.User.ID, threadTSFromInteractive(callback))
-	}
-	reply, ok := common.PermissionReplyFromAction(actionVal, callback.User.ID, extra)
-	if !ok {
-		return
 	}
 
 	channelID := callback.Channel.ID
@@ -57,17 +53,28 @@ func (p *Platform) handleBlockAction(callback slack.InteractionCallback, action 
 	if threadTS == "" {
 		threadTS = callback.Container.ThreadTs
 	}
-	if messageTS != "" {
-		p.trackCardMessage(sessionKey, channelID, messageTS, threadTS)
+
+	if reply, ok := common.PermissionReplyFromAction(actionVal, callback.User.ID, extra); ok {
+		if messageTS != "" {
+			p.trackCardMessage(sessionKey, channelID, messageTS, threadTS)
+		}
+		p.pushPermissionReply(context.Background(), sessionKey, reply, extra)
+		confirmed := common.ConfirmedCardFromReply(reply, extra)
+		ref := cardMessageRef{channel: channelID, ts: messageTS, threadTS: threadTS}
+		if err := p.updateCardMessage(context.Background(), ref, confirmed, sessionKey); err != nil {
+			slog.Warn("slack: interaction card update failed", "err", err)
+		}
+		return
 	}
 
-	p.pushPermissionReply(context.Background(), sessionKey, reply, extra)
-
-	confirmed := common.ConfirmedCardFromReply(reply, extra)
-	ref := cardMessageRef{channel: channelID, ts: messageTS, threadTS: threadTS}
-	if err := p.updateCardMessage(context.Background(), ref, confirmed, sessionKey); err != nil {
-		slog.Warn("slack: interaction card update failed", "err", err)
+	if strings.HasPrefix(actionVal, "cmd:") {
+		cmdText := strings.TrimPrefix(actionVal, "cmd:")
+		slog.Info("slack: block action dispatched as command", "cmd", cmdText, "user", callback.User.ID)
+		p.dispatchCardActionInbound(context.Background(), callback, sessionKey, channelID, messageTS, threadTS, cmdText)
+		return
 	}
+
+	p.forwardUnknownBlockAction(context.Background(), callback, action, sessionKey, channelID, messageTS, threadTS, actionVal, rawValue)
 }
 
 func threadTSFromInteractive(callback slack.InteractionCallback) string {
