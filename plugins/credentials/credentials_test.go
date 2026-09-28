@@ -13,8 +13,8 @@ import (
 )
 
 func TestSecretsKeyConfigIgnoresProcessEnv(t *testing.T) {
-	// Host env must not override config.secretsKey unless secretsKeyFromEnv is set.
-	t.Setenv(SecretsMasterKeyEnv, "host-env-passphrase")
+	// Host process env must not supply the AES master key; only config.secretsKey does.
+	t.Setenv("AGENTKIT_SECRETS_KEY", "host-env-passphrase")
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "mcp.json")
 	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
@@ -37,49 +37,24 @@ func TestSecretsKeyConfigIgnoresProcessEnv(t *testing.T) {
 	if err != nil || secret.Value != "from-enc" {
 		t.Fatalf("resolve: err=%v value=%q", err, secret.Value)
 	}
-	// Master key must not be resolvable as a regular credential.
-	if _, err := store.Resolve(ctx, "shell-bash.gh", "env:"+SecretsMasterKeyEnv); err == nil {
-		t.Fatal("master key must not be exposed via credential lookup")
-	}
 }
 
-func TestSecretsKeyFromEnvRequiresOptIn(t *testing.T) {
-	t.Setenv(SecretsMasterKeyEnv, "host-env-passphrase")
+func TestMasterKeyRequiresSecretsKey(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "mcp.json")
 	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	encPath := filepath.Join(dir, "secrets.enc.json")
-	sharedFS := testEnvFS(t)
-	// Seed an encrypted file using the host-env passphrase.
-	seed, err := NewIntegrations(Config{
-		SecretsKeyFromEnv: true,
-		EncryptedFile:     encPath,
-		ManifestFiles:     []string{manifestPath},
-	}, EnvDeps{FS: sharedFS})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := seed.(agentkit.CommandProvider).Commands()[0]
-	if _, err := cmd.CommandExec(context.Background(), "add shell-bash.gh GH_TOKEN=seed"); err != nil {
-		t.Fatalf("seed env add: %v", err)
-	}
-	// Without secretsKeyFromEnv and without secretsKey, the master key must not
-	// be read from process env: env add must fail.
 	locked, err := NewIntegrations(Config{
-		EncryptedFile: encPath,
+		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
 		ManifestFiles: []string{manifestPath},
-	}, EnvDeps{FS: sharedFS})
+	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd = locked.(agentkit.CommandProvider).Commands()[0]
+	cmd := locked.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(context.Background(), "add shell-bash.gh GH_TOKEN=blocked"); err == nil {
-		t.Fatal("expected master-key error when only process env provides the key")
-	}
-	if _, err := locked.Resolve(context.Background(), "shell-bash.gh", "env:GH_TOKEN"); err == nil {
-		t.Fatal("expected resolve to fail without a configured master key")
+		t.Fatal("expected master-key error when secretsKey is unset")
 	}
 }
 
@@ -386,9 +361,7 @@ func TestEncryptedOverridesScopedEnv(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
 		ManifestFiles: []string{manifestPath},
-		Env: map[string]string{
-			SecretsMasterKeyEnv: secretsPass,
-		},
+		SecretsKey:      secretsPass,
 		ScopedEnv: map[string]map[string]string{
 			"shell-bash.gh": {"GH_TOKEN": "from-config"},
 		},
@@ -593,9 +566,7 @@ func TestEnvAddBeforeManifest(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
 		ManifestFiles: []string{manifestPath},
-		Env: map[string]string{
-			SecretsMasterKeyEnv: secretsPass,
-		},
+		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -662,9 +633,7 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
 		ManifestFiles: []string{manifestPath},
-		Env: map[string]string{
-			SecretsMasterKeyEnv: secretsPass,
-		},
+		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -726,9 +695,7 @@ func TestEnvAddEncryptedSkipsUndecryptableEntries(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
 		ManifestFiles: []string{manifestPath},
-		Env: map[string]string{
-			SecretsMasterKeyEnv: secretsPass,
-		},
+		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -794,9 +761,7 @@ func TestResolveEncryptedOverridesDotenv(t *testing.T) {
 	store, err := NewStatic(Config{
 		EncryptedFile: secretsPath,
 		Files:         []string{dotenv},
-		Env: map[string]string{
-			SecretsMasterKeyEnv: secretsPass,
-		},
+		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)

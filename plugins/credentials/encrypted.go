@@ -14,10 +14,6 @@ import (
 	"strings"
 )
 
-// SecretsMasterKeyEnv is the environment / credentials.config.env key for the
-// AES-256 key used to encrypt secrets.enc.json. It is not subject to Prefix.
-const SecretsMasterKeyEnv = "AGENTKIT_SECRETS_KEY"
-
 const encryptedSecretsVersion = 1
 
 type encryptedSecretsFile struct {

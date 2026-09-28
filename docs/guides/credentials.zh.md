@@ -43,7 +43,7 @@ L1 示例（bash 首 token → `shell-bash.<cmd>`；L0 已给 `tool.shell-bash` 
 ```yaml
 credentials.integrations:
   config:
-    secretsKey: ${var:AGENTKIT_SECRETS_KEY}  # 主密钥；不再放 config.env，默认也不读进程环境
+    secretsKey: ${var:AGENTKIT_SECRETS_KEY}  # 主密钥；用 L1 secretsKey，勿放进 config.env
     scopedEnv:
       shell-bash.gh:
         GH_TOKEN: ${var:GH_TOKEN}
@@ -83,7 +83,7 @@ Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool
 | LLM、telemetry、web-search | `credentials.default` |
 | tool/mcp、tool/openapi、tool/shell-bash（scoped env） | `credentials.integrations` |
 
-`/env`：integrations 插件 `CommandProvider`；配置图须 **实例化** `credentials.integrations`，由 `commands/registry` 聚合。无参数时列出 **密钥名**（不含值）：loaded/abnormal 密文键、dotenv，以及按 scope 的 env 变量名与 `[manifest|loaded|config|abnormal]` 状态（不展示密文路径与 `config.env` 键名，如 `AGENTKIT_SECRETS_KEY`）。
+`/env`：integrations 插件 `CommandProvider`；配置图须 **实例化** `credentials.integrations`，由 `commands/registry` 聚合。无参数时列出 **密钥名**（不含值）：loaded/abnormal 密文键、dotenv，以及按 scope 的 env 变量名与 `[manifest|loaded|config|abnormal]` 状态（不展示密文路径与 `config.secretsKey`）。
 
 ---
 

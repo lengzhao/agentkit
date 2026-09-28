@@ -22,9 +22,7 @@ func TestEnvStatusListsScopedKeys(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
 		ManifestFiles: []string{manifestPath},
-		Env: map[string]string{
-			SecretsMasterKeyEnv: secretsPass,
-		},
+		SecretsKey:    secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)

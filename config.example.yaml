@@ -34,7 +34,6 @@ workspace.default:
 # credentials.integrations:
 #   config:
 #     secretsKey: ${env:AGENTKIT_SECRETS_KEY}
-# （旧写法 config.env.AGENTKIT_SECRETS_KEY 已 deprecated；进程环境需 secretsKeyFromEnv: true）
 #
 # 【1】Flat token — LLM / web-search（scope 为空，键名即 env 名）
 # 方式 A：shell export（credentials.default 会读 process env）

@@ -434,7 +434,7 @@ credentials.integrations:
     encryptedFile: global:secrets.enc.json
     # MCP/OpenAPI allowlist：实现内默认读 workspace mcp.json/api.json（勿在 L1 配 manifestFiles）
     # Set the master key via L1 config.yaml credentials.integrations.config.secretsKey for /env add
-    # (config.env.AGENTKIT_SECRETS_KEY is deprecated; process env requires secretsKeyFromEnv: true).
+    # (e.g. secretsKey: ${var:MY_SECRETS_PASSPHRASE} or ${env:MY_SECRETS_PASSPHRASE}).
   deps:
     fs: filesystem.local.state
 
