@@ -271,7 +271,7 @@ agent.claude.default:
     sessionStore: sessionStore.default
 ```
 
-- **API Key**：`OPENAI_API_KEY` 等（`/env add` 写入 `global:secrets.enc.json`，或 export；需 L1 配置 `AGENTKIT_SECRETS_KEY`）
+- **API Key**：`OPENAI_API_KEY` 等（`/env add` 写入 `global:secrets.enc.json`，或 export；需 L1 配置 `credentials.*.config.secretsKey`）
 - **自定义网关 / 代理**：`ANTHROPIC_BASE_URL` 指向兼容 Anthropic Messages API 的 base URL
 - 通过 `/agent use claude` 或 chat-api `agent_id=claude` 切换；主 agent 也可 `delegate` 到 `claude`
 

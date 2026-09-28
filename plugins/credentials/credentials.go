@@ -31,6 +31,12 @@ type Config struct {
 	Env           map[string]string `json:"env"`
 	Files         []string          `json:"files"`
 	EncryptedFile string            `json:"encryptedFile"`
+	// SecretsKey is the AES master key for encryptedFile (post-interpolation).
+	// Preferred over env.AGENTKIT_SECRETS_KEY and process env.
+	SecretsKey string `json:"secretsKey,omitempty"`
+	// SecretsKeyFromEnv explicitly allows reading the master key from
+	// os.Getenv(AGENTKIT_SECRETS_KEY). Default false (dev escape hatch only).
+	SecretsKeyFromEnv bool `json:"secretsKeyFromEnv,omitempty"`
 	// ProcessEnv enables os.Getenv lookup (static default true; integrations default false).
 	ProcessEnv *bool `json:"processEnv,omitempty"`
 	// ManifestFiles lists workspace paths scanned for per-scope env: allowlists (integrations only).
@@ -45,9 +51,10 @@ type EnvDeps struct {
 }
 
 type envStore struct {
-	prefix          string
-	configEnv       map[string]string
-	masterKeyConfig string
+	prefix            string
+	configEnv         map[string]string
+	masterKeyConfig   string
+	secretsKeyFromEnv bool
 	filePaths       []string
 	encryptedRel    string
 	fs              filesystem.Service
@@ -81,14 +88,18 @@ func newEnvStore(cfg Config, deps EnvDeps, defaultEnc string, defaultProcessEnv 
 	if len(files) == 0 && encRel == EncryptedFileDisabled && processEnv {
 		files = []string{defaultEnvFile}
 	}
-	masterKeyConfig := ""
-	if cfg.Env != nil {
-		masterKeyConfig = strings.TrimSpace(cfg.Env[SecretsMasterKeyEnv])
+	masterKeyConfig := strings.TrimSpace(cfg.SecretsKey)
+	if masterKeyConfig == "" && cfg.Env != nil {
+		if legacy := strings.TrimSpace(cfg.Env[SecretsMasterKeyEnv]); legacy != "" {
+			slog.Warn("credentials: config.env." + SecretsMasterKeyEnv + " is deprecated; move the master key to config.secretsKey")
+			masterKeyConfig = legacy
+		}
 	}
 	s := &envStore{
-		prefix:          cfg.Prefix,
-		configEnv:       normalizeConfigEnv(cfg.Env, cfg.Prefix),
-		masterKeyConfig: masterKeyConfig,
+		prefix:            cfg.Prefix,
+		configEnv:         normalizeConfigEnv(cfg.Env, cfg.Prefix),
+		masterKeyConfig:   masterKeyConfig,
+		secretsKeyFromEnv: cfg.SecretsKeyFromEnv,
 		filePaths:       append([]string(nil), files...),
 		encryptedRel:    encRel,
 		fs:              deps.FS,
@@ -171,10 +182,16 @@ func (s *envStore) resolveEncryptedPath(context.Context) (string, error) {
 	return rel, nil
 }
 
+// masterKey resolves the AES master key. Priority: config.secretsKey (and the
+// deprecated config.env entry, both captured at construction) first; process
+// env only when secretsKeyFromEnv is explicitly enabled.
 func (s *envStore) masterKey() ([]byte, error) {
-	raw := strings.TrimSpace(os.Getenv(SecretsMasterKeyEnv))
+	raw := s.masterKeyConfig
+	if raw == "" && s.secretsKeyFromEnv {
+		raw = strings.TrimSpace(os.Getenv(SecretsMasterKeyEnv))
+	}
 	if raw == "" {
-		raw = s.masterKeyConfig
+		return nil, fmt.Errorf("master key not configured: set config.secretsKey (or secretsKeyFromEnv for dev)")
 	}
 	return parseSecretsMasterKey(raw)
 }
@@ -382,6 +399,11 @@ func normalizeConfigEnv(env map[string]string, prefix string) map[string]string 
 	}
 	out := make(map[string]string, len(env))
 	for key, value := range env {
+		if key == SecretsMasterKeyEnv {
+			// The master key is consumed via masterKey() only; never expose it
+			// through credential lookup or the env graph.
+			continue
+		}
 		storageKey := key
 		if prefix != "" {
 			storageKey = prefix + key

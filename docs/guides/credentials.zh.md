@@ -33,7 +33,7 @@ AgentKit 在运行期通过 `cap/credentials.Store` 解析 `env:NAME` 引用。�
 | 层级 | 内容 |
 |------|------|
 | **L0** `config.base.yaml` | `credentials.default` / `credentials.integrations`、`encryptedFile` |
-| **L1** `config.yaml` | `config.env`（`AGENTKIT_SECRETS_KEY` 等）、**`scopedEnv`**（gh/npm/MCP 等 token） |
+| **L1** `config.yaml` | `config.secretsKey`（加密库主密钥）、**`scopedEnv`**（gh/npm/MCP 等 token）、`config.env`（非敏感预填） |
 | **运行期** | `/env add` 写 scoped 密文（**同键覆盖**）；写盘后 **reload + verify**；无法解开的条目 **保留密文并设 `abnormal: true`**（`/env` 状态列出），不阻断本次写入 |
 
 **加密库（推荐单文件）**：`credentials.default` 与 `credentials.integrations` 共用 `global:secrets.enc.json`（local 即 `.agentkit/secrets.enc.json`）。Flat 键与 scoped 键（`SCOPE::KEY`）在同一 `entries`。L1 **`scopedEnv`** 启动载入；同键以 enc `/env add` 为准。可选 `config.files`（dotenv）作 dev 补充。
@@ -43,8 +43,7 @@ L1 示例（bash 首 token → `shell-bash.<cmd>`；L0 已给 `tool.shell-bash` 
 ```yaml
 credentials.integrations:
   config:
-    env:
-      AGENTKIT_SECRETS_KEY: ${var:AGENTKIT_SECRETS_KEY}
+    secretsKey: ${var:AGENTKIT_SECRETS_KEY}  # 主密钥；不再放 config.env，默认也不读进程环境
     scopedEnv:
       shell-bash.gh:
         GH_TOKEN: ${var:GH_TOKEN}
@@ -73,7 +72,7 @@ type EnvPairResolver interface {
 ```
 
 - **`EnvPairResolver`**：`tool/shell-bash` 经 `subprocessEnv` 调用；键顺序：`opts.Keys` → 该 scope **已存储键**（`scopedEnv`/enc/`/env add`）。  
-- **子进程基线 env**：有注入时 `tool/shell` 使用裁剪后的宿主 env + pairs；无注入时用全量 `os.Environ()`。
+- **子进程基线 env**：`tool/shell` 默认继承宿主 `os.Environ()` + scoped pairs（含无注入、解析失败等路径）；注重隔离时设 `config.trimEnv: true`，子进程 env 变为裁剪基线（`PATH`/`HOME`/… + `PWD`）+ scoped/extra pairs。静态非密钥变量用 `config.extraEnv`。
 
 Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool 插件拼出；`credentials/integrations` 校验并存储 `SCOPE::KEY`。bash 取命令首 token 的 `filepath.Base`。
 
@@ -94,7 +93,7 @@ Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool
 |----|------|
 | cap | `Store`、`EnvPairResolver` |
 | L1 scoped | **`scopedEnv`** 加载；enc `/env add` 覆盖同键 |
-| shell-bash L0 | `workspace` + **`credentials.integrations`**；有 scoped 注入时裁剪 env + token，否则全量 `os.Environ()` |
+| shell-bash L0 | `workspace` + **`credentials.integrations`**；子进程 env 默认 = 宿主 env + scoped 注入，`trimEnv: true` 时裁剪 |
 | MCP/OpenAPI allowlist | 实现内读 workspace `mcp.json` / `api.json`（默认路径），**无** L1 `manifestFiles` 用户面 |
 | Global 链顺序 | context → process → config → encrypted → dotenv |
 
@@ -114,8 +113,7 @@ credentials.integrations:
   use: credentials/integrations
   config:
     encryptedFile: global:secrets.enc.json
-    env:
-      AGENTKIT_SECRETS_KEY: ${var:AGENTKIT_SECRETS_KEY}
+    secretsKey: ${var:AGENTKIT_SECRETS_KEY}
     scopedEnv:
       shell-bash.gh:
         GH_TOKEN: ${env:GH_TOKEN}

@@ -12,6 +12,77 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 )
 
+func TestSecretsKeyConfigIgnoresProcessEnv(t *testing.T) {
+	// Host env must not override config.secretsKey unless secretsKeyFromEnv is set.
+	t.Setenv(SecretsMasterKeyEnv, "host-env-passphrase")
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewIntegrations(Config{
+		SecretsKey:    "config-passphrase",
+		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
+		ManifestFiles: []string{manifestPath},
+	}, EnvDeps{FS: testEnvFS(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cmd := store.(agentkit.CommandProvider).Commands()[0]
+	if _, err := cmd.CommandExec(ctx, "add shell-bash.gh GH_TOKEN=from-enc"); err != nil {
+		t.Fatalf("env add with config secretsKey: %v", err)
+	}
+	secret, err := store.Resolve(ctx, "shell-bash.gh", "env:GH_TOKEN")
+	if err != nil || secret.Value != "from-enc" {
+		t.Fatalf("resolve: err=%v value=%q", err, secret.Value)
+	}
+	// Master key must not be resolvable as a regular credential.
+	if _, err := store.Resolve(ctx, "shell-bash.gh", "env:"+SecretsMasterKeyEnv); err == nil {
+		t.Fatal("master key must not be exposed via credential lookup")
+	}
+}
+
+func TestSecretsKeyFromEnvRequiresOptIn(t *testing.T) {
+	t.Setenv(SecretsMasterKeyEnv, "host-env-passphrase")
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	encPath := filepath.Join(dir, "secrets.enc.json")
+	sharedFS := testEnvFS(t)
+	// Seed an encrypted file using the host-env passphrase.
+	seed, err := NewIntegrations(Config{
+		SecretsKeyFromEnv: true,
+		EncryptedFile:     encPath,
+		ManifestFiles:     []string{manifestPath},
+	}, EnvDeps{FS: sharedFS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := seed.(agentkit.CommandProvider).Commands()[0]
+	if _, err := cmd.CommandExec(context.Background(), "add shell-bash.gh GH_TOKEN=seed"); err != nil {
+		t.Fatalf("seed env add: %v", err)
+	}
+	// Without secretsKeyFromEnv and without secretsKey, the master key must not
+	// be read from process env: env add must fail.
+	locked, err := NewIntegrations(Config{
+		EncryptedFile: encPath,
+		ManifestFiles: []string{manifestPath},
+	}, EnvDeps{FS: sharedFS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd = locked.(agentkit.CommandProvider).Commands()[0]
+	if _, err := cmd.CommandExec(context.Background(), "add shell-bash.gh GH_TOKEN=blocked"); err == nil {
+		t.Fatal("expected master-key error when only process env provides the key")
+	}
+	if _, err := locked.Resolve(context.Background(), "shell-bash.gh", "env:GH_TOKEN"); err == nil {
+		t.Fatal("expected resolve to fail without a configured master key")
+	}
+}
+
 func TestResolvePrefersContextOverEnvironment(t *testing.T) {
 	t.Setenv("AGENTKIT_TEST_SECRET", "from-env")
 	store, err := NewStatic(Config{}, EnvDeps{FS: testEnvFS(t)})

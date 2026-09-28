@@ -24,6 +24,13 @@ type ShellBashConfig struct {
 	// Default: scope is derived from the command's first token; keys come from L1 scopedEnv,
 	// secrets.enc.json (/env add), or shell-bash.json manifest allowlist.
 	Commands map[string][]string `json:"commands,omitempty"`
+	// TrimEnv trims the child env to a minimal base (PATH/HOME/... + PWD) plus
+	// scoped/extra pairs. Default false: the child inherits the full host env
+	// (os.Environ) plus scoped pairs — secrets belong in scopedEnv / /env add.
+	TrimEnv *bool `json:"trimEnv,omitempty"`
+	// ExtraEnv adds static, non-secret KEY=value entries to the child env.
+	// Secrets belong in credentials scopedEnv / /env add, not here.
+	ExtraEnv map[string]string `json:"extraEnv,omitempty"`
 }
 
 type ShellBashDeps struct {
@@ -47,6 +54,7 @@ type bashExecutor struct {
 	workspace   workspace.Service
 	credentials credentials.Store
 	commands    map[string][]string
+	cfg         ShellBashConfig
 }
 
 // NewShellBash registers tool/shell-bash: Execute bash commands rooted in the workspace (tool name: bash).
@@ -81,6 +89,7 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
 		commands:    commands,
+		cfg:         cfg,
 	}
 
 	tool, err := agentkit.NewTool[ShellInput, ShellOutput]("bash", func(ctx context.Context, input ShellInput) (ShellOutput, error) {
@@ -106,7 +115,7 @@ func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, er
 
 	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
 	cmd.Dir = workDir
-	cmd.Env = subprocessEnv(ctx, workDir, command, e.commands, e.credentials)
+	cmd.Env = subprocessEnv(ctx, workDir, command, e.commands, e.credentials, e.cfg)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

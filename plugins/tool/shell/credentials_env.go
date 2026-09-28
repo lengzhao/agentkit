@@ -11,17 +11,27 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 )
 
-func subprocessEnv(ctx context.Context, workDir, command string, commands map[string][]string, store credentials.Store) []string {
-	if store == nil {
-		return os.Environ()
+// subprocessEnv builds the bash child-process environment. By default the child
+// inherits the full host env (os.Environ) plus scoped pairs resolved from the
+// credentials store. trimEnv=true switches to a trimmed base (PATH/HOME/... +
+// PWD) plus scoped/extra pairs for stricter isolation; any EnvPairs failure
+// then falls back to the trimmed base instead of the host env.
+func subprocessEnv(ctx context.Context, workDir, command string, commands map[string][]string, store credentials.Store, cfg ShellBashConfig) []string {
+	trim := cfg.TrimEnv != nil && *cfg.TrimEnv
+	var base []string
+	if trim {
+		base = baseProcessExecEnv(workDir)
+	} else {
+		base = os.Environ()
 	}
+	base = mergeEnvMap(base, cfg.ExtraEnv)
 	resolver, ok := store.(credentials.EnvPairResolver)
-	if !ok {
-		return os.Environ()
+	if store == nil || !ok {
+		return base
 	}
 	cmdName, scope := shellScopeForCommand(command)
 	if scope == "" {
-		return os.Environ()
+		return base
 	}
 	opts := credentials.EnvPairsOptions{}
 	if cmdName != "" {
@@ -29,17 +39,55 @@ func subprocessEnv(ctx context.Context, workDir, command string, commands map[st
 			opts.Keys = keys
 		}
 	}
-	base := baseProcessExecEnv(workDir)
 	pairs, err := resolver.EnvPairs(ctx, scope, opts)
 	if err != nil {
-		slog.Debug("shell-bash: EnvPairs failed", "scope", scope, "err", err)
-		return os.Environ()
+		slog.Warn("tool/shell-bash: EnvPairs failed; scoped injection skipped", "scope", scope, "err", err, "trimEnv", trim)
+		return base
 	}
-	if len(pairs) == 0 {
-		// No scoped secrets for this command: keep full host env (e.g. go/make). Trim only when injecting.
-		return os.Environ()
+	return mergeEnvEntries(base, pairs)
+}
+
+// mergeEnvEntries overlays KEY=value entries onto base, replacing any prior
+// entry with the same key (required when base is os.Environ() and scoped
+// injection must override a stale host value).
+func mergeEnvEntries(base []string, entries []string) []string {
+	if len(entries) == 0 {
+		return base
 	}
-	return append(base, pairs...)
+	extra := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+		extra[key] = value
+	}
+	return mergeEnvMap(base, extra)
+}
+
+// mergeEnvMap appends static KEY=value entries, replacing any base entry with
+// the same key.
+func mergeEnvMap(base []string, extra map[string]string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	keys := make([]string, 0, len(extra))
+	for key := range extra {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := base
+	for _, key := range keys {
+		prefix := key + "="
+		filtered := out[:0]
+		for _, entry := range out {
+			if !strings.HasPrefix(entry, prefix) {
+				filtered = append(filtered, entry)
+			}
+		}
+		out = append(filtered, prefix+extra[key])
+	}
+	return out
 }
 
 func shellScopeForCommand(command string) (cmdName, scope string) {

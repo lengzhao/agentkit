@@ -30,12 +30,11 @@ workspace.default:
 # export AGENTKIT_SECRETS_KEY='your-passphrase'
 # credentials.default:
 #   config:
-#     env:
-#       AGENTKIT_SECRETS_KEY: ${env:AGENTKIT_SECRETS_KEY}
+#     secretsKey: ${env:AGENTKIT_SECRETS_KEY}
 # credentials.integrations:
 #   config:
-#     env:
-#       AGENTKIT_SECRETS_KEY: ${env:AGENTKIT_SECRETS_KEY}
+#     secretsKey: ${env:AGENTKIT_SECRETS_KEY}
+# （旧写法 config.env.AGENTKIT_SECRETS_KEY 已 deprecated；进程环境需 secretsKeyFromEnv: true）
 #
 # 【1】Flat token — LLM / web-search（scope 为空，键名即 env 名）
 # 方式 A：shell export（credentials.default 会读 process env）
@@ -58,8 +57,7 @@ workspace.default:
 # L1 直接配 gh / npm token（推荐本地开发；首 token 自动对应 scope shell-bash.gh / shell-bash.npm）：
 # credentials.integrations:
 #   config:
-#     env:
-#       AGENTKIT_SECRETS_KEY: ${env:AGENTKIT_SECRETS_KEY}
+#     secretsKey: ${env:AGENTKIT_SECRETS_KEY}
 #     scopedEnv:
 #       shell-bash.gh:
 #         GH_TOKEN: ${env:GH_TOKEN}
@@ -68,23 +66,22 @@ workspace.default:
 # （L0 已 deps.credentials.integrations，无需再配 tool.shell-bash）
 # bash 首 token 定 scope，注入该 scope 下已配置的全部变量，无需 config.commands。
 #
-# 【3】bash：仅有 scoped 密钥可注入时裁剪 env + token；其它命令仍为全量 os.Environ()。
+# 【3】bash：子进程默认继承宿主 env + scoped 注入；注重隔离时可在 tool.shell-bash 配
+# trimEnv: true（裁剪基线 + scoped 注入，host env 不隐式继承），静态非密钥变量用 extraEnv。
 # MCP/OpenAPI 的 mcp.json / api.json 只写 env:VAR 名；值用【2】。LLM 用【1】+ credentials.default。
 
-# 示例：加密密钥库（与上【0】相同，可只保留一处 AGENTKIT_SECRETS_KEY）
+# 示例：加密密钥库（与上【0】相同，可只保留一处 secretsKey）
 # credentials.default:
 #   config:
-#     env:
-#       AGENTKIT_SECRETS_KEY: ${var:AGENTKIT_SECRETS_KEY}
+#     secretsKey: ${var:AGENTKIT_SECRETS_KEY}
 #
 # credentials.integrations:
 #   config:
 #     encryptedFile: global:secrets.enc.json   # 与 L0 一致时可省略
-#     env:
-#       AGENTKIT_SECRETS_KEY: ${var:AGENTKIT_SECRETS_KEY}
+#     secretsKey: ${var:AGENTKIT_SECRETS_KEY}
 
 # 示例：自定义 bash（tool/shell-bash）
-# L0 已 deps.credentials.integrations；配置 token 后，gh/npm 等命令会裁剪 env 并注入变量，其它命令仍为全量 os.Environ()。
+# L0 已 deps.credentials.integrations；子进程 env 默认 = 宿主 env + scoped 注入（trimEnv: true 可裁剪）。
 #
 # credentials.integrations:
 #   config:

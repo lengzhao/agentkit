@@ -144,12 +144,7 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 		env = "default"
 	}
 
-	// henomis/langfuse-go reads host and keys from process env at client construction.
-	os.Setenv("LANGFUSE_HOST", baseURL)
-	os.Setenv("LANGFUSE_PUBLIC_KEY", publicKey)
-	os.Setenv("LANGFUSE_SECRET_KEY", secretKey)
-
-	client := langfuse.New(context.Background()).WithFlushInterval(flushInterval)
+	client := newLangfuseSDKClient(context.Background(), baseURL, publicKey, secretKey, flushInterval)
 
 	return &Langfuse{
 		client:                 client,
@@ -165,6 +160,41 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 		telemetry:              deps.Telemetry,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
+}
+
+// newLangfuseSDKClient builds the upstream client. Keys come from credentials deps
+// (resolved before call); henomis/langfuse-go only reads LANGFUSE_* at construction,
+// so we patch process env briefly and restore — never leave secrets in os.environ.
+func newLangfuseSDKClient(ctx context.Context, baseURL, publicKey, secretKey string, flushInterval time.Duration) *langfuse.Langfuse {
+	restore := patchProcessEnv(map[string]string{
+		"LANGFUSE_HOST":       baseURL,
+		"LANGFUSE_PUBLIC_KEY": publicKey,
+		"LANGFUSE_SECRET_KEY": secretKey,
+	})
+	client := langfuse.New(ctx).WithFlushInterval(flushInterval)
+	restore()
+	return client
+}
+
+func patchProcessEnv(vals map[string]string) func() {
+	prev := make(map[string]string, len(vals))
+	wasSet := make(map[string]bool, len(vals))
+	for key, value := range vals {
+		if old, ok := os.LookupEnv(key); ok {
+			prev[key] = old
+			wasSet[key] = true
+		}
+		os.Setenv(key, value)
+	}
+	return func() {
+		for key := range vals {
+			if wasSet[key] {
+				os.Setenv(key, prev[key])
+			} else {
+				os.Unsetenv(key)
+			}
+		}
+	}
 }
 
 func resolveCredential(ctx context.Context, store credentials.Store, ref, fallbackEnv string) (string, error) {

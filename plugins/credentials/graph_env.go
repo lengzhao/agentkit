@@ -27,6 +27,10 @@ func EnvGraphSource(raw map[string]any) (config.EnvLookup, error) {
 		configMap, _ := nodeMap["config"].(map[string]any)
 		envMap, _ := configMap["env"].(map[string]any)
 		for key, value := range envMap {
+			if key == SecretsMasterKeyEnv {
+				// Never export the master key into the config env graph.
+				continue
+			}
 			if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
 				values[key] = s
 			}
