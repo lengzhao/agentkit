@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
 )
 
@@ -121,6 +122,51 @@ func TestFallbackUsesPrimaryModelOnSuccess(t *testing.T) {
 	}
 	if primary.openCalls != 1 {
 		t.Fatalf("open calls = %d, want 1", primary.openCalls)
+	}
+}
+
+func TestFallbackRecordsTraceOnSwitch(t *testing.T) {
+	t.Parallel()
+	rec := &telemetry.RecordingExporter{}
+	ctx := telemetry.WithExporter(context.Background(), rec)
+
+	primary := &stubProvider{name: "primary", failOpen: []bool{true}}
+	secondary := &stubProvider{name: "secondary", replyText: "backup-ok"}
+	fallback, err := NewFallback(FallbackConfig{
+		FallbackModels: []string{"gpt-4o"},
+	}, FallbackDeps{
+		Provider:  primary,
+		Fallbacks: []agentkit.LLMProvider{secondary},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := fallback.Stream(ctx, agentkit.LLMRequest{Model: "gpt-5.4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if _, err := stream.Recv(); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+
+	_, _, events := rec.Snapshot()
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+	ev := events[0]
+	if ev.Name != "llm.fallback" {
+		t.Fatalf("event name = %q", ev.Name)
+	}
+	if ev.Attrs["phase"] != "stream_open" || ev.Attrs["reason"] != "rate limit exceeded" {
+		t.Fatalf("attrs = %v", ev.Attrs)
+	}
+	if ev.Attrs["from_provider"] != "primary" || ev.Attrs["to_provider"] != "secondary" {
+		t.Fatalf("provider attrs = %v", ev.Attrs)
+	}
+	if ev.Attrs["from_model"] != "gpt-5.4" || ev.Attrs["to_model"] != "gpt-4o" {
+		t.Fatalf("model attrs = %v", ev.Attrs)
 	}
 }
 

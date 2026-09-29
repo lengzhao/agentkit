@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -337,6 +338,186 @@ func TestHandleRichTurnEndDoesNotDeadlockWithBodyFlushTimer(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("handleRichTurnEnd deadlocked while holding stream mutex")
 	}
+}
+
+func TestAsyncStreamKeyParsing(t *testing.T) {
+	parent := agentkit.SessionID("feishu:oc_test:u:ou_1:reply:om_parent")
+	asyncKey := asyncStreamKey(parent, "job-1")
+	if got := deliveryFromStreamKey(asyncKey); got != agentkit.SessionID("feishu:oc_test:u:ou_1") {
+		t.Fatalf("delivery = %q", got)
+	}
+	if got := replyToFromStreamKey(asyncKey); got != "om_parent" {
+		t.Fatalf("replyTo = %q", got)
+	}
+	// 无 reply 段的父 key 也应正确剥离 async 后缀。
+	plain := agentkit.SessionID("feishu:oc_test")
+	if got := deliveryFromStreamKey(asyncStreamKey(plain, "j")); got != plain {
+		t.Fatalf("delivery = %q", got)
+	}
+	if got := replyToFromStreamKey(asyncStreamKey(plain, "j")); got != "" {
+		t.Fatalf("replyTo = %q", got)
+	}
+}
+
+func TestScheduleRichCardKeepaliveReschedules(t *testing.T) {
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-keepalive")
+	st := p.streamState(sessionID)
+
+	// 无卡片时不排心跳。
+	p.scheduleRichCardKeepalive(sessionID)
+	st.lock()
+	if st.keepaliveTimer != nil {
+		st.unlock()
+		t.Fatal("expected no keepalive timer without progress handle")
+	}
+	st.progressHandle = &feishuPreviewHandle{messageID: "m1"}
+	st.unlock()
+
+	p.scheduleRichCardKeepalive(sessionID)
+	st.lock()
+	first := st.keepaliveTimer
+	st.unlock()
+	if first == nil {
+		t.Fatal("expected keepalive timer")
+	}
+
+	// 再次调用应重置定时器（心跳窗口随成功 flush 后移）。
+	p.scheduleRichCardKeepalive(sessionID)
+	st.lock()
+	second := st.keepaliveTimer
+	st.unlock()
+	if second == nil || second == first {
+		t.Fatal("expected keepalive timer to be rescheduled")
+	}
+
+	// clearStream 必须停掉心跳，避免 turn 结束后泄漏。
+	p.clearStream(sessionID)
+	st.lock()
+	if st.keepaliveTimer != nil {
+		st.unlock()
+		t.Fatal("expected keepalive timer stopped after clearStream")
+	}
+	st.unlock()
+}
+
+func TestOnRichCardKeepaliveAfterStreamCleared(t *testing.T) {
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-keepalive-cleared")
+	st := p.streamState(sessionID)
+	st.lock()
+	st.progressHandle = &feishuPreviewHandle{messageID: "m1"}
+	st.unlock()
+	p.clearStream(sessionID)
+
+	// state 已删除：回调应直接返回，且不得重建 state。
+	p.onRichCardKeepalive(sessionID)
+	if _, ok := p.streams.Load(sessionID); ok {
+		t.Fatal("keepalive callback must not recreate cleared stream state")
+	}
+}
+
+func TestBodyStreamClosedDisablesElementStream(t *testing.T) {
+	p := &Platform{}
+	st := p.streamState(agentkit.SessionID("session-stream-closed"))
+	handle := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
+
+	st.lock()
+	st.progressHandle = handle
+	st.unlock()
+	if !p.canRichCardStreamBody(st, handle) {
+		t.Fatal("expected body stream allowed on fresh card")
+	}
+
+	// 300309 后应标记关闭，后续直接走整卡 patch。
+	err := errors.New("lark: stream card content code=300309 msg=ErrMsg: streaming mode is closed; ")
+	if !isStreamClosedError(err) {
+		t.Fatal("expected stream closed error detected")
+	}
+	st.lock()
+	st.bodyStreamClosed = true
+	st.unlock()
+	if p.canRichCardStreamBody(st, handle) {
+		t.Fatal("expected body stream disabled after 300309")
+	}
+
+	if isStreamClosedError(errors.New("code=999999 other")) {
+		t.Fatal("unrelated error must not be treated as stream closed")
+	}
+	if isStreamClosedError(nil) {
+		t.Fatal("nil error must not be treated as stream closed")
+	}
+}
+
+func TestCreateProgressCardBackoff(t *testing.T) {
+	// useInteractiveCard=false → SendPreviewStart 返回 errNotSupported，模拟持续创建失败。
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-create-backoff")
+
+	// 第一次失败：记录退避窗口。
+	if _, err := p.createProgressCard(context.Background(), sessionID, replyContext{}, "{}"); err == nil {
+		t.Fatal("expected create error")
+	}
+	st := p.streamState(sessionID)
+	st.lock()
+	if st.createFailCount != 1 || st.nextCreateAfter.IsZero() {
+		st.unlock()
+		t.Fatalf("expected backoff recorded, count=%d after=%v", st.createFailCount, st.nextCreateAfter)
+	}
+	st.unlock()
+
+	// 退避窗口内不再打 API，直接返回 cooldown。
+	if _, err := p.createProgressCard(context.Background(), sessionID, replyContext{}, "{}"); !errors.Is(err, errRichCardCreateCooldown) {
+		t.Fatalf("expected cooldown error, got %v", err)
+	}
+	st.lock()
+	if st.createFailCount != 1 {
+		st.unlock()
+		t.Fatalf("cooldown attempt should not increment fail count, got %d", st.createFailCount)
+	}
+	st.unlock()
+
+	// 退避窗口过后允许重试（仍失败，退避加深）。
+	st.lock()
+	st.nextCreateAfter = time.Now().Add(-time.Second)
+	st.unlock()
+	if _, err := p.createProgressCard(context.Background(), sessionID, replyContext{}, "{}"); err == nil || errors.Is(err, errRichCardCreateCooldown) {
+		t.Fatalf("expected real create error after cooldown, got %v", err)
+	}
+	st.lock()
+	if st.createFailCount != 2 {
+		st.unlock()
+		t.Fatalf("expected fail count 2, got %d", st.createFailCount)
+	}
+	st.unlock()
+}
+
+func TestRecoverRichCardUpdateFailureSwallowsAndClearsHandle(t *testing.T) {
+	// useInteractiveCard=false → SendPreviewStart 返回 errNotSupported，模拟重建失败。
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-recover")
+	st := p.streamState(sessionID)
+	st.lock()
+	st.progressHandle = &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
+	st.unlock()
+
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, "{}", context.DeadlineExceeded)
+
+	st.lock()
+	if st.progressHandle != nil {
+		st.unlock()
+		t.Fatal("expected handle cleared after failed recreate")
+	}
+	st.unlock()
+
+	// 重建失败不限次数：再次失败仍走同一路径（handle 保持为空，下轮 flush 重试创建）。
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, "{}", context.DeadlineExceeded)
+	st.lock()
+	if st.progressHandle != nil {
+		st.unlock()
+		t.Fatal("expected handle still cleared")
+	}
+	st.unlock()
 }
 
 func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {

@@ -604,12 +604,14 @@ func parseTurnEndData(event agentkit.OutboundEvent) capsession.TurnEndData {
 	return data
 }
 
-const streamUpdateInterval = 800 * time.Millisecond
-
 // cc-connect style: stream main_text via CardKit when the collapsible panel is unchanged.
 const richCardBodyStreamInterval = 200 * time.Millisecond
 const richCardBodyStreamMinRunes = 20
 const richCardFullPatchInterval = 1500 * time.Millisecond
+
+// richCardKeepaliveInterval 是进度卡片的心跳间隔：超过该时长没有任何卡片更新时
+// 主动轻量 flush 一次，避免 CardKit 实体在长 LLM 推理期间被回收/拒绝。
+const richCardKeepaliveInterval = 10 * time.Second
 
 func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 	if raw, ok := p.streams.Load(sessionID); ok {
@@ -625,6 +627,7 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 		st := raw.(*streamState)
 		st.lock()
 		stopStreamTimer(&st.bodyFlushTimer)
+		stopStreamTimer(&st.keepaliveTimer)
 		st.unlock()
 	}
 }

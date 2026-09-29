@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type fallbackMode string
@@ -148,6 +149,7 @@ func (f *Fallback) Stream(ctx context.Context, req agentkit.LLMRequest) (agentki
 		if !shouldFallback(err, f.fallbackOn) || i == len(targets)-1 {
 			return nil, err
 		}
+		recordFallbackTrace(ctx, f.fallbackOn, "stream_open", target, targets[i+1], err)
 		slog.Warn("llm fallback: stream open failed, trying next",
 			"provider", target.provider.Name(),
 			"model", target.model,
@@ -234,6 +236,7 @@ func (s *fallbackStream) Recv() (agentkit.LLMEvent, error) {
 		s.inner = nil
 		s.targetIdx++
 		next := s.targets[s.targetIdx]
+		recordFallbackTrace(s.ctx, s.fallbackOn, "stream_recv", failed, next, err)
 		slog.Warn("llm fallback: stream recv failed before output, trying next",
 			"from_provider", failed.provider.Name(),
 			"from_model", failed.model,
@@ -265,6 +268,7 @@ func (s *fallbackStream) openNextTarget() error {
 		if !shouldFallback(err, s.fallbackOn) || s.targetIdx >= len(s.targets)-1 {
 			return err
 		}
+		recordFallbackTrace(s.ctx, s.fallbackOn, "stream_open", target, s.targets[s.targetIdx+1], err)
 		slog.Warn("llm fallback: stream open failed, trying next",
 			"provider", target.provider.Name(),
 			"model", target.model,
@@ -281,6 +285,21 @@ func (s *fallbackStream) Close() error {
 		return nil
 	}
 	return s.inner.Close()
+}
+
+func recordFallbackTrace(ctx context.Context, mode fallbackMode, phase string, from, to fallbackTarget, reason error) {
+	attrs := map[string]string{
+		"phase":          phase,
+		"fallback_on":    string(mode),
+		"from_provider":  from.provider.Name(),
+		"from_model":     from.model,
+		"to_provider":    to.provider.Name(),
+		"to_model":       to.model,
+	}
+	if reason != nil {
+		attrs["reason"] = reason.Error()
+	}
+	telemetry.RecordEvent(ctx, "llm.fallback", attrs)
 }
 
 func shouldFallback(err error, mode fallbackMode) bool {

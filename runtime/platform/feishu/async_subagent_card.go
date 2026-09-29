@@ -10,21 +10,20 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
 
-// asyncSubagentCard tracks a dedicated Feishu progress card for background (async) delegation.
+// 后台委派（async subagent）进度卡 = p.streams 里一个独立 key 的普通 stream。
+// 本文件只负责「哪些事件路由到哪个 stream」；卡片的创建 / 刷新 / 心跳 / 失败重建
+// 全部复用 flushRichCard 同一条路径，不存在第二套卡片生命周期逻辑。
 //
-// The progress panel state (steps / thinking / status / toolStepIdx / progressStartedAt)
-// lives directly in the embedded *streamState, so the shared render/apply helpers
-// (applyRichStreamEvent, applyToolResult, renderRichSteps, progressElapsed) operate on
-// the real state in place — no field duplication and no panelState() round-trip.
+// 每个 job 的 stream state 挂在 asyncStreamKey(父 streamKey, jobID) 下，正文由
+// streamState.bodyFn 自定义（renderAsyncSubagentBody），折叠区复用
+// applyRichStreamEvent / applyToolResult / renderRichSteps。
+
+// asyncSubagentCard 只保存事件路由所需的元数据。
 type asyncSubagentCard struct {
-	state          *streamState
-	jobID          string
-	streamKey      agentkit.SessionID
-	parentAgentID  agentkit.AgentID
-	agent          string
-	task           string
-	progressHandle any
-	lastUpdate     time.Time
+	jobID         string
+	streamKey     agentkit.SessionID // 父 turn 的 stream key（事件按它路由进来）
+	asyncKey      agentkit.SessionID // 该 job 在 p.streams 里的独立 key
+	parentAgentID agentkit.AgentID
 }
 
 func (p *Platform) asyncSubagentCardEnabled() bool {
@@ -88,28 +87,33 @@ func (p *Platform) handleAsyncSubagentStart(ctx context.Context, streamKey agent
 		return nil
 	}
 	if existing := p.asyncSubagentForStream(streamKey); existing != nil {
+		p.clearStream(existing.asyncKey)
 		p.unregisterAsyncSubagentCard(existing)
 	}
 
 	agent := subagentDisplayName(data.Agent)
 	task := truncateRunes(strings.TrimSpace(data.Task), maxToolSummaryRunes)
-	card := &asyncSubagentCard{
-		state:         newStreamState(),
+	asyncKey := asyncStreamKey(streamKey, jobID)
+
+	st := p.streamState(asyncKey)
+	st.lock()
+	st.toolStepIdx = make(map[int]int)
+	st.status = cardStatusWorking
+	st.startedAt = time.Now()
+	st.progressStartedAt = st.startedAt
+	st.bodyFn = func(streaming bool) string {
+		return renderAsyncSubagentBody(agent, task, st.status, streaming)
+	}
+	appendSubagentStartStep(p, st, agent, data.Task)
+	st.unlock()
+
+	p.registerAsyncSubagentCard(&asyncSubagentCard{
 		jobID:         jobID,
 		streamKey:     streamKey,
+		asyncKey:      asyncKey,
 		parentAgentID: parentAgent,
-		agent:         agent,
-		task:          task,
-	}
-	card.state.lock()
-	card.state.toolStepIdx = make(map[int]int)
-	card.state.status = cardStatusWorking
-	card.state.progressStartedAt = time.Now()
-	appendSubagentStartStep(p, card.state, agent, data.Task)
-	card.state.unlock()
-
-	p.registerAsyncSubagentCard(card)
-	return p.flushAsyncSubagentCard(ctx, card, true)
+	})
+	return p.flushRichCard(ctx, asyncKey, true)
 }
 
 func (p *Platform) handleAsyncSubagentEnd(ctx context.Context, data sessevents.SubagentEndData) error {
@@ -126,33 +130,30 @@ func (p *Platform) handleAsyncSubagentEnd(ctx context.Context, data sessevents.S
 	}
 	card := raw.(*asyncSubagentCard)
 
-	card.state.lock()
-	appendSubagentEndStep(p, card.state, data)
+	st := p.streamState(card.asyncKey)
+	st.lock()
+	appendSubagentEndStep(p, st, data)
 	status := strings.TrimSpace(data.Status)
 	switch {
 	case status == "failed" || status == "error" || data.Error != "":
-		card.state.status = cardStatusError
+		st.status = cardStatusError
 	case status == "running":
-		card.state.status = cardStatusWorking
+		st.status = cardStatusWorking
 	default:
-		card.state.status = cardStatusDone
+		st.status = cardStatusDone
 	}
-	card.state.unlock()
+	st.unlock()
 
-	if err := p.flushAsyncSubagentCard(ctx, card, false); err != nil {
-		return err
-	}
+	// 定稿整卡（失败已在 flushRichCard 内部降级，不会上抛），随后清理 state 与心跳。
+	err := p.flushRichCard(ctx, card.asyncKey, false)
+	p.clearStream(card.asyncKey)
 	p.unregisterAsyncSubagentCard(card)
-	return nil
+	return err
 }
 
-// asyncSubagentCardBody renders the main_text body for the async subagent card.
-// Caller must hold card.state.mu.
-func (p *Platform) asyncSubagentCardBody(card *asyncSubagentCard, streaming bool) string {
-	agent := card.agent
-	task := card.task
-	status := card.state.status
-
+// renderAsyncSubagentBody 渲染后台委派进度卡的 main_text 正文。
+// 调用方须持有对应 stream state 的锁（经 streamState.bodyFn 调用时已满足）。
+func renderAsyncSubagentBody(agent, task string, status cardStatus, streaming bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "**后台子 Agent · %s**\n\n", agent)
 	if task != "" {
@@ -174,76 +175,6 @@ func (p *Platform) asyncSubagentCardBody(card *asyncSubagentCard, streaming bool
 	return strings.TrimSpace(b.String())
 }
 
-func (p *Platform) flushAsyncSubagentCard(ctx context.Context, card *asyncSubagentCard, streaming bool) error {
-	rc, ok := p.replyContextForStreamKey(card.streamKey)
-	if !ok {
-		return nil
-	}
-
-	card.state.lock()
-	elapsed := progressElapsed(card.state)
-	steps := p.renderRichSteps(card.state)
-	body := p.asyncSubagentCardBody(card, streaming)
-	handle := card.progressHandle
-	status := card.state.status
-	if streaming && (status == "" || status == cardStatusThinking) {
-		status = cardStatusWorking
-	}
-	card.state.unlock()
-
-	content := buildRichCard(status, "", steps, body, streaming, elapsed)
-	if strings.TrimSpace(content) == "" || content == " " {
-		return nil
-	}
-
-	if handle == nil {
-		newHandle, err := p.SendPreviewStart(ctx, rc, content)
-		if err != nil {
-			return err
-		}
-		card.state.lock()
-		card.progressHandle = newHandle
-		card.lastUpdate = time.Now()
-		card.state.unlock()
-		return nil
-	}
-
-	if err := p.patchRichCard(ctx, handle, content); err != nil {
-		return err
-	}
-	card.state.lock()
-	card.lastUpdate = time.Now()
-	card.state.unlock()
-	return nil
-}
-
-func (p *Platform) maybeFlushAsyncSubagentCard(ctx context.Context, card *asyncSubagentCard, changed bool) error {
-	if !changed {
-		return nil
-	}
-	card.state.lock()
-	should := card.progressHandle == nil || time.Since(card.lastUpdate) >= streamUpdateInterval
-	card.state.unlock()
-	if !should {
-		return nil
-	}
-	return p.flushAsyncSubagentCard(ctx, card, true)
-}
-
-func (p *Platform) applyAsyncSubagentStreamEvent(card *asyncSubagentCard, ame agentkit.AssistantMessageEvent) bool {
-	card.state.lock()
-	changed := p.applyRichStreamEvent(card.state, ame)
-	card.state.unlock()
-	return changed
-}
-
-func (p *Platform) applyAsyncSubagentToolResult(card *asyncSubagentCard, result agentkit.ToolResult) bool {
-	card.state.lock()
-	changed := p.applyToolResult(card.state, result)
-	card.state.unlock()
-	return changed
-}
-
 func (p *Platform) handleAsyncSubagentStreamUpdate(ctx context.Context, streamKey agentkit.SessionID, event agentkit.OutboundEvent, ame agentkit.AssistantMessageEvent) (bool, error) {
 	card := p.asyncSubagentForEvent(streamKey, event)
 	if card == nil {
@@ -253,8 +184,11 @@ func (p *Platform) handleAsyncSubagentStreamUpdate(ctx context.Context, streamKe
 	if seg == streamSegmentNone || seg == streamSegmentBody {
 		return true, nil
 	}
-	changed := p.applyAsyncSubagentStreamEvent(card, ame)
-	return true, p.maybeFlushAsyncSubagentCard(ctx, card, changed)
+	st := p.streamState(card.asyncKey)
+	st.lock()
+	changed := p.applyRichStreamEvent(st, ame)
+	st.unlock()
+	return true, p.maybeFlushRichCard(ctx, card.asyncKey, changed)
 }
 
 func (p *Platform) handleAsyncSubagentToolResult(ctx context.Context, streamKey agentkit.SessionID, event agentkit.OutboundEvent, result agentkit.ToolResult) (bool, error) {
@@ -262,6 +196,9 @@ func (p *Platform) handleAsyncSubagentToolResult(ctx context.Context, streamKey 
 	if card == nil {
 		return false, nil
 	}
-	changed := p.applyAsyncSubagentToolResult(card, result)
-	return true, p.maybeFlushAsyncSubagentCard(ctx, card, changed)
+	st := p.streamState(card.asyncKey)
+	st.lock()
+	changed := p.applyToolResult(st, result)
+	st.unlock()
+	return true, p.maybeFlushRichCard(ctx, card.asyncKey, changed)
 }

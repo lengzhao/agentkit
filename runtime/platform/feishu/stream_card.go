@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -21,6 +22,14 @@ const progressMarkdownFooterSeparator = "\n\n---\n\n"
 const richCardBodySegmentSeparator = "\n\n"
 const outboundStreamReplySuffix = ":reply:"
 
+// outboundStreamAsyncSuffix 把后台委派 job 的进度卡挂到 streams 的独立 key 下，
+// 与父 turn 回复卡共用同一套 flush / 心跳 / 重建逻辑。
+const outboundStreamAsyncSuffix = ":async:"
+
+func asyncStreamKey(streamKey agentkit.SessionID, jobID string) agentkit.SessionID {
+	return agentkit.SessionID(string(streamKey) + outboundStreamAsyncSuffix + jobID)
+}
+
 // outboundStreamKey isolates in-flight card state per trigger message (Route.ReplyTo).
 func outboundStreamKey(event agentkit.OutboundEvent) agentkit.SessionID {
 	delivery := rctx.OutboundRouteID(event)
@@ -33,14 +42,20 @@ func outboundStreamKey(event agentkit.OutboundEvent) agentkit.SessionID {
 
 func deliveryFromStreamKey(streamKey agentkit.SessionID) agentkit.SessionID {
 	s := string(streamKey)
+	if i := strings.LastIndex(s, outboundStreamAsyncSuffix); i >= 0 {
+		s = s[:i]
+	}
 	if i := strings.LastIndex(s, outboundStreamReplySuffix); i >= 0 {
 		return agentkit.SessionID(s[:i])
 	}
-	return streamKey
+	return agentkit.SessionID(s)
 }
 
 func replyToFromStreamKey(streamKey agentkit.SessionID) string {
 	s := string(streamKey)
+	if i := strings.LastIndex(s, outboundStreamAsyncSuffix); i >= 0 {
+		s = s[:i]
+	}
 	if i := strings.LastIndex(s, outboundStreamReplySuffix); i >= 0 {
 		return s[i+len(outboundStreamReplySuffix):]
 	}
@@ -94,7 +109,7 @@ func (p *Platform) bumpRichCardPanel(st *streamState) {
 }
 
 func (p *Platform) canRichCardStreamBody(st *streamState, handle any) bool {
-	if handle == nil {
+	if handle == nil || st.bodyStreamClosed {
 		return false
 	}
 	h, ok := handle.(*feishuPreviewHandle)
@@ -102,6 +117,16 @@ func (p *Platform) canRichCardStreamBody(st *streamState, handle any) bool {
 		return false
 	}
 	return st.richCardPanelVersion == st.richCardFlushedPanelVersion
+}
+
+// isStreamClosedError 识别 CardKit 300309「streaming mode is closed」：整卡更新
+// （UpdateMessage/patch）会关闭实体的流式模式，之后再尝试元素流式必失败。
+func isStreamClosedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "300309") || strings.Contains(msg, "streaming mode is closed")
 }
 
 func streamBodyMarkdownForCardKit(body string) string {
@@ -124,9 +149,14 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 	if status == "" {
 		status = cardStatusThinking
 	}
-	body := st.richCardDisplayBody()
-	if strings.TrimSpace(body) != "" {
-		st.finalizedBodyText = body
+	var body string
+	if st.bodyFn != nil {
+		body = st.bodyFn(streaming)
+	} else {
+		body = st.richCardDisplayBody()
+		if strings.TrimSpace(body) != "" {
+			st.finalizedBodyText = body
+		}
 	}
 	displaySteps := p.renderRichSteps(st)
 	handle := st.progressHandle
@@ -140,12 +170,17 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 	}
 
 	if handle == nil {
-		newHandle, err := p.SendPreviewStart(ctx, rc, content)
+		newHandle, err := p.createProgressCard(ctx, streamKey, rc, content)
 		if err != nil {
-			return err
+			// 卡片创建失败不应中断 agent turn；最终答复仍走普通消息路径。
+			if !errors.Is(err, errRichCardCreateCooldown) {
+				slog.Warn(p.tag()+": rich card create failed, continue without progress card", "session_id", streamKey, "error", err)
+			}
+			return nil
 		}
 		st.lock()
 		st.progressHandle = newHandle
+		st.bodyStreamClosed = false // 新实体流式模式重新可用
 		st.enqueueCard(streamCardProgress, newHandle)
 		evicted := p.evictStreamCardsLocked(st)
 		st.lastProgressUpdate = time.Now()
@@ -153,6 +188,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.lastRichCardBodyStreamRunes = len([]rune(body))
 		st.unlock()
 		p.deleteEvictedProgressCards(ctx, evicted)
+		p.scheduleRichCardKeepalive(streamKey)
 		return nil
 	}
 
@@ -166,7 +202,14 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 				st.lastProgressUpdate = time.Now()
 				st.lastRichCardBodyStreamRunes = len([]rune(body))
 				st.unlock()
+				p.scheduleRichCardKeepalive(streamKey)
 				return nil
+			}
+			if isStreamClosedError(streamErr) {
+				// 流式模式已被整卡更新关闭：标记后本卡不再尝试元素流式。
+				st.lock()
+				st.bodyStreamClosed = true
+				st.unlock()
 			}
 			slog.Debug(p.tag()+": rich card body stream failed, falling back to full patch", "session_id", streamKey, "error", streamErr)
 		}
@@ -179,7 +222,10 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		err = p.patchRichCard(ctx, handle, content)
 	}
 	if err != nil {
-		return err
+		// 卡片更新失败（如 CardKit 间歇性 403）不应中断 agent turn：
+		// 重建新进度卡片并替换 handle，重建失败则 handle 置空、下轮 flush 重试创建。
+		p.recoverRichCardUpdateFailure(ctx, streamKey, rc, content, err)
+		return nil
 	}
 	st.lock()
 	st.lastProgressUpdate = time.Now()
@@ -189,7 +235,130 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.finalizedSteps = append([]toolStep(nil), displaySteps...)
 	}
 	st.unlock()
+	p.scheduleRichCardKeepalive(streamKey)
 	return nil
+}
+
+// recoverRichCardUpdateFailure 在卡片更新失败时保持 turn 存活：直接重建新进度卡片
+// 并替换 handle（旧卡片删除避免残留"运行中"）；重建失败则 handle 置空，下一轮
+// flush 会再次走创建路径。错误不上抛，最终答复由普通消息兜底。
+func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, content string, cause error) {
+	st := p.streamState(streamKey)
+	st.lock()
+	oldHandle := st.progressHandle
+	st.progressHandle = nil
+	st.unlock()
+
+	slog.Warn(p.tag()+": rich card update failed, recreating progress card", "session_id", streamKey, "error", cause)
+	newHandle, err := p.createProgressCard(ctx, streamKey, rc, content)
+	if err != nil {
+		if !errors.Is(err, errRichCardCreateCooldown) {
+			slog.Warn(p.tag()+": recreate rich card failed, retry on next flush", "session_id", streamKey, "error", err)
+		}
+		return
+	}
+	st.lock()
+	st.progressHandle = newHandle
+	st.bodyStreamClosed = false // 新实体流式模式重新可用
+	st.enqueueCard(streamCardProgress, newHandle)
+	evicted := p.evictStreamCardsLocked(st)
+	st.lastProgressUpdate = time.Now()
+	st.richCardFlushedPanelVersion = st.richCardPanelVersion
+	st.lastRichCardBodyStreamRunes = len([]rune(st.richCardDisplayBody()))
+	st.unlock()
+	p.deleteEvictedProgressCards(ctx, evicted)
+	if oldHandle != nil && oldHandle != newHandle {
+		if err := p.DeletePreviewMessage(ctx, oldHandle); err != nil {
+			slog.Debug(p.tag()+": delete broken progress card failed", "session_id", streamKey, "error", err)
+		}
+	}
+	p.scheduleRichCardKeepalive(streamKey)
+}
+
+// errRichCardCreateCooldown 表示卡片创建处于失败退避期，本次不真正发起 API 调用。
+var errRichCardCreateCooldown = errors.New("rich card create in failure cooldown")
+
+const (
+	// richCardCreateRetryBase 是创建失败退避的起步间隔，按连续失败次数指数增长。
+	richCardCreateRetryBase = 2 * time.Second
+	// richCardCreateRetryMax 是退避上限，保证故障恢复后最多 30s 内重建卡片。
+	richCardCreateRetryMax = 30 * time.Second
+)
+
+// createProgressCard 包装 SendPreviewStart，带创建失败退避：网关持续故障（如出口
+// 代理 403）时，流式 delta 会频繁触发 flush，若每次都打创建 API 会进一步压垮链路。
+// 连续失败按 2s/4s/8s…（上限 30s）退避，成功后清零。
+func (p *Platform) createProgressCard(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, content string) (any, error) {
+	st := p.streamState(streamKey)
+	st.lock()
+	if time.Now().Before(st.nextCreateAfter) {
+		st.unlock()
+		return nil, errRichCardCreateCooldown
+	}
+	st.unlock()
+
+	handle, err := p.SendPreviewStart(ctx, rc, content)
+	st.lock()
+	if err != nil {
+		st.createFailCount++
+		shift := st.createFailCount - 1
+		if shift > 4 {
+			shift = 4
+		}
+		backoff := richCardCreateRetryBase << shift
+		if backoff > richCardCreateRetryMax {
+			backoff = richCardCreateRetryMax
+		}
+		st.nextCreateAfter = time.Now().Add(backoff)
+	} else {
+		st.createFailCount = 0
+		st.nextCreateAfter = time.Time{}
+	}
+	st.unlock()
+	return handle, err
+}
+
+// scheduleRichCardKeepalive 重置心跳定时器：卡片创建后若长时间无更新（LLM 推理
+// 期间没有任何出站流量），CardKit 实体可能被回收或遭网关间歇性拒绝；心跳通过
+// 轻量 flush（页脚 elapsed 随时间变化）保持卡片活跃。每次成功 flush 后调用。
+func (p *Platform) scheduleRichCardKeepalive(streamKey agentkit.SessionID) {
+	st := p.streamState(streamKey)
+	st.lock()
+	if st.progressHandle == nil {
+		st.unlock()
+		return
+	}
+	stopStreamTimer(&st.keepaliveTimer)
+	sid := streamKey
+	st.keepaliveTimer = time.AfterFunc(richCardKeepaliveInterval, func() {
+		p.onRichCardKeepalive(sid)
+	})
+	st.unlock()
+}
+
+func (p *Platform) onRichCardKeepalive(streamKey agentkit.SessionID) {
+	// 不能用 p.streamState：turn 结束后 state 已删除，重建会泄漏。
+	raw, ok := p.streams.Load(streamKey)
+	if !ok {
+		return
+	}
+	st := raw.(*streamState)
+	st.lock()
+	stopStreamTimer(&st.keepaliveTimer)
+	active := st.progressHandle != nil
+	idle := active && time.Since(st.lastProgressUpdate) >= richCardKeepaliveInterval
+	st.unlock()
+	if !active {
+		return
+	}
+	if !idle {
+		// 刚有过成功 flush（其已尝试重排心跳，但被当前 firing 的定时器挡住），补排下一次。
+		p.scheduleRichCardKeepalive(streamKey)
+		return
+	}
+	if err := p.flushRichCard(context.Background(), streamKey, true); err != nil {
+		slog.Debug(p.tag()+": rich card keepalive flush failed", "session_id", streamKey, "error", err)
+	}
 }
 
 // maybeFlushRichCard applies streamUpdateInterval throttling but always schedules a
@@ -759,27 +928,74 @@ func (p *Platform) handleRichProactiveAssistant(ctx context.Context, event agent
 }
 
 // finalizeRichTurnEndAsync patches the CardKit entity without blocking turn/end teardown.
+// 失败降级链保证最终答复不丢：patch 旧卡 → 另发一张最终卡 → 纯文本（带重试）。
 func (p *Platform) finalizeRichTurnEndAsync(
 	ctx context.Context,
 	sessionID agentkit.SessionID,
 	handle any,
 	content string,
+	bodyText string,
 	botReplyID string,
 	endData capsession.TurnEndData,
 ) {
 	parent := context.WithoutCancel(ctx)
 	go func() {
+		delivered := false
 		if handle != nil {
 			if err := p.patchRichCard(parent, handle, content); err != nil {
-				slog.Warn(p.tag()+": finalize patch rich card on turn end failed", "session_id", sessionID, "error", err)
+				slog.Warn(p.tag()+": finalize patch rich card on turn end failed, sending a new final card", "session_id", sessionID, "error", err)
+			} else {
+				delivered = true
 			}
-		} else if rc, ok := p.replyContextForStreamKey(sessionID); ok {
-			if _, err := p.SendPreviewStart(parent, rc, content); err != nil {
-				slog.Debug(p.tag()+": send final rich card on turn end failed", "session_id", sessionID, "error", err)
+		}
+		if !delivered {
+			if rc, ok := p.replyContextForStreamKey(sessionID); ok {
+				if newHandle, err := p.SendPreviewStart(parent, rc, content); err != nil {
+					slog.Warn(p.tag()+": send final rich card on turn end failed, falling back to plain text", "session_id", sessionID, "error", err)
+				} else {
+					delivered = true
+					// 旧卡停留在「运行中」且内容可能不全，新卡已成最终卡，删除旧卡避免误导。
+					if handle != nil && handle != newHandle {
+						if err := p.DeletePreviewMessage(parent, handle); err != nil {
+							slog.Debug(p.tag()+": delete stale progress card on turn end failed", "session_id", sessionID, "error", err)
+						}
+					}
+				}
 			}
+		}
+		if !delivered && bodyText != "" {
+			p.sendFinalPlainTextWithRetry(parent, sessionID, bodyText)
 		}
 		p.addBotReplyEndReaction(botReplyID, endData, "")
 	}()
+}
+
+// finalPlainTextRetryDelays 是纯文本兜底的重试间隔：网关故障可持续分钟级，
+// 只试一次会在故障窗口内真正丢失最终答复。
+var finalPlainTextRetryDelays = []time.Duration{5 * time.Second, 20 * time.Second, 60 * time.Second}
+
+func (p *Platform) sendFinalPlainTextWithRetry(ctx context.Context, streamKey agentkit.SessionID, bodyText string) {
+	delivery := deliveryFromStreamKey(streamKey)
+	for attempt := 0; ; attempt++ {
+		if err := p.sendText(ctx, delivery, bodyText); err != nil {
+			if attempt >= len(finalPlainTextRetryDelays) {
+				slog.Error(p.tag()+": plain text fallback on turn end failed after retries, final answer lost",
+					"session_id", streamKey, "attempts", attempt+1, "error", err)
+				return
+			}
+			slog.Warn(p.tag()+": plain text fallback on turn end failed, will retry",
+				"session_id", streamKey, "attempt", attempt+1, "error", err)
+			timer := time.NewTimer(finalPlainTextRetryDelays[attempt])
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			continue
+		}
+		return
+	}
 }
 
 func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.SessionID, endData capsession.TurnEndData) error {
@@ -820,7 +1036,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	content := buildRichCard(finalStatus, "", displaySteps, bodyText, false, elapsed)
 	p.clearStream(sessionID)
 	if strings.TrimSpace(content) != "" && content != " " {
-		p.finalizeRichTurnEndAsync(ctx, sessionID, handle, content, botReplyID, endData)
+		p.finalizeRichTurnEndAsync(ctx, sessionID, handle, content, bodyText, botReplyID, endData)
 	} else {
 		p.addBotReplyEndReaction(botReplyID, endData, "")
 	}
