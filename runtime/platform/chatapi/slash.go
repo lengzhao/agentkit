@@ -48,6 +48,9 @@ func mergeSlashMetadata(metadata map[string]any, conv *conversation) map[string]
 }
 
 func (p *Platform) processChatSlash(ctx context.Context, channelKey string, conv *conversation, engineSessionID agentkit.SessionID, user string, metadata map[string]any, query string) (chatSlashResult, error) {
+	if p.disablePlatformSlash {
+		return chatSlashResult{outcome: common.SlashOutcome{Kind: common.SlashNotCommand}}, nil
+	}
 	name, args, ok := common.ParseSlashCommand(query)
 	if ok && name == "help" && strings.TrimSpace(args) == "" {
 		slash := p.slashContext(engineSessionID, conv, user, metadata)

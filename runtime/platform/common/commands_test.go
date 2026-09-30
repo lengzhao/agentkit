@@ -67,6 +67,20 @@ func TestParseSlashCommandStripsBotSuffix(t *testing.T) {
 	}
 }
 
+func TestProcessPlatformSlashDisabled(t *testing.T) {
+	cmds := stubCommands{byName: map[string]agentkit.Command{
+		"ping": stubCommand{name: "ping", out: "pong"},
+	}}
+	routing := AgentRoutingConfig{DisablePlatformSlash: true}
+	out, err := ProcessPlatformSlash(context.Background(), routing, cmds, slashCtx("slack", "slack:C", agentkit.SessionScopeChannel, ""), "/ping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != SlashNotCommand {
+		t.Fatalf("kind = %v", out.Kind)
+	}
+}
+
 func TestProcessSlashHelp(t *testing.T) {
 	out, err := ProcessSlash(context.Background(), nil, slashCtx("slack", "slack:C:u:U", agentkit.SessionScopeChannel, ""), "/help")
 	if err != nil {

@@ -86,6 +86,14 @@ func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash 
 	return cmdCtx
 }
 
+// ProcessPlatformSlash runs ProcessSlash unless routing config disables platform slash.
+func ProcessPlatformSlash(ctx context.Context, routing AgentRoutingConfig, commands agentkit.Commands, slash SlashContext, text string) (SlashOutcome, error) {
+	if routing.DisablePlatformSlash {
+		return SlashOutcome{Kind: SlashNotCommand}, nil
+	}
+	return ProcessSlash(ctx, commands, slash, text)
+}
+
 // ProcessSlash resolves slash commands via the injected commands registry.
 // Non-slash input returns SlashNotCommand.
 func ProcessSlash(ctx context.Context, commands agentkit.Commands, slash SlashContext, text string) (SlashOutcome, error) {

@@ -242,13 +242,30 @@ platform.default:
 
 Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1` 等），`turn/end` 时一并清理。
 
+## Slash 命令与 Platform 本地处理
+
+飞书 / Lark、Slack、`platform/chat-api` 在消息**入队前**会经 `common.ProcessSlash` 本地解析 slash（含 `/help`、`/new`、`/stop` 等）。未知命令会先提示「转发给 Agent」再入队。
+
+若希望 **Platform 不拦截 slash**，将以 `/` 开头的用户输入当作普通对话交给 Agent（例如由模型自行理解或仅依赖 tool），在对应 platform 的 `config` 中设置：
+
+```yaml
+platform.default:
+  use: platform/feishu
+  config:
+    disablePlatformSlash: true
+```
+
+该字段在 `common.AgentRoutingConfig` 上，对 `platform/feishu`、`platform/lark`、`platform/slack`、`platform/chat-api` 生效。**默认 `false`**（保持本地 slash）。`platform/cli` 仍始终本地处理 slash（含 turn 进行中的 `/stop`）。
+
+开启后 **`/stop` 不再在入队前打断 turn**；需要取消进行中的 turn 时请用客户端/ACP 的 cancel 路径，或关闭该开关。
+
 ## 停止进行中的 Turn
 
 `/stop` 由 `runner` 贡献，通过 `Loop.Cancel` 打断当前 session 正在执行的 turn（取消进行中的 step，并在下一步边界收尾）。与 `Steer` 不同，**不会**把消息注入对话历史。
 
 | 平台 | 行为 |
 |---|---|
-| 飞书 / Slack / chat-api | slash 在入队前本地处理，turn 进行中也可 `/stop` |
+| 飞书 / Slack / chat-api | slash 在入队前本地处理，turn 进行中也可 `/stop`（`disablePlatformSlash: true` 时 slash 仅作普通用户消息入队，无本地 `/stop`） |
 | CLI | turn 进行中仅接受 `/stop`（及 `/exit`）；其他输入会暂存到 turn 结束后再处理 |
 
 multiplex（CLI + IM 等）下，`/exit` 只关闭 CLI  stdin，**不会**结束 Lark / chat-api / 定时任务；要停整个进程请用 **Ctrl+C**（SIGINT）或 `kill -TERM` 目标 agent 进程。

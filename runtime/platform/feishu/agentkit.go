@@ -422,7 +422,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	text := strings.TrimSpace(msg.content)
 	metadata := p.inboundMetadata(msg)
 	if text != "" {
-		outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
+		outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{
 			Route:        rctx.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
 			SessionScope: p.sessionScope,
 			UserID:       msg.userID,

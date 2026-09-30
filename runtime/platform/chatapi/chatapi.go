@@ -95,6 +95,7 @@ type Platform struct {
 	workspace             workspace.Service
 	commands              agentkit.Commands
 	sessionScope          agentkit.SessionScope
+	disablePlatformSlash  bool
 	sessionsDirRel        string
 	admins                []string
 
@@ -202,6 +203,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		workspace:             deps.Workspace,
 		commands:              deps.Commands,
 		sessionScope:          rctx.ParseScope(cfg.SessionScope),
+		disablePlatformSlash:  cfg.DisablePlatformSlash,
 		sessionsDirRel:        sessionsDir,
 		admins:                cfg.Admins,
 	}

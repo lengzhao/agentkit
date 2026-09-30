@@ -16,6 +16,9 @@ type AgentRoutingConfig struct {
 	// SessionScope mirrors runner.config.sessionScope for platform-local slash
 	// commands (/new active-session mapping). Empty defaults to channel.
 	SessionScope string `json:"sessionScope"`
+	// DisablePlatformSlash skips platform-local slash dispatch (/help, /new, /stop, …).
+	// Slash-prefixed user text is enqueued as a normal agent turn instead.
+	DisablePlatformSlash bool `json:"disablePlatformSlash"`
 }
 
 func (c AgentRoutingConfig) ResolveAgentID() agentkit.AgentID {

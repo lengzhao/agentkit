@@ -456,7 +456,7 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
 	metadata := p.inboundMetadata(user, text)
-	outcome, err := common.ProcessSlash(ctx, p.commands, common.SlashContext{
+	outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{
 		Route:        rctx.BuildSessionRoute(d.inboundRoute(user)),
 		SessionScope: p.sessionScope,
 		UserID:       user,
