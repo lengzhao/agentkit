@@ -139,6 +139,9 @@ type turnRun struct {
 	meter     *turnMeter
 	completed int
 	llmModel  string
+	// finalMessage is the last assistant message that ended a segment without
+	// tool calls; attached to turn/end so consumers need not rely on deltas.
+	finalMessage *agentkit.ModelMessage
 }
 
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr error) {
@@ -188,6 +191,11 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		} else if runErr != nil {
 			endData.Failed = true
 			endData.StopReason = runErr.Error()
+		}
+		if run.finalMessage != nil && !endData.Failed && !endData.Cancelled {
+			if raw, err := json.Marshal(run.finalMessage); err == nil {
+				endData.Message = raw
+			}
 		}
 		_ = sessevents.Default.AppendTurnEnd(endCtx, sess, a.id, endData)
 		if err := a.emitLifecycle(endCtx, input.Emit, agentkit.EventTurnEnd, endData); err != nil {
@@ -349,6 +357,8 @@ func (a *Runtime) runSegment(
 		endStepOnce()
 
 		if len(assistant.ToolCalls) == 0 {
+			msg := assistant
+			run.finalMessage = &msg
 			return agentkit.StopNoToolCalls, nil
 		}
 	}
@@ -397,6 +407,9 @@ func (a *Runtime) extendTurn(
 	}
 
 	run.meter.recordContinuation()
+	// The turn continues with another segment, so the message that ended this
+	// segment is no longer the turn's final reply.
+	run.finalMessage = nil
 	data := capsession.TurnContinueData{
 		Segment:  run.meter.continuationsUsed(),
 		Reason:   string(reason),

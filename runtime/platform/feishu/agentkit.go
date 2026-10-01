@@ -306,7 +306,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
 	delivery := rctx.OutboundRouteID(event)
-	streamKey := outboundStreamKey(event)
+	streamKey := p.streamKeyForOutbound(event)
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
@@ -326,7 +326,7 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	}
 	switch event.Type {
 	case agentkit.EventTurnStart:
-		p.clearStream(streamKey)
+		p.clearStreamState(streamKey)
 		p.richStreamState(streamKey)
 		if err := p.bootstrapReplyCard(ctx, streamKey); err != nil {
 			slog.Debug(p.tag()+": bootstrap reply card failed", "session_id", streamKey, "error", err)
@@ -622,7 +622,9 @@ func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 	return actual.(*streamState)
 }
 
-func (p *Platform) clearStream(sessionID agentkit.SessionID) {
+// clearStreamState drops in-memory stream state for a key. Route info lives in
+// stream state and is dropped with it; the next outbound event re-captures it.
+func (p *Platform) clearStreamState(sessionID agentkit.SessionID) {
 	if raw, ok := p.streams.LoadAndDelete(sessionID); ok {
 		st := raw.(*streamState)
 		st.lock()
@@ -632,8 +634,12 @@ func (p *Platform) clearStream(sessionID agentkit.SessionID) {
 	}
 }
 
+func (p *Platform) clearStream(sessionID agentkit.SessionID) {
+	p.clearStreamState(sessionID)
+}
+
 func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.OutboundEvent) error {
-	streamKey := outboundStreamKey(event)
+	streamKey := p.streamKeyForOutbound(event)
 	var payload agentkit.MessageUpdatePayload
 	if err := json.Unmarshal(event.Data, &payload); err != nil {
 		return err

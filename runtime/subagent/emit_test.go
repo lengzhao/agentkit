@@ -18,6 +18,7 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 
 	parentSession := agentkit.SessionID("chat-api:default_channel:t:conv_abc")
 	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "chat-api", parentSession)
+	ctx = context.WithValue(ctx, agentkit.KeyTurnID, "parent-turn-1")
 
 	var got []agentkit.OutboundEvent
 	parent := agentkit.OutboundEmit(func(_ context.Context, event agentkit.OutboundEvent) error {
@@ -121,6 +122,9 @@ func TestForwardParentEmitForwardsProgressSignals(t *testing.T) {
 	}
 	if rctx.OutboundRouteID(got[0]) != parentSession {
 		t.Fatalf("route = %q, want parent delivery %q", rctx.OutboundRouteID(got[0]), parentSession)
+	}
+	if got[0].TurnID != "parent-turn-1" {
+		t.Fatalf("TurnID = %q, want parent-turn-1", got[0].TurnID)
 	}
 	if got[2].Type != agentkit.EventToolResult {
 		t.Fatalf("third event type = %q, want tool/result", got[2].Type)

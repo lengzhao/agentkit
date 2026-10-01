@@ -277,3 +277,74 @@ func TestTurnStoppingWithoutContinueStaysSingleSegment(t *testing.T) {
 		t.Fatalf("step/start events = %d, want 1", got)
 	}
 }
+
+func turnEndData(t *testing.T, events []agentkit.SessionEvent) capsession.TurnEndData {
+	t.Helper()
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != agentkit.EventTurnEnd {
+			continue
+		}
+		var data capsession.TurnEndData
+		if err := json.Unmarshal(events[i].Data, &data); err != nil {
+			t.Fatalf("decode turn/end: %v", err)
+		}
+		return data
+	}
+	t.Fatal("no turn/end event")
+	return capsession.TurnEndData{}
+}
+
+func messageText(msg agentkit.ModelMessage) string {
+	for _, part := range msg.Content {
+		if part.Text != "" {
+			return part.Text
+		}
+	}
+	return ""
+}
+
+func TestTurnEndCarriesFinalMessage(t *testing.T) {
+	t.Parallel()
+
+	f := newTurnFixture(t, &stubTurnStopping{}, agent.Config{ID: "test"}, []llm.ScriptedStep{{Text: "only reply"}})
+	if err := f.run(t); err != nil {
+		t.Fatalf("run turn: %v", err)
+	}
+
+	end := turnEndData(t, f.sessionEvents(t))
+	if len(end.Message) == 0 {
+		t.Fatal("turn/end should carry the final assistant message")
+	}
+	var msg agentkit.ModelMessage
+	if err := json.Unmarshal(end.Message, &msg); err != nil {
+		t.Fatalf("decode turn/end message: %v", err)
+	}
+	if got := messageText(msg); got != "only reply" {
+		t.Fatalf("turn/end message text = %q, want %q", got, "only reply")
+	}
+}
+
+func TestTurnEndMessageIsLastSegmentReply(t *testing.T) {
+	t.Parallel()
+
+	// The first segment ends without tool calls ("first"), the hook continues
+	// the turn, and the second segment replies "final". turn/end must carry the
+	// last segment's message, not the stale first one.
+	hooks := &stubTurnStopping{continueTexts: []string{"keep going"}}
+	f := newTurnFixture(t, hooks, agent.Config{ID: "test"}, []llm.ScriptedStep{{Text: "first"}, {Text: "final"}})
+	if err := f.run(t); err != nil {
+		t.Fatalf("run turn: %v", err)
+	}
+
+	end := turnEndData(t, f.sessionEvents(t))
+	if len(end.Message) == 0 {
+		t.Fatal("turn/end should carry the final assistant message")
+	}
+	var msg agentkit.ModelMessage
+	if err := json.Unmarshal(end.Message, &msg); err != nil {
+		t.Fatalf("decode turn/end message: %v", err)
+	}
+	if got := messageText(msg); got != "final" {
+		t.Fatalf("turn/end message text = %q, want %q (last segment)", got, "final")
+	}
+}

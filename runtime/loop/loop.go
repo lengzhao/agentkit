@@ -175,6 +175,11 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 
 func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
 	turnID := uuid.NewString()
+	// A caller-provided turn id (agentkit.MetadataTurnID) wins, so transports
+	// that register per-turn resources before dispatch can correlate them.
+	if id := turnIDFromMetadata(req.Event.Metadata); id != "" {
+		turnID = id
+	}
 	meta := captelemetry.TurnMeta{
 		TurnID:            turnID,
 		SessionID:         string(rctx.ConversationFromLoopRequest(req)),
@@ -243,7 +248,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	}()
 	ctx = context.WithValue(ctx, agentkit.KeyTurnID, turnID)
 	turnInput := input
-	turnInput.Emit = wrapTurnEndNotices(rttelemetry.WrapOutboundEmit(ctx, input.Emit))
+	turnInput.Emit = wrapTurnEndNotices(rttelemetry.WrapOutboundEmit(ctx, stampTurnID(input.Emit, turnID)))
 	runErr = ag.RunTurn(ctx, turnInput)
 	if agent.IsStepLimitError(runErr) {
 		runErr = nil

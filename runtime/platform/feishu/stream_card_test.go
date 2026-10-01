@@ -233,6 +233,67 @@ func TestOutboundStreamKeyUsesReplyTo(t *testing.T) {
 	}
 }
 
+func TestOutboundStreamKeyPrefersTurnID(t *testing.T) {
+	t.Parallel()
+	event := agentkit.OutboundEvent{
+		TurnID: "turn-abc",
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+			Platform:   "feishu",
+			DeliveryID: agentkit.SessionID("feishu:oc_chat:u:U1"),
+			ReplyTo:    "om_msg_1",
+		}),
+	}
+	got := outboundStreamKey(event)
+	if got != agentkit.SessionID("turn-abc") {
+		t.Fatalf("stream key = %q, want turn-abc", got)
+	}
+}
+
+func TestStreamKeyCapturesRouteIntoState(t *testing.T) {
+	t.Parallel()
+	p := &Platform{}
+	delivery := agentkit.SessionID("feishu:oc_chat:u:U1")
+	p.deliveries.Store(delivery, replyContext{chatID: "oc_chat"})
+	ev := agentkit.OutboundEvent{
+		TurnID: "turn-abc",
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+			Platform:   "feishu",
+			DeliveryID: delivery,
+			ReplyTo:    "om_msg",
+		}),
+		Type: agentkit.EventTurnStart,
+	}
+	key := p.streamKeyForOutbound(ev)
+	if key != agentkit.SessionID("turn-abc") {
+		t.Fatalf("stream key = %q, want turn-abc", key)
+	}
+	rc, ok := p.replyContextForStream(key)
+	if !ok {
+		t.Fatal("expected reply context from captured route")
+	}
+	if rc.messageID != "om_msg" {
+		t.Fatalf("messageID = %q, want om_msg", rc.messageID)
+	}
+	if got := p.deliveryForStream(key); got != delivery {
+		t.Fatalf("delivery = %q, want %q", got, delivery)
+	}
+}
+
+func TestReplyContextForStreamLegacyKey(t *testing.T) {
+	t.Parallel()
+	p := &Platform{}
+	delivery := agentkit.SessionID("feishu:oc_chat:u:U1")
+	p.deliveries.Store(delivery, replyContext{chatID: "oc_chat"})
+	legacyKey := agentkit.SessionID("feishu:oc_chat:u:U1:reply:om_trigger")
+	rc, ok := p.replyContextForStream(legacyKey)
+	if !ok {
+		t.Fatal("expected reply context from legacy key")
+	}
+	if rc.messageID != "om_trigger" {
+		t.Fatalf("messageID = %q, want om_trigger", rc.messageID)
+	}
+}
+
 func TestEvictStreamCardsDropsOldestProgress(t *testing.T) {
 	p := &Platform{useInteractiveCard: false}
 	p1 := &feishuPreviewHandle{messageID: "p1"}
@@ -499,9 +560,10 @@ func TestRecoverRichCardUpdateFailureSwallowsAndClearsHandle(t *testing.T) {
 	st := p.streamState(sessionID)
 	st.lock()
 	st.progressHandle = &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
+	st.bodyText = "new content" // 有增量内容才会触发重建
 	st.unlock()
 
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, "{}", context.DeadlineExceeded)
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
 
 	st.lock()
 	if st.progressHandle != nil {
@@ -511,13 +573,53 @@ func TestRecoverRichCardUpdateFailureSwallowsAndClearsHandle(t *testing.T) {
 	st.unlock()
 
 	// 重建失败不限次数：再次失败仍走同一路径（handle 保持为空，下轮 flush 重试创建）。
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, "{}", context.DeadlineExceeded)
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
 	st.lock()
 	if st.progressHandle != nil {
 		st.unlock()
 		t.Fatal("expected handle still cleared")
 	}
 	st.unlock()
+}
+
+func TestRecoverRichCardUpdateFailureKeepsHandleWhenNoNewContent(t *testing.T) {
+	// 相对旧卡无新增内容时不重建空卡，保留旧 handle 等下轮 flush 重试。
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-recover-noop")
+	st := p.streamState(sessionID)
+	st.lock()
+	old := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
+	st.progressHandle = old
+	st.bodyText = "same"
+	st.ackedBody = "same" // 旧卡已展示全部内容
+	st.unlock()
+
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
+
+	st.lock()
+	defer st.unlock()
+	if st.progressHandle != old {
+		t.Fatal("expected old handle kept when no new content")
+	}
+}
+
+func TestRichCardIncrementalBodyAndSteps(t *testing.T) {
+	st := streamStateLiteral(streamStateData{cardBodyBase: "第一段", cardStepsBase: 1})
+	if got := st.richCardIncrementalBody("第一段\n\n第二段"); got != "第二段" {
+		t.Fatalf("incremental body = %q, want 第二段", got)
+	}
+	// 前缀不匹配时回退全文，保证不丢内容。
+	if got := st.richCardIncrementalBody("重写后的全文"); got != "重写后的全文" {
+		t.Fatalf("fallback body = %q", got)
+	}
+	steps := []toolStep{{Name: "a"}, {Name: "b"}, {Name: "c"}}
+	inc := st.richCardIncrementalSteps(steps)
+	if len(inc) != 2 || inc[0].Name != "b" {
+		t.Fatalf("incremental steps = %#v", inc)
+	}
+	if got := st.richCardIncrementalSteps(nil); got != nil {
+		t.Fatalf("nil steps = %#v", got)
+	}
 }
 
 func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {

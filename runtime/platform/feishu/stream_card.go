@@ -30,8 +30,12 @@ func asyncStreamKey(streamKey agentkit.SessionID, jobID string) agentkit.Session
 	return agentkit.SessionID(string(streamKey) + outboundStreamAsyncSuffix + jobID)
 }
 
-// outboundStreamKey isolates in-flight card state per trigger message (Route.ReplyTo).
+// outboundStreamKey isolates in-flight card state per agent turn when TurnID is
+// set (preferred); otherwise per trigger message (delivery + Route.ReplyTo).
 func outboundStreamKey(event agentkit.OutboundEvent) agentkit.SessionID {
+	if id := strings.TrimSpace(event.TurnID); id != "" {
+		return agentkit.SessionID(id)
+	}
 	delivery := rctx.OutboundRouteID(event)
 	replyTo := strings.TrimSpace(rctx.RouteReplyTo(event.Route))
 	if replyTo == "" {
@@ -62,17 +66,6 @@ func replyToFromStreamKey(streamKey agentkit.SessionID) string {
 	return ""
 }
 
-func (p *Platform) replyContextForStreamKey(streamKey agentkit.SessionID) (replyContext, bool) {
-	delivery := deliveryFromStreamKey(streamKey)
-	rc, ok := p.deliveryForSend(delivery)
-	if !ok {
-		return replyContext{}, false
-	}
-	if replyTo := replyToFromStreamKey(streamKey); replyTo != "" {
-		rc.messageID = replyTo
-	}
-	return rc, true
-}
 
 func (st *streamState) commitInflightBodyText() {
 	part := strings.TrimSpace(st.bodyText)
@@ -98,6 +91,32 @@ func (st *streamState) richCardDisplayBody() string {
 		return st.committedBodyText
 	}
 	return st.committedBodyText + richCardBodySegmentSeparator + inflight
+}
+
+// richCardIncrementalBody 返回当前活跃卡片应展示的正文：全局 display body 减去
+// 本卡创建时已被旧卡展示的前缀（cardBodyBase）。前缀不匹配（如 body 被重写）时
+// 回退为全文，保证内容不丢。
+func (st *streamState) richCardIncrementalBody(full string) string {
+	base := st.cardBodyBase
+	if base == "" {
+		return full
+	}
+	if strings.HasPrefix(full, base) {
+		return strings.TrimLeft(full[len(base):], "\n ")
+	}
+	return full
+}
+
+// richCardIncrementalSteps 返回当前活跃卡片应展示的步骤（扣除旧卡已展示的前缀）。
+func (st *streamState) richCardIncrementalSteps(steps []toolStep) []toolStep {
+	base := st.cardStepsBase
+	if base <= 0 {
+		return steps
+	}
+	if base >= len(steps) {
+		return nil
+	}
+	return steps[base:]
 }
 
 func subagentToolLabel(agent string) string {
@@ -138,7 +157,7 @@ func streamBodyMarkdownForCardKit(body string) string {
 }
 
 func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.SessionID, streaming bool) error {
-	rc, ok := p.replyContextForStreamKey(streamKey)
+	rc, ok := p.replyContextForStream(streamKey)
 	if !ok {
 		return nil
 	}
@@ -150,15 +169,20 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		status = cardStatusThinking
 	}
 	var body string
+	var fullBody string
 	if st.bodyFn != nil {
 		body = st.bodyFn(streaming)
+		fullBody = body
 	} else {
-		body = st.richCardDisplayBody()
-		if strings.TrimSpace(body) != "" {
-			st.finalizedBodyText = body
+		fullBody = st.richCardDisplayBody()
+		if strings.TrimSpace(fullBody) != "" {
+			st.finalizedBodyText = fullBody
 		}
+		// 当前卡只展示增量部分（旧卡已展示的前缀不重复）。
+		body = st.richCardIncrementalBody(fullBody)
 	}
-	displaySteps := p.renderRichSteps(st)
+	allSteps := p.renderRichSteps(st)
+	displaySteps := st.richCardIncrementalSteps(allSteps)
 	handle := st.progressHandle
 	elapsed := progressElapsed(st)
 	panelVer := st.richCardPanelVersion
@@ -186,6 +210,9 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.lastProgressUpdate = time.Now()
 		st.richCardFlushedPanelVersion = panelVer
 		st.lastRichCardBodyStreamRunes = len([]rune(body))
+		// 新卡已展示 base..now，全局已展示位置推进到当前全文。
+		st.ackedBody = fullBody
+		st.ackedSteps = len(allSteps)
 		st.unlock()
 		p.deleteEvictedProgressCards(ctx, evicted)
 		p.scheduleRichCardKeepalive(streamKey)
@@ -201,6 +228,8 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 				st.lock()
 				st.lastProgressUpdate = time.Now()
 				st.lastRichCardBodyStreamRunes = len([]rune(body))
+				st.ackedBody = fullBody
+				st.ackedSteps = len(allSteps)
 				st.unlock()
 				p.scheduleRichCardKeepalive(streamKey)
 				return nil
@@ -222,15 +251,18 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		err = p.patchRichCard(ctx, handle, content)
 	}
 	if err != nil {
-		// 卡片更新失败（如 CardKit 间歇性 403）不应中断 agent turn：
-		// 重建新进度卡片并替换 handle，重建失败则 handle 置空、下轮 flush 重试创建。
-		p.recoverRichCardUpdateFailure(ctx, streamKey, rc, content, err)
+		// 卡片更新失败（如 CardKit 间歇性 403）不应中断 agent turn：重建新进度
+		// 卡片替换 handle，新卡只展示旧卡未成功展示的增量内容（旧卡不删除，
+		// 避免「撤回」提示）。重建失败则 handle 置空、下轮 flush 重试创建。
+		p.recoverRichCardUpdateFailure(ctx, streamKey, rc, err)
 		return nil
 	}
 	st.lock()
 	st.lastProgressUpdate = time.Now()
 	st.richCardFlushedPanelVersion = panelVer
 	st.lastRichCardBodyStreamRunes = len([]rune(body))
+	st.ackedBody = fullBody
+	st.ackedSteps = len(allSteps)
 	if !streaming && len(displaySteps) > 0 {
 		st.finalizedSteps = append([]toolStep(nil), displaySteps...)
 	}
@@ -239,17 +271,48 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 	return nil
 }
 
-// recoverRichCardUpdateFailure 在卡片更新失败时保持 turn 存活：直接重建新进度卡片
-// 并替换 handle（旧卡片删除避免残留"运行中"）；重建失败则 handle 置空，下一轮
-// flush 会再次走创建路径。错误不上抛，最终答复由普通消息兜底。
-func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, content string, cause error) {
+// recoverRichCardUpdateFailure 在卡片更新失败时保持 turn 存活：重建新进度卡片并
+// 替换 handle。旧卡保留不删（删除在 Lark 客户端显示为「撤回」），因此新卡只展示
+// 旧卡未成功展示的增量内容（base = 全局已展示位置 acked），避免重复刷屏。
+// 若相对旧卡没有任何新增内容，则保留旧 handle 等下一轮 flush 重试，不建新卡。
+// 重建失败则 handle 置空，下一轮 flush 会再次走创建路径。错误不上抛，最终答复由
+// turn/end 降级链兜底。
+func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, cause error) {
 	st := p.streamState(streamKey)
 	st.lock()
 	oldHandle := st.progressHandle
+	oldBodyBase, oldStepsBase := st.cardBodyBase, st.cardStepsBase
+	// 以全局已展示位置作为新卡 base：新卡只渲染增量。
+	st.cardBodyBase = st.ackedBody
+	st.cardStepsBase = st.ackedSteps
+	fullBody := st.richCardDisplayBody()
+	if st.bodyFn != nil {
+		fullBody = st.bodyFn(false)
+	}
+	incBody := st.richCardIncrementalBody(fullBody)
+	incSteps := st.richCardIncrementalSteps(p.renderRichSteps(st))
+	status := st.status
+	if status == "" {
+		status = cardStatusThinking
+	}
+	elapsed := progressElapsed(st)
 	st.progressHandle = nil
 	st.unlock()
 
-	slog.Warn(p.tag()+": rich card update failed, recreating progress card", "session_id", streamKey, "error", cause)
+	if oldHandle != nil && strings.TrimSpace(incBody) == "" && len(incSteps) == 0 {
+		// 相对旧卡无新增内容：重建只会产生一张空卡，保留旧卡等下次 flush 重试。
+		st.lock()
+		st.progressHandle = oldHandle
+		st.cardBodyBase = oldBodyBase
+		st.cardStepsBase = oldStepsBase
+		st.unlock()
+		slog.Warn(p.tag()+": rich card update failed, no new content; retry on next flush", "session_id", streamKey, "error", cause)
+		p.scheduleRichCardKeepalive(streamKey)
+		return
+	}
+
+	slog.Warn(p.tag()+": rich card update failed, recreating progress card with incremental content", "session_id", streamKey, "error", cause)
+	content := buildRichCard(status, "", incSteps, incBody, false, elapsed)
 	newHandle, err := p.createProgressCard(ctx, streamKey, rc, content)
 	if err != nil {
 		if !errors.Is(err, errRichCardCreateCooldown) {
@@ -264,14 +327,12 @@ func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey a
 	evicted := p.evictStreamCardsLocked(st)
 	st.lastProgressUpdate = time.Now()
 	st.richCardFlushedPanelVersion = st.richCardPanelVersion
-	st.lastRichCardBodyStreamRunes = len([]rune(st.richCardDisplayBody()))
+	st.lastRichCardBodyStreamRunes = len([]rune(incBody))
+	// 新卡已展示 base..now，全局已展示位置推进到当前全文。
+	st.ackedBody = fullBody
+	st.ackedSteps = len(p.renderRichSteps(st))
 	st.unlock()
 	p.deleteEvictedProgressCards(ctx, evicted)
-	if oldHandle != nil && oldHandle != newHandle {
-		if err := p.DeletePreviewMessage(ctx, oldHandle); err != nil {
-			slog.Debug(p.tag()+": delete broken progress card failed", "session_id", streamKey, "error", err)
-		}
-	}
 	p.scheduleRichCardKeepalive(streamKey)
 }
 
@@ -591,14 +652,15 @@ func (p *Platform) evictStreamCardsLocked(st *streamState) []any {
 	return toDelete
 }
 
-func (p *Platform) deleteEvictedProgressCards(ctx context.Context, handles []any) {
+// deleteEvictedProgressCards 不再真正删除被淘汰的卡片消息：删除在 Lark 客户端
+// 显示为「撤回了一条消息」，故障重建场景会刷屏打扰用户。被淘汰的旧卡内容已被
+// 后续卡片覆盖语义，保留无害。此处仅作日志记录，引用已由调用方清除。
+func (p *Platform) deleteEvictedProgressCards(_ context.Context, handles []any) {
 	for _, handle := range handles {
 		if handle == nil {
 			continue
 		}
-		if err := p.DeletePreviewMessage(ctx, handle); err != nil {
-			slog.Debug(p.tag()+": evict progress card failed", "error", err)
-		}
+		slog.Debug(p.tag()+": evicted progress card kept (no recall)", "handle", fmt.Sprintf("%v", handle))
 	}
 }
 
@@ -764,7 +826,7 @@ func (p *Platform) handleRichToolResult(ctx context.Context, event agentkit.Outb
 	if !p.showToolProgress {
 		return nil
 	}
-	streamKey := outboundStreamKey(event)
+	streamKey := p.streamKeyForOutbound(event)
 	if handled, err := p.handleAsyncSubagentToolResult(ctx, streamKey, event, result); handled {
 		return err
 	}
@@ -779,7 +841,7 @@ func (p *Platform) handleRichSubagentEvent(ctx context.Context, event agentkit.O
 	if !p.showToolProgress {
 		return nil
 	}
-	streamKey := outboundStreamKey(event)
+	streamKey := p.streamKeyForOutbound(event)
 	if event.Type == agentkit.EventSubagentStart {
 		var data sessevents.SubagentStartData
 		if err := json.Unmarshal(event.Data, &data); err != nil {
@@ -881,12 +943,14 @@ func appendSubagentEndStep(p *Platform, st *streamState, data sessevents.Subagen
 }
 
 func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentkit.OutboundEvent) error {
-	streamKey := outboundStreamKey(event)
+	streamKey := p.streamKeyForOutbound(event)
 	p.cancelBodyFlushTimer(streamKey)
 	var payload agentkit.MessageEndPayload
 	fallbackText := ""
+	hasToolCalls := false
 	if err := json.Unmarshal(event.Data, &payload); err == nil {
 		fallbackText = strings.TrimSpace(assistantText(payload.Message))
+		hasToolCalls = len(payload.Message.ToolCalls) > 0
 	}
 
 	st := p.streamState(streamKey)
@@ -898,6 +962,14 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 	if bodyText != "" {
 		st.bodyText = bodyText
 	}
+	if hasToolCalls {
+		// Segment ends with tools: commit body text but keep the card in streaming
+		// mode so tool steps, heartbeat, and later assistant text still refresh.
+		st.commitInflightBodyText()
+		st.bodyText = ""
+		st.unlock()
+		return p.flushRichCard(ctx, streamKey, true)
+	}
 	st.finalizedBodyText = st.richCardDisplayBody()
 	st.unlock()
 	// 整卡落盘（关闭 streaming、去掉进行中页脚），避免仅流式 main_text 时页脚残留在旧 JSON。
@@ -907,7 +979,7 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 // handleRichProactiveAssistant applies non-streaming assistant outbound (e.g. loop
 // step-limit notice) onto the in-flight rich card before turn/end.
 func (p *Platform) handleRichProactiveAssistant(ctx context.Context, event agentkit.OutboundEvent) error {
-	streamKey := outboundStreamKey(event)
+	streamKey := p.streamKeyForOutbound(event)
 	var msg agentkit.ModelMessage
 	if err := json.Unmarshal(event.Data, &msg); err != nil {
 		return err
@@ -931,40 +1003,45 @@ func (p *Platform) handleRichProactiveAssistant(ctx context.Context, event agent
 // 失败降级链保证最终答复不丢：patch 旧卡 → 另发一张最终卡 → 纯文本（带重试）。
 func (p *Platform) finalizeRichTurnEndAsync(
 	ctx context.Context,
-	sessionID agentkit.SessionID,
+	streamKey agentkit.SessionID,
 	handle any,
 	content string,
 	bodyText string,
 	botReplyID string,
 	endData capsession.TurnEndData,
+	delivery agentkit.SessionID,
+	rc replyContext,
+	hasReply bool,
 ) {
 	parent := context.WithoutCancel(ctx)
 	go func() {
 		delivered := false
 		if handle != nil {
 			if err := p.patchRichCard(parent, handle, content); err != nil {
-				slog.Warn(p.tag()+": finalize patch rich card on turn end failed, sending a new final card", "session_id", sessionID, "error", err)
+				// CardKit 路径失败时尝试消息接口整卡更新（不同路径可能仍可用），
+				// 挽救成功则旧卡直接成为最终卡，无需另发新卡。
+				if salvageErr := p.UpdateMessage(parent, handle, content); salvageErr == nil {
+					slog.Info(p.tag()+": finalize patch failed but salvaged via message patch", "session_id", streamKey, "error", err)
+					delivered = true
+				} else {
+					slog.Warn(p.tag()+": finalize patch rich card on turn end failed, sending a new final card", "session_id", streamKey, "error", err)
+				}
 			} else {
 				delivered = true
 			}
 		}
-		if !delivered {
-			if rc, ok := p.replyContextForStreamKey(sessionID); ok {
-				if newHandle, err := p.SendPreviewStart(parent, rc, content); err != nil {
-					slog.Warn(p.tag()+": send final rich card on turn end failed, falling back to plain text", "session_id", sessionID, "error", err)
-				} else {
-					delivered = true
-					// 旧卡停留在「运行中」且内容可能不全，新卡已成最终卡，删除旧卡避免误导。
-					if handle != nil && handle != newHandle {
-						if err := p.DeletePreviewMessage(parent, handle); err != nil {
-							slog.Debug(p.tag()+": delete stale progress card on turn end failed", "session_id", sessionID, "error", err)
-						}
-					}
-				}
+		if !delivered && hasReply {
+			if newHandle, err := p.SendPreviewStart(parent, rc, content); err != nil {
+				slog.Warn(p.tag()+": send final rich card on turn end failed, falling back to plain text", "session_id", streamKey, "error", err)
+			} else {
+				delivered = true
+				// 旧卡保留不删：删除在 Lark 客户端显示为「撤回」，观感差；
+				// 旧卡内容可能不全，但最终卡已完整呈现。
+				_ = newHandle
 			}
 		}
-		if !delivered && bodyText != "" {
-			p.sendFinalPlainTextWithRetry(parent, sessionID, bodyText)
+		if !delivered && bodyText != "" && delivery != "" {
+			p.sendFinalPlainTextWithRetry(parent, delivery, streamKey, bodyText)
 		}
 		p.addBotReplyEndReaction(botReplyID, endData, "")
 	}()
@@ -974,8 +1051,7 @@ func (p *Platform) finalizeRichTurnEndAsync(
 // 只试一次会在故障窗口内真正丢失最终答复。
 var finalPlainTextRetryDelays = []time.Duration{5 * time.Second, 20 * time.Second, 60 * time.Second}
 
-func (p *Platform) sendFinalPlainTextWithRetry(ctx context.Context, streamKey agentkit.SessionID, bodyText string) {
-	delivery := deliveryFromStreamKey(streamKey)
+func (p *Platform) sendFinalPlainTextWithRetry(ctx context.Context, delivery agentkit.SessionID, streamKey agentkit.SessionID, bodyText string) {
 	for attempt := 0; ; attempt++ {
 		if err := p.sendText(ctx, delivery, bodyText); err != nil {
 			if attempt >= len(finalPlainTextRetryDelays) {
@@ -1016,27 +1092,40 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	stopStreamTimer(&st.bodyFlushTimer)
 	handle := st.progressHandle
 	botReplyID := botReplyMessageID(st)
-	bodyText := strings.TrimSpace(st.richCardDisplayBody())
-	if bodyText == "" {
-		bodyText = strings.TrimSpace(st.finalizedBodyText)
+	fullBody := strings.TrimSpace(st.richCardDisplayBody())
+	if fullBody == "" {
+		fullBody = strings.TrimSpace(st.finalizedBodyText)
 	}
-	if endData.Cancelled && bodyText == "" {
-		bodyText = cancelledBodyText(endData.StopReason)
+	if fullBody == "" && len(endData.Message) > 0 {
+		var msg agentkit.ModelMessage
+		if err := json.Unmarshal(endData.Message, &msg); err == nil {
+			fullBody = strings.TrimSpace(assistantText(msg))
+		}
 	}
-	displaySteps := p.renderRichSteps(st)
-	if len(displaySteps) == 0 && len(st.finalizedSteps) > 0 {
-		displaySteps = append([]toolStep(nil), st.finalizedSteps...)
+	if endData.Cancelled && fullBody == "" {
+		fullBody = cancelledBodyText(endData.StopReason)
 	}
+	allSteps := p.renderRichSteps(st)
+	if len(allSteps) == 0 && len(st.finalizedSteps) > 0 {
+		allSteps = append([]toolStep(nil), st.finalizedSteps...)
+	}
+	// 当前卡只展示增量（旧卡已展示的前缀不重复）；纯文本兜底同样用增量，
+	// 因为旧卡仍保留着前文。
+	bodyText := strings.TrimSpace(st.richCardIncrementalBody(fullBody))
+	displaySteps := st.richCardIncrementalSteps(allSteps)
 	elapsed := progressElapsed(st)
 	st.status = finalStatus
 	st.bodyText = ""
 	st.progressHandle = nil
 	st.unlock()
 
+	rc, hasReply := p.replyContextForStream(sessionID)
+	delivery := p.deliveryForStream(sessionID)
+
 	content := buildRichCard(finalStatus, "", displaySteps, bodyText, false, elapsed)
 	p.clearStream(sessionID)
 	if strings.TrimSpace(content) != "" && content != " " {
-		p.finalizeRichTurnEndAsync(ctx, sessionID, handle, content, bodyText, botReplyID, endData)
+		p.finalizeRichTurnEndAsync(ctx, sessionID, handle, content, bodyText, botReplyID, endData, delivery, rc, hasReply)
 	} else {
 		p.addBotReplyEndReaction(botReplyID, endData, "")
 	}

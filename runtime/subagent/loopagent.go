@@ -260,6 +260,7 @@ type parentContext struct {
 	agentID        agentkit.AgentID
 	envelope       agentkit.TurnEnvelope
 	emit           agentkit.OutboundEmit
+	turnID         string
 	parentSession  agentkit.Session
 	sessionControl any
 }
@@ -281,6 +282,7 @@ func captureParentContext(ctx context.Context, parent agentkit.Session) parentCo
 		agentID:        agentID,
 		envelope:       env,
 		emit:           emitFromContext(ctx),
+		turnID:         parentTurnID(ctx),
 		parentSession:  parent,
 		sessionControl: sessionControl,
 	}

@@ -3,6 +3,8 @@ package feishu
 import (
 	"sync"
 	"time"
+
+	"github.com/lengzhao/agentkit"
 )
 
 // streamStateData is a mutable card snapshot (tests and async subagent panel use this directly).
@@ -36,6 +38,18 @@ type streamStateData struct {
 	richCardPanelVersion        uint64
 	richCardFlushedPanelVersion uint64
 	lastRichCardBodyStreamRunes int
+	// 增量重建：故障重建新卡时旧卡不删除，新卡只展示旧卡未成功展示的增量，
+	// 避免同一内容在多张卡重复刷屏。cardBodyBase/cardStepsBase 是当前活跃卡
+	// 创建时全局已展示的正文前缀/步骤数；ackedBody/ackedSteps 是全局已成功
+	// 展示（flush 成功）到的位置，重建时作为新卡的 base。
+	cardBodyBase string
+	cardStepsBase int
+	ackedBody    string
+	ackedSteps   int
+	// route 是该 stream 的 IM 投递地址（从首个出站事件的 Route 捕获），
+	// 供心跳、防抖 flush、turn/end 定稿等异步路径使用，无需再查事件。
+	route     agentkit.RouteRef
+	hasRoute  bool
 }
 
 // streamState holds per-stream outbound card state. Access is serialized with

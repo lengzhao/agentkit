@@ -77,6 +77,7 @@ func (f *parentEmitForwarder) emit(_ context.Context, event agentkit.OutboundEve
 	switch event.Type {
 	case agentkit.EventToolResult:
 		event.Route = f.parentRoute
+		event = withParentTurnID(f.ctx, event)
 		return f.parent(f.ctx, event)
 	case agentkit.EventMessageUpdate:
 		var payload agentkit.MessageUpdatePayload
@@ -105,6 +106,7 @@ func (f *parentEmitForwarder) emit(_ context.Context, event agentkit.OutboundEve
 			event.Data = rctx.MarshalOutboundData(payload)
 		}
 		event.Route = f.parentRoute
+		event = withParentTurnID(f.ctx, event)
 		return f.parent(f.ctx, event)
 	default:
 		return nil
@@ -173,12 +175,12 @@ func emitSubagentLifecycle(ctx context.Context, parentAgent agentkit.AgentID, ty
 	if agentID == "" {
 		agentID = rctx.AgentIDFromContext(ctx)
 	}
-	event := agentkit.OutboundEvent{
+	event := withParentTurnID(ctx, agentkit.OutboundEvent{
 		Route:   parentRoute,
 		AgentID: agentID,
 		Type:    typ,
 		Data:    rctx.MarshalOutboundData(data),
-	}
+	})
 	go func() {
 		emitCtx := context.WithoutCancel(ctx)
 		slog.Debug("subagent lifecycle outbound", "event", typ, "route", parentRoute)

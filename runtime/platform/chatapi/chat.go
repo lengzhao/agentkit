@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -183,9 +184,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		ReplyTo:     msgID,
 		ScopeUserID: user,
 	}, user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
-	if md := p.requestMetadata(r); len(md) > 0 {
-		event.Metadata = md
-	}
+	event.Metadata = mergeInboundTurnMetadata(p.requestMetadata(r), runID)
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)
@@ -316,11 +315,21 @@ func (p *Platform) runForSession(sessionID agentkit.SessionID) *runState {
 	return nil
 }
 
+func (p *Platform) runForOutbound(event agentkit.OutboundEvent) *runState {
+	if id := strings.TrimSpace(event.TurnID); id != "" {
+		return p.pending.get(id)
+	}
+	return p.runForSession(rctx.OutboundRouteID(event))
+}
+
 func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEvent) error {
 	delivery := rctx.OutboundRouteID(event)
-	run := p.runForSession(delivery)
+	run := p.runForOutbound(event)
 	if run == nil {
 		if event.Type == agentkit.EventAssistantMessage {
+			if id := strings.TrimSpace(event.TurnID); id != "" {
+				return fmt.Errorf("chat-api: no active request for turn %s (session %s)", id, delivery)
+			}
 			return fmt.Errorf("chat-api: no active request for session %s", delivery)
 		}
 		return nil
@@ -377,6 +386,19 @@ func (p *Platform) handleOutbound(ctx context.Context, event agentkit.OutboundEv
 		}
 		return nil
 	case agentkit.EventTurnEnd:
+		var end capsession.TurnEndData
+		if err := json.Unmarshal(event.Data, &end); err == nil && len(end.Message) > 0 {
+			var msg agentkit.ModelMessage
+			if err := json.Unmarshal(end.Message, &msg); err == nil {
+				if text := common.ModelMessageText(msg); text != "" {
+					run.mu.Lock()
+					if strings.TrimSpace(run.answerText) == "" {
+						run.answerText = text
+					}
+					run.mu.Unlock()
+				}
+			}
+		}
 		run.signal()
 		run.scheduleFinish()
 		return nil

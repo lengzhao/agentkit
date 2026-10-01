@@ -1,6 +1,10 @@
 package session
 
-import "github.com/lengzhao/agentkit"
+import (
+	"encoding/json"
+
+	"github.com/lengzhao/agentkit"
+)
 
 // Todo statuses. Anything other than TodoDone counts as outstanding work.
 const (
@@ -73,6 +77,10 @@ type TurnEndData struct {
 	StepLimit  int    `json:"stepLimit,omitempty"`
 	Cancelled  bool   `json:"cancelled,omitempty"`
 	Failed     bool   `json:"failed,omitempty"`
+	// Message carries the turn's final assistant message when one was produced.
+	// It lets consumers render the reply without depending on streaming deltas
+	// (message/update) having all arrived.
+	Message json.RawMessage `json:"message,omitempty"`
 }
 
 type StepStartData struct {

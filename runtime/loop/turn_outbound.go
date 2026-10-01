@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -25,6 +26,28 @@ func wrapTurnEndNotices(emit agentkit.OutboundEmit) agentkit.OutboundEmit {
 				}
 			}
 		}
+		return emit(ctx, event)
+	}
+}
+
+// turnIDFromMetadata extracts a caller-provided turn id from inbound metadata.
+func turnIDFromMetadata(metadata map[string]any) string {
+	v, ok := metadata[agentkit.MetadataTurnID].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
+// stampTurnID tags every outbound event with the current turn id so platforms
+// can correlate per-turn resources (SSE sinks, callbacks) without relying on
+// conversation/delivery string equality.
+func stampTurnID(emit agentkit.OutboundEmit, turnID string) agentkit.OutboundEmit {
+	if emit == nil {
+		return nil
+	}
+	return func(ctx context.Context, event agentkit.OutboundEvent) error {
+		event.TurnID = turnID
 		return emit(ctx, event)
 	}
 }

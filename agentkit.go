@@ -59,6 +59,11 @@ const InboundMetaTag = "meta"
 // prepend the optional [meta ...] inbound prefix for that turn.
 const MetadataSkipPromptMeta = "skipPromptMeta"
 
+// MetadataTurnID is the optional MessageEvent.Metadata key a transport sets to
+// pre-assign the turn id (e.g. to register per-turn resources such as SSE sinks
+// before dispatch). Loop honors a non-empty value instead of generating one.
+const MetadataTurnID = "turnId"
+
 // SessionID identifies a conversation unit for Loop locking and durable history.
 // Platforms emit a delivery route (finest grain: channel + optional :t:thread
 // + optional :u:user). Runner resolves active-session mappings (/new) and writes
@@ -189,6 +194,11 @@ type OutboundEvent struct {
 	UserID     string
 	Type       EventType
 	Data       json.RawMessage
+	// TurnID correlates the event with one agent turn. The loop stamps it on
+	// every outbound event so platforms can key per-turn resources (e.g. SSE
+	// sinks) without relying on conversation/delivery string equality.
+	// Empty means the event is turn-less (proactive sends, system notices).
+	TurnID string `json:"turnId,omitempty"`
 }
 
 // ErrOutboundPlatformRequired is returned when OutboundEvent.PlatformID is empty.

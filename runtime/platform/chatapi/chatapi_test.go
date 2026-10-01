@@ -422,6 +422,10 @@ func TestChatMessageMetadataHeaders(t *testing.T) {
 		if ev.Metadata["X-Chat-API-User-Name"] != "Bob" {
 			t.Fatalf("name = %v", ev.Metadata["X-Chat-API-User-Name"])
 		}
+		turnID, _ := ev.Metadata[agentkit.MetadataTurnID].(string)
+		if strings.TrimSpace(turnID) == "" {
+			t.Fatalf("metadata %s should be set", agentkit.MetadataTurnID)
+		}
 		// Unblock handleChatMessages waiting on run.done.
 		for _, runID := range plat.activeByConv {
 			plat.pending.finish(runID, pendingResult{answer: "ok"})
@@ -429,6 +433,111 @@ func TestChatMessageMetadataHeaders(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for inbound event")
 	}
+}
+
+func TestOutboundRoutesByTurnID(t *testing.T) {
+	p, err := New(Config{ListenAddr: ":0"}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	conv, err := plat.conversations.create("default_channel", "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
+
+	runA := newRunID()
+	runB := newRunID()
+	stateA := newRunState(runA, "u1", "default_channel", "", sessionID, conv.ID, "m1", plat, nil)
+	stateB := newRunState(runB, "u1", "default_channel", "", sessionID, conv.ID, "m2", plat, nil)
+	if !plat.pending.create(stateA) || !plat.pending.create(stateB) {
+		t.Fatal("pending create failed")
+	}
+
+	delta, _ := json.Marshal(agentkit.MessageUpdatePayload{
+		AssistantMessageEvent: agentkit.AssistantMessageEvent{
+			Type:  agentkit.AssistantEventTextDelta,
+			Delta: "for-b",
+		},
+	})
+	ctx := context.Background()
+	if err := plat.Send(ctx, agentkit.OutboundEvent{
+		Route:  chatAPIRoute(sessionID),
+		TurnID: runB,
+		Type:   agentkit.EventMessageUpdate,
+		Data:   delta,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stateA.mu.Lock()
+	gotA := stateA.answerText
+	stateA.mu.Unlock()
+	stateB.mu.Lock()
+	gotB := stateB.answerText
+	stateB.mu.Unlock()
+	if gotA != "" {
+		t.Fatalf("run A answerText = %q, want empty", gotA)
+	}
+	if gotB != "for-b" {
+		t.Fatalf("run B answerText = %q, want for-b", gotB)
+	}
+}
+
+func TestTurnEndMessageFillsAnswerWhenNoDeltas(t *testing.T) {
+	p, err := New(Config{ListenAddr: ":0"}, Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+
+	runID := newRunID()
+	conv, err := plat.conversations.create("default_channel", "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
+	rec := httptest.NewRecorder()
+	sse, err := newSSEWriter(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := newRunState(runID, "u1", "default_channel", "", sessionID, conv.ID, "m1", plat, sse)
+	if !plat.pending.create(run) {
+		t.Fatal("pending create failed")
+	}
+	plat.setActiveConv(conv.ID, runID)
+	startRunSSE(plat, run, sse, conv.ID)
+
+	finalMsg, _ := json.Marshal(agentkit.ModelMessage{
+		Role:    "assistant",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "final from turn/end"}},
+	})
+	turnEnd, _ := json.Marshal(capsession.TurnEndData{Steps: 1, Message: finalMsg})
+	ctx := context.Background()
+	_ = plat.Send(ctx, agentkit.OutboundEvent{
+		Route:  chatAPIRoute(sessionID),
+		TurnID: runID,
+		Type:   agentkit.EventTurnEnd,
+		Data:   turnEnd,
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		run.mu.Lock()
+		answer := run.answerText
+		run.mu.Unlock()
+		if answer == "final from turn/end" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	run.mu.Lock()
+	got := run.answerText
+	run.mu.Unlock()
+	t.Fatalf("answerText = %q, want final from turn/end", got)
 }
 
 func TestSSEWriter(t *testing.T) {

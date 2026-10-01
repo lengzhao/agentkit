@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
@@ -32,7 +33,7 @@ func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, c
 		MessageId(rc.messageID).
 		Body(p.buildReplyMessageReqBody(rc, msgType, content)).
 		Build()
-	return p.withTransientRetry(ctx, "reply", func() error {
+	err := p.withTransientRetry(ctx, "reply", func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "reply", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Im.Message.Reply(ctx, req, options...)
 			if err != nil {
@@ -44,6 +45,17 @@ func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, c
 			return nil
 		})
 	})
+	if err == nil {
+		return nil
+	}
+	// 网关/权限故障（如 403）常同时拦截 Reply 与 Create，但 Create 走不同路径，
+	// 多一次尝试就多一分送达最终答复的机会；chatID 为空时无法降级。
+	if rc.chatID == "" {
+		return err
+	}
+	slog.Warn(p.tag()+": reply api failed, falling back to create message",
+		"chat_id", rc.chatID, "error", err)
+	return p.createMessage(ctx, rc.chatID, msgType, content, "send (reply fallback)")
 }
 
 func (p *Platform) createMessage(ctx context.Context, chatID, msgType, content, op string) error {
