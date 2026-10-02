@@ -6,7 +6,7 @@
 
 ```mermaid
 flowchart TB
-  subgraph fast [默认 CI - go test ./...]
+  subgraph fast [默认 CI - scripts/test.sh unit]
     U[单元测试<br/>插件 / runtime / cap]
     S[Smoke 测试<br/>testing/smoke/]
     P[Preset 构建测试<br/>config/presets_test.go]
@@ -14,17 +14,29 @@ flowchart TB
   subgraph slow [可选 - tags=integration]
     I[Integration<br/>真实 preset once-run]
   end
+  subgraph sys [CI 专属 - tags=sysint]
+    X[SysInt<br/>真实外部二进制（bwrap）隔离断言]
+  end
   U --> S
   S --> P
   P --> I
+  P --> X
 ```
 
 | 层级 | 位置 | 命令 | 目的 |
 |---|---|---|---|
-| 单元 | 各包 `*_test.go` | `go test ./...` | 插件契约、derive/replay、policy、loop 并发 |
+| 单元 | 各包 `*_test.go` | `go test -race -count=1 ./...` | 插件契约、derive/replay、policy、loop 并发 |
 | Smoke | `testing/smoke/` | `go test ./testing/smoke/...` | 无 API Key 的 scripted 端到端（subagent、recovery） |
 | Preset 构建 | `config/presets_test.go` | `go test ./config/...` | 每个 preset overlay 可 `build.Build[Runner]` |
 | Integration | `integration/` | `go test -tags=integration ./integration/...` | 真实 preset + CLI once 跑通并断言 session 事件 |
+| SysInt | 各包 `*_sysint_test.go` | `go test -tags=sysint ./runtime/sandbox/...` | 真实外部二进制（bubblewrap）的隔离性安全断言 |
+
+### SysInt（真实二进制，`-tags=sysint`）
+
+单元层的 argv 结构断言无法证明隔离真正生效；SysInt 层用真实 bwrap 执行命令并断言安全属性（邻居租户不可见、secret 掩码为空、只读 floor EROFS、pid 命名空间隔离、loopback 保留）。
+
+- 本地无 bwrap 时 **skip**；CI 上 `SYSINT_REQUIRED=1`（由 `scripts/test.sh sysint` 按 `CI` 环境变量注入）使其**失败而非跳过**——安全测试不得静默失效。
+- CI job 需先 `apt-get install -y bubblewrap`（见 `.github/workflows/test.yml` 的 `sysint` job）。
 
 ## 共享 testkit
 
@@ -129,6 +141,9 @@ events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:
 # preset 集成（较慢，需完整 plugins 图）
 ./scripts/test.sh integration
 
+# 真实 bwrap 隔离断言（需 Linux + bubblewrap；本地缺失时 skip）
+./scripts/test.sh sysint
+
 # 全部
 ./scripts/test.sh all
 ```
@@ -144,10 +159,11 @@ events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:
 
 ## CI
 
-`.github/workflows/test.yml`：
+`.github/workflows/test.yml`（命令的单一事实源是 `scripts/test.sh`，CI 直接调用，避免双份逻辑漂移）：
 
-- **unit**：`go run ./scripts/check-plugin-imports`（`plugins/*` 不得互相 import，共享实现放 `runtime/*`）+ `go test ./...`（含 smoke 与 preset build）
-- **integration**：`go test -tags=integration ./integration/...`
+- **unit**：`./scripts/test.sh unit` = `check-plugin-imports`（`plugins/*` 不得互相 import，共享实现放 `runtime/*`）+ `go vet ./...` + `go test -race -count=1 -timeout=10m ./...`（含 smoke 与 preset build；`-count=1` 防缓存掩盖 flaky）
+- **integration**：`./scripts/test.sh integration` = `go test -tags=integration -count=1 ./integration/...`
+- **sysint**：`./scripts/test.sh sysint`（ubuntu runner 安装 bubblewrap 后执行，bwrap 不可用即失败）
 
 ## 与架构文档的关系
 

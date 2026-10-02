@@ -11,8 +11,25 @@ import (
 	"github.com/lengzhao/pluginkit/build"
 )
 
+// stubCredentialEnv makes config-build tests hermetic: every env credential
+// referenced by config.base.yaml gets a dummy value so the build does not
+// depend on the developer's local environment.
+func stubCredentialEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"OPENAI_API_KEY",
+		"DEEPSEEK_API_KEY",
+		"EXA_API_KEY",
+		"TAVILY_API_KEY",
+		"SLACK_APP_TOKEN",
+		"SLACK_BOT_TOKEN",
+	} {
+		t.Setenv(key, "sk-test")
+	}
+}
+
 func TestConfigBaseLoadsAndBuilds(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "sk-test")
+	stubCredentialEnv(t)
 	doc, err := config.LoadDocument(config.DefaultBasePath, "")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +53,7 @@ func TestConfigBaseLoadsAndBuilds(t *testing.T) {
 }
 
 func TestPresetCodingOverlayBuilds(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "sk-test")
+	stubCredentialEnv(t)
 	doc, err := config.LoadDocument(config.DefaultBasePath, "presets/coding.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +77,7 @@ func TestPresetCodingOverlayBuilds(t *testing.T) {
 }
 
 func TestPresetChatAPIOverlayBuilds(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "sk-test")
+	stubCredentialEnv(t)
 	doc, err := config.LoadDocument(config.DefaultBasePath, "presets/chat-api.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +100,7 @@ func TestPresetChatAPIOverlayBuilds(t *testing.T) {
 }
 
 func TestPresetCodingSmokeOverlayBuilds(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "sk-test")
+	stubCredentialEnv(t)
 	doc, err := config.LoadDocument(config.DefaultBasePath, "presets/coding-smoke.yaml")
 	if err != nil {
 		t.Fatal(err)
