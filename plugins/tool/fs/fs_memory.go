@@ -36,29 +36,27 @@ type memoryFS struct {
 
 var _ filesystem.Service = (*memoryFS)(nil)
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *FSMemoryConfig) SetDefaults() {
+	setLimitDefaults(&c.MaxBytes, &c.MaxMatches, &c.MaxResults, &c.MaxListEntries)
+}
+
+// Validate implements pluginkit.Validator.
+func (c *FSMemoryConfig) Validate() error {
+	return validateLimits("tool/fs-memory", c.MaxBytes, c.MaxMatches, c.MaxResults, c.MaxListEntries)
+}
+
 // NewFSMemory registers tool/fs-memory: In-memory workspace file tools for tests and smoke runs.
 func NewFSMemory(cfg FSMemoryConfig) (agentkit.ToolPack, error) {
 	files := make(map[string]string, len(cfg.Files))
 	for k, v := range cfg.Files {
 		files[normalizeMemPath(k)] = v
 	}
-	maxBytes := cfg.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = 1 << 20
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
-	maxMatches := cfg.MaxMatches
-	if maxMatches <= 0 {
-		maxMatches = 100
-	}
-	maxResults := cfg.MaxResults
-	if maxResults <= 0 {
-		maxResults = defaultFindLimit
-	}
-	maxListEntries := cfg.MaxListEntries
-	if maxListEntries <= 0 {
-		maxListEntries = defaultListLimit
-	}
-	return buildWorkspaceTools(&fsAdapter{store: &memoryFS{files: files}}, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
+	return buildWorkspaceTools(&fsAdapter{store: &memoryFS{files: files}}, cfg.MaxBytes, cfg.MaxMatches, cfg.MaxResults, cfg.MaxListEntries, cfg.Tools)
 }
 
 func (s *memoryFS) Read(_ context.Context, path string) ([]byte, error) {

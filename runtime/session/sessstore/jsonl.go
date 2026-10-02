@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,17 @@ type JSONLConfig struct {
 	ID agentkit.SessionID `json:"id"`
 	// MaxLoadedEvents limits non-compaction events kept in memory on load. Zero loads the full file.
 	MaxLoadedEvents int `json:"maxLoadedEvents"`
+}
+
+// Validate implements pluginkit.Validator.
+func (c *JSONLConfig) Validate() error {
+	if strings.TrimSpace(c.Path) == "" {
+		return fmt.Errorf("session/jsonl path is required")
+	}
+	if c.MaxLoadedEvents < 0 {
+		return fmt.Errorf("session/jsonl maxLoadedEvents must be >= 0")
+	}
+	return nil
 }
 
 // JSONL persists session events as append-only JSON lines.
@@ -63,6 +75,9 @@ func newJSONL(cfg JSONLConfig) (*JSONL, error) {
 // Best practices:
 //   - Reopening a file resumes event sequence numbering, so seq stays unique across restarts.
 func NewJSONL(cfg JSONLConfig) (agentkit.Session, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	return newJSONL(cfg)
 }
 

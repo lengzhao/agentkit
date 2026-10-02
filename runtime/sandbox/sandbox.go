@@ -80,6 +80,29 @@ type Config struct {
 	TmpBase string `json:"tmpBase"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if strings.TrimSpace(c.Mode) == "" {
+		c.Mode = ModeAuto
+	}
+	if c.TmpBase == "" {
+		c.TmpBase = "/dev/shm/shellbwrap"
+	}
+	if c.SecretFiles == nil {
+		c.SecretFiles = append([]string(nil), defaultSecretFiles...)
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	switch mode := strings.TrimSpace(c.Mode); mode {
+	case ModeOff, ModeAuto, ModeBwrap:
+		return nil
+	default:
+		return fmt.Errorf("sandbox/bwrap config.mode must be off, auto or bwrap, got %q", mode)
+	}
+}
+
 // Deps for sandbox/bwrap.
 type Deps struct {
 	Workspace workspace.Service `json:"workspace"`
@@ -153,13 +176,11 @@ func New(cfg Config, d Deps) (capsandbox.Service, error) {
 	if d.Workspace == nil {
 		return nil, fmt.Errorf("sandbox/bwrap requires workspace")
 	}
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	mode := strings.TrimSpace(cfg.Mode)
-	if mode == "" {
-		mode = ModeAuto
-	}
-	if mode != ModeOff && mode != ModeAuto && mode != ModeBwrap {
-		return nil, fmt.Errorf("sandbox/bwrap config.mode must be off, auto or bwrap, got %q", mode)
-	}
 
 	// In production, auto is treated as bwrap (fail closed) so a misconfig
 	// cannot silently run unsandboxed.

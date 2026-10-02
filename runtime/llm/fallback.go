@@ -34,6 +34,17 @@ type FallbackDeps struct {
 	Fallbacks []agentkit.LLMProvider `json:"fallbacks,omitempty"`
 }
 
+// Validate implements pluginkit.Validator.
+func (c *FallbackConfig) Validate() error {
+	if _, err := parseFallbackMode(c.FallbackOn); err != nil {
+		return err
+	}
+	if len(c.Models) > 0 && len(c.FallbackModels) > 0 {
+		return fmt.Errorf("llm/fallback: config.models and config.fallbackModels are mutually exclusive")
+	}
+	return nil
+}
+
 type fallbackTarget struct {
 	provider agentkit.LLMProvider
 	model    string

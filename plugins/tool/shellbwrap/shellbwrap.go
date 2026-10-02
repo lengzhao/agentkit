@@ -37,6 +37,30 @@ type Config struct {
 	MaxOutputBytes int `json:"maxOutputBytes"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.WorkDir == "" {
+		c.WorkDir = "."
+	}
+	if c.TimeoutSeconds == 0 {
+		c.TimeoutSeconds = 60
+	}
+	if c.MaxOutputBytes == 0 {
+		c.MaxOutputBytes = 1 << 20 // 1 MiB
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.TimeoutSeconds < 0 {
+		return fmt.Errorf("tool/shell-bwrap timeoutSeconds must not be negative")
+	}
+	if c.MaxOutputBytes < 0 {
+		return fmt.Errorf("tool/shell-bwrap maxOutputBytes must not be negative")
+	}
+	return nil
+}
+
 // Deps for tool/shell-bwrap.
 type Deps struct {
 	Workspace   workspace.Service  `json:"workspace"`
@@ -89,30 +113,22 @@ func New(cfg Config, d Deps) (agentkit.Tool, error) {
 			slog.Warn("tool/shell-bwrap: deps.credentials is not credentials/integrations; scoped env injection disabled")
 		}
 	}
-	workDir := cfg.WorkDir
-	if workDir == "" {
-		workDir = "."
-	}
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 60 * time.Second
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	commands := cfg.Commands
 	if commands == nil {
 		commands = map[string][]string{}
 	}
-	maxOutput := cfg.MaxOutputBytes
-	if maxOutput <= 0 {
-		maxOutput = 1 << 20 // 1 MiB
-	}
 	ex := &executor{
-		relWorkDir:  workDir,
-		timeout:     timeout,
+		relWorkDir:  cfg.WorkDir,
+		timeout:     time.Duration(cfg.TimeoutSeconds) * time.Second,
 		workspace:   d.Workspace,
 		credentials: d.Credentials,
 		sandbox:     d.Sandbox,
 		commands:    commands,
-		maxOutput:   maxOutput,
+		maxOutput:   cfg.MaxOutputBytes,
 	}
 	tool, err := agentkit.NewTool[ShellInput, ShellOutput]("bash", func(ctx context.Context, input ShellInput) (ShellOutput, error) {
 		return ex.run(ctx, input.Command)

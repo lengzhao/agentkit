@@ -112,7 +112,61 @@ type Platform struct {
 }
 
 // New registers platform/chat-api: Dify-like HTTP + SSE API for custom apps and BFFs.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if strings.TrimSpace(c.Path) == "" {
+		c.Path = defaultPath
+	}
+	if strings.ToLower(strings.TrimSpace(c.BusyPolicy)) == "" {
+		c.BusyPolicy = busyPolicyQueue
+	}
+	if strings.TrimSpace(c.UserHeader) == "" {
+		c.UserHeader = defaultUserHeader
+	}
+	if strings.TrimSpace(c.UserNameHeader) == "" {
+		c.UserNameHeader = defaultUserNameHeader
+	}
+	if strings.TrimSpace(c.UserEmailHeader) == "" {
+		c.UserEmailHeader = defaultUserEmailHeader
+	}
+	if strings.TrimSpace(c.ChannelHeader) == "" {
+		c.ChannelHeader = defaultChannelHeader
+	}
+	if strings.TrimSpace(c.RequestTimeout) == "" {
+		c.RequestTimeout = defaultTimeout.String()
+	}
+	if strings.TrimSpace(c.InteractionTimeout) == "" {
+		c.InteractionTimeout = defaultInteractionTimeout.String()
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if _, err := time.ParseDuration(strings.TrimSpace(c.RequestTimeout)); err != nil {
+		return fmt.Errorf("platform/chat-api requestTimeout: %w", err)
+	}
+	if _, err := time.ParseDuration(strings.TrimSpace(c.InteractionTimeout)); err != nil {
+		return fmt.Errorf("platform/chat-api interactionTimeout: %w", err)
+	}
+	switch busy := strings.ToLower(strings.TrimSpace(c.BusyPolicy)); busy {
+	case busyPolicyQueue, busyPolicyReject:
+	default:
+		return fmt.Errorf("platform/chat-api busyPolicy must be queue or reject")
+	}
+	if c.MaxRuns < 0 {
+		return fmt.Errorf("platform/chat-api maxRuns must not be negative")
+	}
+	if c.MaxUploadSize < 0 {
+		return fmt.Errorf("platform/chat-api maxUploadSize must not be negative")
+	}
+	return nil
+}
+
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	registerOnly := cfgRegisterOnly(cfg)
 	listen := strings.TrimSpace(cfg.ListenAddr)
 	if registerOnly {

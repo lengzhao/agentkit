@@ -59,23 +59,39 @@ func NewSummary(cfg SummaryConfig, deps SummaryDeps) (capcompaction.Service, err
 	if deps.SessionEvents == nil {
 		return nil, fmt.Errorf("compaction/summary requires sessionEvents dependency")
 	}
-	if cfg.KeepRecentTokens <= 0 {
-		if cfg.KeepRecent > 0 {
-			cfg.KeepRecentTokens = cfg.KeepRecent * 500
-		} else {
-			cfg.KeepRecentTokens = defaultKeepRecentTokens
-		}
-	}
-	if cfg.ReserveTokens <= 0 {
-		cfg.ReserveTokens = defaultReserveTokens
-	}
-	if cfg.MaxInputTokens <= 0 {
-		cfg.MaxInputTokens = defaultMaxInputTokens
-	}
-	if cfg.SummaryPrompt == "" {
-		cfg.SummaryPrompt = initialSummarizationPrompt
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	return &summaryService{cfg: cfg, llm: deps.LLM, events: deps.SessionEvents}, nil
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *SummaryConfig) SetDefaults() {
+	if c.KeepRecentTokens == 0 {
+		if c.KeepRecent > 0 {
+			c.KeepRecentTokens = c.KeepRecent * 500
+		} else {
+			c.KeepRecentTokens = defaultKeepRecentTokens
+		}
+	}
+	if c.ReserveTokens == 0 {
+		c.ReserveTokens = defaultReserveTokens
+	}
+	if c.MaxInputTokens == 0 {
+		c.MaxInputTokens = defaultMaxInputTokens
+	}
+	if c.SummaryPrompt == "" {
+		c.SummaryPrompt = initialSummarizationPrompt
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *SummaryConfig) Validate() error {
+	if c.KeepRecent < 0 || c.KeepRecentTokens < 0 || c.ReserveTokens < 0 || c.MaxInputTokens < 0 {
+		return fmt.Errorf("compaction/summary keepRecent, keepRecentTokens, reserveTokens, maxInputTokens must not be negative")
+	}
+	return nil
 }
 
 func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request) (capcompaction.Result, error) {

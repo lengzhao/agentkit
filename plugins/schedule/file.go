@@ -24,6 +24,13 @@ type FileDeps struct {
 	Engine capschedule.Engine `json:"engine"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *FileConfig) SetDefaults() {
+	if strings.TrimSpace(c.Path) == "" {
+		c.Path = "capschedule.json"
+	}
+}
+
 // fileRegistry keeps jobs in a JSON file so an agent-created schedule survives a
 // restart. The filesystem backend guarantees atomic replace (temp file + rename
 // on local disk): a daemon killed mid-write must not come back to a truncated
@@ -54,11 +61,8 @@ func NewFile(cfg FileConfig, deps FileDeps) (capschedule.Registry, error) {
 	if deps.Engine == nil {
 		return nil, fmt.Errorf("schedule/file requires engine dependency")
 	}
-	path := strings.TrimSpace(cfg.Path)
-	if path == "" {
-		path = "capschedule.json"
-	}
-	return &fileRegistry{relPath: path, fs: deps.FS, engine: deps.Engine, now: time.Now}, nil
+	cfg.SetDefaults()
+	return &fileRegistry{relPath: strings.TrimSpace(cfg.Path), fs: deps.FS, engine: deps.Engine, now: time.Now}, nil
 }
 
 func (r *fileRegistry) List(ctx context.Context) ([]capschedule.Job, error) {

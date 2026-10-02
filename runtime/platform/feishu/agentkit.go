@@ -56,6 +56,36 @@ type Config struct {
 	UnknownCardAction          string            `json:"unknownCardAction"` // forward (default) | ignore
 }
 
+// SetDefaults implements pluginkit.Defaulter. Emoji 字段保留 "none" 哨兵语义：
+// 仅在为空时填默认值，"none" 由 newPlatform 映射为空串（禁用）。
+func (c *Config) SetDefaults() {
+	if strings.TrimSpace(c.ReactionEmoji) == "" {
+		c.ReactionEmoji = "OnIt"
+	}
+	if c.DoneEmoji == "" {
+		c.DoneEmoji = "CheckMark"
+	}
+	if c.CancelledEmoji == "" {
+		c.CancelledEmoji = "HEARTBROKEN"
+	}
+	if c.ErrorEmoji == "" {
+		c.ErrorEmoji = "CrossMark"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.AppID == "" || c.AppSecret == "" {
+		return fmt.Errorf("platform feishu/lark requires appId and appSecret")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.UnknownCardAction)) {
+	case "", "forward", "ignore":
+	default:
+		return fmt.Errorf("platform feishu/lark unknownCardAction must be forward or ignore, got %q", c.UnknownCardAction)
+	}
+	return nil
+}
+
 type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
@@ -146,8 +176,9 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 }
 
 func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Platform, error) {
-	if cfg.AppID == "" || cfg.AppSecret == "" {
-		return nil, fmt.Errorf("platform/%s requires appId and appSecret", name)
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("platform/%s: %w", name, err)
 	}
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("platform/%s requires workspace", name)
@@ -158,34 +189,17 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	}
 	common.WarnAllowFromEmpty(name, cfg.AllowFrom)
 
-	reactionEmoji := strings.TrimSpace(cfg.ReactionEmoji)
-	if reactionEmoji == "" {
-		reactionEmoji = "OnIt"
+	// "none" 哨兵：禁用对应 emoji。
+	noneToEmpty := func(s string) string {
+		if s == "none" {
+			return ""
+		}
+		return s
 	}
-	if reactionEmoji == "none" {
-		reactionEmoji = ""
-	}
-	doneEmoji := cfg.DoneEmoji
-	if doneEmoji == "" {
-		doneEmoji = "CheckMark"
-	}
-	if doneEmoji == "none" {
-		doneEmoji = ""
-	}
-	cancelledEmoji := cfg.CancelledEmoji
-	if cancelledEmoji == "" {
-		cancelledEmoji = "HEARTBROKEN"
-	}
-	if cancelledEmoji == "none" {
-		cancelledEmoji = ""
-	}
-	errorEmoji := cfg.ErrorEmoji
-	if errorEmoji == "" {
-		errorEmoji = "CrossMark"
-	}
-	if errorEmoji == "none" {
-		errorEmoji = ""
-	}
+	reactionEmoji := noneToEmpty(strings.TrimSpace(cfg.ReactionEmoji))
+	doneEmoji := noneToEmpty(cfg.DoneEmoji)
+	cancelledEmoji := noneToEmpty(cfg.CancelledEmoji)
+	errorEmoji := noneToEmpty(cfg.ErrorEmoji)
 
 	useInteractiveCard := true
 	if cfg.EnableFeishuCard != nil {

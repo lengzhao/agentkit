@@ -35,6 +35,17 @@ type MCPConfig struct {
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *MCPConfig) SetDefaults() {
+	if len(c.Files) == 0 {
+		if c.EnableLocal {
+			c.Files = []string{defaultLocalMCPFile, defaultGlobalMCPFile}
+		} else {
+			c.Files = []string{defaultGlobalMCPFile}
+		}
+	}
+}
+
 type MCPDeps struct {
 	// FS reads/writes mcp.json files (scope prefixes allowed).
 	FS          filesystem.Service      `json:"fs"`

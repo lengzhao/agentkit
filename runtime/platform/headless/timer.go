@@ -60,25 +60,43 @@ type Timer struct {
 // Best practices:
 //   - Ticks are anchored to the start time and missed ones are skipped, so a slow turn does not make the schedule drift.
 //   - Use platform/worker with a cron expression when you need calendar times rather than an interval.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *TimerConfig) SetDefaults() {
+	if strings.TrimSpace(c.SessionID) == "" {
+		c.SessionID = "timer"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *TimerConfig) Validate() error {
+	if c.EverySeconds <= 0 {
+		return fmt.Errorf("platform/timer requires everySeconds > 0")
+	}
+	if strings.TrimSpace(c.Prompt) == "" {
+		return fmt.Errorf("platform/timer requires a prompt")
+	}
+	if c.MaxRuns < 0 {
+		return fmt.Errorf("platform/timer maxRuns must not be negative")
+	}
+	if _, err := resolveSessionMode(c.SessionMode); err != nil {
+		return fmt.Errorf("platform/timer: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Output)) {
+	case "", OutputText, OutputJSON:
+	default:
+		return fmt.Errorf("platform/timer output must be text or json, got %q", c.Output)
+	}
+	return nil
+}
+
 func NewTimer(cfg TimerConfig) (agentkit.Platform, error) {
-	if cfg.EverySeconds <= 0 {
-		return nil, fmt.Errorf("platform/timer requires everySeconds > 0")
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	prompt := strings.TrimSpace(cfg.Prompt)
-	if prompt == "" {
-		return nil, fmt.Errorf("platform/timer requires a prompt")
-	}
-	if cfg.MaxRuns < 0 {
-		return nil, fmt.Errorf("platform/timer maxRuns must not be negative")
-	}
-	mode, err := resolveSessionMode(cfg.SessionMode)
-	if err != nil {
-		return nil, fmt.Errorf("platform/timer: %w", err)
-	}
+	mode, _ := resolveSessionMode(cfg.SessionMode) // Validate 已保证合法
 	sessionID := strings.TrimSpace(cfg.SessionID)
-	if sessionID == "" {
-		sessionID = "timer"
-	}
 	immediate := true
 	if cfg.Immediate != nil {
 		immediate = *cfg.Immediate

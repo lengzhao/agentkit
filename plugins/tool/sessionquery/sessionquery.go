@@ -18,6 +18,21 @@ type Deps struct {
 	Index capsessionindex.Service `json:"index"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.DefaultLimit == 0 {
+		c.DefaultLimit = 10
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.DefaultLimit < 0 {
+		return fmt.Errorf("tool/session-search defaultLimit must not be negative")
+	}
+	return nil
+}
+
 // Input supports Hermes-style session_search shapes: search (FTS), list (browse sessions), scroll (context around a hit).
 type Input struct {
 	Mode string `json:"mode,omitempty" jsonschema:"search (default) | list | scroll"`
@@ -52,10 +67,11 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 	if deps.Index == nil {
 		return nil, fmt.Errorf("tool/session-search requires index")
 	}
-	defaultLimit := cfg.DefaultLimit
-	if defaultLimit <= 0 {
-		defaultLimit = 10
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
+	defaultLimit := cfg.DefaultLimit
 	idx := deps.Index
 	tool, err := agentkit.NewTool[Input, Output]("session_search", func(ctx context.Context, input Input) (Output, error) {
 		if err := idx.SyncSessions(ctx); err != nil {

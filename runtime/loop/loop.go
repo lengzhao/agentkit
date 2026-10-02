@@ -29,6 +29,24 @@ type Deps struct {
 	Telemetry captelemetry.Exporter `json:"telemetry,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.FollowUpMode == "" {
+		c.FollowUpMode = agentkit.FollowUpOneAtATime
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	switch c.FollowUpMode {
+	case agentkit.FollowUpOneAtATime, agentkit.FollowUpAll:
+		return nil
+	default:
+		return fmt.Errorf("loop followUpMode must be %q or %q, got %q",
+			agentkit.FollowUpOneAtATime, agentkit.FollowUpAll, c.FollowUpMode)
+	}
+}
+
 type Default struct {
 	agents          map[agentkit.AgentID]agentkit.Agent
 	defaultAgent    agentkit.AgentID
@@ -47,14 +65,15 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 		}
 		agents[ag.ID()] = ag
 	}
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	defaultID := cfg.DefaultAgent
 	if defaultID == "" && len(deps.Agents) > 0 {
 		defaultID = deps.Agents[0].ID()
 	}
 	mode := cfg.FollowUpMode
-	if mode == "" {
-		mode = agentkit.FollowUpOneAtATime
-	}
 	if len(deps.Agents) == 0 {
 		return nil, fmt.Errorf("loop requires at least one agent")
 	}

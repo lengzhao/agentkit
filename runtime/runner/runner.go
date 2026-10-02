@@ -84,6 +84,32 @@ type Root struct {
 //   - Platforms emit delivery SessionIDs; runner applies sessionScope and agent routing before dispatch.
 //   - Ordering within a session is preserved at any concurrency; only cross-session turns overlap.
 //   - A panicking or failing turn is reported on its session and never kills the process.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.MaxConcurrentTurns == 0 {
+		c.MaxConcurrentTurns = defaultMaxConcurrentTurns
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.MaxConcurrentTurns < 0 {
+		return fmt.Errorf("runner maxConcurrentTurns must not be negative")
+	}
+	if c.ShutdownTimeoutSeconds < 0 {
+		return fmt.Errorf("runner shutdownTimeoutSeconds must not be negative")
+	}
+	if c.ShutdownGraceSecondsOnSignal < 0 {
+		return fmt.Errorf("runner shutdownGraceSecondsOnSignal must not be negative")
+	}
+	switch agentkit.SessionScope(strings.ToLower(strings.TrimSpace(c.SessionScope))) {
+	case "", agentkit.SessionScopeChannel, agentkit.SessionScopeThread, agentkit.SessionScopeUser:
+		return nil
+	default:
+		return fmt.Errorf("runner sessionScope must be channel, thread, or user, got %q", c.SessionScope)
+	}
+}
+
 func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if deps.Platform == nil {
 		return nil, fmt.Errorf("runner requires platform")
@@ -92,17 +118,15 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 		return nil, fmt.Errorf("runner requires loop")
 	}
 	_ = deps.CatalogCommands
-	if cfg.MaxConcurrentTurns < 0 {
-		return nil, fmt.Errorf("runner maxConcurrentTurns must not be negative")
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	exp := deps.Telemetry
 	if exp == nil {
 		exp = rttelemetry.Noop
 	}
 	maxConcurrent := cfg.MaxConcurrentTurns
-	if maxConcurrent == 0 {
-		maxConcurrent = defaultMaxConcurrentTurns
-	}
 	var shutdownTimeout time.Duration
 	if cfg.ShutdownTimeoutSeconds > 0 {
 		shutdownTimeout = time.Duration(cfg.ShutdownTimeoutSeconds) * time.Second

@@ -27,6 +27,16 @@ type SQLiteIndexDeps struct {
 	Workspace workspace.Service `json:"workspace"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *SQLiteIndexConfig) SetDefaults() {
+	if strings.TrimSpace(c.IndexRel) == "" {
+		c.IndexRel = "sessions/.index.sqlite"
+	}
+	if strings.TrimSpace(c.SessionsRel) == "" {
+		c.SessionsRel = "sessions"
+	}
+}
+
 // SQLiteIndex persists FTS5 over session JSONL transcripts per tenant workspace.
 type SQLiteIndex struct {
 	workspace   workspace.Service
@@ -40,18 +50,11 @@ func NewSQLiteIndex(cfg SQLiteIndexConfig, deps SQLiteIndexDeps) (capsessioninde
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("session/sqlite-index requires workspace")
 	}
-	rel := strings.TrimSpace(cfg.IndexRel)
-	if rel == "" {
-		rel = "sessions/.index.sqlite"
-	}
-	sessionsRel := strings.TrimSpace(cfg.SessionsRel)
-	if sessionsRel == "" {
-		sessionsRel = "sessions"
-	}
+	cfg.SetDefaults()
 	return &SQLiteIndex{
 		workspace:   deps.Workspace,
-		indexRel:    rel,
-		sessionsRel: sessionsRel,
+		indexRel:    strings.TrimSpace(cfg.IndexRel),
+		sessionsRel: strings.TrimSpace(cfg.SessionsRel),
 	}, nil
 }
 

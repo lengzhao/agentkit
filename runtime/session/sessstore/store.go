@@ -39,19 +39,30 @@ type Store struct {
 	sidecar         fileSidecar
 }
 
+// Validate implements pluginkit.Validator.
+func (c *StoreConfig) Validate() error {
+	if c.Dir == "" {
+		return fmt.Errorf("session store dir is required")
+	}
+	if c.MaxCachedSessions < 0 {
+		return fmt.Errorf("session store maxCachedSessions must be >= 0")
+	}
+	if c.MaxLoadedEvents < 0 {
+		return fmt.Errorf("session store maxLoadedEvents must be >= 0")
+	}
+	if _, err := parseCacheIdleTTL(c.CacheIdleTTL); err != nil {
+		return err
+	}
+	return nil
+}
+
 // NewStore registers session/store: Resolve durable JSONL sessions by id.
 func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("session store requires workspace")
 	}
-	if cfg.Dir == "" {
-		return nil, fmt.Errorf("session store dir is required")
-	}
-	if cfg.MaxCachedSessions < 0 {
-		return nil, fmt.Errorf("session store maxCachedSessions must be >= 0")
-	}
-	if cfg.MaxLoadedEvents < 0 {
-		return nil, fmt.Errorf("session store maxLoadedEvents must be >= 0")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	idleTTL, err := parseCacheIdleTTL(cfg.CacheIdleTTL)
 	if err != nil {

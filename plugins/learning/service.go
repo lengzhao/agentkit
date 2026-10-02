@@ -81,6 +81,13 @@ type Config struct {
 	Workshop    workshop.Config `json:"workshop"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if strings.TrimSpace(c.SessionsDir) == "" {
+		c.SessionsDir = "sessions"
+	}
+}
+
 type Deps struct {
 	Workspace    workspace.Service     `json:"workspace"`
 	FS           filesystem.Service    `json:"fs"`
@@ -106,15 +113,12 @@ func New(cfg Config, deps Deps) (*Service, error) {
 	if deps.Engine == nil {
 		return nil, fmt.Errorf("learning/default requires engine")
 	}
+	cfg.SetDefaults()
 	dreamCfg := cfg.Dreaming.Normalized()
 	wsCfg := cfg.Workshop.Normalized()
-	sessionsDir := strings.TrimSpace(cfg.SessionsDir)
-	if sessionsDir == "" {
-		sessionsDir = "sessions"
-	}
 	svc := &Service{
 		disabled:    cfg.Disabled,
-		sessionsDir: sessionsDir,
+		sessionsDir: strings.TrimSpace(cfg.SessionsDir),
 		dreaming:    dreamCfg,
 		workshop:    wsCfg,
 		workspace:   deps.Workspace,

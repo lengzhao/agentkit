@@ -43,11 +43,15 @@ func New(cfg Config, deps Deps) (skill.Registry, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("skill/filesystem requires workspace")
 	}
-	dirs := cfg.Dirs
-	if len(dirs) == 0 {
-		dirs = []string{"global:.cursor/skills", "global:.agents/skills", "global:skills"}
+	cfg.SetDefaults()
+	return &Registry{relDirs: cfg.Dirs, fs: deps.FS, workspace: deps.Workspace}, nil
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if len(c.Dirs) == 0 {
+		c.Dirs = []string{"global:.cursor/skills", "global:.agents/skills", "global:skills"}
 	}
-	return &Registry{relDirs: dirs, fs: deps.FS, workspace: deps.Workspace}, nil
 }
 
 func (r *Registry) List(ctx context.Context) ([]skill.Descriptor, error) {

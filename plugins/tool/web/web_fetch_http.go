@@ -66,27 +66,40 @@ type WebFetchOutput struct {
 // Best practices:
 //   - Needs no credentials, so it works without any API key.
 //   - Leave allowPrivateHosts off to block cloud metadata and internal admin endpoints.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *WebFetchHTTPConfig) SetDefaults() {
+	if c.TimeoutSeconds == 0 {
+		c.TimeoutSeconds = int(defaultFetchTimeout / time.Second)
+	}
+	if c.MaxBytes == 0 {
+		c.MaxBytes = defaultFetchMaxBytes
+	}
+	if c.MaxRedirects == 0 {
+		c.MaxRedirects = defaultMaxRedirects
+	}
+	if c.UserAgent == "" {
+		c.UserAgent = defaultUserAgent
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *WebFetchHTTPConfig) Validate() error {
+	if c.TimeoutSeconds < 0 || c.MaxBytes < 0 || c.MaxRedirects < 0 {
+		return fmt.Errorf("tool/web-fetch-http timeoutSeconds, maxBytes, maxRedirects must not be negative")
+	}
+	return nil
+}
+
 func NewWebFetchHTTP(cfg WebFetchHTTPConfig) (agentkit.Tool, error) {
-	timeout := defaultFetchTimeout
-	if cfg.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
-	maxBytes := cfg.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = defaultFetchMaxBytes
-	}
-	maxRedirects := cfg.MaxRedirects
-	if maxRedirects <= 0 {
-		maxRedirects = defaultMaxRedirects
-	}
-	userAgent := cfg.UserAgent
-	if userAgent == "" {
-		userAgent = defaultUserAgent
-	}
+	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 
 	f := &httpFetcher{
-		maxBytes:     maxBytes,
-		userAgent:    userAgent,
+		maxBytes:     cfg.MaxBytes,
+		userAgent:    cfg.UserAgent,
 		allowPrivate: cfg.AllowPrivateHosts,
 		allowHosts:   normalizeHosts(cfg.AllowHosts),
 		denyHosts:    normalizeHosts(cfg.DenyHosts),
@@ -114,8 +127,8 @@ func NewWebFetchHTTP(cfg WebFetchHTTPConfig) (agentkit.Tool, error) {
 		Timeout:   timeout,
 		Transport: &http.Transport{DialContext: dialer.DialContext},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxRedirects {
-				return fmt.Errorf("stopped after %d redirects", maxRedirects)
+			if len(via) >= cfg.MaxRedirects {
+				return fmt.Errorf("stopped after %d redirects", cfg.MaxRedirects)
 			}
 			return f.checkURL(req.URL)
 		},

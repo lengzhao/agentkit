@@ -23,6 +23,13 @@ type MultiDeps struct {
 	Engine schedule.Engine    `json:"engine"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *MultiConfig) SetDefaults() {
+	if strings.TrimSpace(c.Path) == "" {
+		c.Path = defaultGlobalSchedulePath
+	}
+}
+
 // multiRegistry stores every job in one schedule file. List and Remove filter by
 // the channel key derived from the current turn context.
 type multiRegistry struct {
@@ -37,11 +44,8 @@ func NewMulti(cfg MultiConfig, deps MultiDeps) (schedule.Registry, error) {
 	if deps.Engine == nil {
 		return nil, fmt.Errorf("schedule/multi requires engine dependency")
 	}
-	path := strings.TrimSpace(cfg.Path)
-	if path == "" {
-		path = defaultGlobalSchedulePath
-	}
-	inner, err := NewFile(FileConfig{Path: path}, FileDeps{FS: deps.FS, Engine: deps.Engine})
+	cfg.SetDefaults()
+	inner, err := NewFile(FileConfig{Path: strings.TrimSpace(cfg.Path)}, FileDeps{FS: deps.FS, Engine: deps.Engine})
 	if err != nil {
 		return nil, err
 	}

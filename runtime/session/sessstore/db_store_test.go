@@ -103,6 +103,19 @@ func TestSQLStorePersistsAcrossReopen(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreConfigDefaultsDriver(t *testing.T) {
+	t.Parallel()
+	var cfg sessstore.SQLiteStoreConfig
+	cfg.DSN = "file:validate?mode=memory"
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if cfg.Driver != "sqlite" {
+		t.Fatalf("driver = %q", cfg.Driver)
+	}
+}
+
 func TestSQLStoreActiveSession(t *testing.T) {
 	t.Parallel()
 

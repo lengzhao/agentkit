@@ -34,11 +34,16 @@ var DefaultDeniedPaths = []string{
 //
 // Best practices:
 //   - Mandatory alongside approval/auto-allow, which does no filtering of its own.
-func NewPathDenylist(cfg PathDenylistConfig) (agentkit.Policy, error) {
-	deny := cfg.Deny
-	if len(deny) == 0 {
-		deny = DefaultDeniedPaths
+// SetDefaults implements pluginkit.Defaulter.
+func (c *PathDenylistConfig) SetDefaults() {
+	if len(c.Deny) == 0 {
+		c.Deny = append([]string(nil), DefaultDeniedPaths...)
 	}
+}
+
+func NewPathDenylist(cfg PathDenylistConfig) (agentkit.Policy, error) {
+	cfg.SetDefaults()
+	deny := cfg.Deny
 	tools := make(map[string]bool, len(cfg.Tools))
 	for _, name := range cfg.Tools {
 		tools[strings.TrimSpace(name)] = true

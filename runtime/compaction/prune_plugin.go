@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/lengzhao/agentkit/cap/compaction"
 )
@@ -19,12 +20,27 @@ type pruneService struct {
 //
 // Best practices:
 //   - Cheap and lossless enough to run before compaction/summary in the same chain.
-func NewPrune(cfg PruneConfig) (compaction.Service, error) {
-	maxBytes := cfg.MaxToolResultBytes
-	if maxBytes <= 0 {
-		maxBytes = 8192
+// SetDefaults implements pluginkit.Defaulter.
+func (c *PruneConfig) SetDefaults() {
+	if c.MaxToolResultBytes == 0 {
+		c.MaxToolResultBytes = 8192
 	}
-	return &pruneService{maxBytes: maxBytes}, nil
+}
+
+// Validate implements pluginkit.Validator.
+func (c *PruneConfig) Validate() error {
+	if c.MaxToolResultBytes < 0 {
+		return fmt.Errorf("compaction/prune-tool-results maxToolResultBytes must not be negative")
+	}
+	return nil
+}
+
+func NewPrune(cfg PruneConfig) (compaction.Service, error) {
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &pruneService{maxBytes: cfg.MaxToolResultBytes}, nil
 }
 
 func (s *pruneService) Compact(_ context.Context, req compaction.Request) (compaction.Result, error) {

@@ -26,6 +26,13 @@ type RecognizeConfig struct {
 	ImageSystemPrompt string `json:"imageSystemPrompt"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *RecognizeConfig) SetDefaults() {
+	if strings.TrimSpace(c.ImageSystemPrompt) == "" {
+		c.ImageSystemPrompt = defaultImageSystemPrompt
+	}
+}
+
 type RecognizeDeps struct {
 	LLM       agentkit.LLMProvider   `json:"llm"`
 	Workspace workspace.Service      `json:"workspace"`
@@ -48,10 +55,8 @@ func NewRecognize(cfg RecognizeConfig, deps RecognizeDeps) (agentkit.ToolPack, e
 	if deps.Telemetry == nil {
 		return nil, fmt.Errorf("tool/recognize requires telemetry dependency")
 	}
+	cfg.SetDefaults()
 	sysPrompt := strings.TrimSpace(cfg.ImageSystemPrompt)
-	if sysPrompt == "" {
-		sysPrompt = defaultImageSystemPrompt
-	}
 	svc := &service{
 		model:     strings.TrimSpace(cfg.Model),
 		llm:       deps.LLM,

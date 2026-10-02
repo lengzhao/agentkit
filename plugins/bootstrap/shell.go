@@ -47,23 +47,37 @@ func NewShell(cfg ShellConfig, deps ShellDeps) (agentkit.AppInitializer, error) 
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("bootstrap/shell requires workspace")
 	}
-	if len(cfg.Commands) == 0 {
-		return nil, fmt.Errorf("bootstrap/shell requires at least one command")
-	}
-	workDir := strings.TrimSpace(cfg.WorkDir)
-	if workDir == "" {
-		workDir = "local:."
-	}
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 60 * time.Second
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	return &shellInit{
-		workDir:   workDir,
+		workDir:   strings.TrimSpace(cfg.WorkDir),
 		commands:  cfg.Commands,
-		timeout:   timeout,
+		timeout:   time.Duration(cfg.TimeoutSeconds) * time.Second,
 		workspace: deps.Workspace,
 	}, nil
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *ShellConfig) SetDefaults() {
+	if strings.TrimSpace(c.WorkDir) == "" {
+		c.WorkDir = "local:."
+	}
+	if c.TimeoutSeconds == 0 {
+		c.TimeoutSeconds = 60
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *ShellConfig) Validate() error {
+	if len(c.Commands) == 0 {
+		return fmt.Errorf("bootstrap/shell requires at least one command")
+	}
+	if c.TimeoutSeconds < 0 {
+		return fmt.Errorf("bootstrap/shell timeoutSeconds must not be negative")
+	}
+	return nil
 }
 
 func (s *shellInit) InitApp(ctx context.Context) error {

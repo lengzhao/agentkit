@@ -20,13 +20,17 @@ type staticSectionProvider struct {
 }
 
 // NewStatic registers prompt/section/static: Inject a fixed block of system prompt text from config.
-func NewStatic(cfg StaticConfig) (agentkit.SectionProvider, error) {
-	name := cfg.Name
-	if name == "" {
-		name = "static"
+// SetDefaults implements pluginkit.Defaulter.
+func (c *StaticConfig) SetDefaults() {
+	if c.Name == "" {
+		c.Name = "static"
 	}
+}
+
+func NewStatic(cfg StaticConfig) (agentkit.SectionProvider, error) {
+	cfg.SetDefaults()
 	return &staticSectionProvider{
-		name:    name,
+		name:    cfg.Name,
 		content: strings.TrimSpace(cfg.Content),
 	}, nil
 }

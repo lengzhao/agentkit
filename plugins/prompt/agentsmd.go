@@ -34,6 +34,16 @@ type agentsMDProvider struct {
 	fs        filesystem.Service
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *AgentsMDConfig) SetDefaults() {
+	if c.Root == "" {
+		c.Root = "."
+	}
+	if len(c.Filenames) == 0 {
+		c.Filenames = defaultAgentsMDFilenames()
+	}
+}
+
 // NewAgentsMD registers prompt/section/agents-md: Inject AGENTS.md instructions discovered in the workspace hierarchy.
 func NewAgentsMD(cfg AgentsMDConfig, deps AgentsMDDeps) (agentkit.SectionProvider, error) {
 	if deps.Workspace == nil {
@@ -42,15 +52,8 @@ func NewAgentsMD(cfg AgentsMDConfig, deps AgentsMDDeps) (agentkit.SectionProvide
 	if deps.FS == nil {
 		return nil, fmt.Errorf("prompt/section/agents-md requires fs")
 	}
-	root := cfg.Root
-	if root == "" {
-		root = "."
-	}
-	filenames := cfg.Filenames
-	if len(filenames) == 0 {
-		filenames = defaultAgentsMDFilenames()
-	}
-	return &agentsMDProvider{relRoot: root, workspace: deps.Workspace, fs: deps.FS, filenames: filenames}, nil
+	cfg.SetDefaults()
+	return &agentsMDProvider{relRoot: cfg.Root, workspace: deps.Workspace, fs: deps.FS, filenames: cfg.Filenames}, nil
 }
 
 func defaultAgentsMDFilenames() []string {

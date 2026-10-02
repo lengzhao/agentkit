@@ -35,6 +35,22 @@ type Config struct {
 	UnknownCardAction   string `json:"unknownCardAction"` // forward (default) | ignore
 }
 
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.BotToken == "" && c.BotTokenRef == "" {
+		return fmt.Errorf("platform/slack requires botToken or botTokenRef")
+	}
+	if c.AppToken == "" && c.AppTokenRef == "" {
+		return fmt.Errorf("platform/slack requires appToken or appTokenRef")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.UnknownCardAction)) {
+	case "", "forward", "ignore":
+	default:
+		return fmt.Errorf("platform/slack unknownCardAction must be forward or ignore, got %q", c.UnknownCardAction)
+	}
+	return nil
+}
+
 type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
@@ -101,6 +117,9 @@ type Platform struct {
 
 // New registers platform/slack: Slack Socket Mode; SessionID follows cc-connect slack conventions.
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	botToken, err := resolveToken(context.Background(), cfg.BotToken, cfg.BotTokenRef, deps.Credentials, "botTokenRef")
 	if err != nil {
 		return nil, err

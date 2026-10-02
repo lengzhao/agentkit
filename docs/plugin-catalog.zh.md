@@ -2,7 +2,16 @@
 
 本文定义 AgentKit 的 **Plugin Kind** 命名规范、分类体系和分阶段落地范围。Kind 通过 `pluginkit.Register(kind, New)` 注册；配置中使用 `use: <kind>` 引用。
 
-相关文档：[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)、[roadmap.zh.md](roadmap.zh.md)。
+相关文档：[go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md)、[roadmap.zh.md](roadmap.zh.md)、[config-catalog.zh.md](config-catalog.zh.md)（逐插件配置字段参考，自动生成）。
+
+配置相关的 CLI 工具：
+
+| 命令 | 用途 |
+|---|---|
+| `agent config describe <kind>` | 查看插件的 config 字段、默认值与 deps 注入点 |
+| `agent config scaffold <kind>` | 生成可填充的 YAML 配置骨架（含 SetDefaults 默认值） |
+| `agent config validate` | 不构造实例，校验整张配置图（decode → SetDefaults → Validate） |
+| `agent config dump` | 输出合并后的完整配置图 |
 
 ## 1. 命名规范
 
@@ -599,6 +608,7 @@ graph:
 - [ ] `init()` 仅调用 `pluginkit.Register`，无 IO / goroutine
 - [ ] 构造函数签名符合 `New` / `New(cfg)` / `New(cfg, deps)` 之一
 - [ ] Config struct 字段有 `json` tag；未知字段 decode 失败
+- [ ] Config 有默认值时实现 `SetDefaults()`；有非法取值时实现 `Validate() error`（装配期 decode → SetDefaults → Validate 管线生效，`agent config validate` 与 manager UI 不构造实例即可报错）
 - [ ] Deps 字段类型为接口，非具体 Provider
 - [ ] 需生命周期时实现 `agentkit.StartStop`
 - [ ] 需启动前一次性准备时实现 `agentkit.AppInitializer`，并由 `runner.deps.init` 挂载

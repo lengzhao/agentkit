@@ -39,6 +39,27 @@ type turnContinueProvider struct {
 	requireTodosDone bool
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *TurnContinueConfig) SetDefaults() {
+	if c.ContinuePrompt == "" {
+		c.ContinuePrompt = defaultContinuePrompt
+	}
+	if c.StallLimit == 0 {
+		c.StallLimit = defaultStallLimit
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *TurnContinueConfig) Validate() error {
+	if c.MaxContinuations < 0 {
+		return fmt.Errorf("hook/turn-continue maxContinuations must not be negative")
+	}
+	if c.StallLimit < 0 {
+		return fmt.Errorf("hook/turn-continue stallLimit must not be negative")
+	}
+	return nil
+}
+
 // NewTurnContinue registers hook/turn-continue: Decide whether an autonomous turn continues or stops; contributes /status.
 //
 // Best practices:
@@ -48,14 +69,9 @@ func NewTurnContinue(cfg TurnContinueConfig, deps TurnContinueDeps) (agentkit.Ho
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/turn-continue requires sessionStore dependency")
 	}
-	if cfg.MaxContinuations < 0 {
-		return nil, fmt.Errorf("hook/turn-continue maxContinuations must not be negative")
-	}
-	if cfg.ContinuePrompt == "" {
-		cfg.ContinuePrompt = defaultContinuePrompt
-	}
-	if cfg.StallLimit <= 0 {
-		cfg.StallLimit = defaultStallLimit
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	requireFinish := true
 	if cfg.RequireFinish != nil {

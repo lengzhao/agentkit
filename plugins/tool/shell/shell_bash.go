@@ -38,6 +38,24 @@ type ShellBashDeps struct {
 	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *ShellBashConfig) SetDefaults() {
+	if c.WorkDir == "" {
+		c.WorkDir = "."
+	}
+	if c.TimeoutSeconds == 0 {
+		c.TimeoutSeconds = 60
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *ShellBashConfig) Validate() error {
+	if c.TimeoutSeconds < 0 {
+		return fmt.Errorf("tool/shell-bash timeoutSeconds must not be negative")
+	}
+	return nil
+}
+
 type ShellInput struct {
 	Command string `json:"command" jsonschema:"Shell command to execute"`
 }
@@ -71,21 +89,17 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error
 			slog.Warn("tool/shell-bash: deps.credentials is not credentials/integrations; scoped env injection disabled")
 		}
 	}
-	workDir := cfg.WorkDir
-	if workDir == "" {
-		workDir = "."
-	}
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 60 * time.Second
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	commands := cfg.Commands
 	if commands == nil {
 		commands = map[string][]string{}
 	}
 	exec := &bashExecutor{
-		relWorkDir:  workDir,
-		timeout:     timeout,
+		relWorkDir:  cfg.WorkDir,
+		timeout:     time.Duration(cfg.TimeoutSeconds) * time.Second,
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
 		commands:    commands,

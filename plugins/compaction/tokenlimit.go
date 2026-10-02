@@ -38,6 +38,33 @@ type tokenLimitService struct {
 	services      []compaction.Service
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *TokenLimitConfig) SetDefaults() {
+	if c.TriggerRatio == 0 {
+		c.TriggerRatio = defaultTriggerRatio
+	}
+	if c.CharsPerToken == 0 {
+		c.CharsPerToken = defaultCharsPerToken
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *TokenLimitConfig) Validate() error {
+	if c.MaxTokens < 0 || c.ContextWindow < 0 {
+		return fmt.Errorf("compaction/token-limit maxTokens and contextWindow must not be negative")
+	}
+	if c.MaxTokens == 0 && c.ContextWindow == 0 {
+		return fmt.Errorf("compaction/token-limit requires maxTokens or contextWindow")
+	}
+	if c.TriggerRatio <= 0 || c.TriggerRatio >= 1 {
+		return fmt.Errorf("compaction/token-limit triggerRatio must be in (0, 1), got %v", c.TriggerRatio)
+	}
+	if c.CharsPerToken <= 0 {
+		return fmt.Errorf("compaction/token-limit charsPerToken must be positive")
+	}
+	return nil
+}
+
 // NewTokenLimit registers compaction/token-limit: Trigger inner compaction services once the context crosses a token threshold.
 //
 // Best practices:
@@ -47,21 +74,15 @@ func NewTokenLimit(cfg TokenLimitConfig, deps TokenLimitDeps) (compaction.Servic
 	if deps.Chain == nil {
 		return nil, fmt.Errorf("compaction/token-limit requires chain dependency")
 	}
-	ratio := cfg.TriggerRatio
-	if ratio <= 0 || ratio >= 1 {
-		ratio = defaultTriggerRatio
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	threshold := cfg.MaxTokens
-	if threshold <= 0 && cfg.ContextWindow > 0 {
-		threshold = int(float64(cfg.ContextWindow) * ratio)
-	}
-	if threshold <= 0 {
-		return nil, fmt.Errorf("compaction/token-limit requires maxTokens or contextWindow")
+	if threshold == 0 {
+		threshold = int(float64(cfg.ContextWindow) * cfg.TriggerRatio)
 	}
 	charsPerToken := cfg.CharsPerToken
-	if charsPerToken <= 0 {
-		charsPerToken = defaultCharsPerToken
-	}
 	var services []compaction.Service
 	for _, svc := range deps.Services {
 		if svc != nil {

@@ -21,6 +21,21 @@ type ScheduleDeps struct {
 	Engine   capschedule.Engine   `json:"engine"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *ScheduleConfig) SetDefaults() {
+	if c.MaxJobs == 0 {
+		c.MaxJobs = defaultMaxAgentJobs
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *ScheduleConfig) Validate() error {
+	if c.MaxJobs < 0 {
+		return fmt.Errorf("tool/schedule maxJobs must not be negative")
+	}
+	return nil
+}
+
 type ScheduleInput struct {
 	Op           string `json:"op" jsonschema:"list to see the schedule; add to create a job; remove to delete one"`
 	Kind         string `json:"kind,omitempty" jsonschema:"cron for recurring jobs, delay for relative one-shot reminders, at for absolute one-shot reminders"`
@@ -74,10 +89,11 @@ func NewSchedule(cfg ScheduleConfig, deps ScheduleDeps) (agentkit.Tool, error) {
 	if deps.Engine == nil {
 		return nil, fmt.Errorf("tool/schedule requires engine dependency")
 	}
-	maxJobs := cfg.MaxJobs
-	if maxJobs <= 0 {
-		maxJobs = defaultMaxAgentJobs
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
+	maxJobs := cfg.MaxJobs
 	registry := deps.Schedule
 	engine := deps.Engine
 

@@ -19,12 +19,16 @@ type AutoAllowConfig struct {
 // Best practices:
 //   - Never use alone. It filters nothing, so the Policy plane is the only enforcement left: pair it with policy/shell-allowlist and policy/path-denylist.
 //   - Every decision is logged via slog, so an unattended run stays reviewable after the fact.
-func NewAutoAllow(cfg AutoAllowConfig) (agentkit.Approval, error) {
-	reason := cfg.Reason
-	if reason == "" {
-		reason = "auto-allowed: unattended run"
+// SetDefaults implements pluginkit.Defaulter.
+func (c *AutoAllowConfig) SetDefaults() {
+	if c.Reason == "" {
+		c.Reason = "auto-allowed: unattended run"
 	}
-	return autoAllow{reason: reason}, nil
+}
+
+func NewAutoAllow(cfg AutoAllowConfig) (agentkit.Approval, error) {
+	cfg.SetDefaults()
+	return autoAllow{reason: cfg.Reason}, nil
 }
 
 type autoAllow struct {

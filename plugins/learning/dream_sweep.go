@@ -26,15 +26,31 @@ type DreamSweepDeps struct {
 	Learning caplearning.DreamSweepScheduler `json:"learning"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *DreamSweepConfig) SetDefaults() {
+	if c.PollSeconds == 0 {
+		c.PollSeconds = 60
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *DreamSweepConfig) Validate() error {
+	if c.PollSeconds <= 0 {
+		return fmt.Errorf("learning/dream-sweep pollSeconds must be positive")
+	}
+	return nil
+}
+
 // NewDreamSweep registers learning/dream-sweep: background grounded dreaming sweeps.
 func NewDreamSweep(cfg DreamSweepConfig, deps DreamSweepDeps) (capschedule.Runtime, error) {
 	if deps.Learning == nil {
 		return nil, fmt.Errorf("learning/dream-sweep requires learning dependency")
 	}
-	poll := time.Duration(cfg.PollSeconds) * time.Second
-	if cfg.PollSeconds <= 0 {
-		poll = 60 * time.Second
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
+	poll := time.Duration(cfg.PollSeconds) * time.Second
 	return &DreamSweep{
 		svc:  deps.Learning,
 		poll: poll,

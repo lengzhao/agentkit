@@ -35,12 +35,16 @@ type Platform struct {
 }
 
 // New registers platform/http: HTTP host that serves http.DefaultServeMux.
-func New(cfg Config, deps Deps) (agentkit.Platform, error) {
-	listen := strings.TrimSpace(cfg.ListenAddr)
-	if listen == "" {
-		listen = defaultListenAddr
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if strings.TrimSpace(c.ListenAddr) == "" {
+		c.ListenAddr = defaultListenAddr
 	}
-	return &Platform{listenAddr: listen, ready: make(chan struct{})}, nil
+}
+
+func New(cfg Config, deps Deps) (agentkit.Platform, error) {
+	cfg.SetDefaults()
+	return &Platform{listenAddr: strings.TrimSpace(cfg.ListenAddr), ready: make(chan struct{})}, nil
 }
 
 func (p *Platform) PlatformID() string { return "http" }

@@ -47,6 +47,17 @@ type LoopAgentConfig struct {
 	MaxConcurrentJobsPerSession int `json:"maxConcurrentJobsPerSession,omitempty"`
 }
 
+// Validate implements pluginkit.Validator.
+func (c *LoopAgentConfig) Validate() error {
+	if c.TimeoutSeconds < 0 {
+		return fmt.Errorf("subagent/loop-agent timeoutSeconds must not be negative")
+	}
+	if c.MaxConcurrentJobsPerSession < 0 {
+		return fmt.Errorf("subagent/loop-agent maxConcurrentJobsPerSession must not be negative")
+	}
+	return nil
+}
+
 // LoopAgentDeps holds injected capabilities for Loop-backed delegation.
 type LoopAgentDeps struct {
 	SessionStore agentkit.SessionStore `json:"sessionStore"`
@@ -84,6 +95,9 @@ func NewLoopAgent(cfg LoopAgentConfig, deps LoopAgentDeps) (subagent.Spawner, er
 			continue
 		}
 		agents[ag.ID()] = ag
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	var defaultTO time.Duration
 	if cfg.TimeoutSeconds > 0 {

@@ -53,6 +53,45 @@ type CronDeps struct {
 const defaultPollSeconds = 30
 const defaultMissedGraceSeconds = 300
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *CronConfig) SetDefaults() {
+	if c.PollSeconds == 0 {
+		c.PollSeconds = defaultPollSeconds
+	}
+	if c.MissedGraceSeconds == 0 {
+		c.MissedGraceSeconds = defaultMissedGraceSeconds
+	}
+	if strings.TrimSpace(c.SessionID) == "" {
+		c.SessionID = "schedule"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *CronConfig) Validate() error {
+	if c.PollSeconds <= 0 {
+		return fmt.Errorf("schedule/cron pollSeconds must be positive")
+	}
+	if c.MissedGraceSeconds <= 0 {
+		return fmt.Errorf("schedule/cron missedGraceSeconds must be positive")
+	}
+	if _, err := resolveSessionMode(c.SessionMode); err != nil {
+		return fmt.Errorf("schedule/cron: %w", err)
+	}
+	for i, spec := range c.Jobs {
+		if strings.TrimSpace(spec.Cron) == "" {
+			return fmt.Errorf("schedule/cron job %d requires cron", i+1)
+		}
+		prompt, script := strings.TrimSpace(spec.Prompt), strings.TrimSpace(spec.Script)
+		if prompt == "" && script == "" {
+			return fmt.Errorf("schedule/cron job %d requires prompt or script", i+1)
+		}
+		if prompt != "" && script != "" {
+			return fmt.Errorf("schedule/cron job %d: prompt and script are mutually exclusive", i+1)
+		}
+	}
+	return nil
+}
+
 // Cron watches a shared registry and submits due jobs as inbound turns.
 type Cron struct {
 	registry    capschedule.Registry
@@ -86,6 +125,10 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 	if deps.Engine == nil {
 		return nil, fmt.Errorf("schedule/cron requires engine dependency")
 	}
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	jobs, err := parseCronJobs(cfg.Jobs, deps.Engine)
 	if err != nil {
 		return nil, err
@@ -93,22 +136,10 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 	if err := validateScriptDeps(jobs, deps); err != nil {
 		return nil, err
 	}
-	mode, err := resolveSessionMode(cfg.SessionMode)
-	if err != nil {
-		return nil, fmt.Errorf("schedule/cron: %w", err)
-	}
+	mode, _ := resolveSessionMode(cfg.SessionMode) // Validate 已保证合法
 	sessionID := strings.TrimSpace(cfg.SessionID)
-	if sessionID == "" {
-		sessionID = "schedule"
-	}
 	poll := time.Duration(cfg.PollSeconds) * time.Second
-	if cfg.PollSeconds <= 0 {
-		poll = defaultPollSeconds * time.Second
-	}
 	missedGrace := time.Duration(cfg.MissedGraceSeconds) * time.Second
-	if cfg.MissedGraceSeconds <= 0 {
-		missedGrace = defaultMissedGraceSeconds * time.Second
-	}
 	return &Cron{
 		registry:    deps.Schedule,
 		workspace:   deps.Workspace,

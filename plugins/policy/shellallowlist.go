@@ -24,11 +24,16 @@ type ShellAllowlistConfig struct {
 // Best practices:
 //   - Chained commands are checked segment by segment regardless of strict, so `git status && rm -rf /` cannot ride in on an allowed prefix.
 //   - Under an unattended run this replaces human judgement: prefer strict with a narrow allow list over approval/auto-allow on its own.
-func NewShellAllowlist(cfg ShellAllowlistConfig) (agentkit.Policy, error) {
-	toolName := strings.TrimSpace(cfg.Tool)
-	if toolName == "" {
-		toolName = "bash"
+// SetDefaults implements pluginkit.Defaulter.
+func (c *ShellAllowlistConfig) SetDefaults() {
+	if strings.TrimSpace(c.Tool) == "" {
+		c.Tool = "bash"
 	}
+}
+
+func NewShellAllowlist(cfg ShellAllowlistConfig) (agentkit.Policy, error) {
+	cfg.SetDefaults()
+	toolName := strings.TrimSpace(cfg.Tool)
 	allow := normalizePrefixes(cfg.Allow)
 	deny := normalizePrefixes(cfg.Deny)
 	return agentkit.PolicyFunc(func(_ context.Context, in agentkit.PolicyInput) agentkit.Decision {

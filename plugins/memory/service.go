@@ -39,23 +39,26 @@ type Service struct {
 }
 
 // New registers memory/default.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if strings.TrimSpace(c.MemoryRoot) == "" {
+		c.MemoryRoot = rtmem.DefaultRoot
+	}
+	if strings.TrimSpace(c.MemoryFile) == "" {
+		c.MemoryFile = rtmem.DefaultFile
+	}
+}
+
 func New(cfg Config, deps Deps) (*Service, error) {
 	if deps.FS == nil {
 		return nil, fmt.Errorf("memory/default requires fs dependency")
 	}
-	root := strings.TrimSpace(cfg.MemoryRoot)
-	if root == "" {
-		root = rtmem.DefaultRoot
-	}
-	file := strings.TrimSpace(cfg.MemoryFile)
-	if file == "" {
-		file = rtmem.DefaultFile
-	}
+	cfg.SetDefaults()
 	return &Service{
 		disabled:   cfg.Disabled,
 		charLimit:  cfg.CharLimit,
-		memoryRoot: root,
-		memoryFile: file,
+		memoryRoot: strings.TrimSpace(cfg.MemoryRoot),
+		memoryFile: strings.TrimSpace(cfg.MemoryFile),
 		review:     cfg.Review,
 		fs:         deps.FS,
 	}, nil

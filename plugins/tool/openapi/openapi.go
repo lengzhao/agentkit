@@ -30,6 +30,17 @@ type OpenAPIConfig struct {
 	EnableLocal bool `json:"enableLocal,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *OpenAPIConfig) SetDefaults() {
+	if len(c.Files) == 0 {
+		if c.EnableLocal {
+			c.Files = []string{defaultLocalAPIFile, defaultGlobalAPIFile}
+		} else {
+			c.Files = []string{defaultGlobalAPIFile}
+		}
+	}
+}
+
 type OpenAPIDeps struct {
 	// FS reads/writes api.json and spec files.
 	FS          filesystem.Service   `json:"fs"`

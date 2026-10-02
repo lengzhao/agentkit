@@ -42,6 +42,21 @@ type Config struct {
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if len(c.Dirs) == 0 {
+		c.Dirs = definition.DefaultDirs()
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.TimeoutSeconds < 0 {
+		return fmt.Errorf("subagent/inprocess timeoutSeconds must not be negative")
+	}
+	return nil
+}
+
 type Deps struct {
 	Workspace    workspace.Service        `json:"workspace"`
 	SessionStore agentkit.SessionStore    `json:"sessionStore"`
@@ -87,16 +102,16 @@ func New(cfg Config, deps Deps) (subagent.Spawner, error) {
 	if deps.Prompt == nil {
 		return nil, fmt.Errorf("subagent/inprocess requires prompt")
 	}
-	dirs := cfg.Dirs
-	if len(dirs) == 0 {
-		dirs = definition.DefaultDirs()
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	var timeout time.Duration
 	if cfg.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
 	return &Spawner{
-		dirs:      dirs,
+		dirs:      cfg.Dirs,
 		timeout:   timeout,
 		workspace: deps.Workspace,
 		store:     deps.SessionStore,

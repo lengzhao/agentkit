@@ -83,37 +83,49 @@ func init() {
 //     beside its siblings, so the parent-directory exemption would be a way out
 //     of the tenant. Point a tenant's root at the project directory itself
 //     instead of relying on "..".
+// SetDefaults implements pluginkit.Defaulter.
+func (c *TenantConfig) SetDefaults() {
+	if c.Global == "" {
+		c.Global = "~/.agentkit"
+	}
+	if c.LocalBase == "" {
+		c.LocalBase = "~/.agentkit/tenants"
+	}
+	if c.Scope == "" {
+		c.Scope = cw.ScopeLocal
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *TenantConfig) Validate() error {
+	if c.Scope != cw.ScopeGlobal && c.Scope != cw.ScopeLocal {
+		return fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
+	}
+	for key := range c.Tenants {
+		if key == "" {
+			return fmt.Errorf("workspace/tenant: empty tenant key")
+		}
+	}
+	return nil
+}
+
 func NewTenant(cfg TenantConfig) (cw.Service, error) {
-	global := cfg.Global
-	if global == "" {
-		global = "~/.agentkit"
-	}
-	localBase := cfg.LocalBase
-	if localBase == "" {
-		localBase = "~/.agentkit/tenants"
-	}
-	scope := cfg.Scope
-	if scope == "" {
-		scope = cw.ScopeLocal
-	}
-	if scope != cw.ScopeGlobal && scope != cw.ScopeLocal {
-		return nil, fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
-	globalAbs, err := Resolve(global)
+	globalAbs, err := Resolve(cfg.Global)
 	if err != nil {
 		return nil, err
 	}
-	localBaseAbs, err := Resolve(localBase)
+	localBaseAbs, err := Resolve(cfg.LocalBase)
 	if err != nil {
 		return nil, err
 	}
 
 	roots := make(map[string]string, len(cfg.Tenants))
 	for key, entry := range cfg.Tenants {
-		if key == "" {
-			return nil, fmt.Errorf("workspace/tenant: empty tenant key")
-		}
 		if entry.Root == "" {
 			return nil, fmt.Errorf("workspace/tenant: tenant %q has no root", key)
 		}
@@ -127,7 +139,7 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 	return &TenantService{
 		globalRoot:         globalAbs,
 		localBase:          localBaseAbs,
-		scope:              scope,
+		scope:              cfg.Scope,
 		omitPlatformPrefix: cfg.OmitPlatformPrefix,
 		workDir:            normalizeWorkDir(cfg.WorkDir),
 		uploadSub:          normalizeUploadSub(cfg.UploadSubdir),

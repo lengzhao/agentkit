@@ -78,9 +78,31 @@ func init() {
 }
 
 // New registers agent/acp-remote: run turns via an external ACP agent subprocess.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.ID == "" {
+		c.ID = "acp"
+	}
+	if c.ClientName == "" {
+		c.ClientName = "agentkit"
+	}
+	if c.ClientVersion == "" {
+		c.ClientVersion = "0.1.0"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if len(c.Command) == 0 {
+		return fmt.Errorf("agent/acp-remote requires command")
+	}
+	return nil
+}
+
 func New(cfg Config, deps Deps) (agentkit.Agent, error) {
-	if len(cfg.Command) == 0 {
-		return nil, fmt.Errorf("agent/acp-remote requires command")
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("agent/acp-remote requires workspace")
@@ -92,19 +114,6 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		return nil, fmt.Errorf("agent/acp-remote requires telemetry dependency")
 	}
 	id := cfg.ID
-	if id == "" {
-		id = "acp"
-	}
-	clientName := cfg.ClientName
-	if clientName == "" {
-		clientName = "agentkit"
-	}
-	clientVersion := cfg.ClientVersion
-	if clientVersion == "" {
-		clientVersion = "0.1.0"
-	}
-	cfg.ClientName = clientName
-	cfg.ClientVersion = clientVersion
 	sandbox := deps.Sandbox
 	if sandbox == nil {
 		sandbox = capsandbox.Disabled()

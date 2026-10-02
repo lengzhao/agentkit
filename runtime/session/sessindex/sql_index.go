@@ -26,6 +26,17 @@ type SQLIndexConfig struct {
 
 type SQLIndexDeps struct{}
 
+// Validate implements pluginkit.Validator.
+func (c *SQLIndexConfig) Validate() error {
+	if strings.TrimSpace(c.Driver) == "" {
+		return fmt.Errorf("session/sql-index driver is required")
+	}
+	if strings.TrimSpace(c.DSN) == "" {
+		return fmt.Errorf("session/sql-index dsn is required")
+	}
+	return nil
+}
+
 // SQLIndex derives a searchable transcript index from session/sql durable events.
 type SQLIndex struct {
 	driver string

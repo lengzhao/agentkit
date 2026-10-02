@@ -1,6 +1,7 @@
 package deferred
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/lengzhao/agentkit"
@@ -30,6 +31,61 @@ func (c Config) Normalize() Config {
 	out := c
 	out.DisclosureConfig = c.DisclosureConfig.Normalize()
 	return out
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	c.DisclosureConfig.SetDefaults()
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	return c.DisclosureConfig.Validate()
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *DisclosureConfig) SetDefaults() {
+	c.Enabled = c.Enabled.normalize()
+	if c.ThresholdPct == 0 {
+		c.ThresholdPct = 5
+	}
+	if c.ListingMaxTokens == 0 {
+		c.ListingMaxTokens = 4000
+	}
+	if c.SearchDefaultLimit == 0 {
+		c.SearchDefaultLimit = 5
+	}
+	if c.MaxSearchLimit == 0 {
+		c.MaxSearchLimit = 25
+	}
+	if c.Listing == "" {
+		c.Listing = "auto"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *DisclosureConfig) Validate() error {
+	if c.ThresholdPct <= 0 || c.ThresholdPct > 100 {
+		return fmt.Errorf("tools/deferred thresholdPct must be in (0, 100], got %v", c.ThresholdPct)
+	}
+	if c.ListingMaxTokens <= 0 {
+		return fmt.Errorf("tools/deferred listingMaxTokens must be positive")
+	}
+	if c.SearchDefaultLimit <= 0 || c.MaxSearchLimit <= 0 {
+		return fmt.Errorf("tools/deferred searchDefaultLimit and maxSearchLimit must be positive")
+	}
+	if c.MaxSearchLimit > 50 {
+		return fmt.Errorf("tools/deferred maxSearchLimit must be <= 50, got %d", c.MaxSearchLimit)
+	}
+	if c.SearchDefaultLimit > c.MaxSearchLimit {
+		return fmt.Errorf("tools/deferred searchDefaultLimit (%d) exceeds maxSearchLimit (%d)", c.SearchDefaultLimit, c.MaxSearchLimit)
+	}
+	switch c.Listing {
+	case "on", "off", "auto":
+	default:
+		return fmt.Errorf("tools/deferred listing must be auto, on, or off, got %q", c.Listing)
+	}
+	return nil
 }
 
 func (c DisclosureConfig) Normalize() DisclosureConfig {

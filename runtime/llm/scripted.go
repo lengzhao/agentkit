@@ -34,15 +34,27 @@ type Scripted struct {
 }
 
 // NewScripted registers llm/scripted: Deterministic canned responses. For tests and offline smoke runs.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *ScriptedConfig) SetDefaults() {
+	if c.Model == "" {
+		c.Model = "scripted"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *ScriptedConfig) Validate() error {
+	if len(c.Steps) == 0 {
+		return fmt.Errorf("scripted llm requires at least one step")
+	}
+	return nil
+}
+
 func NewScripted(cfg ScriptedConfig) (agentkit.LLMProvider, error) {
-	if len(cfg.Steps) == 0 {
-		return nil, fmt.Errorf("scripted llm requires at least one step")
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
-	model := cfg.Model
-	if model == "" {
-		model = "scripted"
-	}
-	return &Scripted{model: model, steps: cfg.Steps}, nil
+	return &Scripted{model: cfg.Model, steps: cfg.Steps}, nil
 }
 
 func (p *Scripted) Name() string { return "scripted" }

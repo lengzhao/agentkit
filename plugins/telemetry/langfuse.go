@@ -49,6 +49,36 @@ type LangfuseConfig struct {
 	RedactOutputs bool `json:"redactOutputs"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *LangfuseConfig) SetDefaults() {
+	if strings.TrimSpace(c.BaseURL) == "" {
+		c.BaseURL = "https://cloud.langfuse.com"
+	}
+	if c.SampleRate == 0 {
+		c.SampleRate = 1
+	}
+	if c.FlushIntervalSeconds == 0 {
+		c.FlushIntervalSeconds = 2
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *LangfuseConfig) Validate() error {
+	if c.SampleRate <= 0 || c.SampleRate > 1 {
+		return fmt.Errorf("telemetry/langfuse sampleRate must be in (0, 1], got %v", c.SampleRate)
+	}
+	if c.FlushIntervalSeconds < 0 {
+		return fmt.Errorf("telemetry/langfuse flushIntervalSeconds must not be negative")
+	}
+	if c.MaxPayloadBytes < 0 {
+		return fmt.Errorf("telemetry/langfuse maxPayloadBytes must not be negative")
+	}
+	if c.MaxFieldBytes != nil && *c.MaxFieldBytes < 0 {
+		return fmt.Errorf("telemetry/langfuse maxFieldBytes must not be negative")
+	}
+	return nil
+}
+
 type LangfuseDeps struct {
 	Credentials credentials.Store    `json:"credentials"`
 	Telemetry   captelemetry.Toolkit `json:"telemetry"`
@@ -103,28 +133,14 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 		return nil, err
 	}
 
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	if baseURL == "" {
-		baseURL = "https://cloud.langfuse.com"
-	}
-
 	sampleRate := cfg.SampleRate
-	if sampleRate <= 0 {
-		sampleRate = 1
-	}
-	if sampleRate > 1 {
-		sampleRate = 1
-	}
-
 	flushInterval := time.Duration(cfg.FlushIntervalSeconds) * time.Second
-	if flushInterval <= 0 {
-		flushInterval = 2 * time.Second
-	}
-
 	maxPayload := cfg.MaxPayloadBytes
-	if maxPayload < 0 {
-		maxPayload = 0
-	}
 
 	maxFieldBytes := 8192
 	if cfg.MaxFieldBytes != nil {

@@ -36,6 +36,42 @@ type FSWorkspaceDeps struct {
 	Workspace workspace.Service  `json:"workspace,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *FSWorkspaceConfig) SetDefaults() {
+	setLimitDefaults(&c.MaxBytes, &c.MaxMatches, &c.MaxResults, &c.MaxListEntries)
+}
+
+// Validate implements pluginkit.Validator.
+func (c *FSWorkspaceConfig) Validate() error {
+	return validateLimits("tool/fs-workspace", c.MaxBytes, c.MaxMatches, c.MaxResults, c.MaxListEntries)
+}
+
+// setLimitDefaults 填充 fs 工具包的四个限量默认值（1 MiB / 100 / 1000 / 500）。
+func setLimitDefaults(maxBytes, maxMatches, maxResults, maxListEntries *int) {
+	if *maxBytes == 0 {
+		*maxBytes = 1 << 20
+	}
+	if *maxMatches == 0 {
+		*maxMatches = 100
+	}
+	if *maxResults == 0 {
+		*maxResults = defaultFindLimit
+	}
+	if *maxListEntries == 0 {
+		*maxListEntries = defaultListLimit
+	}
+}
+
+func validateLimits(kind string, limits ...int) error {
+	names := []string{"maxBytes", "maxMatches", "maxResults", "maxListEntries"}
+	for i, v := range limits {
+		if v < 0 {
+			return fmt.Errorf("%s %s must not be negative", kind, names[i])
+		}
+	}
+	return nil
+}
+
 type fsAdapter struct {
 	store     filesystem.Service
 	workspace workspace.Service
@@ -49,28 +85,16 @@ func NewFSWorkspace(cfg FSWorkspaceConfig, deps FSWorkspaceDeps) (agentkit.ToolP
 	if deps.FS == nil {
 		return nil, fmt.Errorf("tool/fs-workspace requires fs (filesystem/local or another filesystem.Service)")
 	}
-	maxBytes := cfg.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = 1 << 20
-	}
-	maxMatches := cfg.MaxMatches
-	if maxMatches <= 0 {
-		maxMatches = 100
-	}
-	maxResults := cfg.MaxResults
-	if maxResults <= 0 {
-		maxResults = defaultFindLimit
-	}
-	maxListEntries := cfg.MaxListEntries
-	if maxListEntries <= 0 {
-		maxListEntries = defaultListLimit
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	fs := &fsAdapter{
 		store:     deps.FS,
 		workspace: deps.Workspace,
 		readOnly:  cfg.ReadOnly,
 	}
-	return buildWorkspaceTools(fs, maxBytes, maxMatches, maxResults, maxListEntries, cfg.Tools)
+	return buildWorkspaceTools(fs, cfg.MaxBytes, cfg.MaxMatches, cfg.MaxResults, cfg.MaxListEntries, cfg.Tools)
 }
 
 // workspaceFSOps is the filesystem surface used by buildWorkspaceTools.

@@ -28,6 +28,13 @@ type Config struct {
 	DefaultSessionID string `json:"defaultSessionId"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.DefaultSessionID == "" {
+		c.DefaultSessionID = string(rctx.DefaultCLISessionID)
+	}
+}
+
 type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
@@ -52,14 +59,12 @@ type Platform struct {
 
 // New registers platform/cli: Interactive terminal platform with slash commands.
 func New(cfg Config, deps Deps) (agentkit.Platform, error) {
+	cfg.SetDefaults()
 	initial := cfg.Prompt
 	if initial == "" {
 		initial = initialPromptFromArgs(promptArgs())
 	}
 	deliveryID := agentkit.SessionID(cfg.DefaultSessionID)
-	if deliveryID == "" {
-		deliveryID = rctx.DefaultCLISessionID
-	}
 	return &Platform{
 		initialPrompt: initial,
 		once:          cfg.Once,

@@ -60,6 +60,38 @@ type OpenAIDeps struct {
 	Credentials credentials.Store `json:"credentials,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *OpenAIConfig) SetDefaults() {
+	if c.Model == "" {
+		c.Model = "gpt-4o"
+	}
+	if c.BaseURL == "" {
+		c.BaseURL = "https://api.openai.com/v1"
+	}
+	if c.TimeoutSeconds == 0 {
+		c.TimeoutSeconds = int(defaultRequestTimeout / time.Second)
+	}
+	if c.ResponseHeaderTimeoutSeconds == 0 {
+		c.ResponseHeaderTimeoutSeconds = int(defaultResponseHeaderTimeout / time.Second)
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *OpenAIConfig) Validate() error {
+	if c.TimeoutSeconds < 0 {
+		return fmt.Errorf("llm: timeoutSeconds must not be negative")
+	}
+	if c.ResponseHeaderTimeoutSeconds < 0 {
+		return fmt.Errorf("llm: responseHeaderTimeoutSeconds must not be negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.API)) {
+	case "", "chat", "chat-completions", "chat_completions", "responses", "response":
+		return nil
+	default:
+		return fmt.Errorf("llm: api must be chat or responses, got %q", c.API)
+	}
+}
+
 type OpenAI struct {
 	providerName   string
 	model          string

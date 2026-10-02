@@ -31,6 +31,19 @@ type RuntimeConfig struct {
 	DenyTools []string `json:"denyTools,omitempty"`
 }
 
+// Validate implements pluginkit.Validator.
+func (c *RuntimeConfig) Validate() error {
+	if c.DefaultTimeoutSeconds < 0 {
+		return fmt.Errorf("tools/runtime defaultTimeoutSeconds must not be negative")
+	}
+	for name, seconds := range c.ToolTimeouts {
+		if seconds <= 0 {
+			return fmt.Errorf("tools/runtime toolTimeouts[%q] must be positive", name)
+		}
+	}
+	return nil
+}
+
 type RuntimeDeps struct {
 	Tools        []agentkit.Tool         `json:"tools,omitempty"`
 	ToolPacks    []agentkit.ToolPack     `json:"toolPacks,omitempty"`
@@ -62,6 +75,9 @@ type Runtime struct {
 //   - Policies are the enforcement plane; hooks only observe and rewrite. Put a security rule in a policy.
 //   - The approval dep is consulted only for ask decisions, so it never sees an allowed or denied call.
 func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	tools := make(map[string]agentkit.Tool)
 	for _, tool := range deps.Tools {
 		if err := addTool(tools, tool); err != nil {

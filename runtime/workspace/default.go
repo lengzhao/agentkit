@@ -39,31 +39,47 @@ func init() {
 //
 // Best practices:
 //   - Prefix a path with global: or local: to pin it regardless of scope.
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.Global == "" {
+		c.Global = c.Root // deprecated alias
+	}
+	if c.Global == "" {
+		c.Global = "~/.agentkit"
+	}
+	if c.Local == "" {
+		c.Local = ".agentkit"
+	}
+	if c.Scope == "" {
+		c.Scope = cw.ScopeGlobal
+	}
+	if c.WorkDir == "" {
+		c.WorkDir = defaultWorkDir
+	}
+	if c.UploadSubdir == "" {
+		c.UploadSubdir = defaultUploadSubdir
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.Scope != cw.ScopeGlobal && c.Scope != cw.ScopeLocal {
+		return fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
+	}
+	return nil
+}
+
 func New(cfg Config) (cw.Service, error) {
-	global := cfg.Global
-	if global == "" {
-		global = cfg.Root
-	}
-	if global == "" {
-		global = "~/.agentkit"
-	}
-	local := cfg.Local
-	if local == "" {
-		local = ".agentkit"
-	}
-	scope := cfg.Scope
-	if scope == "" {
-		scope = cw.ScopeGlobal
-	}
-	if scope != cw.ScopeGlobal && scope != cw.ScopeLocal {
-		return nil, fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
-	globalAbs, err := Resolve(global)
+	globalAbs, err := Resolve(cfg.Global)
 	if err != nil {
 		return nil, err
 	}
-	localAbs, err := Resolve(local)
+	localAbs, err := Resolve(cfg.Local)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +88,7 @@ func New(cfg Config) (cw.Service, error) {
 	return &Service{
 		globalRoot: globalAbs,
 		localRoot:  localAbs,
-		scope:      scope,
+		scope:      cfg.Scope,
 		workDir:    workDir,
 		uploadSub:  uploadSub,
 	}, nil

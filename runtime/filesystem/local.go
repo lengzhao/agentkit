@@ -27,6 +27,13 @@ type Deps struct {
 	Workspace workspace.Service `json:"workspace"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.Root == "" {
+		c.Root = "."
+	}
+}
+
 type localFS struct {
 	relRoot      string
 	workspace    workspace.Service
@@ -42,12 +49,9 @@ func New(cfg Config, deps Deps) (capfs.Service, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("filesystem/local requires workspace")
 	}
-	root := cfg.Root
-	if root == "" {
-		root = "."
-	}
+	cfg.SetDefaults()
 	return &localFS{
-		relRoot:      root,
+		relRoot:      cfg.Root,
 		workspace:    deps.Workspace,
 		unrestricted: cfg.Unrestricted,
 	}, nil

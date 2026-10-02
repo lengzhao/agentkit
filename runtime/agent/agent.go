@@ -43,6 +43,24 @@ type Config struct {
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *Config) SetDefaults() {
+	if c.ID == "" {
+		c.ID = "coding"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *Config) Validate() error {
+	if c.MaxSteps != nil && *c.MaxSteps < 0 {
+		return fmt.Errorf("agent maxSteps must not be negative (0 disables the cap)")
+	}
+	if c.MaxPromptTokens < 0 {
+		return fmt.Errorf("agent maxPromptTokens must not be negative (0 disables)")
+	}
+	return nil
+}
+
 type Deps struct {
 	SessionStore agentkit.SessionStore    `json:"sessionStore"`
 	LLM          agentkit.LLMProvider     `json:"llm"`
@@ -77,10 +95,11 @@ type Runtime struct {
 //   - An interrupted turn is repaired on the next turn, so a crash mid-tool-call does not leave the session unusable.
 //   - Autonomous continuation belongs in TurnStopping hooks (e.g. hook/turn-continue); per-turn step caps use maxSteps.
 func New(cfg Config, deps Deps) (agentkit.Agent, error) {
-	id := cfg.ID
-	if id == "" {
-		id = "coding"
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
+	id := cfg.ID
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("agent requires sessionStore")
 	}

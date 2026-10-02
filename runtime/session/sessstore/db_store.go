@@ -28,6 +28,60 @@ type SQLStoreConfig struct {
 
 type SQLStoreDeps struct{}
 
+// Validate implements pluginkit.Validator.
+func (c *SQLStoreConfig) Validate() error {
+	if strings.TrimSpace(c.Driver) == "" {
+		return fmt.Errorf("session sql driver is required")
+	}
+	if strings.TrimSpace(c.DSN) == "" {
+		return fmt.Errorf("session sql dsn is required")
+	}
+	if c.MaxCachedSessions < 0 {
+		return fmt.Errorf("session sql maxCachedSessions must be >= 0")
+	}
+	if c.MaxLoadedEvents < 0 {
+		return fmt.Errorf("session sql maxLoadedEvents must be >= 0")
+	}
+	if _, err := parseCacheIdleTTL(c.CacheIdleTTL); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SQLiteStoreConfig is the config shape for session/sqlite (driver defaults to sqlite).
+type SQLiteStoreConfig struct {
+	SQLStoreConfig
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *SQLiteStoreConfig) SetDefaults() {
+	if strings.TrimSpace(c.Driver) == "" {
+		c.Driver = "sqlite"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *SQLiteStoreConfig) Validate() error {
+	return c.SQLStoreConfig.Validate()
+}
+
+// PostgresStoreConfig is the config shape for session/postgres (driver defaults to pgx).
+type PostgresStoreConfig struct {
+	SQLStoreConfig
+}
+
+// SetDefaults implements pluginkit.Defaulter.
+func (c *PostgresStoreConfig) SetDefaults() {
+	if strings.TrimSpace(c.Driver) == "" {
+		c.Driver = "pgx"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *PostgresStoreConfig) Validate() error {
+	return c.SQLStoreConfig.Validate()
+}
+
 // SQLStore persists sessions in a SQL database instead of workspace JSONL files.
 type SQLStore struct {
 	driver          string
@@ -39,11 +93,8 @@ type SQLStore struct {
 
 // NewSQLStore registers session/sql: durable sessions in SQLite/Postgres (or any database/sql backend).
 func NewSQLStore(cfg SQLStoreConfig, _ SQLStoreDeps) (agentkit.SessionStore, error) {
-	if cfg.MaxCachedSessions < 0 {
-		return nil, fmt.Errorf("session sql maxCachedSessions must be >= 0")
-	}
-	if cfg.MaxLoadedEvents < 0 {
-		return nil, fmt.Errorf("session sql maxLoadedEvents must be >= 0")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	idleTTL, err := parseCacheIdleTTL(cfg.CacheIdleTTL)
 	if err != nil {
@@ -79,19 +130,15 @@ func NewSQLStore(cfg SQLStoreConfig, _ SQLStoreDeps) (agentkit.SessionStore, err
 }
 
 // NewSQLiteStore registers session/sqlite: same as session/sql with driver sqlite.
-func NewSQLiteStore(cfg SQLStoreConfig, deps SQLStoreDeps) (agentkit.SessionStore, error) {
-	if strings.TrimSpace(cfg.Driver) == "" {
-		cfg.Driver = "sqlite"
-	}
-	return NewSQLStore(cfg, deps)
+func NewSQLiteStore(cfg SQLiteStoreConfig, deps SQLStoreDeps) (agentkit.SessionStore, error) {
+	cfg.SetDefaults()
+	return NewSQLStore(cfg.SQLStoreConfig, deps)
 }
 
 // NewPostgresStore registers session/postgres: same as session/sql with driver pgx.
-func NewPostgresStore(cfg SQLStoreConfig, deps SQLStoreDeps) (agentkit.SessionStore, error) {
-	if strings.TrimSpace(cfg.Driver) == "" {
-		cfg.Driver = "pgx"
-	}
-	return NewSQLStore(cfg, deps)
+func NewPostgresStore(cfg PostgresStoreConfig, deps SQLStoreDeps) (agentkit.SessionStore, error) {
+	cfg.SetDefaults()
+	return NewSQLStore(cfg.SQLStoreConfig, deps)
 }
 
 func (s *SQLStore) runCacheJanitor(interval time.Duration) {

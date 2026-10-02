@@ -10,7 +10,7 @@ require (
 	github.com/henomis/langfuse-go v0.0.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/larksuite/oapi-sdk-go/v3 v3.11.0
-	github.com/lengzhao/pluginkit v0.1.2
+	github.com/lengzhao/pluginkit v0.1.3
 	github.com/sashabaranov/go-openai v1.42.0
 	github.com/slack-go/slack v0.29.0
 	golang.org/x/image v0.46.0

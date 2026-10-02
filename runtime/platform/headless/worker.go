@@ -77,6 +77,34 @@ type WorkerConfig struct {
 	Stream bool `json:"stream"`
 }
 
+// SetDefaults implements pluginkit.Defaulter.
+func (c *WorkerConfig) SetDefaults() {
+	if strings.TrimSpace(c.SessionID) == "" {
+		c.SessionID = "worker"
+	}
+}
+
+// Validate implements pluginkit.Validator.
+func (c *WorkerConfig) Validate() error {
+	if _, err := resolveSessionMode(c.SessionMode); err != nil {
+		return fmt.Errorf("platform/worker: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Output)) {
+	case "", OutputText, OutputJSON:
+	default:
+		return fmt.Errorf("platform/worker output must be text or json, got %q", c.Output)
+	}
+	for i, task := range c.Tasks {
+		if strings.TrimSpace(task.Cron) != "" {
+			return fmt.Errorf("platform/worker task %d has cron %q: use schedule/cron instead", i+1, task.Cron)
+		}
+		if strings.TrimSpace(task.Prompt) != "" && strings.TrimSpace(task.Script) != "" {
+			return fmt.Errorf("platform/worker task %d: prompt and script are mutually exclusive", i+1)
+		}
+	}
+	return nil
+}
+
 type WorkerDeps struct {
 	// Workspace resolves script paths. Required when any task uses script.
 	Workspace workspace.Service `json:"workspace,omitempty"`
@@ -156,14 +184,12 @@ func NewWorker(cfg WorkerConfig, deps WorkerDeps) (agentkit.Platform, error) {
 		return nil, fmt.Errorf("platform/worker requires a positional argument, tasks, or prompt")
 	}
 
-	mode, err := resolveSessionMode(cfg.SessionMode)
-	if err != nil {
-		return nil, fmt.Errorf("platform/worker: %w", err)
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
+	mode, _ := resolveSessionMode(cfg.SessionMode) // Validate 已保证合法
 	sessionID := strings.TrimSpace(cfg.SessionID)
-	if sessionID == "" {
-		sessionID = "worker"
-	}
 
 	return &Worker{
 		tasks:     tasks,

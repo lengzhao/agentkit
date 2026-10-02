@@ -12,6 +12,8 @@ case "$TIER" in
   unit)
     echo "== plugin import isolation =="
     go run ./scripts/check-plugin-imports
+    echo "== config catalog freshness =="
+    go run ./scripts/gen-config-catalog -check
     echo "== go vet =="
     go vet ./...
     echo "== unit + smoke (race, no cache, explicit timeout) =="
