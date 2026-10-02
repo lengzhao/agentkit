@@ -24,10 +24,17 @@ func ApplyAll(ctx context.Context, services []capscompaction.Service, req capsco
 	tokensBefore := EstimateMessagesTokens(req.Messages)
 	charsBefore := estimateMessagesChars(req.Messages)
 	messagesBefore := len(req.Messages)
+	seqBefore := latestCompactionSeq(ctx, req.Session)
 	started := time.Now()
 
 	messages, applied, err := applyAll(ctx, services, req)
 	if !outermost || len(services) == 0 || (applied == 0 && err == nil) {
+		return messages, applied, err
+	}
+	// Only persisted compaction counts as real: services like prune-tool-results
+	// report Applied for in-memory trimming that the next step re-reads in full,
+	// which would otherwise emit a span on every step without shrinking anything.
+	if err == nil && req.Session != nil && latestCompactionSeq(ctx, req.Session) <= seqBefore {
 		return messages, applied, err
 	}
 
@@ -68,6 +75,25 @@ func ApplyAll(ctx context.Context, services []capscompaction.Service, req capsco
 	}
 	endObservation(observationEnd)
 	return messages, applied, err
+}
+
+// latestCompactionSeq returns the newest session/compaction event seq, or 0.
+// A nil session (or read failure) yields 0.
+func latestCompactionSeq(ctx context.Context, sess agentkit.Session) agentkit.EventSeq {
+	if sess == nil {
+		return 0
+	}
+	events, err := sess.Read(ctx, 0)
+	if err != nil {
+		return 0
+	}
+	var seq agentkit.EventSeq
+	for _, ev := range events {
+		if ev.Type == agentkit.EventCompaction && ev.Seq > seq {
+			seq = ev.Seq
+		}
+	}
+	return seq
 }
 
 func estimateMessagesChars(messages []agentkit.ModelMessage) int {

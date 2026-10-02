@@ -2,6 +2,7 @@ package compaction_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -9,6 +10,8 @@ import (
 	capscompaction "github.com/lengzhao/agentkit/cap/compaction"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	rtcompaction "github.com/lengzhao/agentkit/runtime/compaction"
+	"github.com/lengzhao/agentkit/runtime/session/sessevents"
+	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -100,6 +103,94 @@ func TestApplyAllSkipsCompactionSpanWhenNoop(t *testing.T) {
 	if len(observations) != 0 {
 		t.Fatalf("observations = %d, want 0 when compaction is a no-op", len(observations))
 	}
+}
+
+// pruneToolResults 类服务只修剪内存消息、不落 compaction 事件；每一步都会重复
+// "应用"，若为此发 span 会刷出大量无实际压缩的噪声记录。
+func TestApplyAllSkipsSpanWhenAppliedWithoutPersistedEvent(t *testing.T) {
+	t.Parallel()
+
+	rec := &telemetry.RecordingExporter{}
+	ctx := telemetry.WithExporter(context.Background(), rec)
+	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-prune"})
+
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "sess-prune"})
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	svc := &countingCompaction{applied: true}
+	messages, applied, err := rtcompaction.ApplyAll(ctx, []capscompaction.Service{svc}, capscompaction.Request{
+		SessionID: sess.ID(),
+		Session:   sess,
+		Messages:  []agentkit.ModelMessage{{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}}},
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("applied = %d, want 1 (in-memory trim still reported)", applied)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(messages))
+	}
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 0 {
+		t.Fatalf("observations = %d, want 0 when no compaction event persisted", len(observations))
+	}
+}
+
+// 服务落盘 compaction 事件（如 compaction/summary）时，span 照常记录。
+func TestApplyAllRecordsSpanWhenCompactionEventPersisted(t *testing.T) {
+	t.Parallel()
+
+	rec := &telemetry.RecordingExporter{}
+	ctx := telemetry.WithExporter(context.Background(), rec)
+	ctx, _ = rec.BeginTurn(ctx, captelemetry.TurnMeta{TurnID: "turn-summary"})
+
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "sess-summary"})
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	svc := &persistingCompaction{}
+	_, applied, err := rtcompaction.ApplyAll(ctx, []capscompaction.Service{svc}, capscompaction.Request{
+		SessionID: sess.ID(),
+		AgentID:   "agent-1",
+		Session:   sess,
+		Messages:  []agentkit.ModelMessage{{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}}},
+		Force:     true,
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("applied = %d, want 1", applied)
+	}
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 1 {
+		t.Fatalf("observations = %d, want 1 when compaction event persisted", len(observations))
+	}
+	if observations[0].Meta.Name != "compaction.apply" {
+		t.Fatalf("name = %q", observations[0].Meta.Name)
+	}
+}
+
+type persistingCompaction struct{}
+
+func (persistingCompaction) Compact(ctx context.Context, req capscompaction.Request) (capscompaction.Result, error) {
+	if req.Session == nil {
+		return capscompaction.Result{}, fmt.Errorf("session required")
+	}
+	if err := sessevents.Default.AppendCompaction(ctx, req.Session, req.AgentID, capscompaction.EventData{
+		Kind: capscompaction.KindSummary,
+		Summary: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "[Conversation summary]\nshort"}},
+		},
+	}); err != nil {
+		return capscompaction.Result{}, err
+	}
+	return capscompaction.Result{Applied: true}, nil
 }
 
 type wrappingCompaction struct {
