@@ -160,6 +160,38 @@ flowchart TB
 
 ---
 
+## E — 测试体系加固（承接 [testing.zh.md](testing.zh.md)）
+
+> 本节跟踪测试基础设施与覆盖缺口，与上面的分层收敛无关。完成于 2026-10-02 的项见 commit `94e869e` / `93d8571`。
+
+### 已完成
+
+- [x] **密封 config 构建测试**：`stubCredentialEnv` 注入 base 配置全部 env 引用，本地无 key 不再红（根包 4 个用例）
+- [x] **CI 单源化**：`test.yml` 两个 job 改调 `scripts/test.sh`；unit = import 隔离 + `go vet` + `-race -count=1 -timeout=10m`
+- [x] **race 门禁清零**：修复 5 处真实竞争（`runner/dispatch` shutdown 后 send-on-closed-channel 生产 bug、`schedule/cron` loopHook、`rctx` 全局策略 map、`platform/http` resolvedAddr、chatapi/subagent 测试自身）
+- [x] **sysint 层**：`runtime/sandbox/bwrap_sysint_test.go`（`-tags=sysint`）真实 bwrap 断言邻居不可见 / secret 掩码 / 只读 floor / pid ns / loopback 保留 / fail-closed；CI 安装 bubblewrap，`SYSINT_REQUIRED=1` 使缺失即失败
+- [x] **覆盖率采集**：`test.sh coverage`，基线 60.4%，CI 上传 artifact（暂不设门槛）
+
+### 待办（按优先级）
+
+- [ ] **sandbox L2 单测补全**（安全关键，argv 断言之外的判定逻辑）
+  - [x] `within` 前缀混淆、`cleanHostPath` symlink 逃逸（含 symlink 父目录下新建文件）— `runtime/sandbox/guard_test.go`
+  - [x] hidePaths 解析失败 fail-closed vs roBinds warn+skip 的非对称语义钉死 — 同上
+  - [x] `resolveBinds`：workspace ref、含冒号宿主机路径、create=true mkdir（仅对 workspace ref 生效）— 同上
+  - [ ] `New` 模式矩阵：off/auto/bwrap × env 空/prod × failIfUnavailable 三态（按 `exec.LookPath("bwrap")` 分支期望）
+  - [ ] 视图缓存：TTL 命中/过期、`viewCacheMax` 驱逐、并发 `-race`
+- [ ] **acpremote sandbox 注入断言**（当前 `bridge_test.go` 只补了 nil 参数，注入路径零覆盖）
+  - [ ] recording fake sandbox：断言 spawn 时 WrapArgv 收到正确 cwd/inner、返回的包装 argv 真正用于 exec、WrapArgv 报错则子进程不启动（fail-closed）
+  - [ ] nil Sandbox 默认 `capsandbox.Disabled()` 的兜底契约
+- [ ] **shellbwrap env 安全**：runner env 中的密钥（如 `OPENAI_API_KEY`）不得进入 sandboxed 子进程；scopedEnv 注入/回退分支
+- [ ] **filesystem/sandbox 装饰器**：7 个方法 deny 时 inner 零调用（recording fake）；双机制一致性契约（CheckRead/Write 判定与 WrapArgv argv 推导可见性一致）
+- [ ] **零覆盖包补齐**：`runtime/prompt`、`runtime/hooks`、`runtime/bind`、`runtime/chathistory`、`plugins/tool/todo`、`plugins/tool/memory`、`plugins/tool/sessionquery`（先出 `-cover` 报告按逻辑密度排序）
+- [ ] **testkit 沉淀**：workspace/sandbox/filesystem 的通用 fake 收归 `testing/agenttest`，消除各测试文件重复定义
+- [ ] **覆盖率门槛**：采集观察约两周后，对变更包设 diff 门槛
+- [ ] **flaky 治理**：CI 定期 `-shuffle=on` 全量；失败重跑记录与隔离
+
+---
+
 ## 暂不处理
 
 `runtime/rctx`（session / envelope / route / workspace key / outbound emit）上移根包或 cap，待单独评估。

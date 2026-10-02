@@ -18,7 +18,7 @@ func (f fakeWorkspace) Resolve(_ context.Context, rel string) (string, error) {
 	if strings.HasPrefix(rel, "global:") {
 		return filepath.Join(f.global, strings.TrimPrefix(rel, "global:")), nil
 	}
-	return filepath.Join(f.local, rel), nil
+	return filepath.Join(f.local, strings.TrimPrefix(rel, "local:")), nil
 }
 
 func newTestSandbox(t *testing.T) (*Sandbox, string, string) {
