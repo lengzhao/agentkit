@@ -38,6 +38,12 @@ type SubagentDelegateConfig struct {
 	ResearcherDef string
 	Steps         []llm.ScriptedStep
 	ParentAgentID agentkit.AgentID
+	// ChildToolPacks are mounted on the child runtime (alongside finish) for allowlist smokes.
+	ChildToolPacks []agentkit.ToolPack
+	// ChildTools are extra tools on the child runtime (e.g. slow/blocking tools for timeout smokes).
+	ChildTools []agentkit.Tool
+	// SpawnerTimeoutSeconds bounds one in-process child delegation (wall clock).
+	SpawnerTimeoutSeconds int
 	// NewFinishTool builds the child agent's finish tool from the session store,
 	// e.g. an adapter of finish.NewFinish. Required: agenttest stays plugin-agnostic.
 	NewFinishTool func(store agentkit.SessionStore) (agentkit.Tool, error)
@@ -77,9 +83,11 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 	if err != nil {
 		t.Fatal(err)
 	}
+	childToolList := append([]agentkit.Tool{finishTool}, cfg.ChildTools...)
 	childTools, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools:    []agentkit.Tool{finishTool},
-		Approval: AllowAll{},
+		Tools:     childToolList,
+		ToolPacks: cfg.ChildToolPacks,
+		Approval:  AllowAll{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +97,11 @@ func NewSubagentDelegateEnv(t *testing.T, cfg SubagentDelegateConfig) SubagentDe
 		t.Fatal(err)
 	}
 
-	spawner, err := rtsubagent.New(rtsubagent.Config{Dirs: []string{"local:agents"}}, rtsubagent.Deps{
+	spawnerCfg := rtsubagent.Config{Dirs: []string{"local:agents"}}
+	if cfg.SpawnerTimeoutSeconds > 0 {
+		spawnerCfg.TimeoutSeconds = cfg.SpawnerTimeoutSeconds
+	}
+	spawner, err := rtsubagent.New(spawnerCfg, rtsubagent.Deps{
 		Workspace:    DirWorkspace{"local:agents": agentsDir},
 		SessionStore: store,
 		LLM:          provider,

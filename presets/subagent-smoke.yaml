@@ -19,6 +19,16 @@ platform.default:
   deps:
     commands: commands.default
 
+runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+    loop:
+      use: loop/default
+      deps:
+        agents:
+          - agent.assistant.default
+
 # 父 agent 与子 inprocess 必须引用同一 graph 实例（llm.default），才能共享 scripted 游标。
 agent.assistant.default:
   deps:

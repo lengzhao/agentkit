@@ -58,8 +58,26 @@ type RunOnceResult struct {
 	SessionID agentkit.SessionID
 }
 
+// RunWorker loads a platform/worker preset, runs each task as one turn, then exits at EOF.
+func RunWorker(t *testing.T, tasks []string, overlayPaths ...string) RunOnceResult {
+	t.Helper()
+	if len(tasks) == 0 {
+		t.Fatal("RunWorker requires at least one task prompt")
+	}
+	return runPresetPlatform(t, overlayPaths, func(graph map[string]any, sessionID agentkit.SessionID) {
+		injectWorkerTasks(graph, tasks)
+	})
+}
+
 // RunOnce loads overlays, injects a CLI prompt, chdirs to repo root, and runs until exit.
 func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult {
+	t.Helper()
+	return runPresetPlatform(t, overlayPaths, func(graph map[string]any, sessionID agentkit.SessionID) {
+		injectOncePrompt(graph, prompt)
+	})
+}
+
+func runPresetPlatform(t *testing.T, overlayPaths []string, patch func(map[string]any, agentkit.SessionID)) RunOnceResult {
 	t.Helper()
 
 	root := agenttest.RepoRoot(t)
@@ -75,8 +93,10 @@ func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult 
 	doc := Load(t, overlayPaths...)
 	graph := doc.ToGraph()
 	sessionID := injectIsolatedSession(graph, sanitizeTestName(t.Name()))
-	injectOncePrompt(graph, prompt)
 	injectWorkerPlatform(graph, sessionID)
+	if patch != nil {
+		patch(graph, sessionID)
+	}
 	prepareRunnableGraph(graph)
 
 	runnerInst, result, err := build.Build[agentkit.Runner](context.Background(), graph, doc.RootID)
@@ -100,6 +120,21 @@ func RunOnce(t *testing.T, prompt string, overlayPaths ...string) RunOnceResult 
 		t.Fatal("runner session store is nil")
 	}
 	return RunOnceResult{Runner: runnerInst, Store: store, SessionID: sessionID}
+}
+
+func injectWorkerTasks(graph map[string]any, tasks []string) {
+	platform := resolvePlatformNode(graph)
+	if platform == nil || platformUse(platform) != "platform/worker" {
+		panic("injectWorkerTasks requires platform/worker in preset graph")
+	}
+	cfg := asMap(platform["config"])
+	specs := make([]any, len(tasks))
+	for i, p := range tasks {
+		specs[i] = p
+	}
+	cfg["tasks"] = specs
+	delete(cfg, "prompt")
+	platform["config"] = cfg
 }
 
 func injectIsolatedSession(graph map[string]any, suffix string) agentkit.SessionID {
@@ -176,6 +211,9 @@ func prepareRunnableGraph(graph map[string]any) {
 	if runnerNode, ok := graph["runner.default"].(map[string]any); ok {
 		deps := asMap(runnerNode["deps"])
 		deps["schedules"] = []any{}
+		// catalogCommands → loop.default pulls L0 agents + llm.router/deepseek into the build.
+		delete(deps, "catalogCommands")
+		delete(deps, "init")
 		runnerNode["deps"] = deps
 	}
 

@@ -180,6 +180,7 @@ flowchart TB
 - [x] **filesystem/sandbox 装饰器**：deny 时 inner 零调用 — `runtime/filesystem/sandbox_test.go`；CheckRead/Write 与 WrapArgv 可见性 — `runtime/sandbox/dual_mechanism_test.go`
 - [x] **零覆盖包补齐**：`runtime/prompt`、`runtime/hooks`、`plugins/tool/memory`、`plugins/tool/sessionquery`；此前已补 `runtime/bind`、`runtime/chathistory`、`plugins/tool/todo`（`todo` 工具层仍有集成路径未覆盖，可后续用 agenttest 补 Call）
 - [x] **testkit 沉淀**：`testing/agenttest` 新增 `ScopedWorkspace`、`RecordingSandbox`、`GateSandbox`、`RecordingFS`、`StubEnvPairResolver`；sandbox / filesystem / acpremote / shell / shellbwrap 测试已迁移
+- [x] **smoke E2E 补齐**：E2E-010/011/030/031/400 → `testing/smoke/`；E2E-202 permission timeout → `permission_test.go`；E2E-111 会话发现 HTTP → `chatapi/sessions_discover_test.go`（`HTTPHandler`）；E2E-102 CLI `/agent use` → `runtime/platform/cli/agent_use_e2e_test.go`；E2E-041 worker 多 task → `integration/worker_multi_test.go`；E2E-100 CLI REPL 多轮 → `runtime/platform/cli/repl_multi_e2e_test.go`
 - [ ] **覆盖率门槛**：采集观察约两周后，对变更包设 diff 门槛
 - [x] **flaky 治理（起步）**：`scripts/test.sh shuffle` = `-race -shuffle=on` 全量；CI 定期调度仍待 workflow 配置
 

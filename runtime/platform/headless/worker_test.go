@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	capshell "github.com/lengzhao/agentkit/cap/shell"
@@ -68,6 +69,9 @@ func TestWorkerRunsEachTaskThenReportsEOF(t *testing.T) {
 		if event.PlatformID != "worker" {
 			t.Fatalf("platform id = %q, want worker", event.PlatformID)
 		}
+		if err := p.Send(ctx, agentkit.OutboundEvent{Type: agentkit.EventTurnEnd}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	want := []string{"first", "second", "third"}
@@ -95,6 +99,42 @@ func TestWorkerRunsEachTaskThenReportsEOF(t *testing.T) {
 	}
 }
 
+func TestWorkerWaitsForTurnEndBeforeNextPrompt(t *testing.T) {
+	t.Parallel()
+
+	p, err := newWorker(headless.WorkerConfig{Tasks: tasks("first", "second")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	if _, err := p.Receive(ctx); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_, err := p.Receive(ctx)
+		if err != nil {
+			t.Errorf("second receive: %v", err)
+		}
+		close(done)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("second prompt should block until turn/end")
+	default:
+	}
+	if err := p.Send(ctx, agentkit.OutboundEvent{Type: agentkit.EventTurnEnd}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for second prompt after turn/end")
+	}
+}
+
 func TestWorkerFixedModeSharesOneSession(t *testing.T) {
 	t.Parallel()
 
@@ -110,6 +150,9 @@ func TestWorkerFixedModeSharesOneSession(t *testing.T) {
 
 	first, err := p.Receive(ctx)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Send(ctx, agentkit.OutboundEvent{Type: agentkit.EventTurnEnd}); err != nil {
 		t.Fatal(err)
 	}
 	second, err := p.Receive(ctx)
@@ -171,6 +214,9 @@ func TestWorkerPromptIsTheSingleTaskShorthand(t *testing.T) {
 	}
 	if got := textOfMessage(event.Message); got != "just this" {
 		t.Fatalf("task = %q, want %q", got, "just this")
+	}
+	if err := p.Send(context.Background(), agentkit.OutboundEvent{Type: agentkit.EventTurnEnd}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := p.Receive(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("second receive err = %v, want EOF", err)

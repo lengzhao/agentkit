@@ -96,6 +96,47 @@ type Worker struct {
 	mu       sync.Mutex
 	next     int
 	runCount int
+	turnGate promptTurnGate
+}
+
+// promptTurnGate blocks the next prompt task until the runner reports turn/end
+// for the previous one, so fixed-session worker runs do not steer into one turn.
+type promptTurnGate struct {
+	mu      sync.Mutex
+	pending bool
+	done    chan struct{}
+}
+
+func (g *promptTurnGate) wait(ctx context.Context) error {
+	g.mu.Lock()
+	for g.pending {
+		ch := g.done
+		g.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		g.mu.Lock()
+	}
+	g.mu.Unlock()
+	return nil
+}
+
+func (g *promptTurnGate) markPromptDispatched() {
+	g.mu.Lock()
+	g.pending = true
+	g.done = make(chan struct{})
+	g.mu.Unlock()
+}
+
+func (g *promptTurnGate) markTurnEnded() {
+	g.mu.Lock()
+	if g.pending {
+		g.pending = false
+		close(g.done)
+	}
+	g.mu.Unlock()
 }
 
 // NewWorker registers platform/worker: Headless one-shot task runner for prompts or shell scripts.
@@ -209,6 +250,10 @@ func (w *Worker) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 			}
 			continue
 		}
+		if err := w.turnGate.wait(ctx); err != nil {
+			return agentkit.MessageEvent{}, err
+		}
+		w.turnGate.markPromptDispatched()
 		return w.event(run, task.Prompt), nil
 	}
 }
@@ -243,7 +288,13 @@ func (w *Worker) event(run int, prompt string) agentkit.MessageEvent {
 }
 
 func (w *Worker) Send(_ context.Context, event agentkit.OutboundEvent) error {
-	return w.emitter.send(event)
+	if err := w.emitter.send(event); err != nil {
+		return err
+	}
+	if event.Type == agentkit.EventTurnEnd {
+		w.turnGate.markTurnEnded()
+	}
+	return nil
 }
 
 // positionalTask reads the command line tail so `agent -config worker.yaml "do

@@ -80,8 +80,8 @@ mindmap
 | INT-001 | coding-smoke once-run | `"列出目录并读取 README"` | `turn/end` ≥1；`tool/result` ≥2 | ✅ | `integration/preset_smoke_test.go` |
 | SMK-010 | scripted read 链 | turn + read tool | `turn/end`；derive 无 orphan call | ✅ | `testing/smoke/tool_test.go` |
 | SMK-011 | policy deny 拒绝工具 | deny read | tool result 含拒绝；turn 正常结束 | ✅ | `tool_test.go` |
-| E2E-010 | 写文件 + bash 组合 | coding preset | jsonl 含 write + bash 事件 | ⬜ | INT + scripted overlay |
-| E2E-011 | gitignore 尊重 | read 被忽略路径 | 工具返回错误而非泄漏 | ⬜ | smoke + temp workspace |
+| E2E-010 | 写文件 + bash 组合 | coding preset | jsonl 含 write + bash 事件 | ✅ | `testing/smoke/coding_tools_test.go` |
+| E2E-011 | gitignore 尊重 | grep/find 跳过忽略路径 | 不列出/不匹配 secrets | ✅ | `testing/smoke/gitignore_test.go` |
 
 ### 3.3 自主运行（Turn Continue / Todo / Finish）
 
@@ -101,8 +101,8 @@ mindmap
 | SMK-021 | logical store session 映射 | chat-api 风格 ID | derive 无 interrupted；logical 事件正确 | ✅ | `smoke_test.go` |
 | SMK-022 | 经 Loop.Dispatch 委派 | loop 入站 | 同上 | ✅ | `smoke_test.go` |
 | SMK-023 | 第二轮 turn 子事件不泄漏 | 连续两轮 | 父 session 隔离 | ✅ | `subagent_test.go` |
-| E2E-030 | 子 agent tools 白名单 | 定义仅 read | 子 session 无 write/bash | ⬜ | smoke |
-| E2E-031 | 子 agent 超时 | 极低 timeout | `subagent/end` + 错误回传 | ⬜ | smoke |
+| E2E-030 | 子 agent tools 白名单 | 定义仅 finish | write 被拒、finish 可执行 | ✅ | `testing/smoke/subagent_policy_test.go` |
+| E2E-031 | 子 agent 超时 | 极低 timeout | `subagent/end` + 错误回传 | ✅ | `testing/smoke/subagent_policy_test.go` |
 
 ### 3.5 Headless（Worker / Timer / Cron）
 
@@ -110,7 +110,7 @@ mindmap
 |---|---|---|---|---|---|
 | BLD-003 | autonomous+worker 可 build | — | build 成功 | ✅ | presets_test |
 | E2E-040 | worker prompt 模式 once-run | autonomous-smoke+worker | 任务完成；进程退出 | ✅ | `integration/preset_smoke_test.go` |
-| E2E-041 | worker 多 task 顺序执行 | 3 个 prompt | 3 次 turn/end | ⬜ | headless 单测已有平台层 🔶 |
+| E2E-041 | worker 多 task 顺序执行 | 3 个 prompt | 3 次 turn/end | ✅ | `integration/worker_multi_test.go`；`platform/worker` 在 `turn/end` 后再投递下一 task |
 | E2E-042 | worker script 模式 | bash 脚本 | 不经 agent 直接执行 | ⬜ | INT |
 | E2E-043 | cron 触发 + agent 排期 | cron preset | schedule 事件 + finish | ⬜ | INT + 短 cron |
 | E2E-044 | 一次性提醒 | `schedule kind=delay in=5s` | `send` + `MarkFired` | ⬜ | 见 [schedule-timer.zh.md](schedule-timer.zh.md) |
@@ -121,9 +121,9 @@ mindmap
 
 | ID | 场景 | 断言 | 状态 | 层级 |
 |---|---|---|---|---|
-| E2E-100 | REPL 多轮对话 | 同一 session 串行 | 🔶 | loop_test 覆盖锁 |
+| E2E-100 | REPL 多轮对话 | 同一 session 串行 3 turn | ✅ | `runtime/platform/cli/repl_multi_e2e_test.go` |
 | E2E-101 | `/new` 切换 logical session | 新 logical id；投递不变 | ✅ | `runtime/platform/cli/session_new_e2e_test.go` |
-| E2E-102 | `/agent use` 绑定 | `runtime.json` 写入；derive 过滤 | ⬜ | INT |
+| E2E-102 | `/agent use` 绑定 | `runtime.json` 写入；derive 过滤 | ✅ | `runtime/platform/cli/agent_use_e2e_test.go` |
 | E2E-103 | `/status` 输出运行态 | 含续跑上限 / token / todo | ⬜ | CLI 单测 🔶 |
 
 ### 4.2 Chat API
@@ -131,7 +131,7 @@ mindmap
 | ID | 场景 | 断言 | 状态 | 层级 |
 |---|---|---|---|---|
 | E2E-110 | HTTP POST 消息 → SSE/JSON 回复 | 200 + assistant 内容 | ✅ | `runtime/platform/chatapi/runner_e2e_test.go` |
-| E2E-111 | 会话发现 API | sessions 列表含测试 session | ⬜ | `sessions_discover_test` 单测 🔶 |
+| E2E-111 | 会话发现 API | sessions 列表含测试 session | ✅ | `runtime/platform/chatapi/sessions_discover_test.go`（`HTTPHandler`） |
 | E2E-112 | 文件上传附件 | 工具可读附件路径 | ⬜ | INT |
 
 ### 4.3 IM（Slack / 飞书）与 Multiplex
@@ -150,7 +150,7 @@ mindmap
 | SMK-030 | policy deny | read 被拒 | ✅ | tool_test |
 | E2E-200 | policy ask → 用户 allow | ask_user / approval | `permission/request` → `resolved` → tool 执行 | ✅ | `testing/smoke/permission_test.go` |
 | E2E-201 | policy ask → 用户 deny | deny | tool result 含拒绝 | ✅ | `testing/smoke/permission_test.go` |
-| E2E-202 | permission 超时 | 短 timeout | `OutcomeTimeout`；turn 继续或停 | ⬜ | cap/permission 单测 🔶 |
+| E2E-202 | permission 超时 | 短 timeout | `OutcomeTimeout`；turn 继续或停 | ✅ | `testing/smoke/permission_test.go` |
 | E2E-203 | headless 下 ask_user 降级 | web preset headless | 不挂 pending；返回 guidance | ⬜ | INT |
 | E2E-204 | web_fetch 私网拦截 | loopback URL | dial 阶段拒绝 | ⬜ | web 单测 🔶 |
 | E2E-205 | `policy/network-deny`（roadmap） | SSRF 尝试 | 统一策略拒绝 | ⬜ | 待 M2 |
@@ -176,7 +176,7 @@ mindmap
 
 | ID | 场景 | 断言 | 状态 | 层级 |
 |---|---|---|---|---|
-| E2E-400 | session 事件完整链路 | 一次 turn 含 start/end/tool/usage | 🔶 | smoke 部分断言 |
+| E2E-400 | session 事件完整链路 | 一次 turn 含 start/end/step/tool | ✅ | `testing/smoke/turn_observability_test.go` |
 | E2E-401 | Langfuse exporter flush | mock ingestion API 收到 batch | ✅ | `langfuse_test.go` 单测 |
 | E2E-402 | Langfuse preset 端到端 | langfuse-smoke once-run | exporter 在 turn 后 flush | ✅ | `integration/langfuse_test.go` |
 | E2E-403 | telemetry 层级 trace | parent/subagent turn | 子 span 挂父 trace | 🔶 | hierarchy 单测 |

@@ -10,3 +10,21 @@ llm.review:
   config:
     steps:
       - text: ""
+
+# L0 的 apiKeyRef 为裸 env: 引用，loader 不会因缺 key 裁剪实例；integration 无 key 时显式摘掉。
+llm.deepseek: null
+llm.gpt: null
+llm.router: null
+llm.fallback: null
+
+compaction.summary.default:
+  deps:
+    llm: llm.review
+
+prompt.subagents.default:
+  deps:
+    llm: llm.review
+
+tool.recognize.default:
+  deps:
+    llm: llm.review

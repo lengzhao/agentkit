@@ -94,23 +94,28 @@ out := agenttest.CallTool(t, ctx, tool, `{"id":"42","verbose":true}`)
 | `loop_test.go` | 同 session 串行、跨 session 隔离 | loop 锁与 session 路由 |
 | `tool_test.go` | 多 tool derive、policy deny | read 工具链、策略拒绝 |
 | `mcp_test.go` | MCP stdio 动态工具 agent turn | tool/mcp + tools/runtime |
-| `permission_test.go` | policy ask allow/deny 经 Loop 审批 | permission 协议、tool 执行/拒绝 |
+| `permission_test.go` | policy ask allow/deny 经 Loop 审批；短 timeout → `OutcomeTimeout` | permission 协议、tool 执行/拒绝（E2E-200/201/202） |
 | `recovery_test.go` | orphan read 修复、干净 session | recovery 合成 interrupted result、不误触发 |
 | `compaction_overflow_test.go` | overflow 只认真实压缩（prune-only 不重试、summary/prune+summary 重试成功）、before-step token-limit 自动压缩、maxPromptTokens 发送前兜底、巨型消息 truncate-only、压缩视图跨重启 | 压缩与溢出回归（真实 compaction 服务 + JSONL store，仅 LLM fake） |
 | `web_test.go` | scripted web_search / web_fetch | 网络工具脚本链（无 API Key） |
 | `openapi_test.go` | OpenAPI mock + bind + scripted turn | 动态 HTTP 工具、ctx bind、tool runtime 挂载 |
+| `coding_tools_test.go` | write + bash 链式 turn | E2E-010 coding 工具组合 |
+| `gitignore_test.go` | find/grep 与 `.gitignore` | E2E-011 忽略路径不泄漏 |
+| `subagent_policy_test.go` | 子 agent 白名单 / 超时 | E2E-030 / E2E-031 |
+| `turn_observability_test.go` | turn 事件骨架 | E2E-400 start/end/step/tool |
 
 ### Integration（`integration/`，`-tags=integration`）
 
 | 文件 | 用例 | 覆盖场景 |
 |---|---|---|
 | `preset_smoke_test.go` | subagent / autonomous / coding / worker preset | 真实 pluginkit 图 once-run |
+| `worker_multi_test.go` | worker 三 task 顺序 | E2E-041：3× `turn/end` |
 | `session_persist_test.go` | jsonl session 重启后续跑 | 磁盘持久化 + derive 历史 |
 | `multi_tenant_test.go` | 多租户 work/ 写隔离 | workspace/tenant + fs-workspace |
 | `langfuse_test.go` | Langfuse turn 后 flush | mock ingestion API |
-
-chat-api HTTP 全链路见 `runtime/platform/chatapi/runner_e2e_test.go`；CLI `/new` 见 `runtime/platform/cli/session_new_e2e_test.go`。
 | `web_smoke_test.go` | web + web-smoke 链式 preset build | pluginkit 图可构建（ask_user 需交互，不做 once-run） |
+
+chat-api HTTP 全链路见 `runtime/platform/chatapi/runner_e2e_test.go`；会话发现 `GET /v1/conversations` 见 `sessions_discover_test.go`（E2E-111）；CLI `/new` 见 `runtime/platform/cli/session_new_e2e_test.go`；`/agent use` 见 `agent_use_e2e_test.go`（E2E-102）；REPL 多轮见 `repl_multi_e2e_test.go`（E2E-100）。
 
 示例：
 

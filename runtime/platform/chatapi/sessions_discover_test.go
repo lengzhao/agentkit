@@ -84,6 +84,46 @@ func TestListConversationsFromPersistedSessions(t *testing.T) {
 	}
 }
 
+// E2E-111: persisted session is visible through the public HTTP mux (not only handleConversations).
+func TestE2E111SessionsDiscoverHTTP(t *testing.T) {
+	root := t.TempDir()
+	channel := "default_channel"
+	convID := "conv_xleOhmgad8IfiMcirKAYQw"
+	ws := staticWorkspace{root: root}
+	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appendTestUserMessage(tenantCtx(channel, convID), store, channel, convID, "discover via mux"); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := sessindex.NewSQLiteIndex(sessindex.SQLiteIndexConfig{}, sessindex.SQLiteIndexDeps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Config{Path: "/v1/"}, Deps{
+		SessionStore: store,
+		Workspace:    ws,
+		SessionIndex: idx,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plat := p.(*Platform)
+	req := httptest.NewRequest(http.MethodGet, "/v1/conversations?user=demo", nil)
+	req.Header.Set("X-Chat-API-Channel", channel)
+	req.Header.Set("X-Chat-API-User", "demo")
+	rec := httptest.NewRecorder()
+	plat.HTTPHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	rawBody := rec.Body.String()
+	if !strings.Contains(rawBody, convID) {
+		t.Fatalf("body %q, want conversation id %q", rawBody, convID)
+	}
+}
+
 func TestHistoryIgnoresChannelScopedSession(t *testing.T) {
 	root := t.TempDir()
 	channel := "default_channel"

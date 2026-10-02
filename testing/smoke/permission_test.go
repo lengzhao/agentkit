@@ -36,6 +36,103 @@ func TestSmokePermissionAskDenyViaLoop(t *testing.T) {
 	})
 }
 
+// E2E-202: short DefaultTimeout ends in OutcomeTimeout; tool stays denied and turn completes.
+func TestSmokePermissionAskTimeoutViaLoop(t *testing.T) {
+	t.Parallel()
+
+	echo, err := agentkit.NewTool("echo", func(_ context.Context, in struct {
+		Text string `json:"text"`
+	}) (struct {
+		Text string `json:"text"`
+	}, error) {
+		return struct {
+			Text string `json:"text"`
+		}{Text: in.Text}, nil
+	}).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	toolRT := agenttest.ToolsRuntime(t, tools.RuntimeDeps{
+		Tools:    []agentkit.Tool{echo},
+		Policies: []agentkit.Policy{agenttest.AskAllToolsPolicy("confirm echo")},
+	})
+	ag, store := agenttest.NewScriptedAgent(t, agenttest.ScriptedAgentConfig{
+		Steps: []llm.ScriptedStep{
+			{
+				ToolCalls: []agentkit.ToolCall{{
+					ID: "call-echo", Name: "echo", Input: []byte(`{"text":"secret"}`),
+				}},
+			},
+			{Text: "continuing after timeout"},
+		},
+		Tools: toolRT,
+	})
+
+	loopInst, err := loop.New(loop.Config{DefaultAgent: "smoke"}, loop.Deps{Agents: []agentkit.Agent{ag}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := agentkit.SessionID("smoke:permission-timeout")
+	ctx := context.Background()
+
+	var outboundMu sync.Mutex
+	var outbound []agentkit.OutboundEvent
+	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
+		outboundMu.Lock()
+		outbound = append(outbound, out)
+		outboundMu.Unlock()
+		return nil
+	}
+
+	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
+		Event: agentkit.MessageEvent{
+			PlatformID: "cli",
+			Message: agentkit.ModelMessage{
+				Role:    "user",
+				Content: []agentkit.ContentPart{{Type: "text", Text: "echo secret"}},
+			},
+			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
+		},
+		Capability: permission.Capability{
+			Interactive:    true,
+			DefaultTimeout: 30 * time.Millisecond,
+			AnswerScope:    permission.ScopeAnyone,
+		},
+		Emit: emit,
+	}); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	outboundMu.Lock()
+	defer outboundMu.Unlock()
+	if got := countOutbound(outbound, agentkit.EventPermissionRequest); got != 1 {
+		t.Fatalf("permission/request = %d, want 1", got)
+	}
+	if got := countOutbound(outbound, agentkit.EventPermissionResolved); got != 1 {
+		t.Fatalf("permission/resolved = %d, want 1", got)
+	}
+	var resolved permission.Result
+	for _, ev := range outbound {
+		if ev.Type != agentkit.EventPermissionResolved {
+			continue
+		}
+		if err := json.Unmarshal(ev.Data, &resolved); err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	if resolved.Outcome != permission.OutcomeTimeout {
+		t.Fatalf("resolved outcome = %q, want timeout", resolved.Outcome)
+	}
+
+	events := agenttest.SessionEvents(t, ctx, store, sessionID)
+	agenttest.AssertNoToolResultWithContent(t, events, "call-echo", "secret")
+	agenttest.AssertToolResultContains(t, events, "call-echo", "did not respond in time")
+	agenttest.AssertEventAtLeast(t, events, agentkit.EventTurnEnd, 1)
+}
+
 type permissionLoopCase struct {
 	replyText      string
 	wantToolResult string

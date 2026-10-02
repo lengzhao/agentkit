@@ -10,6 +10,20 @@ platform.default:
   deps:
     commands: commands.default
 
+runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+    loop:
+      use: loop/default
+      deps:
+        agents:
+          - agent.assistant.default
+
+agent.assistant.default:
+  deps:
+    llm: llm.default
+
 tool.web-fetch-http.default:
   use: tool/web-fetch-scripted
   config:

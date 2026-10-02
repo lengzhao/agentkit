@@ -279,6 +279,11 @@ func (p *Platform) routes() http.Handler {
 	return mux
 }
 
+// HTTPHandler returns the Chat API mux for embedding and smoke/e2e tests.
+func (p *Platform) HTTPHandler() http.Handler {
+	return p.routes()
+}
+
 func (p *Platform) mountRoutes(mux *http.ServeMux) {
 	wrap := func(h http.HandlerFunc) http.HandlerFunc {
 		return p.corsHTTP(p.authHTTP(h))

@@ -1,0 +1,66 @@
+# L1 preset：worker 多 task 冒烟（每 task 一次 turn/end，scripted 三步纯文本）。
+# 与 presettest.RunWorker 配合；integration E2E-041。
+#
+#   presettest.RunWorker(t, []string{"task-1","task-2","task-3"}, "presets/worker-three-turn-smoke.yaml")
+
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: "smoke: L0 llm.default placeholder（agent 内联 llm 优先）"
+
+platform.default:
+  use: platform/worker
+  config:
+    tasks: []
+    sessionMode: fixed
+    sessionID: worker
+    stream: false
+
+runner.default:
+  use: runner
+  deps:
+    platform: platform.default
+    loop:
+      use: loop/default
+      deps:
+        agents:
+          - use: agent/coding
+            config:
+              id: smoke
+            deps:
+              sessionStore: sessionStore.default
+              workspace: workspace.default
+              llm:
+                use: llm/scripted
+                config:
+                  steps:
+                    - text: "worker-reply-1"
+                    - text: "worker-reply-2"
+                    - text: "worker-reply-3"
+              prompt:
+                use: prompt/assembler/default
+              tools:
+                use: tools/runtime
+                deps:
+                  toolPacks:
+                    - use: tool/fs-memory
+                      config:
+                        files:
+                          README.md: "# smoke\n"
+                        tools: [read]
+
+session.default:
+  use: session/memory
+  config:
+    id: cli:default
+
+sessionStore.default:
+  use: session/static
+  deps:
+    session: session.default
+
+workspace.default:
+  use: workspace/default
+  config:
+    scope: local
