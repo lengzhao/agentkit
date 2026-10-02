@@ -86,12 +86,13 @@ func TestResumeReplaysLastTextDeltaAfterDisconnect(t *testing.T) {
 	go plat.serveRunSSE(ctx, run, sse, conv.ID, runID)
 
 	release := make(chan struct{})
+	activeRun := run // capture for the goroutine: run is reassigned below
 	go func() {
 		<-release
-		run.mu.Lock()
-		run.answerText = "final-after-disconnect"
-		run.mu.Unlock()
-		run.signal()
+		activeRun.mu.Lock()
+		activeRun.answerText = "final-after-disconnect"
+		activeRun.mu.Unlock()
+		activeRun.signal()
 		time.Sleep(80 * time.Millisecond)
 		plat.pending.finish(runID, pendingResult{answer: "final-after-disconnect"})
 	}()

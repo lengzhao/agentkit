@@ -25,14 +25,9 @@ func TestHTTPHostServesDefaultServeMux(t *testing.T) {
 		_, _ = plat.Receive(ctx)
 	}()
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if plat.resolvedAddr != "" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if plat.resolvedAddr == "" {
+	select {
+	case <-plat.ready:
+	case <-time.After(3 * time.Second):
 		t.Fatal("server did not start")
 	}
 

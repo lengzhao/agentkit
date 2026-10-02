@@ -277,7 +277,7 @@ func TestLoopDelegateAsyncReturnsBeforeSlowOutbound(t *testing.T) {
 func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
 	t.Parallel()
 
-	var sawBroker bool
+	var sawBroker atomic.Bool
 	ctrl := &brokerMarker{mark: &sawBroker}
 
 	root := t.TempDir()
@@ -315,7 +315,7 @@ func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sawBroker {
+	if !sawBroker.Load() {
 		t.Fatal("child turn did not inherit permission broker from parent control")
 	}
 }
@@ -323,7 +323,7 @@ func TestLoopDelegateChildInheritsSessionControl(t *testing.T) {
 func TestLoopDelegateAsyncChildInheritsSessionControl(t *testing.T) {
 	t.Parallel()
 
-	var sawBroker bool
+	var sawBroker atomic.Bool
 	ctrl := &brokerMarker{mark: &sawBroker}
 
 	root := t.TempDir()
@@ -365,22 +365,22 @@ func TestLoopDelegateAsyncChildInheritsSessionControl(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for !sawBroker && time.Now().Before(deadline) {
+	for !sawBroker.Load() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !sawBroker {
+	if !sawBroker.Load() {
 		t.Fatal("async child turn did not inherit permission broker from parent control")
 	}
 }
 
 // brokerMarker is a minimal stand-in for *loop.Control in BrokerFrom tests.
 type brokerMarker struct {
-	mark *bool
+	mark *atomic.Bool
 }
 
 func (b *brokerMarker) Await(context.Context, permission.Request) (permission.Result, error) {
 	if b.mark != nil {
-		*b.mark = true
+		b.mark.Store(true)
 	}
 	return permission.Result{Outcome: permission.OutcomeResolved, Allow: true}, nil
 }
@@ -388,7 +388,7 @@ func (b *brokerMarker) Await(context.Context, permission.Request) (permission.Re
 type brokerProbeAgent struct {
 	id    agentkit.AgentID
 	store agentkit.SessionStore
-	probe *bool
+	probe *atomic.Bool
 }
 
 func (a *brokerProbeAgent) ID() agentkit.AgentID { return a.id }
@@ -398,7 +398,7 @@ func (a *brokerProbeAgent) RunTurn(ctx context.Context, input agentkit.TurnInput
 		return fmt.Errorf("emit required")
 	}
 	if _, ok := rtpermission.BrokerFrom(ctx); ok && a.probe != nil {
-		*a.probe = true
+		a.probe.Store(true)
 	}
 	sess, err := a.store.Get(ctx, rctx.SessionIDFromContext(ctx))
 	if err != nil {

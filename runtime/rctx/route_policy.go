@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -91,9 +92,12 @@ func workspaceFromRoute(route agentkit.RouteRef, userID string) string {
 	return WorkspaceKey(string(scoped))
 }
 
-var platformSessionPolicies = map[string]PlatformSessionPolicy{
-	"chat-api": {ActiveEntryMode: ActiveEntryDelivery},
-}
+var (
+	platformSessionPoliciesMu sync.RWMutex
+	platformSessionPolicies   = map[string]PlatformSessionPolicy{
+		"chat-api": {ActiveEntryMode: ActiveEntryDelivery},
+	}
+)
 
 // RegisterPlatformPolicy registers or overrides routing policy for a platform id.
 func RegisterPlatformPolicy(platform string, policy PlatformSessionPolicy) {
@@ -101,6 +105,8 @@ func RegisterPlatformPolicy(platform string, policy PlatformSessionPolicy) {
 	if platform == "" {
 		return
 	}
+	platformSessionPoliciesMu.Lock()
+	defer platformSessionPoliciesMu.Unlock()
 	platformSessionPolicies[platform] = policy
 }
 
@@ -110,6 +116,8 @@ func PlatformSessionPolicyFor(platform string) PlatformSessionPolicy {
 	if platform == "" {
 		return PlatformSessionPolicy{}
 	}
+	platformSessionPoliciesMu.RLock()
+	defer platformSessionPoliciesMu.RUnlock()
 	return platformSessionPolicies[platform]
 }
 

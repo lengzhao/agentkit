@@ -24,11 +24,14 @@ type Deps struct{}
 // Platform serves http.DefaultServeMux. Other plugins (e.g. platform/chat-api with
 // registerOnly) mount routes via http.Handle before this platform starts listening.
 type Platform struct {
-	listenAddr   string
+	listenAddr string
+	server     *http.Server
+	cancel     context.CancelFunc
+	startOnce  sync.Once
+	// ready is closed once the listener is bound; resolvedAddr is written
+	// before that, so reading it after <-ready is race-free.
+	ready        chan struct{}
 	resolvedAddr string
-	server       *http.Server
-	cancel       context.CancelFunc
-	startOnce    sync.Once
 }
 
 // New registers platform/http: HTTP host that serves http.DefaultServeMux.
@@ -37,7 +40,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if listen == "" {
 		listen = defaultListenAddr
 	}
-	return &Platform{listenAddr: listen}, nil
+	return &Platform{listenAddr: listen, ready: make(chan struct{})}, nil
 }
 
 func (p *Platform) PlatformID() string { return "http" }
@@ -67,6 +70,7 @@ func (p *Platform) serve(ctx context.Context) {
 		return
 	}
 	p.resolvedAddr = ln.Addr().String()
+	close(p.ready)
 	slog.Info("http: server started", "addr", p.resolvedAddr)
 	go func() {
 		<-ctx.Done()

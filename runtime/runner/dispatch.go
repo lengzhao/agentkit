@@ -31,6 +31,12 @@ type scheduler struct {
 	regCh  chan func(map[agentkit.SessionID]*sessionQueue)
 	queues map[agentkit.SessionID]*sessionQueue
 	wg     sync.WaitGroup
+
+	// regMu serializes stop (close) against withQueues (send): after a
+	// shutdown timeout, drains may still be running when stop retires the
+	// registry goroutine — a send on the closed channel would panic.
+	regMu  sync.Mutex
+	closed bool
 }
 
 // sessionQueue is one session's FIFO backlog plus whether a worker owns it.
@@ -64,19 +70,35 @@ func (s *scheduler) registryLoop() {
 	}
 }
 
-// stop retires the registry goroutine. Call after wait returns so no further
-// submits race the close. Safe to call once.
+// stop retires the registry goroutine. Safe to call once; later withQueues
+// calls become no-ops (late submits are dropped, in-flight drains retire).
 func (s *scheduler) stop() {
-	close(s.regCh)
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	if !s.closed {
+		s.closed = true
+		close(s.regCh)
+	}
 }
 
-func (s *scheduler) withQueues(fn func(map[agentkit.SessionID]*sessionQueue)) {
+// withQueues runs fn under the registry goroutine and reports whether it ran
+// (false after stop: the caller must treat the turn as abandoned).
+func (s *scheduler) withQueues(fn func(map[agentkit.SessionID]*sessionQueue)) bool {
 	done := make(chan struct{})
+	s.regMu.Lock()
+	if s.closed {
+		s.regMu.Unlock()
+		return false
+	}
+	// The send cannot block forever: the registry loop keeps receiving until
+	// regCh is closed, and close only happens under regMu (held here).
 	s.regCh <- func(queues map[agentkit.SessionID]*sessionQueue) {
 		fn(queues)
 		close(done)
 	}
+	s.regMu.Unlock()
 	<-done
+	return true
 }
 
 // acquire takes one concurrency slot before running a turn.
@@ -103,7 +125,7 @@ func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
 	sessionID := rctx.ConversationFromLoopRequest(req)
 
 	var start bool
-	s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
+	if !s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
 		queue := queues[sessionID]
 		if queue == nil {
 			queue = &sessionQueue{}
@@ -114,7 +136,9 @@ func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
 		if start {
 			queue.running = true
 		}
-	})
+	}) {
+		return // scheduler stopped: drop the submission
+	}
 
 	if start {
 		s.wg.Add(1)
@@ -129,7 +153,7 @@ func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 	for {
 		var req agentkit.LoopRequest
 		var empty bool
-		s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
+		if !s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
 			queue := queues[sessionID]
 			if queue == nil || len(queue.pending) == 0 {
 				if queue != nil {
@@ -141,7 +165,9 @@ func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 			}
 			req = queue.pending[0]
 			queue.pending = queue.pending[1:]
-		})
+		}) {
+			return // scheduler stopped: retire the drain
+		}
 		if empty {
 			return
 		}

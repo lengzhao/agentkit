@@ -42,7 +42,7 @@ func TestChatOutboundSSE(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	sse, err := newSSEWriter(rec)
 	if err != nil {
 		t.Fatal(err)
@@ -80,12 +80,12 @@ func TestChatOutboundSSE(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Contains(rec.Body.String(), "text_delta") {
+		if strings.Contains(rec.bodyString(), "text_delta") {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("expected text_delta in %s", rec.Body.String())
+	t.Fatalf("expected text_delta in %s", rec.bodyString())
 }
 
 func TestToolCallSSEOnlyOnEnd(t *testing.T) {
@@ -101,7 +101,7 @@ func TestToolCallSSEOnlyOnEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	sse, err := newSSEWriter(rec)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestToolCallSSEOnlyOnEnd(t *testing.T) {
 		Data:  toolEnd,
 	})
 
-	body := rec.Body.String()
+	body := rec.bodyString()
 	if strings.Count(body, "event: tool_call") != 1 {
 		t.Fatalf("expected exactly one tool_call SSE, got body:\n%s", body)
 	}
@@ -166,7 +166,7 @@ func TestToolResultSSETruncates(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	sse, err := newSSEWriter(rec)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestToolResultSSETruncates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := rec.Body.String()
+	body := rec.bodyString()
 	if !strings.Contains(body, "event: tool_result") {
 		t.Fatalf("expected tool_result SSE, got:\n%s", body)
 	}
@@ -215,13 +215,13 @@ func TestConversationsList(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/conversations?user=u1", nil)
 	req.Header.Set("X-Chat-API-Channel", "ch1")
 	req.Header.Set("X-Chat-API-User", "u1")
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	plat.handleConversations(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	if rec.Code() != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code(), rec.bodyString())
 	}
-	if !strings.Contains(rec.Body.String(), "conversations") {
-		t.Fatalf("body %s", rec.Body.String())
+	if !strings.Contains(rec.bodyString(), "conversations") {
+		t.Fatalf("body %s", rec.bodyString())
 	}
 }
 
@@ -236,10 +236,10 @@ func TestConversationMessages(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/conversations/"+convID+"/messages?limit=10", nil)
 	req.Header.Set("X-Chat-API-Channel", channel)
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	plat.handleConversationSub(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	if rec.Code() != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code(), rec.bodyString())
 	}
 	var resp struct {
 		OK   bool `json:"ok"`
@@ -247,7 +247,7 @@ func TestConversationMessages(t *testing.T) {
 			Messages []map[string]any `json:"messages"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	if err := json.Unmarshal(rec.bodyBytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
 	if len(resp.Data.Messages) != 2 {
@@ -312,7 +312,7 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	sse, err := newSSEWriter(rec)
 	if err != nil {
 		t.Fatal(err)
@@ -341,8 +341,8 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 		Data:  toolEnd,
 	})
 	time.Sleep(500 * time.Millisecond)
-	if strings.Contains(rec.Body.String(), "event: message_end") {
-		t.Fatalf("message_end should not fire before turn/end: %s", rec.Body.String())
+	if strings.Contains(rec.bodyString(), "event: message_end") {
+		t.Fatalf("message_end should not fire before turn/end: %s", rec.bodyString())
 	}
 
 	delta, _ := json.Marshal(agentkit.MessageUpdatePayload{
@@ -365,13 +365,13 @@ func TestToolCallStepDoesNotEndSSEEarly(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		body := rec.Body.String()
+		body := rec.bodyString()
 		if strings.Contains(body, "text_delta") && strings.Contains(body, "event: message_end") {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("expected text_delta then message_end, got: %s", rec.Body.String())
+	t.Fatalf("expected text_delta then message_end, got: %s", rec.bodyString())
 }
 
 func TestChatMessageMetadataHeaders(t *testing.T) {
@@ -393,7 +393,7 @@ func TestChatMessageMetadataHeaders(t *testing.T) {
 	req.Header.Set("X-Org-Id", "org-42")
 	req.Header.Set("X-Chat-API-User-Name", "Bob")
 
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	pushDone := make(chan agentkit.MessageEvent, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -427,7 +427,13 @@ func TestChatMessageMetadataHeaders(t *testing.T) {
 			t.Fatalf("metadata %s should be set", agentkit.MetadataTurnID)
 		}
 		// Unblock handleChatMessages waiting on run.done.
+		plat.activeMu.Lock()
+		runIDs := make([]string, 0, len(plat.activeByConv))
 		for _, runID := range plat.activeByConv {
+			runIDs = append(runIDs, runID)
+		}
+		plat.activeMu.Unlock()
+		for _, runID := range runIDs {
 			plat.pending.finish(runID, pendingResult{answer: "ok"})
 		}
 	case <-time.After(3 * time.Second):
@@ -499,7 +505,7 @@ func TestTurnEndMessageFillsAnswerWhenNoDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID := agentkit.SessionID(engineSessionKey("default_channel", conv.ID))
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	sse, err := newSSEWriter(rec)
 	if err != nil {
 		t.Fatal(err)
@@ -541,7 +547,7 @@ func TestTurnEndMessageFillsAnswerWhenNoDeltas(t *testing.T) {
 }
 
 func TestSSEWriter(t *testing.T) {
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	sse, err := newSSEWriter(rec)
 	if err != nil {
 		t.Fatal(err)
@@ -549,7 +555,7 @@ func TestSSEWriter(t *testing.T) {
 	if err := sse.Event("ping", map[string]string{"ok": "1"}); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("event: ping")) {
-		t.Fatalf("body %s", rec.Body.String())
+	if !bytes.Contains(rec.bodyBytes(), []byte("event: ping")) {
+		t.Fatalf("body %s", rec.bodyString())
 	}
 }

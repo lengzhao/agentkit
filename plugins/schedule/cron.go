@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -69,7 +70,7 @@ type Cron struct {
 	mu       sync.Mutex
 	runCount int
 	dueQueue []capschedule.Job
-	loopHook func() // test-only via SetLoopHookForTest
+	loopHook atomic.Pointer[func()] // test-only via SetLoopHookForTest
 }
 
 // NewCron registers schedule/cron: Resident calendar scheduler over a shared job registry.
@@ -186,8 +187,8 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		return fmt.Errorf("schedule/cron: sync jobs: %w", err)
 	}
 	for {
-		if c.loopHook != nil {
-			c.loopHook()
+		if hook := c.loopHook.Load(); hook != nil {
+			(*hook)()
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -390,7 +391,11 @@ func scheduleInboundPrompt(job capschedule.Job) string {
 
 // SetLoopHookForTest runs hook at the top of each Start loop iteration. Test-only.
 func (c *Cron) SetLoopHookForTest(hook func()) {
-	c.loopHook = hook
+	if hook == nil {
+		c.loopHook.Store(nil)
+		return
+	}
+	c.loopHook.Store(&hook)
 }
 
 // SetClockForTest replaces the clock and wait so cron behaviour can be asserted
