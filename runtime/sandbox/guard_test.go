@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
 // errRefWorkspace fails resolution for refs listed in failRefs.
 type errRefWorkspace struct {
-	fakeWorkspace
+	agenttest.ScopedWorkspace
 	failRefs map[string]bool
 }
 
@@ -21,7 +22,7 @@ func (w errRefWorkspace) Resolve(ctx context.Context, rel string) (string, error
 	if w.failRefs[rel] {
 		return "", fmt.Errorf("resolve %s: unavailable", rel)
 	}
-	return w.fakeWorkspace.Resolve(ctx, rel)
+	return w.ScopedWorkspace.Resolve(ctx, rel)
 }
 
 // within must not confuse sibling prefixes (tenant-a vs tenant-ab).
@@ -76,8 +77,8 @@ func TestCheckReadSymlinkEscape(t *testing.T) {
 func TestHidePathsFailClosed(t *testing.T) {
 	s, local, global := newTestSandbox(t)
 	s.workspace = errRefWorkspace{
-		fakeWorkspace: fakeWorkspace{local: local, global: global},
-		failRefs:      map[string]bool{"global:private": true},
+		ScopedWorkspace: agenttest.ScopedWorkspace{Local: local, Global: global},
+		failRefs:        map[string]bool{"global:private": true},
 	}
 	s.hidePaths = []string{"global:private"}
 
@@ -94,8 +95,8 @@ func TestHidePathsFailClosed(t *testing.T) {
 func TestRoBindsDegradeOnBadEntry(t *testing.T) {
 	s, local, global := newTestSandbox(t)
 	s.workspace = errRefWorkspace{
-		fakeWorkspace: fakeWorkspace{local: local, global: global},
-		failRefs:      map[string]bool{"global:broken": true},
+		ScopedWorkspace: agenttest.ScopedWorkspace{Local: local, Global: global},
+		failRefs:        map[string]bool{"global:broken": true},
 	}
 	s.roBinds = []string{"global:broken"}
 
@@ -139,8 +140,11 @@ func TestResolveBindsVariants(t *testing.T) {
 
 	// strict=true propagates resolution failure.
 	s2 := &Sandbox{workspace: errRefWorkspace{
-		fakeWorkspace: fakeWorkspace{local: local, global: filepath.Join(base, "global")},
-		failRefs:      map[string]bool{"global:nope": true},
+		ScopedWorkspace: agenttest.ScopedWorkspace{
+			Local:  local,
+			Global: filepath.Join(base, "global"),
+		},
+		failRefs: map[string]bool{"global:nope": true},
 	}}
 	if _, err := s2.resolveBinds(ctx, []string{"global:nope"}, false, true); err == nil {
 		t.Fatal("strict bind resolution must fail closed")

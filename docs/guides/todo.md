@@ -174,21 +174,14 @@ flowchart TB
 
 ### 待办（按优先级）
 
-- [ ] **sandbox L2 单测补全**（安全关键，argv 断言之外的判定逻辑）
-  - [x] `within` 前缀混淆、`cleanHostPath` symlink 逃逸（含 symlink 父目录下新建文件）— `runtime/sandbox/guard_test.go`
-  - [x] hidePaths 解析失败 fail-closed vs roBinds warn+skip 的非对称语义钉死 — 同上
-  - [x] `resolveBinds`：workspace ref、含冒号宿主机路径、create=true mkdir（仅对 workspace ref 生效）— 同上
-  - [ ] `New` 模式矩阵：off/auto/bwrap × env 空/prod × failIfUnavailable 三态（按 `exec.LookPath("bwrap")` 分支期望）
-  - [ ] 视图缓存：TTL 命中/过期、`viewCacheMax` 驱逐、并发 `-race`
-- [ ] **acpremote sandbox 注入断言**（当前 `bridge_test.go` 只补了 nil 参数，注入路径零覆盖）
-  - [ ] recording fake sandbox：断言 spawn 时 WrapArgv 收到正确 cwd/inner、返回的包装 argv 真正用于 exec、WrapArgv 报错则子进程不启动（fail-closed）
-  - [ ] nil Sandbox 默认 `capsandbox.Disabled()` 的兜底契约
-- [ ] **shellbwrap env 安全**：runner env 中的密钥（如 `OPENAI_API_KEY`）不得进入 sandboxed 子进程；scopedEnv 注入/回退分支
-- [ ] **filesystem/sandbox 装饰器**：7 个方法 deny 时 inner 零调用（recording fake）；双机制一致性契约（CheckRead/Write 判定与 WrapArgv argv 推导可见性一致）
-- [ ] **零覆盖包补齐**：`runtime/prompt`、`runtime/hooks`、`runtime/bind`、`runtime/chathistory`、`plugins/tool/todo`、`plugins/tool/memory`、`plugins/tool/sessionquery`（先出 `-cover` 报告按逻辑密度排序）
-- [ ] **testkit 沉淀**：workspace/sandbox/filesystem 的通用 fake 收归 `testing/agenttest`，消除各测试文件重复定义
+- [x] **sandbox L2 单测补全**（`runtime/sandbox/guard_test.go`、`new_test.go`、`cache_test.go`、`dual_mechanism_test.go`）
+- [x] **acpremote sandbox 注入断言**（`plugins/agent/acpremote/sandbox_test.go`）
+- [x] **shellbwrap env 安全**：runner 密钥不进入 sandbox 子进程；scopedEnv 注入与回退 — `plugins/tool/shellbwrap/env_test.go`
+- [x] **filesystem/sandbox 装饰器**：deny 时 inner 零调用 — `runtime/filesystem/sandbox_test.go`；CheckRead/Write 与 WrapArgv 可见性 — `runtime/sandbox/dual_mechanism_test.go`
+- [x] **零覆盖包补齐**：`runtime/prompt`、`runtime/hooks`、`plugins/tool/memory`、`plugins/tool/sessionquery`；此前已补 `runtime/bind`、`runtime/chathistory`、`plugins/tool/todo`（`todo` 工具层仍有集成路径未覆盖，可后续用 agenttest 补 Call）
+- [x] **testkit 沉淀**：`testing/agenttest` 新增 `ScopedWorkspace`、`RecordingSandbox`、`GateSandbox`、`RecordingFS`、`StubEnvPairResolver`；sandbox / filesystem / acpremote / shell / shellbwrap 测试已迁移
 - [ ] **覆盖率门槛**：采集观察约两周后，对变更包设 diff 门槛
-- [ ] **flaky 治理**：CI 定期 `-shuffle=on` 全量；失败重跑记录与隔离
+- [x] **flaky 治理（起步）**：`scripts/test.sh shuffle` = `-race -shuffle=on` 全量；CI 定期调度仍待 workflow 配置
 
 ---
 

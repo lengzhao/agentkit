@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
 // sysintEnv builds a real Sandbox (mode=bwrap, probed) over a two-tenant
@@ -42,7 +44,7 @@ func sysintEnv(t *testing.T) (*Sandbox, string, string) {
 	if err := os.WriteFile(filepath.Join(global, "secrets.enc.json"), []byte("top-secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Config{Mode: ModeBwrap, TmpBase: t.TempDir()}, Deps{Workspace: fakeWorkspace{local: localA, global: global}})
+	svc, err := New(Config{Mode: ModeBwrap, TmpBase: t.TempDir()}, Deps{Workspace: agenttest.ScopedWorkspace{Local: localA, Global: global}})
 	if err != nil {
 		if os.Getenv("SYSINT_REQUIRED") == "1" {
 			t.Fatalf("bwrap required but unavailable: %v", err)

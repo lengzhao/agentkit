@@ -6,24 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
-
-type stubEnvPairResolver struct {
-	pairs map[string][]string
-	err   error
-}
-
-func (s stubEnvPairResolver) Resolve(context.Context, string, string) (credentials.Secret, error) {
-	return credentials.Secret{}, nil
-}
-
-func (s stubEnvPairResolver) EnvPairs(_ context.Context, scope string, _ credentials.EnvPairsOptions) ([]string, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	return s.pairs[scope], nil
-}
 
 func hasEnvEntry(env []string, entry string) bool {
 	for _, e := range env {
@@ -41,8 +25,8 @@ func trimEnvCfg() ShellBashConfig {
 
 func TestSubprocessEnvDefaultInheritsHostEnv(t *testing.T) {
 	t.Setenv("AGENTKIT_SHELL_HOST_MARKER", "1")
-	env := subprocessEnv(context.Background(), "/tmp", "go test ./...", nil, stubEnvPairResolver{
-		pairs: map[string][]string{"shell-bash.go": nil},
+	env := subprocessEnv(context.Background(), "/tmp", "go test ./...", nil, agenttest.StubEnvPairResolver{
+		Pairs: map[string][]string{"shell-bash.go": nil},
 	}, ShellBashConfig{})
 	if !hasEnvEntry(env, "AGENTKIT_SHELL_HOST_MARKER=1") {
 		t.Fatal("default should inherit full host env (trimEnv off)")
@@ -51,8 +35,8 @@ func TestSubprocessEnvDefaultInheritsHostEnv(t *testing.T) {
 
 func TestSubprocessEnvTrimEnvUsesTrimmedBase(t *testing.T) {
 	t.Setenv("AGENTKIT_SHELL_HOST_MARKER", "1")
-	env := subprocessEnv(context.Background(), "/tmp", "go test ./...", nil, stubEnvPairResolver{
-		pairs: map[string][]string{"shell-bash.go": nil},
+	env := subprocessEnv(context.Background(), "/tmp", "go test ./...", nil, agenttest.StubEnvPairResolver{
+		Pairs: map[string][]string{"shell-bash.go": nil},
 	}, trimEnvCfg())
 	if hasEnvEntry(env, "AGENTKIT_SHELL_HOST_MARKER=1") {
 		t.Fatal("host env leaked into subprocess env with trimEnv on")
@@ -72,8 +56,8 @@ func TestSubprocessEnvTrimEnvNilStore(t *testing.T) {
 
 func TestSubprocessEnvTrimEnvErrorUsesTrimmedBase(t *testing.T) {
 	t.Setenv("AGENTKIT_SHELL_HOST_MARKER", "1")
-	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, stubEnvPairResolver{
-		err: errors.New("store unavailable"),
+	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, agenttest.StubEnvPairResolver{
+		Err: errors.New("store unavailable"),
 	}, trimEnvCfg())
 	if hasEnvEntry(env, "AGENTKIT_SHELL_HOST_MARKER=1") {
 		t.Fatal("host env leaked into subprocess env on EnvPairs error")
@@ -82,8 +66,8 @@ func TestSubprocessEnvTrimEnvErrorUsesTrimmedBase(t *testing.T) {
 
 func TestSubprocessEnvErrorDefaultKeepsHostEnv(t *testing.T) {
 	t.Setenv("AGENTKIT_SHELL_HOST_MARKER", "1")
-	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, stubEnvPairResolver{
-		err: errors.New("store unavailable"),
+	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, agenttest.StubEnvPairResolver{
+		Err: errors.New("store unavailable"),
 	}, ShellBashConfig{})
 	if !hasEnvEntry(env, "AGENTKIT_SHELL_HOST_MARKER=1") {
 		t.Fatal("EnvPairs error should keep host env when trimEnv off")
@@ -101,8 +85,8 @@ func TestSubprocessEnvExtraEnv(t *testing.T) {
 
 func TestSubprocessEnvTrimEnvInjection(t *testing.T) {
 	t.Setenv("AGENTKIT_SHELL_LEAK_ME", "secret")
-	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, stubEnvPairResolver{
-		pairs: map[string][]string{"shell-bash.gh": {"GH_TOKEN=gh-test"}},
+	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, agenttest.StubEnvPairResolver{
+		Pairs: map[string][]string{"shell-bash.gh": {"GH_TOKEN=gh-test"}},
 	}, trimEnvCfg())
 	hasToken := false
 	hasLeak := false
@@ -124,8 +108,8 @@ func TestSubprocessEnvTrimEnvInjection(t *testing.T) {
 
 func TestSubprocessEnvDefaultInjectionAppendsToHostEnv(t *testing.T) {
 	t.Setenv("AGENTKIT_SHELL_HOST_MARKER", "1")
-	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, stubEnvPairResolver{
-		pairs: map[string][]string{"shell-bash.gh": {"GH_TOKEN=gh-test"}},
+	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, agenttest.StubEnvPairResolver{
+		Pairs: map[string][]string{"shell-bash.gh": {"GH_TOKEN=gh-test"}},
 	}, ShellBashConfig{})
 	if !hasEnvEntry(env, "GH_TOKEN=gh-test") {
 		t.Fatalf("missing injected pair: %v", env)
@@ -137,8 +121,8 @@ func TestSubprocessEnvDefaultInjectionAppendsToHostEnv(t *testing.T) {
 
 func TestSubprocessEnvInjectionOverridesHostKey(t *testing.T) {
 	t.Setenv("GH_TOKEN", "from-host")
-	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, stubEnvPairResolver{
-		pairs: map[string][]string{"shell-bash.gh": {"GH_TOKEN=from-scope"}},
+	env := subprocessEnv(context.Background(), "/tmp", "gh auth status", nil, agenttest.StubEnvPairResolver{
+		Pairs: map[string][]string{"shell-bash.gh": {"GH_TOKEN=from-scope"}},
 	}, ShellBashConfig{})
 	if !hasEnvEntry(env, "GH_TOKEN=from-scope") {
 		t.Fatalf("scoped value must override host env: %v", env)

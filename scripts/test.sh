@@ -34,6 +34,10 @@ case "$TIER" in
     go test -count=1 -timeout=10m -coverpkg=./... -coverprofile=coverage.out ./...
     go tool cover -func=coverage.out | tail -1
     ;;
+  shuffle)
+    echo "== shuffle (race, flaky hunt) =="
+    go test -race -count=1 -shuffle=on -timeout=15m ./...
+    ;;
   smoke)
     echo "== smoke only =="
     go test -race -count=1 -run '^TestSmoke' ./testing/smoke/...
@@ -43,7 +47,7 @@ case "$TIER" in
     "$0" integration
     ;;
   *)
-    echo "usage: $0 [unit|integration|sysint|coverage|smoke|all]" >&2
+    echo "usage: $0 [unit|integration|sysint|coverage|shuffle|smoke|all]" >&2
     exit 1
     ;;
 esac

@@ -51,6 +51,10 @@ flowchart TB
 | `MustScripted` / `AllowAll` | scripted LLM 与审批 |
 | `TempFileStore` / `SessionEvents` | 文件 session 与事件读取 |
 | `TurnContext` / `LoopTurnContext` / `RunTurn` | agent turn 上下文 |
+| `ScopedWorkspace` / `SetupScopedTenantDirs` | sandbox 单测用的 local:/global: 布局 |
+| `RecordingSandbox` / `GateSandbox` | WrapArgv 录制与 CheckRead/Write 门禁 fake |
+| `RecordingFS` | filesystem 装饰器单测用的计数 fake（`runtime/filesystem` 测试勿 import agenttest，存在 import cycle） |
+| `StubEnvPairResolver` | shell / shell-bwrap scoped env 注入测试 |
 | `NewSubagentDelegateEnv` | 父→delegate→子 冒烟栈 |
 | `AssertSubagentParentSession` | 委派回归断言（无 recovery、单条 delegate result） |
 | `AssertDeriveMessagesToolCallsAnswered` | derive 后 tool call 均有 result |
@@ -146,6 +150,9 @@ events := agenttest.SessionEvents(t, ctx, result.Store, agentkit.SessionID("cli:
 
 # 全部
 ./scripts/test.sh all
+
+# 可选：全量 -shuffle=on 抓 flaky（CI 可定期跑，比 unit 更慢）
+./scripts/test.sh shuffle
 ```
 
 ## 编写新测试的建议

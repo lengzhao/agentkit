@@ -1,25 +1,11 @@
 package shellbwrap
 
 import (
-	"context"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
-
-type fakeWorkspace struct {
-	local  string
-	global string
-}
-
-func (f fakeWorkspace) Resolve(_ context.Context, rel string) (string, error) {
-	if strings.HasPrefix(rel, "global:") {
-		return filepath.Join(f.global, strings.TrimPrefix(rel, "global:")), nil
-	}
-	return filepath.Join(f.local, rel), nil
-}
 
 func TestTruncBuffer(t *testing.T) {
 	buf := &truncBuffer{limit: 5}
@@ -39,7 +25,7 @@ func TestNewRequiresSandbox(t *testing.T) {
 }
 
 func TestNewWithSandbox(t *testing.T) {
-	tool, err := New(Config{}, Deps{Workspace: fakeWorkspace{}, Sandbox: capsandbox.Disabled()})
+	tool, err := New(Config{}, Deps{Workspace: agenttest.ScopedWorkspace{}, Sandbox: capsandbox.Disabled()})
 	if err != nil {
 		t.Fatal(err)
 	}

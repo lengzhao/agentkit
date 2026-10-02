@@ -7,40 +7,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/lengzhao/agentkit/testing/agenttest"
 )
-
-type fakeWorkspace struct {
-	local  string
-	global string
-}
-
-func (f fakeWorkspace) Resolve(_ context.Context, rel string) (string, error) {
-	if strings.HasPrefix(rel, "global:") {
-		return filepath.Join(f.global, strings.TrimPrefix(rel, "global:")), nil
-	}
-	return filepath.Join(f.local, strings.TrimPrefix(rel, "local:")), nil
-}
 
 func newTestSandbox(t *testing.T) (*Sandbox, string, string) {
 	t.Helper()
-	base := t.TempDir()
-	// On macOS TempDir lives under /var (a symlink); the plugin consistently
-	// uses realpath-normalized paths.
-	if real, err := filepath.EvalSymlinks(base); err == nil {
-		base = real
-	}
-	local := filepath.Join(base, "tenants", "tenant-a")
-	global := filepath.Join(base, "global")
-	for _, d := range []string{local, global} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(global, "secrets.enc.json"), []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	ws, local, global := agenttest.SetupScopedTenantDirs(t)
 	s := &Sandbox{
-		workspace: fakeWorkspace{local: local, global: global},
+		workspace: ws,
 		on:        true,
 		roMaskDir: t.TempDir(),
 		tmpBase:   "",
@@ -128,7 +103,7 @@ func TestWrapBwrapGlobalAncestorOfTenants(t *testing.T) {
 	if err := os.MkdirAll(global, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := &Sandbox{workspace: fakeWorkspace{local: local, global: global}, on: true}
+	s := &Sandbox{workspace: agenttest.ScopedWorkspace{Local: local, Global: global}, on: true}
 	workDir := filepath.Join(local, "work")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -359,14 +334,14 @@ func TestTenantDirNameStableAndDistinct(t *testing.T) {
 }
 
 func TestNewRejectsBadMode(t *testing.T) {
-	_, err := New(Config{Mode: "nope"}, Deps{Workspace: fakeWorkspace{}})
+	_, err := New(Config{Mode: "nope"}, Deps{Workspace: agenttest.ScopedWorkspace{}})
 	if err == nil {
 		t.Fatal("expected error for invalid mode")
 	}
 }
 
 func TestNewOffModeSkipsProbe(t *testing.T) {
-	s, err := New(Config{Mode: ModeOff}, Deps{Workspace: fakeWorkspace{}})
+	s, err := New(Config{Mode: ModeOff}, Deps{Workspace: agenttest.ScopedWorkspace{}})
 	if err != nil {
 		t.Fatal(err)
 	}
