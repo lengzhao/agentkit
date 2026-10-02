@@ -969,6 +969,9 @@ tool.shell-bash.default:
     # env to a minimal base + scoped/extra pairs (extraEnv covers static non-secret vars).
     credentials: credentials.integrations
 
+# 租户沙箱（sandbox/bwrap，Linux）：shell 换 tool/shell-bwrap、fs 走 filesystem/sandbox
+# 装饰器，子进程与进程内共享同一租户视图。可用 overlay 见 presets/sandbox.yaml。
+
 tool.skill.default:
   use: tool/skill
   deps:

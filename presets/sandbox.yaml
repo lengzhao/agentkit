@@ -1,0 +1,59 @@
+# L1 preset：租户沙箱（sandbox/bwrap，需 Linux + bubblewrap）。
+#
+# 一份视图配置，两种执行机制：
+#
+#   子进程隔离 —— tool/shell-bwrap 与 agent/acp-remote 的 exec argv 经
+#                sandbox.WrapArgv 包进 bwrap mount namespace：租户根 rw、
+#                global 只读（secretFiles 掩码）、邻居租户不可见、只读 floor（EROFS）。
+#   进程内执行 —— bwrap 管不到 runner 内的 Go 代码，fs 工具改走
+#                filesystem/sandbox 装饰器，按同一视图做 CheckRead/CheckWrite
+#                （读为 allowlist：租户根 / global / ro-rwBinds 之外一律拒绝）。
+#
+# 本 preset 是 overlay：节点名与 L0 保持一致，引用处（tools.default 的
+# tool.shell-bash.default、tool.fs-workspace.default）零改动。注意合并语义：
+# config 按 key 合并，deps 整表替换（覆盖节点时依赖需列全）。
+# 组合示例：
+#
+#   go run ./cmd/agent -config presets/multi-tenant.yaml,presets/sandbox.yaml,...
+#
+# ACP agent 沙箱化（可选）：给对应 agent 节点加 dep，如
+#   agent.cursor.default:
+#     deps:
+#       sandbox: sandbox.default
+
+sandbox.default:
+  use: sandbox/bwrap
+  config:
+    # off=禁用；auto=探测可用则启用、否则告警降级（env: prod 时升级为 fail-closed）；
+    # bwrap=强制启用，依赖缺失即按 failIfUnavailable（默认 true）拒绝启动。
+    mode: auto
+    # env: prod                         # 生产环境显式标记，配合 mode: auto
+    # roBinds: ["global:share_dir"]     # 全租户共享只读路径（宿主机绝对路径或 workspace ref）
+    # rwBinds: []                       # 全租户共享可写路径（注意并发写冲突）
+    # hidePaths: ["global:private"]     # 掩码：目录不可见且写入 EROFS、文件置空；解析失败即拒绝（防泄漏）
+    # secretFiles: ["secrets.enc.json"] # global 根下需掩码的敏感文件（默认值即此）
+    # tmpBase: /dev/shm/shellbwrap      # 每租户 /tmp 的宿主机 tmpfs 基底；同一宿主机每个 runner 实例须独占
+  deps:
+    workspace: workspace.default
+
+# 进程内 fs 装饰器：包在 filesystem.local.default 之外，与 bwrap 视图同源。
+filesystem.local.sandboxed:
+  use: filesystem/sandbox
+  deps:
+    fs: filesystem.local.default
+    sandbox: sandbox.default
+
+# fs 工具改走沙箱视图（deps 整表替换，需列全）。
+tool.fs-workspace.default:
+  deps:
+    fs: filesystem.local.sandboxed
+    workspace: workspace.default
+
+# 同名节点替换 shell 实现：config（workDir/timeoutSeconds）按 key 合并保留；
+# deps 整表替换，需列全。
+tool.shell-bash.default:
+  use: tool/shell-bwrap
+  deps:
+    workspace: workspace.default
+    sandbox: sandbox.default
+    credentials: credentials.integrations

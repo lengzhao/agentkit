@@ -185,7 +185,15 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, b.cfg.Command[0], b.cfg.Command[1:]...)
+	argv := b.cfg.Command
+	// Wrap the ACP subprocess with the tenant sandbox view (e.g. bwrap
+	// mount-namespace isolation); the tenant identity comes from ctx. A
+	// disabled sandbox passes argv through unchanged.
+	argv, err = b.sandbox.WrapArgv(ctx, cwd, argv)
+	if err != nil {
+		return nil, fmt.Errorf("acp sandbox wrap: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = cwd
 	configureCmdProcessGroup(cmd)
 	cmd.Env = commandEnv(b.cfg.Env)

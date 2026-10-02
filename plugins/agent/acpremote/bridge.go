@@ -14,6 +14,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
@@ -43,6 +44,7 @@ type bridge struct {
 	fs         filesystem.Service
 	sessionMCP capacp.SessionMCPProvider
 	telemetry  captelemetry.Toolkit
+	sandbox    capsandbox.Service
 
 	connOps chan connOp
 	// proc is the current subprocess snapshot. It is written exclusively by
@@ -78,13 +80,14 @@ func (proc *subprocess) alive() bool {
 	}
 }
 
-func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit) *bridge {
+func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit, sandbox capsandbox.Service) *bridge {
 	b := &bridge{
 		cfg:        cfg,
 		workspace:  ws,
 		fs:         fs,
 		sessionMCP: sessionMCP,
 		telemetry:  telemetry,
+		sandbox:    sandbox,
 		connOps:    make(chan connOp),
 	}
 	go b.connLoop()

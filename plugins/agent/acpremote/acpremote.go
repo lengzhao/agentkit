@@ -10,6 +10,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/filesystem"
+	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -52,6 +53,10 @@ type Deps struct {
 	// SessionMCP supplies harness MCP servers for session/new (not project mcp.json).
 	SessionMCP capacp.SessionMCPProvider `json:"sessionMcp,omitempty"`
 	Telemetry  captelemetry.Toolkit        `json:"telemetry"`
+	// Sandbox wraps the ACP subprocess command with the tenant sandbox view
+	// (e.g. sandbox/bwrap) at spawn time. Nil defaults to
+	// capsandbox.Disabled() (passthrough).
+	Sandbox capsandbox.Service `json:"sandbox,omitempty"`
 }
 
 // Runtime proxies turns to an external ACP agent over stdio.
@@ -64,6 +69,7 @@ type Runtime struct {
 	sessionEvents capsession.Conversation
 	sessionMCP    capacp.SessionMCPProvider
 	telemetry     captelemetry.Toolkit
+	sandbox       capsandbox.Service
 	bridges       sync.Map // agentkit.SessionID -> *bridge
 }
 
@@ -99,6 +105,10 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	}
 	cfg.ClientName = clientName
 	cfg.ClientVersion = clientVersion
+	sandbox := deps.Sandbox
+	if sandbox == nil {
+		sandbox = capsandbox.Disabled()
+	}
 	return &Runtime{
 		id:            id,
 		cfg:           cfg,
@@ -108,11 +118,12 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		sessionEvents: deps.SessionEvents,
 		sessionMCP:    deps.SessionMCP,
 		telemetry:     deps.Telemetry,
+		sandbox:       sandbox,
 	}, nil
 }
 
 func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.telemetry))
+	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.telemetry, a.sandbox))
 	return v.(*bridge)
 }
 

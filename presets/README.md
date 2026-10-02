@@ -29,6 +29,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "one-shot
 | [web-smoke.yaml](web-smoke.yaml) | Web smoke | Scripted web; **chain with web** |
 | [openapi-smoke.yaml](openapi-smoke.yaml) | OpenAPI tools smoke | Scripted LLM + fixture api.json; **HTTP mock: testing/openapitest** |
 | [multi-tenant.yaml](multi-tenant.yaml) | Multi-tenant IM | Per-chat dirs; tools under `work/`; **bring your own platform** |
+| [sandbox.yaml](sandbox.yaml) | Tenant sandbox | `sandbox/bwrap` (Linux): shell swaps to `tool/shell-bwrap`, fs goes through the `filesystem/sandbox` decorator; **chain after multi-tenant** |
 | [p1-context.yaml](p1-context.yaml) | P1 snippet | Copy into custom overlay; not a full stack |
 
 ## Integrations
