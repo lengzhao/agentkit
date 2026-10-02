@@ -17,6 +17,13 @@ llm.gpt: null
 llm.router: null
 llm.fallback: null
 
+# llm.default extends llm.router；摘掉 router 后须内联 scripted，否则单独 resolve 会失败。
+llm.default:
+  use: llm/scripted
+  config:
+    steps:
+      - text: ""
+
 compaction.summary.default:
   deps:
     llm: llm.review

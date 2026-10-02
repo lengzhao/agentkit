@@ -71,10 +71,6 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
-commands.default:
-    deps:
-        sessionCommands: sessionCommands.default
-    use: commands/registry
 compaction.chain.default:
     use: compaction/chain
 compaction.pipeline.default:
@@ -250,12 +246,10 @@ llm.deepseek:
         credentials: credentials.default
     use: llm/openai-chat
 llm.default:
-    deps:
-        default: llm.gpt
-        protocols:
-            - llm.gpt
-            - llm.deepseek
-    use: llm/router
+    config:
+        steps:
+            - text: 'smoke: L0 llm.default placeholder（agent 内联 llm 优先）'
+    use: llm/scripted
 llm.fallback:
     config:
         fallbackModels:
@@ -294,9 +288,15 @@ llm.gpt:
     use: llm/openai-compatible
 llm.review:
     config:
-        steps:
-            - text: ""
-    use: llm/scripted
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        model: gpt-5.4-mini
+        responseHeaderTimeoutSeconds: 60
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
 llm.router:
     deps:
         default: llm.gpt
@@ -339,35 +339,13 @@ openapi.default:
         telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/openapi
-platform.chat-api:
-    config:
-        apiToken: ""
-        busyPolicy: queue
-        debugUi: false
-        interactionTimeout: 10m
-        listenAddr: ""
-        metadataHeaders:
-            - x-task-id
-        path: /v1/
-    deps:
-        commands: commands.default
-        sessionIndex: sessionIndex.default
-        sessionStore: sessionStore.default
-        workspace: workspace.default
-    use: platform/chat-api
-platform.cli:
-    config:
-        once: false
-    deps:
-        commands: commands.default
-        sessionStore: sessionStore.default
-    use: platform/cli
 platform.default:
-    deps:
-        platforms:
-            - platform.cli
-            - platform.chat-api
-    use: platform/multiplex
+    config:
+        sessionID: worker
+        sessionMode: fixed
+        stream: false
+        tasks: []
+    use: platform/worker
 policy.dangerous-shell.default:
     use: policy/deny-dangerous-shell
 prompt.agents-md.default:
@@ -484,7 +462,36 @@ runner.default:
         catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
-        loop: loop.default
+        loop:
+            deps:
+                agents:
+                    - config:
+                        id: smoke
+                      deps:
+                        llm:
+                            config:
+                                steps:
+                                    - text: worker-reply-1
+                                    - text: worker-reply-2
+                                    - text: worker-reply-3
+                            use: llm/scripted
+                        prompt:
+                            use: prompt/assembler/default
+                        sessionStore: sessionStore.default
+                        tools:
+                            deps:
+                                toolPacks:
+                                    - config:
+                                        files:
+                                            README.md: |
+                                                # smoke
+                                        tools:
+                                            - read
+                                      use: tool/fs-memory
+                            use: tools/runtime
+                        workspace: workspace.default
+                      use: agent/coding
+            use: loop/default
         platform: platform.default
         schedules:
             - schedule.cron
@@ -513,12 +520,12 @@ schedule.default:
     use: schedule/multi
 schedule.engine:
     use: schedule/engine
+session.default:
+    config:
+        id: cli:default
+    use: session/memory
 session.events:
     use: session/events
-sessionCommands.default:
-    deps:
-        sessionStore: sessionStore.default
-    use: session/commands
 sessionIndex.default:
     config:
         indexRel: sessions/.index.sqlite
@@ -527,14 +534,9 @@ sessionIndex.default:
         workspace: workspace.default
     use: session/sqlite-index
 sessionStore.default:
-    config:
-        cacheIdleTTL: 30m
-        dir: sessions
-        maxCachedSessions: 64
-        maxLoadedEvents: 256
     deps:
-        workspace: workspace.default
-    use: session/store
+        session: session.default
+    use: session/static
 skills.default:
     config:
         dirs:

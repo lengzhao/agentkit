@@ -476,7 +476,11 @@ runner.default:
         catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
-        loop: loop.default
+        loop:
+            deps:
+                agents:
+                    - agent.assistant.default
+            use: loop/default
         platform: platform.default
         schedules:
             - schedule.cron

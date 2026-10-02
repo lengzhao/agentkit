@@ -2,7 +2,6 @@ package config_test
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +18,9 @@ var presetsChainOnly = map[string]string{
 	"daemon.yaml":     "requires autonomous capability stack",
 	"cron.yaml":       "requires autonomous capability stack",
 	"web-smoke.yaml":  "requires web capability stack",
-	"p1-context.yaml": "capability fragment, not a full overlay",
+	"p1-context.yaml":        "capability fragment, not a full overlay",
+	"smoke-no-api-key.yaml":         "L1 fragment; chains with *-smoke presets (see presettest)",
+	"worker-three-turn-smoke.yaml":  "tasks injected by presettest.RunWorker",
 }
 
 func TestPresetsBuild(t *testing.T) {
@@ -57,18 +58,7 @@ func TestPresetsChainedBuild(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
 
-	repoRoot, err := filepath.Abs("..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repoRoot); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	base := filepath.Join("..", "config.base.yaml")
 
 	chains := [][]string{
 		{"autonomous.yaml", "worker.yaml"},
@@ -86,9 +76,9 @@ func TestPresetsChainedBuild(t *testing.T) {
 		t.Run(strings.Join(chain, "+"), func(t *testing.T) {
 			overlays := make([]string, 0, len(chain))
 			for _, name := range chain {
-				overlays = append(overlays, filepath.Join("presets", name))
+				overlays = append(overlays, filepath.Join("..", "presets", name))
 			}
-			doc, err := config.LoadDocument("config.base.yaml", overlays...)
+			doc, err := config.LoadDocument(base, overlays...)
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}

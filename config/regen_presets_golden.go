@@ -19,7 +19,8 @@ var chainOnly = map[string]bool{
 	"daemon.yaml":     true,
 	"cron.yaml":       true,
 	"web-smoke.yaml":  true,
-	"p1-context.yaml": true,
+	"p1-context.yaml":       true,
+	"smoke-no-api-key.yaml": true,
 }
 
 func main() {
