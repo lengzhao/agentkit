@@ -832,7 +832,7 @@ agents:
 
 ### 5.10 子 Agent 委派（subagent）
 
-AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"。已落地 `subagent/composite`（合并 `subagent/inprocess` 与 `subagent/loop-agent`）+ `tool/subagent` + `prompt/section/subagents`。进程内子 Agent 来自工作目录 `agents/*.md`；Loop agent（如 `cursor`）在 `subagent/loop-agent` 的 `config.agents` 里声明——加一个子 Agent = 加一个文件或配置项，不改实例图。使用手册见 [guides/subagent.zh.md](guides/subagent.zh.md)。
+AgentSet 解决的是"进程里有几个平级 Agent"；子 Agent 解决的是"一个 Agent 在一个 turn 内把子任务外包出去"；`agent/chain` 解决的是"一次入站依次过多个 Agent"（声明式顺序链，节点共享 session，如路由节点切模型 → 主节点执行，见 [guides/agent-chain.zh.md](guides/agent-chain.zh.md)）。已落地 `subagent/composite`（合并 `subagent/inprocess` 与 `subagent/loop-agent`）+ `tool/subagent` + `prompt/section/subagents`。进程内子 Agent 来自工作目录 `agents/*.md`；Loop agent（如 `cursor`）在 `subagent/loop-agent` 的 `config.agents` 里声明——加一个子 Agent = 加一个文件或配置项，不改实例图。使用手册见 [guides/subagent.zh.md](guides/subagent.zh.md)。
 
 **为什么值得做**：委派的收益是**上下文隔离**，不是并发。子 Agent 烧掉的十几轮 grep 输出留在它自己的 Session 里，回到父 Session 的只有一段结论——父 Agent 的 turn 因此不必靠 compaction 去救那些一次性的探索输出。
 

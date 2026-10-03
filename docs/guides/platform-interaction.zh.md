@@ -297,6 +297,8 @@ multiplex（CLI + IM 等）下，`/exit` 只关闭 CLI  stdin，**不会**结束
 
 `/model -g` 的全局条目按**当前路由到的 agent id**（含 `/agent -g use`）写入 `global:runtime.json`，与 runner 入站解析一致。
 
+**Agent 自主切换**：挂载 `tool/set-model` 后，Agent 可调用 `set_model` 写入同一会话 `runtime.json` 覆盖（下一 turn 生效，`allowModels` 白名单约束可选范围）；与 `agent/chain` 组合可实现「路由节点识别意图并切模型 → 主节点执行」的编排，见 [agent-chain.zh.md](agent-chain.zh.md)。
+
 `platform/lark`（及 `platform/feishu`）的 `config.sessionScope` 应与 `runner.config.sessionScope` 一致；不一致时 turn 可能锁在一种 session id 上，而 `/stop` 在另一种 id 上查 `IsSessionBusy`，会误判为无进行中的 turn。`/stop` 会按 delivery、scope 与 `/new` 子 session 等多种候选 id 匹配 busy session。群聊里若命令被解析成 `/stop@_user_x`，也会按 `stop` 处理。
 
 被取消的 turn 在 `turn/end` 时会携带 `cancelled: true`：飞书 / Lark 在**触发该 turn 的原消息**上移除处理中 reaction 并加上 `cancelledEmoji`（默认 `HEARTBROKEN` 💔），流式卡的处理过程/正文区追加「已取消」说明；Slack 在对应用户消息上移除 `eyes` 并加上 `cancelledEmoji`（默认 `broken_heart`），无流式卡时不另发说明消息。异常结束的 turn 使用 `errorEmoji`（飞书默认 `CrossMark`，Slack 默认 `x`）。不会误把 reaction 打到 `/stop` 命令消息上。同一 turn 内被 steer 合并处理的多条用户消息，会在 `turn/end` 时一并更新 reaction。

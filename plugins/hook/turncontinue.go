@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -21,6 +22,11 @@ type TurnContinueConfig struct {
 	RequireTodosDone *bool `json:"requireTodosDone"`
 	// StallLimit stops after this many repeats of the same tool call signature.
 	StallLimit int `json:"stallLimit"`
+	// NoProgressLimit stops after this many consecutive continuations with no
+	// substantive progress — no new tool/call, todo/update, or run/finish event
+	// (default 3). Guards against idle loops when tool/finish is missing or the
+	// model keeps ending segments with text-only replies.
+	NoProgressLimit int `json:"noProgressLimit"`
 }
 
 type TurnContinueDeps struct {
@@ -28,8 +34,9 @@ type TurnContinueDeps struct {
 }
 
 const (
-	defaultContinuePrompt = "Keep going on the task. Review the remaining work, do the next concrete step, and call finish when everything is done or you are blocked."
-	defaultStallLimit     = 3
+	defaultContinuePrompt  = "Keep going on the task. Review the remaining work, do the next concrete step, and call finish when everything is done or you are blocked."
+	defaultStallLimit      = 3
+	defaultNoProgressLimit = 3
 )
 
 type turnContinueProvider struct {
@@ -37,6 +44,13 @@ type turnContinueProvider struct {
 	sessionStore     agentkit.SessionStore
 	requireFinish    bool
 	requireTodosDone bool
+	progress         sync.Map // sessionID -> *progressTrack
+}
+
+// progressTrack tracks the substantive-event watermark across continuations.
+type progressTrack struct {
+	lastSeq    agentkit.EventSeq
+	noProgress int
 }
 
 // SetDefaults implements pluginkit.Defaulter.
@@ -46,6 +60,9 @@ func (c *TurnContinueConfig) SetDefaults() {
 	}
 	if c.StallLimit == 0 {
 		c.StallLimit = defaultStallLimit
+	}
+	if c.NoProgressLimit == 0 {
+		c.NoProgressLimit = defaultNoProgressLimit
 	}
 }
 
@@ -57,6 +74,9 @@ func (c *TurnContinueConfig) Validate() error {
 	if c.StallLimit < 0 {
 		return fmt.Errorf("hook/turn-continue stallLimit must not be negative")
 	}
+	if c.NoProgressLimit < 0 {
+		return fmt.Errorf("hook/turn-continue noProgressLimit must not be negative")
+	}
 	return nil
 }
 
@@ -64,7 +84,7 @@ func (c *TurnContinueConfig) Validate() error {
 //
 // Best practices:
 //   - Useless without tool/todo and tool/finish: with no completion signal it can only stop on stall or continuation limit.
-//   - Decision order is finish, then stall, then continuation limit, then pending work.
+//   - Decision order is finish, then stall, then continuation limit, then no-progress, then pending work.
 func NewTurnContinue(cfg TurnContinueConfig, deps TurnContinueDeps) (agentkit.HookProvider, error) {
 	if deps.SessionStore == nil {
 		return nil, fmt.Errorf("hook/turn-continue requires sessionStore dependency")
@@ -105,10 +125,11 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	if sessionID == "" {
 		return nil
 	}
-	state, err := loadRunState(ctx, p.sessionStore, sessionID)
+	events, err := loadRunEvents(ctx, p.sessionStore, sessionID)
 	if err != nil {
 		return err
 	}
+	state := capsession.RunStateFromEvents(events)
 
 	if state.Finish != nil {
 		stopping.Stop = true
@@ -125,6 +146,11 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 		stopping.StopReason = fmt.Sprintf("continuation limit reached (%d)", p.cfg.MaxContinuations)
 		return nil
 	}
+	if p.noProgressStopped(sessionID, stopping, substantiveSeq(events)) {
+		stopping.Stop = true
+		stopping.StopReason = fmt.Sprintf("no progress: %d consecutive continuations without tool calls, todo updates, or finish", p.cfg.NoProgressLimit)
+		return nil
+	}
 	if !p.wantsMoreWork(state) {
 		stopping.Stop = true
 		stopping.StopReason = "no outstanding work"
@@ -138,13 +164,56 @@ func (p *turnContinueProvider) turnStopping(ctx context.Context, stopping *agent
 	return nil
 }
 
-// loadRunState reads the session log and projects the autonomous-run signals.
-func loadRunState(ctx context.Context, store agentkit.SessionStore, sessionID agentkit.SessionID) (capsession.RunState, error) {
+// substantiveSeq returns the highest seq of events that count as real work:
+// tool calls, todo updates, or finish. Text-only replies do not move it.
+func substantiveSeq(events []agentkit.SessionEvent) agentkit.EventSeq {
+	var seq agentkit.EventSeq
+	for _, ev := range events {
+		switch ev.Type {
+		case agentkit.EventToolCall, agentkit.EventTodoUpdate, agentkit.EventRunFinish:
+			if ev.Seq > seq {
+				seq = ev.Seq
+			}
+		}
+	}
+	return seq
+}
+
+// noProgressStopped tracks the substantive-event watermark across
+// continuations and reports whether the run hit the no-progress limit.
+// Segment 0 marks a fresh turn and resets the tracker.
+func (p *turnContinueProvider) noProgressStopped(sessionID agentkit.SessionID, stopping *agentkit.TurnStopping, watermark agentkit.EventSeq) bool {
+	if p.cfg.NoProgressLimit <= 0 {
+		return false
+	}
+	track, _ := p.progress.LoadOrStore(sessionID, &progressTrack{})
+	t := track.(*progressTrack)
+	if stopping.Segments == 0 {
+		t.lastSeq = watermark
+		t.noProgress = 0
+		return false
+	}
+	if watermark <= t.lastSeq {
+		t.noProgress++
+	} else {
+		t.noProgress = 0
+		t.lastSeq = watermark
+	}
+	return t.noProgress >= p.cfg.NoProgressLimit
+}
+
+// loadRunEvents reads the full session log for autonomous-run projections.
+func loadRunEvents(ctx context.Context, store agentkit.SessionStore, sessionID agentkit.SessionID) ([]agentkit.SessionEvent, error) {
 	sess, err := store.Get(ctx, sessionID)
 	if err != nil {
-		return capsession.RunState{}, err
+		return nil, err
 	}
-	events, err := sess.Read(ctx, 0)
+	return sess.Read(ctx, 0)
+}
+
+// loadRunState reads the session log and projects the autonomous-run signals.
+func loadRunState(ctx context.Context, store agentkit.SessionStore, sessionID agentkit.SessionID) (capsession.RunState, error) {
+	events, err := loadRunEvents(ctx, store, sessionID)
 	if err != nil {
 		return capsession.RunState{}, err
 	}

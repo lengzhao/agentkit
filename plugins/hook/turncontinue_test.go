@@ -183,6 +183,85 @@ func TestDriverStopsAtContinuationLimit(t *testing.T) {
 	}
 }
 
+func TestDriverStopsOnNoProgress(t *testing.T) {
+	t.Parallel()
+
+	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 10, NoProgressLimit: 3})
+	startRun(t, sess)
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "still pending", Status: capsession.TodoPending},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	call := func(seg int) *agentkit.TurnStopping {
+		in := stopping()
+		in.Segments = seg
+		if err := h.TurnStopping(driverCtx(sess), in); err != nil {
+			t.Fatal(err)
+		}
+		return in
+	}
+	// Segment 0: baseline (the todo update above is the initial watermark).
+	if in := call(0); in.Stop {
+		t.Fatalf("segment 0 should continue: %s", in.StopReason)
+	}
+	// Continuations with text-only replies (no new tool/todo/finish events).
+	for seg := 1; seg <= 2; seg++ {
+		if in := call(seg); in.Stop {
+			t.Fatalf("segment %d should continue: %s", seg, in.StopReason)
+		}
+	}
+	in := call(3)
+	if !in.Stop {
+		t.Fatal("expected stop on no progress")
+	}
+	if !strings.Contains(in.StopReason, "no progress") {
+		t.Fatalf("stop reason = %q", in.StopReason)
+	}
+}
+
+func TestDriverNoProgressResetsOnSubstantiveEvents(t *testing.T) {
+	t.Parallel()
+
+	h, sess := newDriver(t, hook.TurnContinueConfig{MaxContinuations: 10, NoProgressLimit: 2})
+	startRun(t, sess)
+	if err := sessevents.Default.AppendTodoUpdate(context.Background(), sess, "a", []capsession.Todo{
+		{ID: "1", Title: "still pending", Status: capsession.TodoPending},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	call := func(seg int) *agentkit.TurnStopping {
+		in := stopping()
+		in.Segments = seg
+		if err := h.TurnStopping(driverCtx(sess), in); err != nil {
+			t.Fatal(err)
+		}
+		return in
+	}
+	call(0) // baseline
+	if in := call(1); in.Stop { // no progress #1
+		t.Fatalf("segment 1 should continue: %s", in.StopReason)
+	}
+	// The segment did real work: a tool call moves the watermark, counter resets.
+	if err := sessevents.Default.AppendToolCall(context.Background(), sess, "a", agentkit.ToolCall{
+		ID: "c1", Name: "read", Input: []byte(`{"path":"a.go"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if in := call(2); in.Stop {
+		t.Fatalf("segment 2 should continue: %s", in.StopReason)
+	}
+	if in := call(3); in.Stop { // no progress #1 again
+		t.Fatalf("segment 3 should continue: %s", in.StopReason)
+	}
+	in := call(4) // no progress #2: limit reached
+	if !in.Stop || !strings.Contains(in.StopReason, "no progress") {
+		t.Fatalf("segment 4: stop=%v reason=%q", in.Stop, in.StopReason)
+	}
+}
+
 func TestDriverIsInertWithoutMaxContinuations(t *testing.T) {
 	t.Parallel()
 

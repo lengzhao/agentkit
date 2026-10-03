@@ -4,6 +4,7 @@ package all
 
 import (
 	_ "github.com/lengzhao/agentkit/plugins/agent/acpremote"
+	_ "github.com/lengzhao/agentkit/plugins/agent/chain"
 	_ "github.com/lengzhao/agentkit/plugins/approval"
 	_ "github.com/lengzhao/agentkit/plugins/bootstrap"
 	_ "github.com/lengzhao/agentkit/plugins/compaction"
@@ -27,6 +28,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/tool/send"
 	_ "github.com/lengzhao/agentkit/plugins/tool/sessionquery"
+	_ "github.com/lengzhao/agentkit/plugins/tool/setmodel"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shell"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shellbwrap"
 	_ "github.com/lengzhao/agentkit/plugins/tool/skill"

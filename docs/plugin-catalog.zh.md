@@ -144,6 +144,7 @@ platform.http:
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation（roadmap） | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；`config`：`id` / `model` / `retry` / `maxSteps`（默认 200，`0`=不限）/ `maxPromptTokens`（发送前兜底，`0`=关闭）；自主续跑靠 `deps.hooks`（如 `hook/turn-continue`） | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
+| `agent/chain` | `agentkit.Agent` | 顺序链：一次入站依次跑 `config.nodes` 引用的多个 Agent（deps `agents` 注入），共享同一 session；入站 user 消息只在首个节点落盘。跳过/重复执行策略由包装插件承载，chain 本身不做 | — |
 | `agent/catalog-commands` | `agentkit.CommandProvider` | `/agent`、`/model`、`/acp` slash；deps 注入 `loop`、`sessionStore`、`workspace` | — |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent（roadmap） | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
@@ -320,6 +321,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
+| `tool/set-model` | `sessionStore` | `set_model` | Agent 自主切换本会话模型（写与 `/model` 相同的 `runtime.json` 覆盖，下一 turn 生效）；`config.allowModels` 白名单；子 Agent 上下文拒绝调用 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 | `tool/send` | `sender`, `workspace?`, `fs?` | `send` | 经 delivery.Sender 主动发送文本或工作区文件；`/send [-r\|--raw] <chatId> <message>` 管理面投递（同平台裸 chat/channel id，消息可多行；`-r` 跳过平台 Markdown 转换）；L0 `tools.default` 已启用 |
 | `tool/chat-history` | `history`（`agentkit.Platform`，运行时适配为 `chathistory.Router`） | `chat_history` | 读取 IM 传输层群/会话历史；平台未实现 Provider 时返回空；`thread` 默认 true；L0 `tools.default` 已启用 |

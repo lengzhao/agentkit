@@ -225,8 +225,12 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		}
 	}()
 
-	if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
-		return err
+	// Composite agents (agent/chain) run later nodes with an empty message:
+	// the inbound user message is recorded once, by the first node's turn.
+	if !isEmptyMessage(input.Message) {
+		if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
+			return err
+		}
 	}
 
 	for {
@@ -812,6 +816,12 @@ func (a *Runtime) appendInterruptedToolCalls(ctx context.Context, sess agentkit.
 		}
 	}
 	return nil
+}
+
+// isEmptyMessage reports whether msg carries no content worth recording as a
+// user turn (agent/chain later nodes pass an empty message).
+func isEmptyMessage(msg agentkit.ModelMessage) bool {
+	return len(msg.Content) == 0 && len(msg.ToolCalls) == 0 && len(msg.ToolResults) == 0
 }
 
 func cancelReasonFromError(err error) (string, bool) {

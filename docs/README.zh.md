@@ -20,6 +20,7 @@ docs/
 └── guides/                           # 场景专题
     ├── autonomous-run.zh.md          # 自主运行
     ├── subagent.zh.md                # 子 Agent 委派
+    ├── agent-chain.zh.md             # Agent 链式编排（agent/chain）
     ├── multi-tenant.zh.md            # 多租户
     ├── tools.zh.md                   # 网络工具 + MCP
     ├── platform-interaction.zh.md    # Permission / HIL

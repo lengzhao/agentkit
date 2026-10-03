@@ -47,6 +47,21 @@
 | `sessionStore`（必填） | `agentkit.SessionStore` |  |
 | `workspace`（必填） | `workspace.Service` |  |
 
+## `agent/chain`
+
+- 返回类型：`agentkit.Agent`
+- 源码：[`plugins/agent/chain/chain.go`](../plugins/agent/chain/chain.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `id` | `agentkit.AgentID` | — | ID is the chain agent id referenced by loop.defaultAgent or /agent use. |
+| `nodes` | `[]agentkit.AgentID` | — | Nodes lists node agent ids (from deps.agents) executed in order for every turn. |
+| `continueOnError` | `bool` | — | ContinueOnError keeps running later nodes after a node fails; default aborts the chain. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `agents`（必填） | `[]agentkit.Agent` |  |
+
 ## `agent/coding`
 
 - 返回类型：`agentkit.Agent`
@@ -350,6 +365,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `requireFinish` | `*bool` | — | RequireFinish keeps going until tool/finish is called, even with no pending todos. |
 | `requireTodosDone` | `*bool` | — | RequireTodosDone keeps going while todos are still pending. |
 | `stallLimit` | `int` | `3` | StallLimit stops after this many repeats of the same tool call signature. |
+| `noProgressLimit` | `int` | `3` | NoProgressLimit stops after this many consecutive continuations with no substantive progress — no new tool/call, todo/update, or run/finish event (default 3). Guards against idle loops when tool/finish is missing or the model keeps ending segments with text-only replies. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -913,8 +929,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `rwBinds` | `[]string` | — | RwBinds are extra read-write binds (public writable paths shared by all tenants; beware concurrent write conflicts). Host absolute paths or workspace refs (missing dirs are created). |
 | `hidePaths` | `[]string` | — | HidePaths are masked: directories become invisible and read-only, files are masked empty. Host absolute paths or workspace refs. Applied after all binds, so they can mask sensitive subpaths of system binds or the global root. Resolution fails closed (a failed mask means a leak). |
 | `secretFiles` | `[]string` | `[secrets.enc.json]` | SecretFiles are sensitive files under the global root masked empty (relative to the global root), default ["secrets.enc.json"]. Applied after the global ro-bind and ro/rwBinds. |
-| `homeRef` | `string` | `.` | 沙箱内 HOME 的选择：缺省 `.`（可写租户根，即 workspace "."）；可为 workspace ref（`global:dir`/`local:path`）、宿主机绝对路径，或字面量 `host`（透传宿主用户 HOME 并只读挂入，仅建议单租户可信环境）。解析结果必须落在视图内（租户根 / global / ro-rwBinds），否则渲染失败（fail-closed）。 |
-| `maps` | `[]MapConfig` | — | 显式 src→dst 映射（如把宿主 `~/.ssh`、`~/.gitconfig` 挂进租户 HOME）。`src`：宿主机绝对路径或 workspace ref；`dst`：沙箱内绝对路径，或相对 HOME 的相对路径（不可 `..` 逃逸）；`mode`：`ro`（默认）/`rw`。应用于 ro/rwBinds 之后、secretFiles/hidePaths 之前（掩码永远优先）；src 位于 hidePaths 内则 fail-closed（防止换位置重新暴露掩码路径）。进程内与 bwrap 视图一致：ro 映射即使在可写根下也只读，rw 映射即使在只读根下也可写；`filesystem/sandbox` 装饰器会把 dst 下的路径翻译成宿主 src 再读写（`PathTranslator` 可选接口），因此 fs 工具与 shell 看到同一份内容。 |
+| `homeRef` | `string` | — | HomeRef selects the in-sandbox HOME. Default "." (the writable tenant root, i.e. workspace "."). Values: a workspace ref ("global:dir", "local:path"), a host absolute path, or the literal "host" (pass the host user's home through, ro-bound — intended for single-tenant trusted setups). The resolved home must live inside the view (tenant root, global root or a configured bind); otherwise rendering fails closed instead of pointing HOME at an unmounted void. |
+| `maps` | `[]sandbox.MapConfig` | — | Maps bind a host source onto a different in-sandbox destination, e.g. share the host's ~/.ssh or ~/.gitconfig into the tenant HOME. Applied after ro/rwBinds and before secretFiles/hidePaths (masks always win). |
 | `systemBinds` | `[]string` | — | SystemBinds overrides the default minimal system read-only bind list; empty uses the built-in default (/usr /bin /lib /lib64 /opt plus DNS/cert files under /etc). |
 | `tmpBase` | `string` | `/dev/shm/shellbwrap` | TmpBase is the base dir on a host tmpfs (default /dev/shm/shellbwrap): each tenant gets a subdir bound rw as in-sandbox /tmp. /dev/shm has its own size cap (usually half of RAM), preventing tmpfs writes from eating node memory. The explicit value "tmpfs" falls back to bwrap's own --tmpfs /tmp (no size limit, not recommended). Must be exclusive per runner instance on a shared host: startup removes leftover contents. |
 
@@ -1366,6 +1382,19 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
 | `index`（必填） | `sessionindex.Service` |  |
+
+## `tool/set-model`
+
+- 返回类型：`agentkit.Tool`
+- 源码：[`plugins/tool/setmodel/register.go`](../plugins/tool/setmodel/register.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `allowModels` | `[]string` | — | AllowModels is the whitelist of model ids the agent may switch to. Empty means no restriction. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionStore`（必填） | `agentkit.SessionStore` |  |
 
 ## `tool/shell-bash`
 

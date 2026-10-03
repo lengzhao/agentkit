@@ -57,6 +57,7 @@ hook.turn-continue.default:
   config:
     maxContinuations: 30   # 0 = 不续跑（即使挂了 hook 也不注入 Continue）
     stallLimit: 3
+    noProgressLimit: 3     # 连续 N 次续跑无实质进展（无新 tool/call、todo/update、run/finish）-> Stop
     requireFinish: true
     requireTodosDone: true
 ```
@@ -78,10 +79,13 @@ hook.turn-continue.default:
 已 run/finish            -> Stop
 同一工具同参连续 N 次    -> Stop（stalled，默认 N=3）
 Segments >= maxContinuations -> Stop
+连续 N 次续跑无实质进展  -> Stop（no progress，默认 N=3；新 turn 的 segment 0 重置计数）
 还有 pending todo        -> Continue（正文带未完成清单）
 requireFinish 且未 finish -> Continue
 否则                     -> Stop
 ```
+
+`noProgressLimit` 防的是「空转」：stall 只抓**重复同一工具调用**，而模型每段只回文本、不调工具也不更新 todo（典型如挂了 `turn-continue` 却漏挂 `tool/finish`，模型反复说「我该 finish 了」但没有这个工具）会绕过 stall 一直续到上限。无进展检测以 session 事件为水位——`tool/call`、`todo/update`、`run/finish` 任一出现即算有进展，连续 N 段水位不动即停，把这类配置错误的成本锁在 N 个空段内。「每段都在真调工具干活但没 finish」属正当续跑，仍由 `maxContinuations` 封顶。
 
 所有信号都来自 session 日志，所以一次自主运行的每个"为什么继续/为什么停"都能从 transcript 复原。
 
