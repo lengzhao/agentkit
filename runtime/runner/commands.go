@@ -12,7 +12,45 @@ import (
 func (r *Root) Commands() []agentkit.Command {
 	return []agentkit.Command{
 		stopCommand{loop: r.loop, store: r.sessionStore},
+		meCommand{},
 	}
+}
+
+type meCommand struct{}
+
+func (meCommand) Name() string        { return "me" }
+func (meCommand) Alias() string       { return "whoami" }
+func (meCommand) Description() string { return "show current user identity (uid/name/email)" }
+
+func (meCommand) CommandExec(ctx context.Context, args string) (string, error) {
+	if strings.TrimSpace(args) != "" {
+		return "", fmt.Errorf("usage: /me")
+	}
+	env := rctx.EnvelopeFromContext(ctx)
+	uid := strings.TrimSpace(rctx.UserIDFromContext(ctx))
+	name := strings.TrimSpace(env.Actor.Name)
+	if name == "" {
+		name = senderNameFromMetadata(env.Metadata)
+	}
+	email := strings.TrimSpace(env.Actor.Email)
+	if email == "" {
+		email = senderEmailFromMetadata(env.Metadata)
+	}
+	var b strings.Builder
+	if uid != "" {
+		fmt.Fprintf(&b, "uid: %s\n", uid)
+	}
+	if name != "" {
+		fmt.Fprintf(&b, "name: %s\n", name)
+	}
+	if email != "" {
+		fmt.Fprintf(&b, "email: %s\n", email)
+	}
+	out := strings.TrimRight(b.String(), "\n")
+	if out == "" {
+		return "unknown user", nil
+	}
+	return out, nil
 }
 
 type stopCommand struct {

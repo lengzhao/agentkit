@@ -162,6 +162,99 @@ func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
 	}
 }
 
+func meCommandFrom(t *testing.T) agentkit.Command {
+	t.Helper()
+	root, err := runner.New(runner.Config{}, runner.Deps{
+		Platform: stubPlatform{},
+		Loop:     &stubStopLoop{busy: map[agentkit.SessionID]bool{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range root.(agentkit.CommandProvider).Commands() {
+		if cmd.Name() == "me" {
+			return cmd
+		}
+	}
+	t.Fatal("missing /me command")
+	return nil
+}
+
+func TestMeCommand(t *testing.T) {
+	t.Parallel()
+	cmd := meCommandFrom(t)
+	env := agentkit.TurnEnvelope{
+		Actor:    agentkit.ActorRef{UserID: "ou_1"},
+		Metadata: map[string]any{"displayName": "Alice", "email": "alice@example.com"},
+	}
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	out, err := cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "uid: ou_1\nname: Alice\nemail: alice@example.com"
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
+	}
+}
+
+func TestMeCommandActorFieldsWin(t *testing.T) {
+	t.Parallel()
+	cmd := meCommandFrom(t)
+	env := agentkit.TurnEnvelope{
+		Actor:    agentkit.ActorRef{UserID: "U1", Name: "Bob", Email: "bob@example.com"},
+		Metadata: map[string]any{"displayName": "Alice", "email": "alice@example.com"},
+	}
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	out, err := cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "uid: U1\nname: Bob\nemail: bob@example.com"
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
+	}
+}
+
+func TestMeCommandChatAPIHeaders(t *testing.T) {
+	t.Parallel()
+	cmd := meCommandFrom(t)
+	env := agentkit.TurnEnvelope{
+		Actor:    agentkit.ActorRef{UserID: "carol"},
+		Metadata: map[string]any{"X-Chat-API-User-Name": "Carol", "X-Chat-API-User-Email": "carol@example.com"},
+	}
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	out, err := cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "uid: carol\nname: Carol\nemail: carol@example.com"
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
+	}
+}
+
+func TestMeCommandUnknownUser(t *testing.T) {
+	t.Parallel()
+	cmd := meCommandFrom(t)
+	out, err := cmd.CommandExec(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "unknown user" {
+		t.Fatalf("out = %q, want unknown user", out)
+	}
+}
+
+func TestMeCommandRejectsArgs(t *testing.T) {
+	t.Parallel()
+	cmd := meCommandFrom(t)
+	_, err := cmd.CommandExec(context.Background(), "x")
+	if err == nil || !strings.Contains(err.Error(), "usage: /me") {
+		t.Fatalf("err = %v, want usage error", err)
+	}
+}
+
 type stopActiveStore struct {
 	active map[agentkit.SessionID]agentkit.SessionID
 }

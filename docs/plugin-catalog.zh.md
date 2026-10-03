@@ -451,7 +451,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 |---|---|
 | `commands/registry` | `/plugin` |
 | `agent/catalog-commands` | `/agent`、`/acp` |
-| `runner` | `/stop` |
+| `runner` | `/stop`、`/me`（`/whoami`） |
 | `subagent/inprocess` | `/subagent` |
 | `session/commands` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |

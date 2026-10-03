@@ -244,7 +244,9 @@ Slack 在 `EventMessageStart` 后还会启动渐进式 typing reaction（`clock1
 
 ## Slash 命令与 Platform 本地处理
 
-飞书 / Lark、Slack、`platform/chat-api` 在消息**入队前**会经 `common.ProcessSlash` 本地解析 slash（含 `/help`、`/new`、`/stop` 等）。未知命令会先提示「转发给 Agent」再入队。
+飞书 / Lark、Slack、`platform/chat-api` 在消息**入队前**会经 `common.ProcessSlash` 本地解析 slash（含 `/help`、`/new`、`/stop`、`/me` 等）。未知命令会先提示「转发给 Agent」再入队。
+
+`/me`（别名 `/whoami`）由 `runner` 贡献，返回当前用户身份：`uid` 取 `TurnEnvelope.Actor.UserID`，`name`/`email` 优先取 `Actor.Name`/`Actor.Email`，为空时回落到入站 metadata（飞书 / Slack 的 `displayName`/`email`，chat-api 的 `X-Chat-API-User-Name`/`X-Chat-API-User-Email` 请求头）。无任何身份信息时返回 `unknown user`。
 
 若希望 **Platform 不拦截 slash**，将以 `/` 开头的用户输入当作普通对话交给 Agent（例如由模型自行理解或仅依赖 tool），在对应 platform 的 `config` 中设置：
 
