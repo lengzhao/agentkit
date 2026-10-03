@@ -484,3 +484,30 @@ func TestNewOffModeSkipsProbe(t *testing.T) {
 		t.Fatal("sandbox must be disabled in off mode")
 	}
 }
+
+func TestEnsureRWBindTarget_existingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureRWBindTarget(path); err != nil {
+		t.Fatalf("existing file: %v", err)
+	}
+}
+
+func TestResolveBinds_rwBindExistingFile(t *testing.T) {
+	s, _, global := newTestSandbox(t)
+	mcp := filepath.Join(global, "mcp.json")
+	if err := os.WriteFile(mcp, []byte("{\"mcpServers\":{}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.rwBinds = []string{"global:mcp.json"}
+	got, err := s.resolveBinds(context.Background(), s.rwBinds, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != mcp {
+		t.Fatalf("binds=%v want %q", got, mcp)
+	}
+}

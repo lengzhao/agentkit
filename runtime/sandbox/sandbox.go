@@ -16,6 +16,7 @@ package sandbox
 import (
 	"context"
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -590,7 +591,7 @@ func (s *Sandbox) resolveBinds(ctx context.Context, paths []string, create, stri
 		if isWorkspaceRef(p) {
 			resolved, err := s.workspace.Resolve(ctx, p)
 			if err == nil && create {
-				err = os.MkdirAll(resolved, 0o755)
+				err = ensureRWBindTarget(resolved)
 			}
 			if err != nil {
 				if strict {
@@ -619,6 +620,19 @@ func (s *Sandbox) resolveBinds(ctx context.Context, paths []string, create, stri
 // paths containing a colon are not misparsed.
 func isWorkspaceRef(p string) bool {
 	return strings.HasPrefix(p, "global:") || strings.HasPrefix(p, "local:")
+}
+
+// ensureRWBindTarget creates a missing rw-bind target. Existing files are left
+// alone (MkdirAll on a file path fails with "not a directory").
+func ensureRWBindTarget(path string) error {
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.MkdirAll(path, 0o755)
 }
 
 // tenantDirName derives a stable tmp subdir name from the tenant root path
