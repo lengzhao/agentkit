@@ -63,7 +63,19 @@ func checkRead(v *view, p, orig string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: read %q outside the sandbox view (tenant root, global root, ro/rwBinds)", capsandbox.ErrDenied, orig)
+	// Map destinations are visible at their dst (the src path itself stays
+	// outside the view unless covered by the roots above).
+	for _, m := range v.roMaps {
+		if within(p, m.dst) {
+			return nil
+		}
+	}
+	for _, m := range v.rwMaps {
+		if within(p, m.dst) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: read %q outside the sandbox view (tenant root, global root, ro/rwBinds, maps)", capsandbox.ErrDenied, orig)
 }
 
 // CheckWrite decides per the current tenant view whether an in-process write
@@ -83,6 +95,13 @@ func (s *Sandbox) CheckWrite(ctx context.Context, path string) error {
 	if err := checkRead(v, p, path); err != nil {
 		return err
 	}
+	// A ro-mapped dst stays read-only even when it lives inside a writable
+	// root (the bwrap ro-bind shadows the rw mount underneath).
+	for _, m := range v.roMaps {
+		if within(p, m.dst) {
+			return fmt.Errorf("%w: write %q is a read-only map", capsandbox.ErrDenied, path)
+		}
+	}
 	if within(p, v.tenantRoot) {
 		return nil
 	}
@@ -91,7 +110,12 @@ func (s *Sandbox) CheckWrite(ctx context.Context, path string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: write %q outside tenant root and rwBinds (read-only)", capsandbox.ErrDenied, path)
+	for _, m := range v.rwMaps {
+		if within(p, m.dst) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: write %q outside tenant root, rwBinds and rw maps (read-only)", capsandbox.ErrDenied, path)
 }
 
 // cleanHostPath normalizes a host path; symlinks are resolved when the target

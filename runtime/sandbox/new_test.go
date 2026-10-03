@@ -23,6 +23,31 @@ func newSandboxDeps(t *testing.T) Deps {
 	}}
 }
 
+func TestConfigValidateMaps(t *testing.T) {
+	cases := []struct {
+		name    string
+		maps    []MapConfig
+		wantErr bool
+	}{
+		{"empty", nil, false},
+		{"ro_default", []MapConfig{{Src: "/a", Dst: ".a"}}, false},
+		{"rw", []MapConfig{{Src: "/a", Dst: ".a", Mode: "rw"}}, false},
+		{"missing_src", []MapConfig{{Dst: ".a"}}, true},
+		{"missing_dst", []MapConfig{{Src: "/a"}}, true},
+		{"bad_mode", []MapConfig{{Src: "/a", Dst: ".a", Mode: "exec"}}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := Config{Mode: ModeOff, Maps: c.maps}
+			cfg.SetDefaults()
+			err := cfg.Validate()
+			if (err != nil) != c.wantErr {
+				t.Fatalf("Validate() err=%v, wantErr=%v", err, c.wantErr)
+			}
+		})
+	}
+}
+
 func TestNewRequiresWorkspace(t *testing.T) {
 	_, err := New(Config{Mode: ModeOff}, Deps{})
 	if err == nil {

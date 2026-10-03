@@ -15,7 +15,7 @@ type SandboxConfig struct{}
 
 // SandboxDeps for filesystem/sandbox.
 type SandboxDeps struct {
-	FS      capfs.Service       `json:"fs"`
+	FS      capfs.Service      `json:"fs"`
 	Sandbox capsandbox.Service `json:"sandbox"`
 }
 
@@ -45,45 +45,52 @@ func NewSandboxed(_ SandboxConfig, deps SandboxDeps) (capfs.Service, error) {
 	return &sandboxed{inner: deps.FS, sandbox: deps.Sandbox}, nil
 }
 
+// translate rewrites an in-view path under a sandbox map dst to its host src
+// (no-op when the sandbox has no maps or the path is unmapped).
+func (g *sandboxed) translate(ctx context.Context, path string) string {
+	return capsandbox.TranslatePath(ctx, g.sandbox, path)
+}
+
 func (g *sandboxed) Read(ctx context.Context, path string) ([]byte, error) {
 	if err := g.sandbox.CheckRead(ctx, path); err != nil {
 		return nil, err
 	}
-	return g.inner.Read(ctx, path)
+	return g.inner.Read(ctx, g.translate(ctx, path))
 }
 
 func (g *sandboxed) Stat(ctx context.Context, path string) (capfs.Info, error) {
 	if err := g.sandbox.CheckRead(ctx, path); err != nil {
 		return capfs.Info{}, err
 	}
-	return g.inner.Stat(ctx, path)
+	return g.inner.Stat(ctx, g.translate(ctx, path))
 }
 
 func (g *sandboxed) List(ctx context.Context, path string) ([]capfs.DirEntry, error) {
 	if err := g.sandbox.CheckRead(ctx, path); err != nil {
 		return nil, err
 	}
-	return g.inner.List(ctx, path)
+	return g.inner.List(ctx, g.translate(ctx, path))
 }
 
 func (g *sandboxed) Write(ctx context.Context, path string, data []byte, opts ...capfs.WriteOption) error {
 	if err := g.sandbox.CheckWrite(ctx, path); err != nil {
 		return err
 	}
-	return g.inner.Write(ctx, path, data, opts...)
+	return g.inner.Write(ctx, g.translate(ctx, path), data, opts...)
 }
 
 func (g *sandboxed) Append(ctx context.Context, path string, data []byte) error {
 	if err := g.sandbox.CheckWrite(ctx, path); err != nil {
 		return err
 	}
-	return g.inner.Append(ctx, path, data)
+	return g.inner.Append(ctx, g.translate(ctx, path), data)
 }
 
 func (g *sandboxed) Grep(ctx context.Context, req capfs.GrepRequest) (capfs.GrepResult, error) {
 	if err := g.sandbox.CheckRead(ctx, req.Path); err != nil {
 		return capfs.GrepResult{}, err
 	}
+	req.Path = g.translate(ctx, req.Path)
 	return g.inner.Grep(ctx, req)
 }
 
@@ -91,6 +98,7 @@ func (g *sandboxed) Find(ctx context.Context, req capfs.FindRequest) (capfs.Find
 	if err := g.sandbox.CheckRead(ctx, req.Path); err != nil {
 		return capfs.FindResult{}, err
 	}
+	req.Path = g.translate(ctx, req.Path)
 	return g.inner.Find(ctx, req)
 }
 

@@ -86,6 +86,141 @@ func TestWrapBwrapMasksNeighborTenants(t *testing.T) {
 	}
 }
 
+// homeRef selects the in-sandbox HOME; default stays the tenant root.
+func TestWrapBwrapHomeRef(t *testing.T) {
+	s, local, global := newTestSandbox(t)
+	workDir := filepath.Join(local, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeOf := func(argv []string) string {
+		i := slices.Index(argv, "HOME")
+		if i < 0 || i+1 >= len(argv) {
+			t.Fatalf("no --setenv HOME, argv=%v", argv)
+		}
+		return argv[i+1]
+	}
+
+	// Default: HOME = tenant root.
+	argv, err := s.WrapArgv(context.Background(), workDir, []string{"bash", "-lc", "ls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := homeOf(argv); got != local {
+		t.Fatalf("default HOME must be the tenant root %s, got %s", local, got)
+	}
+
+	// homeRef = global:. → HOME = global root (read-only in the view).
+	s2, _, global2 := newTestSandbox(t)
+	s2.homeRef = "global:."
+	argv, err = s2.WrapArgv(context.Background(), workDir, []string{"bash", "-lc", "ls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := homeOf(argv); got != global2 {
+		t.Fatalf("homeRef=global:. must set HOME to %s, got %s", global2, got)
+	}
+	_ = global
+}
+
+// A homeRef resolving outside the view fails closed instead of pointing HOME
+// at an unmounted path.
+func TestWrapBwrapHomeRefOutsideViewFails(t *testing.T) {
+	s, local, _ := newTestSandbox(t)
+	s.homeRef = t.TempDir() // host absolute path outside tenant/global/binds
+	workDir := filepath.Join(local, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WrapArgv(context.Background(), workDir, []string{"bash", "-lc", "ls"}); err == nil {
+		t.Fatal("homeRef outside the view must fail the render")
+	}
+}
+
+// maps bind host sources onto in-sandbox destinations relative to HOME.
+func TestWrapBwrapMaps(t *testing.T) {
+	s, local, _ := newTestSandbox(t)
+	base := t.TempDir()
+	if real, err := filepath.EvalSymlinks(base); err == nil {
+		base = real
+	}
+	sshDir := filepath.Join(base, ".ssh")
+	gitconfig := filepath.Join(base, ".gitconfig")
+	shared := filepath.Join(base, "shared")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gitconfig, []byte("[user]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.maps = []MapConfig{
+		{Src: sshDir, Dst: ".ssh"},                         // ro, relative to HOME
+		{Src: gitconfig, Dst: ".gitconfig"},                // ro file map
+		{Src: shared, Dst: "shared", Mode: "rw"},           // rw map
+		{Src: filepath.Join(base, "missing"), Dst: "nope"}, // skipped
+	}
+	workDir := filepath.Join(local, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argv, err := s.WrapArgv(context.Background(), workDir, []string{"bash", "-lc", "ls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(argv, "\x00")
+	if !strings.Contains(joined, "--ro-bind\x00"+sshDir+"\x00"+filepath.Join(local, ".ssh")) {
+		t.Fatalf("expected ro map .ssh under HOME, argv=%v", argv)
+	}
+	if !strings.Contains(joined, "--ro-bind\x00"+gitconfig+"\x00"+filepath.Join(local, ".gitconfig")) {
+		t.Fatalf("expected ro map .gitconfig under HOME, argv=%v", argv)
+	}
+	if !strings.Contains(joined, "--bind\x00"+shared+"\x00"+filepath.Join(local, "shared")) {
+		t.Fatalf("expected rw map shared under HOME, argv=%v", argv)
+	}
+	if strings.Contains(joined, "missing") {
+		t.Fatalf("unresolvable map src must be skipped, argv=%v", argv)
+	}
+}
+
+// A map src inside a hidePath would re-expose a masked path under a new
+// location: fail closed.
+func TestMapSrcInsideHidePathFails(t *testing.T) {
+	s, local, global := newTestSandbox(t)
+	private := filepath.Join(global, "private")
+	if err := os.MkdirAll(private, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.hidePaths = []string{"global:private"}
+	s.maps = []MapConfig{{Src: private, Dst: ".private"}}
+	workDir := filepath.Join(local, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WrapArgv(context.Background(), workDir, []string{"bash", "-lc", "ls"}); err == nil {
+		t.Fatal("map src inside a hidePath must fail the render")
+	}
+}
+
+// A relative map dst must not escape HOME.
+func TestMapDstEscapeFails(t *testing.T) {
+	s, local, _ := newTestSandbox(t)
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.maps = []MapConfig{{Src: src, Dst: "../escape"}}
+	workDir := filepath.Join(local, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WrapArgv(context.Background(), workDir, []string{"bash", "-lc", "ls"}); err == nil {
+		t.Fatal("map dst escaping HOME must fail the render")
+	}
+}
+
 func TestWrapBwrapGlobalAncestorOfTenants(t *testing.T) {
 	// When the global root is an ancestor of the tenants parent (e.g.
 	// global=~/.agentkit, tenants=~/.agentkit/tenants), the global ro-bind

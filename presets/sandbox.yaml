@@ -32,6 +32,14 @@ sandbox.default:
     # rwBinds: []                       # 全租户共享可写路径（注意并发写冲突）
     # hidePaths: ["global:private"]     # 掩码：目录不可见且写入 EROFS、文件置空；解析失败即拒绝（防泄漏）
     # secretFiles: ["secrets.enc.json"] # global 根下需掩码的敏感文件（默认值即此）
+    # homeRef: "."                      # 沙箱内 HOME：默认可写租户根；可配 global:dir / local:path /
+    #                                   # 宿主机绝对路径（须落在视图内，否则拒绝），或 "host" 透传宿主
+    #                                   # HOME（只读挂入，仅建议单租户可信环境）
+    # maps:                             # 显式 src→dst 映射：把宿主配置挂进沙箱 HOME（git/ssh 等）
+    #   - src: /home/devops/.ssh        #   宿主机绝对路径或 workspace ref
+    #     dst: .ssh                     #   相对 HOME（也可写绝对路径）；mode 默认 ro，rw 需显式
+    #   - src: /home/devops/.gitconfig
+    #     dst: .gitconfig
     # tmpBase: /dev/shm/shellbwrap      # 每租户 /tmp 的宿主机 tmpfs 基底；同一宿主机每个 runner 实例须独占
   deps:
     workspace: workspace.default

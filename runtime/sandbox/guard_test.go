@@ -105,6 +105,95 @@ func TestRoBindsDegradeOnBadEntry(t *testing.T) {
 	}
 }
 
+// In-process checks must agree with the bwrap maps: a ro map dst is readable
+// but not writable even inside the writable tenant root; a rw map dst outside
+// the tenant root is writable.
+func TestCheckReadWriteMaps(t *testing.T) {
+	s, local, global := newTestSandbox(t)
+	ctx := context.Background()
+	base := t.TempDir()
+	if real, err := filepath.EvalSymlinks(base); err == nil {
+		base = real
+	}
+	sshDir := filepath.Join(base, ".ssh")
+	shared := filepath.Join(base, "shared")
+	for _, d := range []string{sshDir, shared} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.maps = []MapConfig{
+		{Src: sshDir, Dst: ".ssh"},                                      // ro, under HOME (tenant root)
+		{Src: shared, Dst: filepath.Join(global, "shared"), Mode: "rw"}, // rw, under ro global root
+	}
+
+	roDst := filepath.Join(local, ".ssh", "id_rsa")
+	if err := s.CheckRead(ctx, roDst); err != nil {
+		t.Fatalf("ro map dst must be readable: %v", err)
+	}
+	if err := s.CheckWrite(ctx, roDst); !errors.Is(err, capsandbox.ErrDenied) {
+		t.Fatalf("ro map dst must stay read-only even under the tenant root, got %v", err)
+	}
+
+	rwDst := filepath.Join(global, "shared", "f.txt")
+	if err := s.CheckRead(ctx, rwDst); err != nil {
+		t.Fatalf("rw map dst must be readable: %v", err)
+	}
+	if err := s.CheckWrite(ctx, rwDst); err != nil {
+		t.Fatalf("rw map dst must be writable even under the ro global root: %v", err)
+	}
+
+	// The map src itself stays outside the view.
+	if err := s.CheckRead(ctx, filepath.Join(sshDir, "id_rsa")); !errors.Is(err, capsandbox.ErrDenied) {
+		t.Fatalf("map src must not become visible, got %v", err)
+	}
+}
+
+// TranslatePath rewrites in-view map dsts to their host srcs (longest prefix
+// wins) so in-process consumers see the same content as the subprocess view.
+func TestTranslatePath(t *testing.T) {
+	s, local, _ := newTestSandbox(t)
+	ctx := context.Background()
+	base := t.TempDir()
+	if real, err := filepath.EvalSymlinks(base); err == nil {
+		base = real
+	}
+	sshDir := filepath.Join(base, ".ssh")
+	nested := filepath.Join(base, "nested")
+	for _, d := range []string{sshDir, nested} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.maps = []MapConfig{
+		{Src: sshDir, Dst: ".ssh"},
+		{Src: nested, Dst: ".ssh/nested"}, // longer dst prefix must win
+	}
+
+	cases := []struct {
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{filepath.Join(local, ".ssh"), sshDir, true},
+		{filepath.Join(local, ".ssh", "id_rsa"), filepath.Join(sshDir, "id_rsa"), true},
+		{filepath.Join(local, ".ssh", "nested", "f"), filepath.Join(nested, "f"), true},
+		{filepath.Join(local, "work", "a.go"), "", false},
+	}
+	for _, c := range cases {
+		got, ok := s.TranslatePath(ctx, c.in)
+		if ok != c.wantOK || got != c.want {
+			t.Errorf("TranslatePath(%q) = %q,%v; want %q,%v", c.in, got, ok, c.want, c.wantOK)
+		}
+	}
+
+	// Disabled sandbox never translates.
+	off := &Sandbox{on: false}
+	if _, ok := off.TranslatePath(ctx, filepath.Join(local, ".ssh")); ok {
+		t.Fatal("disabled sandbox must not translate")
+	}
+}
+
 func TestResolveBindsVariants(t *testing.T) {
 	s, local, _ := newTestSandbox(t)
 	ctx := context.Background()

@@ -101,6 +101,14 @@ func (s *Sandbox) WrapArgv(ctx context.Context, workDir string, inner []string) 
 	for _, p := range v.rwBinds {
 		args = append(args, "--bind", p, p)
 	}
+	// Explicit src→dst maps (e.g. host ~/.ssh → $HOME/.ssh), after ro/rwBinds
+	// and before the masks so hidePaths/secretFiles can still cover them.
+	for _, m := range v.roMaps {
+		args = append(args, "--ro-bind", m.src, m.dst)
+	}
+	for _, m := range v.rwMaps {
+		args = append(args, "--bind", m.src, m.dst)
+	}
 	// Sensitive files masked with /dev/null (must come after the global
 	// ro-bind and ro/rwBinds, so rwBinds binding the global root or its parent
 	// cannot re-expose secrets).
@@ -135,7 +143,7 @@ func (s *Sandbox) WrapArgv(ctx context.Context, workDir string, inner []string) 
 	}
 	args = append(args,
 		"--chdir", workDir,
-		"--setenv", "HOME", v.tenantRoot,
+		"--setenv", "HOME", v.home,
 		"--setenv", "TMPDIR", "/tmp",
 	)
 	if s.roFloorFlag {

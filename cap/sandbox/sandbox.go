@@ -48,6 +48,28 @@ type Service interface {
 	CheckWrite(ctx context.Context, path string) error
 }
 
+// PathTranslator is an optional interface a Service may implement when the
+// view contains src→dst maps: the dst exists only inside the subprocess
+// namespace, so in-process consumers (filesystem/sandbox) must translate a
+// path under a map dst to its host src before touching the disk. CheckRead/
+// CheckWrite still run against the untranslated (in-view) path.
+type PathTranslator interface {
+	// TranslatePath maps an in-view host-style path to the backing host
+	// path. ok=false means no translation applies (use the path as-is).
+	TranslatePath(ctx context.Context, path string) (translated string, ok bool)
+}
+
+// TranslatePath returns the host backing path for path when svc implements
+// PathTranslator and a mapping applies; otherwise it returns path unchanged.
+func TranslatePath(ctx context.Context, svc Service, path string) string {
+	if t, ok := svc.(PathTranslator); ok {
+		if translated, ok := t.TranslatePath(ctx, path); ok {
+			return translated
+		}
+	}
+	return path
+}
+
 // Disabled returns a no-op Service: Enabled reports false, WrapArgv passes
 // inner through unchanged, CheckRead/CheckWrite allow everything
 // (confinement falls back to the tool layer). Assembly code can inject it

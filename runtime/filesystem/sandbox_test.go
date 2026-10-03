@@ -3,6 +3,7 @@ package filesystem
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	capfs "github.com/lengzhao/agentkit/cap/filesystem"
@@ -69,6 +70,56 @@ func (g gateSandbox) WrapArgv(context.Context, string, []string) ([]string, erro
 
 func (g gateSandbox) CheckRead(context.Context, string) error  { return g.readErr }
 func (g gateSandbox) CheckWrite(context.Context, string) error { return g.writeErr }
+
+// mappingSandbox additionally implements capsandbox.PathTranslator.
+type mappingSandbox struct {
+	gateSandbox
+	from, to string
+}
+
+func (m mappingSandbox) TranslatePath(_ context.Context, path string) (string, bool) {
+	if path == m.from || strings.HasPrefix(path, m.from+"/") {
+		return m.to + strings.TrimPrefix(path, m.from), true
+	}
+	return "", false
+}
+
+// recordingPathsInner records the paths inner is called with.
+type recordingPathsInner struct {
+	recordingInner
+	paths []string
+}
+
+func (r *recordingPathsInner) Read(_ context.Context, path string) ([]byte, error) {
+	r.paths = append(r.paths, path)
+	return []byte("ok"), nil
+}
+
+func (r *recordingPathsInner) Write(_ context.Context, path string, _ []byte, _ ...capfs.WriteOption) error {
+	r.paths = append(r.paths, path)
+	return nil
+}
+
+// A path under a sandbox map dst must reach inner translated to the host src;
+// unmapped paths pass through unchanged.
+func TestSandboxedTranslatesMappedPaths(t *testing.T) {
+	ctx := context.Background()
+	inner := &recordingPathsInner{}
+	guard := mappingSandbox{from: "/tenant/.ssh", to: "/host/home/.ssh"}
+	svc, err := NewSandboxed(SandboxConfig{}, SandboxDeps{FS: inner, Sandbox: guard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Read(ctx, "/tenant/.ssh/id_rsa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Write(ctx, "/tenant/work/a.go", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if len(inner.paths) != 2 || inner.paths[0] != "/host/home/.ssh/id_rsa" || inner.paths[1] != "/tenant/work/a.go" {
+		t.Fatalf("mapped dst must be translated to src, unmapped unchanged: %v", inner.paths)
+	}
+}
 
 func TestNewSandboxedRequiresDeps(t *testing.T) {
 	_, err := NewSandboxed(SandboxConfig{}, SandboxDeps{})

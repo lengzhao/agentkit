@@ -67,6 +67,18 @@ type Config struct {
 	// (relative to the global root), default ["secrets.enc.json"].
 	// Applied after the global ro-bind and ro/rwBinds.
 	SecretFiles []string `json:"secretFiles"`
+	// HomeRef selects the in-sandbox HOME. Default "." (the writable tenant
+	// root, i.e. workspace "."). Values: a workspace ref ("global:dir",
+	// "local:path"), a host absolute path, or the literal "host" (pass the
+	// host user's home through, ro-bound — intended for single-tenant trusted
+	// setups). The resolved home must live inside the view (tenant root,
+	// global root or a configured bind); otherwise rendering fails closed
+	// instead of pointing HOME at an unmounted void.
+	HomeRef string `json:"homeRef"`
+	// Maps bind a host source onto a different in-sandbox destination, e.g.
+	// share the host's ~/.ssh or ~/.gitconfig into the tenant HOME. Applied
+	// after ro/rwBinds and before secretFiles/hidePaths (masks always win).
+	Maps []MapConfig `json:"maps"`
 	// SystemBinds overrides the default minimal system read-only bind list;
 	// empty uses the built-in default (/usr /bin /lib /lib64 /opt plus
 	// DNS/cert files under /etc).
@@ -78,6 +90,26 @@ type Config struct {
 	// --tmpfs /tmp (no size limit, not recommended). Must be exclusive per
 	// runner instance on a shared host: startup removes leftover contents.
 	TmpBase string `json:"tmpBase"`
+}
+
+// Map modes for MapConfig.Mode.
+const (
+	MapModeRO = "ro" // default: read-only mapping
+	MapModeRW = "rw" // read-write mapping (tenant can modify the host source)
+)
+
+// MapConfig binds a host source onto a different in-sandbox destination.
+type MapConfig struct {
+	// Src is the host source: an absolute path or a workspace ref
+	// ("global:...", "local:..."), resolved per call per tenant.
+	Src string `json:"src"`
+	// Dst is the in-sandbox destination: an absolute path, or a relative path
+	// resolved against the rendered HOME (e.g. ".ssh" → $HOME/.ssh), so the
+	// mapping follows homeRef. A relative dst must not escape HOME ("..").
+	Dst string `json:"dst"`
+	// Mode is "ro" (default) or "rw". rw hands the host source's writable
+	// surface to the tenant — a deliberate choice (e.g. never rw-map .ssh).
+	Mode string `json:"mode"`
 }
 
 // SetDefaults implements pluginkit.Defaulter.
@@ -97,10 +129,20 @@ func (c *Config) SetDefaults() {
 func (c *Config) Validate() error {
 	switch mode := strings.TrimSpace(c.Mode); mode {
 	case ModeOff, ModeAuto, ModeBwrap:
-		return nil
 	default:
 		return fmt.Errorf("sandbox/bwrap config.mode must be off, auto or bwrap, got %q", mode)
 	}
+	for i, m := range c.Maps {
+		if strings.TrimSpace(m.Src) == "" || strings.TrimSpace(m.Dst) == "" {
+			return fmt.Errorf("sandbox/bwrap config.maps[%d]: src and dst are required", i)
+		}
+		switch strings.TrimSpace(m.Mode) {
+		case "", MapModeRO, MapModeRW:
+		default:
+			return fmt.Errorf("sandbox/bwrap config.maps[%d].mode must be ro or rw, got %q", i, m.Mode)
+		}
+	}
+	return nil
 }
 
 // Deps for sandbox/bwrap.
@@ -123,6 +165,8 @@ type Sandbox struct {
 	on          bool
 	tmpBase     string
 	secretFiles []string
+	homeRef     string
+	maps        []MapConfig
 	// procBind=true uses --ro-bind /proc /proc instead of --proc /proc: when
 	// the container's /proc has locked mounts (e.g. Docker masks /proc/kcore by
 	// default) the kernel rejects a fresh procfs mount in the new pid
@@ -239,6 +283,11 @@ func New(cfg Config, d Deps) (capsandbox.Service, error) {
 		roFloorFlag: roFloorFlag,
 		tmpBase:     tmpBase,
 		secretFiles: secretFiles,
+		homeRef:     strings.TrimSpace(cfg.HomeRef),
+		maps:        cfg.Maps,
+	}
+	if s.homeRef == "host" {
+		slog.Warn("sandbox/bwrap: homeRef=host exposes the host home read-only; intended for single-tenant trusted setups")
 	}
 	if on && tmpBase != "" {
 		// Old sandboxes die with the runner process, so leftover tenant tmp
@@ -265,10 +314,20 @@ type view struct {
 	tenantRoot  string
 	globalRoot  string
 	tenantsBase string
+	// home is the in-sandbox HOME (default tenantRoot; see Config.HomeRef).
+	home        string
 	roBinds     []string
 	rwBinds     []string
+	roMaps      []pathMap
+	rwMaps      []pathMap
 	hidePaths   []string
 	secretPaths []string
+}
+
+// pathMap is a resolved src→dst bind (Config.Maps entry).
+type pathMap struct {
+	src string
+	dst string
 }
 
 // render resolves the current tenant from ctx and renders the view. Tenant
@@ -337,6 +396,39 @@ func (s *Sandbox) renderView(ctx context.Context, tenantRoot string) (*view, err
 	if err != nil {
 		return nil, err
 	}
+	// HOME: default the writable tenant root; "host" passes the host user's
+	// home through as a read-only bind (single-tenant trusted setups). Any
+	// other homeRef must resolve inside the view — HOME pointing at an
+	// unmounted path is a config error, not a runtime state.
+	home := tenantRoot
+	if ref := s.homeRef; ref != "" && ref != "." {
+		if ref == "host" {
+			hostHome, err := os.UserHomeDir()
+			if err != nil {
+				return nil, fmt.Errorf("sandbox: resolve host home: %w", err)
+			}
+			home, err = cleanExisting(hostHome)
+			if err != nil {
+				return nil, fmt.Errorf("sandbox: resolve host home: %w", err)
+			}
+			roBinds = append(roBinds, home)
+		} else {
+			home, err = s.resolveHomeRef(ctx, ref)
+			if err != nil {
+				return nil, err
+			}
+			if !withinAny(home, []string{tenantRoot, globalRoot}, roBinds, rwBinds) {
+				return nil, fmt.Errorf("sandbox: homeRef %q resolves to %s outside the sandbox view (tenant root, global root, ro/rwBinds)", ref, home)
+			}
+		}
+	}
+	// Maps: src resolution degrades to warn+skip like ro/rwBinds, but a src
+	// inside a hidePath fails closed — maps must not re-expose masked paths
+	// under a different location.
+	roMaps, rwMaps, err := s.resolveMaps(ctx, home, hidePaths)
+	if err != nil {
+		return nil, err
+	}
 	secretFiles := s.secretFiles
 	if secretFiles == nil {
 		secretFiles = defaultSecretFiles
@@ -349,11 +441,132 @@ func (s *Sandbox) renderView(ctx context.Context, tenantRoot string) (*view, err
 		tenantRoot:  tenantRoot,
 		globalRoot:  globalRoot,
 		tenantsBase: tenantsBase,
+		home:        home,
 		roBinds:     roBinds,
 		rwBinds:     rwBinds,
+		roMaps:      roMaps,
+		rwMaps:      rwMaps,
 		hidePaths:   hidePaths,
 		secretPaths: secretPaths,
 	}, nil
+}
+
+// resolveHomeRef resolves a non-default homeRef (workspace ref or host
+// absolute path) to a canonical existing path.
+func (s *Sandbox) resolveHomeRef(ctx context.Context, ref string) (string, error) {
+	if filepath.IsAbs(ref) {
+		home, err := cleanExisting(ref)
+		if err != nil {
+			return "", fmt.Errorf("sandbox: resolve homeRef %q: %w", ref, err)
+		}
+		return home, nil
+	}
+	home, err := resolveClean(ctx, s.workspace, ref)
+	if err != nil {
+		return "", fmt.Errorf("sandbox: resolve homeRef %q: %w", ref, err)
+	}
+	return home, nil
+}
+
+// resolveMaps renders Config.Maps entries against the rendered HOME.
+func (s *Sandbox) resolveMaps(ctx context.Context, home string, hidePaths []string) (roMaps, rwMaps []pathMap, err error) {
+	for _, m := range s.maps {
+		src := strings.TrimSpace(m.Src)
+		if isWorkspaceRef(src) {
+			resolved, rerr := s.workspace.Resolve(ctx, src)
+			if rerr != nil {
+				slog.Warn("sandbox: skip map with unresolvable src", "src", src, "err", rerr)
+				continue
+			}
+			src = resolved
+		}
+		src, rerr := cleanExisting(src)
+		if rerr != nil {
+			slog.Warn("sandbox: skip map with unresolvable src", "src", m.Src, "err", rerr)
+			continue
+		}
+		for _, h := range hidePaths {
+			if within(src, h) {
+				return nil, nil, fmt.Errorf("sandbox: map src %q is inside masked path %s (maps must not re-expose masked paths)", m.Src, h)
+			}
+		}
+		dst := strings.TrimSpace(m.Dst)
+		if filepath.IsAbs(dst) {
+			dst = filepath.Clean(dst)
+		} else {
+			dst = filepath.Join(home, dst)
+			if !within(dst, home) {
+				return nil, nil, fmt.Errorf("sandbox: map dst %q escapes HOME (%s)", m.Dst, home)
+			}
+		}
+		pm := pathMap{src: src, dst: dst}
+		if strings.TrimSpace(m.Mode) == MapModeRW {
+			rwMaps = append(rwMaps, pm)
+		} else {
+			roMaps = append(roMaps, pm)
+		}
+	}
+	return roMaps, rwMaps, nil
+}
+
+// TranslatePath implements capsandbox.PathTranslator: a path under a map dst
+// is rewritten to its host src (longest dst prefix wins), so in-process
+// consumers read/write the same backing content the subprocess sees at dst.
+// The dst itself may not exist on the host — without this translation the
+// in-process view would be an empty shell compared to the bwrap view.
+func (s *Sandbox) TranslatePath(ctx context.Context, path string) (string, bool) {
+	if !s.on {
+		return "", false
+	}
+	v, err := s.render(ctx)
+	if err != nil {
+		return "", false
+	}
+	p := cleanHostPath(path)
+	var best *pathMap
+	for _, maps := range [][]pathMap{v.roMaps, v.rwMaps} {
+		for i := range maps {
+			m := &maps[i]
+			if within(p, m.dst) && (best == nil || len(m.dst) > len(best.dst)) {
+				best = m
+			}
+		}
+	}
+	if best == nil {
+		return "", false
+	}
+	if p == best.dst {
+		return best.src, true
+	}
+	return filepath.Join(best.src, strings.TrimPrefix(p, best.dst+string(filepath.Separator))), true
+}
+
+// cleanExisting normalizes a host path that must exist (realpath).
+func cleanExisting(p string) (string, error) {
+	p = filepath.Clean(strings.TrimSpace(p))
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", err
+	}
+	return real, nil
+}
+
+// withinAny reports whether p equals or lives under any of roots or the
+// paths in lists.
+func withinAny(p string, roots []string, lists ...[]string) bool {
+	for _, r := range roots {
+		if within(p, r) {
+			return true
+		}
+	}
+	for _, list := range lists {
+		for _, r := range list {
+			if within(p, r) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // resolveBinds normalizes bind configs and drops nonexistent entries. Two
@@ -447,3 +660,4 @@ func resolveClean(ctx context.Context, ws workspace.Service, rel string) (string
 }
 
 var _ capsandbox.Service = (*Sandbox)(nil)
+var _ capsandbox.PathTranslator = (*Sandbox)(nil)
