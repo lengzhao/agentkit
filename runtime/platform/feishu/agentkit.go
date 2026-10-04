@@ -474,7 +474,8 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
 		opts,
 	)
-	_ = p.inbox.Push(ctx, common.WithMetadata(event, metadata))
+	event = enrichInboundActorFromProfile(common.WithMetadata(event, metadata))
+	_ = p.inbox.Push(ctx, event)
 }
 
 func (p *Platform) inboundMetadata(msg inboundMessage) map[string]any {

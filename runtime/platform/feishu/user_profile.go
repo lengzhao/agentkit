@@ -13,6 +13,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
@@ -39,31 +40,48 @@ func (p *Platform) cachedUserProfile(userID string) feishuUserProfileEntry {
 		return cached.(feishuUserProfileEntry)
 	}
 	entry := p.fetchUserProfile(userID)
-	if entry.ok {
+	if feishuProfileEntryPopulated(entry) {
 		p.userProfileCache.Store(userID, entry)
 	}
 	return entry
+}
+
+func feishuProfileEntryPopulated(entry feishuUserProfileEntry) bool {
+	return entry.ok && (entry.name != "" || entry.email != "")
+}
+
+func feishuContactUserIDType(userID string) string {
+	switch {
+	case strings.HasPrefix(userID, "ou_"):
+		return larkcontact.UserIdTypeOpenId
+	case strings.HasPrefix(userID, "on_"):
+		return larkcontact.UserIdTypeUnionId
+	default:
+		return larkcontact.UserIdTypeUserId
+	}
 }
 
 func (p *Platform) fetchUserProfile(userID string) feishuUserProfileEntry {
 	if p.client == nil {
 		return feishuUserProfileEntry{}
 	}
+	idType := feishuContactUserIDType(userID)
 	resp, err := p.client.Contact.User.Get(context.Background(),
 		larkcontact.NewGetUserReqBuilder().
 			UserId(userID).
-			UserIdType("open_id").
+			UserIdType(idType).
 			Build())
 	if err != nil {
-		slog.Debug(p.tag()+": user profile lookup failed", "open_id", userID, "error", err)
+		slog.Debug(p.tag()+": user profile lookup failed", "user_id", userID, "id_type", idType, "error", err)
 		return feishuUserProfileEntry{}
 	}
 	if !resp.Success() || resp.Data == nil || resp.Data.User == nil {
-		slog.Debug(p.tag()+": user profile lookup: no data", "open_id", userID, "code", resp.Code)
+		slog.Warn(p.tag()+": user profile lookup: no data",
+			"user_id", userID, "id_type", idType, "code", resp.Code, "msg", resp.Msg)
 		return feishuUserProfileEntry{}
 	}
 	user := resp.Data.User
-	entry := feishuUserProfileEntry{ok: true}
+	entry := feishuUserProfileEntry{}
 	if user.Name != nil {
 		entry.name = strings.TrimSpace(*user.Name)
 	}
@@ -73,7 +91,62 @@ func (p *Platform) fetchUserProfile(userID string) feishuUserProfileEntry {
 	if entry.email == "" && user.EnterpriseEmail != nil {
 		entry.email = strings.TrimSpace(*user.EnterpriseEmail)
 	}
+	if entry.name == "" && entry.email == "" {
+		return feishuUserProfileEntry{}
+	}
+	entry.ok = true
 	return entry
+}
+
+// enrichInboundActorFromProfile copies displayName/email metadata onto envelope.actor
+// so slash commands (/me) and runner inject see sender name without a second lookup.
+func enrichInboundActorFromProfile(ev agentkit.MessageEvent) agentkit.MessageEvent {
+	if len(ev.Metadata) == 0 {
+		return ev
+	}
+	if strings.TrimSpace(ev.Envelope.Actor.UserID) == "" {
+		ev.Envelope.Actor.UserID = strings.TrimSpace(ev.UserID)
+	}
+	if strings.TrimSpace(ev.Envelope.Actor.Name) == "" {
+		ev.Envelope.Actor.Name = profileNameFromMetadata(ev.Metadata)
+	}
+	if strings.TrimSpace(ev.Envelope.Actor.Email) == "" {
+		ev.Envelope.Actor.Email = profileEmailFromMetadata(ev.Metadata)
+	}
+	return ev
+}
+
+func profileNameFromMetadata(md map[string]any) string {
+	for _, key := range []string{"sender_name", "displayName", "userName", "name", "X-Chat-API-User-Name"} {
+		if v := metadataString(md, key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func profileEmailFromMetadata(md map[string]any) string {
+	for _, key := range []string{"sender_email", "email", "X-Chat-API-User-Email"} {
+		if v := metadataString(md, key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func metadataString(md map[string]any, key string) string {
+	if len(md) == 0 {
+		return ""
+	}
+	raw, ok := md[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
 }
 
 func (p *Platform) userProfileMetadata(userID string) map[string]any {
