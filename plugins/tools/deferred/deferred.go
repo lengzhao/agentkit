@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
@@ -89,11 +91,37 @@ func (d *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Activation is decided on the pre-reveal deferrable set: reveal only affects
+	// assembly, never flips disclosure off (which would dump every schema at once).
 	split := d.classifyVisible(specs)
 	if len(split.Deferrable) == 0 || !d.cfg.disclosureActive(split.Deferrable, 0) {
 		return specs, nil
 	}
+	split = d.applyReveal(ctx, split)
 	return assembleVisible(split.Eager, split.Deferrable, d.cfg, 0), nil
+}
+
+// applyReveal promotes turn-revealed deferrable tools (search/describe hits)
+// into the eager set so the model can call them directly on later steps.
+func (d *Runtime) applyReveal(ctx context.Context, split classified) classified {
+	if len(split.Deferrable) == 0 {
+		return split
+	}
+	revealed := revealedNames(ctx)
+	if len(revealed) == 0 {
+		return split
+	}
+	eager := make([]agentkit.ToolSpec, 0, len(split.Eager)+len(revealed))
+	eager = append(eager, split.Eager...)
+	rest := make([]agentkit.ToolSpec, 0, len(split.Deferrable))
+	for _, spec := range split.Deferrable {
+		if revealed[spec.Name] {
+			eager = append(eager, spec)
+		} else {
+			rest = append(rest, spec)
+		}
+	}
+	return classified{Eager: eager, Deferrable: rest}
 }
 
 func (d *Runtime) classifyVisible(specs []agentkit.ToolSpec) classified {
@@ -119,14 +147,51 @@ func (d *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	}
 	switch call.Name {
 	case ToolSearch:
-		return d.executeSearch(ctx, call)
+		return d.executeBridgeObserved(ctx, call, "tool.deferred.search", nil, d.executeSearch)
 	case ToolDescribe:
-		return d.executeDescribe(ctx, call)
+		return d.executeBridgeObserved(ctx, call, "tool.deferred.describe", nil, d.executeDescribe)
 	case ToolCall:
-		return d.executeBridgeCall(ctx, call)
+		extra := map[string]string{}
+		if entries, err := normalizeCalls(call.Input); err == nil && len(entries) > 0 {
+			extra["deferred_target"] = entries[0].Name
+		}
+		return d.executeBridgeObserved(ctx, call, "tool.deferred.call", extra, d.executeBridgeCall)
 	default:
 		return d.inner.Execute(ctx, call)
 	}
+}
+
+// executeBridgeObserved records a telemetry observation for bridge tools, mirroring
+// tools/runtime.Execute so tool_search / tool_describe / tool_call show up in traces.
+// The real tool invoked through tool_call still gets its own child span from inner.Execute.
+func (d *Runtime) executeBridgeObserved(ctx context.Context, call agentkit.ToolCall, spanName string, extra map[string]string, handler func(context.Context, agentkit.ToolCall) (agentkit.ToolResult, error)) (agentkit.ToolResult, error) {
+	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
+	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
+		Name:  spanName,
+		Kind:  captelemetry.KindTool,
+		Input: string(call.Input),
+		Attributes: telemetry.MergeStringMaps(
+			telemetry.ToolObservationAttrs(ctx, call),
+			extra,
+			map[string]string{"tool_name": call.Name},
+		),
+	}))
+	var observationEnd captelemetry.ObservationEnd
+	defer func() {
+		endObservation(observationEnd)
+	}()
+
+	result, err := handler(ctx, call)
+	if err != nil {
+		if agentkit.IsTurnAbort(err) {
+			observationEnd.Err = err
+			return result, err
+		}
+		observationEnd.Output = err.Error()
+		return result, err
+	}
+	observationEnd.Output = result.Content
+	return result, nil
 }
 
 func (d *Runtime) deferrableCatalog(ctx context.Context) ([]catalogEntry, error) {

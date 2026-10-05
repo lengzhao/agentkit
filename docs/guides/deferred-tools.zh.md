@@ -4,7 +4,7 @@
 
 参考实现思路：[Hermes Tool Search](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/tool-search.md)（`tool_search` / `tool_describe` / `tool_call` 三桥 + listing）。
 
-相关文档：[tools.zh.md](tools.zh.md)、[go-agent-harness-architecture.zh.md](../go-agent-harness-architecture.zh.md)、[subagent.zh.md](subagent.zh.md)。
+相关文档：[tools.zh.md](tools.zh.md)、[go-agent-harness-architecture.zh.md](../go-agent-harness-architecture.zh.md)、[subagent.zh.md](subagent.zh.md)、[plugin-state.zh.md](plugin-state.zh.md)（reveal 状态已迁移到统一 turn State）。
 
 ## 1. 目标与非目标
 
@@ -125,10 +125,11 @@ sequenceDiagram
 
 1. `inner.Visible(ctx)` 得到完整 `[]agentkit.ToolSpec`（含 dynamic 刷新）。
 2. **分类**（见 §5）：每个 spec 标记 `eager` 或 `deferrable`。
-3. **组装**：
-   - 无 deferrable，或 `enabled: false` → 原样返回。
-   - 有 deferrable 且 `enabled: true` → 返回 `eager specs + bridge specs`（三桥）；deferrable 的完整 schema **不**进入列表。
-4. 若内层配置了 `allowTools` / `denyTools`，过滤在 **inner.Visible** 已生效；外层组装基于过滤后的列表。
+3. **揭示（reveal）**：本 turn 中已被 `tool_search` 命中或 `tool_describe` 加载的 deferrable 工具，提升为 eager，完整 schema 直接进入列表，模型后续 step 可**直接调用**（无需再走 `tool_call` 桥）。揭示集合存于 **turn 级 ctx 状态袋**（`rctx.State`，见 [plugin-state.zh.md](plugin-state.zh.md)），turn 结束即失效，下一轮 agent 重新 search 自愈；上限 24 个/turn，超出后最早揭示的工具回落为仅桥可达；runner 未注入状态袋时降级为不揭示。注意：**是否出桥的激活判定基于揭示前的 deferrable 体量**，reveal 只影响组装，不会翻转披露状态（否则 auto 模式下揭示后剩余体量跌破阈值会导致全量 schema 突变注入）。
+4. **组装**：
+   - 无剩余 deferrable，或 `enabled: false` → 原样返回。
+   - 有剩余 deferrable 且 `enabled: true` → 返回 `eager specs（含已揭示）+ bridge specs`（三桥）；其余 deferrable 的完整 schema **不**进入列表。
+5. 若内层配置了 `allowTools` / `denyTools`，过滤在 **inner.Visible** 已生效；外层组装基于过滤后的列表。
 
 **Listing（披露层级）**：与 Hermes 类似，将 deferrable 工具的「名称 + 短描述」嵌入 `tool_search` 的 description（受 `listingMaxTokens` 与 `thresholdPct` 约束）。超预算时降级为仅名称、再降级为按来源（MCP server / OpenAPI api）一行摘要，避免模型误以为能力不存在。
 
@@ -162,7 +163,8 @@ sequenceDiagram
 
 - **unwrap 在外层、委托在内层**：`tool_call` 不得在内层注册为 stub 后绕过 policy。
 - `tool_search` / `tool_describe` 为只读目录操作，不经过 MCP 网络；catalog 来自当前 `inner.Visible`（与 Hermes `skip_tool_search_assembly` 等价）。
-- Telemetry：unwrap 后对 generation 观测建议使用 **真实工具名**（与 Hermes activity 一致）；桥工具可记为 `tool.deferred.search` 等 span 名（实现细节）。
+- **揭示写入**：`tool_search` 的命中名与 `tool_describe` 的成功加载名都会写入本 session 的揭示集合（见 §4.1），下一步 `Visible` 起模型可直接调用。
+- Telemetry：unwrap 后由 inner 记录 **真实工具名** 的 `tool.<name>` span（与 Hermes activity 一致）；桥工具自身记录 `tool.deferred.search` / `tool.deferred.describe` / `tool.deferred.call` span（`tool_call` 附带 `deferred_target` 属性）。
 
 ### 4.3 桥工具契约
 
@@ -255,6 +257,7 @@ plugins/tools/deferred/
   assemble.go         # 三桥 schema + listing
   catalog.go          # 检索索引与 listing 文本
   bridge.go           # JSON 参数解析
+  reveal.go           # 揭示集合读写（基于 rctx.State turn 袋）
   deferred_test.go
 
 runtime/tools/

@@ -23,17 +23,20 @@ func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (ag
 	}
 	groups := make([]queryGroup, 0, len(queries))
 	shared := make(map[string]map[string]string)
+	var hits []string
 	for _, q := range queries {
-		hits := searchCatalog(catalog, q, limit)
-		matches := make([]string, 0, len(hits))
-		for _, spec := range hits {
+		found := searchCatalog(catalog, q, limit)
+		matches := make([]string, 0, len(found))
+		for _, spec := range found {
 			matches = append(matches, spec.Name)
 			if _, ok := shared[spec.Name]; !ok {
 				shared[spec.Name] = toolSummaryMap([]agentkit.ToolSpec{spec})[spec.Name]
 			}
 		}
 		groups = append(groups, queryGroup{Query: q, Matches: matches})
+		hits = append(hits, matches...)
 	}
+	reveal(ctx, hits...)
 	out := map[string]any{
 		"queries": groups,
 		"tools":   shared,
@@ -57,9 +60,12 @@ func (d *Runtime) executeDescribe(ctx context.Context, call agentkit.ToolCall) (
 	}
 	found, notFound := describeCatalog(catalog, names)
 	tools := make(map[string]agentkit.ToolSpec, len(found))
+	loaded := make([]string, 0, len(found))
 	for name, spec := range found {
 		tools[name] = spec
+		loaded = append(loaded, name)
 	}
+	reveal(ctx, loaded...)
 	out := map[string]any{"tools": tools}
 	if len(notFound) > 0 {
 		out["not_found"] = notFound

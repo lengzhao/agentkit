@@ -46,6 +46,10 @@ const (
 	// KeyScheduleStateless marks a schedule-fired turn that must not inherit the
 	// delivery conversation's active session history (similar to KeyInSubagent).
 	KeyScheduleStateless contextKey = "agentkit.schedule_stateless"
+	// KeyTurnState is the per-turn mutable state bag (runtime/rctx.State).
+	// Runner injects it at turn start; hooks, tools, and policies share it
+	// for optimization-grade state that must not affect correctness.
+	KeyTurnState contextKey = "agentkit.turn_state"
 	// KeyTurnEnvelope carries the normalized Route / Conversation / Workspace
 	// context for the current turn. Runner sets it before Loop.Dispatch.
 	KeyTurnEnvelope contextKey = "agentkit.turn_envelope"

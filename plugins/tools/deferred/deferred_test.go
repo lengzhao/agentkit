@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/plugins/tools/deferred"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/tools"
 )
 
@@ -104,6 +105,61 @@ func TestToolCallPropagatesAbortTurn(t *testing.T) {
 	})
 	if !agentkit.IsTurnAbort(err) {
 		t.Fatalf("want turn abort, got %v", err)
+	}
+}
+
+func TestSearchRevealsToolsInVisible(t *testing.T) {
+	t.Parallel()
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOn}}, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rctx.WithState(context.Background(), rctx.NewState())
+	payload, _ := json.Marshal(map[string]any{"queries": []string{"ping"}})
+	if _, err := outer.Execute(ctx, agentkit.ToolCall{ID: "1", Name: deferred.ToolSearch, Input: payload}); err != nil {
+		t.Fatal(err)
+	}
+	specs, err := outer.Visible(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, s := range specs {
+		names[s.Name] = true
+	}
+	if !names["mcp__ping"] {
+		t.Fatalf("searched tool not revealed: %v", names)
+	}
+	// A new turn (fresh state bag) must not see the revealed tool.
+	other, err := outer.Visible(rctx.WithState(context.Background(), rctx.NewState()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range other {
+		if s.Name == "mcp__ping" {
+			t.Fatalf("reveal leaked across turns")
+		}
+	}
+}
+
+func TestRevealSkippedWithoutTurnState(t *testing.T) {
+	t.Parallel()
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOn}}, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"queries": []string{"ping"}})
+	if _, err := outer.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: deferred.ToolSearch, Input: payload}); err != nil {
+		t.Fatal(err)
+	}
+	specs, err := outer.Visible(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range specs {
+		if s.Name == "mcp__ping" {
+			t.Fatalf("reveal must not persist without turn state")
+		}
 	}
 }
 

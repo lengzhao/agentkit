@@ -169,6 +169,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 		return fmt.Errorf("turn requires session id in context")
 	}
 	ctx = rctx.WithWorkspaceService(ctx, a.workspace)
+	ctx = rctx.WithState(ctx, rctx.NewState())
 	sess, err := a.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return err
