@@ -13,6 +13,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/subprocess"
 )
 
 type ShellBashConfig struct {
@@ -128,6 +129,7 @@ func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, er
 	}
 
 	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
+	subprocess.PrepareExecCmd(cmd)
 	cmd.Dir = workDir
 	cmd.Env = subprocessEnv(ctx, workDir, command, e.commands, e.credentials, e.cfg)
 	var stdout, stderr bytes.Buffer
@@ -140,7 +142,10 @@ func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, er
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else if runCtx.Err() != nil {
-			return ShellOutput{}, fmt.Errorf("shell timeout after %s", e.timeout)
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				return ShellOutput{}, fmt.Errorf("shell timeout after %s", e.timeout)
+			}
+			return ShellOutput{}, fmt.Errorf("shell cancelled: %w", runCtx.Err())
 		} else {
 			return ShellOutput{}, err
 		}
