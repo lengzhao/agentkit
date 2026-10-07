@@ -165,6 +165,7 @@ sequenceDiagram
 - `tool_search` / `tool_describe` 为只读目录操作，不经过 MCP 网络；catalog 来自当前 `inner.Visible`（与 Hermes `skip_tool_search_assembly` 等价）。
 - **揭示写入**：`tool_search` 的命中名与 `tool_describe` 的成功加载名都会写入本 session 的揭示集合（见 §4.1），下一步 `Visible` 起模型可直接调用。
 - Telemetry：unwrap 后由 inner 记录 **真实工具名** 的 `tool.<name>` span（与 Hermes activity 一致）；桥工具自身记录 `tool.deferred.search` / `tool.deferred.describe` / `tool.deferred.call` span（`tool_call` 附带 `deferred_target` 属性）。
+- **诊断**：`tool_describe` 若加载到「描述很长但 `inputSchema` 无 `properties`」的工具，会 `slog.Warn`（`tools/deferred: tool_describe loaded hollow input schema`），附带 `tool`、`description_len`、`input_schema_bytes`，便于区分 AgentHub catalog 空 schema 与模型未填参。
 
 ### 4.3 桥工具契约
 

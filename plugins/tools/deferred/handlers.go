@@ -62,6 +62,7 @@ func (d *Runtime) executeDescribe(ctx context.Context, call agentkit.ToolCall) (
 	tools := make(map[string]agentkit.ToolSpec, len(found))
 	loaded := make([]string, 0, len(found))
 	for name, spec := range found {
+		warnHollowDescribeSchema(spec)
 		tools[name] = spec
 		loaded = append(loaded, name)
 	}
