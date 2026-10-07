@@ -41,6 +41,9 @@ type Config struct {
 	// force-run compaction once before the LLM call; if it still exceeds, fail
 	// the step instead of sending a request the provider will reject. 0 disables.
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
+	// ToolExecution is how multiple tool calls in one assistant step run together.
+	// Omitted defaults to parallel (pi agent-loop default).
+	ToolExecution agentkit.ToolExecutionMode `json:"toolExecution,omitempty"`
 }
 
 // SetDefaults implements pluginkit.Defaulter.
@@ -57,6 +60,11 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxPromptTokens < 0 {
 		return fmt.Errorf("agent maxPromptTokens must not be negative (0 disables)")
+	}
+	switch c.ToolExecution {
+	case "", agentkit.ToolExecutionParallel, agentkit.ToolExecutionSequential:
+	default:
+		return fmt.Errorf("agent toolExecution must be parallel or sequential")
 	}
 	return nil
 }
@@ -79,6 +87,7 @@ type Runtime struct {
 	retry           retrySettings
 	maxSteps        int
 	maxPromptTokens int
+	toolExecution   agentkit.ToolExecutionMode
 	now             func() time.Time
 	sessionStore    agentkit.SessionStore
 	llm             agentkit.LLMProvider
@@ -115,14 +124,19 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("agent requires workspace")
 	}
-	return &Runtime{
-		id:              id,
-		model:           cfg.Model,
-		modalities:      agentkit.NormalizeModalities(cfg.Modalities),
-		retry:           resolveRetrySettings(cfg.Retry),
-		maxSteps:        resolveMaxSteps(cfg.MaxSteps),
-		maxPromptTokens: cfg.MaxPromptTokens,
-		now:             time.Now,
+		toolExecution := cfg.ToolExecution
+		if toolExecution == "" {
+			toolExecution = agentkit.ToolExecutionParallel
+		}
+		return &Runtime{
+			id:              id,
+			model:           cfg.Model,
+			modalities:      agentkit.NormalizeModalities(cfg.Modalities),
+			retry:           resolveRetrySettings(cfg.Retry),
+			maxSteps:        resolveMaxSteps(cfg.MaxSteps),
+			maxPromptTokens: cfg.MaxPromptTokens,
+			toolExecution:   toolExecution,
+			now:             time.Now,
 		sessionStore:    deps.SessionStore,
 		llm:             deps.LLM,
 		tools:           deps.Tools,
@@ -334,43 +348,9 @@ func (a *Runtime) runSegment(
 		if toolBaseCtx == nil {
 			toolBaseCtx = stepCtx
 		}
-		for i, call := range assistant.ToolCalls {
-			if reason := ctrl.PopCancelReason(); reason != "" {
-				_ = a.appendInterruptedToolCalls(context.WithoutCancel(ctx), sess, emit, a.id, assistant.ToolCalls[i:], false)
-				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				return "", fmt.Errorf("cancelled: %s", reason)
-			}
-			if err := sessevents.Default.AppendToolCall(ctx, sess, a.id, call); err != nil {
-				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				return "", err
-			}
-			toolCtx := withToolContext(toolBaseCtx, sess, a.id)
-			result, err := a.tools.Execute(toolCtx, call)
-			result, err = agentkit.RecoverToolExecute(call, result, err)
-			if err != nil {
-				_ = a.appendInterruptedToolCalls(context.WithoutCancel(ctx), sess, emit, a.id, assistant.ToolCalls[i:], true)
-				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				return "", err
-			}
-			stored, err := derive.PrepareToolResultForStorage(ctx, sess.ID(), result, 0)
-			if err != nil {
-				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				return "", err
-			}
-			if err := sessevents.Default.AppendToolResult(ctx, sess, a.id, stored); err != nil {
-				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				return "", err
-			}
-			if err := a.emitLifecycle(ctx, emit, agentkit.EventToolResult, stored); err != nil {
-				_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
-				endStepOnce()
-				return "", err
-			}
+		if err := a.runAssistantToolCalls(ctx, sess, emit, ctrl, toolBaseCtx, stepIndex, a.id, assistant, assistant.ToolCalls); err != nil {
+			endStepOnce()
+			return "", err
 		}
 
 		if err := sessevents.Default.AppendStepEnd(ctx, sess, a.id, stepIndex); err != nil {

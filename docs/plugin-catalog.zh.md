@@ -308,7 +308,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 |---|---|---|---|
 | `tool/fs-workspace` | `fs`（`filesystem.Service`）、`workspace?` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 工作区文件工具组；`config.readOnly` / `config.tools` 可限制能力。路径根与 gitignore 在 `deps.fs`（默认 `filesystem/local`） |
 | `tool/fs-memory` | — | 同上 | 内存 `filesystem.Service`，测试与冒烟 |
-| `tool/shell-bash` | `workspace`, `credentials`（L0 默认 `integrations`） | `bash` | Shell；L1 `scopedEnv` 或 `/env add` 注入 gh/npm 等 token，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
+| `tool/shell-bash` | `workspace`, `credentials`（L0 默认 `integrations`） | `bash` | Shell（pi 对齐：`command` + 可选 `timeout`；合并 stdout/stderr；非零退出/超时为 tool 错误文本）；L1 `scopedEnv` 或 `/env add` 注入 gh/npm 等 token，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/web-search-auto` | `credentials?` | `web_search` | 可选：Tavily 优先，缺 key/失败时 fallback DuckDuckGo |
 | `tool/web-search-tavily` | `credentials?` | `web_search` | Tavily 搜索 |
 | `tool/web-search-duckduckgo` | — | `web_search` | DuckDuckGo HTML 抓取，无需 key |

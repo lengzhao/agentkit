@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"golang.org/x/sync/errgroup"
 )
 
 func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
@@ -88,12 +90,20 @@ func (d *Runtime) executeBridgeCall(ctx context.Context, call agentkit.ToolCall)
 	if err != nil {
 		return bridgeError(call, err.Error()), nil
 	}
-	entry := entries[0]
-	if !allowed[entry.Name] {
-		return bridgeError(call, fmt.Sprintf("'%s' is not in the deferred catalog for this session", entry.Name)), nil
+	for _, entry := range entries {
+		if !allowed[entry.Name] {
+			return bridgeError(call, fmt.Sprintf("'%s' is not in the deferred catalog for this session", entry.Name)), nil
+		}
 	}
+	if len(entries) == 1 {
+		return d.executeDeferredEntry(ctx, call, entries[0])
+	}
+	return d.executeDeferredEntriesParallel(ctx, call, entries)
+}
+
+func (d *Runtime) executeDeferredEntry(ctx context.Context, bridgeCall agentkit.ToolCall, entry callEntry) (agentkit.ToolResult, error) {
 	innerCall := agentkit.ToolCall{
-		ID:    call.ID,
+		ID:    bridgeCall.ID,
 		Name:  entry.Name,
 		Input: entry.Arguments,
 	}
@@ -102,9 +112,64 @@ func (d *Runtime) executeBridgeCall(ctx context.Context, call agentkit.ToolCall)
 		if agentkit.IsTurnAbort(err) {
 			return result, err
 		}
-		return bridgeError(call, err.Error()), nil
+		return bridgeError(bridgeCall, err.Error()), nil
 	}
-	// Session / UI show the real tool name after unwrap.
 	result.Name = entry.Name
 	return result, nil
+}
+
+type deferredCallResult struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (d *Runtime) executeDeferredEntriesParallel(ctx context.Context, bridgeCall agentkit.ToolCall, entries []callEntry) (agentkit.ToolResult, error) {
+	results := make([]deferredCallResult, len(entries))
+	var abortErr error
+	var abortMu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+
+	for i, entry := range entries {
+		idx := i
+		g.Go(func() error {
+			if gctx.Err() != nil {
+				return nil
+			}
+			innerCall := agentkit.ToolCall{
+				ID:    agentkit.ToolCallID(fmt.Sprintf("%s~%d", bridgeCall.ID, idx)),
+				Name:  entry.Name,
+				Input: entry.Arguments,
+			}
+			result, err := d.inner.Execute(gctx, innerCall)
+			if err != nil {
+				if agentkit.IsTurnAbort(err) {
+					abortMu.Lock()
+					if abortErr == nil {
+						abortErr = err
+					}
+					abortMu.Unlock()
+					return err
+				}
+				results[idx] = deferredCallResult{Name: entry.Name, Error: err.Error()}
+				return nil
+			}
+			results[idx] = deferredCallResult{Name: entry.Name, Content: result.Content}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		if agentkit.IsTurnAbort(err) || agentkit.IsTurnAbort(abortErr) {
+			if abortErr != nil {
+				err = abortErr
+			}
+			return agentkit.ToolResult{}, err
+		}
+	}
+	body, err := json.Marshal(map[string]any{"calls": results})
+	if err != nil {
+		return bridgeError(bridgeCall, err.Error()), nil
+	}
+	return agentkit.ResultFromCall(bridgeCall, string(body)), nil
 }

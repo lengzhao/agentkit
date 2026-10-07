@@ -12,8 +12,9 @@ import (
 )
 
 type ScriptedStep struct {
-	Text      string              `json:"text"`
-	ToolCalls []agentkit.ToolCall `json:"toolCalls"`
+	Text       string              `json:"text"`
+	ToolCalls  []agentkit.ToolCall `json:"toolCalls"`
+	StopReason string              `json:"stopReason,omitempty"`
 }
 
 type ScriptedConfig struct {
@@ -74,7 +75,8 @@ func (p *Scripted) Stream(_ context.Context, req agentkit.LLMRequest) (agentkit.
 			Type: "text",
 			Text: step.Text,
 		}},
-		ToolCalls: step.ToolCalls,
+		ToolCalls:  step.ToolCalls,
+		StopReason: step.StopReason,
 	}
 	if req.Model != "" {
 		_ = req.Model

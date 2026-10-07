@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/tooloutput"
 	workspaceruntime "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -71,7 +72,7 @@ func TestShellSlashCommandUsage(t *testing.T) {
 }
 
 func TestFormatShellOutput(t *testing.T) {
-	out := formatShellOutput(ShellOutput{Stdout: "ok\n", Stderr: "warn", ExitCode: 2})
+	out := tooloutput.SlashCommandText("ok\n", "warn", 2)
 	if !strings.Contains(out, "ok") || !strings.Contains(out, "warn") || !strings.Contains(out, "[exit 2]") {
 		t.Fatalf("unexpected output: %q", out)
 	}

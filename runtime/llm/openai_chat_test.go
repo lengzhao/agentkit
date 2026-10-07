@@ -34,6 +34,16 @@ func TestChatStreamFinalizeAfterTrailingUsage(t *testing.T) {
 	}
 }
 
+func TestAssistantStopReasonFromOpenAILength(t *testing.T) {
+	t.Parallel()
+	if got := assistantStopReasonFromOpenAI(openai.FinishReasonLength); got != agentkit.AssistantStopReasonLength {
+		t.Fatalf("length mapping = %q", got)
+	}
+	if got := assistantStopReasonFromOpenAI(openai.FinishReasonStop); got != "stop" {
+		t.Fatalf("stop mapping = %q", got)
+	}
+}
+
 func TestStreamAccumulatorCarriesStopReason(t *testing.T) {
 	t.Parallel()
 

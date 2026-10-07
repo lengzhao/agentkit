@@ -458,7 +458,9 @@ func OnTurnComplete(h func(context.Context, *TurnComplete) error) Hook
 
 ### 5.5 工具执行路径
 
-工具运行时按固定顺序执行一次调用。Policy Plane 是唯一 enforcement 点；typed hook 挂在这些阶段上观察或变换，不能另开拒绝通道。
+工具运行时对**每一次** `ToolRuntime.Execute` 按固定顺序走完 Policy / hook / body。Policy Plane 是唯一 enforcement 点；typed hook 挂在这些阶段上观察或变换，不能另开拒绝通道。
+
+`agent/coding` 配置 `toolExecution`（默认 `parallel`，对齐 pi agent-loop）：同一步内多个 `tool_calls` 时，若**任一名称**在 `ToolSpec.executionMode` 为 `sequential`（或工具实现 `ExecutionMode()` / 内建默认如 `bash`、`write`），则**整批串行**；否则在 `tools/runtime` 上**先串行 Preflight**（可见性、Policy、审批、`OnBeforeTool`），再并发执行 tool body（上限 16）。`assistant` 的 `stopReason=length` 时整批 tool 记为可恢复错误、不执行 body。`tool/call` 仍按模型顺序先落盘，`tool/result` 按同一顺序写回 Session 以便 replay。
 
 ```mermaid
 flowchart TB
@@ -850,7 +852,7 @@ tools.default → tool.subagent.default → subagent.default → tools.default
 
 **出站可观测性**：Spawner 用 `forwardParentEmit` 包一层父 turn 的 `OutboundEmit`（来自 `ctx` 的 `KeyOutboundEmit`）：转发 `toolcall_start` / `toolcall_end` / `toolcall_delta`、限长 `thinking_delta`（单块 ≤96 rune、合计 ≤480 rune，**含将子 Agent `text_delta` 重映射为 `thinking_delta`**，供过程卡思考区展示而不进入主回复正文）、`tool/result`；原始 `text_delta` 不会作为正文 lane 转发。route 改回父 delivery session，避免主 Agent 的正文流与子 Agent 交错。飞书 / Lark 异步过程卡与同步过程区共用 `applyRichStreamEvent` 渲染上述信号。`platform/chat-api` 启用 `debugUi` 时仍主要在 `toolcall_end` 时发 SSE `tool_call`（参数完整）与 `tool_result`（正文限长 1024 rune）；`OutboundEvent.AgentID` 用于在 `/debug/` 标注 `subagent · <name>`。详见 [guides/subagent.zh.md §6](guides/subagent.zh.md#6-跑起来)。
 
-**并发边界**：一次 `delegate` 仍只启动一个子 Agent。`subagent/inprocess` 同步阻塞至子 Agent 结束；`subagent/loop-agent` 支持 `async: true`，让主 turn 先结束。同一父 session 的 async job 默认不限制，可用 `maxConcurrentJobsPerSession` 限流（per-parent buffered channel）。`agent/acp-remote` 按 harness child session 持有独立 bridge，避免多 job 共享 `promptCancel`。同 session turn 顺序由 `runner` 的 per-session FIFO 保证，Loop 不再持 per-session mutex。大规模并行 fan-out 仍须考虑共享 workspace 写冲突与 `runner.maxConcurrentTurns`。
+**并发边界**：一次 `delegate` 仍只启动一个子 Agent，但同一步内多个 `delegate` tool call 可由 Agent 并行执行（各自独立 child session）。`subagent/inprocess` 同步阻塞至子 Agent 结束；`subagent/loop-agent` 支持 `async: true`，让主 turn 先结束。同一父 session 的 async job 默认不限制，可用 `maxConcurrentJobsPerSession` 限流（per-parent buffered channel）。`agent/acp-remote` 按 harness child session 持有独立 bridge，避免多 job 共享 `promptCancel`。同 session turn 顺序由 `runner` 的 per-session FIFO 保证，Loop 不再持 per-session mutex。大规模并行 fan-out 仍须考虑共享 workspace 写冲突与 `runner.maxConcurrentTurns`。
 
 ### 5.11 MCP 动态工具
 
@@ -1206,7 +1208,7 @@ plugins/tool/
 |---|---|---|
 | `tool/fs-workspace` | `read` / `write` / `edit` / `grep` / `find` / `ls` | 模型面文件工具组；IO 走 `deps.fs`。`filesystem/local` 下 `grep`/`find` 尊重 `.gitignore`；详见 [plugin-catalog.zh.md](plugin-catalog.zh.md) |
 | `tool/fs-memory` | 同上 | 内存 FS，测试与冒烟 |
-| `tool/shell-bash` | `bash` | bash 执行；L0 默认 `deps.credentials.integrations`，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
+| `tool/shell-bash` | `bash` | bash 执行（入参/描述/合并输出与 pi coding-agent 对齐：`command`、可选 `timeout`、尾截断 2000 行/50KB + spill）；L0 默认 `deps.credentials.integrations`，见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `tool/web-fetch-http` | `web_fetch` | HTTP 抓取，无需凭据 |
 | `tool/web-search-tavily` | `web_search` | Tavily 搜索（L0 默认），缺 key 不阻断构造 |
 | `tool/web-search-exa` | `web_search` | Exa 搜索（可选替代） |

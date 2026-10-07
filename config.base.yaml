@@ -200,6 +200,7 @@ agent.assistant.default:
   config:
     id: assistant
     model: gpt-5.4
+    # toolExecution: parallel  # default; use sequential to disable same-step tool concurrency
     # 发送前兜底：assembled prompt（含 system prompt 与 inline 媒体实际大小）超过则先强制压缩；
     # 必须低于所接端点的真实上下文窗口（chatai gateway 为 1M），并高于 token-limit 触发点
     maxPromptTokens: 1000000

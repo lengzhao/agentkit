@@ -14,12 +14,13 @@ import (
 	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/subprocess"
+	"github.com/lengzhao/agentkit/runtime/tooloutput"
 )
 
 type ShellBashConfig struct {
 	// WorkDir is working directory relative to the workspace root.
 	WorkDir string `json:"workDir"`
-	// TimeoutSeconds is per-command limit; 0 falls back to the built-in default.
+	// TimeoutSeconds is per-command limit when the model omits timeout; 0 means no limit.
 	TimeoutSeconds int `json:"timeoutSeconds"`
 	// Commands optionally overrides env var names injected for shell-bash.<token>.
 	// Default: scope is derived from the command's first token; keys come from L1 scopedEnv,
@@ -57,19 +58,20 @@ func (c *ShellBashConfig) Validate() error {
 	return nil
 }
 
+// ShellInput matches pi bash tool parameters.
 type ShellInput struct {
-	Command string `json:"command" jsonschema:"Shell command to execute"`
+	Command string   `json:"command" jsonschema:"Shell command to execute"`
+	Timeout *float64 `json:"timeout,omitempty" jsonschema:"Timeout in seconds (optional, no default timeout)"`
 }
 
 type ShellOutput struct {
-	ExitCode int    `json:"exitCode"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
 type bashExecutor struct {
 	relWorkDir  string
-	timeout     time.Duration
 	workspace   workspace.Service
 	credentials credentials.Store
 	commands    map[string][]string
@@ -100,25 +102,42 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error
 	}
 	exec := &bashExecutor{
 		relWorkDir:  cfg.WorkDir,
-		timeout:     time.Duration(cfg.TimeoutSeconds) * time.Second,
 		workspace:   deps.Workspace,
 		credentials: deps.Credentials,
 		commands:    commands,
 		cfg:         cfg,
 	}
 
-	tool, err := agentkit.NewTool[ShellInput, ShellOutput]("bash", func(ctx context.Context, input ShellInput) (ShellOutput, error) {
-		return exec.run(ctx, input.Command)
-	}).Description("Execute a bash command in the workspace (default cwd is the absolute agent work directory). Prefer absolute paths in commands and when cd-ing to skill or global directories.").Build()
+	tool, err := agentkit.NewTool[ShellInput, string]("bash", func(ctx context.Context, input ShellInput) (string, error) {
+		return exec.runForModel(ctx, input)
+	}).Description(tooloutput.BashToolDescription()).
+		Sequential().Build()
 	if err != nil {
 		return nil, err
 	}
 	return &shellBashBundle{tool: tool, exec: exec}, nil
 }
 
-func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, error) {
-	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
+func (e *bashExecutor) runForModel(ctx context.Context, input ShellInput) (string, error) {
+	out, runErr := e.run(ctx, input.Command, input.Timeout)
+	workDir, _ := e.workspace.Resolve(ctx, e.relWorkDir)
+	return tooloutput.BashModelResult(ctx, e.workspace, workDir, tooloutput.BashStreams{
+		Stdout: out.Stdout, Stderr: out.Stderr, ExitCode: out.ExitCode,
+	}, runErr)
+}
+
+func (e *bashExecutor) run(ctx context.Context, command string, perCallTimeout *float64) (ShellOutput, error) {
+	limit, err := tooloutput.ResolveRunTimeout(perCallTimeout, e.cfg.TimeoutSeconds)
+	if err != nil {
+		return ShellOutput{}, err
+	}
+
+	runCtx := ctx
+	var cancel context.CancelFunc
+	if limit > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, limit)
+		defer cancel()
+	}
 
 	workDir, err := e.workspace.Resolve(ctx, e.relWorkDir)
 	if err != nil {
@@ -136,23 +155,30 @@ func (e *bashExecutor) run(ctx context.Context, command string) (ShellOutput, er
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	exitCode := 0
+	out := ShellOutput{
+		Stdout: stdout.String(),
+		Stderr: stderr.String(),
+	}
 	if err != nil {
+		if runCtx.Err() != nil {
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				out.ExitCode = 1
+				secs := float64(limit) / float64(time.Second)
+				if perCallTimeout != nil {
+					secs = *perCallTimeout
+				} else if e.cfg.TimeoutSeconds > 0 {
+					secs = float64(e.cfg.TimeoutSeconds)
+				}
+				return out, &tooloutput.TimeoutError{Seconds: secs}
+			}
+			return out, fmt.Errorf("%w: %w", tooloutput.ErrShellCancelled, runCtx.Err())
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		} else if runCtx.Err() != nil {
-			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-				return ShellOutput{}, fmt.Errorf("shell timeout after %s", e.timeout)
-			}
-			return ShellOutput{}, fmt.Errorf("shell cancelled: %w", runCtx.Err())
-		} else {
-			return ShellOutput{}, err
+			out.ExitCode = exitErr.ExitCode()
+			return out, nil
 		}
+		return ShellOutput{}, err
 	}
-	return ShellOutput{
-		ExitCode: exitCode,
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-	}, nil
+	return out, nil
 }

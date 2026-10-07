@@ -9,10 +9,18 @@ import (
 )
 
 type toolImpl[In, Out any] struct {
-	name        string
-	description string
-	schema      JSONSchema
-	handler     func(context.Context, In) (Out, error)
+	name          string
+	description   string
+	schema        JSONSchema
+	executionMode ToolExecutionMode
+	handler       func(context.Context, In) (Out, error)
+}
+
+func (t *toolImpl[In, Out]) ExecutionMode() ToolExecutionMode {
+	if t.executionMode == "" {
+		return ToolExecutionParallel
+	}
+	return t.executionMode
 }
 
 func (t *toolImpl[In, Out]) Name() string        { return t.name }
@@ -45,11 +53,12 @@ func (t *toolImpl[In, Out]) Call(ctx context.Context, input json.RawMessage) (st
 }
 
 type ToolBuilder[In, Out any] struct {
-	name        string
-	description string
-	schema      JSONSchema
-	schemaErr   error
-	handler     func(context.Context, In) (Out, error)
+	name          string
+	description   string
+	schema        JSONSchema
+	schemaErr     error
+	executionMode ToolExecutionMode
+	handler       func(context.Context, In) (Out, error)
 }
 
 // NewTool starts building a typed tool plugin. The input schema is inferred
@@ -76,6 +85,12 @@ func (b *ToolBuilder[In, Out]) Schema(schema JSONSchema) *ToolBuilder[In, Out] {
 	return b
 }
 
+// Sequential marks the tool as non-parallelizable within a multi-tool assistant step.
+func (b *ToolBuilder[In, Out]) Sequential() *ToolBuilder[In, Out] {
+	b.executionMode = ToolExecutionSequential
+	return b
+}
+
 func (b *ToolBuilder[In, Out]) Build() (Tool, error) {
 	if b.name == "" {
 		return nil, fmt.Errorf("tool name is required")
@@ -87,10 +102,11 @@ func (b *ToolBuilder[In, Out]) Build() (Tool, error) {
 		return nil, fmt.Errorf("tool %s input schema: %w", b.name, b.schemaErr)
 	}
 	return &toolImpl[In, Out]{
-		name:        b.name,
-		description: b.description,
-		schema:      b.schema,
-		handler:     b.handler,
+		name:          b.name,
+		description:   b.description,
+		schema:        b.schema,
+		executionMode: b.executionMode,
+		handler:       b.handler,
 	}, nil
 }
 

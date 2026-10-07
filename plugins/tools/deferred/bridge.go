@@ -45,9 +45,6 @@ func normalizeCalls(input json.RawMessage) ([]callEntry, error) {
 			calls[i].Arguments = json.RawMessage(`{}`)
 		}
 	}
-	if len(calls) > 1 {
-		return nil, fmt.Errorf("tool_call supports one local tool per call in this version")
-	}
 	return calls, nil
 }
 

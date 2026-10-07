@@ -43,6 +43,9 @@ type ToolSpec struct {
 	Name        string
 	Description string
 	InputSchema JSONSchema
+	// ExecutionMode is parallel or sequential within a multi-tool assistant step.
+	// Filled by tools/runtime Visible(); omitted on wire defaults to parallel when scheduling.
+	ExecutionMode ToolExecutionMode
 }
 
 type ToolCall struct {

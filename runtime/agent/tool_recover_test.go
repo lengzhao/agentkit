@@ -29,6 +29,17 @@ func (failCallTool) Call(context.Context, json.RawMessage) (string, error) {
 	return "", errors.New("invalid tool input: bad field")
 }
 
+type stubBash struct{}
+
+func (stubBash) Name() string        { return "bash" }
+func (stubBash) Description() string { return "serial stub" }
+func (stubBash) InputSchema() agentkit.JSONSchema {
+	return agentkit.JSONSchema{Type: "object"}
+}
+func (stubBash) Call(context.Context, json.RawMessage) (string, error) {
+	return "ok", nil
+}
+
 type slowTool struct{}
 
 func (slowTool) Name() string        { return "slow" }
@@ -225,7 +236,8 @@ func TestRunTurnInterruptedResultsOnAbortMidBatch(t *testing.T) {
 	steps := []llm.ScriptedStep{{
 		ToolCalls: []agentkit.ToolCall{
 			{ID: "c1", Name: "fail_call", Input: json.RawMessage(`{}`)},
-			{ID: "c2", Name: "fail_call", Input: json.RawMessage(`{}`)},
+			{ID: "c2", Name: "bash", Input: json.RawMessage(`{"command":"true"}`)},
+			{ID: "c3", Name: "fail_call", Input: json.RawMessage(`{}`)},
 		},
 	}}
 	dir := t.TempDir()
@@ -243,7 +255,7 @@ func TestRunTurnInterruptedResultsOnAbortMidBatch(t *testing.T) {
 	}
 	hook := &abortAfterFirstToolHook{}
 	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{failCallTool{}},
+		Tools: []agentkit.Tool{failCallTool{}, stubBash{}},
 		Hooks: hook,
 	})
 	if err != nil {
@@ -298,5 +310,8 @@ func TestRunTurnInterruptedResultsOnAbortMidBatch(t *testing.T) {
 	}
 	if byID["c2"].Content != derive.InterruptedToolResultText {
 		t.Fatalf("c2 result = %#v, want interrupted", byID["c2"])
+	}
+	if byID["c3"].Content != derive.InterruptedToolResultText {
+		t.Fatalf("c3 result = %#v, want interrupted", byID["c3"])
 	}
 }

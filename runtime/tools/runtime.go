@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -206,9 +205,10 @@ func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 		tool := r.exposed[exposedName]
 		available[exposedName] = true
 		specs = append(specs, agentkit.ToolSpec{
-			Name:        exposedName,
-			Description: tool.Description(),
-			InputSchema: tool.InputSchema(),
+			Name:          exposedName,
+			Description:   tool.Description(),
+			InputSchema:   tool.InputSchema(),
+			ExecutionMode: specExecutionMode(tool),
 		})
 	}
 	r.filter.warnUnknownAllowNames(available, &r.filterWarnOnce)
@@ -248,95 +248,11 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 }
 
 func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID agentkit.SessionID, agentID agentkit.AgentID) (agentkit.ToolResult, error) {
-	if r.filter.active() && !r.filter.allows(call.Name) {
-		return filteredOutResult(call), nil
+	result, call, runBody, err := r.preflightTool(ctx, call, sessionID, agentID)
+	if err != nil || !runBody {
+		return result, err
 	}
-
-	tool, ok := r.lookupTool(call.Name)
-	if !ok {
-		if err := r.refreshDynamic(ctx); err != nil {
-			return agentkit.ToolResult{}, fmt.Errorf("refresh dynamic tools: %w", err)
-		}
-		tool, ok = r.lookupTool(call.Name)
-		if !ok {
-			return deniedResult(call, "tool not found", "", nil), nil
-		}
-	}
-
-	decision, err := r.evaluatePolicies(ctx, call)
-	if err != nil {
-		return agentkit.ToolResult{}, agentkit.AbortTurn(err)
-	}
-	switch decision.Kind {
-	case agentkit.DecisionDeny:
-		return deniedResult(call, decision.Reason, "", decision.Audit), nil
-	case agentkit.DecisionAsk:
-		allowed, reason, guidance, err := r.resolveAskDecision(ctx, &call, decision.Reason)
-		if err != nil {
-			return agentkit.ToolResult{}, agentkit.AbortTurn(err)
-		}
-		if !allowed {
-			if reason == "" {
-				reason = "approval denied"
-			}
-			return deniedResult(call, reason, guidance, nil), nil
-		}
-	}
-
-	if r.hooks != nil {
-		if err := r.hooks.BeforeTool(ctx, &call); err != nil {
-			return agentkit.ToolResult{}, agentkit.AbortTurn(err)
-		}
-	}
-
-	execCtx := ctx
-	cancel := func() {}
-	if timeout := r.timeoutFor(call.Name); timeout > 0 {
-		execCtx, cancel = context.WithTimeout(ctx, timeout)
-	}
-	defer cancel()
-
-	slog.Info("tool execute", "tool", call.Name, "session_id", sessionID, "agent_id", agentID)
-	started := time.Now()
-	output, err := tool.Call(execCtx, call.Input)
-	elapsed := time.Since(started)
-	if err != nil {
-		slog.Error("tool failed",
-			"tool", call.Name,
-			"session_id", sessionID,
-			"agent_id", agentID,
-			"duration", elapsed,
-			"err", err,
-		)
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(execCtx.Err(), context.DeadlineExceeded) {
-			return timeoutResult(call), nil
-		}
-		return agentkit.ToolResult{}, err
-	}
-	if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
-		slog.Warn("tool timed out",
-			"tool", call.Name,
-			"session_id", sessionID,
-			"agent_id", agentID,
-			"duration", elapsed,
-		)
-		return timeoutResult(call), nil
-	}
-	result := agentkit.ResultFromCall(call, output)
-	slog.Info("tool done",
-		"tool", call.Name,
-		"session_id", sessionID,
-		"agent_id", agentID,
-		"duration", elapsed,
-		"output_bytes", len(result.Content),
-	)
-
-	if r.hooks != nil {
-		if err := r.hooks.AfterTool(ctx, &result); err != nil {
-			return agentkit.ToolResult{}, agentkit.AbortTurn(err)
-		}
-	}
-	return result, nil
+	return r.runToolBody(ctx, call, sessionID, agentID)
 }
 
 func (r *Runtime) lookupTool(callName string) (agentkit.Tool, bool) {

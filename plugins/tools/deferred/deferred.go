@@ -141,6 +141,21 @@ func (d *Runtime) bridgesActive(ctx context.Context) bool {
 	return len(split.Deferrable) > 0 && d.cfg.disclosureActive(split.Deferrable, 0)
 }
 
+func (d *Runtime) PreflightTool(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, agentkit.ToolCall, bool, error) {
+	if batch, ok := d.inner.(agentkit.ToolBatchRuntime); ok {
+		return batch.PreflightTool(ctx, call)
+	}
+	result, err := d.Execute(ctx, call)
+	return result, call, false, err
+}
+
+func (d *Runtime) RunToolBody(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	if batch, ok := d.inner.(agentkit.ToolBatchRuntime); ok {
+		return batch.RunToolBody(ctx, call)
+	}
+	return agentkit.ToolResult{}, fmt.Errorf("tool runtime does not support batched body execution")
+}
+
 func (d *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 	if !d.bridgesActive(ctx) {
 		return d.inner.Execute(ctx, call)

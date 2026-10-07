@@ -111,6 +111,7 @@ func TestToolInputSchemas(t *testing.T) {
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
 					"command": pathProp("Shell command to execute"),
+					"timeout": {Type: "number", Description: "Timeout in seconds (optional, no default timeout)"},
 				},
 				Required: []string{"command"},
 			},

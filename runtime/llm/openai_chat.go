@@ -51,6 +51,9 @@ func (s *chatStream) Recv() (agentkit.LLMEvent, error) {
 			continue
 		}
 		choice := chunk.Choices[0]
+		if choice.FinishReason != "" {
+			s.acc.setStopReason(assistantStopReasonFromOpenAI(choice.FinishReason))
+		}
 		delta := choice.Delta
 		if delta.ReasoningContent != "" {
 			s.acc.appendThinkingDelta(delta.ReasoningContent)

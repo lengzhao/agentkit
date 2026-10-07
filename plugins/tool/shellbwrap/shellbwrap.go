@@ -23,6 +23,7 @@ import (
 	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/subprocess"
+	"github.com/lengzhao/agentkit/runtime/tooloutput"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -71,14 +72,14 @@ type Deps struct {
 
 // ShellInput is the bash tool input (same schema as tool/shell-bash).
 type ShellInput struct {
-	Command string `json:"command" jsonschema:"Shell command to execute"`
+	Command string   `json:"command" jsonschema:"Shell command to execute"`
+	Timeout *float64 `json:"timeout,omitempty" jsonschema:"Timeout in seconds (optional, no default timeout)"`
 }
 
-// ShellOutput is the bash tool output (same schema as tool/shell-bash).
-type ShellOutput struct {
-	ExitCode int    `json:"exitCode"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
+type shellOutput struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
 func init() {
@@ -87,7 +88,7 @@ func init() {
 
 type executor struct {
 	relWorkDir  string
-	timeout     time.Duration
+	cfg         Config
 	workspace   workspace.Service
 	credentials credentials.Store
 	sandbox     capsandbox.Service
@@ -124,16 +125,21 @@ func New(cfg Config, d Deps) (agentkit.Tool, error) {
 	}
 	ex := &executor{
 		relWorkDir:  cfg.WorkDir,
-		timeout:     time.Duration(cfg.TimeoutSeconds) * time.Second,
+		cfg:         cfg,
 		workspace:   d.Workspace,
 		credentials: d.Credentials,
 		sandbox:     d.Sandbox,
 		commands:    commands,
 		maxOutput:   cfg.MaxOutputBytes,
 	}
-	tool, err := agentkit.NewTool[ShellInput, ShellOutput]("bash", func(ctx context.Context, input ShellInput) (ShellOutput, error) {
-		return ex.run(ctx, input.Command)
-	}).Description("Execute a bash command in the workspace (default cwd is the absolute agent work directory). Prefer absolute paths in commands and when cd-ing to skill or global directories.").Build()
+	tool, err := agentkit.NewTool[ShellInput, string]("bash", func(ctx context.Context, input ShellInput) (string, error) {
+		out, runErr := ex.run(ctx, input.Command, input.Timeout)
+		workDir, _ := d.Workspace.Resolve(ctx, cfg.WorkDir)
+		return tooloutput.BashModelResult(ctx, d.Workspace, workDir, tooloutput.BashStreams{
+			Stdout: out.Stdout, Stderr: out.Stderr, ExitCode: out.ExitCode,
+		}, runErr)
+	}).Description(tooloutput.BashToolDescription()).
+		Sequential().Build()
 	if err != nil {
 		return nil, err
 	}
@@ -173,43 +179,34 @@ func (c slashCommand) CommandExec(ctx context.Context, args string) (string, err
 	if command == "" {
 		return "", fmt.Errorf("usage: /shell <command>")
 	}
-	out, err := c.exec.run(ctx, command)
+	out, err := c.exec.run(ctx, command, nil)
 	if err != nil {
+		if te, ok := tooloutput.AsTimeoutError(err); ok {
+			return "", fmt.Errorf("shell timeout after %g seconds", te.Seconds)
+		}
 		return "", err
 	}
-	return formatShellOutput(out), nil
+	return tooloutput.SlashCommandText(out.Stdout, out.Stderr, out.ExitCode), nil
 }
 
-func formatShellOutput(out ShellOutput) string {
-	var b strings.Builder
-	if out.Stdout != "" {
-		b.WriteString(out.Stdout)
+func (e *executor) run(ctx context.Context, command string, perCallTimeout *float64) (shellOutput, error) {
+	limit, err := tooloutput.ResolveRunTimeout(perCallTimeout, e.cfg.TimeoutSeconds)
+	if err != nil {
+		return shellOutput{}, err
 	}
-	if out.Stderr != "" {
-		if b.Len() > 0 && !strings.HasSuffix(out.Stdout, "\n") {
-			b.WriteByte('\n')
-		}
-		b.WriteString(out.Stderr)
+	runCtx := ctx
+	var cancel context.CancelFunc
+	if limit > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, limit)
+		defer cancel()
 	}
-	if out.ExitCode != 0 {
-		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n") {
-			b.WriteByte('\n')
-		}
-		fmt.Fprintf(&b, "[exit %d]", out.ExitCode)
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (e *executor) run(ctx context.Context, command string) (ShellOutput, error) {
-	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
 
 	workDir, err := e.workspace.Resolve(ctx, e.relWorkDir)
 	if err != nil {
-		return ShellOutput{}, err
+		return shellOutput{}, err
 	}
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return ShellOutput{}, fmt.Errorf("mkdir work dir: %w", err)
+		return shellOutput{}, fmt.Errorf("mkdir work dir: %w", err)
 	}
 	if real, err := filepath.EvalSymlinks(workDir); err == nil {
 		workDir = real
@@ -218,7 +215,7 @@ func (e *executor) run(ctx context.Context, command string) (ShellOutput, error)
 	argv := []string{"bash", "-lc", command}
 	argv, err = e.sandbox.WrapArgv(ctx, workDir, argv)
 	if err != nil {
-		return ShellOutput{}, err
+		return shellOutput{}, err
 	}
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	subprocess.PrepareExecCmd(cmd)
@@ -231,31 +228,37 @@ func (e *executor) run(ctx context.Context, command string) (ShellOutput, error)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	err = cmd.Run()
-	exitCode := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		} else if runCtx.Err() != nil {
-			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-				return ShellOutput{}, fmt.Errorf("shell timeout after %s", e.timeout)
-			}
-			return ShellOutput{}, fmt.Errorf("shell cancelled: %w", runCtx.Err())
-		} else {
-			return ShellOutput{}, err
-		}
-	}
 	stderrText := stderr.String()
-	out := ShellOutput{
-		ExitCode: exitCode,
-		Stdout:   stdout.String(),
-		Stderr:   stderrText,
+	out := shellOutput{
+		Stdout: stdout.String(),
+		Stderr: stderrText,
 	}
 	if stdout.truncated {
 		out.Stdout += "\n...[stdout truncated]"
 	}
 	if stderr.truncated {
 		out.Stderr += "\n...[stderr truncated]"
+	}
+	if err != nil {
+		if runCtx.Err() != nil {
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				out.ExitCode = 1
+				secs := float64(limit) / float64(time.Second)
+				if perCallTimeout != nil {
+					secs = *perCallTimeout
+				} else if e.cfg.TimeoutSeconds > 0 {
+					secs = float64(e.cfg.TimeoutSeconds)
+				}
+				return out, &tooloutput.TimeoutError{Seconds: secs}
+			}
+			return out, fmt.Errorf("%w: %w", tooloutput.ErrShellCancelled, runCtx.Err())
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			out.ExitCode = exitErr.ExitCode()
+			return out, nil
+		}
+		return shellOutput{}, err
 	}
 	return out, nil
 }

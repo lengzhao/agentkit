@@ -97,16 +97,44 @@ func (f *filteredTools) Visible(ctx context.Context) ([]agentkit.ToolSpec, error
 }
 
 func (f *filteredTools) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	if denied, ok := f.guardCall(call); ok {
+		return denied, nil
+	}
+	return f.inner.Execute(ctx, call)
+}
+
+func (f *filteredTools) PreflightTool(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, agentkit.ToolCall, bool, error) {
+	if denied, ok := f.guardCall(call); ok {
+		return denied, call, false, nil
+	}
+	if batch, ok := f.inner.(agentkit.ToolBatchRuntime); ok {
+		return batch.PreflightTool(ctx, call)
+	}
+	result, err := f.inner.Execute(ctx, call)
+	return result, call, false, err
+}
+
+func (f *filteredTools) RunToolBody(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	if denied, ok := f.guardCall(call); ok {
+		return denied, nil
+	}
+	if batch, ok := f.inner.(agentkit.ToolBatchRuntime); ok {
+		return batch.RunToolBody(ctx, call)
+	}
+	return agentkit.ToolResult{}, fmt.Errorf("tool runtime does not support batched body execution")
+}
+
+func (f *filteredTools) guardCall(call agentkit.ToolCall) (agentkit.ToolResult, bool) {
 	if len(f.allow) > 0 && !f.allow[call.Name] {
-		return denyToolCall(call, "not in subagent tool allowlist"), nil
+		return denyToolCall(call, "not in subagent tool allowlist"), true
 	}
 	if call.Name == "skill" && len(f.skillAllow) > 0 {
 		name, err := parseSkillToolName(call.Input)
 		if err != nil || !f.skillAllow[strings.ToLower(name)] {
-			return denyToolCall(call, "skill not available to this subagent"), nil
+			return denyToolCall(call, "skill not available to this subagent"), true
 		}
 	}
-	return f.inner.Execute(ctx, call)
+	return agentkit.ToolResult{}, false
 }
 
 func denyToolCall(call agentkit.ToolCall, reason string) agentkit.ToolResult {

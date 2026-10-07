@@ -106,6 +106,8 @@ type EventSeq int64
 const (
 	AssistantStopReasonError   = "error"
 	AssistantStopReasonAborted = "aborted"
+	// AssistantStopReasonLength means output hit the token limit; tool args may be truncated.
+	AssistantStopReasonLength = "length"
 )
 
 // ModelMessage is model-visible content only. Session routing lives on event
