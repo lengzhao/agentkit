@@ -16,14 +16,29 @@ import (
 func (r *Runtime) PreflightTool(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, agentkit.ToolCall, bool, error) {
 	sessionID := rctx.SessionIDFromContext(ctx)
 	agentID := rctx.AgentIDFromContext(ctx)
-	return r.preflightTool(ctx, call, sessionID, agentID)
+	result, call, runBody, err := r.preflightTool(ctx, call, sessionID, agentID)
+	if err != nil {
+		result, err = r.withToolObservation(ctx, call, func(ctx context.Context) (agentkit.ToolResult, error) {
+			return result, err
+		})
+		return result, call, false, err
+	}
+	if !runBody {
+		result, err = r.withToolObservation(ctx, call, func(ctx context.Context) (agentkit.ToolResult, error) {
+			return result, nil
+		})
+		return result, call, false, err
+	}
+	return result, call, true, nil
 }
 
 // RunToolBody executes the tool body and AfterTool. Call only after a successful PreflightTool.
 func (r *Runtime) RunToolBody(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 	sessionID := rctx.SessionIDFromContext(ctx)
 	agentID := rctx.AgentIDFromContext(ctx)
-	return r.runToolBody(ctx, call, sessionID, agentID)
+	return r.withToolObservation(ctx, call, func(ctx context.Context) (agentkit.ToolResult, error) {
+		return r.runToolBody(ctx, call, sessionID, agentID)
+	})
 }
 
 func (r *Runtime) preflightTool(ctx context.Context, call agentkit.ToolCall, sessionID agentkit.SessionID, agentID agentkit.AgentID) (agentkit.ToolResult, agentkit.ToolCall, bool, error) {

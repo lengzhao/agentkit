@@ -218,7 +218,12 @@ func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
 func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 	sessionID := rctx.SessionIDFromContext(ctx)
 	agentID := rctx.AgentIDFromContext(ctx)
+	return r.withToolObservation(ctx, call, func(ctx context.Context) (agentkit.ToolResult, error) {
+		return r.execute(ctx, call, sessionID, agentID)
+	})
+}
 
+func (r *Runtime) withToolObservation(ctx context.Context, call agentkit.ToolCall, run func(context.Context) (agentkit.ToolResult, error)) (agentkit.ToolResult, error) {
 	ctx = context.WithValue(ctx, agentkit.KeyToolCallID, call.ID)
 	ctx, endObservation := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name:  "tool." + call.Name,
@@ -234,7 +239,7 @@ func (r *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 		endObservation(observationEnd)
 	}()
 
-	result, err := r.execute(ctx, call, sessionID, agentID)
+	result, err := run(ctx)
 	if err != nil {
 		if agentkit.IsTurnAbort(err) {
 			observationEnd.Err = err

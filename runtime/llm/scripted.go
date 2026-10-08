@@ -60,7 +60,7 @@ func NewScripted(cfg ScriptedConfig) (agentkit.LLMProvider, error) {
 
 func (p *Scripted) Name() string { return "scripted" }
 
-func (p *Scripted) Stream(_ context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
+func (p *Scripted) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.LLMStream, error) {
 	p.mu.Lock()
 	if p.idx >= len(p.steps) {
 		p.mu.Unlock()
@@ -78,8 +78,10 @@ func (p *Scripted) Stream(_ context.Context, req agentkit.LLMRequest) (agentkit.
 		ToolCalls:  step.ToolCalls,
 		StopReason: step.StopReason,
 	}
-	if req.Model != "" {
-		_ = req.Model
+	if m := strings.TrimSpace(req.Model); m != "" {
+		NoteActualModel(ctx, m)
+	} else {
+		NoteActualModel(ctx, p.model)
 	}
 	return &scriptedStream{msg: msg}, nil
 }

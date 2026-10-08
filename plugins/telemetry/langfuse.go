@@ -309,15 +309,34 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
 		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
+		plannedModel := meta.Model
 		ctx = l.telemetry.WithToolParent(ctx, created.ID)
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
+			md := l.observationMetadataByID(traceID, created.ID, obsMetadata)
+			planned := strings.TrimSpace(plannedModel)
+			if planned == "" {
+				planned = strings.TrimSpace(md["model"])
+			}
+			actual := strings.TrimSpace(end.ActualModel)
+			if actual == "" {
+				actual = planned
+			}
+			if actual != "" {
+				md["model"] = actual
+			}
+			if planned != "" && actual != "" && planned != actual {
+				md["model_planned"] = planned
+			}
 			update := &model.Generation{
 				ID:       created.ID,
 				TraceID:  traceID,
 				Output:   l.preparePayload(end.Output, l.redactOutputs),
 				EndTime:  &endTime,
-				Metadata: stringMapToM(l.observationMetadataByID(traceID, created.ID, obsMetadata)),
+				Metadata: stringMapToM(md),
+			}
+			if actual != "" {
+				update.Model = actual
 			}
 			if !end.CompletionStartTime.IsZero() {
 				completionStart := end.CompletionStartTime.UTC()
@@ -484,6 +503,9 @@ func (l *Langfuse) traceMetadata(meta captelemetry.TurnMeta) map[string]string {
 	}
 	if meta.AgentID != "" {
 		out["agent_id"] = meta.AgentID
+	}
+	if meta.Model != "" {
+		out["model"] = meta.Model
 	}
 	if meta.PlatformID != "" {
 		out["platform_id"] = meta.PlatformID

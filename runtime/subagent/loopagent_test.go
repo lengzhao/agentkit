@@ -20,12 +20,14 @@ import (
 
 type storeRecordingAgent struct {
 	id      agentkit.AgentID
+	model   string
 	summary string
 	err     error
 	store   agentkit.SessionStore
 }
 
 func (a *storeRecordingAgent) ID() agentkit.AgentID { return a.id }
+func (a *storeRecordingAgent) ConfiguredModel() string { return a.model }
 
 func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {
 	if a.err != nil {
@@ -56,7 +58,7 @@ func newLoopSpawnerWithTelemetry(t *testing.T, async bool, summary string, telem
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := &storeRecordingAgent{id: "cursor", summary: summary, store: store}
+	agent := &storeRecordingAgent{id: "cursor", model: "cursor-model", summary: summary, store: store}
 	deps := LoopAgentDeps{
 		SessionStore: store,
 		Agents:       []agentkit.Agent{agent},
@@ -274,6 +276,9 @@ func TestLoopAgentAsyncRecordsSeparateTurnTrace(t *testing.T) {
 	turn := turns[0]
 	if turn.Meta.AgentID != "cursor" {
 		t.Fatalf("agent id = %q, want cursor", turn.Meta.AgentID)
+	}
+	if turn.Meta.Model != "cursor-model" {
+		t.Fatalf("model = %q, want cursor-model", turn.Meta.Model)
 	}
 	if turn.Meta.SessionID != result.Session {
 		t.Fatalf("session id = %q, want %q", turn.Meta.SessionID, result.Session)

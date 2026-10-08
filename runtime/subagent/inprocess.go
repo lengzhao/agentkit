@@ -145,7 +145,6 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if !ok {
 		return subagent.Result{}, fmt.Errorf("unknown subagent %q; available: %s", name, namesOf(defs))
 	}
-
 	parentID := rctx.SessionIDFromContext(ctx)
 	if parentID == "" {
 		return subagent.Result{}, fmt.Errorf("delegation requires a parent session in context")
@@ -238,9 +237,11 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		defer cancel()
 	}
 
+	obsModel := inprocessTelemetryModel(childCtx, s.store, s.workspace, childID, child.ID(), def)
 	childCtx, endSubagentObs := telemetry.BeginObservation(childCtx, telemetry.ObservationMetaFromContext(childCtx, captelemetry.ObservationMeta{
 		Name:  "subagent." + def.Name,
 		Kind:  captelemetry.KindSpan,
+		Model: obsModel,
 		Input: task,
 		Scope: true,
 		Attributes: map[string]string{

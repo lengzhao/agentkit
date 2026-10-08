@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/plugins/tool/finish"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -18,6 +19,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -252,6 +254,52 @@ func countEventType(events []agentkit.SessionEvent, typ agentkit.EventType) int 
 		}
 	}
 	return n
+}
+
+func TestInprocessSubagentSpanRecordsModel(t *testing.T) {
+	t.Parallel()
+
+	const defWithModel = `---
+name: researcher
+description: read-only research
+model: sub-gpt-4
+tools: [finish]
+---
+You are the research subagent.
+`
+	rec := &telemetry.RecordingExporter{}
+	f := newFixture(t, map[string]string{"researcher.md": defWithModel}, []llm.ScriptedStep{
+		{Text: "ok"},
+	})
+	ctx, endTurn := rec.BeginTurn(f.ctx, captelemetry.TurnMeta{
+		TurnID:    "turn-1",
+		SessionID: string(f.parentID),
+	})
+	defer endTurn(captelemetry.TurnEnd{})
+	ctx, endDelegate := rec.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name: "tool.delegate",
+		Kind: captelemetry.KindTool,
+	})
+	defer endDelegate(captelemetry.ObservationEnd{})
+
+	if _, err := f.spawner.Run(ctx, subagent.Request{Agent: "researcher", Task: "answer"}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	_, observations, _ := rec.Snapshot()
+	var span telemetry.RecordedObservation
+	for _, obs := range observations {
+		if obs.Meta.Name == "subagent.researcher" {
+			span = obs
+			break
+		}
+	}
+	if span.ID == "" {
+		t.Fatal("missing subagent.researcher observation")
+	}
+	if span.Meta.Model != "sub-gpt-4" {
+		t.Fatalf("model = %q, want sub-gpt-4", span.Meta.Model)
+	}
 }
 
 func TestRunFallsBackToLastAssistantText(t *testing.T) {

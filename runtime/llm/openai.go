@@ -220,6 +220,7 @@ func (p *OpenAI) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.
 	if model == "" {
 		model = p.model
 	}
+	NoteActualModel(ctx, model)
 	backend, err := p.backend()
 	if err != nil {
 		return nil, err

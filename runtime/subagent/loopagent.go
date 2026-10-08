@@ -464,7 +464,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 	// permission broker while the parent turn is in delegate (sync or async child).
 	childCtx = rttelemetry.WithExporter(childCtx, s.telemetry)
 
-	turnMeta := s.childTurnMeta(childCtx, ag, task, childID)
+	turnMeta := s.childTurnMeta(childCtx, def, ag, task, childID)
 	childCtx, endTurn := rttelemetry.BeginTurn(childCtx, turnMeta)
 	childCtx = rttelemetry.WithTurnAccum(childCtx)
 	defer func() {
@@ -533,7 +533,7 @@ func (s *LoopAgentSpawner) timeoutFor(def subagent.Definition) time.Duration {
 	return s.defaultTO
 }
 
-func (s *LoopAgentSpawner) childTurnMeta(ctx context.Context, ag agentkit.Agent, task string, childID agentkit.SessionID) captelemetry.TurnMeta {
+func (s *LoopAgentSpawner) childTurnMeta(ctx context.Context, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID) captelemetry.TurnMeta {
 	env := rctx.EnvelopeFromContext(ctx)
 	msg := agentkit.ModelMessage{
 		Role:    "user",
@@ -544,6 +544,7 @@ func (s *LoopAgentSpawner) childTurnMeta(ctx context.Context, ag agentkit.Agent,
 		SessionID:         string(childID),
 		DeliverySessionID: string(rctx.DeliveryFromEnvelope(env)),
 		AgentID:           string(ag.ID()),
+		Model:             telemetryModel(def, ag),
 		PlatformID:        env.Route.Platform,
 		UserID:            env.Actor.UserID,
 		Input:             rttelemetry.FormatMessage(msg),

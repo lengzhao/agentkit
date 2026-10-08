@@ -58,3 +58,48 @@ func TestExecuteRecordsToolObservation(t *testing.T) {
 		t.Fatalf("kind = %q", observations[0].Meta.Kind)
 	}
 }
+
+func TestRunToolBodyRecordsToolObservation(t *testing.T) {
+	t.Parallel()
+
+	rec := &telemetry.RecordingExporter{}
+	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{echoTool{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, ok := toolRT.(agentkit.ToolBatchRuntime)
+	if !ok {
+		t.Fatal("tools runtime must implement ToolBatchRuntime")
+	}
+
+	ctx := telemetry.WithExporter(context.Background(), rec)
+	ctx = rctx.ApplyEnvelopeToContext(ctx, agentkit.TurnEnvelope{Conversation: "cli:default", Workspace: "cli:default"})
+	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("coder"))
+
+	_, call, runBody, err := rt.PreflightTool(ctx, agentkit.ToolCall{
+		ID:    "call-1",
+		Name:  "echo",
+		Input: []byte(`{"msg":"hi"}`),
+	})
+	if err != nil || !runBody {
+		t.Fatalf("preflight: runBody=%v err=%v", runBody, err)
+	}
+
+	result, err := rt.RunToolBody(ctx, call)
+	if err != nil {
+		t.Fatalf("run body: %v", err)
+	}
+	if result.Content == "" {
+		t.Fatal("expected tool result")
+	}
+
+	_, observations, _ := rec.Snapshot()
+	if len(observations) != 1 {
+		t.Fatalf("observations = %d, want 1", len(observations))
+	}
+	if observations[0].Meta.Name != "tool.echo" {
+		t.Fatalf("name = %q", observations[0].Meta.Name)
+	}
+}

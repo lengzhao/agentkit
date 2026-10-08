@@ -478,6 +478,7 @@ type stepOutcome struct {
 
 func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, model string, pos stepPosition) (stepOutcome, error) {
 	stepStarted := time.Now()
+	ctx = rtllm.WithActualModelSlot(ctx)
 	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
 		Name: "agent.step.prep",
 		Kind: captelemetry.KindSpan,
@@ -533,6 +534,9 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	}))
 	var observationEnd captelemetry.ObservationEnd
 	defer func() {
+		if actual := rtllm.ActualModelFrom(ctx); actual != "" {
+			observationEnd.ActualModel = actual
+		}
 		endObservation(observationEnd)
 	}()
 
@@ -603,12 +607,19 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 	for i, call := range assistant.ToolCalls {
 		toolNames[i] = call.Name
 	}
+	logModel := model
+	if actual := rtllm.ActualModelFrom(ctx); actual != "" {
+		logModel = actual
+	}
 	attrs := []any{
 		"agent_id", a.id,
 		"session_id", sess.ID(),
-		"model", model,
+		"model", logModel,
 		"tool_calls", len(assistant.ToolCalls),
 		"duration", time.Since(stepStarted),
+	}
+	if logModel != model && model != "" {
+		attrs = append(attrs, "model_planned", model)
 	}
 	if len(toolNames) > 0 {
 		attrs = append(attrs, "tools", toolNames)

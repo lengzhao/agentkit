@@ -31,6 +31,8 @@ type TurnMeta struct {
 	WorkspaceKey string
 	// AttachmentSources lists inbound attachment paths (comma-separated, no base64).
 	AttachmentSources string
+	// Model is the agent's configured model id for trace metadata (Langfuse trace).
+	Model string
 	Input             string
 }
 
@@ -78,6 +80,9 @@ type ObservationEnd struct {
 	Output string
 	Err    error
 	Usage  *Usage
+	// ActualModel is the catalog model id that served the call (after router/fallback/provider default).
+	// When set on llm.generation, exporters should prefer this over ObservationMeta.Model (planned).
+	ActualModel string
 	// CompletionStartTime is when the model first produced output (TTFT boundary).
 	// Zero means unavailable, e.g. the stream ended before any content arrived.
 	CompletionStartTime time.Time

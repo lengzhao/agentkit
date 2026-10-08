@@ -141,6 +141,7 @@ func (f *Fallback) Stream(ctx context.Context, req agentkit.LLMRequest) (agentki
 		attemptReq.Model = target.model
 		stream, err := target.provider.Stream(ctx, attemptReq)
 		if err == nil {
+			NoteActualModel(ctx, target.model)
 			if i > 0 {
 				slog.Info("llm fallback: switched provider/model",
 					"provider", target.provider.Name(),
@@ -265,6 +266,7 @@ func (s *fallbackStream) openNextTarget() error {
 		attemptReq.Model = target.model
 		stream, err := target.provider.Stream(s.ctx, attemptReq)
 		if err == nil {
+			NoteActualModel(s.ctx, target.model)
 			if s.targetIdx > 0 {
 				slog.Info("llm fallback: switched provider/model",
 					"provider", target.provider.Name(),

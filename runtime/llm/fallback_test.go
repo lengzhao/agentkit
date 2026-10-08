@@ -128,7 +128,7 @@ func TestFallbackUsesPrimaryModelOnSuccess(t *testing.T) {
 func TestFallbackRecordsTraceOnSwitch(t *testing.T) {
 	t.Parallel()
 	rec := &telemetry.RecordingExporter{}
-	ctx := telemetry.WithExporter(context.Background(), rec)
+	ctx := WithActualModelSlot(telemetry.WithExporter(context.Background(), rec))
 
 	primary := &stubProvider{name: "primary", failOpen: []bool{true}}
 	secondary := &stubProvider{name: "secondary", replyText: "backup-ok"}
@@ -167,6 +167,9 @@ func TestFallbackRecordsTraceOnSwitch(t *testing.T) {
 	}
 	if ev.Attrs["from_model"] != "gpt-5.4" || ev.Attrs["to_model"] != "gpt-4o" {
 		t.Fatalf("model attrs = %v", ev.Attrs)
+	}
+	if got := ActualModelFrom(ctx); got != "gpt-4o" {
+		t.Fatalf("actual model = %q, want gpt-4o after fallback", got)
 	}
 }
 

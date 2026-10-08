@@ -13,10 +13,12 @@ import (
 
 type stubAgent struct {
 	id      agentkit.AgentID
+	model   string
 	runTurn func(context.Context, agentkit.TurnInput) error
 }
 
 func (a stubAgent) ID() agentkit.AgentID { return a.id }
+func (a stubAgent) ConfiguredModel() string { return a.model }
 func (a stubAgent) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	if a.runTurn != nil {
 		return a.runTurn(ctx, input)
@@ -29,7 +31,7 @@ func TestDispatchRecordsTelemetryTurn(t *testing.T) {
 
 	rec := &telemetry.RecordingExporter{}
 	l, err := loop.New(loop.Config{}, loop.Deps{
-		Agents:    []agentkit.Agent{stubAgent{id: "coder"}},
+		Agents:    []agentkit.Agent{stubAgent{id: "coder", model: "gpt-main"}},
 		Telemetry: rec,
 	})
 	if err != nil {
@@ -54,6 +56,9 @@ func TestDispatchRecordsTelemetryTurn(t *testing.T) {
 	}
 	if turns[0].Meta.SessionID != "cli:default" {
 		t.Fatalf("session id = %q", turns[0].Meta.SessionID)
+	}
+	if turns[0].Meta.Model != "gpt-main" {
+		t.Fatalf("model = %q, want gpt-main", turns[0].Meta.Model)
 	}
 	if turns[0].Meta.Input == "" {
 		t.Fatal("expected turn input summary")

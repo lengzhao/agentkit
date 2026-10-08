@@ -89,6 +89,128 @@ func TestLangfuseExporterFlushUsesIngestionAPI(t *testing.T) {
 	}
 }
 
+func TestLangfuseTraceMetadataIncludesModel(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, payload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, err := plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
+		BaseURL:              server.URL,
+		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
+		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
+		FlushIntervalSeconds: 1,
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, endTurn := exp.BeginTurn(context.Background(), captelemetry.TurnMeta{
+		TurnID:    "turn-model",
+		SessionID: "cli:default",
+		AgentID:   "coder",
+		Model:     "gpt-4o",
+		Input:     "hello",
+	})
+	endTurn(captelemetry.TurnEnd{})
+	if err := exp.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"model":"gpt-4o"`) {
+		t.Fatalf("batch missing model metadata: %s", raw)
+	}
+}
+
+func TestLangfuseGenerationEndRecordsActualModel(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, payload)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+
+	store, err := plugincredentials.NewStatic(plugincredentials.Config{}, plugincredentials.EnvDeps{FS: testCredentialsFS(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, err := plugintelemetry.NewLangfuse(plugintelemetry.LangfuseConfig{
+		BaseURL:              server.URL,
+		PublicKeyRef:         "env:LANGFUSE_PUBLIC_KEY",
+		SecretKeyRef:         "env:LANGFUSE_SECRET_KEY",
+		FlushIntervalSeconds: 1,
+	}, plugintelemetry.LangfuseDeps{Credentials: store, Telemetry: mustToolkit(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, endTurn := exp.BeginTurn(context.Background(), captelemetry.TurnMeta{
+		TurnID:    "turn-1",
+		SessionID: "cli:default",
+	})
+	ctx, endGen := exp.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name:  "llm.generation",
+		Kind:  captelemetry.KindGeneration,
+		Model: "gpt-5.4",
+	})
+	endGen(captelemetry.ObservationEnd{
+		Output:      "ok",
+		ActualModel: "gpt-4o",
+	})
+	endTurn(captelemetry.TurnEnd{})
+	if err := exp.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"model":"gpt-4o"`) {
+		t.Fatalf("missing actual model on generation end: %s", text)
+	}
+	if !strings.Contains(text, `"model_planned":"gpt-5.4"`) {
+		t.Fatalf("missing model_planned when fallback differs: %s", text)
+	}
+}
+
 func TestLangfuseExporterPrefersFirstTextTimeForTTFT(t *testing.T) {
 	var bodies []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
