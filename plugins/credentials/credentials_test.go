@@ -465,7 +465,7 @@ func TestEnvCommandSanitizeArgsForLog(t *testing.T) {
 	t.Parallel()
 	cmd := &integrationEnvCommand{}
 	got := cmd.SanitizeArgsForLog("add mcp.tool FOO=bar BAZ=secret")
-	want := "add mcp.tool FOO=" + agentkit.SlashLogRedacted + " BAZ=" + agentkit.SlashLogRedacted
+	want := "add mcp.tool FOO=" + agentkit.SlashLogRedacted
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

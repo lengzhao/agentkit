@@ -393,43 +393,77 @@ func normalizeConfigEnv(env map[string]string, prefix string) map[string]string 
 
 var _ credentials.Store = (*staticStore)(nil)
 
-func peelUpdateFlag(args []string) (update bool, rest []string) {
-	for _, arg := range args {
-		switch arg {
-		case "-u", "--update":
+// parseEnvSlashArgs parses integrations /env slash args.
+// add form: add SCOPE KEY=VALUE — everything after the first '=' in KEY=VALUE is kept (spaces allowed).
+func parseEnvSlashArgs(raw string) (update bool, subcmd string, scope string, pair string, err error) {
+	raw = strings.TrimSpace(raw)
+	for raw != "" {
+		switch {
+		case strings.HasPrefix(raw, "-u") && (len(raw) == 2 || raw[2] == ' ' || raw[2] == '\t'):
 			update = true
+			raw = strings.TrimSpace(raw[2:])
+		case strings.HasPrefix(raw, "--update"):
+			update = true
+			raw = strings.TrimSpace(raw[len("--update"):])
 		default:
-			rest = append(rest, arg)
+			goto parsed
 		}
 	}
-	return update, rest
+parsed:
+	if raw == "" {
+		return update, "", "", "", nil
+	}
+	subcmd, rest, ok := splitFirstEnvToken(raw)
+	if !ok {
+		return update, "", "", "", nil
+	}
+	if subcmd != "add" {
+		return update, subcmd, "", "", nil
+	}
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return update, "add", "", "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE")
+	}
+	scope, pairPart, ok := splitFirstEnvToken(rest)
+	if !ok || scope == "" {
+		return update, "add", "", "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE")
+	}
+	pair = strings.TrimSpace(pairPart)
+	if pair == "" || !strings.Contains(pair, "=") {
+		return update, "add", scope, "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE")
+	}
+	if strings.Contains(scope, "=") {
+		return update, "add", scope, pair, fmt.Errorf("usage: /env add SCOPE KEY=VALUE ...; SCOPE must be mcp.<server>, openapi.<api>, or shell-bash.<cmd>")
+	}
+	return update, "add", scope, pair, nil
+}
+
+func splitFirstEnvToken(s string) (field, rest string, ok bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", "", false
+	}
+	i := 0
+	for i < len(s) && s[i] != ' ' && s[i] != '\t' {
+		i++
+	}
+	return s[:i], strings.TrimSpace(s[i:]), true
 }
 
 func redactEnvAddArgsForLog(args string) string {
-	fields := strings.Fields(args)
-	if len(fields) == 0 || fields[0] != "add" {
+	_, sub, scope, pair, err := parseEnvSlashArgs(args)
+	if sub != "add" || err != nil {
 		return args
 	}
-	out := []string{"add"}
-	rest := fields[1:]
-	if len(rest) > 0 && !strings.Contains(rest[0], "=") {
-		out = append(out, rest[0])
-		rest = rest[1:]
+	key, _, ok := strings.Cut(pair, "=")
+	if !ok {
+		return args
 	}
-	for _, pair := range rest {
-		key, _, ok := strings.Cut(pair, "=")
-		if !ok {
-			out = append(out, pair)
-			continue
-		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			out = append(out, "="+agentkit.SlashLogRedacted)
-			continue
-		}
-		out = append(out, key+"="+agentkit.SlashLogRedacted)
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "add " + scope + " =" + agentkit.SlashLogRedacted
 	}
-	return strings.Join(out, " ")
+	return "add " + scope + " " + key + "=" + agentkit.SlashLogRedacted
 }
 
 func parseEnvPair(pair string) (string, string, error) {

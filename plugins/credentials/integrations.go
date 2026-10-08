@@ -340,7 +340,7 @@ func (s *integrationStore) statusWithHelp() string {
 func integrationEnvHelp() string {
 	return `Usage:
   /env                                    show status, env key inventory, and help
-  /env add SCOPE KEY=VALUE [KEY=VALUE ...]  write scoped secrets (overwrites same key), reload, verify; lists overwrote keys when replacing existing entries
+  /env add SCOPE KEY=VALUE  write one scoped secret (VALUE is not split on spaces; use multiple /env add for more keys)
   /env -u                                 reload secrets, dotenv, and integration manifests
 
 Notes:
@@ -371,7 +371,13 @@ func (c *integrationEnvCommand) SanitizeArgsForLog(args string) string {
 }
 
 func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (string, error) {
-	update, rest := peelUpdateFlag(strings.Fields(strings.TrimSpace(args)))
+	update, sub, scope, pair, err := parseEnvSlashArgs(args)
+	if err != nil {
+		return "", err
+	}
+	if update && sub != "" {
+		return "", fmt.Errorf("usage: /env | /env add SCOPE KEY=VALUE | /env -u")
+	}
 	switch {
 	case update:
 		count, err := c.store.reload(ctx)
@@ -382,23 +388,16 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 			return "", err
 		}
 		return fmt.Sprintf("env: reloaded %d key(s) from disk and refreshed manifests", count), nil
-	case len(rest) >= 1 && rest[0] == "add":
-		if len(rest) < 3 {
-			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE [KEY=VALUE ...] (SCOPE: mcp.<server>, openapi.<api>, or shell-bash.<cmd>)")
-		}
-		scope := rest[1]
-		if strings.Contains(scope, "=") {
-			return "", fmt.Errorf("usage: /env add SCOPE KEY=VALUE ...; SCOPE must be mcp.<server>, openapi.<api>, or shell-bash.<cmd>")
-		}
-		outcome, err := c.store.addScopedPairs(ctx, scope, rest[2:])
+	case sub == "add":
+		outcome, err := c.store.addScopedPairs(ctx, scope, []string{pair})
 		if err != nil {
 			return "", err
 		}
 		return formatEnvAddOutcome(outcome, scope), nil
-	case len(rest) == 0:
+	case sub == "" && !update:
 		return c.store.statusWithHelp(), nil
 	default:
-		return "", fmt.Errorf("usage: /env | /env add SCOPE KEY=VALUE ... | /env -u")
+		return "", fmt.Errorf("usage: /env | /env add SCOPE KEY=VALUE | /env -u")
 	}
 }
 
