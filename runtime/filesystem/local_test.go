@@ -2,10 +2,12 @@ package filesystem
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	capfs "github.com/lengzhao/agentkit/cap/filesystem"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -213,5 +215,37 @@ func TestLocalRestrictedAbsolutePathStaysUnderRoot(t *testing.T) {
 	_, err = fs.Read(ctx, outside)
 	if err == nil {
 		t.Fatal("expected restricted absolute path not to read file outside root join semantics")
+	}
+}
+
+func TestLocalGrepFindRespectCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	tenantRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tenantRoot, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		name := filepath.Join(tenantRoot, "sub", "f"+string(rune('a'+i))+".txt")
+		if err := os.WriteFile(name, []byte("needle"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ws := rtworkspace.Static(tenantRoot)
+	fs, err := New(Config{Root: "."}, Deps{Workspace: ws})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = fs.Grep(ctx, capfs.GrepRequest{Pattern: "needle", Path: "sub"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Grep cancelled ctx: %v", err)
+	}
+	_, err = fs.Find(ctx, capfs.FindRequest{Pattern: "*.txt", Path: "sub"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Find cancelled ctx: %v", err)
 	}
 }

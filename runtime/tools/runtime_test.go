@@ -211,6 +211,76 @@ func TestRuntimeExecuteEnforcesTimeout(t *testing.T) {
 	}
 }
 
+func TestRuntimeDelegateUsesDefaultTimeoutWhenInputOmitsSeconds(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		DefaultTimeoutSeconds: 1,
+	}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{
+			name: "delegate",
+			fn: func(ctx context.Context, input json.RawMessage) (string, error) {
+				select {
+				case <-time.After(1500 * time.Millisecond):
+					return "done", nil
+				case <-ctx.Done():
+					return "", ctx.Err()
+				}
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{
+		ID:    "call-1",
+		Name:  "delegate",
+		Input: json.RawMessage(`{"agent":"x","task":"y"}`),
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "done" {
+		t.Fatalf("unexpected result: %q", tools.ResultText(result))
+	}
+}
+
+func TestRuntimeDelegateExtendsToolTimeoutFromInput(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		ToolTimeouts: map[string]int{"delegate": 1},
+	}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubTool{
+			name: "delegate",
+			fn: func(ctx context.Context, input json.RawMessage) (string, error) {
+				select {
+				case <-time.After(1500 * time.Millisecond):
+					return "done", nil
+				case <-ctx.Done():
+					return "", ctx.Err()
+				}
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{
+		ID:    "call-1",
+		Name:  "delegate",
+		Input: json.RawMessage(`{"agent":"x","task":"y","timeoutSeconds":3}`),
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "done" {
+		t.Fatalf("unexpected result: %q", tools.ResultText(result))
+	}
+}
+
 func TestRuntimeExecuteCopiesPolicyAuditOnDeny(t *testing.T) {
 	t.Parallel()
 

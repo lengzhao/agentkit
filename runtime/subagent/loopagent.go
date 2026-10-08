@@ -195,9 +195,16 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 	slog.Info("subagent loop: started", "agent", def.Name, "parent", parentID, "child", childID, "async", async)
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData)
 
+	wall, err := DelegationWallClock(req, s.timeoutFor(def))
+	if err != nil {
+		if async {
+			s.releaseJob(parentID)
+		}
+		return subagent.Result{}, err
+	}
 	if async {
 		parentCtx := captureParentContext(ctx, parent)
-		go s.runAsync(parentCtx, def, ag, task, childID, jobID, parentID, parentAgent)
+		go s.runAsync(parentCtx, def, ag, task, childID, jobID, parentID, parentAgent, wall)
 		slog.Info("subagent loop: async returned", "agent", def.Name, "job", jobID)
 		return subagent.Result{
 			Agent:   def.Name,
@@ -208,7 +215,7 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		}, nil
 	}
 
-	result, runErr, closer := s.runChild(ctx, def, ag, task, childID)
+	result, runErr, closer := s.runChild(ctx, def, ag, task, childID, wall)
 	// Sync delegation: the parent turn is still open and owns the progress card,
 	// so drain the forwarded stream (blocking) before recording subagent/end so
 	// the card is fully rendered before the tool result returns. closer is nil
@@ -302,7 +309,7 @@ func captureParentContext(ctx context.Context, parent agentkit.Session) parentCo
 	}
 }
 
-func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID) {
+func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID, wallClock time.Duration) {
 	defer s.releaseJob(parentID)
 
 	var result subagent.Result
@@ -333,7 +340,7 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 
 	ctx := parent.asyncRunContext()
 
-	result, runErr, closer = s.runChild(ctx, def, ag, task, childID)
+	result, runErr, closer = s.runChild(ctx, def, ag, task, childID, wallClock)
 	result = finalizeSubagentResult(result, runErr)
 }
 
@@ -445,7 +452,7 @@ func formatSubagentComplete(agentName, jobID string, result subagent.Result, run
 	return b.String()
 }
 
-func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID) (out subagent.Result, runErr error, closer func()) {
+func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, wallClock time.Duration) (out subagent.Result, runErr error, closer func()) {
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
@@ -475,10 +482,9 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		endTurn(end)
 	}()
 
-	timeout := s.timeoutFor(def)
-	if timeout > 0 {
+	if wallClock > 0 {
 		var cancel context.CancelFunc
-		childCtx, cancel = context.WithTimeout(childCtx, timeout)
+		childCtx, cancel = context.WithTimeout(childCtx, wallClock)
 		defer cancel()
 	}
 

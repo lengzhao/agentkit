@@ -75,6 +75,7 @@
 | `retry` | `*agent.RetryConfig` | — | Retry is per-step retry for transient provider failures. |
 | `maxSteps` | `*int` | — | MaxSteps caps model steps per turn (all segments). Omitted defaults to 200; explicit 0 disables the cap. |
 | `maxPromptTokens` | `int` | — | MaxPromptTokens is the pre-send guard: when the assembled prompt (system prompt + hydrated history, inline media counted at real size) exceeds it, force-run compaction once before the LLM call; if it still exceeds, fail the step instead of sending a request the provider will reject. 0 disables. |
+| `toolExecution` | `agentkit.ToolExecutionMode` | — | ToolExecution is how multiple tool calls in one assistant step run together. Omitted defaults to parallel (pi agent-loop default). |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1404,7 +1405,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `workDir` | `string` | `.` | WorkDir is working directory relative to the workspace root. |
-| `timeoutSeconds` | `int` | `60` | TimeoutSeconds applies when the model omits the optional `timeout` argument; 0 means no limit. |
+| `timeoutSeconds` | `int` | `60` | TimeoutSeconds is per-command limit when the model omits timeout; 0 means no limit. |
 | `commands` | `map[string][]string` | — | Commands optionally overrides env var names injected for shell-bash.<token>. Default: scope is derived from the command's first token; keys come from L1 scopedEnv, secrets.enc.json (/env add), or shell-bash.json manifest allowlist. |
 | `trimEnv` | `*bool` | — | TrimEnv trims the child env to a minimal base (PATH/HOME/... + PWD) plus scoped/extra pairs. Default false: the child inherits the full host env (os.Environ) plus scoped pairs — secrets belong in scopedEnv / /env add. |
 | `extraEnv` | `map[string]string` | — | ExtraEnv adds static, non-secret KEY=value entries to the child env. Secrets belong in credentials scopedEnv / /env add, not here. |
@@ -1450,7 +1451,9 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 - 返回类型：`agentkit.Tool`
 - 源码：[`plugins/tool/subagent/register.go`](../plugins/tool/subagent/register.go)
 
-无 config 字段。
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `defaultTimeoutSeconds` | `int` | `900` | DefaultTimeoutSeconds applies when the model omits timeoutSeconds on delegate. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1599,7 +1602,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tools/runtime`
 
 - 返回类型：`agentkit.ToolRuntime`
-- 源码：[`runtime/tools/filter.go`](../runtime/tools/filter.go)
+- 源码：[`runtime/tools/batch.go`](../runtime/tools/batch.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|

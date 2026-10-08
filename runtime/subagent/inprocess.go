@@ -174,7 +174,11 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	}
 	emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentStart, startData)
 
-	result, runErr := s.runChild(ctx, def, task, childID)
+	wall, err := DelegationWallClock(req, s.timeout)
+	if err != nil {
+		return subagent.Result{}, err
+	}
+	result, runErr := s.runChild(ctx, def, task, childID, wall)
 	end := sessevents.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
@@ -192,7 +196,7 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	return result, runErr
 }
 
-func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID) (out subagent.Result, runErr error) {
+func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID, wallClock time.Duration) (out subagent.Result, runErr error) {
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	tools, err := newFilteredTools(ctx, s.tools, def.Tools, def.Skills)
@@ -228,9 +232,9 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	// Drop the parent's turn control: steering and cancel reasons belong to the
 	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
-	if s.timeout > 0 {
+	if wallClock > 0 {
 		var cancel context.CancelFunc
-		childCtx, cancel = context.WithTimeout(childCtx, s.timeout)
+		childCtx, cancel = context.WithTimeout(childCtx, wallClock)
 		defer cancel()
 	}
 

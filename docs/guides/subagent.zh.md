@@ -154,13 +154,19 @@ tools.subagent.default:      # 只读 + web 抓取 + skill + finish，没有 del
 {"agent": "researcher", "task": "查清 runtime/loop 怎么保证同一 session 串行，给出文件行号"}
 ```
 
+单次委派覆盖墙钟（秒），同时放宽本次 `delegate` 在 `tools/runtime` 上的等待（大于 `toolTimeouts.delegate` 时取较大值）：
+
+```json
+{"agent": "researcher", "task": "深挖整个 runtime 目录", "timeoutSeconds": 1200}
+```
+
 异步委派 Loop agent（如 cursor）：
 
 ```json
 {"agent": "cursor", "task": "重构 auth 模块并补测试", "async": true}
 ```
 
-`async` 可省略：若子 agent 定义或配置里写了 `async: true`，默认即异步。
+`async` 可省略：若子 agent 定义或配置里写了 `async: true`，默认即异步。`timeoutSeconds` 可省略：`tool/subagent` 默认 **900** 秒（可用实例 `defaultTimeoutSeconds` 覆盖）；仍受 `toolTimeouts.delegate` 约束，未配置时 runtime 对 `delegate` 同样按 900 秒等待。
 
 `task` 必须自带完整背景——**子 Agent 从空 session 起跑，看不到主对话**。返回：
 
@@ -224,7 +230,9 @@ scripted LLM 按"父 delegate → 子 finish → 子收尾 → 父转述"四步�
         delegate: 900
   ```
 
-- **`timeoutSeconds` 是墙钟兜底**，防止子 Agent 卡住把主 Agent 一起拖死。它和上面的工具超时是两层，都要留够。
+  单次委派也可在工具参数里写 `timeoutSeconds`（会覆盖 spawner 墙钟，并在大于 `toolTimeouts.delegate` 时延长本次工具等待）。
+
+- **实例级 `timeoutSeconds` 是墙钟兜底**（`subagent/inprocess`、`subagent/loop-agent` 及其 `agents` 条目），防止子 Agent 卡住把主 Agent 一起拖死。它和 `toolTimeouts.delegate` 是两层，都要留够；per-call `timeoutSeconds` 覆盖实例墙钟，但不替代全局 `toolTimeouts` 的上限——只有 per-call 值更大时才会拉长工具等待。
 
 ## 6.1 委派与 Session：避免锁竞争（架构约定）
 

@@ -54,10 +54,17 @@ type Request struct {
 	Task  string `json:"task"`
 	// Async overrides the definition default. Nil means use the definition.
 	Async *bool `json:"async,omitempty"`
+	// TimeoutSeconds overrides the spawner's configured wall clock for this delegation.
+	// Zero or omitted uses DefaultDelegationTimeoutSeconds from the delegate tool.
+	TimeoutSeconds *int `json:"timeoutSeconds,omitempty"`
 }
 
 // Result statuses. Completed and Blocked mirror the child's explicit finish;
 // Stopped means the child ended without an explicit finish (e.g. no tool calls).
+// DefaultDelegationTimeoutSeconds is used when delegate omits timeoutSeconds
+// (tool/subagent config and tools/runtime execution bound for delegate).
+const DefaultDelegationTimeoutSeconds = 900
+
 const (
 	StatusCompleted = "completed"
 	StatusBlocked   = "blocked"

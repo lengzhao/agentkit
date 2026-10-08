@@ -64,6 +64,24 @@ func TestSubagentToolReturnsSummary(t *testing.T) {
 	if spawner.got.Agent != "researcher" || !strings.Contains(spawner.got.Task, "serialize turns") {
 		t.Errorf("spawner request = %+v", spawner.got)
 	}
+	if spawner.got.TimeoutSeconds == nil || *spawner.got.TimeoutSeconds != capsubagent.DefaultDelegationTimeoutSeconds {
+		t.Errorf("default timeout = %v, want %d", spawner.got.TimeoutSeconds, capsubagent.DefaultDelegationTimeoutSeconds)
+	}
+}
+
+func TestSubagentToolForwardsTimeoutSeconds(t *testing.T) {
+	t.Parallel()
+
+	spawner := &fakeSpawner{result: capsubagent.Result{Agent: "researcher", Status: capsubagent.StatusCompleted, Summary: "ok"}}
+	delegate, err := subagent.NewSubagent(subagent.SubagentConfig{}, subagent.SubagentDeps{Subagent: spawner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secs := 900
+	testutil.CallTool(t, context.Background(), delegate, `{"agent":"researcher","task":"work","timeoutSeconds":900}`)
+	if spawner.got.TimeoutSeconds == nil || *spawner.got.TimeoutSeconds != secs {
+		t.Fatalf("timeout = %v, want %d", spawner.got.TimeoutSeconds, secs)
+	}
 }
 
 func TestSubagentToolSurfacesSpawnerError(t *testing.T) {

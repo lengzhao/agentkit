@@ -82,7 +82,7 @@ func (r *Runtime) runToolBody(ctx context.Context, call agentkit.ToolCall, sessi
 
 	execCtx := ctx
 	cancel := func() {}
-	if timeout := r.timeoutFor(call.Name); timeout > 0 {
+	if timeout := r.executionTimeout(call); timeout > 0 {
 		execCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()

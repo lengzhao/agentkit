@@ -238,6 +238,9 @@ func (s *localFS) Grep(ctx context.Context, req capfs.GrepRequest) (capfs.GrepRe
 
 	collector := newGrepCollector(limit)
 	scanFile := func(fullPath, rel string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		data, err := os.ReadFile(fullPath)
 		if err != nil {
 			return err
@@ -259,6 +262,9 @@ func (s *localFS) Grep(ctx context.Context, req capfs.GrepRequest) (capfs.GrepRe
 		if err != nil {
 			return capfs.GrepResult{}, err
 		}
+		if err := ctx.Err(); err != nil {
+			return capfs.GrepResult{}, err
+		}
 		if err := scanFile(root, filepath.ToSlash(rel)); err != nil {
 			return capfs.GrepResult{}, err
 		}
@@ -268,6 +274,9 @@ func (s *localFS) Grep(ctx context.Context, req capfs.GrepRequest) (capfs.GrepRe
 	err = filepath.WalkDir(root, func(fullPath string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		rel, err := filepath.Rel(workspaceRoot, fullPath)
 		if err != nil {
@@ -344,6 +353,9 @@ func (s *localFS) Find(ctx context.Context, req capfs.FindRequest) (capfs.FindRe
 	}
 
 	if !rootInfo.IsDir() {
+		if err := ctx.Err(); err != nil {
+			return capfs.FindResult{}, err
+		}
 		rel, err := filepath.Rel(workspaceRoot, root)
 		if err != nil {
 			return capfs.FindResult{}, err
@@ -365,6 +377,9 @@ func (s *localFS) Find(ctx context.Context, req capfs.FindRequest) (capfs.FindRe
 	err = filepath.WalkDir(root, func(fullPath string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		rel, err := filepath.Rel(workspaceRoot, fullPath)
 		if err != nil {
