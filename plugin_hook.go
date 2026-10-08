@@ -2,41 +2,44 @@ package agentkit
 
 import "context"
 
+// HookProvider contributes typed hooks to the hook runtime. Each hook point is
+// an open interface: providers may implement it on their own struct or wrap a
+// function with the On* helpers (OnBeforeStep, ...).
 type HookProvider interface {
-	Hooks() []Hook
+	Hooks() HookContribution
 }
 
-// Hook marks a value that may implement one or more hook point interfaces.
-// Execution order follows deps.providers list order; within a provider, Hooks()
-// slice order is preserved.
-type Hook interface {
-	isHook()
+// HookContribution declares which hook points a provider contributes to.
+// Nil fields mean the provider does not hook that point. Execution order
+// follows the deps.providers list order; within one provider, slice order per
+// hook point is preserved.
+type HookContribution struct {
+	BeforeStep   []BeforeStepHook
+	BeforeTool   []BeforeToolHook
+	AfterTool    []AfterToolHook
+	TurnStopping []TurnStoppingHook
+	TurnComplete []TurnCompleteHook
 }
 
 type BeforeStepHook interface {
-	Hook
 	BeforeStep(context.Context, *BeforeStep) error
 }
 
 type BeforeToolHook interface {
-	Hook
 	BeforeTool(context.Context, *ToolCall) error
 }
 
 type AfterToolHook interface {
-	Hook
 	AfterTool(context.Context, *ToolResult) error
 }
 
 type TurnStoppingHook interface {
-	Hook
 	TurnStopping(context.Context, *TurnStopping) error
 }
 
 // TurnCompleteHook runs after a turn finishes successfully (turn/end recorded, not cancelled).
 // Implementations should return quickly and offload heavy work to a background goroutine.
 type TurnCompleteHook interface {
-	Hook
 	TurnComplete(context.Context, *TurnComplete) error
 }
 

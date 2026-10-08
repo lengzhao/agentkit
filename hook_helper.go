@@ -6,8 +6,6 @@ type beforeStepHook struct {
 	fn func(context.Context, *BeforeStep) error
 }
 
-func (h *beforeStepHook) isHook() {}
-
 func (h *beforeStepHook) BeforeStep(ctx context.Context, in *BeforeStep) error {
 	return h.fn(ctx, in)
 }
@@ -20,8 +18,6 @@ func OnBeforeStep(fn func(context.Context, *BeforeStep) error) BeforeStepHook {
 type beforeToolHook struct {
 	fn func(context.Context, *ToolCall) error
 }
-
-func (h *beforeToolHook) isHook() {}
 
 func (h *beforeToolHook) BeforeTool(ctx context.Context, in *ToolCall) error {
 	return h.fn(ctx, in)
@@ -36,8 +32,6 @@ type afterToolHook struct {
 	fn func(context.Context, *ToolResult) error
 }
 
-func (h *afterToolHook) isHook() {}
-
 func (h *afterToolHook) AfterTool(ctx context.Context, in *ToolResult) error {
 	return h.fn(ctx, in)
 }
@@ -51,8 +45,6 @@ type turnStoppingHook struct {
 	fn func(context.Context, *TurnStopping) error
 }
 
-func (h *turnStoppingHook) isHook() {}
-
 func (h *turnStoppingHook) TurnStopping(ctx context.Context, in *TurnStopping) error {
 	return h.fn(ctx, in)
 }
@@ -65,8 +57,6 @@ func OnTurnStopping(fn func(context.Context, *TurnStopping) error) TurnStoppingH
 type turnCompleteHook struct {
 	fn func(context.Context, *TurnComplete) error
 }
-
-func (h *turnCompleteHook) isHook() {}
 
 func (h *turnCompleteHook) TurnComplete(ctx context.Context, in *TurnComplete) error {
 	return h.fn(ctx, in)

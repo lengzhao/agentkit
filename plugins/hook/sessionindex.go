@@ -34,8 +34,10 @@ func NewSessionIndex(_ SessionIndexConfig, deps SessionIndexDeps) (agentkit.Hook
 	}, nil
 }
 
-func (p *sessionIndexProvider) Hooks() []agentkit.Hook {
-	return []agentkit.Hook{agentkit.OnTurnComplete(p.onTurnComplete)}
+func (p *sessionIndexProvider) Hooks() agentkit.HookContribution {
+	return agentkit.HookContribution{
+		TurnComplete: []agentkit.TurnCompleteHook{agentkit.OnTurnComplete(p.onTurnComplete)},
+	}
 }
 
 func (p *sessionIndexProvider) onTurnComplete(ctx context.Context, tc *agentkit.TurnComplete) error {

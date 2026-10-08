@@ -32,13 +32,10 @@ func newDriver(t *testing.T, cfg hook.TurnContinueConfig) (agentkit.TurnStopping
 		t.Fatalf("build hook/turn-continue: %v", err)
 	}
 	hooks := provider.Hooks()
-	if len(hooks) != 1 {
-		t.Fatalf("hooks = %d, want 1", len(hooks))
+	if len(hooks.TurnStopping) != 1 {
+		t.Fatalf("turn stopping hooks = %d, want 1", len(hooks.TurnStopping))
 	}
-	h, ok := hooks[0].(agentkit.TurnStoppingHook)
-	if !ok {
-		t.Fatal("hook does not implement TurnStoppingHook")
-	}
+	h := hooks.TurnStopping[0]
 	return h, sess
 }
 

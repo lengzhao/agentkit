@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/pluginkit"
@@ -39,27 +40,21 @@ func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 		if provider == nil {
 			continue
 		}
-		for _, hook := range provider.Hooks() {
-			if hook == nil {
-				continue
-			}
-			if h, ok := hook.(agentkit.BeforeStepHook); ok {
-				beforeStep = append(beforeStep, h)
-			}
-			if h, ok := hook.(agentkit.BeforeToolHook); ok {
-				beforeTool = append(beforeTool, h)
-			}
-			if h, ok := hook.(agentkit.AfterToolHook); ok {
-				afterTool = append(afterTool, h)
-			}
-			if h, ok := hook.(agentkit.TurnStoppingHook); ok {
-				turnStopping = append(turnStopping, h)
-			}
-			if h, ok := hook.(agentkit.TurnCompleteHook); ok {
-				turnComplete = append(turnComplete, h)
-			}
-		}
+		c := provider.Hooks()
+		beforeStep = appendHooks(beforeStep, c.BeforeStep)
+		beforeTool = appendHooks(beforeTool, c.BeforeTool)
+		afterTool = appendHooks(afterTool, c.AfterTool)
+		turnStopping = appendHooks(turnStopping, c.TurnStopping)
+		turnComplete = appendHooks(turnComplete, c.TurnComplete)
 	}
+	slog.Info("hook chains assembled",
+		"providers", len(deps.Providers),
+		"before_step", len(beforeStep),
+		"before_tool", len(beforeTool),
+		"after_tool", len(afterTool),
+		"turn_stopping", len(turnStopping),
+		"turn_complete", len(turnComplete),
+	)
 	return &Runtime{
 		beforeStep:   beforeStep,
 		beforeTool:   beforeTool,
@@ -115,3 +110,15 @@ func (r *Runtime) TurnComplete(ctx context.Context, in *agentkit.TurnComplete) e
 }
 
 var _ agentkit.HookRuntime = (*Runtime)(nil)
+
+// appendHooks appends non-nil hooks from src to dst, skipping nil entries so a
+// misconfigured contribution cannot panic the chain at execution time.
+func appendHooks[H any](dst, src []H) []H {
+	for _, h := range src {
+		if any(h) == nil {
+			continue
+		}
+		dst = append(dst, h)
+	}
+	return dst
+}

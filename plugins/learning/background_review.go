@@ -103,8 +103,10 @@ func NewBackgroundReview(cfg BackgroundReviewConfig, deps backgroundReviewDeps) 
 	return p, nil
 }
 
-func (p *backgroundReviewProvider) Hooks() []agentkit.Hook {
-	return []agentkit.Hook{agentkit.OnTurnComplete(p.onTurnComplete)}
+func (p *backgroundReviewProvider) Hooks() agentkit.HookContribution {
+	return agentkit.HookContribution{
+		TurnComplete: []agentkit.TurnCompleteHook{agentkit.OnTurnComplete(p.onTurnComplete)},
+	}
 }
 
 // ShutdownHooks lets the runner cancel in-flight background reviews on shutdown

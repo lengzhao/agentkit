@@ -425,19 +425,43 @@ type AppInitializer interface {
 
 ### 5.4 Typed Hooks
 
-对外暴露 Agent 语义 hook，而不是通用字符串事件。hook 插件返回 `agentkit.HookProvider` 或具体 hook 函数集合，Loop 或 Agent 将它们装配进 Hook Runtime。
+对外暴露 Agent 语义 hook，而不是通用字符串事件。hook 插件返回 `agentkit.HookProvider`，通过 `HookContribution` 显式声明贡献了哪些 hook 点；Loop 或 Agent 将它们装配进 Hook Runtime。
 
 ```go
 type HookProvider interface {
-    Hooks() []Hook
+    Hooks() HookContribution
 }
 
-func OnBeforeStep(h func(context.Context, *BeforeStep) error) Hook
-func OnBeforeTool(h func(context.Context, *ToolCall) error) Hook
-func OnAfterTool(h func(context.Context, *ToolResult) error) Hook
-func OnTurnStopping(h func(context.Context, *TurnStopping) error) Hook
-func OnTurnComplete(h func(context.Context, *TurnComplete) error) Hook
+// HookContribution 显式声明贡献的 hook 点；nil 字段 = 不挂该点。
+type HookContribution struct {
+    BeforeStep   []BeforeStepHook
+    BeforeTool   []BeforeToolHook
+    AfterTool    []AfterToolHook
+    TurnStopping []TurnStoppingHook
+    TurnComplete []TurnCompleteHook
+}
+
+// 每个 hook 点是开放接口：可直接在 Provider 上实现，也可用 On* 包装函数。
+func OnBeforeStep(h func(context.Context, *BeforeStep) error) BeforeStepHook
+func OnBeforeTool(h func(context.Context, *ToolCall) error) BeforeToolHook
+func OnAfterTool(h func(context.Context, *ToolResult) error) AfterToolHook
+func OnTurnStopping(h func(context.Context, *TurnStopping) error) TurnStoppingHook
+func OnTurnComplete(h func(context.Context, *TurnComplete) error) TurnCompleteHook
 ```
+
+执行顺序：按 `deps.providers` 依赖顺序，对每个 hook 点依次拼接各 provider 的对应切片；同一 provider 内保持切片顺序。`hooks/runtime` 装配时会 slog 记录各 hook 点的最终链长，并跳过切片中的 nil 条目。
+
+#### 多 hook 插件共存约定
+
+多个 hook 插件按上述顺序串成一条链，**同一 payload 指针在链上传递**，后来者能看到先来者的改写。为避免互相踩脚：
+
+| 插件类型 | 约定 | 理由 |
+|---|---|---|
+| 观测/日志类（turn log、session-index） | 不返回 error；错误只 slog.Warn | 不短路别人，也不因别人报错而静默丢失观测 |
+| 改写类（compaction） | 排中间；意识到顺序决定观测者看到的数据 | `BeforeStep.Messages` 是共享指针 |
+| 裁决类（turn-continue） | 排靠后 | 需要看到所有改写后的最终状态；`Stop` 优先于 `Continue` |
+
+其余规则：链上第一个 error 短路后续 hook；`TurnComplete` 应快速返回、重活放 goroutine，且插件需自行保证幂等（同一 provider 在配置图中被引用两次会执行两遍，框架不去重）。
 
 内部 Hook Runtime 可以支持 chain、serial、parallel 三种模式；插件作者只看到稳定 payload 类型和返回约定，不调用 `next()`。hook 实例只有在 root graph 中被依赖后才会进入运行时；未配置的 hook 即使被 import 也不会运行。
 
