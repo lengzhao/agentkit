@@ -204,7 +204,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		SessionID:         string(rctx.ConversationFromLoopRequest(req)),
 		DeliverySessionID: string(rctx.DeliveryFromEnvelope(req.Event.Envelope)),
 		AgentID:           string(agentID),
-		Model:             agentConfiguredModel(ag),
+		Model:             agentTraceModel(ctx, ag),
 		PlatformID:        req.Event.PlatformID,
 		UserID:            req.Event.UserID,
 		WorkspaceKey:      req.Event.Envelope.Workspace,

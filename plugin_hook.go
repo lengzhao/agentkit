@@ -10,15 +10,15 @@ type HookProvider interface {
 }
 
 // HookContribution declares which hook points a provider contributes to.
-// Nil fields mean the provider does not hook that point. Execution order
-// follows the deps.providers list order; within one provider, slice order per
-// hook point is preserved.
+// Each provider contributes at most one handler per point; nil means the
+// provider does not hook that point. Chain order follows deps.providers list
+// order across providers.
 type HookContribution struct {
-	BeforeStep   []BeforeStepHook
-	BeforeTool   []BeforeToolHook
-	AfterTool    []AfterToolHook
-	TurnStopping []TurnStoppingHook
-	TurnComplete []TurnCompleteHook
+	BeforeStep   BeforeStepHook
+	BeforeTool   BeforeToolHook
+	AfterTool    AfterToolHook
+	TurnStopping TurnStoppingHook
+	TurnComplete TurnCompleteHook
 }
 
 type BeforeStepHook interface {

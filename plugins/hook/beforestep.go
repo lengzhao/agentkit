@@ -55,7 +55,7 @@ func New(cfg Config, deps Deps) (agentkit.HookProvider, error) {
 
 func (p *Provider) Hooks() agentkit.HookContribution {
 	return agentkit.HookContribution{
-		BeforeStep: []agentkit.BeforeStepHook{agentkit.OnBeforeStep(p.beforeStep)},
+		BeforeStep: agentkit.OnBeforeStep(p.beforeStep),
 	}
 }
 

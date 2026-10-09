@@ -31,7 +31,8 @@ type TurnMeta struct {
 	WorkspaceKey string
 	// AttachmentSources lists inbound attachment paths (comma-separated, no base64).
 	AttachmentSources string
-	// Model is the agent's configured model id for trace metadata (Langfuse trace).
+	// Model is the session-effective model id for trace metadata (session/global
+	// override applied; falls back to the agent's configured default).
 	Model string
 	Input             string
 }

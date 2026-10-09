@@ -68,7 +68,7 @@ func TestSmokeSubagentToolAllowlistDeniesWrite(t *testing.T) {
 	}
 }
 
-// E2E-031: spawner wall-clock timeout ends delegation with subagent/end error.
+// E2E-031: delegation wall-clock timeout ends with subagent/end error (deadline/canceled).
 func TestSmokeSubagentDelegationTimesOut(t *testing.T) {
 	t.Parallel()
 
@@ -85,7 +85,6 @@ func TestSmokeSubagentDelegationTimesOut(t *testing.T) {
 	}
 
 	cfg := subagentDelegateConfig()
-	cfg.SpawnerTimeoutSeconds = 1
 	cfg.ResearcherDef = `---
 name: researcher
 description: slow child for timeout smoke
@@ -99,7 +98,7 @@ You are the research subagent for smoke tests.
 			Text: "交给 researcher。",
 			ToolCalls: []agentkit.ToolCall{{
 				ID: "call-delegate", Name: "delegate",
-				Input: []byte(`{"agent":"researcher","task":"run slow tool"}`),
+				Input: []byte(`{"agent":"researcher","task":"run slow tool","timeoutSeconds":1}`),
 			}},
 		},
 		{ToolCalls: []agentkit.ToolCall{{ID: "call-slow", Name: "slow", Input: []byte(`{}`)}}},

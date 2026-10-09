@@ -65,6 +65,54 @@ func TestDispatchRecordsTelemetryTurn(t *testing.T) {
 	}
 }
 
+type traceModelAgent struct {
+	id              agentkit.AgentID
+	configuredModel string
+	effectiveModel  string
+}
+
+func (a traceModelAgent) ID() agentkit.AgentID { return a.id }
+func (a traceModelAgent) ConfiguredModel() string { return a.configuredModel }
+func (a traceModelAgent) EffectiveModel(context.Context) string { return a.effectiveModel }
+func (a traceModelAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
+
+func TestDispatchRecordsEffectiveModelOverConfigured(t *testing.T) {
+	t.Parallel()
+
+	rec := &telemetry.RecordingExporter{}
+	l, err := loop.New(loop.Config{}, loop.Deps{
+		Agents: []agentkit.Agent{traceModelAgent{
+			id:              "coder",
+			configuredModel: "gpt-configured",
+			effectiveModel:  "gpt-effective",
+		}},
+		Telemetry: rec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
+		AgentID:    "coder",
+		PlatformID: "cli",
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	turns, _, _ := rec.Snapshot()
+	if len(turns) != 1 {
+		t.Fatalf("turns = %d, want 1", len(turns))
+	}
+	if turns[0].Meta.Model != "gpt-effective" {
+		t.Fatalf("model = %q, want gpt-effective (session-effective over configured)", turns[0].Meta.Model)
+	}
+}
+
 // 平台入站记录的真实附件信息（size/mime/path）必须由 loop 发出一个独立的
 // inbound.attachments span，携带结构化 metadata，便于在 Langfuse 上按大小/类型过滤。
 func TestDispatchEmitsInboundAttachmentsSpan(t *testing.T) {

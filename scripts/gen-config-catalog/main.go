@@ -128,18 +128,20 @@ func writeKind(b *bytes.Buffer, pkgs *packageIndex, spec pluginkit.Spec, desc pl
 
 // packageIndex 按包缓存 AST 解析结果，提供字段注释与源码位置。
 type packageIndex struct {
-	root   string
-	fset   *token.FileSet
-	parsed map[string]map[string]*ast.StructType // pkgPath -> typeName -> struct
-	files  map[string]string                     // pkgPath -> 首个源文件相对路径
+	root      string
+	fset      *token.FileSet
+	parsed    map[string]map[string]*ast.StructType // pkgPath -> typeName -> struct
+	typeFiles map[string]map[string]string          // pkgPath -> typeName -> 源文件相对路径
+	files     map[string]string                     // pkgPath -> 首个源文件相对路径（type 未命中时回退）
 }
 
 func newPackageIndex(root string) *packageIndex {
 	return &packageIndex{
-		root:   root,
-		fset:   token.NewFileSet(),
-		parsed: map[string]map[string]*ast.StructType{},
-		files:  map[string]string{},
+		root:      root,
+		fset:      token.NewFileSet(),
+		parsed:    map[string]map[string]*ast.StructType{},
+		typeFiles: map[string]map[string]string{},
+		files:     map[string]string{},
 	}
 }
 
@@ -157,6 +159,7 @@ func (p *packageIndex) parsePkg(pkgPath string) map[string]*ast.StructType {
 	if err != nil {
 		return types
 	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -182,7 +185,12 @@ func (p *packageIndex) parsePkg(pkgPath string) map[string]*ast.StructType {
 					continue
 				}
 				if st, ok := ts.Type.(*ast.StructType); ok {
-					types[ts.Name.Name] = st
+					name := ts.Name.Name
+					types[name] = st
+					if p.typeFiles[pkgPath] == nil {
+						p.typeFiles[pkgPath] = map[string]string{}
+					}
+					p.typeFiles[pkgPath][name] = filepath.ToSlash(rel)
 				}
 			}
 		}
@@ -221,8 +229,14 @@ func (p *packageIndex) sourceRef(typ reflect.Type) string {
 	if typ == nil {
 		return ""
 	}
-	p.parsePkg(typ.PkgPath())
-	return p.files[typ.PkgPath()]
+	pkgPath := typ.PkgPath()
+	p.parsePkg(pkgPath)
+	if byType := p.typeFiles[pkgPath]; byType != nil {
+		if src := byType[typ.Name()]; src != "" {
+			return src
+		}
+	}
+	return p.files[pkgPath]
 }
 
 func fieldType(f pluginkit.FieldDescription) string {

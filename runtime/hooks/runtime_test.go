@@ -14,18 +14,16 @@ type contributionProvider struct {
 
 func (p contributionProvider) Hooks() agentkit.HookContribution { return p.c }
 
-func TestNewSkipsNilProvider(t *testing.T) {
+func TestNewSkipsNilProviderAndNilHook(t *testing.T) {
 	var n int
 	rt, err := New(Config{}, Deps{Providers: []agentkit.HookProvider{
 		nil,
+		contributionProvider{c: agentkit.HookContribution{}}, // nil BeforeStep
 		contributionProvider{c: agentkit.HookContribution{
-			BeforeStep: []agentkit.BeforeStepHook{
-				nil, // nil entries must not panic the chain
-				agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
-					n++
-					return nil
-				}),
-			},
+			BeforeStep: agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
+				n++
+				return nil
+			}),
 		}},
 	}})
 	if err != nil {
@@ -43,20 +41,22 @@ func TestBeforeStepChainOrderAndAbort(t *testing.T) {
 	var order []string
 	rt, err := New(Config{}, Deps{Providers: []agentkit.HookProvider{
 		contributionProvider{c: agentkit.HookContribution{
-			BeforeStep: []agentkit.BeforeStepHook{
-				agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
-					order = append(order, "a")
-					return nil
-				}),
-				agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
-					order = append(order, "b")
-					return errors.New("stop")
-				}),
-				agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
-					order = append(order, "c")
-					return nil
-				}),
-			},
+			BeforeStep: agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
+				order = append(order, "a")
+				return nil
+			}),
+		}},
+		contributionProvider{c: agentkit.HookContribution{
+			BeforeStep: agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
+				order = append(order, "b")
+				return errors.New("stop")
+			}),
+		}},
+		contributionProvider{c: agentkit.HookContribution{
+			BeforeStep: agentkit.OnBeforeStep(func(context.Context, *agentkit.BeforeStep) error {
+				order = append(order, "c")
+				return nil
+			}),
 		}},
 	}})
 	if err != nil {
@@ -74,30 +74,22 @@ func TestBeforeStepChainOrderAndAbort(t *testing.T) {
 func TestHookTypesCollected(t *testing.T) {
 	var beforeTool, afterTool, stopping, complete int
 	multi := contributionProvider{c: agentkit.HookContribution{
-		BeforeTool: []agentkit.BeforeToolHook{
-			agentkit.OnBeforeTool(func(context.Context, *agentkit.ToolCall) error {
-				beforeTool++
-				return nil
-			}),
-		},
-		AfterTool: []agentkit.AfterToolHook{
-			agentkit.OnAfterTool(func(context.Context, *agentkit.ToolResult) error {
-				afterTool++
-				return nil
-			}),
-		},
-		TurnStopping: []agentkit.TurnStoppingHook{
-			agentkit.OnTurnStopping(func(context.Context, *agentkit.TurnStopping) error {
-				stopping++
-				return nil
-			}),
-		},
-		TurnComplete: []agentkit.TurnCompleteHook{
-			agentkit.OnTurnComplete(func(context.Context, *agentkit.TurnComplete) error {
-				complete++
-				return nil
-			}),
-		},
+		BeforeTool: agentkit.OnBeforeTool(func(context.Context, *agentkit.ToolCall) error {
+			beforeTool++
+			return nil
+		}),
+		AfterTool: agentkit.OnAfterTool(func(context.Context, *agentkit.ToolResult) error {
+			afterTool++
+			return nil
+		}),
+		TurnStopping: agentkit.OnTurnStopping(func(context.Context, *agentkit.TurnStopping) error {
+			stopping++
+			return nil
+		}),
+		TurnComplete: agentkit.OnTurnComplete(func(context.Context, *agentkit.TurnComplete) error {
+			complete++
+			return nil
+		}),
 	}}
 	rt, err := New(Config{}, Deps{Providers: []agentkit.HookProvider{multi}})
 	if err != nil {
@@ -133,7 +125,7 @@ func TestProviderStructImplementsHookPointDirectly(t *testing.T) {
 	h := &directHook{}
 	rt, err := New(Config{}, Deps{Providers: []agentkit.HookProvider{
 		contributionProvider{c: agentkit.HookContribution{
-			BeforeStep: []agentkit.BeforeStepHook{h},
+			BeforeStep: h,
 		}},
 	}})
 	if err != nil {

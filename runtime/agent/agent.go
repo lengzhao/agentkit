@@ -155,11 +155,25 @@ func (a *Runtime) ID() agentkit.AgentID { return a.id }
 // ConfiguredModel returns the model from agent config (before session override).
 func (a *Runtime) ConfiguredModel() string { return a.model }
 
+// EffectiveModel resolves the model for the session in ctx (session override,
+// then global override, then agent default). Falls back to ConfiguredModel
+// when session id is missing or resolution fails. Used by the loop for trace metadata.
+func (a *Runtime) EffectiveModel(ctx context.Context) string {
+	return a.modelForSession(ctx, rctx.SessionIDFromContext(ctx))
+}
+
 func (a *Runtime) effectiveModel(ctx context.Context, sess agentkit.Session) string {
 	if sess == nil {
 		return a.model
 	}
-	effective, _, _, err := sessbind.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, sess.ID(), a.id, a.model)
+	return a.modelForSession(ctx, sess.ID())
+}
+
+func (a *Runtime) modelForSession(ctx context.Context, sessionID agentkit.SessionID) string {
+	if sessionID == "" {
+		return a.model
+	}
+	effective, _, _, err := sessbind.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, sessionID, a.id, a.model)
 	if err != nil || effective == "" {
 		return a.model
 	}

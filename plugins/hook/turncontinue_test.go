@@ -32,11 +32,10 @@ func newDriver(t *testing.T, cfg hook.TurnContinueConfig) (agentkit.TurnStopping
 		t.Fatalf("build hook/turn-continue: %v", err)
 	}
 	hooks := provider.Hooks()
-	if len(hooks.TurnStopping) != 1 {
-		t.Fatalf("turn stopping hooks = %d, want 1", len(hooks.TurnStopping))
+	if hooks.TurnStopping == nil {
+		t.Fatal("expected TurnStopping hook")
 	}
-	h := hooks.TurnStopping[0]
-	return h, sess
+	return hooks.TurnStopping, sess
 }
 
 func driverCtx(sess agentkit.Session) context.Context {
@@ -237,7 +236,7 @@ func TestDriverNoProgressResetsOnSubstantiveEvents(t *testing.T) {
 		}
 		return in
 	}
-	call(0) // baseline
+	call(0)                     // baseline
 	if in := call(1); in.Stop { // no progress #1
 		t.Fatalf("segment 1 should continue: %s", in.StopReason)
 	}

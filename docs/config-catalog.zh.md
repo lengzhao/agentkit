@@ -37,7 +37,7 @@
 ## `agent/catalog-commands`
 
 - 返回类型：`agentkit.CommandProvider`
-- 源码：[`runtime/command/acp_commands.go`](../runtime/command/acp_commands.go)
+- 源码：[`runtime/command/catalog_commands.go`](../runtime/command/catalog_commands.go)
 
 无 config 字段。
 
@@ -121,7 +121,7 @@
 ## `commands/registry`
 
 - 返回类型：`agentkit.Commands`
-- 源码：[`runtime/command/acp_commands.go`](../runtime/command/acp_commands.go)
+- 源码：[`runtime/command/registry.go`](../runtime/command/registry.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -154,7 +154,7 @@
 ## `compaction/prune-tool-results`
 
 - 返回类型：`compaction.Service`
-- 源码：[`runtime/compaction/apply.go`](../runtime/compaction/apply.go)
+- 源码：[`runtime/compaction/prune_plugin.go`](../runtime/compaction/prune_plugin.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -163,7 +163,7 @@
 ## `compaction/summary`
 
 - 返回类型：`compaction.Service`
-- 源码：[`runtime/compaction/apply.go`](../runtime/compaction/apply.go)
+- 源码：[`runtime/compaction/summary_plugin.go`](../runtime/compaction/summary_plugin.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -215,7 +215,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `compaction/token-limit`
 
 - 返回类型：`compaction.Service`
-- 源码：[`plugins/compaction/pipeline.go`](../plugins/compaction/pipeline.go)
+- 源码：[`plugins/compaction/tokenlimit.go`](../plugins/compaction/tokenlimit.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -232,7 +232,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `credentials/env`
 
 - 返回类型：`credentials.Store`
-- 源码：[`plugins/credentials/collect.go`](../plugins/credentials/collect.go)
+- 源码：[`plugins/credentials/credentials.go`](../plugins/credentials/credentials.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -252,7 +252,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `credentials/integrations`
 
 - 返回类型：`credentials.Store`
-- 源码：[`plugins/credentials/collect.go`](../plugins/credentials/collect.go)
+- 源码：[`plugins/credentials/credentials.go`](../plugins/credentials/credentials.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -278,7 +278,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `filesystem/local`
 
 - 返回类型：`filesystem.Service`
-- 源码：[`runtime/filesystem/atomic.go`](../runtime/filesystem/atomic.go)
+- 源码：[`runtime/filesystem/local.go`](../runtime/filesystem/local.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -292,7 +292,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `filesystem/sandbox`
 
 - 返回类型：`filesystem.Service`
-- 源码：[`runtime/filesystem/atomic.go`](../runtime/filesystem/atomic.go)
+- 源码：[`runtime/filesystem/sandbox.go`](../runtime/filesystem/sandbox.go)
 
 无 config 字段。
 
@@ -304,7 +304,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `hook/background-review`
 
 - 返回类型：`agentkit.HookProvider`
-- 源码：[`plugins/learning/background_notify.go`](../plugins/learning/background_notify.go)
+- 源码：[`plugins/learning/background_review.go`](../plugins/learning/background_review.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -346,7 +346,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `hook/session-index`
 
 - 返回类型：`agentkit.HookProvider`
-- 源码：[`plugins/hook/beforestep.go`](../plugins/hook/beforestep.go)
+- 源码：[`plugins/hook/sessionindex.go`](../plugins/hook/sessionindex.go)
 
 无 config 字段。
 
@@ -357,7 +357,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `hook/turn-continue`
 
 - 返回类型：`agentkit.HookProvider`
-- 源码：[`plugins/hook/beforestep.go`](../plugins/hook/beforestep.go)
+- 源码：[`plugins/hook/turncontinue.go`](../plugins/hook/turncontinue.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -386,7 +386,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `learning/default`
 
 - 返回类型：`*learning.Service`
-- 源码：[`plugins/learning/background_notify.go`](../plugins/learning/background_notify.go)
+- 源码：[`plugins/learning/service.go`](../plugins/learning/service.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -406,7 +406,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `learning/dream-sweep`
 
 - 返回类型：`schedule.Runtime`
-- 源码：[`plugins/learning/background_notify.go`](../plugins/learning/background_notify.go)
+- 源码：[`plugins/learning/dream_sweep.go`](../plugins/learning/dream_sweep.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -419,7 +419,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `llm/fallback`
 
 - 返回类型：`agentkit.LLMProvider`
-- 源码：[`runtime/llm/catalog.go`](../runtime/llm/catalog.go)
+- 源码：[`runtime/llm/fallback.go`](../runtime/llm/fallback.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -435,7 +435,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `llm/openai-chat`
 
 - 返回类型：`agentkit.LLMProvider`
-- 源码：[`runtime/llm/catalog.go`](../runtime/llm/catalog.go)
+- 源码：[`runtime/llm/openai.go`](../runtime/llm/openai.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -459,7 +459,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `llm/openai-compatible`
 
 - 返回类型：`agentkit.LLMProvider`
-- 源码：[`runtime/llm/catalog.go`](../runtime/llm/catalog.go)
+- 源码：[`runtime/llm/openai.go`](../runtime/llm/openai.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -483,7 +483,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `llm/openai-responses`
 
 - 返回类型：`agentkit.LLMProvider`
-- 源码：[`runtime/llm/catalog.go`](../runtime/llm/catalog.go)
+- 源码：[`runtime/llm/openai.go`](../runtime/llm/openai.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -518,7 +518,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `llm/scripted`
 
 - 返回类型：`agentkit.LLMProvider`
-- 源码：[`runtime/llm/catalog.go`](../runtime/llm/catalog.go)
+- 源码：[`runtime/llm/scripted.go`](../runtime/llm/scripted.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -528,7 +528,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `loop/default`
 
 - 返回类型：`agentkit.Loop`
-- 源码：[`runtime/loop/control.go`](../runtime/loop/control.go)
+- 源码：[`runtime/loop/loop.go`](../runtime/loop/loop.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -543,7 +543,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `memory/default`
 
 - 返回类型：`*memory.Service`
-- 源码：[`plugins/memory/apply.go`](../plugins/memory/apply.go)
+- 源码：[`plugins/memory/service.go`](../plugins/memory/service.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -560,7 +560,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `platform/acp`
 
 - 返回类型：`agentkit.Platform`
-- 源码：[`runtime/platform/acp/agent.go`](../runtime/platform/acp/agent.go)
+- 源码：[`runtime/platform/acp/platform.go`](../runtime/platform/acp/platform.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -574,7 +574,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `platform/chat-api`
 
 - 返回类型：`agentkit.Platform`
-- 源码：[`runtime/platform/chatapi/admin.go`](../runtime/platform/chatapi/admin.go)
+- 源码：[`runtime/platform/chatapi/chatapi.go`](../runtime/platform/chatapi/chatapi.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -719,7 +719,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `platform/multiplex`
 
 - 返回类型：`agentkit.Platform`
-- 源码：[`runtime/platform/multiplex/chathistory.go`](../runtime/platform/multiplex/chathistory.go)
+- 源码：[`runtime/platform/multiplex/multiplex.go`](../runtime/platform/multiplex/multiplex.go)
 
 无 config 字段。
 
@@ -730,7 +730,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `platform/slack`
 
 - 返回类型：`agentkit.Platform`
-- 源码：[`runtime/platform/slack/block_action_forward.go`](../runtime/platform/slack/block_action_forward.go)
+- 源码：[`runtime/platform/slack/slack.go`](../runtime/platform/slack/slack.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -758,7 +758,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `platform/timer`
 
 - 返回类型：`agentkit.Platform`
-- 源码：[`runtime/platform/headless/output.go`](../runtime/platform/headless/output.go)
+- 源码：[`runtime/platform/headless/timer.go`](../runtime/platform/headless/timer.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -774,7 +774,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `platform/worker`
 
 - 返回类型：`agentkit.Platform`
-- 源码：[`runtime/platform/headless/output.go`](../runtime/platform/headless/output.go)
+- 源码：[`runtime/platform/headless/worker.go`](../runtime/platform/headless/worker.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -809,7 +809,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `policy/shell-allowlist`
 
 - 返回类型：`agentkit.Policy`
-- 源码：[`plugins/policy/pathdenylist.go`](../plugins/policy/pathdenylist.go)
+- 源码：[`plugins/policy/shellallowlist.go`](../plugins/policy/shellallowlist.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -847,7 +847,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `prompt/section/memory`
 
 - 返回类型：`agentkit.SectionProvider`
-- 源码：[`plugins/prompt/agentsmd.go`](../plugins/prompt/agentsmd.go)
+- 源码：[`plugins/prompt/memorymd.go`](../plugins/prompt/memorymd.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -861,7 +861,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `prompt/section/skills`
 
 - 返回类型：`agentkit.SectionProvider`
-- 源码：[`plugins/prompt/agentsmd.go`](../plugins/prompt/agentsmd.go)
+- 源码：[`plugins/prompt/skills.go`](../plugins/prompt/skills.go)
 
 无 config 字段。
 
@@ -872,7 +872,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `prompt/section/static`
 
 - 返回类型：`agentkit.SectionProvider`
-- 源码：[`plugins/prompt/agentsmd.go`](../plugins/prompt/agentsmd.go)
+- 源码：[`plugins/prompt/static.go`](../plugins/prompt/static.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -882,7 +882,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `prompt/section/subagents`
 
 - 返回类型：`agentkit.SectionProvider`
-- 源码：[`plugins/prompt/agentsmd.go`](../plugins/prompt/agentsmd.go)
+- 源码：[`plugins/prompt/subagents.go`](../plugins/prompt/subagents.go)
 
 无 config 字段。
 
@@ -894,7 +894,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `runner`
 
 - 返回类型：`agentkit.Runner`
-- 源码：[`runtime/runner/agent.go`](../runtime/runner/agent.go)
+- 源码：[`runtime/runner/runner.go`](../runtime/runner/runner.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -919,7 +919,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `sandbox/bwrap`
 
 - 返回类型：`sandbox.Service`
-- 源码：[`runtime/sandbox/bwrap.go`](../runtime/sandbox/bwrap.go)
+- 源码：[`runtime/sandbox/sandbox.go`](../runtime/sandbox/sandbox.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -968,7 +968,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `schedule/file`
 
 - 返回类型：`schedule.Registry`
-- 源码：[`plugins/schedule/cron.go`](../plugins/schedule/cron.go)
+- 源码：[`plugins/schedule/file.go`](../plugins/schedule/file.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -982,7 +982,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `schedule/multi`
 
 - 返回类型：`schedule.Registry`
-- 源码：[`plugins/schedule/cron.go`](../plugins/schedule/cron.go)
+- 源码：[`plugins/schedule/multi.go`](../plugins/schedule/multi.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -996,7 +996,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/commands`
 
 - 返回类型：`agentkit.CommandProvider`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/commands_plugin.go`](../runtime/session/sessstore/commands_plugin.go)
 
 无 config 字段。
 
@@ -1013,7 +1013,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/jsonl`
 
 - 返回类型：`agentkit.Session`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/jsonl.go`](../runtime/session/sessstore/jsonl.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1024,7 +1024,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/memory`
 
 - 返回类型：`agentkit.Session`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/memory.go`](../runtime/session/sessstore/memory.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1034,7 +1034,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/postgres`
 
 - 返回类型：`agentkit.SessionStore`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/db_store.go`](../runtime/session/sessstore/db_store.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1043,7 +1043,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/sql`
 
 - 返回类型：`agentkit.SessionStore`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/db_store.go`](../runtime/session/sessstore/db_store.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1056,7 +1056,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/sql-index`
 
 - 返回类型：`sessionindex.Service`
-- 源码：[`runtime/session/sessindex/index_extract.go`](../runtime/session/sessindex/index_extract.go)
+- 源码：[`runtime/session/sessindex/sql_index.go`](../runtime/session/sessindex/sql_index.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1066,7 +1066,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/sqlite`
 
 - 返回类型：`agentkit.SessionStore`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/db_store.go`](../runtime/session/sessstore/db_store.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1075,7 +1075,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/sqlite-index`
 
 - 返回类型：`sessionindex.Service`
-- 源码：[`runtime/session/sessindex/index_extract.go`](../runtime/session/sessindex/index_extract.go)
+- 源码：[`runtime/session/sessindex/sqlite_index.go`](../runtime/session/sessindex/sqlite_index.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1089,7 +1089,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/static`
 
 - 返回类型：`agentkit.SessionStore`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/static.go`](../runtime/session/sessstore/static.go)
 
 无 config 字段。
 
@@ -1100,7 +1100,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/store`
 
 - 返回类型：`agentkit.SessionStore`
-- 源码：[`runtime/session/sessstore/agent.go`](../runtime/session/sessstore/agent.go)
+- 源码：[`runtime/session/sessstore/store.go`](../runtime/session/sessstore/store.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1141,7 +1141,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `subagent/inprocess`
 
 - 返回类型：`subagent.Spawner`
-- 源码：[`runtime/subagent/async_context.go`](../runtime/subagent/async_context.go)
+- 源码：[`runtime/subagent/inprocess.go`](../runtime/subagent/inprocess.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1161,7 +1161,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `subagent/loop-agent`
 
 - 返回类型：`subagent.Spawner`
-- 源码：[`runtime/subagent/async_context.go`](../runtime/subagent/async_context.go)
+- 源码：[`runtime/subagent/loopagent.go`](../runtime/subagent/loopagent.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1249,7 +1249,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/fs-memory`
 
 - 返回类型：`agentkit.ToolPack`
-- 源码：[`plugins/tool/fs/format.go`](../plugins/tool/fs/format.go)
+- 源码：[`plugins/tool/fs/fs_memory.go`](../plugins/tool/fs/fs_memory.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1263,7 +1263,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/fs-workspace`
 
 - 返回类型：`agentkit.ToolPack`
-- 源码：[`plugins/tool/fs/format.go`](../plugins/tool/fs/format.go)
+- 源码：[`plugins/tool/fs/fs_workspace.go`](../plugins/tool/fs/fs_workspace.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1311,7 +1311,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/openapi`
 
 - 返回类型：`agentkit.ToolProvider`
-- 源码：[`plugins/tool/openapi/copy_global.go`](../plugins/tool/openapi/copy_global.go)
+- 源码：[`plugins/tool/openapi/openapi.go`](../plugins/tool/openapi/openapi.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1344,7 +1344,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/schedule`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/schedule/commands.go`](../plugins/tool/schedule/commands.go)
+- 源码：[`plugins/tool/schedule/schedule.go`](../plugins/tool/schedule/schedule.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1358,7 +1358,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/send`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/send/commands.go`](../plugins/tool/send/commands.go)
+- 源码：[`plugins/tool/send/send.go`](../plugins/tool/send/send.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1387,7 +1387,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/set-model`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/setmodel/register.go`](../plugins/tool/setmodel/register.go)
+- 源码：[`plugins/tool/setmodel/setmodel.go`](../plugins/tool/setmodel/setmodel.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1400,7 +1400,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/shell-bash`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/shell/commands.go`](../plugins/tool/shell/commands.go)
+- 源码：[`plugins/tool/shell/shell_bash.go`](../plugins/tool/shell/shell_bash.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1418,7 +1418,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/shell-bwrap`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/shellbwrap/env.go`](../plugins/tool/shellbwrap/env.go)
+- 源码：[`plugins/tool/shellbwrap/shellbwrap.go`](../plugins/tool/shellbwrap/shellbwrap.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1436,7 +1436,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/skill`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/skill/register.go`](../plugins/tool/skill/register.go)
+- 源码：[`plugins/tool/skill/skill.go`](../plugins/tool/skill/skill.go)
 
 无 config 字段。
 
@@ -1449,7 +1449,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/subagent`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/subagent/register.go`](../plugins/tool/subagent/register.go)
+- 源码：[`plugins/tool/subagent/subagent.go`](../plugins/tool/subagent/subagent.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1462,7 +1462,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/todo`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/todo/register.go`](../plugins/tool/todo/register.go)
+- 源码：[`plugins/tool/todo/todo.go`](../plugins/tool/todo/todo.go)
 
 无 config 字段。
 
@@ -1474,7 +1474,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-fetch-http`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_fetch_http.go`](../plugins/tool/web/web_fetch_http.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1489,7 +1489,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-fetch-scripted`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_scripted.go`](../plugins/tool/web/web_scripted.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1499,7 +1499,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-search-auto`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_search_auto.go`](../plugins/tool/web/web_search_auto.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1515,7 +1515,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-search-duckduckgo`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_search_duckduckgo.go`](../plugins/tool/web/web_search_duckduckgo.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1526,7 +1526,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-search-exa`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_search_exa.go`](../plugins/tool/web/web_search_exa.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1549,7 +1549,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-search-scripted`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_scripted.go`](../plugins/tool/web/web_scripted.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1560,7 +1560,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tool/web-search-tavily`
 
 - 返回类型：`agentkit.Tool`
-- 源码：[`plugins/tool/web/register.go`](../plugins/tool/web/register.go)
+- 源码：[`plugins/tool/web/web_search_tavily.go`](../plugins/tool/web/web_search_tavily.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1583,7 +1583,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tools/deferred`
 
 - 返回类型：`agentkit.ToolRuntime`
-- 源码：[`plugins/tools/deferred/assemble.go`](../plugins/tools/deferred/assemble.go)
+- 源码：[`plugins/tools/deferred/config.go`](../plugins/tools/deferred/config.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1602,7 +1602,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `tools/runtime`
 
 - 返回类型：`agentkit.ToolRuntime`
-- 源码：[`runtime/tools/batch.go`](../runtime/tools/batch.go)
+- 源码：[`runtime/tools/runtime.go`](../runtime/tools/runtime.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1638,7 +1638,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `workspace/tenant`
 
 - 返回类型：`workspace.Service`
-- 源码：[`runtime/workspace/default.go`](../runtime/workspace/default.go)
+- 源码：[`runtime/workspace/tenant.go`](../runtime/workspace/tenant.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|

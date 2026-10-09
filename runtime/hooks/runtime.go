@@ -15,11 +15,11 @@ type Deps struct {
 }
 
 type Runtime struct {
-	beforeStep    []agentkit.BeforeStepHook
-	beforeTool    []agentkit.BeforeToolHook
-	afterTool     []agentkit.AfterToolHook
-	turnStopping  []agentkit.TurnStoppingHook
-	turnComplete  []agentkit.TurnCompleteHook
+	beforeStep   []agentkit.BeforeStepHook
+	beforeTool   []agentkit.BeforeToolHook
+	afterTool    []agentkit.AfterToolHook
+	turnStopping []agentkit.TurnStoppingHook
+	turnComplete []agentkit.TurnCompleteHook
 }
 
 func init() {
@@ -41,11 +41,21 @@ func New(_ Config, deps Deps) (agentkit.HookRuntime, error) {
 			continue
 		}
 		c := provider.Hooks()
-		beforeStep = appendHooks(beforeStep, c.BeforeStep)
-		beforeTool = appendHooks(beforeTool, c.BeforeTool)
-		afterTool = appendHooks(afterTool, c.AfterTool)
-		turnStopping = appendHooks(turnStopping, c.TurnStopping)
-		turnComplete = appendHooks(turnComplete, c.TurnComplete)
+		if c.BeforeStep != nil {
+			beforeStep = append(beforeStep, c.BeforeStep)
+		}
+		if c.BeforeTool != nil {
+			beforeTool = append(beforeTool, c.BeforeTool)
+		}
+		if c.AfterTool != nil {
+			afterTool = append(afterTool, c.AfterTool)
+		}
+		if c.TurnStopping != nil {
+			turnStopping = append(turnStopping, c.TurnStopping)
+		}
+		if c.TurnComplete != nil {
+			turnComplete = append(turnComplete, c.TurnComplete)
+		}
 	}
 	slog.Info("hook chains assembled",
 		"providers", len(deps.Providers),
@@ -110,15 +120,3 @@ func (r *Runtime) TurnComplete(ctx context.Context, in *agentkit.TurnComplete) e
 }
 
 var _ agentkit.HookRuntime = (*Runtime)(nil)
-
-// appendHooks appends non-nil hooks from src to dst, skipping nil entries so a
-// misconfigured contribution cannot panic the chain at execution time.
-func appendHooks[H any](dst, src []H) []H {
-	for _, h := range src {
-		if any(h) == nil {
-			continue
-		}
-		dst = append(dst, h)
-	}
-	return dst
-}

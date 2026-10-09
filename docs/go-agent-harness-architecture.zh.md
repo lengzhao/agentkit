@@ -432,13 +432,13 @@ type HookProvider interface {
     Hooks() HookContribution
 }
 
-// HookContribution 显式声明贡献的 hook 点；nil 字段 = 不挂该点。
+// HookContribution 显式声明贡献的 hook 点；每个点每 provider 至多一个 handler，nil = 不挂该点。
 type HookContribution struct {
-    BeforeStep   []BeforeStepHook
-    BeforeTool   []BeforeToolHook
-    AfterTool    []AfterToolHook
-    TurnStopping []TurnStoppingHook
-    TurnComplete []TurnCompleteHook
+    BeforeStep   BeforeStepHook
+    BeforeTool   BeforeToolHook
+    AfterTool    AfterToolHook
+    TurnStopping TurnStoppingHook
+    TurnComplete TurnCompleteHook
 }
 
 // 每个 hook 点是开放接口：可直接在 Provider 上实现，也可用 On* 包装函数。
@@ -449,7 +449,7 @@ func OnTurnStopping(h func(context.Context, *TurnStopping) error) TurnStoppingHo
 func OnTurnComplete(h func(context.Context, *TurnComplete) error) TurnCompleteHook
 ```
 
-执行顺序：按 `deps.providers` 依赖顺序，对每个 hook 点依次拼接各 provider 的对应切片；同一 provider 内保持切片顺序。`hooks/runtime` 装配时会 slog 记录各 hook 点的最终链长，并跳过切片中的 nil 条目。
+执行顺序：按 `deps.providers` 依赖顺序，对每个 hook 点依次拼接各 provider 的非 nil 字段。`hooks/runtime` 装配时会 slog 记录各 hook 点的最终链长。
 
 #### 多 hook 插件共存约定
 

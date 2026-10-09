@@ -111,7 +111,7 @@ func NewTurnContinue(cfg TurnContinueConfig, deps TurnContinueDeps) (agentkit.Ho
 
 func (p *turnContinueProvider) Hooks() agentkit.HookContribution {
 	return agentkit.HookContribution{
-		TurnStopping: []agentkit.TurnStoppingHook{agentkit.OnTurnStopping(p.turnStopping)},
+		TurnStopping: agentkit.OnTurnStopping(p.turnStopping),
 	}
 }
 

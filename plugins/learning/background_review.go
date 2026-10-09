@@ -105,7 +105,7 @@ func NewBackgroundReview(cfg BackgroundReviewConfig, deps backgroundReviewDeps) 
 
 func (p *backgroundReviewProvider) Hooks() agentkit.HookContribution {
 	return agentkit.HookContribution{
-		TurnComplete: []agentkit.TurnCompleteHook{agentkit.OnTurnComplete(p.onTurnComplete)},
+		TurnComplete: agentkit.OnTurnComplete(p.onTurnComplete),
 	}
 }
 
