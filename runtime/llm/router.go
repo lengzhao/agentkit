@@ -3,9 +3,11 @@ package llm
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capllm "github.com/lengzhao/agentkit/cap/llm"
 )
 
 type RouterDeps struct {
@@ -50,7 +52,11 @@ func (r *Router) Stream(ctx context.Context, req agentkit.LLMRequest) (agentkit.
 	if err != nil {
 		return nil, err
 	}
-	return p.Stream(ctx, req)
+	stream, err := p.Stream(ctx, req)
+	if err == nil && strings.TrimSpace(req.Model) != "" {
+		NoteActualModel(ctx, req.Model)
+	}
+	return stream, err
 }
 
 func (r *Router) resolve(model string) (agentkit.LLMProvider, error) {
@@ -80,4 +86,19 @@ func (r *Router) ModalitiesForModel(model string) []string {
 		return ProviderModalitiesForModel(r.defaultP, model)
 	}
 	return agentkit.NormalizeModalities(nil)
+}
+
+// CatalogModels implements capllm.ModelCatalog so commands can list every
+// routable model id across the indexed providers.
+func (r *Router) CatalogModels() []capllm.ModelEntry {
+	ids := make([]string, 0, len(r.index))
+	for id := range r.index {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]capllm.ModelEntry, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, capllm.ModelEntry{ID: id, Modalities: r.ModalitiesForModel(id)})
+	}
+	return out
 }

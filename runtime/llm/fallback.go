@@ -51,9 +51,9 @@ type fallbackTarget struct {
 }
 
 type Fallback struct {
-	providers  []agentkit.LLMProvider
-	models     []string
-	fallbackOn fallbackMode
+	providers   []agentkit.LLMProvider
+	models      []string
+	fallbackOn  fallbackMode
 	useReqModel bool
 }
 
@@ -302,12 +302,12 @@ func (s *fallbackStream) Close() error {
 
 func recordFallbackTrace(ctx context.Context, mode fallbackMode, phase string, from, to fallbackTarget, reason error) {
 	attrs := map[string]string{
-		"phase":          phase,
-		"fallback_on":    string(mode),
-		"from_provider":  from.provider.Name(),
-		"from_model":     from.model,
-		"to_provider":    to.provider.Name(),
-		"to_model":       to.model,
+		"phase":         phase,
+		"fallback_on":   string(mode),
+		"from_provider": from.provider.Name(),
+		"from_model":    from.model,
+		"to_provider":   to.provider.Name(),
+		"to_model":      to.model,
 	}
 	if reason != nil {
 		attrs["reason"] = reason.Error()

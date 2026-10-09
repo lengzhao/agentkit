@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
@@ -24,26 +25,20 @@ func telemetryModel(def capsubagent.Definition, ag agentkit.Agent) string {
 	return ""
 }
 
-// inprocessTelemetryModel is the model id recorded for Langfuse and the child LLM:
-// agents/<name>.md model: is the default, then session/global binds for the child session.
+// inprocessTelemetryModel is the model id recorded for Langfuse and the child LLM.
+// It resolves exactly like the child runtime does (sessbind.ResolveSubagentModel):
+// agents/<name>.md `model:` first, then global binds keyed by the child agent
+// (explicit /model -g sub <name> config), the subagents wildcard (sub:*), then
+// by the parent agent.
 func inprocessTelemetryModel(
 	ctx context.Context,
-	store agentkit.SessionStore,
 	ws workspace.Service,
-	childID agentkit.SessionID,
 	agentID agentkit.AgentID,
 	def capsubagent.Definition,
 ) string {
-	defaultModel := strings.TrimSpace(def.Model)
-	if store == nil {
-		return defaultModel
+	scope, ok := rctx.SubagentModelScopeFrom(ctx)
+	if !ok {
+		return strings.TrimSpace(def.Model)
 	}
-	effective, _, _, err := sessbind.ResolveEffectiveModel(ctx, store, ws, childID, agentID, defaultModel)
-	if err != nil {
-		return defaultModel
-	}
-	if m := strings.TrimSpace(effective); m != "" {
-		return m
-	}
-	return defaultModel
+	return sessbind.ResolveSubagentModel(ctx, ws, scope.ParentAgentID, agentID, def.Model)
 }

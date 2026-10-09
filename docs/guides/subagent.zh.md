@@ -45,12 +45,33 @@ model: ""                 # 可省，默认用 Spawner 的 llm dep 的默认模�
 | `name` | 否 | 默认文件名去掉 `.md`；委派时大小写不敏感 |
 | `tools` | 否 | 工具名白名单，空 = 该 runtime 的全部工具。写的是**模型可见的工具名**而不是 kind 名（`tool/read-file` → `read`，`tool/list-dir` → `ls`）；名字写错会被丢弃并告警。见 [§4](#4-子-agent-的能力边界) |
 | `skills` | 否 | Skill 名白名单，空 = 该 runtime 的全部 skill。同时收窄 prompt 里的 skill 目录与 `skill` 工具的加载范围；名字写错会告警。需在 `tools` 里包含 `skill` 才能加载 |
-| `model` | 否 | 覆盖模型，用于"便宜模型跑调研" |
+| `model` | 否 | 该子 Agent 的**能力契约**模型：一旦写了，会话内 `/model` 与全局设置都不会覆盖它（见下方「模型解析」）。常用于"便宜模型跑调研"或 vision 子 agent 绑定视觉模型 |
 | `modalities` | 否 | 声明该子 Agent 处理的输入类型：`text`、`image`、`audio`（可写别名 `vision`）。会出现在主 Agent 的 subagents prompt；空表示不额外标注 |
 
 `agents/*.md` 只用于进程内（`inprocess`）子 Agent。委派到 Loop 里已注册的 agent（如 `cursor`）在 `subagent/loop-agent` 实例的 `config.agents` 里声明，见 [§3](#3-目录查找)。
 
 一个文件解析失败不会影响其它子 Agent：坏文件被跳过，其余照常可用。
+
+### 模型解析（进程内子 Agent）
+
+子 Agent 的模型是**显式配置，不做会话内隐式继承**——用户在主对话 `/model` 切模型只作用于主 agent，子 Agent 不跟随会话状态（可预测、易排查）。按「**定义作者 > 显式子 Agent 配置 > 一般默认 > 兜底**」解析（`sessbind.ResolveSubagentModel`）：
+
+| 顺序 | 来源 | 说明 |
+|------|------|------|
+| 1 | `agents/<name>.md` 的 `model:` | 定义文件是能力契约（prompt、`modalities`、`model` 一体 authored），运行时不覆盖 |
+| 2 | `models["sub:<名>"]`（`/model -g sub <名> <model>`） | 显式给该子 Agent 配的全局模型，所有会话生效；`reset` 清除 |
+| 3 | `models["sub:*"]`（`/model -g sub * <model>`） | wildcard：给所有未单独配置的子 Agent 配的全局模型（specific beats general：被第 2 层覆盖时让位）；`reset` 清除 |
+| 4 | `models["<父agent>"]`（`/model -g <model>`） | 父 agent 的全局默认，作为未单独配置子 Agent 的一般默认 |
+| 5 | 兜底 | 1–4 全空时为空，由 LLM 实例自身默认决定 |
+
+设计要点：
+
+- **子 session 与父会话的 session bind 都不参与**：子 session 是每次 delegate 新建的临时 id（没有 `/model` 入口）；父会话 bind 属于主 agent 的会话语义。子 Agent 模型只由「定义 + 全局配置」决定。
+- 想改某个子 Agent 的模型：写 md 的 `model:`（定义层），或 `/model -g sub <名> <model>`（配置层）；想整体换档：`/model -g <model>`，未单独配置的子 Agent 跟随；想只给子 Agent 整体换档而不动主 agent：`/model -g sub * <model>`。
+- `/model -g sub`（不带名）列出子 Agent 模型总览：wildcard、每个已定义子 Agent（含 md `model:` 优先提示）与 stale 条目。
+- Langfuse 上 `subagent.<name>` span 的 planned `model` 与实际 LLM 调用使用同一解析函数。
+
+Loop 子 Agent（`subagent/loop-agent`，如 `cursor`）不走此链：模型由定义 `model` / 目标 Loop agent 配置（或远端 ACP 自身）决定。
 
 ## 3. 目录查找
 

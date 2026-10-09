@@ -228,7 +228,9 @@ func (h *abortAfterFirstToolHook) AfterTool(context.Context, *agentkit.ToolResul
 func (h *abortAfterFirstToolHook) TurnStopping(context.Context, *agentkit.TurnStopping) error {
 	return nil
 }
-func (h *abortAfterFirstToolHook) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
+func (h *abortAfterFirstToolHook) TurnComplete(context.Context, *agentkit.TurnComplete) error {
+	return nil
+}
 
 func TestRunTurnInterruptedResultsOnAbortMidBatch(t *testing.T) {
 	t.Parallel()

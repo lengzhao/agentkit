@@ -46,6 +46,8 @@
 | `loop`（必填） | `agentkit.AgentCatalogLoop` |  |
 | `sessionStore`（必填） | `agentkit.SessionStore` |  |
 | `workspace`（必填） | `workspace.Service` |  |
+| `subagents` | `capsubagent.Spawner` | 可选：启用 `/model -g sub` 的子 Agent 名校验与总览列表 |
+| `llm` | `agentkit.LLMProvider` | 可选（建议 `llm/router`）：提供模型目录，`/model` show 附 `available` 行、set 未知模型给非阻断警告 |
 
 ## `agent/chain`
 

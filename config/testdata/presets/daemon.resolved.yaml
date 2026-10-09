@@ -19,8 +19,10 @@ agent.assistant.default:
     use: agent/coding
 agent.catalogCommands.default:
     deps:
+        llm: llm.router
         loop: loop.default
         sessionStore: sessionStore.default
+        subagents: subagent.default
         workspace: workspace.default
     use: agent/catalog-commands
 agent.cursor.default:
@@ -41,6 +43,7 @@ agent.cursor.default:
         fs: filesystem.local.state
         sessionEvents: session.events
         sessionStore: sessionStore.default
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: agent/acp-remote
 agent.worker.default:
@@ -70,14 +73,18 @@ bootstrap.shell.default:
     deps:
         workspace: workspace.default
     use: bootstrap/shell
+compaction.chain.default:
+    use: compaction/chain
 compaction.pipeline.default:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.default
     use: compaction/pipeline
 compaction.pipeline.worker:
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.prune.default
             - compaction.token-limit.worker
@@ -105,6 +112,7 @@ compaction.token-limit.default:
         contextWindow: 1048576
         triggerRatio: 0.92
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
@@ -114,6 +122,7 @@ compaction.token-limit.worker:
         contextWindow: 1048576
         triggerRatio: 0.7
     deps:
+        chain: compaction.chain.default
         services:
             - compaction.summary.default
     use: compaction/token-limit
@@ -129,6 +138,8 @@ credentials.integrations:
     deps:
         fs: filesystem.local.state
     use: credentials/integrations
+delivery.default:
+    use: delivery/assistant
 filesystem.local.default:
     config:
         root: work
@@ -153,6 +164,7 @@ hook.background-review.default:
         minTurnTokens: 0
         skipSlashOnly: true
     deps:
+        delivery: delivery.default
         learning: learning.default
         llm: llm.review
         memory: memory.default
@@ -163,14 +175,12 @@ hook.before-step.default:
     config:
         contributeCommands: true
     deps:
-        services:
-            - compaction.pipeline.default
+        compaction: compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.before-step.worker:
     deps:
-        services:
-            - compaction.pipeline.worker
+        compaction: compaction.pipeline.worker
         sessionStore: sessionStore.default
     use: hook/before-step
 hook.session-index.default:
@@ -220,12 +230,14 @@ learning.dreamSweep:
     deps:
         learning: learning.default
     use: learning/dream-sweep
-llm.default:
+llm.deepseek:
     config:
-        api: chat
-        apiKeyRef: env:OPENAI_API_KEY
-        baseUrl: https://api.openai.com/v1
-        model: gpt-5.4
+        apiKeyRef: env:DEEPSEEK_API_KEY
+        baseUrl: https://api.deepseek.com/v1
+        models:
+            - id: deepseek-v4-flash
+              modalities:
+                - text
         responseHeaderTimeoutSeconds: 60
         retry:
             provider:
@@ -234,21 +246,41 @@ llm.default:
         timeoutSeconds: 180
     deps:
         credentials: credentials.default
-    use: llm/openai-compatible
+    use: llm/openai-chat
+llm.default:
+    deps:
+        default: llm.gpt
+        protocols:
+            - llm.gpt
+            - llm.deepseek
+    use: llm/router
 llm.fallback:
     config:
         fallbackModels:
             - gpt-5.4-mini
             - gpt-5.4-nano
+            - deepseek-v4-flash
     deps:
-        provider: llm.default
+        provider: llm.router
     use: llm/fallback
-llm.openai:
+llm.gpt:
     config:
         api: chat
         apiKeyRef: env:OPENAI_API_KEY
         baseUrl: https://api.openai.com/v1
-        model: gpt-5.4
+        models:
+            - id: gpt-5.4
+              modalities:
+                - text
+                - image
+            - id: gpt-5.4-mini
+              modalities:
+                - text
+                - image
+            - id: gpt-5.4-nano
+              modalities:
+                - text
+                - image
         responseHeaderTimeoutSeconds: 60
         retry:
             provider:
@@ -269,6 +301,13 @@ llm.review:
     deps:
         credentials: credentials.default
     use: llm/openai-compatible
+llm.router:
+    deps:
+        default: llm.gpt
+        protocols:
+            - llm.gpt
+            - llm.deepseek
+    use: llm/router
 loop.default:
     deps:
         agents:
@@ -285,6 +324,7 @@ mcp.default:
     deps:
         credentials: credentials.integrations
         fs: filesystem.local.state
+        telemetry: telemetry.toolkit
     use: tool/mcp
 memory.default:
     config:
@@ -300,6 +340,7 @@ openapi.default:
     deps:
         credentials: credentials.integrations
         fs: filesystem.local.state
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/openapi
 platform.default:
@@ -504,7 +545,7 @@ subagent.inprocess.default:
         compaction:
             - compaction.pipeline.default
         hooks: hooks.default
-        llm: llm.openai
+        llm: llm.default
         prompt: prompt.subagent.default
         sessionStore: sessionStore.default
         tools: tools.subagent.default
@@ -532,10 +573,13 @@ subagent.loop.default:
     use: subagent/loop-agent
 telemetry.default:
     use: telemetry/none
+telemetry.toolkit:
+    use: telemetry/toolkit
 tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
+        delivery: delivery.default
         history: platform.default
     use: tool/chat-history
 tool.finish.default:
@@ -571,7 +615,8 @@ tool.recognize.default:
     config:
         model: gpt-5.4-mini
     deps:
-        llm: llm.openai
+        llm: llm.gpt
+        telemetry: telemetry.toolkit
         workspace: workspace.default
     use: tool/recognize
 tool.schedule.default:
@@ -583,6 +628,7 @@ tool.schedule.default:
     use: tool/schedule
 tool.send.default:
     deps:
+        delivery: delivery.default
         fs: filesystem.local.default
         sender: platform.default
         workspace: workspace.default

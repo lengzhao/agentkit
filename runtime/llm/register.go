@@ -1,8 +1,8 @@
 package llm
 
 import (
-	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit"
+	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -16,13 +16,13 @@ func init() {
 }
 
 var (
-	_ agentkit.LLMProvider            = (*OpenAI)(nil)
-	_ agentkit.LLMProvider            = (*Scripted)(nil)
-	_ agentkit.LLMProvider            = (*Fallback)(nil)
-	_ agentkit.LLMProvider            = (*Router)(nil)
-	_ agentkit.ModalityAwareLLM       = (*OpenAI)(nil)
-	_ agentkit.ModelModalityAwareLLM  = (*OpenAI)(nil)
-	_ agentkit.ModelModalityAwareLLM  = (*Router)(nil)
-	_ agentkit.ModelModalityAwareLLM  = (*Fallback)(nil)
-	_ capllm.ModelCatalog             = (*OpenAI)(nil)
+	_ agentkit.LLMProvider           = (*OpenAI)(nil)
+	_ agentkit.LLMProvider           = (*Scripted)(nil)
+	_ agentkit.LLMProvider           = (*Fallback)(nil)
+	_ agentkit.LLMProvider           = (*Router)(nil)
+	_ agentkit.ModalityAwareLLM      = (*OpenAI)(nil)
+	_ agentkit.ModelModalityAwareLLM = (*OpenAI)(nil)
+	_ agentkit.ModelModalityAwareLLM = (*Router)(nil)
+	_ agentkit.ModelModalityAwareLLM = (*Fallback)(nil)
+	_ capllm.ModelCatalog            = (*OpenAI)(nil)
 )

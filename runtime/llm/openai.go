@@ -93,18 +93,18 @@ func (c *OpenAIConfig) Validate() error {
 }
 
 type OpenAI struct {
-	providerName   string
-	model          string
-	api            string
-	hostedTools    []HostedToolConfig
-	reasoning      *OpenAIReasoningConfig
-	providerRetry  ProviderRetrySettings
-	requestTimeout time.Duration
-	modalities     []string
+	providerName    string
+	model           string
+	api             string
+	hostedTools     []HostedToolConfig
+	reasoning       *OpenAIReasoningConfig
+	providerRetry   ProviderRetrySettings
+	requestTimeout  time.Duration
+	modalities      []string
 	modelModalities map[string][]string
 	catalogEntries  []capllm.ModelEntry
-	apiKey         string
-	client         *openai.Client
+	apiKey          string
+	client          *openai.Client
 }
 
 // NewOpenAI registers llm/openai-compatible: OpenAI-compatible provider, chat or responses API.

@@ -26,7 +26,7 @@ type storeRecordingAgent struct {
 	store   agentkit.SessionStore
 }
 
-func (a *storeRecordingAgent) ID() agentkit.AgentID { return a.id }
+func (a *storeRecordingAgent) ID() agentkit.AgentID    { return a.id }
 func (a *storeRecordingAgent) ConfiguredModel() string { return a.model }
 
 func (a *storeRecordingAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) error {

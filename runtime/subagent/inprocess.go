@@ -228,6 +228,12 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	childEnv := parentEnv.WithConversation(string(childID))
 	childCtx = rctx.ApplyEnvelopeToContext(childCtx, childEnv)
 	childCtx = rctx.WithAgentID(childCtx, child.ID())
+	// Model overrides for the child resolve from explicit config only
+	// (definition model, then global binds); conversation session state
+	// never leaks into the child.
+	childCtx = rctx.WithSubagentModelScope(childCtx, rctx.SubagentModelScope{
+		ParentAgentID: rctx.AgentIDFromContext(ctx),
+	})
 	// Drop the parent's turn control: steering and cancel reasons belong to the
 	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.
 	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
@@ -237,7 +243,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		defer cancel()
 	}
 
-	obsModel := inprocessTelemetryModel(childCtx, s.store, s.workspace, childID, child.ID(), def)
+	obsModel := inprocessTelemetryModel(childCtx, s.workspace, child.ID(), def)
 	childCtx, endSubagentObs := telemetry.BeginObservation(childCtx, telemetry.ObservationMetaFromContext(childCtx, captelemetry.ObservationMeta{
 		Name:  "subagent." + def.Name,
 		Kind:  captelemetry.KindSpan,

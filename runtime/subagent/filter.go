@@ -170,9 +170,9 @@ func (e *emptyToolSetError) Error() string {
 // definitionPrompt layers a child agent's persona on top of the shared prompt
 // sections, so AGENTS.md, time and the skill catalog still reach the child.
 type definitionPrompt struct {
-	inner   agentkit.PromptAssembler
-	body    string
-	skills  []string
+	inner  agentkit.PromptAssembler
+	body   string
+	skills []string
 }
 
 func (d *definitionPrompt) Assemble(ctx context.Context, req agentkit.PromptRequest) ([]agentkit.ModelMessage, error) {

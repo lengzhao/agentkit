@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit"
+	capllm "github.com/lengzhao/agentkit/cap/llm"
 )
 
 // ModelCatalogEntry is config.models[] on protocol LLM plugins.

@@ -124,19 +124,19 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	if deps.Workspace == nil {
 		return nil, fmt.Errorf("agent requires workspace")
 	}
-		toolExecution := cfg.ToolExecution
-		if toolExecution == "" {
-			toolExecution = agentkit.ToolExecutionParallel
-		}
-		return &Runtime{
-			id:              id,
-			model:           cfg.Model,
-			modalities:      agentkit.NormalizeModalities(cfg.Modalities),
-			retry:           resolveRetrySettings(cfg.Retry),
-			maxSteps:        resolveMaxSteps(cfg.MaxSteps),
-			maxPromptTokens: cfg.MaxPromptTokens,
-			toolExecution:   toolExecution,
-			now:             time.Now,
+	toolExecution := cfg.ToolExecution
+	if toolExecution == "" {
+		toolExecution = agentkit.ToolExecutionParallel
+	}
+	return &Runtime{
+		id:              id,
+		model:           cfg.Model,
+		modalities:      agentkit.NormalizeModalities(cfg.Modalities),
+		retry:           resolveRetrySettings(cfg.Retry),
+		maxSteps:        resolveMaxSteps(cfg.MaxSteps),
+		maxPromptTokens: cfg.MaxPromptTokens,
+		toolExecution:   toolExecution,
+		now:             time.Now,
 		sessionStore:    deps.SessionStore,
 		llm:             deps.LLM,
 		tools:           deps.Tools,
@@ -170,10 +170,20 @@ func (a *Runtime) effectiveModel(ctx context.Context, sess agentkit.Session) str
 }
 
 func (a *Runtime) modelForSession(ctx context.Context, sessionID agentkit.SessionID) string {
+	// In-process subagents resolve models from explicit config only: the
+	// definition model first, then global binds (child agent key, then parent
+	// agent key). Conversation session state never leaks into children.
+	if scope, ok := rctx.SubagentModelScopeFrom(ctx); ok {
+		return sessbind.ResolveSubagentModel(ctx, a.workspace, scope.ParentAgentID, a.id, a.model)
+	}
 	if sessionID == "" {
 		return a.model
 	}
-	effective, _, _, err := sessbind.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, sessionID, a.id, a.model)
+	resolved, err := capsession.ResolveActiveSessionID(ctx, a.sessionStore, sessionID)
+	if err != nil || resolved == "" {
+		resolved = sessionID
+	}
+	effective, _, _, err := sessbind.ResolveEffectiveModel(ctx, a.sessionStore, a.workspace, resolved, a.id, a.model)
 	if err != nil || effective == "" {
 		return a.model
 	}
@@ -490,7 +500,8 @@ type stepOutcome struct {
 	ctx context.Context
 }
 
-func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, model string, pos stepPosition) (stepOutcome, error) {
+func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agentkit.OutboundEmit, _ string, pos stepPosition) (stepOutcome, error) {
+	model := a.effectiveModel(ctx, sess)
 	stepStarted := time.Now()
 	ctx = rtllm.WithActualModelSlot(ctx)
 	ctx, endPrep := telemetry.BeginObservation(ctx, telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{

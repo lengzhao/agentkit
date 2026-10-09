@@ -285,9 +285,12 @@ multiplex（CLI + IM 等）下，`/exit` 只关闭 CLI  stdin，**不会**结束
 
 | 命令 | 行为 |
 |---|---|
-| `/model` | 显示当前生效模型、会话/全局覆盖与 agent 默认 |
-| `/model <name>` | 将会话模型设为任意 provider 支持的模型名（用户自行输入，无内置列表） |
+| `/model` | 显示当前生效模型、会话/全局覆盖与 agent 默认（LLM 提供模型目录时附 `available: ...` 一行） |
+| `/model <name>` | 将会话模型设为任意 provider 支持的模型名；不在目录中时给**非阻断**警告（自定义 baseUrl 模型仍合法） |
 | `/model -g <name>` | 为**当前 agent** 设置全局默认（写入 `global:runtime.json` 的 `models`，所有未单独覆盖的会话生效） |
+| `/model -g sub` | 列出子 Agent 模型总览：wildcard、每个已定义子 Agent（含 md `model:` 优先提示）与遗留条目 |
+| `/model -g sub <name> [model]` | 查看/设置/清除某个进程内子 Agent 的全局模型（写入 `global:runtime.json` 的 `models["sub:<name>"]`；子 Agent 名对定义列表校验，拼错会列出可用名单；md 定义里的 `model:` 优先于此设置）。`sub:<name>` 前缀是兼容别名 |
+| `/model -g sub * <model>` | 给**所有子 Agent** 设全局 wildcard 模型（写入 `models["sub:*"]`，只影响子 Agent、不动主 agent；被 per-子键覆盖时让位）。`reset` 清除 |
 | `/model reset` | 清除本会话的模型覆盖 |
 | `/model -g reset` | 清除当前 agent 的全局覆盖 |
 
@@ -295,7 +298,7 @@ multiplex（CLI + IM 等）下，`/exit` 只关闭 CLI  stdin，**不会**结束
 
 **Agent 全局默认**：`/agent -g use <id>` 写入 `global:runtime.json` 的 `agentId`，对所有未设会话覆盖的会话生效；`/agent -g reset` 清除。优先级：会话 `runtime.json` → 全局 → 请求里的 `agent_id` → `loop.defaultAgent`。会话/全局 agent 绑定优先于 chat-api 请求体中的 `agent_id`。
 
-`/model -g` 的全局条目按**当前路由到的 agent id**（含 `/agent -g use`）写入 `global:runtime.json`，与 runner 入站解析一致。
+`/model -g` 的全局条目按**当前路由到的 agent id**（含 `/agent -g use`）写入 `global:runtime.json`，与 runner 入站解析一致。**会话级 `/model` 只作用于主 agent**：进程内子 Agent 的模型是显式配置（md `model:` → `/model -g sub <名>` → `/model -g sub *` → 父 agent 的 `-g`），不随会话内 `/model` 变化，见 [subagent.zh.md §模型解析](subagent.zh.md#模型解析进程内子-agent)。
 
 **Agent 自主切换**：挂载 `tool/set-model` 后，Agent 可调用 `set_model` 写入同一会话 `runtime.json` 覆盖（下一 turn 生效，`allowModels` 白名单约束可选范围）；与 `agent/chain` 组合可实现「路由节点识别意图并切模型 → 主节点执行」的编排，见 [agent-chain.zh.md](agent-chain.zh.md)。
 

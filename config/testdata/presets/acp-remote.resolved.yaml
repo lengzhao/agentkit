@@ -36,8 +36,10 @@ agent.assistant.default:
     use: agent/coding
 agent.catalogCommands.default:
     deps:
+        llm: llm.router
         loop: loop.default
         sessionStore: sessionStore.default
+        subagents: subagent.default
         workspace: workspace.default
     use: agent/catalog-commands
 agent.cursor.default:

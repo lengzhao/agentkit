@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
-	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit"
+	capllm "github.com/lengzhao/agentkit/cap/llm"
 )
 
 type catalogStub struct {

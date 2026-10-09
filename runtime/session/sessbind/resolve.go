@@ -133,6 +133,26 @@ func GlobalModelBind(ctx context.Context, ws workspace.Service, agentID agentkit
 	return strings.TrimSpace(data.Models[string(agentID)]), nil
 }
 
+// GlobalModelBinds returns every entry in global:runtime.json models, or nil
+// when unset. Commands use it to list configured overrides.
+func GlobalModelBinds(ctx context.Context, ws workspace.Service) (map[string]string, error) {
+	if ws == nil {
+		return nil, nil
+	}
+	data, err := loadGlobalRuntime(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	if len(data.Models) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(data.Models))
+	for k, v := range data.Models {
+		out[k] = v
+	}
+	return out, nil
+}
+
 // SetGlobalModelBind sets or clears the global default model for agentID.
 func SetGlobalModelBind(ctx context.Context, ws workspace.Service, agentID agentkit.AgentID, model string) error {
 	if ws == nil {

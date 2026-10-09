@@ -21,7 +21,7 @@ func (h *recordBeforeStep) BeforeStep(_ context.Context, in *agentkit.BeforeStep
 	return nil
 }
 
-func (h *recordBeforeStep) BeforeTool(context.Context, *agentkit.ToolCall) error { return nil }
+func (h *recordBeforeStep) BeforeTool(context.Context, *agentkit.ToolCall) error  { return nil }
 func (h *recordBeforeStep) AfterTool(context.Context, *agentkit.ToolResult) error { return nil }
 
 func (h *recordBeforeStep) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
