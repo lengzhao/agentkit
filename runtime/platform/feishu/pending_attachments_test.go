@@ -138,3 +138,43 @@ func TestMarkAndIsActiveThreadSession(t *testing.T) {
 		}
 	})
 }
+
+func TestAllowsUnmentionedGroupMessage(t *testing.T) {
+	const threadKey = "feishu:oc_chat:t:om_root:u:ou_user"
+
+	t.Run("default: only attachments pass in engaged thread", func(t *testing.T) {
+		p := &Platform{threadIsolation: true}
+		p.markThreadSessionActive(threadKey)
+		if !p.allowsUnmentionedGroupMessage("image", threadKey) {
+			t.Fatal("attachment should pass in engaged thread by default")
+		}
+		if p.allowsUnmentionedGroupMessage("text", threadKey) {
+			t.Fatal("text should require @bot by default")
+		}
+	})
+
+	t.Run("threadNoMention: every message passes in engaged thread", func(t *testing.T) {
+		p := &Platform{threadIsolation: true, threadNoMention: true}
+		p.markThreadSessionActive(threadKey)
+		for _, mt := range []string{"text", "post", "image", "file"} {
+			if !p.allowsUnmentionedGroupMessage(mt, threadKey) {
+				t.Fatalf("msg type %q should pass with threadNoMention", mt)
+			}
+		}
+	})
+
+	t.Run("not engaged thread still requires mention", func(t *testing.T) {
+		p := &Platform{threadIsolation: true, threadNoMention: true}
+		if p.allowsUnmentionedGroupMessage("text", threadKey) {
+			t.Fatal("un-engaged thread should still require @bot")
+		}
+	})
+
+	t.Run("thread isolation disabled never passes", func(t *testing.T) {
+		p := &Platform{threadIsolation: false, threadNoMention: true}
+		p.markThreadSessionActive(threadKey)
+		if p.allowsUnmentionedGroupMessage("text", threadKey) {
+			t.Fatal("thread isolation off should require @bot")
+		}
+	})
+}

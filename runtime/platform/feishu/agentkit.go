@@ -37,6 +37,7 @@ type Config struct {
 	ShareSessionInChannel      bool              `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
 	ThreadIsolation            bool              `json:"threadIsolation"`
 	ReplyInThread              *bool             `json:"replyInThread"`
+	ThreadNoMention            bool              `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation
 	ReactionEmoji              string            `json:"reactionEmoji"`
 	DoneEmoji                  string            `json:"doneEmoji"`
 	CancelledEmoji             string            `json:"cancelledEmoji"`
@@ -269,6 +270,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		respondToAtEveryoneAndHere: cfg.RespondToAtEveryoneAndHere,
 		shareSessionInChannel:      cfg.ShareSessionInChannel,
 		threadIsolation:            cfg.ThreadIsolation,
+		threadNoMention:            cfg.ThreadNoMention,
 		replyInThread:              replyInThread,
 		resolveMentions:            cfg.ResolveMentions,
 		noReplyToTrigger:           noReplyToTrigger,

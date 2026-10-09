@@ -54,6 +54,7 @@ type Platform struct {
 	respondToAtEveryoneAndHere bool
 	shareSessionInChannel      bool
 	threadIsolation            bool
+	threadNoMention            bool
 	replyInThread              bool
 	noReplyToTrigger           bool
 	unknownCardAction          string
@@ -353,12 +354,13 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 			case p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all"):
 				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
 			// Once a thread has been engaged via @bot, allow follow-up
-			// attachment-only messages (image/file/audio/media/sticker) in the
-			// same thread through without re-mentioning the bot. Plain text
-			// still requires an explicit @bot to avoid pulling in unrelated
-			// chatter.
-			case p.threadIsolation && isAttachmentMsgType(msgType) && p.isActiveThreadSession(sessionKey):
-				slog.Debug(p.tag()+": passing attachment through active thread without mention",
+			// messages in the same thread through without re-mentioning the
+			// bot. With threadNoMention every message passes; by default only
+			// attachment-only messages (image/file/audio/media/sticker) are
+			// admitted so plain text still requires an explicit @bot to avoid
+			// pulling in unrelated chatter.
+			case p.allowsUnmentionedGroupMessage(msgType, sessionKey):
+				slog.Debug(p.tag()+": passing message through active thread without mention",
 					"chat_id", chatID, "session_key", sessionKey, "msg_type", msgType, "message_id", messageID)
 			default:
 				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)

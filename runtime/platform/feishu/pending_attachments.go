@@ -146,3 +146,17 @@ func (p *Platform) isActiveThreadSession(sessionKey string) bool {
 	_, ok := p.activeThreadSessions.Load(sessionKey)
 	return ok
 }
+
+// allowsUnmentionedGroupMessage reports whether a group message that does not
+// @ the bot should still be dispatched. Only bot-engaged topic threads
+// (threadIsolation) qualify: with threadNoMention every follow-up message in
+// the thread passes; by default only attachment-only messages are admitted.
+func (p *Platform) allowsUnmentionedGroupMessage(msgType, sessionKey string) bool {
+	if !p.threadIsolation || !p.isActiveThreadSession(sessionKey) {
+		return false
+	}
+	if p.threadNoMention {
+		return true
+	}
+	return isAttachmentMsgType(msgType)
+}

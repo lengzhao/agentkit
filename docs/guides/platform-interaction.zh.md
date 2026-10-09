@@ -192,6 +192,7 @@ flowchart TD
 | `asyncSubagentProgressCard` | `true` | `async` 委派子 Agent 时另发一张后台过程卡（生命周期独立于父 turn 回复卡） |
 | `enableFeishuCard` | `true` | `false` 时回退纯文本出站 |
 | `replyInThread` | `true` | 仅群聊出站时 `Im.Message.Reply` 带 `reply_in_thread`；私聊（p2p）始终平铺回复 |
+| `threadNoMention` | `false` | 配合 `threadIsolation`：话题被 @bot 触发过（`activeThreadSessions`）后，话题内所有消息（含纯文字）免 @；默认仅纯附件免 @，纯文字仍需 @ |
 | `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
 **整轮 turn** 的 thinking / tool / 正文都在同一张 rich 卡内刷新；同一 turn 内多条 assistant 消息的正文会在每条 `message/start` 时**定稿到累积区**（段间空行拼接），不会互相覆盖。出站流式状态优先按 Loop 打标的 `OutboundEvent.turnId` 隔离；无 `turnId` 时回退为 `delivery` + `Route.ReplyTo` 组合。IM 投递地址（delivery + replyTo）在首个出站事件时捕获进 stream state，心跳、防抖 flush、`turn/end` 定稿与纯文本兜底均从 state 读取，不依赖事件或额外缓存表。子 Agent 转发进度与 `subagent/start|end` 会带上父 turn id，异步委派在后台 goroutine 仍沿用捕获的父 turn id。`turn/end` 定稿时若流式正文为空，会用载荷里的 `message` 兜底。平台监听 `tool/result` 与 `subagent/start|end` 更新过程区。`renderProgressBody` 在面板 JSON 中默认仅保留最近 **2** 条 tool 行（超出显示「仅显示最近更新」），与 cc-connect 一致。
