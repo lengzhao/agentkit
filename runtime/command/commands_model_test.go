@@ -394,3 +394,30 @@ func TestModelGlobalUsesRoutedAgent(t *testing.T) {
 		t.Fatalf("assistant should have no global model: %q err=%v", got, err)
 	}
 }
+
+// /model show 是查看状态，不是把模型名设为 "show"；有 session 覆盖时仍展示 global 绑定。
+func TestModelCommandShowAliasAndGlobalWhileSessionOverride(t *testing.T) {
+	t.Parallel()
+
+	modelCmd, _, ctx := newModelCommand(t, nil, nil)
+
+	if _, err := modelCmd.CommandExec(ctx, "-g global-model"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := modelCmd.CommandExec(ctx, "session-model"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := modelCmd.CommandExec(ctx, "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "session override: show") {
+		t.Fatalf("/model show should not set model name: %q", out)
+	}
+	if !strings.Contains(out, "session override: session-model") ||
+		!strings.Contains(out, "global override: global-model") ||
+		!strings.Contains(out, "model: session-model") {
+		t.Fatalf("show alias out = %q", out)
+	}
+}

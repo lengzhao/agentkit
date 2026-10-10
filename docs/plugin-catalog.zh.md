@@ -161,7 +161,8 @@ platform.http:
 | `tool/session-query` | `agentkit.Tool` | `session_search`：`mode=search`（FTS）、`list`、`scroll`（同租户） | DSH session-query |
 | `tool/memory` | `agentkit.Tool` | 主 agent `memory`：`add` / `replace` / `remove`（`memory.md`）；Hermes 式 WHEN/HOW/SKIP 说明（`MemoryToolDescription`） | memory.default |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
-| `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载（deps `fs` 接 unrestricted 实例；向上遍历传宿主机绝对路径，非本地后端静默 miss） | DSH `agent-instructions` / Pi AGENTS.md |
+| `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载（deps `fs` 接 unrestricted 实例；向上遍历传宿主机绝对路径，非本地后端静默 miss）；`prompt/section/file` 的预设别名 | DSH `agent-instructions` / Pi AGENTS.md |
+| `prompt/section/file` | `agentkit.SectionProvider` | 通用文件内容注入：按 `filenames` 读 workspace 文件拼进 prompt，`walkUp` 可向上遍历；适用于 AGENTS.md 之外的任意指令/约定文件 | — |
 | `prompt/section/static` | `agentkit.SectionProvider` | 配置内联自定义 system prompt 文本 | — |
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
 | `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
@@ -513,7 +514,7 @@ plugins/
   compaction/        # summary、prune-tool-results
   approval/          # cli、auto-deny、auto-allow
   web/               # http-fetch、exa-search…
-  prompt/            # section/agents-md、section/static、section/skills
+  prompt/            # section/file（含别名 section/agents-md）、section/static、section/skills
   skill/             # filesystem
   policy/            # deny-dangerous-shell
   hook/              # before-step

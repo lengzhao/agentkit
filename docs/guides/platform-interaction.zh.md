@@ -286,7 +286,7 @@ multiplex（CLI + IM 等）下，`/exit` 只关闭 CLI  stdin，**不会**结束
 
 | 命令 | 行为 |
 |---|---|
-| `/model` | 显示当前生效模型、会话/全局覆盖与 agent 默认（LLM 提供模型目录时附 `available: ...` 一行） |
+| `/model` | 显示当前生效模型、会话/全局覆盖与 agent 默认（LLM 提供模型目录时附 `available: ...` 一行）；`/model show` / `status` 同义 |
 | `/model <name>` | 将会话模型设为任意 provider 支持的模型名；不在目录中时给**非阻断**警告（自定义 baseUrl 模型仍合法） |
 | `/model -g <name>` | 为**当前 agent** 设置全局默认（写入 `global:runtime.json` 的 `models`，所有未单独覆盖的会话生效） |
 | `/model -g sub` | 列出子 Agent 模型总览：wildcard、每个已定义子 Agent（含 md `model:` 优先提示）与遗留条目 |

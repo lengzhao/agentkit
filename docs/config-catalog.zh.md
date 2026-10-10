@@ -838,6 +838,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 - 返回类型：`agentkit.SectionProvider`
 - 源码：[`plugins/prompt/agentsmd.go`](../plugins/prompt/agentsmd.go)
 
+`prompt/section/file` 的预设别名：`name=agents-md`、`walkUp=true`、默认 filenames 如下。
+
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `root` | `string` | `.` | Root is directory to start the upward search from. |
@@ -847,6 +849,25 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `workspace`（必填） | `workspace.Service` |  |
 | `fs`（必填） | `filesystem.Service` | FS reads candidate instruction files; wire an unrestricted filesystem/local instance (the upward walk passes absolute host paths). Non-local backends simply miss every candidate and inject nothing. |
+
+## `prompt/section/file`
+
+- 返回类型：`agentkit.SectionProvider`
+- 源码：[`plugins/prompt/file.go`](../plugins/prompt/file.go)
+
+通用文件注入 section：读取 workspace 目录下的一个或多个文件内容拼进 system prompt，缺失或空文件静默跳过。
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `name` | `string` | `file` | Name is the section label, used for ordering and debugging. |
+| `root` | `string` | `.` | Root is the workspace-relative directory to start reading from. |
+| `filenames` | `[]string` | —（必填） | Filenames are candidate files (names or relative paths) read in each visited directory; missing or empty files are silently skipped. |
+| `walkUp` | `bool` | `false` | WalkUp continues the search in parent directories up to the filesystem root. Wire an unrestricted filesystem/local instance: the upward walk passes absolute host paths; non-local backends simply miss every candidate and inject nothing. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `workspace`（必填） | `workspace.Service` |  |
+| `fs`（必填） | `filesystem.Service` | `walkUp: true` 时接 unrestricted 实例（向上遍历传宿主机绝对路径）；非本地后端静默 miss。 |
 
 ## `prompt/section/memory`
 

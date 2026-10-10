@@ -545,11 +545,6 @@ hook.background-review.default:
 
 memory.default:
   use: memory/default
-  config:
-    # memoryRoot: "."
-    # memoryRoot: global:.
-    review:
-      writeApproval: false
   deps:
     fs: filesystem.local.state
 

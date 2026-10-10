@@ -59,7 +59,7 @@ func (c modelCommand) CommandExec(ctx context.Context, args string) (string, err
 		return c.subagentExec(ctx, scope)
 	}
 
-	if payload == "" {
+	if payload == "" || isModelShowPayload(payload) {
 		return c.show(ctx, global)
 	}
 	if strings.EqualFold(payload, "reset") || strings.EqualFold(payload, "default") {
@@ -87,6 +87,16 @@ func (s subScope) wildcard() bool {
 //
 // The wildcard token is explicit so a typo'd subagent name can never be
 // silently reinterpreted as a model id.
+// isModelShowPayload treats common "display status" typos as bare /model.
+func isModelShowPayload(payload string) bool {
+	switch strings.ToLower(strings.TrimSpace(payload)) {
+	case "show", "status", "list":
+		return true
+	default:
+		return false
+	}
+}
+
 func peelSubScope(payload string) (bool, subScope) {
 	fields := strings.Fields(strings.TrimSpace(payload))
 	if len(fields) == 0 {
@@ -316,9 +326,13 @@ func (c modelCommand) show(ctx context.Context, globalOnly bool) (string, error)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	effectiveModel, sessionOverride, globalOverride, err := sessbind.ResolveEffectiveModel(
+	effectiveModel, sessionOverride, _, err := sessbind.ResolveEffectiveModel(
 		ctx, c.store, c.workspace, sessionID, effective, agentDefault,
 	)
+	if err != nil {
+		return "", err
+	}
+	globalOverride, err := sessbind.GlobalModelBind(ctx, c.workspace, effective)
 	if err != nil {
 		return "", err
 	}

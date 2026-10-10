@@ -336,9 +336,6 @@ mcp.default:
         telemetry: telemetry.toolkit
     use: tool/mcp
 memory.default:
-    config:
-        review:
-            writeApproval: false
     deps:
         fs: filesystem.local.state
     use: memory/default
