@@ -161,6 +161,7 @@ sequenceDiagram
 
 要点：
 
+- **批量路径（`PreflightTool` / `RunToolBody`）**：披露激活时桥工具在 **preflight 阶段完整执行**（`runBody=false`），不再转给内层——内层 catalog 无桥名，会误判 `tool not found`。eager 工具与被揭示后由模型直接调用的 deferrable 工具照常委托内层 preflight（policy / approval / hooks 链不变）。
 - **unwrap 在外层、委托在内层**：`tool_call` 不得在内层注册为 stub 后绕过 policy。
 - `tool_search` / `tool_describe` 为只读目录操作，不经过 MCP 网络；catalog 来自当前 `inner.Visible`（与 Hermes `skip_tool_search_assembly` 等价）。
 - **揭示写入**：`tool_search` 的命中名与 `tool_describe` 的成功加载名都会写入本 session 的揭示集合（见 §4.1），下一步 `Visible` 起模型可直接调用。

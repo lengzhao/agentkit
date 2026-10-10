@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -160,6 +161,84 @@ func TestRevealSkippedWithoutTurnState(t *testing.T) {
 		if s.Name == "mcp__ping" {
 			t.Fatalf("reveal must not persist without turn state")
 		}
+	}
+}
+
+func TestPreflightHandlesBridgeTools(t *testing.T) {
+	t.Parallel()
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOn}}, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, ok := outer.(agentkit.ToolBatchRuntime)
+	if !ok {
+		t.Fatal("deferred runtime must implement ToolBatchRuntime")
+	}
+	ctx := rctx.WithState(context.Background(), rctx.NewState())
+
+	// tool_search must execute at preflight, not fall through to inner ("tool not found").
+	payload, _ := json.Marshal(map[string]any{"queries": []string{"ping"}})
+	result, _, runBody, err := batch.PreflightTool(ctx, agentkit.ToolCall{ID: "1", Name: deferred.ToolSearch, Input: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runBody {
+		t.Fatal("bridge tools must complete in preflight")
+	}
+	if !strings.Contains(result.Content, "mcp__ping") {
+		t.Fatalf("search result = %q", result.Content)
+	}
+
+	// After search reveals it, the deferred tool is directly callable: preflight
+	// delegates to inner (runBody=true) and RunToolBody executes it.
+	_, rewritten, runBody, err := batch.PreflightTool(ctx, agentkit.ToolCall{ID: "2", Name: "mcp__ping", Input: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runBody {
+		t.Fatal("revealed deferred tool should delegate to inner preflight")
+	}
+	bodyResult, err := batch.RunToolBody(ctx, rewritten)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bodyResult.Content != "ok" {
+		t.Fatalf("body content = %q", bodyResult.Content)
+	}
+
+	// tool_call bridge must also execute at preflight.
+	callPayload, _ := json.Marshal(map[string]any{
+		"calls": []map[string]any{{"name": "mcp__ping", "arguments": map[string]any{}}},
+	})
+	callResult, _, runBody, err := batch.PreflightTool(ctx, agentkit.ToolCall{ID: "3", Name: deferred.ToolCall, Input: callPayload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runBody {
+		t.Fatal("tool_call bridge must complete in preflight")
+	}
+	if callResult.Content != "ok" {
+		t.Fatalf("tool_call content = %q", callResult.Content)
+	}
+}
+
+func TestPreflightBridgePassthroughWhenDisabled(t *testing.T) {
+	t.Parallel()
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOff}}, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := outer.(agentkit.ToolBatchRuntime)
+	// Disclosure off: bridge names are not special, inner denies them as unknown.
+	result, _, runBody, err := batch.PreflightTool(context.Background(), agentkit.ToolCall{ID: "1", Name: deferred.ToolSearch, Input: json.RawMessage(`{"queries":["ping"]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runBody {
+		t.Fatal("unknown bridge name must not run body")
+	}
+	if result.Content != "tool not found" {
+		t.Fatalf("content = %q", result.Content)
 	}
 }
 

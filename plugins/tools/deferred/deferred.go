@@ -141,7 +141,19 @@ func (d *Runtime) bridgesActive(ctx context.Context) bool {
 	return len(split.Deferrable) > 0 && d.cfg.disclosureActive(split.Deferrable, 0)
 }
 
+// PreflightTool implements agentkit.ToolBatchRuntime. Bridge tools
+// (tool_search / tool_describe / tool_call) exist only in this wrapper — the
+// inner runtime catalog has no such names, so delegating their preflight would
+// deny them with "tool not found". Bridges are catalog-level operations
+// handled entirely here during preflight (runBody=false); policy/hooks for the
+// real tool behind tool_call still run inside inner.Execute.
+// Eager tools and revealed deferred tools (called directly after search)
+// delegate to the inner preflight pipeline unchanged.
 func (d *Runtime) PreflightTool(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, agentkit.ToolCall, bool, error) {
+	if IsBridge(call.Name) && d.bridgesActive(ctx) {
+		result, err := d.Execute(ctx, call)
+		return result, call, false, err
+	}
 	if batch, ok := d.inner.(agentkit.ToolBatchRuntime); ok {
 		return batch.PreflightTool(ctx, call)
 	}
@@ -150,6 +162,10 @@ func (d *Runtime) PreflightTool(ctx context.Context, call agentkit.ToolCall) (ag
 }
 
 func (d *Runtime) RunToolBody(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	// Defensive: bridges normally finish in PreflightTool (runBody=false).
+	if IsBridge(call.Name) && d.bridgesActive(ctx) {
+		return d.Execute(ctx, call)
+	}
 	if batch, ok := d.inner.(agentkit.ToolBatchRuntime); ok {
 		return batch.RunToolBody(ctx, call)
 	}
