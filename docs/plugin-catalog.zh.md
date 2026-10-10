@@ -192,7 +192,7 @@ llm.default:
 
 **`llm/router`**：`deps.protocols` 列出协议插件实例；`deps.default` 为兜底实例（可不填 `models`，不参与精确匹配）。各协议在 `config.models[].id` 注册模型 id，**全局不可重复**。Agent `deps.llm` 指向 router 时仅配置 `config.model`；`/model` 只改模型名，下一 step 自动换协议。示例见设计 doc。
 
-**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。推荐 `deps.llm: llm/router`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`，协议由 router 按模型 id 选择。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。包装 router 时 **`ModalitiesForModel` 随当前 attempt 的 model 变化**（与 LLM 调用前 `PrepareMessagesForLLM` 一致）。每次切换到下一候选时通过 telemetry 记录 **`llm.fallback` 事件**（`phase`、`from_*` / `to_*`、`reason`、`fallback_on`），便于 Langfuse trace 排查。
+**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。推荐 `deps.llm: llm/router`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`，协议由 router 按模型 id 选择。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。网关返回 `Model '<id>' is not available in this group`（常见 HTTP 404）在 `retryable` / `quota` / `any` 下都会切下一候选，且**不会**对同一模型做 provider retry。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。包装 router 时 **`ModalitiesForModel` 随当前 attempt 的 model 变化**（与 LLM 调用前 `PrepareMessagesForLLM` 一致）。每次切换到下一候选时通过 telemetry 记录 **`llm.fallback` 事件**（`phase`、`from_*` / `to_*`、`reason`、`fallback_on`），便于 Langfuse trace 排查。
 
 ```yaml
 llm.default:

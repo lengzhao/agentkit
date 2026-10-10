@@ -26,6 +26,8 @@ type FallbackConfig struct {
 	// FallbackModels are tried after the request model (from agent config) on the shared provider.
 	FallbackModels []string `json:"fallbackModels,omitempty"`
 	// FallbackOn selects which errors trigger failover: retryable (default), quota, or any.
+	// A gateway response "Model '<id>' is not available in this group" always fails over,
+	// in every mode. It is not a same-model retry: the model is absent from the group.
 	FallbackOn string `json:"fallbackOn,omitempty"`
 }
 
@@ -315,12 +317,23 @@ func recordFallbackTrace(ctx context.Context, mode fallbackMode, phase string, f
 	telemetry.RecordEvent(ctx, "llm.fallback", attrs)
 }
 
+func isModelUnavailableInGroup(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "is not available in this group")
+}
+
 func shouldFallback(err error, mode fallbackMode) bool {
 	if err == nil {
 		return false
 	}
 	if errors.Is(err, context.Canceled) {
 		return false
+	}
+	// 网关按分组拒绝模型（HTTP 404）。同模型重试无效，但应切到 fallbackModels。
+	if isModelUnavailableInGroup(err) {
+		return true
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		// TTFB / request timeout: try the next model or provider.

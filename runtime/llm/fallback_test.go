@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 type stubProvider struct {
@@ -228,6 +229,60 @@ func TestFallbackUsesRequestModelBeforeFallbackModels(t *testing.T) {
 
 	if len(seen) != 2 || seen[0] != "gpt-5.4" || seen[1] != "gpt-4o" {
 		t.Fatalf("models tried = %v", seen)
+	}
+}
+
+func TestFallbackSwitchesOnModelUnavailableInGroup(t *testing.T) {
+	t.Parallel()
+	errUnavailable := &openai.APIError{
+		HTTPStatusCode: 404,
+		HTTPStatus:     "404 Not Found",
+		Message:        "Model 'deepseek-v4-flash' is not available in this group.",
+	}
+	primary := &errorProvider{err: errUnavailable}
+	secondary := &stubProvider{replyText: "backup"}
+	fallback, err := NewFallback(FallbackConfig{
+		FallbackModels: []string{"glm-5.3"},
+	}, FallbackDeps{Provider: primary, Fallbacks: []agentkit.LLMProvider{secondary}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := fallback.Stream(context.Background(), agentkit.LLMRequest{Model: "deepseek-v4-flash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	ev, err := stream.Recv()
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+	if messageText(ev.Message.Content) != "backup" {
+		t.Fatalf("reply = %q", messageText(ev.Message.Content))
+	}
+	if secondary.openCalls != 1 {
+		t.Fatalf("secondary open calls = %d, want 1", secondary.openCalls)
+	}
+	if IsRetryableError(errUnavailable) {
+		t.Fatal("model unavailable in group must not retry the same model")
+	}
+}
+
+func TestShouldFallbackModelUnavailableInGroup(t *testing.T) {
+	t.Parallel()
+	unavailable := &openai.APIError{
+		HTTPStatusCode: 404,
+		HTTPStatus:     "404 Not Found",
+		Message:        "Model 'deepseek-v4-flash' is not available in this group.",
+	}
+	for _, mode := range []fallbackMode{fallbackOnRetryable, fallbackOnQuota, fallbackOnAny} {
+		if !shouldFallback(unavailable, mode) {
+			t.Fatalf("mode %s should fallback", mode)
+		}
+	}
+	plain404 := &openai.APIError{HTTPStatusCode: 404, HTTPStatus: "404 Not Found", Message: "Not Found"}
+	if shouldFallback(plain404, fallbackOnRetryable) {
+		t.Fatal("unrelated 404 should not fallback")
 	}
 }
 

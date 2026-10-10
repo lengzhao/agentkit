@@ -21,6 +21,7 @@ func TestIsRetryableError(t *testing.T) {
 		{errors.New("unexpected EOF"), true},
 		{&openai.APIError{HTTPStatusCode: 503, Message: "overloaded"}, true},
 		{&openai.APIError{HTTPStatusCode: 429, Message: "insufficient_quota"}, false},
+		{&openai.APIError{HTTPStatusCode: 404, Message: "Model 'deepseek-v4-flash' is not available in this group."}, false},
 		{errors.New("context length exceeded"), false},
 		{errors.New("billing issue"), false},
 		{context.DeadlineExceeded, false},

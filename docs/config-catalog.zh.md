@@ -427,7 +427,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|---|
 | `models` | `[]string` | — | Models is the full ordered model chain when sharing one provider or pairing with deps.fallbacks. |
 | `fallbackModels` | `[]string` | — | FallbackModels are tried after the request model (from agent config) on the shared provider. |
-| `fallbackOn` | `string` | — | FallbackOn selects which errors trigger failover: retryable (default), quota, or any. |
+| `fallbackOn` | `string` | — | FallbackOn selects which errors trigger failover: retryable (default), quota, or any. A gateway response "Model '<id>' is not available in this group" always fails over, in every mode. It is not a same-model retry: the model is absent from the group. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
