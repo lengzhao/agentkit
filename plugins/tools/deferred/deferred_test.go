@@ -86,7 +86,7 @@ func (abortBeforeToolHooks) BeforeStep(context.Context, *agentkit.BeforeStep) er
 func (abortBeforeToolHooks) BeforeTool(context.Context, *agentkit.ToolCall) error {
 	return agentkit.AbortTurn(errors.New("hook blocked"))
 }
-func (abortBeforeToolHooks) AfterTool(context.Context, *agentkit.ToolResult) error { return nil }
+func (abortBeforeToolHooks) AfterTool(context.Context, *agentkit.ToolResult) error      { return nil }
 func (abortBeforeToolHooks) TurnStopping(context.Context, *agentkit.TurnStopping) error { return nil }
 func (abortBeforeToolHooks) TurnComplete(context.Context, *agentkit.TurnComplete) error { return nil }
 
@@ -161,6 +161,118 @@ func TestRevealSkippedWithoutTurnState(t *testing.T) {
 		if s.Name == "mcp__ping" {
 			t.Fatalf("reveal must not persist without turn state")
 		}
+	}
+}
+
+func TestSearchInlinesTopHitSchemas(t *testing.T) {
+	t.Parallel()
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOn}}, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rctx.WithState(context.Background(), rctx.NewState())
+	payload, _ := json.Marshal(map[string]any{"queries": []string{"ping"}})
+	result, err := outer.Execute(ctx, agentkit.ToolCall{ID: "1", Name: deferred.ToolSearch, Input: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Schemas map[string]agentkit.ToolSpec `json:"schemas"`
+		Hint    string                       `json:"hint"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &body); err != nil {
+		t.Fatal(err)
+	}
+	spec, ok := body.Schemas["mcp__ping"]
+	if !ok {
+		t.Fatalf("expected inlined schema for mcp__ping, got %v", body.Schemas)
+	}
+	if spec.InputSchema.Type != "object" {
+		t.Fatalf("inlined schema incomplete: %+v", spec.InputSchema)
+	}
+	if body.Hint == "" {
+		t.Fatal("expected hint about direct invocation")
+	}
+}
+
+func TestSearchInlineSchemasDisabled(t *testing.T) {
+	t.Parallel()
+	cfg := deferred.Config{DisclosureConfig: deferred.DisclosureConfig{
+		Enabled:               deferred.EnabledOn,
+		SearchInlineSchemaMax: -1,
+	}}
+	outer, err := deferred.New(cfg, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"queries": []string{"ping"}})
+	result, err := outer.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: deferred.ToolSearch, Input: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Content, `"schemas"`) {
+		t.Fatalf("schemas must be absent when disabled: %s", result.Content)
+	}
+}
+
+func TestCallBridgeOff(t *testing.T) {
+	t.Parallel()
+	cfg := deferred.Config{DisclosureConfig: deferred.DisclosureConfig{
+		Enabled:    deferred.EnabledOn,
+		CallBridge: "off",
+	}}
+	outer, err := deferred.New(cfg, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, err := outer.Visible(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, s := range specs {
+		names[s.Name] = true
+	}
+	if !names[deferred.ToolSearch] || !names[deferred.ToolDescribe] {
+		t.Fatalf("search/describe bridges missing: %v", names)
+	}
+	if names[deferred.ToolCall] {
+		t.Fatalf("tool_call must be hidden when callBridge=off: %v", names)
+	}
+	// A stray tool_call gets a clear error pointing at direct invocation.
+	payload, _ := json.Marshal(map[string]any{
+		"calls": []map[string]any{{"name": "mcp__ping", "arguments": map[string]any{}}},
+	})
+	result, err := outer.Execute(context.Background(), agentkit.ToolCall{ID: "1", Name: deferred.ToolCall, Input: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Content, "disabled") {
+		t.Fatalf("expected disabled hint, got %q", result.Content)
+	}
+	// Direct invocation of a searched tool still works.
+	ctx := rctx.WithState(context.Background(), rctx.NewState())
+	searchPayload, _ := json.Marshal(map[string]any{"queries": []string{"ping"}})
+	if _, err := outer.Execute(ctx, agentkit.ToolCall{ID: "2", Name: deferred.ToolSearch, Input: searchPayload}); err != nil {
+		t.Fatal(err)
+	}
+	direct, err := outer.Execute(ctx, agentkit.ToolCall{ID: "3", Name: "mcp__ping", Input: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if direct.Content != "ok" {
+		t.Fatalf("direct call content = %q", direct.Content)
+	}
+}
+
+func TestCallBridgeInvalid(t *testing.T) {
+	t.Parallel()
+	cfg := deferred.Config{DisclosureConfig: deferred.DisclosureConfig{
+		Enabled:    deferred.EnabledOn,
+		CallBridge: "maybe",
+	}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected validation error for callBridge=maybe")
 	}
 }
 

@@ -26,6 +26,8 @@ func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (ag
 	groups := make([]queryGroup, 0, len(queries))
 	shared := make(map[string]map[string]string)
 	var hits []string
+	var hitSpecs []agentkit.ToolSpec
+	seen := make(map[string]bool)
 	for _, q := range queries {
 		found := searchCatalog(catalog, q, limit)
 		matches := make([]string, 0, len(found))
@@ -34,21 +36,57 @@ func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (ag
 			if _, ok := shared[spec.Name]; !ok {
 				shared[spec.Name] = toolSummaryMap([]agentkit.ToolSpec{spec})[spec.Name]
 			}
+			if !seen[spec.Name] {
+				seen[spec.Name] = true
+				hitSpecs = append(hitSpecs, spec)
+			}
 		}
 		groups = append(groups, queryGroup{Query: q, Matches: matches})
 		hits = append(hits, matches...)
 	}
 	reveal(ctx, hits...)
 	out := map[string]any{
-		"queries": groups,
-		"tools":   shared,
+		"queries":         groups,
+		"tools":           shared,
 		"total_available": len(catalog),
+	}
+	// Inline full schemas for the top hits so the model can invoke immediately,
+	// skipping a tool_describe round-trip (hits are revealed either way).
+	if schemas := inlineSearchSchemas(hitSpecs, d.cfg.SearchInlineSchemaMax); len(schemas) > 0 {
+		out["schemas"] = schemas
+		out["hint"] = "Tools in schemas carry full parameter schemas: call them directly by name (or via " + ToolCall + ") — " + ToolDescribe + " is only needed for matches without an entry here."
 	}
 	body, err := json.Marshal(out)
 	if err != nil {
 		return bridgeError(call, err.Error()), nil
 	}
 	return agentkit.ResultFromCall(call, string(body)), nil
+}
+
+// inlineSearchSchemas returns full specs for the top-ranked hits, bounded by
+// count (max) and a total JSON byte budget. The first hit is always inlined
+// when max > 0, even if it alone exceeds the budget.
+func inlineSearchSchemas(specs []agentkit.ToolSpec, max int) map[string]agentkit.ToolSpec {
+	if max <= 0 {
+		return nil
+	}
+	out := make(map[string]agentkit.ToolSpec, min(max, len(specs)))
+	used := 0
+	for _, spec := range specs {
+		if len(out) >= max {
+			break
+		}
+		body, err := json.Marshal(spec)
+		if err != nil {
+			continue
+		}
+		if len(out) > 0 && used+len(body) > searchInlineSchemaBudget {
+			break
+		}
+		out[spec.Name] = spec
+		used += len(body)
+	}
+	return out
 }
 
 func (d *Runtime) executeDescribe(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {

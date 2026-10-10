@@ -22,22 +22,51 @@ func assembleVisible(eager []agentkit.ToolSpec, deferrable []agentkit.ToolSpec, 
 			}
 		}
 	}
-	bridges := bridgeSpecs(len(deferrable), listing)
+	bridges := bridgeSpecs(len(deferrable), listing, cfg.SearchInlineSchemaMax > 0, cfg.callBridgeEnabled())
 	out := make([]agentkit.ToolSpec, 0, len(eager)+len(bridges))
 	out = append(out, eager...)
 	out = append(out, bridges...)
 	return out
 }
 
-func bridgeSpecs(deferredCount int, listing string) []agentkit.ToolSpec {
-	searchDesc := fmt.Sprintf(
-		"Search %d additional tools loaded on demand. Returns matching tool names per query plus a shared tools map with short descriptions. Follow with %s for full parameter schemas, then %s to invoke. Tools listed in the system prompt are already available.",
-		deferredCount, ToolDescribe, ToolCall,
-	)
+func bridgeSpecs(deferredCount int, listing string, inlineSchemas bool, callBridge bool) []agentkit.ToolSpec {
+	// How the model should invoke a found tool: directly by name once revealed,
+	// or via the tool_call bridge when it is exposed.
+	invoke := "invoke them directly by name"
+	if callBridge {
+		invoke = fmt.Sprintf("invoke them directly by name (or via %s)", ToolCall)
+	}
+	var searchDesc string
+	if inlineSchemas {
+		searchDesc = fmt.Sprintf(
+			"Search %d additional tools loaded on demand. Returns matching tool names per query; top matches include full parameter schemas and are immediately callable — %s, no %s needed. Use %s only for matches returned without a schema. Found tools stay available for the rest of this turn. Tools listed in the system prompt are already available.",
+			deferredCount, invoke, ToolDescribe, ToolDescribe,
+		)
+	} else if callBridge {
+		searchDesc = fmt.Sprintf(
+			"Search %d additional tools loaded on demand. Returns matching tool names per query plus a shared tools map with short descriptions. Follow with %s for full parameter schemas, then %s to invoke. Tools listed in the system prompt are already available.",
+			deferredCount, ToolDescribe, ToolCall,
+		)
+	} else {
+		searchDesc = fmt.Sprintf(
+			"Search %d additional tools loaded on demand. Returns matching tool names per query plus a shared tools map with short descriptions. Follow with %s for full parameter schemas, then invoke them directly by name. Tools listed in the system prompt are already available.",
+			deferredCount, ToolDescribe,
+		)
+	}
 	if listing != "" {
 		searchDesc += "\n\nDeferred capabilities (load with " + ToolDescribe + "):\n" + listing
 	}
-	return []agentkit.ToolSpec{
+	describeDesc := fmt.Sprintf(
+		"Load full JSON schemas for %s matches that came back without an inlined schema. Skip when the search result already includes the schema. Required before %s when parameters are unknown.",
+		ToolSearch, ToolCall,
+	)
+	if !callBridge {
+		describeDesc = fmt.Sprintf(
+			"Load full JSON schemas for %s matches that came back without an inlined schema. Skip when the search result already includes the schema. Required before invoking when parameters are unknown.",
+			ToolSearch,
+		)
+	}
+	specs := []agentkit.ToolSpec{
 		{
 			Name:        ToolSearch,
 			Description: searchDesc,
@@ -58,11 +87,8 @@ func bridgeSpecs(deferredCount int, listing string) []agentkit.ToolSpec {
 			},
 		},
 		{
-			Name: ToolDescribe,
-			Description: fmt.Sprintf(
-				"Load full JSON schemas for tools returned by %s. Required before %s when parameters are unknown.",
-				ToolSearch, ToolCall,
-			),
+			Name:        ToolDescribe,
+			Description: describeDesc,
 			InputSchema: agentkit.JSONSchema{
 				Type: "object",
 				Properties: map[string]agentkit.JSONSchema{
@@ -75,32 +101,35 @@ func bridgeSpecs(deferredCount int, listing string) []agentkit.ToolSpec {
 				Required: []string{"names"},
 			},
 		},
-		{
-			Name: ToolCall,
-			Description: fmt.Sprintf(
-				"Invoke deferred tools. Pass calls as an array of {name, arguments}. Argument shapes match each tool schema (see %s). Policy and hooks apply to the underlying tool.",
-				ToolDescribe,
-			),
-			InputSchema: agentkit.JSONSchema{
-				Type: "object",
-				Properties: map[string]agentkit.JSONSchema{
-					"calls": {
-						Type:        "array",
-						Description: "One entry per invocation.",
-						Items: &agentkit.JSONSchema{
-							Type: "object",
-							Properties: map[string]agentkit.JSONSchema{
-								"name":      {Type: "string"},
-								"arguments": {Type: "object"},
-							},
-							Required: []string{"name", "arguments"},
+	}
+	if !callBridge {
+		return specs
+	}
+	return append(specs, agentkit.ToolSpec{
+		Name: ToolCall,
+		Description: fmt.Sprintf(
+			"Invoke deferred tools. Pass calls as an array of {name, arguments}. Argument shapes match each tool schema (inlined in %s results, or loaded via %s). Policy and hooks apply to the underlying tool.",
+			ToolSearch, ToolDescribe,
+		),
+		InputSchema: agentkit.JSONSchema{
+			Type: "object",
+			Properties: map[string]agentkit.JSONSchema{
+				"calls": {
+					Type:        "array",
+					Description: "One entry per invocation.",
+					Items: &agentkit.JSONSchema{
+						Type: "object",
+						Properties: map[string]agentkit.JSONSchema{
+							"name":      {Type: "string"},
+							"arguments": {Type: "object"},
 						},
+						Required: []string{"name", "arguments"},
 					},
 				},
-				Required: []string{"calls"},
 			},
+			Required: []string{"calls"},
 		},
-	}
+	})
 }
 
 func toolSummaryMap(specs []agentkit.ToolSpec) map[string]map[string]string {

@@ -172,9 +172,13 @@ sequenceDiagram
 
 | 模型工具名 | 作用 |
 |------------|------|
-| `tool_search` | 多 query 并行检索 deferrable catalog；返回按 query 分组的命中名 + 共享 `tools` 摘要 map |
-| `tool_describe` | 批量加载完整 `parameters` JSON Schema |
-| `tool_call` | `calls: [{name, arguments}, …]`；本地工具单次一条；批量规则首版与 Hermes 对齐（仅同类可批，混合拒绝） |
+| `tool_search` | 多 query 并行检索 deferrable catalog；返回按 query 分组的命中名 + 共享 `tools` 摘要 map；**top-N 命中内联完整 schema**（见 `searchInlineSchemaMax`），命中即揭示，模型可直接按名调用 |
+| `tool_describe` | 批量加载完整 `parameters` JSON Schema；仅用于 search 结果未内联 schema 的命中 |
+| `tool_call` | `calls: [{name, arguments}, …]`；本地工具单次一条；批量规则首版与 Hermes 对齐（仅同类可批，混合拒绝）；`callBridge: off` 时不下发该桥 |
+
+**内联 schema（少一次 describe）**：`tool_search` 命中按相关性排序，前 `searchInlineSchemaMax` 个（默认 5，受约 8KB 字节预算约束）的完整 `inputSchema` 直接放入结果的 `schemas` map，并附 `hint` 告知模型可直接调用。桥描述同步说明「内联 schema 的无需 `tool_describe`」。加上 reveal（命中即加入本 turn 白名单、下一 step 起完整 schema 进入 `Visible`），典型路径从 `search → describe → 调用` 缩短为 `search → 调用`。
+
+**`callBridge: off`（去掉冗余的 `tool_call`）**：揭示 + 内联 schema 后，工具本就可按名直接调用（内层 runtime 对动态名直接解析执行，policy / hooks 不变），`tool_call` 桥冗余。`off` 时不再向模型下发该 spec；模型误调时返回「disabled，直接按名调用」的提示。
 
 桥名保留 `tool_*` 前缀，与现有 `ask_user`、`web_fetch` 风格一致。注册时 **禁止** 内层 catalog 出现同名工具（构造时校验或文档约定）。
 
@@ -213,6 +217,8 @@ sequenceDiagram
 | `listing` | string | `auto` | `auto` / `on` / `off`：是否嵌入 catalog 清单到 `tool_search` description |
 | `searchDefaultLimit` | int | `5` | 单次 query 默认命中数 |
 | `maxSearchLimit` | int | `25` | query 的 `limit` 硬顶 |
+| `searchInlineSchemaMax` | int | `5` | `tool_search` 结果内联完整 schema 的 top-N 命中数（另受约 8KB 字节预算约束）；`0`=默认，负数=关闭内联 |
+| `callBridge` | `on` \| `off` | `on` | `off` 时不下发 `tool_call` 桥（揭示后按名直接调用）；误调返回禁用提示 |
 | `eagerTools` | []string | 空 | 永不 defer 的工具名（静态 + 动态均可）；优先于 `deferTools` |
 | `deferTools` | []string | 空 | 强制 defer 的工具名（在非 `eagerTools` 时生效） |
 

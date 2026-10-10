@@ -1,17 +1,17 @@
 package deferred
 
 const (
-	ToolSearch  = "tool_search"
+	ToolSearch   = "tool_search"
 	ToolDescribe = "tool_describe"
-	ToolCall    = "tool_call"
+	ToolCall     = "tool_call"
 )
 
 const charsPerToken = 4
 
 var bridgeNames = map[string]bool{
-	ToolSearch:  true,
+	ToolSearch:   true,
 	ToolDescribe: true,
-	ToolCall:    true,
+	ToolCall:     true,
 }
 
 func IsBridge(name string) bool {

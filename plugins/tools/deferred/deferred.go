@@ -182,6 +182,9 @@ func (d *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	case ToolDescribe:
 		return d.executeBridgeObserved(ctx, call, "tool.deferred.describe", nil, d.executeDescribe)
 	case ToolCall:
+		if !d.cfg.callBridgeEnabled() {
+			return bridgeError(call, "tool_call bridge is disabled (callBridge: off); invoke the revealed tool directly by name"), nil
+		}
 		extra := map[string]string{}
 		if entries, err := normalizeCalls(call.Input); err == nil && len(entries) > 0 {
 			extra["deferred_target"] = entries[0].Name
