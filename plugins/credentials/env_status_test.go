@@ -21,12 +21,12 @@ func TestEnvStatusListsScopedKeys(t *testing.T) {
 	}
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
-		ManifestFiles: []string{manifestPath},
 		SecretsKey:    secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_TEST_SECRET=value"); err != nil {

@@ -1,8 +1,10 @@
 package credentials
 
 import (
+	"context"
 	"testing"
 
+	"github.com/lengzhao/agentkit/cap/credentials"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -17,4 +19,19 @@ func testEnvFS(t *testing.T) filesystem.Service {
 		t.Fatal(err)
 	}
 	return fs
+}
+
+// setTestManifests points an integrations store at test manifest files. Production
+// always scans the fixed workspace defaults (global:mcp.json / global:api.json), so
+// tests override the paths directly instead of via a config knob.
+func setTestManifests(t *testing.T, store credentials.Store, paths ...string) {
+	t.Helper()
+	s, ok := store.(*integrationStore)
+	if !ok {
+		t.Fatalf("store is %T, want *integrationStore", store)
+	}
+	s.manifestPaths = append([]string(nil), paths...)
+	if err := s.reloadManifest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -49,11 +49,11 @@ func TestEnvAddPreservesSpacesInValue(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		SecretsKey:    "config-passphrase",
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
-		ManifestFiles: []string{manifestPath},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	want := "Bearer eyJhbGciOiJIUzI1NiJ9"

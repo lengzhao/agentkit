@@ -33,10 +33,8 @@ func NewIntegrations(cfg Config, deps EnvDeps) (credentials.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	manifestPaths := append([]string(nil), cfg.ManifestFiles...)
-	if len(manifestPaths) == 0 {
-		manifestPaths = []string{defaultMCPManifestFile, defaultOpenAPIManifestFile}
-	}
+	// Manifest allowlist paths are a fixed workspace convention, not a config knob.
+	manifestPaths := []string{defaultMCPManifestFile, defaultOpenAPIManifestFile}
 	scoped, err := buildConfigScoped(cfg.Prefix, cfg.ScopedEnv)
 	if err != nil {
 		return nil, err

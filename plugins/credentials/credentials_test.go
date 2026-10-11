@@ -23,11 +23,11 @@ func TestSecretsKeyConfigIgnoresProcessEnv(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		SecretsKey:    "config-passphrase",
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
-		ManifestFiles: []string{manifestPath},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(ctx, "add shell-bash.gh GH_TOKEN=from-enc"); err != nil {
@@ -47,11 +47,11 @@ func TestMasterKeyRequiresSecretsKey(t *testing.T) {
 	}
 	locked, err := NewIntegrations(Config{
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
-		ManifestFiles: []string{manifestPath},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, locked, manifestPath)
 	cmd := locked.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(context.Background(), "add shell-bash.gh GH_TOKEN=blocked"); err == nil {
 		t.Fatal("expected master-key error when secretsKey is unset")
@@ -259,11 +259,11 @@ func integrationTestStore(t *testing.T, dir string, envFile string, secretKey st
 	store, err := NewIntegrations(Config{
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         files,
-		ManifestFiles: []string{manifestPath},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	return store
 }
 
@@ -288,11 +288,11 @@ func TestIntegrationsManifestLazyRefresh(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         []string{envPath},
-		ManifestFiles: []string{manifestPath},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 
 	secret, err := store.Resolve(ctx, integrationTestScope, "env:AGENTKIT_MANIFEST_A")
@@ -325,7 +325,6 @@ func TestScopedEnvShellEnvPairs(t *testing.T) {
 	}
 	store, err := NewIntegrations(Config{
 		EncryptedFile: EncryptedFileDisabled,
-		ManifestFiles: []string{manifestPath},
 		ScopedEnv: map[string]map[string]string{
 			"shell-bash.gh": {"GH_TOKEN": "gh-test"},
 		},
@@ -333,6 +332,7 @@ func TestScopedEnvShellEnvPairs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	resolver, ok := store.(credentials.EnvPairResolver)
 	if !ok {
 		t.Fatal("expected EnvPairResolver")
@@ -360,7 +360,6 @@ func TestEncryptedOverridesScopedEnv(t *testing.T) {
 	const secretsPass = "agentkit-test-secrets-passphrase"
 	store, err := NewIntegrations(Config{
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
-		ManifestFiles: []string{manifestPath},
 		SecretsKey:      secretsPass,
 		ScopedEnv: map[string]map[string]string{
 			"shell-bash.gh": {"GH_TOKEN": "from-config"},
@@ -369,6 +368,7 @@ func TestEncryptedOverridesScopedEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(ctx, "add shell-bash.gh GH_TOKEN=from-enc"); err != nil {
@@ -565,12 +565,12 @@ func TestEnvAddBeforeManifest(t *testing.T) {
 	const secretsPass = "agentkit-test-secrets-passphrase"
 	store, err := NewIntegrations(Config{
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
-		ManifestFiles: []string{manifestPath},
 		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	out, err := cmd.CommandExec(ctx, "add mcp.tool NOT_IN_MANIFEST=secret")
@@ -597,11 +597,11 @@ func TestEnvAddScopedIsolation(t *testing.T) {
 	store, err := NewIntegrations(Config{
 		EncryptedFile: EncryptedFileDisabled,
 		Files:         []string{filepath.Join(dir, ".env")},
-		ManifestFiles: []string{manifestPath},
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(ctx, "add mcp.a SHARED=one"); err != nil {
@@ -632,12 +632,12 @@ func TestEnvAddEncryptedCommand(t *testing.T) {
 	}
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
-		ManifestFiles: []string{manifestPath},
 		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cp := store.(agentkit.CommandProvider)
 	cmd := cp.Commands()[0]
@@ -694,12 +694,12 @@ func TestEnvAddEncryptedSkipsUndecryptableEntries(t *testing.T) {
 	}
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
-		ManifestFiles: []string{manifestPath},
 		SecretsKey:      secretsPass,
 	}, EnvDeps{FS: testEnvFS(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	out, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_TEST_SECRET=fresh")

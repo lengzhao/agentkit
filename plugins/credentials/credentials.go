@@ -35,8 +35,6 @@ type Config struct {
 	SecretsKey string `json:"secretsKey,omitempty"`
 	// ProcessEnv enables os.Getenv lookup (static default true; integrations default false).
 	ProcessEnv *bool `json:"processEnv,omitempty"`
-	// ManifestFiles lists workspace paths scanned for per-scope env: allowlists (integrations only).
-	ManifestFiles []string `json:"manifestFiles,omitempty"`
 	// ScopedEnv preloads integration secrets per scope (L1 config); enc /env add overrides same key.
 	ScopedEnv map[string]map[string]string `json:"scopedEnv,omitempty"`
 }
