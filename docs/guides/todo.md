@@ -70,7 +70,7 @@ flowchart TB
 - [x] **`cap/compaction`**：`plugins/hook`、`plugins/compaction` 均调 `runtime/compaction` → 注入
 - [x] **`cap/chathistory`**：仅 `tool/chathistory` → 公共函数改小写
 - [x] **`cap/credentials`**：`plugins/credentials`、`tool/mcp`、`tool/openapi`、`tool/shell` → 注入
-  - 落地：`cap/credentials` 仅 `Store` / `EnvPairResolver` / `Secret` / `GlobalScope`；密文、manifest、scoped 查找在 `plugins/credentials`；mcp / openapi / shell 经 `deps.credentials` 注入 `Store`（shell 另断言 `EnvPairResolver`），各自拼 `mcp.` / `openapi.` / `shell-bash.` scope。
+  - 落地：`cap/credentials` 仅 `Store` / `EnvPairResolver` / `Secret` / `GlobalScope`；密文、scoped 查找在 `plugins/credentials`；mcp / openapi / shell 经 `deps.credentials` 注入 `Store`（shell 另断言 `EnvPairResolver`），各自拼 `mcp.` / `openapi.` / `shell-bash.` scope。
   - 验收：上述插件非测试源码不再 import `runtime/credentials`（该包已删除）。
 - [ ] **`cap/memory`**：`plugins/memory`、`learning` → 注入（`prompt` 已走 `cap/memory.Reader`；`learning` 背景审阅信号去重经 `Reader.PreviewAddOutcome`，非测试源码不再 import `runtime/memory`）
 - [x] **`cap/skill`**：`plugins/skill`、`tool/skill` → 注入

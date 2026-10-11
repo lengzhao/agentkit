@@ -13,18 +13,6 @@ const (
 	shellBashCredentialScopePrefix = "shell-bash."
 )
 
-func mcpCredentialScope(serverName string) string {
-	return mcpCredentialScopePrefix + strings.TrimSpace(serverName)
-}
-
-func openAPICredentialScope(apiName string) string {
-	return openAPICredentialScopePrefix + strings.TrimSpace(apiName)
-}
-
-func shellBashCredentialScope(cmd string) string {
-	return shellBashCredentialScopePrefix + strings.TrimSpace(cmd)
-}
-
 func isIntegrationScope(scope string) bool {
 	return validateIntegrationScope(scope) == nil
 }

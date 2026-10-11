@@ -2,7 +2,6 @@ package credentials
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -42,10 +41,6 @@ func TestParseEnvSlashArgsValueWithSpaces(t *testing.T) {
 
 func TestEnvAddPreservesSpacesInValue(t *testing.T) {
 	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "mcp.json")
-	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{"n8n-wwa":{"env":{"N8N_WWA_TOKEN":"env:N8N_WWA_TOKEN"}}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	store, err := NewIntegrations(Config{
 		SecretsKey:    "config-passphrase",
 		EncryptedFile: filepath.Join(dir, "secrets.enc.json"),
@@ -53,7 +48,6 @@ func TestEnvAddPreservesSpacesInValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	want := "Bearer eyJhbGciOiJIUzI1NiJ9"

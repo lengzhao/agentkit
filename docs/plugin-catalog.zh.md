@@ -435,7 +435,7 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 | `filesystem/local` | `filesystem.Service` | 本地盘文件存储：`workspace.Resolve` + `.gitignore`；`root` / `unrestricted`；`global:`/`local:` 前缀委托 workspace 双根路由（不受 root 限制）；`Write` 原子（temp+rename，`WithPerm` 可指定 mode），`Append` 追加 |
 | `bootstrap/shell` | `agentkit.AppInitializer` | 启动前在 workspace 目录按序执行 `bash -lc` 命令；挂到 `runner.deps.init` |
 | `credentials/env` | `credentials.Store` | YAML 级 `env:` ref；dotenv / 加密 secrets / 进程 env（deps `fs`，`/env add` 写 0600）；`Resolve(ctx, GlobalScope, ref)`。详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
-| `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`、`EnvPairs`（shell env）、manifest allowlist（经 deps `fs` 读 mcp.json/api.json）、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
+| `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`（context → scoped 存储，无 flat 回退）、`EnvPairs`（shell env）、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
 | `storage/json` | `storage.Store` | 通用 KV 存储（roadmap） |
 | `telemetry/langfuse` | `telemetry.Exporter` | Langfuse Go SDK（ingestion API）导出 |

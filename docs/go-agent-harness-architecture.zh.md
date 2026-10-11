@@ -71,7 +71,7 @@ func New(cfg Config, deps Deps) (T, error)
 - not-found 统一约定 `errors.Is(err, os.ErrNotExist)`，实现不得包成不透明错误。
 - `Write` 必须原子（local=temp+rename；对象存储=单次 PUT），父前缀按需创建；`WithPerm(0o600)` 仅供 secrets 类文件，对象存储可忽略。已解析的宿主机绝对路径（session sidecar）复用同包 `WriteAtomic`，不经 `Service`。
 - `Append` 供 diary/ledger 等追加流；对象存储可以读改写实现。
-- `DirEntry.ModTime` / `Info.ModTime` 供 ingest 排序与 manifest 新鲜度检查。
+- `DirEntry.ModTime` / `Info.ModTime` 供 ingest 排序。
 
 状态插件全部经 `deps.fs` 注入：memory、learning（dreaming/workshop/review sidecar）、skills、schedule、credentials、mcp、openapi、agent/acp-remote 接 `filesystem.local.state`（root="."，workspace 根）；prompt/agents-md、tool/send 因传宿主机绝对路径而接 unrestricted 的 `filesystem.local.default`。豁免（宿主机语义保留 os 直调）：`acpremote/convert.go` 的 ACP `fs/read|write_text_file` 协议面、shell 类插件的子进程 cwd `MkdirAll`。
 

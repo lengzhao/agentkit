@@ -57,11 +57,10 @@ func appendKeySection(b *strings.Builder, title string, keys []string) {
 }
 
 type scopedEnvKeyView struct {
-	envKey    string
-	loaded    bool
-	abnormal  bool
-	config    bool
-	manifest  bool
+	envKey   string
+	loaded   bool
+	abnormal bool
+	config   bool
 }
 
 func (s *integrationStore) formatScopedEnvKeyInventory() string {
@@ -99,9 +98,6 @@ func (s *integrationStore) formatScopedEnvKeyInventory() string {
 
 func (v scopedEnvKeyView) statusTags() []string {
 	var tags []string
-	if v.manifest {
-		tags = append(tags, "manifest")
-	}
 	if v.loaded {
 		tags = append(tags, "loaded")
 	}
@@ -120,9 +116,6 @@ func (v scopedEnvKeyView) statusTags() []string {
 func (s *integrationStore) collectIntegrationScopes() []string {
 	seen := make(map[string]struct{})
 	s.mu.RLock()
-	for scope := range s.allow {
-		seen[scope] = struct{}{}
-	}
 	for storageKey := range s.encrypted {
 		if scope, _, ok := parseScopedStorageKey(storageKey); ok {
 			seen[scope] = struct{}{}
@@ -155,14 +148,6 @@ func (s *integrationStore) collectIntegrationScopes() []string {
 func (s *integrationStore) envKeyViewsForScope(scope string, abnormalSet map[string]struct{}) []scopedEnvKeyView {
 	byKey := make(map[string]*scopedEnvKeyView)
 	s.mu.RLock()
-	for k := range s.allow[scope] {
-		v := byKey[k]
-		if v == nil {
-			v = &scopedEnvKeyView{envKey: k}
-			byKey[k] = v
-		}
-		v.manifest = true
-	}
 	prefix := scopedStorageKey(scope, "")
 	markStorage := func(m map[string]string, loaded, config bool) {
 		for storageKey := range m {

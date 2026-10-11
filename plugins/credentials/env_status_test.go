@@ -2,7 +2,6 @@ package credentials
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,10 +14,6 @@ func TestEnvStatusListsScopedKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secrets.enc.json")
 	const secretsPass = "agentkit-test-secrets-passphrase"
-	manifestPath := filepath.Join(dir, "mcp.json")
-	if err := os.WriteFile(manifestPath, []byte(`{"mcpServers":{"tool":{"command":"echo","env":{"K":"env:AGENTKIT_TEST_SECRET"}}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	store, err := NewIntegrations(Config{
 		EncryptedFile: path,
 		SecretsKey:    secretsPass,
@@ -26,7 +21,6 @@ func TestEnvStatusListsScopedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	setTestManifests(t, store, manifestPath)
 	ctx := context.Background()
 	cmd := store.(agentkit.CommandProvider).Commands()[0]
 	if _, err := cmd.CommandExec(ctx, "add mcp.tool AGENTKIT_TEST_SECRET=value"); err != nil {

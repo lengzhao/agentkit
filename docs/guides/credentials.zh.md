@@ -15,7 +15,7 @@ AgentKit 在运行期通过 `cap/credentials.Store` 解析 `env:NAME` 引用。�
 | 对外稳定 | 插件只依赖 `Store.Resolve`；shell 额外可选 `EnvPairResolver`。 |
 | 配置优先 | L0/L1 **config.yaml** 提供 **`scopedEnv`**、主密钥；`/env add` 为运行期补充/覆盖。 |
 | cap 极简 | `Store` + `EnvPairResolver`；**不**引入 Writer/Catalog/Backend/ProviderChain 等 cap 接口。 |
-| 实现内聚 | 链式查找、scoped 存储、密文、manifest 留在 `plugins/credentials`；scope 字符串由各 tool 插件自行拼接；shell 基线 env 留在 `tool/shell`。 |
+| 实现内聚 | 链式查找、scoped 存储、密文留在 `plugins/credentials`；scope 字符串由各 tool 插件自行拼接；shell 基线 env 留在 `tool/shell`。 |
 
 ### 1.2 读路径（语义，不必拆成多个 Go 接口）
 
@@ -25,8 +25,7 @@ AgentKit 在运行期通过 `cap/credentials.Store` 解析 `env:NAME` 引用。�
 
 1. Context  
 2. Scoped 存储 `SCOPE::KEY`（L1 `scopedEnv`、enc、`/env add`；**同键 enc/文件优先于 scopedEnv**）  
-3. MCP/OpenAPI：若 JSON 里声明了 `env:` 名且尚无 scoped 值，可 **flat 回退**（实现上由 integrations 读 workspace 默认索引，**不是** L1 配置项）  
-4. 否则错误（integration scope 带 `/env add` 提示）
+3. 否则错误（integration scope 带 `/env add` 提示）
 
 ### 1.3 配置供给
 
@@ -53,7 +52,7 @@ credentials.integrations:
         KNOWLEDGE_API_KEY: ${var:KNOWLEDGE_API_KEY}
 ```
 
-MCP/OpenAPI 的 **env 变量名**仍在 `mcp.default` / `openapi.default` 的 `config.files`（如 `global:mcp.json`）里声明；**值**用 `scopedEnv` 或 `/env add`，不必在 `credentials.integrations` 上再配 manifest 路径列表。
+MCP/OpenAPI 的 **env 变量名**仍在 `mcp.default` / `openapi.default` 的 `config.files`（如 `global:mcp.json`）里声明；**值**一律用 `scopedEnv` 或 `/env add` 按 scope 提供，credentials 不再回退到 flat 存储。
 
 ### 1.4 cap 契约
 
@@ -83,7 +82,7 @@ Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool
 | LLM、telemetry、web-search | `credentials.default` |
 | tool/mcp、tool/openapi、tool/shell-bash（scoped env） | `credentials.integrations` |
 
-`/env`：integrations 插件 `CommandProvider`；配置图须 **实例化** `credentials.integrations`，由 `commands/registry` 聚合。无参数时列出 **密钥名**（不含值）：loaded/abnormal 密文键、dotenv，以及按 scope 的 env 变量名与 `[manifest|loaded|config|abnormal]` 状态（不展示密文路径与 `config.secretsKey`）。
+`/env`：integrations 插件 `CommandProvider`；配置图须 **实例化** `credentials.integrations`，由 `commands/registry` 聚合。无参数时列出 **密钥名**（不含值）：loaded/abnormal 密文键、dotenv，以及按 scope 的 env 变量名与 `[loaded|config|abnormal]` 状态（不展示密文路径与 `config.secretsKey`）。
 
 ---
 
@@ -94,7 +93,7 @@ Scope 命名：`mcp.<server>` / `openapi.<api>` / `shell-bash.<cmd>` 由各 tool
 | cap | `Store`、`EnvPairResolver` |
 | L1 scoped | **`scopedEnv`** 加载；enc `/env add` 覆盖同键 |
 | shell-bash L0 | `workspace` + **`credentials.integrations`**；子进程 env 默认 = 宿主 env + scoped 注入，`trimEnv: true` 时裁剪 |
-| MCP/OpenAPI allowlist | 实现内读 workspace `mcp.json` / `api.json`（默认路径），**无** L1 `manifestFiles` 用户面 |
+| Integration 链顺序 | context → scoped 存储（enc/dotenv `SCOPE::KEY` → L1 `scopedEnv`）；无 flat 回退、无 manifest allowlist |
 | Global 链顺序 | context → process → config → encrypted → dotenv |
 
 Shell：`subprocessEnv` → `EnvPairs`；`config.commands` 仅少见 override。
@@ -150,13 +149,10 @@ Context override 由 `credentials/env` 与 `credentials/integrations` 在 `Resol
 
 | 项 | 何时值得做 |
 |----|------------|
-| `credentials.integrations.config.manifestFiles` / `manifestSources` | **默认不做**；allowlist 路径改由 tool 插件或固定约定即可 |
-| `shell-bash.json` 独立 manifest | bash 用 `scopedEnv` + 首 token scope 即可 |
 | `SecretProviderChain` 可配置 | 链顺序需按环境差异频繁改 |
 | `Backend` + Vault / AWS SM | 有合规或集中密钥管理硬性要求 |
 | Composite 单 credentials 节点 | 挂错 deps 成为高频支持问题 |
 | Scope 前缀注册表 | 集成种类 > ~5 且频繁新增 |
-| ManifestParser `Detect` 注册表 | manifest kind 数量多且第三方扩展 |
 | cap `Writer` / `Catalog` | 有第二个 Writer 或第二个 Catalog 消费者 |
 
 业界对照（Keychain / AWS Chain / Vault）用于**沟通概念**；**不要求**逐项落成独立 cap 组件。

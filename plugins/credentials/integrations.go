@@ -2,29 +2,15 @@ package credentials
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
-	"os"
-	"sort"
 	"strings"
-	"sync"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 )
 
-const (
-	defaultMCPManifestFile     = "global:mcp.json"
-	defaultOpenAPIManifestFile = "global:api.json"
-)
-
 type integrationStore struct {
 	*envStore
-	manifestPaths  []string
-	mu             sync.RWMutex
-	allow          map[string]map[string]struct{}
-	manifestMaxMod int64
 }
 
 // NewIntegrations registers credentials/integrations for MCP and OpenAPI with /env and scoped Resolve.
@@ -33,31 +19,18 @@ func NewIntegrations(cfg Config, deps EnvDeps) (credentials.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Manifest allowlist paths are a fixed workspace convention, not a config knob.
-	manifestPaths := []string{defaultMCPManifestFile, defaultOpenAPIManifestFile}
 	scoped, err := buildConfigScoped(cfg.Prefix, cfg.ScopedEnv)
 	if err != nil {
 		return nil, err
 	}
 	backend.setConfigScoped(scoped)
-	s := &integrationStore{
-		envStore:      backend,
-		manifestPaths: manifestPaths,
-		allow:         make(map[string]map[string]struct{}),
-	}
-	if err := s.reloadManifest(context.Background()); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return &integrationStore{envStore: backend}, nil
 }
 
 func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string) (credentials.Secret, error) {
 	scope = strings.TrimSpace(scope)
 	if scope == "" {
 		return credentials.Secret{}, fmt.Errorf("credential scope is required")
-	}
-	if err := s.ensureManifestFresh(ctx); err != nil {
-		return credentials.Secret{}, err
 	}
 	key := envKey(ref)
 	if key == "" {
@@ -66,17 +39,10 @@ func (s *integrationStore) Resolve(ctx context.Context, scope string, ref string
 	if value, ok := s.lookupScopedValue(ctx, scope, ref); ok {
 		return credentials.Secret{Ref: ref, Value: value}, nil
 	}
-	if !s.scopeAllows(scope, key) {
-		if isIntegrationScope(scope) {
-			return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q (/env add %s %s=<value>)", key, scope, scope, key)
-		}
-		return credentials.Secret{}, fmt.Errorf("credential %q is not declared for scope %q", key, scope)
+	if isIntegrationScope(scope) {
+		return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q (/env add %s %s=<value>)", key, scope, scope, key)
 	}
-	value, err := s.lookupValue(ctx, ref)
-	if err != nil {
-		return credentials.Secret{}, err
-	}
-	return credentials.Secret{Ref: ref, Value: value}, nil
+	return credentials.Secret{}, fmt.Errorf("credential %q is not set for scope %q", key, scope)
 }
 
 func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, ref string) (string, bool) {
@@ -99,9 +65,6 @@ func (s *integrationStore) lookupScopedValue(ctx context.Context, scope string, 
 func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pairs []string) (envAddOutcome, error) {
 	scope = strings.TrimSpace(scope)
 	if err := validateIntegrationScope(scope); err != nil {
-		return envAddOutcome{}, err
-	}
-	if err := s.ensureManifestFresh(ctx); err != nil {
 		return envAddOutcome{}, err
 	}
 	updates := make(map[string]string, len(pairs))
@@ -131,16 +94,7 @@ func (s *integrationStore) addScopedPairs(ctx context.Context, scope string, pai
 		}
 		return nil
 	}
-	outcome, err := s.addUpdates(ctx, updates, refs, verify)
-	if err != nil {
-		return envAddOutcome{}, err
-	}
-	if err := s.reloadManifest(ctx); err != nil {
-		msg := fmt.Sprintf("manifest reload failed: %v", err)
-		slog.Warn("credentials: env add", "warning", msg)
-		outcome.Warnings = append(outcome.Warnings, msg)
-	}
-	return outcome, nil
+	return s.addUpdates(ctx, updates, refs, verify)
 }
 
 func formatEnvAddOutcome(outcome envAddOutcome, scope string) string {
@@ -164,45 +118,13 @@ func formatEnvAddOutcome(outcome envAddOutcome, scope string) string {
 	return b.String()
 }
 
-func (s *integrationStore) scopeAllows(scope string, key string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	keys, ok := s.allow[scope]
-	if !ok {
-		return false
-	}
-	_, ok = keys[key]
-	return ok
-}
-
-func (s *integrationStore) allowlistedEnvKeys(scope string) []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	keys, ok := s.allow[scope]
-	if !ok || len(keys) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(keys))
-	for key := range keys {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // EnvPairs implements credentials.EnvPairResolver.
 func (s *integrationStore) EnvPairs(ctx context.Context, scope string, opts credentials.EnvPairsOptions) ([]string, error) {
 	scope = strings.TrimSpace(scope)
 	if scope == "" {
 		return nil, fmt.Errorf("credential scope is required")
 	}
-	if err := s.ensureManifestFresh(ctx); err != nil {
-		return nil, err
-	}
 	keys := append([]string(nil), opts.Keys...)
-	if len(keys) == 0 {
-		keys = s.allowlistedEnvKeys(scope)
-	}
 	if len(keys) == 0 {
 		keys = s.listEnvKeysForScope(scope)
 	}
@@ -212,124 +134,11 @@ func (s *integrationStore) EnvPairs(ctx context.Context, scope string, opts cred
 	return injectScopedEnv(ctx, nil, scope, keys, s), nil
 }
 
-func (s *integrationStore) ensureManifestFresh(ctx context.Context) error {
-	maxMod, err := s.manifestsMaxModTime(ctx)
-	if err != nil {
-		return err
-	}
-	s.mu.RLock()
-	fresh := s.manifestMaxMod == maxMod
-	s.mu.RUnlock()
-	if fresh {
-		return nil
-	}
-	return s.reloadManifest(ctx)
-}
-
-func (s *integrationStore) resolveManifestPath(_ context.Context, rel string) (string, error) {
-	return rel, nil
-}
-
-func (s *integrationStore) manifestsMaxModTime(ctx context.Context) (int64, error) {
-	var maxMod int64
-	for _, rel := range s.manifestPaths {
-		rel = strings.TrimSpace(rel)
-		if rel == "" {
-			continue
-		}
-		path, err := s.resolveManifestPath(ctx, rel)
-		if err != nil {
-			return 0, err
-		}
-		info, err := s.fs.Stat(ctx, path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return 0, fmt.Errorf("stat manifest %q: %w", path, err)
-		}
-		if mod := info.ModTime.UnixNano(); mod > maxMod {
-			maxMod = mod
-		}
-	}
-	return maxMod, nil
-}
-
-func (s *integrationStore) reloadManifest(ctx context.Context) error {
-	maxMod, err := s.manifestsMaxModTime(ctx)
-	if err != nil {
-		return err
-	}
-	parts := make([]map[string]map[string]struct{}, 0, len(s.manifestPaths))
-	for _, rel := range s.manifestPaths {
-		rel = strings.TrimSpace(rel)
-		if rel == "" {
-			continue
-		}
-		path, err := s.resolveManifestPath(ctx, rel)
-		if err != nil {
-			return err
-		}
-		data, err := s.fs.Read(ctx, path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return fmt.Errorf("read manifest %q: %w", path, err)
-		}
-		part, err := manifestFromFile(data)
-		if err != nil {
-			return fmt.Errorf("parse manifest %q: %w", rel, err)
-		}
-		if len(part) > 0 {
-			parts = append(parts, part)
-		}
-	}
-	merged := mergeManifests(parts...)
-	s.mu.Lock()
-	s.allow = merged
-	s.manifestMaxMod = maxMod
-	s.mu.Unlock()
-	return nil
-}
-
-func manifestFromFile(data []byte) (map[string]map[string]struct{}, error) {
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" {
-		return nil, nil
-	}
-	if strings.Contains(trimmed, `"mcpServers"`) {
-		return manifestFromMCPFile(data)
-	}
-	if strings.Contains(trimmed, `"apis"`) {
-		return manifestFromAPIIndex(data)
-	}
-	if strings.Contains(trimmed, `"commands"`) {
-		return manifestFromShellBashFile(data)
-	}
-	return nil, fmt.Errorf("unsupported manifest shape")
-}
-
 func (s *integrationStore) statusWithHelp() string {
-	s.mu.RLock()
-	scopes := len(s.allow)
-	s.mu.RUnlock()
 	var b strings.Builder
 	b.WriteString(s.formatStatus())
 	b.WriteString(s.formatFlatEncryptedKeys())
 	b.WriteString(s.formatScopedEnvKeyInventory())
-	fmt.Fprintf(&b, ", %d scoped manifest entr(y/ies)", scopes)
-	if len(s.manifestPaths) > 0 {
-		b.WriteString("\nmanifest files:")
-		for _, path := range s.manifestPaths {
-			path = strings.TrimSpace(path)
-			if path == "" {
-				continue
-			}
-			b.WriteString("\n  - ")
-			b.WriteString(path)
-		}
-	}
 	b.WriteString("\n\n")
 	b.WriteString(integrationEnvHelp())
 	return b.String()
@@ -339,15 +148,13 @@ func integrationEnvHelp() string {
 	return `Usage:
   /env                                    show status, env key inventory, and help
   /env add SCOPE KEY=VALUE  write one scoped secret (VALUE is not split on spaces; use multiple /env add for more keys)
-  /env -u                                 reload secrets, dotenv, and integration manifests
+  /env -u                                 reload secrets and dotenv from disk
 
 Notes:
   SCOPE is mcp.<server>, openapi.<api>, or shell-bash.<cmd> (command basename after the dot)
-  /env add does not require a manifest entry; mcp.json / api.json / shell-bash.json env entries declare keys for lookup after values are set
   Scoped values live in secrets.enc.json (or dotenv) as SCOPE::KEY; undecryptable enc entries are preserved with abnormal=true (see /env status)
   L1 credentials.integrations.config.scopedEnv preloads values at startup; same SCOPE::KEY in secrets.enc.json wins over scopedEnv
-  Resolve: context > scoped store (encrypted/file, then L1 scopedEnv) > manifest allowlist > flat fallback
-  Manifest allowlists refresh automatically when mcp.json / api.json change on disk`
+  Resolve: context > scoped store (encrypted/file, then L1 scopedEnv)`
 }
 
 func (s *integrationStore) Commands() []agentkit.Command {
@@ -382,10 +189,7 @@ func (c *integrationEnvCommand) CommandExec(ctx context.Context, args string) (s
 		if err != nil {
 			return "", err
 		}
-		if err := c.store.reloadManifest(ctx); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("env: reloaded %d key(s) from disk and refreshed manifests", count), nil
+		return fmt.Sprintf("env: reloaded %d key(s) from disk", count), nil
 	case sub == "add":
 		outcome, err := c.store.addScopedPairs(ctx, scope, []string{pair})
 		if err != nil {

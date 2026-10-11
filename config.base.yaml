@@ -430,12 +430,11 @@ credentials.default:
   deps:
     fs: filesystem.local.state
 
-# MCP / OpenAPI env: refs: scoped manifest allowlist, /env slash, no process env.
+# MCP / OpenAPI env: refs: scoped values (L1 scopedEnv, /env add), no process env.
 credentials.integrations:
   use: credentials/integrations
   config:
     encryptedFile: global:secrets.enc.json
-    # MCP/OpenAPI allowlist：实现内固定读 workspace mcp.json/api.json，无 L1 配置项
     # Set the master key via L1 config.yaml credentials.integrations.config.secretsKey for /env add
     # (e.g. secretsKey: ${var:MY_SECRETS_PASSPHRASE} or ${env:MY_SECRETS_PASSPHRASE}).
   deps:

@@ -1425,7 +1425,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|---|
 | `workDir` | `string` | `.` | WorkDir is working directory relative to the workspace root. |
 | `timeoutSeconds` | `int` | `60` | TimeoutSeconds is per-command limit when the model omits timeout; 0 means no limit. |
-| `commands` | `map[string][]string` | — | Commands optionally overrides env var names injected for shell-bash.<token>. Default: scope is derived from the command's first token; keys come from L1 scopedEnv, secrets.enc.json (/env add), or shell-bash.json manifest allowlist. |
+| `commands` | `map[string][]string` | — | Commands optionally overrides env var names injected for shell-bash.<token>. Default: scope is derived from the command's first token; keys come from L1 scopedEnv or secrets.enc.json / dotenv (/env add). |
 | `trimEnv` | `*bool` | — | TrimEnv trims the child env to a minimal base (PATH/HOME/... + PWD) plus scoped/extra pairs. Default false: the child inherits the full host env (os.Environ) plus scoped pairs — secrets belong in scopedEnv / /env add. |
 | `extraEnv` | `map[string]string` | — | ExtraEnv adds static, non-secret KEY=value entries to the child env. Secrets belong in credentials scopedEnv / /env add, not here. |
 
