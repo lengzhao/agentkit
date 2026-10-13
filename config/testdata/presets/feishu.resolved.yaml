@@ -202,10 +202,10 @@ hook.turn-continue.default:
     use: hook/turn-continue
 hook.turn-nudge.default:
     config:
+        stepInterval: 20
+        stepLimit: 60
         timeIntervalMinutes: 10
         timeLimitMinutes: 60
-        toolCallInterval: 20
-        toolCallLimit: 60
     use: hook/turn-nudge
 hooks.default:
     deps:

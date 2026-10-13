@@ -14,27 +14,28 @@ import (
 )
 
 type TurnNudgeConfig struct {
-	// ToolCallInterval injects a budget-status notice (numbers only) after every N
-	// completed tool calls in a turn (default 20). 0 keeps the default; set a very
-	// large value to disable.
-	ToolCallInterval int `json:"toolCallInterval"`
+	// StepInterval injects a budget-status notice (numbers only) after every N
+	// completed model steps in a turn (default 20). Steps align with agent maxSteps:
+	// one step may batch many tool calls. 0 keeps the default; set a very large
+	// value to disable.
+	StepInterval int `json:"stepInterval"`
 	// TimeIntervalMinutes injects a budget-status notice (numbers only) after every
 	// N minutes of turn elapsed time (default 10). 0 keeps the default; set a very
 	// large value to disable.
 	TimeIntervalMinutes int `json:"timeIntervalMinutes"`
-	// ToolCallLimit is the tool-call budget for one turn (default 60). Once reached,
+	// StepLimit is the model-step budget for one turn (default 60). Once reached,
 	// every further tool result carries LimitMessage telling the model to summarize
 	// and end the turn. 0 keeps the default; set a very large value to disable.
-	ToolCallLimit int `json:"toolCallLimit"`
+	StepLimit int `json:"stepLimit"`
 	// TimeLimitMinutes is the elapsed-time budget for one turn (default 60). Once
 	// reached, every further tool result carries LimitMessage. 0 keeps the default;
 	// set a very large value to disable.
 	TimeLimitMinutes int `json:"timeLimitMinutes"`
 	// Message is the periodic budget-status template (numbers only, no wrap-up
-	// directive); {toolCalls} and {elapsed} are replaced.
+	// directive); {steps} and {elapsed} are replaced.
 	Message string `json:"message"`
 	// LimitMessage is injected on every tool result after a limit is reached;
-	// {toolCalls} and {elapsed} are replaced.
+	// {steps} and {elapsed} are replaced.
 	LimitMessage string `json:"limitMessage"`
 }
 
@@ -42,24 +43,24 @@ type TurnNudgeConfig struct {
 type TurnNudgeDeps struct{}
 
 const (
-	defaultToolCallInterval    = 20
+	defaultStepInterval        = 20
 	defaultTimeIntervalMinutes = 10
-	defaultToolCallLimit       = 60
+	defaultStepLimit           = 60
 	defaultTimeLimitMinutes    = 60
-	defaultNudgeMessage        = "[turn-nudge] Budget status: {toolCalls} tool calls, {elapsed} elapsed this turn."
-	defaultLimitMessage        = "[turn-nudge] LIMIT REACHED: this turn has used {toolCalls} tool calls over {elapsed}, hitting the configured budget. Do not start any new work. Summarize what is done and what remains, then end the turn now (call finish if available)."
+	defaultNudgeMessage        = "[turn-nudge] Budget status: {steps} steps, {elapsed} elapsed this turn."
+	defaultLimitMessage        = "[turn-nudge] LIMIT REACHED: this turn has used {steps} steps over {elapsed}, hitting the configured budget. Do not start any new work. Summarize what is done and what remains, then end the turn now (call finish if available)."
 )
 
 // SetDefaults implements pluginkit.Defaulter.
 func (c *TurnNudgeConfig) SetDefaults() {
-	if c.ToolCallInterval == 0 {
-		c.ToolCallInterval = defaultToolCallInterval
+	if c.StepInterval == 0 {
+		c.StepInterval = defaultStepInterval
 	}
 	if c.TimeIntervalMinutes == 0 {
 		c.TimeIntervalMinutes = defaultTimeIntervalMinutes
 	}
-	if c.ToolCallLimit == 0 {
-		c.ToolCallLimit = defaultToolCallLimit
+	if c.StepLimit == 0 {
+		c.StepLimit = defaultStepLimit
 	}
 	if c.TimeLimitMinutes == 0 {
 		c.TimeLimitMinutes = defaultTimeLimitMinutes
@@ -74,14 +75,14 @@ func (c *TurnNudgeConfig) SetDefaults() {
 
 // Validate implements pluginkit.Validator.
 func (c *TurnNudgeConfig) Validate() error {
-	if c.ToolCallInterval < 0 {
-		return fmt.Errorf("hook/turn-nudge toolCallInterval must not be negative")
+	if c.StepInterval < 0 {
+		return fmt.Errorf("hook/turn-nudge stepInterval must not be negative")
 	}
 	if c.TimeIntervalMinutes < 0 {
 		return fmt.Errorf("hook/turn-nudge timeIntervalMinutes must not be negative")
 	}
-	if c.ToolCallLimit < 0 {
-		return fmt.Errorf("hook/turn-nudge toolCallLimit must not be negative")
+	if c.StepLimit < 0 {
+		return fmt.Errorf("hook/turn-nudge stepLimit must not be negative")
 	}
 	if c.TimeLimitMinutes < 0 {
 		return fmt.Errorf("hook/turn-nudge timeLimitMinutes must not be negative")
@@ -91,10 +92,15 @@ func (c *TurnNudgeConfig) Validate() error {
 
 // turnNudgeState tracks one turn's consumption; reset at each turn start.
 type turnNudgeState struct {
-	startedAt   time.Time
-	toolCalls   int
-	nextCountAt int
-	nextTimeAt  time.Time
+	startedAt time.Time
+	// steps is the number of completed model steps, mirrored from BeforeStep.Step.
+	steps int
+	// nextStepNudge is the steps value at which the next periodic notice is due.
+	nextStepNudge int
+	// lastNudgeStep guards the periodic tier against injecting into every tool
+	// result of the same step (parallel batches share one steps value).
+	lastNudgeStep int
+	nextTimeAt    time.Time
 }
 
 type turnNudgeProvider struct {
@@ -111,11 +117,12 @@ func init() {
 	pluginkit.Register("hook/turn-nudge", NewTurnNudge)
 }
 
-// NewTurnNudge registers hook/turn-nudge: Inject wrap-up notices into tool results as a turn consumes its tool-call / elapsed-time budget.
+// NewTurnNudge registers hook/turn-nudge: Inject wrap-up notices into tool results as a turn consumes its step / elapsed-time budget.
 //
 // Best practices:
 //   - Notices are appended to tool results, so they persist in session history and reach the model at the next step.
-//   - Two tiers: periodic soft nudges (toolCallInterval / timeIntervalMinutes) and a budget limit (toolCallLimit / timeLimitMinutes) after which every tool result carries limitMessage.
+//   - Two tiers: periodic soft nudges (stepInterval / timeIntervalMinutes) and a budget limit (stepLimit / timeLimitMinutes) after which every tool result carries limitMessage.
+//   - The step counter mirrors agent maxSteps semantics (turn-wide, across segments); one parallel tool batch still counts as one step.
 //   - This hook only nudges; hard limits stay with agent maxSteps and hook/turn-continue.
 func NewTurnNudge(cfg TurnNudgeConfig, _ TurnNudgeDeps) (agentkit.HookProvider, error) {
 	cfg.SetDefaults()
@@ -138,29 +145,34 @@ func (p *turnNudgeProvider) Hooks() agentkit.HookContribution {
 	}
 }
 
-// beforeStep resets per-turn counters at the first step of a turn.
+// beforeStep resets per-turn counters at the first step of a turn and mirrors
+// the completed-step count thereafter (Step is the 0-based index of the step
+// about to run, i.e. the number of steps completed so far).
 func (p *turnNudgeProvider) beforeStep(ctx context.Context, step *agentkit.BeforeStep) error {
-	if step.Step != 0 || step.Segment != 0 {
-		return nil
-	}
 	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return nil
 	}
 	p.mu.Lock()
-	p.turns[sessionID] = p.newState(p.now())
-	p.mu.Unlock()
+	defer p.mu.Unlock()
+	if step.Step == 0 && step.Segment == 0 {
+		p.turns[sessionID] = p.newState(p.now())
+		return nil
+	}
+	if st, ok := p.turns[sessionID]; ok {
+		st.steps = step.Step
+	}
 	return nil
 }
 
-// afterTool counts the completed call and appends a notice when either budget
-// interval has elapsed since the last notice.
+// afterTool appends a notice when either budget interval has elapsed since the
+// last notice, or the wrap-up-and-end limit message once a limit is reached.
 func (p *turnNudgeProvider) afterTool(ctx context.Context, result *agentkit.ToolResult) error {
 	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return nil
 	}
-	notice := p.recordToolAndNudge(sessionID)
+	notice := p.nudge(sessionID)
 	if notice == "" {
 		return nil
 	}
@@ -173,13 +185,14 @@ func (p *turnNudgeProvider) afterTool(ctx context.Context, result *agentkit.Tool
 
 func (p *turnNudgeProvider) newState(now time.Time) *turnNudgeState {
 	return &turnNudgeState{
-		startedAt:   now,
-		nextCountAt: p.cfg.ToolCallInterval,
-		nextTimeAt:  now.Add(p.timeInterval),
+		startedAt:     now,
+		nextStepNudge: p.cfg.StepInterval,
+		lastNudgeStep: -1,
+		nextTimeAt:    now.Add(p.timeInterval),
 	}
 }
 
-func (p *turnNudgeProvider) recordToolAndNudge(sessionID agentkit.SessionID) string {
+func (p *turnNudgeProvider) nudge(sessionID agentkit.SessionID) string {
 	now := p.now()
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -188,19 +201,19 @@ func (p *turnNudgeProvider) recordToolAndNudge(sessionID agentkit.SessionID) str
 		st = p.newState(now)
 		p.turns[sessionID] = st
 	}
-	st.toolCalls++
 	elapsed := now.Sub(st.startedAt).Round(time.Second)
 
 	// Limit tier: once any budget is reached, every further tool result carries
 	// the wrap-up-and-end message; periodic nudges are superseded.
-	if st.toolCalls >= p.cfg.ToolCallLimit || elapsed >= p.timeLimit {
-		return p.render(p.cfg.LimitMessage, st.toolCalls, elapsed)
+	if st.steps >= p.cfg.StepLimit || elapsed >= p.timeLimit {
+		return p.render(p.cfg.LimitMessage, st.steps, elapsed)
 	}
 
 	nudge := false
-	if st.toolCalls >= st.nextCountAt {
+	if st.steps >= st.nextStepNudge && st.steps != st.lastNudgeStep {
 		nudge = true
-		st.nextCountAt = st.toolCalls + p.cfg.ToolCallInterval
+		st.lastNudgeStep = st.steps
+		st.nextStepNudge = st.steps + p.cfg.StepInterval
 	}
 	if !now.Before(st.nextTimeAt) {
 		nudge = true
@@ -209,12 +222,12 @@ func (p *turnNudgeProvider) recordToolAndNudge(sessionID agentkit.SessionID) str
 	if !nudge {
 		return ""
 	}
-	return p.render(p.cfg.Message, st.toolCalls, elapsed)
+	return p.render(p.cfg.Message, st.steps, elapsed)
 }
 
-func (p *turnNudgeProvider) render(template string, toolCalls int, elapsed time.Duration) string {
+func (p *turnNudgeProvider) render(template string, steps int, elapsed time.Duration) string {
 	return strings.NewReplacer(
-		"{toolCalls}", strconv.Itoa(toolCalls),
+		"{steps}", strconv.Itoa(steps),
 		"{elapsed}", elapsed.String(),
 	).Replace(template)
 }

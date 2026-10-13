@@ -380,7 +380,7 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 | `hook/before-step` | `agentkit.HookProvider` | Turn 开始前注入/检查 | DSH `agent/pre-step` |
 | `hook/turn-continue` | `agentkit.HookProvider` | Turn 末裁决续跑/收尾（`TurnStopping` seam）；`maxContinuations`（0=不续跑）、`stallLimit`、`requireFinish`、`requireTodosDone`、`continuePrompt`；贡献 `/status` | DSH `agent/turn-stopping` |
 | `hook/session-index` | `agentkit.HookProvider` | 每轮成功后异步刷新 session FTS | — |
-| `hook/turn-nudge` | `agentkit.HookProvider` | 两档预算提醒：每 `toolCallInterval` 次工具调用 / 每 `timeIntervalMinutes` 分钟在工具结果末尾追加预算数值（`message`，仅告知不含指令）；达到 `toolCallLimit` / `timeLimitMinutes` 后每次工具结果都改发 `limitMessage`（要求立即总结并结束 turn）。只提醒不裁决，硬顶仍由 `maxSteps` / `hook/turn-continue` 承担 | — |
+| `hook/turn-nudge` | `agentkit.HookProvider` | 两档预算提醒：每 `stepInterval` 个模型步 / 每 `timeIntervalMinutes` 分钟在工具结果末尾追加预算数值（`message`，仅告知不含指令）；达到 `stepLimit` / `timeLimitMinutes` 后每次工具结果都改发 `limitMessage`（要求立即总结并结束 turn）。步数与 `maxSteps` 同口径（一步可并行多个工具调用，批次内只注入一次）。只提醒不裁决，硬顶仍由 `maxSteps` / `hook/turn-continue` 承担 | — |
 | `hook/background-review` | `agentkit.HookProvider` | Turn 成功后后台 LLM review（`TurnComplete`）；内建 `learn_capture`；deps `learning`（`ReviewHost` + `SkillProposer`）、`memory`（`Capture`）、`llm` | [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §9 |
 
 **已就绪的 hook 点接口**（`agentkit.HookRuntime` 支持，任何 `HookProvider` 插件均可贡献，尚无独立 kind）：

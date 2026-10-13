@@ -599,14 +599,15 @@ hook.turn-continue.default:
   deps:
     sessionStore: sessionStore.default
 
-# turn 预算提醒：每 20 次工具调用 / 每 10 分钟在工具结果末尾注入预算数值（不含收尾指令）；
-# 达到 60 次 / 60 分钟限制后，每次工具结果都追加"立即总结并结束"的强提醒。
+# turn 预算提醒：每 20 个模型步 / 每 10 分钟在工具结果末尾注入预算数值（不含收尾指令）；
+# 达到 60 步 / 60 分钟限制后，每次工具结果都追加"立即总结并结束"的强提醒。
+# 步数与 agent maxSteps 同口径（一步可并行多个工具调用）。
 hook.turn-nudge.default:
   use: hook/turn-nudge
   config:
-    toolCallInterval: 20
+    stepInterval: 20
     timeIntervalMinutes: 10
-    toolCallLimit: 60
+    stepLimit: 60
     timeLimitMinutes: 60
 
 compaction.chain.default:

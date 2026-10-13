@@ -52,8 +52,13 @@ func nudgeCtx(sessionID string) context.Context {
 
 func startTurn(t *testing.T, p *turnNudgeProvider, ctx context.Context) {
 	t.Helper()
-	if err := p.beforeStep(ctx, &agentkit.BeforeStep{Step: 0, Segment: 0}); err != nil {
-		t.Fatalf("beforeStep: %v", err)
+	advanceToStep(t, p, ctx, 0)
+}
+
+func advanceToStep(t *testing.T, p *turnNudgeProvider, ctx context.Context, step int) {
+	t.Helper()
+	if err := p.beforeStep(ctx, &agentkit.BeforeStep{Step: step, Segment: 0}); err != nil {
+		t.Fatalf("beforeStep(%d): %v", step, err)
 	}
 }
 
@@ -66,25 +71,28 @@ func callTool(t *testing.T, p *turnNudgeProvider, ctx context.Context, content s
 	return result
 }
 
+// bigSteps keeps the step-based tier out of the way for time-focused tests.
+const bigSteps = 100000
+
 func TestTurnNudgeConfigDefaultsAndValidate(t *testing.T) {
 	t.Parallel()
 
 	cfg := TurnNudgeConfig{}
 	cfg.SetDefaults()
-	if cfg.ToolCallInterval != defaultToolCallInterval {
-		t.Fatalf("ToolCallInterval = %d, want %d", cfg.ToolCallInterval, defaultToolCallInterval)
+	if cfg.StepInterval != defaultStepInterval {
+		t.Fatalf("StepInterval = %d, want %d", cfg.StepInterval, defaultStepInterval)
 	}
 	if cfg.TimeIntervalMinutes != defaultTimeIntervalMinutes {
 		t.Fatalf("TimeIntervalMinutes = %d, want %d", cfg.TimeIntervalMinutes, defaultTimeIntervalMinutes)
 	}
-	if cfg.Message != defaultNudgeMessage {
-		t.Fatalf("Message = %q, want default", cfg.Message)
-	}
-	if cfg.ToolCallLimit != defaultToolCallLimit {
-		t.Fatalf("ToolCallLimit = %d, want %d", cfg.ToolCallLimit, defaultToolCallLimit)
+	if cfg.StepLimit != defaultStepLimit {
+		t.Fatalf("StepLimit = %d, want %d", cfg.StepLimit, defaultStepLimit)
 	}
 	if cfg.TimeLimitMinutes != defaultTimeLimitMinutes {
 		t.Fatalf("TimeLimitMinutes = %d, want %d", cfg.TimeLimitMinutes, defaultTimeLimitMinutes)
+	}
+	if cfg.Message != defaultNudgeMessage {
+		t.Fatalf("Message = %q, want default", cfg.Message)
 	}
 	if cfg.LimitMessage != defaultLimitMessage {
 		t.Fatalf("LimitMessage = %q, want default", cfg.LimitMessage)
@@ -92,17 +100,17 @@ func TestTurnNudgeConfigDefaultsAndValidate(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("validate defaults: %v", err)
 	}
-	bad := TurnNudgeConfig{ToolCallInterval: -1}
+	bad := TurnNudgeConfig{StepInterval: -1}
 	if err := bad.Validate(); err == nil {
-		t.Fatal("negative toolCallInterval should fail validation")
+		t.Fatal("negative stepInterval should fail validation")
 	}
 	bad = TurnNudgeConfig{TimeIntervalMinutes: -1}
 	if err := bad.Validate(); err == nil {
 		t.Fatal("negative timeIntervalMinutes should fail validation")
 	}
-	bad = TurnNudgeConfig{ToolCallLimit: -1}
+	bad = TurnNudgeConfig{StepLimit: -1}
 	if err := bad.Validate(); err == nil {
-		t.Fatal("negative toolCallLimit should fail validation")
+		t.Fatal("negative stepLimit should fail validation")
 	}
 	bad = TurnNudgeConfig{TimeLimitMinutes: -1}
 	if err := bad.Validate(); err == nil {
@@ -110,84 +118,109 @@ func TestTurnNudgeConfigDefaultsAndValidate(t *testing.T) {
 	}
 }
 
-func TestNudgeAtToolCallInterval(t *testing.T) {
+func TestNudgeAtStepInterval(t *testing.T) {
 	t.Parallel()
 
-	p, _ := newNudgeProvider(t, TurnNudgeConfig{ToolCallInterval: 3, TimeIntervalMinutes: 100000})
-	ctx := nudgeCtx("sess-count")
+	p, _ := newNudgeProvider(t, TurnNudgeConfig{
+		StepInterval:        3,
+		TimeIntervalMinutes: bigSteps,
+		StepLimit:           bigSteps,
+		TimeLimitMinutes:    bigSteps,
+	})
+	ctx := nudgeCtx("sess-steps")
 	startTurn(t, p, ctx)
 
-	for i := 1; i <= 2; i++ {
+	for _, s := range []int{1, 2} {
+		advanceToStep(t, p, ctx, s)
 		if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
-			t.Fatalf("call %d content = %q, want unchanged", i, got)
+			t.Fatalf("step %d content = %q, want unchanged", s, got)
 		}
 	}
+	advanceToStep(t, p, ctx, 3)
 	got := callTool(t, p, ctx, "ok").Content
-	if !strings.Contains(got, "ok\n\n") || !strings.Contains(got, "3 tool calls") {
-		t.Fatalf("3rd call should carry notice, content = %q", got)
+	if !strings.Contains(got, "ok\n\n") || !strings.Contains(got, "3 steps") {
+		t.Fatalf("step 3 should carry notice, content = %q", got)
 	}
-	// Next nudge at 6 calls.
-	for i := 4; i <= 5; i++ {
+	// A parallel batch in the same step injects only once.
+	if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
+		t.Fatalf("second tool of step 3 content = %q, want unchanged (one notice per step)", got)
+	}
+	// Next nudge at step 6.
+	for _, s := range []int{4, 5} {
+		advanceToStep(t, p, ctx, s)
 		if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
-			t.Fatalf("call %d content = %q, want unchanged", i, got)
+			t.Fatalf("step %d content = %q, want unchanged", s, got)
 		}
 	}
-	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "6 tool calls") {
-		t.Fatalf("6th call should carry notice, content = %q", got)
+	advanceToStep(t, p, ctx, 6)
+	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "6 steps") {
+		t.Fatalf("step 6 should carry notice, content = %q", got)
 	}
 }
 
 func TestNudgeAtTimeInterval(t *testing.T) {
 	t.Parallel()
 
-	p, clock := newNudgeProvider(t, TurnNudgeConfig{ToolCallInterval: 100000, TimeIntervalMinutes: 20})
+	p, clock := newNudgeProvider(t, TurnNudgeConfig{
+		StepInterval:        bigSteps,
+		TimeIntervalMinutes: 10,
+		StepLimit:           bigSteps,
+		TimeLimitMinutes:    bigSteps,
+	})
 	ctx := nudgeCtx("sess-time")
 	startTurn(t, p, ctx)
 
 	if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
 		t.Fatalf("early call content = %q, want unchanged", got)
 	}
-	clock.Advance(21 * time.Minute)
+	clock.Advance(11 * time.Minute)
 	got := callTool(t, p, ctx, "ok").Content
-	if !strings.Contains(got, "2 tool calls") || !strings.Contains(got, "21m0s") {
+	if !strings.Contains(got, "Budget status") || !strings.Contains(got, "11m0s") {
 		t.Fatalf("time-based notice missing, content = %q", got)
 	}
 	// Next time nudge only after another full interval.
 	if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
 		t.Fatalf("call right after notice content = %q, want unchanged", got)
 	}
-	clock.Advance(20 * time.Minute)
-	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "4 tool calls") || !strings.Contains(got, "41m0s") {
+	clock.Advance(10 * time.Minute)
+	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "21m0s") {
 		t.Fatalf("second time-based notice missing, content = %q", got)
 	}
 }
 
-func TestLimitMessageAfterToolCallLimit(t *testing.T) {
+func TestLimitMessageAfterStepLimit(t *testing.T) {
 	t.Parallel()
 
 	p, _ := newNudgeProvider(t, TurnNudgeConfig{
-		ToolCallInterval:    2,
-		TimeIntervalMinutes: 100000,
-		ToolCallLimit:       3,
-		TimeLimitMinutes:    100000,
+		StepInterval:        2,
+		TimeIntervalMinutes: bigSteps,
+		StepLimit:           3,
+		TimeLimitMinutes:    bigSteps,
 	})
-	ctx := nudgeCtx("sess-limit-count")
+	ctx := nudgeCtx("sess-limit-steps")
 	startTurn(t, p, ctx)
 
+	advanceToStep(t, p, ctx, 1)
 	if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
-		t.Fatalf("call 1 content = %q, want unchanged", got)
+		t.Fatalf("step 1 content = %q, want unchanged", got)
 	}
 	// Pre-limit: periodic status only, no wrap-up directive.
+	advanceToStep(t, p, ctx, 2)
 	got := callTool(t, p, ctx, "ok").Content
 	if !strings.Contains(got, "Budget status") || strings.Contains(got, "Summarize") {
-		t.Fatalf("call 2 should carry status-only notice, content = %q", got)
+		t.Fatalf("step 2 should carry status-only notice, content = %q", got)
 	}
 	// At and beyond the limit: every result carries the wrap-up-and-end message.
-	for i := 3; i <= 5; i++ {
+	for _, s := range []int{3, 4, 5} {
+		advanceToStep(t, p, ctx, s)
 		got := callTool(t, p, ctx, "ok").Content
 		if !strings.Contains(got, "LIMIT REACHED") || !strings.Contains(got, "Summarize") {
-			t.Fatalf("call %d should carry limit message, content = %q", i, got)
+			t.Fatalf("step %d should carry limit message, content = %q", s, got)
 		}
+	}
+	// Every tool result within a limited step carries it too.
+	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "LIMIT REACHED") {
+		t.Fatalf("limit message should repeat on every tool result, content = %q", got)
 	}
 }
 
@@ -195,9 +228,9 @@ func TestLimitMessageAfterTimeLimit(t *testing.T) {
 	t.Parallel()
 
 	p, clock := newNudgeProvider(t, TurnNudgeConfig{
-		ToolCallInterval:    100000,
-		TimeIntervalMinutes: 100000,
-		ToolCallLimit:       100000,
+		StepInterval:        bigSteps,
+		TimeIntervalMinutes: bigSteps,
+		StepLimit:           bigSteps,
 		TimeLimitMinutes:    30,
 	})
 	ctx := nudgeCtx("sess-limit-time")
@@ -220,15 +253,21 @@ func TestLimitMessageAfterTimeLimit(t *testing.T) {
 func TestNudgeEmptyResultContent(t *testing.T) {
 	t.Parallel()
 
-	p, _ := newNudgeProvider(t, TurnNudgeConfig{ToolCallInterval: 1, TimeIntervalMinutes: 100000})
+	p, _ := newNudgeProvider(t, TurnNudgeConfig{
+		StepInterval:        1,
+		TimeIntervalMinutes: bigSteps,
+		StepLimit:           bigSteps,
+		TimeLimitMinutes:    bigSteps,
+	})
 	ctx := nudgeCtx("sess-empty")
 	startTurn(t, p, ctx)
 
+	advanceToStep(t, p, ctx, 1)
 	got := callTool(t, p, ctx, "").Content
 	if strings.HasPrefix(got, "\n") {
 		t.Fatalf("empty content should not gain leading separator, content = %q", got)
 	}
-	if !strings.Contains(got, "1 tool calls") {
+	if !strings.Contains(got, "1 steps") {
 		t.Fatalf("notice missing, content = %q", got)
 	}
 }
@@ -236,29 +275,43 @@ func TestNudgeEmptyResultContent(t *testing.T) {
 func TestNudgeResetsOnNewTurn(t *testing.T) {
 	t.Parallel()
 
-	p, clock := newNudgeProvider(t, TurnNudgeConfig{ToolCallInterval: 2, TimeIntervalMinutes: 20})
+	p, clock := newNudgeProvider(t, TurnNudgeConfig{
+		StepInterval:        2,
+		TimeIntervalMinutes: 10,
+		StepLimit:           bigSteps,
+		TimeLimitMinutes:    bigSteps,
+	})
 	ctx := nudgeCtx("sess-reset")
 	startTurn(t, p, ctx)
+	advanceToStep(t, p, ctx, 1)
 	callTool(t, p, ctx, "ok")
-	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "2 tool calls") {
-		t.Fatalf("2nd call should carry notice, content = %q", got)
+	advanceToStep(t, p, ctx, 2)
+	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "2 steps") {
+		t.Fatalf("step 2 should carry notice, content = %q", got)
 	}
 
 	// New turn: counters and clock baseline reset.
 	clock.Advance(time.Hour)
 	startTurn(t, p, ctx)
+	advanceToStep(t, p, ctx, 1)
 	if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
-		t.Fatalf("first call of new turn content = %q, want unchanged", got)
+		t.Fatalf("step 1 of new turn content = %q, want unchanged", got)
 	}
-	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "2 tool calls") {
-		t.Fatalf("2nd call of new turn should carry notice, content = %q", got)
+	advanceToStep(t, p, ctx, 2)
+	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "2 steps") {
+		t.Fatalf("step 2 of new turn should carry notice, content = %q", got)
 	}
 }
 
 func TestNudgeWithoutSessionOrTurnStart(t *testing.T) {
 	t.Parallel()
 
-	p, _ := newNudgeProvider(t, TurnNudgeConfig{ToolCallInterval: 2, TimeIntervalMinutes: 20})
+	p, clock := newNudgeProvider(t, TurnNudgeConfig{
+		StepInterval:        2,
+		TimeIntervalMinutes: 10,
+		StepLimit:           bigSteps,
+		TimeLimitMinutes:    bigSteps,
+	})
 
 	// No session in ctx: no-op.
 	result := agentkit.ToolResult{Content: "ok"}
@@ -269,11 +322,15 @@ func TestNudgeWithoutSessionOrTurnStart(t *testing.T) {
 		t.Fatalf("content = %q, want unchanged", result.Content)
 	}
 
-	// No beforeStep (defensive lazy init): still counts and nudges.
+	// No beforeStep (defensive lazy init): steps stay 0, so step-based nudges
+	// never fire, but time-based ones still do.
 	ctx := nudgeCtx("sess-lazy")
-	callTool(t, p, ctx, "ok")
-	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "2 tool calls") {
-		t.Fatalf("lazy state should still nudge, content = %q", got)
+	if got := callTool(t, p, ctx, "ok").Content; got != "ok" {
+		t.Fatalf("lazy state without steps should not nudge, content = %q", got)
+	}
+	clock.Advance(11 * time.Minute)
+	if got := callTool(t, p, ctx, "ok").Content; !strings.Contains(got, "0 steps") {
+		t.Fatalf("time-based nudge should fire on lazy state, content = %q", got)
 	}
 }
 
@@ -281,15 +338,18 @@ func TestNudgeCustomMessage(t *testing.T) {
 	t.Parallel()
 
 	p, _ := newNudgeProvider(t, TurnNudgeConfig{
-		ToolCallInterval:    1,
-		TimeIntervalMinutes: 100000,
-		Message:             "WRAP UP calls={toolCalls} elapsed={elapsed}",
+		StepInterval:        1,
+		TimeIntervalMinutes: bigSteps,
+		StepLimit:           bigSteps,
+		TimeLimitMinutes:    bigSteps,
+		Message:             "WRAP UP steps={steps} elapsed={elapsed}",
 	})
 	ctx := nudgeCtx("sess-custom")
 	startTurn(t, p, ctx)
 
+	advanceToStep(t, p, ctx, 1)
 	got := callTool(t, p, ctx, "ok").Content
-	if !strings.Contains(got, "WRAP UP calls=1 elapsed=0s") {
+	if !strings.Contains(got, "WRAP UP steps=1 elapsed=0s") {
 		t.Fatalf("custom message not applied, content = %q", got)
 	}
 }
