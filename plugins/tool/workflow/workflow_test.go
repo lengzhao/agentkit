@@ -70,6 +70,13 @@ func TestWorkflowDescriptionListsPipelines(t *testing.T) {
 	if !strings.Contains(desc, "pipe: echo and import") {
 		t.Fatalf("desc = %q", desc)
 	}
+	// 模型新建/编辑 workflow 需要绝对路径：搜索目录与文件路径都必须出现在描述里。
+	if !strings.Contains(desc, filepath.Join(root, "workflows")) {
+		t.Fatalf("desc missing search dir: %q", desc)
+	}
+	if !strings.Contains(desc, filepath.Join(root, "workflows", "pipe.json")) {
+		t.Fatalf("desc missing workflow path: %q", desc)
+	}
 }
 
 func TestWorkflowCommandListsFiles(t *testing.T) {

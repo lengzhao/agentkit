@@ -203,7 +203,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 ```
 
 - `name`：workflow 文件名（去扩展名）；`args`：对应该 workflow 的 `inputs`
-- 工具描述由引擎动态汇集：**每个 workflow 一段（name + description + inputs 摘要）**，与 subagent 靠 `prompt/section/subagents` 列名单同理；`args` 在工具侧按 `inputs` schema 校验，非法即返回校验错误（模型可修正重试），不进入管线
+- 工具描述由引擎动态汇集：**搜索目录的绝对路径列表**（模型新建 workflow 的定位依据，scoped `local:`/`global:` 语法对模型无意义）+ **每个 workflow 一段（name + description + path + inputs 摘要）**，与 subagent 靠 `prompt/section/subagents` 列名单同理；`args` 在工具侧按 `inputs` schema 校验，非法即返回校验错误（模型可修正重试），不进入管线
 - 目录按调用重读（同 subagent `Definitions` 每次调用重读）：编辑 workflow 文件**即改即生效**，无需 `/workflow -u`
 
 ```yaml

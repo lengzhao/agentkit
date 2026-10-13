@@ -84,18 +84,31 @@ func (t *workflowTool) InputSchema() agentkit.JSONSchema {
 
 // Description lists the currently discovered workflows; tools/runtime calls it
 // when assembling the catalog, so edits to workflow files show up next turn.
+// It also prints the resolved search directories: the model needs an absolute
+// location when creating a new workflow file (the scoped local:/global: config
+// syntax is meaningless to it).
 func (t *workflowTool) Description() string {
 	var b strings.Builder
 	b.WriteString("Run a fixed pipeline (script/tool/model/agent steps) by name. " +
 		"Intermediate data stays in files and tool calls; only the pipeline's rendered result returns here, " +
-		"so use workflows for large payloads that must not pass through the conversation. " +
-		"Available workflows:\n")
-	workflows, errs := Discover(context.Background(), t.deps.Workspace, t.dirs)
+		"so use workflows for large payloads that must not pass through the conversation.\n")
+	ctx := context.Background()
+	b.WriteString("Workflow search directories (first hit wins; write new workflows to the first writable one):\n")
+	for _, scoped := range t.dirs {
+		dir, err := t.deps.Workspace.Resolve(ctx, scoped)
+		if err != nil {
+			fmt.Fprintf(&b, "- %s (unresolved: %v)\n", scoped, err)
+			continue
+		}
+		fmt.Fprintf(&b, "- %s\n", dir)
+	}
+	b.WriteString("Available workflows:\n")
+	workflows, errs := Discover(ctx, t.deps.Workspace, t.dirs)
 	if len(workflows) == 0 {
-		b.WriteString("(none found; check the workflows directory)\n")
+		b.WriteString("(none found; create a .json file in the first search directory)\n")
 	}
 	for _, wf := range workflows {
-		fmt.Fprintf(&b, "- %s: %s", wf.Name, wf.Description)
+		fmt.Fprintf(&b, "- %s: %s (path: %s)", wf.Name, wf.Description, wf.Path)
 		if schema := wf.InputsJSONSchema(); schema != "" {
 			fmt.Fprintf(&b, " args schema: %s", schema)
 		}
