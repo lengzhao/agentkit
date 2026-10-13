@@ -372,6 +372,20 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `sessionStore`（必填） | `agentkit.SessionStore` |  |
 
+## `hook/turn-nudge`
+
+- 返回类型：`agentkit.HookProvider`
+- 源码：[`plugins/hook/turnnudge.go`](../plugins/hook/turnnudge.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `toolCallInterval` | `int` | `20` | ToolCallInterval injects a budget-status notice (numbers only) after every N completed tool calls in a turn (default 20). 0 keeps the default; set a very large value to disable. |
+| `timeIntervalMinutes` | `int` | `10` | TimeIntervalMinutes injects a budget-status notice (numbers only) after every N minutes of turn elapsed time (default 10). 0 keeps the default; set a very large value to disable. |
+| `toolCallLimit` | `int` | `60` | ToolCallLimit is the tool-call budget for one turn (default 60). Once reached, every further tool result carries LimitMessage telling the model to summarize and end the turn. 0 keeps the default; set a very large value to disable. |
+| `timeLimitMinutes` | `int` | `60` | TimeLimitMinutes is the elapsed-time budget for one turn (default 60). Once reached, every further tool result carries LimitMessage. 0 keeps the default; set a very large value to disable. |
+| `message` | `string` | `[turn-nudge] Budget status: {toolCalls} tool calls, {elapsed} elapsed this turn.` | Message is the periodic budget-status template (numbers only, no wrap-up directive); {toolCalls} and {elapsed} are replaced. |
+| `limitMessage` | `string` | `[turn-nudge] LIMIT REACHED: this turn has used {toolCalls} tool calls over {elapsed}, hitting the configured budget. Do not start any new work. Summarize what is done and what remains, then end the turn now (call finish if available).` | LimitMessage is injected on every tool result after a limit is reached; {toolCalls} and {elapsed} are replaced. |
+
 ## `hooks/runtime`
 
 - 返回类型：`agentkit.HookRuntime`

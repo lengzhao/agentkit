@@ -564,6 +564,7 @@ hooks.default:
       - hook.before-step.default
       - hook.session-index.default
       - hook.background-review.default
+      - hook.turn-nudge.default
 
 # worker 长跑：按 token 阈值更早触发压缩（triggerRatio 0.7）。
 hooks.worker:
@@ -572,6 +573,7 @@ hooks.worker:
     providers:
       - hook.before-step.worker
       - hook.turn-continue.default
+      - hook.turn-nudge.default
 
 hook.before-step.default:
   use: hook/before-step
@@ -596,6 +598,16 @@ hook.turn-continue.default:
     requireTodosDone: true
   deps:
     sessionStore: sessionStore.default
+
+# turn 预算提醒：每 20 次工具调用 / 每 10 分钟在工具结果末尾注入预算数值（不含收尾指令）；
+# 达到 60 次 / 60 分钟限制后，每次工具结果都追加"立即总结并结束"的强提醒。
+hook.turn-nudge.default:
+  use: hook/turn-nudge
+  config:
+    toolCallInterval: 20
+    timeIntervalMinutes: 10
+    toolCallLimit: 60
+    timeLimitMinutes: 60
 
 compaction.chain.default:
   use: compaction/chain

@@ -200,18 +200,27 @@ hook.turn-continue.default:
     deps:
         sessionStore: sessionStore.default
     use: hook/turn-continue
+hook.turn-nudge.default:
+    config:
+        timeIntervalMinutes: 10
+        timeLimitMinutes: 60
+        toolCallInterval: 20
+        toolCallLimit: 60
+    use: hook/turn-nudge
 hooks.default:
     deps:
         providers:
             - hook.before-step.default
             - hook.session-index.default
             - hook.background-review.default
+            - hook.turn-nudge.default
     use: hooks/runtime
 hooks.worker:
     deps:
         providers:
             - hook.before-step.worker
             - hook.turn-continue.default
+            - hook.turn-nudge.default
     use: hooks/runtime
 learning.default:
     config:

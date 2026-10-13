@@ -146,12 +146,20 @@ hook.session-index.default:
     deps:
         index: sessionIndex.default
     use: hook/session-index
+hook.turn-nudge.default:
+    config:
+        timeIntervalMinutes: 10
+        timeLimitMinutes: 60
+        toolCallInterval: 20
+        toolCallLimit: 60
+    use: hook/turn-nudge
 hooks.default:
     deps:
         providers:
             - hook.before-step.default
             - hook.session-index.default
             - hook.background-review.default
+            - hook.turn-nudge.default
     use: hooks/runtime
 learning.default:
     config:
