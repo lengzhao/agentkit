@@ -24,6 +24,53 @@ func TestFormatMessageEncodesRoleAndContent(t *testing.T) {
 	}
 }
 
+// thinking 是推理过程，不能混进 content 正文：导出为独立 thinking 字段，
+// content 只保留用户可见回答。
+func TestFormatMessageSeparatesThinking(t *testing.T) {
+	t.Parallel()
+
+	raw := telemetry.FormatMessage(agentkit.ModelMessage{
+		Role: "assistant",
+		Content: []agentkit.ContentPart{
+			{Type: "thinking", Text: "let me reason"},
+			{Type: "text", Text: "final answer"},
+		},
+	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["content"] != "final answer" {
+		t.Fatalf("content = %#v, want only visible text", got["content"])
+	}
+	if got["thinking"] != "let me reason" {
+		t.Fatalf("thinking = %#v, want dedicated field", got["thinking"])
+	}
+}
+
+// generation input 走同一 messageEntryForExport，同样要保持 thinking 分离。
+func TestFormatGenerationInputSeparatesThinking(t *testing.T) {
+	t.Parallel()
+
+	messages := []agentkit.ModelMessage{
+		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}},
+		{Role: "assistant", Content: []agentkit.ContentPart{
+			{Type: "thinking", Text: "hmm"},
+			{Type: "text", Text: "hello"},
+		}},
+	}
+	raw := telemetry.FormatGenerationInputForExport(nil, messages, 0, false)
+	if !strings.Contains(raw, `"thinking":"hmm"`) {
+		t.Fatalf("generation input missing dedicated thinking field: %s", raw)
+	}
+	if !strings.Contains(raw, `"content":"hello"`) {
+		t.Fatalf("generation input content should exclude thinking: %s", raw)
+	}
+	if strings.Contains(raw, `"content":"hmmhello"`) || strings.Contains(raw, `"content":"hmm"`) {
+		t.Fatalf("thinking leaked into content: %s", raw)
+	}
+}
+
 func TestFormatMessageEncodesAttachments(t *testing.T) {
 	t.Parallel()
 

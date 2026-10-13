@@ -48,6 +48,9 @@ func SummarizeMessage(msg agentkit.ModelMessage) string {
 		b.WriteString(": ")
 	}
 	for _, part := range msg.Content {
+		if strings.TrimSpace(part.Type) == "thinking" {
+			continue
+		}
 		if part.Text != "" {
 			b.WriteString(part.Text)
 		}
@@ -95,6 +98,9 @@ func messageEntryForExport(msg agentkit.ModelMessage, maxFieldBytes int) map[str
 	entry := map[string]any{}
 	if msg.Role != "" {
 		entry["role"] = msg.Role
+	}
+	if thinking := thinkingFromParts(msg.Content); thinking != "" {
+		entry["thinking"] = truncateFieldText(thinking, maxFieldBytes)
 	}
 	if text := textFromParts(msg.Content); text != "" {
 		entry["content"] = truncateFieldText(text, maxFieldBytes)
@@ -249,9 +255,30 @@ func summarizeDataURL(url string) string {
 	return fmt.Sprintf("[data:%s]", mime)
 }
 
+// textFromParts joins user-visible text parts. Thinking parts are excluded:
+// they are reasoning, not reply, and are exported separately (see
+// thinkingFromParts) so trace output keeps a clear boundary.
 func textFromParts(parts []agentkit.ContentPart) string {
 	var b stringsBuilder
 	for _, part := range parts {
+		if strings.TrimSpace(part.Type) == "thinking" {
+			continue
+		}
+		if part.Text != "" {
+			b.WriteString(part.Text)
+		}
+	}
+	return b.String()
+}
+
+// thinkingFromParts joins reasoning parts for the dedicated `thinking` field
+// in exported messages.
+func thinkingFromParts(parts []agentkit.ContentPart) string {
+	var b stringsBuilder
+	for _, part := range parts {
+		if strings.TrimSpace(part.Type) != "thinking" {
+			continue
+		}
 		if part.Text != "" {
 			b.WriteString(part.Text)
 		}
