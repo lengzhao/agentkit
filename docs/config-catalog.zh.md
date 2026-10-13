@@ -743,6 +743,24 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `platforms`（必填） | `[]agentkit.Platform` |  |
 
+## `platform/rpc`
+
+- 返回类型：`agentkit.Platform`
+- 源码：[`runtime/platform/rpc/platform.go`](../runtime/platform/rpc/platform.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `sessionFile` | `string` | — | SessionFile is the --session path. Its basename (without .jsonl) is the Pi session id. |
+| `model` | `string` | — | Model is the initial model id. |
+| `modelProvider` | `string` | — | ModelProvider is config.modelProvider. set_model rejects any other provider. |
+| `baseUrl` | `string` | — | BaseURL is config.baseUrl, echoed on get_state. |
+| `wireApi` | `string` | — | WireAPI is config.wireApi, echoed as model.api. |
+| `allowedModels` | `map[string]json.RawMessage` | — | AllowedModels lists model ids set_model may select, besides Model. An empty map allows only Model. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionStore` | `agentkit.SessionStore` |  |
+
 ## `platform/slack`
 
 - 返回类型：`agentkit.Platform`

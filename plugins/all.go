@@ -51,6 +51,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/platform/headless"
 	_ "github.com/lengzhao/agentkit/runtime/platform/http"
 	_ "github.com/lengzhao/agentkit/runtime/platform/multiplex"
+	_ "github.com/lengzhao/agentkit/runtime/platform/rpc"
 	_ "github.com/lengzhao/agentkit/runtime/platform/slack"
 	_ "github.com/lengzhao/agentkit/runtime/prompt"
 	_ "github.com/lengzhao/agentkit/runtime/runner"

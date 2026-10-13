@@ -14,7 +14,7 @@
 | follow-up inbox 纯内存 | 崩溃后排队消息丢失 |
 | `hook/llm-request`、`BeforeStep` 决策类型 | 请求改写（步数硬顶已用 `maxSteps`） |
 | ~~`session/sqlite-index` + `tool/session-query`~~ | 已落地（见 learning-dreaming §9.1） |
-| `platform/http`、`platform/rpc` | 通用 HTTP/RPC 接入（`platform/http` 已落地：服务 DefaultServeMux） |
+| `platform/http` | 通用 HTTP 接入已落地（服务 DefaultServeMux）。`platform/rpc` 已落地为 Pi RPC stdio |
 | `policy/network-deny` | SSRF 仍在 `web/http-fetch` 内 |
 | OS 级沙箱 | 暂缓，靠 policy + approval |
 
@@ -26,7 +26,7 @@
 
 ## M3 — 可运营（剩余）
 
-`platform/http` / `platform/rpc`、`telemetry/otel`、成本汇总 CLI。（跨 session 检索见 `session/sqlite-index` + `tool/session-query`，已默认进 L0。）
+`telemetry/otel`、成本汇总 CLI。（`platform/http`、`platform/rpc` 已落地。跨 session 检索见 `session/sqlite-index` + `tool/session-query`，已默认进 L0。）
 
 ## Learning / Review（与 M3 交叉）
 
