@@ -1442,6 +1442,11 @@ go run ./cmd/agent --preset coding "inspect this repo"
 
 `telemetry/langfuse` 经 `cap/telemetry` 接口与 `runtime/telemetry` 旁路导出 turn 链路到 Langfuse UI。Session JSONL 仍是权威事实源；导出失败写 `slog.Warn`，不阻断 turn。
 
+导出支持两种 Langfuse ingestion 接口，由 `ingestVersion` 选择（默认 `v4`）：
+
+- `v4`（默认）：OpenTelemetry OTLP/HTTP 接口 `POST {baseUrl}/api/public/otel/v1/traces`（带 `x-langfuse-ingestion-version: 4` 头），适用于 Langfuse server v4。Trace/Span/Generation/Event 翻译成 OTel span（Generation 带 `langfuse.observation.type=generation`，Event 为零时长 span），turn ID 派生为 OTel trace ID（UUID 直接映射，其他取 SHA-256 前 16 字节），属性映射见 `plugins/telemetry/langfuse_otel.go`。
+- `v3`：旧批处理接口 `POST {baseUrl}/api/public/ingestion`（henomis/langfuse-go SDK），适用于 Langfuse server v3 及更早。
+
 | AgentKit | Langfuse | 插入点 |
 |---|---|---|
 | RunTurn | Trace `agent.turn`（input 为结构化 JSON，含 `attachments`；metadata 含 `turn_id`、`model`、`workspace_key`、`attachment_sources`（逗号分隔 workspace 路径，无 base64）、`usage_*_tokens`、`steps`、`stop_reason`）；当入站带附件时，turn 起始额外发一个独立 Span `inbound.attachments`，metadata 含 `attachments`（每条附件 `type`/`mime`/`source`/`origName`/`bytes`，`bytes` 为入站落盘时的真实文件大小）、`attachment_count`、`attachment_bytes`（总字节数），便于在 Langfuse 上按附件大小/类型过滤 | `loop.Dispatch` |

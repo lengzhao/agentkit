@@ -438,7 +438,7 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 | `credentials/integrations` | `Store` + `EnvPairResolver` | Scoped `Resolve`（context → scoped 存储，无 flat 回退）、`EnvPairs`（shell env）、`/env`；详见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | `credentials/file` | `credentials.Store` | 文件存储（roadmap） |
 | `storage/json` | `storage.Store` | 通用 KV 存储（roadmap） |
-| `telemetry/langfuse` | `telemetry.Exporter` | Langfuse Go SDK（ingestion API）导出 |
+| `telemetry/langfuse` | `telemetry.Exporter` | Langfuse 导出；默认 v4（OTLP `/api/public/otel/v1/traces`），`ingestVersion: v3` 走旧批处理接口（`/api/public/ingestion`） |
 | `telemetry/none` | `telemetry.Exporter` | 无遥测 |
 | `telemetry/otel` | `telemetry.Exporter` | 通用 OpenTelemetry（未做） |
 

@@ -1204,6 +1204,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `baseUrl` | `string` | `https://cloud.langfuse.com` | BaseURL is the Langfuse host, e.g. https://cloud.langfuse.com. |
 | `publicKeyRef` | `string` | — | PublicKeyRef resolves the Langfuse public key, e.g. env:LANGFUSE_PUBLIC_KEY. |
 | `secretKeyRef` | `string` | — | SecretKeyRef resolves the Langfuse secret key, e.g. env:LANGFUSE_SECRET_KEY. |
+| `ingestVersion` | `string` | `v4` | IngestVersion selects the Langfuse ingestion API: "v4" (default, OTLP /api/public/otel/v1/traces, for Langfuse server v4) or "v3" (legacy batch /api/public/ingestion, for Langfuse server v3 and earlier). |
 | `environment` | `string` | — | Environment labels traces in Langfuse. |
 | `release` | `string` | — | Release labels the deploying artifact. |
 | `sampleRate` | `float64` | `1` | SampleRate in (0,1]; 1 exports every turn. |

@@ -5,18 +5,24 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/henomis/langfuse-go"
 	"github.com/henomis/langfuse-go/model"
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/pluginkit"
+)
+
+// Langfuse ingestion API versions.
+const (
+	// IngestVersionV3 is the legacy batch ingestion API (POST /api/public/ingestion).
+	IngestVersionV3 = "v3"
+	// IngestVersionV4 is the OpenTelemetry-based API (OTLP POST /api/public/otel/v1/traces).
+	IngestVersionV4 = "v4"
 )
 
 type LangfuseConfig struct {
@@ -26,6 +32,10 @@ type LangfuseConfig struct {
 	PublicKeyRef string `json:"publicKeyRef"`
 	// SecretKeyRef resolves the Langfuse secret key, e.g. env:LANGFUSE_SECRET_KEY.
 	SecretKeyRef string `json:"secretKeyRef"`
+	// IngestVersion selects the Langfuse ingestion API: "v4" (default, OTLP
+	// /api/public/otel/v1/traces, for Langfuse server v4) or "v3" (legacy batch
+	// /api/public/ingestion, for Langfuse server v3 and earlier).
+	IngestVersion string `json:"ingestVersion"`
 	// Environment labels traces in Langfuse.
 	Environment string `json:"environment"`
 	// Release labels the deploying artifact.
@@ -54,6 +64,9 @@ func (c *LangfuseConfig) SetDefaults() {
 	if strings.TrimSpace(c.BaseURL) == "" {
 		c.BaseURL = "https://cloud.langfuse.com"
 	}
+	if strings.TrimSpace(c.IngestVersion) == "" {
+		c.IngestVersion = IngestVersionV4
+	}
 	if c.SampleRate == 0 {
 		c.SampleRate = 1
 	}
@@ -64,6 +77,11 @@ func (c *LangfuseConfig) SetDefaults() {
 
 // Validate implements pluginkit.Validator.
 func (c *LangfuseConfig) Validate() error {
+	switch strings.ToLower(strings.TrimSpace(c.IngestVersion)) {
+	case IngestVersionV3, IngestVersionV4:
+	default:
+		return fmt.Errorf("telemetry/langfuse ingestVersion must be %q or %q, got %q", IngestVersionV3, IngestVersionV4, c.IngestVersion)
+	}
 	if c.SampleRate <= 0 || c.SampleRate > 1 {
 		return fmt.Errorf("telemetry/langfuse sampleRate must be in (0, 1], got %v", c.SampleRate)
 	}
@@ -84,8 +102,21 @@ type LangfuseDeps struct {
 	Telemetry   captelemetry.Toolkit `json:"telemetry"`
 }
 
+// ingestClient abstracts the two Langfuse ingestion APIs (v3 batch ingestion,
+// v4 OTLP) behind the event model the exporter already produces.
+type ingestClient interface {
+	Trace(t *model.Trace) error
+	Generation(g *model.Generation, parentObservationID *string) error
+	GenerationEnd(g *model.Generation) error
+	Span(s *model.Span, parentObservationID *string) error
+	SpanEnd(s *model.Span) error
+	Event(e *model.Event, parentObservationID *string) error
+	Flush(ctx context.Context) error
+	Shutdown(ctx context.Context) error
+}
+
 type Langfuse struct {
-	client                 *langfuse.Langfuse
+	client                 ingestClient
 	maxPayloadBytes        int
 	maxFieldBytes          int
 	dedupeGenerationPrefix bool
@@ -160,7 +191,17 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 		env = "default"
 	}
 
-	client := newLangfuseSDKClient(context.Background(), baseURL, publicKey, secretKey, flushInterval)
+	var client ingestClient
+	switch strings.ToLower(strings.TrimSpace(cfg.IngestVersion)) {
+	case IngestVersionV3:
+		client = newIngestionAPIClient(context.Background(), baseURL, publicKey, secretKey, flushInterval)
+	default:
+		otelClient, err := newOTelIngestClient(context.Background(), baseURL, publicKey, secretKey, flushInterval, env, strings.TrimSpace(cfg.Release))
+		if err != nil {
+			return nil, err
+		}
+		client = otelClient
+	}
 
 	return &Langfuse{
 		client:                 client,
@@ -176,41 +217,6 @@ func NewLangfuse(cfg LangfuseConfig, deps LangfuseDeps) (captelemetry.Exporter, 
 		telemetry:              deps.Telemetry,
 		rng:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
-}
-
-// newLangfuseSDKClient builds the upstream client. Keys come from credentials deps
-// (resolved before call); henomis/langfuse-go only reads LANGFUSE_* at construction,
-// so we patch process env briefly and restore — never leave secrets in os.environ.
-func newLangfuseSDKClient(ctx context.Context, baseURL, publicKey, secretKey string, flushInterval time.Duration) *langfuse.Langfuse {
-	restore := patchProcessEnv(map[string]string{
-		"LANGFUSE_HOST":       baseURL,
-		"LANGFUSE_PUBLIC_KEY": publicKey,
-		"LANGFUSE_SECRET_KEY": secretKey,
-	})
-	client := langfuse.New(ctx).WithFlushInterval(flushInterval)
-	restore()
-	return client
-}
-
-func patchProcessEnv(vals map[string]string) func() {
-	prev := make(map[string]string, len(vals))
-	wasSet := make(map[string]bool, len(vals))
-	for key, value := range vals {
-		if old, ok := os.LookupEnv(key); ok {
-			prev[key] = old
-			wasSet[key] = true
-		}
-		os.Setenv(key, value)
-	}
-	return func() {
-		for key := range vals {
-			if wasSet[key] {
-				os.Setenv(key, prev[key])
-			} else {
-				os.Unsetenv(key)
-			}
-		}
-	}
 }
 
 func resolveCredential(ctx context.Context, store credentials.Store, ref, fallbackEnv string) (string, error) {
@@ -249,7 +255,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 		Release:   l.release,
 		Metadata:  stringMapToM(l.traceMetadata(meta)),
 	}
-	if _, err := l.client.Trace(trace); err != nil {
+	if err := l.client.Trace(trace); err != nil {
 		slog.Warn("telemetry/langfuse trace create failed", "trace_id", traceID, "err", err)
 	}
 
@@ -268,7 +274,7 @@ func (l *Langfuse) BeginTurn(ctx context.Context, meta captelemetry.TurnMeta) (c
 			}
 			update.Metadata = stringMapToM(merged)
 		}
-		if _, err := l.client.Trace(update); err != nil {
+		if err := l.client.Trace(update); err != nil {
 			slog.Warn("telemetry/langfuse trace update failed", "trace_id", traceID, "err", err)
 		}
 	}
@@ -303,17 +309,17 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 		if params := l.generationModelParameters(meta); params != nil {
 			gen.ModelParameters = params
 		}
-		created, err := l.client.Generation(gen, l.scopeParentPtr(ctx))
-		if err != nil {
+		gen.ID = uuid.NewString()
+		if err := l.client.Generation(gen, l.scopeParentPtr(ctx)); err != nil {
 			slog.Warn("telemetry/langfuse generation create failed", "trace_id", traceID, "name", name, "err", err)
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
-		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
+		l.storeObservationMetadata(traceID, gen.ID, obsMetadata)
 		plannedModel := meta.Model
-		ctx = l.telemetry.WithToolParent(ctx, created.ID)
+		ctx = l.telemetry.WithToolParent(ctx, gen.ID)
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
-			md := l.observationMetadataByID(traceID, created.ID, obsMetadata)
+			md := l.observationMetadataByID(traceID, gen.ID, obsMetadata)
 			planned := strings.TrimSpace(plannedModel)
 			if planned == "" {
 				planned = strings.TrimSpace(md["model"])
@@ -329,7 +335,7 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 				md["model_planned"] = planned
 			}
 			update := &model.Generation{
-				ID:       created.ID,
+				ID:       gen.ID,
 				TraceID:  traceID,
 				Output:   l.preparePayload(end.Output, l.redactOutputs),
 				EndTime:  &endTime,
@@ -352,8 +358,8 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 				update.Level = model.ObservationLevelError
 				update.StatusMessage = end.Err.Error()
 			}
-			if _, err := l.client.GenerationEnd(update); err != nil {
-				slog.Warn("telemetry/langfuse generation end failed", "trace_id", traceID, "observation_id", created.ID, "err", err)
+			if err := l.client.GenerationEnd(update); err != nil {
+				slog.Warn("telemetry/langfuse generation end failed", "trace_id", traceID, "observation_id", gen.ID, "err", err)
 			}
 		}
 	default:
@@ -364,31 +370,31 @@ func (l *Langfuse) BeginObservation(ctx context.Context, meta captelemetry.Obser
 			StartTime: &now,
 			Metadata:  stringMapToM(obsMetadata),
 		}
-		created, err := l.client.Span(span, l.toolParentPtr(ctx))
-		if err != nil {
+		span.ID = uuid.NewString()
+		if err := l.client.Span(span, l.toolParentPtr(ctx)); err != nil {
 			slog.Warn("telemetry/langfuse span create failed", "trace_id", traceID, "name", name, "err", err)
 			return ctx, func(captelemetry.ObservationEnd) {}
 		}
-		l.storeObservationMetadata(traceID, created.ID, obsMetadata)
-		ctx = l.telemetry.WithToolParent(ctx, created.ID)
+		l.storeObservationMetadata(traceID, span.ID, obsMetadata)
+		ctx = l.telemetry.WithToolParent(ctx, span.ID)
 		if meta.Scope {
-			ctx = l.telemetry.WithScopeParent(ctx, created.ID)
+			ctx = l.telemetry.WithScopeParent(ctx, span.ID)
 		}
 		return ctx, func(end captelemetry.ObservationEnd) {
 			endTime := time.Now().UTC()
 			update := &model.Span{
-				ID:       created.ID,
+				ID:       span.ID,
 				TraceID:  traceID,
 				Output:   l.preparePayload(end.Output, l.redactOutputs),
 				EndTime:  &endTime,
-				Metadata: stringMapToM(l.observationMetadataByID(traceID, created.ID, obsMetadata)),
+				Metadata: stringMapToM(l.observationMetadataByID(traceID, span.ID, obsMetadata)),
 			}
 			if end.Err != nil {
 				update.Level = model.ObservationLevelError
 				update.StatusMessage = end.Err.Error()
 			}
-			if _, err := l.client.SpanEnd(update); err != nil {
-				slog.Warn("telemetry/langfuse span end failed", "trace_id", traceID, "observation_id", created.ID, "err", err)
+			if err := l.client.SpanEnd(update); err != nil {
+				slog.Warn("telemetry/langfuse span end failed", "trace_id", traceID, "observation_id", span.ID, "err", err)
 			}
 		}
 	}
@@ -409,19 +415,17 @@ func (l *Langfuse) RecordEvent(ctx context.Context, name string, attrs map[strin
 		StartTime: &now,
 		Metadata:  stringMapToM(l.telemetry.EnrichEventAttrs(ctx, attrs)),
 	}
-	if _, err := l.client.Event(event, l.scopeParentPtr(ctx)); err != nil {
+	if err := l.client.Event(event, l.scopeParentPtr(ctx)); err != nil {
 		slog.Warn("telemetry/langfuse event failed", "trace_id", traceID, "name", name, "err", err)
 	}
 }
 
 func (l *Langfuse) Flush(ctx context.Context) error {
-	l.client.Flush(ctx)
-	return nil
+	return l.client.Flush(ctx)
 }
 
 func (l *Langfuse) Shutdown(ctx context.Context) error {
-	l.client.Flush(ctx)
-	return nil
+	return l.client.Shutdown(ctx)
 }
 
 func (l *Langfuse) shouldSample() bool {

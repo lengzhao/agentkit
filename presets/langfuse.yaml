@@ -13,6 +13,9 @@ telemetry.default:
     baseUrl: https://cloud.langfuse.com
     publicKeyRef: env:LANGFUSE_PUBLIC_KEY
     secretKeyRef: env:LANGFUSE_SECRET_KEY
+    # ingestVersion 默认 v4（OTLP /api/public/otel/v1/traces）；
+    # Langfuse server v3 及更早的自托管实例需改为 v3（旧批处理接口）。
+    # ingestVersion: v3
     environment: development
     maxPayloadBytes: 1048576
     maxFieldBytes: 8192
