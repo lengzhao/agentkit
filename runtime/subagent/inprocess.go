@@ -18,11 +18,13 @@ package subagent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
@@ -77,6 +79,15 @@ type Spawner struct {
 	prompt    agentkit.PromptAssembler
 	hooks     agentkit.HookRuntime
 	compact   []compaction.Service
+	submit    capschedule.SubmitFunc
+}
+
+var _ subagent.SubmitBinder = (*Spawner)(nil)
+
+// BindSubmit receives the runner inbound submit func; required for async
+// delegation (the [subagent-complete] follow-up is delivered through it).
+func (s *Spawner) BindSubmit(fn capschedule.SubmitFunc) {
+	s.submit = fn
 }
 
 // New registers subagent/inprocess: Run a child agent in-process from an agents/<name>.md definition and return only its conclusion.
@@ -162,11 +173,25 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	// The parent's current seq makes the id deterministic per call site and
 	// unique within the parent session; session/store sanitizes the separators.
 	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(capsession.LatestEventSeq(parentEvents))))
+	jobID := string(childID)
+
+	async := def.Async
+	if req.Async != nil {
+		async = *req.Async
+	}
+	if async && s.submit == nil {
+		return subagent.Result{}, fmt.Errorf("async subagent %q: submit func not bound yet", def.Name)
+	}
+	slog.Info("subagent inprocess delegate", "agent", def.Name, "parent", parentID, "child", childID, "async", async)
 
 	startData := sessevents.SubagentStartData{
 		Agent:   def.Name,
 		Session: string(childID),
 		Task:    task,
+		Async:   async,
+	}
+	if async {
+		startData.JobID = jobID
 	}
 	if err := sessevents.AppendSubagentStart(ctx, parent, parentAgent, startData); err != nil {
 		return subagent.Result{}, err
@@ -177,7 +202,25 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	if err != nil {
 		return subagent.Result{}, err
 	}
-	result, runErr := s.runChild(ctx, def, task, childID, wall)
+	if async {
+		parentCtx := captureParentContext(ctx, parent)
+		go s.runAsync(parentCtx, def, task, childID, jobID, parentID, parentAgent, wall)
+		slog.Info("subagent inprocess: async returned", "agent", def.Name, "job", jobID)
+		return subagent.Result{
+			Agent:   def.Name,
+			Session: string(childID),
+			Status:  subagent.StatusRunning,
+			Summary: "subagent started in the background; results will arrive in a follow-up turn",
+			JobID:   jobID,
+		}, nil
+	}
+
+	result, runErr, closer := s.runChild(ctx, def, task, childID, wall)
+	// Sync delegation never sets KeyAsyncSubagent, so closer is nil here; drain
+	// defensively before recording subagent/end (same order as loop-agent).
+	if closer != nil {
+		closer()
+	}
 	end := sessevents.SubagentEndData{
 		Agent:   def.Name,
 		Session: string(childID),
@@ -195,12 +238,45 @@ func (s *Spawner) Run(ctx context.Context, req subagent.Request) (subagent.Resul
 	return result, runErr
 }
 
-func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID, wallClock time.Duration) (out subagent.Result, runErr error) {
+// runAsync executes the child turn in the background. The [subagent-complete]
+// follow-up is delivered (finishAsyncSubagent) BEFORE the forwarded
+// progress-card stream is drained: the card is best-effort UI, the follow-up
+// is what resumes the parent agent (see docs/guides/subagent.zh.md §6.1).
+func (s *Spawner) runAsync(parent parentContext, def subagent.Definition, task string, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID, wallClock time.Duration) {
+	var result subagent.Result
+	var runErr error
+	var closer func()
+	defer func() {
+		if r := recover(); r != nil {
+			runErr = fmt.Errorf("async subagent panic: %v", r)
+			result = subagent.Result{
+				Agent:   def.Name,
+				Session: string(childID),
+				Status:  "failed",
+				Summary: runErr.Error(),
+			}
+			slog.Error("async subagent: panic", "job_id", jobID, "agent", def.Name, "panic", r)
+		}
+		finishAsyncSubagent(s.store, s.submit, parent, def.Name, childID, jobID, parentID, parentAgent, result, runErr)
+		if closer != nil {
+			closer()
+		}
+	}()
+
+	ctx := parent.asyncRunContext()
+	result, runErr, closer = s.runChild(ctx, def, task, childID, wallClock)
+	result = finalizeSubagentResult(result, runErr)
+}
+
+// runChild executes the child turn. The returned closer retires the async
+// forwarder goroutine (nil for synchronous delegation); the caller decides
+// when to drain — async paths drain after the follow-up is delivered.
+func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task string, childID agentkit.SessionID, wallClock time.Duration) (out subagent.Result, runErr error, closer func()) {
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	tools, err := newFilteredTools(ctx, s.tools, def.Tools, def.Skills)
 	if err != nil {
-		return out, fmt.Errorf("subagent %q: %w", def.Name, err)
+		return out, fmt.Errorf("subagent %q: %w", def.Name, err), nil
 	}
 	childModalities := def.Modalities
 	if agentkit.SupportsModality(childModalities, agentkit.ModalityImage) {
@@ -220,7 +296,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		Workspace:    s.workspace,
 	})
 	if err != nil {
-		return out, err
+		return out, err, nil
 	}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
@@ -265,9 +341,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	}()
 
 	childEmit, closeForward := forwardParentEmit(ctx, emitFromContext(ctx))
-	if closeForward != nil {
-		defer closeForward()
-	}
+	closer = closeForward
 	runErr = child.RunTurn(childCtx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -282,16 +356,16 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	sess, err := sessevents.LoadSession(ctx, s.store, childID)
 	if err != nil {
 		if runErr != nil {
-			return out, runErr
+			return out, runErr, closer
 		}
-		return out, err
+		return out, err, closer
 	}
 	events, err := derive.ReadAllEvents(ctx, sess)
 	if err != nil {
 		if runErr != nil {
-			return out, runErr
+			return out, runErr, closer
 		}
-		return out, err
+		return out, err, closer
 	}
 	out.Steps = capsession.StepCount(events, 0)
 	if finish := capsession.FinishAfter(events, 0); finish != nil {
@@ -301,7 +375,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		out.Status = subagent.StatusStopped
 		out.Summary = capsession.LastAssistantText(events, 0)
 	}
-	return out, runErr
+	return out, runErr, closer
 }
 
 // namesOf renders the available agents for an error the model can act on: it

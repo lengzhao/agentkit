@@ -345,48 +345,7 @@ func (s *LoopAgentSpawner) runAsync(parent parentContext, def subagent.Definitio
 }
 
 func (s *LoopAgentSpawner) finishAsync(parent parentContext, def subagent.Definition, childID agentkit.SessionID, jobID string, parentID agentkit.SessionID, parentAgent agentkit.AgentID, result subagent.Result, runErr error) {
-	bg := context.Background()
-	ctx := parent.asyncRunContext()
-	ctx = rctx.WithAgentID(ctx, parentAgent)
-
-	end := sessevents.SubagentEndData{
-		Agent:   def.Name,
-		Session: string(childID),
-		Status:  result.Status,
-		Summary: result.Summary,
-		Steps:   result.Steps,
-		JobID:   jobID,
-	}
-	if runErr != nil {
-		end.Error = runErr.Error()
-	}
-	parentSess := parent.parentSession
-	if parentSess == nil || parentSess.ID() != parentID {
-		slog.Warn("async subagent: parent session not retained, store get", "job_id", jobID, "parent", parentID)
-		var err error
-		parentSess, err = s.store.Get(bg, parentID)
-		if err != nil {
-			slog.Error("async subagent: load parent session", "job_id", jobID, "err", err)
-			parentSess = nil
-		}
-	} else {
-		slog.Debug("async subagent: append end on retained parent session", "job_id", jobID, "parent", parentID)
-	}
-	if parentSess != nil {
-		if err := sessevents.AppendSubagentEnd(bg, parentSess, parentAgent, end); err != nil {
-			slog.Error("async subagent: append end", "job_id", jobID, "err", err)
-		} else {
-			emitSubagentLifecycle(ctx, parentAgent, agentkit.EventSubagentEnd, end)
-		}
-	}
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("async subagent: submit complete panic", "job_id", jobID, "agent", def.Name, "panic", r)
-			}
-		}()
-		s.submitSubagentComplete(bg, parent, parentAgent, def.Name, jobID, result, runErr)
-	}()
+	finishAsyncSubagent(s.store, s.submit, parent, def.Name, childID, jobID, parentID, parentAgent, result, runErr)
 }
 
 func finalizeSubagentResult(result subagent.Result, runErr error) subagent.Result {
@@ -400,33 +359,6 @@ func finalizeSubagentResult(result subagent.Result, runErr error) subagent.Resul
 		result.Status = "failed"
 	}
 	return result
-}
-
-func (s *LoopAgentSpawner) submitSubagentComplete(ctx context.Context, parent parentContext, parentAgent agentkit.AgentID, agentName, jobID string, result subagent.Result, runErr error) {
-	if s.submit == nil {
-		return
-	}
-	text := formatSubagentComplete(agentName, jobID, result, runErr)
-	parentEnv := parent.envelope
-	if parentEnv.Conversation == "" {
-		parentEnv = parentEnv.WithConversation(string(parent.conversation))
-	}
-	event := rctx.SyncMessageEvent(agentkit.MessageEvent{
-		AgentID: parentAgent,
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-		},
-		Metadata: map[string]any{
-			"subagent_complete": true,
-			"subagent_job_id":   jobID,
-			"subagent_agent":    agentName,
-			"subagent_status":   result.Status,
-		},
-	}, parentEnv)
-	if err := s.submit(ctx, event); err != nil {
-		slog.Error("async subagent: submit follow-up", "job_id", jobID, "err", err)
-	}
 }
 
 func formatSubagentComplete(agentName, jobID string, result subagent.Result, runErr error) string {

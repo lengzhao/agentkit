@@ -68,6 +68,24 @@ You are the research subagent.
 		}
 	})
 
+	t.Run("async frontmatter reaches definition", func(t *testing.T) {
+		t.Parallel()
+		def, err := parse("bg.md", "---\ndescription: background worker\nasync: true\n---\nbody\n")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if !def.Async {
+			t.Error("async: true in frontmatter must set def.Async")
+		}
+		def, err = parse("fg.md", "---\ndescription: foreground worker\n---\nbody\n")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if def.Async {
+			t.Error("async must default to false when frontmatter omits it")
+		}
+	})
+
 	t.Run("name falls back to file name", func(t *testing.T) {
 		t.Parallel()
 		def, err := parse("reviewer.md", "---\ndescription: reviews code\n---\nbody\n")

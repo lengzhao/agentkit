@@ -154,6 +154,7 @@ func parse(fileName, raw string) (subagent.Definition, error) {
 		Description: description,
 		Prompt:      prompt,
 		Backend:     backend,
+		Async:       fm.Async,
 		Tools:       trimAll(fm.Tools),
 		Skills:      trimAll(fm.Skills),
 		Model:       strings.TrimSpace(fm.Model),

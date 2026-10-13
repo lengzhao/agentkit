@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -393,6 +394,110 @@ func TestRunValidatesRequest(t *testing.T) {
 	}
 	if _, err := f.spawner.Run(f.ctx, subagent.Request{Agent: "researcher", Task: "  "}); err == nil {
 		t.Error("expected an error for an empty task")
+	}
+}
+
+const asyncResearcherDef = `---
+name: researcher
+description: read-only research
+async: true
+tools: [finish]
+---
+You are the research subagent.
+`
+
+func bindSubmitCapture(t *testing.T, spawner subagent.Spawner) chan agentkit.MessageEvent {
+	t.Helper()
+	submitted := make(chan agentkit.MessageEvent, 1)
+	binder, ok := spawner.(subagent.SubmitBinder)
+	if !ok {
+		t.Fatal("inprocess spawner must implement subagent.SubmitBinder for async delegation")
+	}
+	binder.BindSubmit(func(_ context.Context, ev agentkit.MessageEvent) error {
+		submitted <- ev
+		return nil
+	})
+	return submitted
+}
+
+// agents/*.md frontmatter 写 async: true 时，delegate 必须立即返回 running，
+// 后台跑完后经 submit 投递 [subagent-complete] follow-up（文档承诺的默认异步）。
+func TestRunAsyncFromDefinitionSubmitsFollowUp(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, map[string]string{"researcher.md": asyncResearcherDef}, []llm.ScriptedStep{
+		{ToolCalls: []agentkit.ToolCall{llm.MustToolCall("finish", `{"status":"completed","summary":"async research done"}`)}},
+		{Text: "done"},
+	})
+	submitted := bindSubmitCapture(t, f.spawner)
+
+	result, err := f.spawner.Run(f.ctx, subagent.Request{Agent: "researcher", Task: "background research"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Status != subagent.StatusRunning {
+		t.Fatalf("status = %q, want running", result.Status)
+	}
+	if result.JobID == "" {
+		t.Fatal("expected a job id for the async delegation")
+	}
+
+	select {
+	case ev := <-submitted:
+		if len(ev.Message.Content) == 0 {
+			t.Fatal("empty follow-up message")
+		}
+		text := ev.Message.Content[0].Text
+		if !strings.Contains(text, "[subagent-complete agent=researcher") {
+			t.Fatalf("follow-up missing subagent-complete header: %q", text)
+		}
+		if !strings.Contains(text, "async research done") {
+			t.Fatalf("follow-up missing child summary: %q", text)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for async follow-up submit")
+	}
+
+	// 后台收尾后，父 session 审计应有 subagent/end（status=completed）。
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		events := f.events(t, f.parentID)
+		found := false
+		for _, ev := range events {
+			if ev.Type == agentkit.EventSubagentEnd && strings.Contains(string(ev.Data), "async research done") {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("parent session missing subagent/end audit after async completion")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// 定义未写 async 时，工具参数 async: true 同样必须生效。
+func TestRunAsyncFromRequestOverride(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, map[string]string{"researcher.md": researcherDef}, []llm.ScriptedStep{{Text: "quick answer"}})
+	submitted := bindSubmitCapture(t, f.spawner)
+
+	async := true
+	result, err := f.spawner.Run(f.ctx, subagent.Request{Agent: "researcher", Task: "override", Async: &async})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Status != subagent.StatusRunning {
+		t.Fatalf("status = %q, want running", result.Status)
+	}
+	select {
+	case <-submitted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for async follow-up submit")
 	}
 }
 

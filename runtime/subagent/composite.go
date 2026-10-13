@@ -63,6 +63,9 @@ func (c *compositeSpawner) Run(ctx context.Context, req subagent.Request) (subag
 }
 
 func (c *compositeSpawner) BindSubmit(fn capschedule.SubmitFunc) {
+	if binder, ok := c.inprocess.(subagent.SubmitBinder); ok {
+		binder.BindSubmit(fn)
+	}
 	if c.loop == nil {
 		return
 	}
