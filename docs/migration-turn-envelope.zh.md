@@ -31,7 +31,7 @@
 | credentials | `Store`、`EnvPairResolver`、`Secret`、`GlobalScope` | 实现在 `plugins/credentials`（密文 / scoped 查找）；见 [guides/credentials.zh.md](guides/credentials.zh.md) |
 | permission | `Broker`、`Request`、`Reply`、DTO | `MatchReply`、`MarshalReply`、`EffectiveTimeout`、`CapabilityFrom`… |
 | schedule | `Registry`、`Runtime`、`Engine`、`Cron`、`Job`、`SubmitFunc` | `ParseCron`、`NextFire`、`IsFireTurn`… |
-| skill | `Registry`、`Descriptor`、`Content` | `RenderSkillLoaded`（`runtime/session/derive`）；`SanitizeRelativePath`、`ReadFile`、`RunScript`（`runtime/skill`） |
+| skill | `Registry`、`Descriptor`、`Content` | `RenderSkillLoaded`（`runtime/session/derive`）；`SanitizeRelativePath`、`ReadFile`（`runtime/skill`） |
 | learning | `cap/learning`（`SkillProposer`、`ReviewHost`、`DreamSweepScheduler`）；`cap/memory`（`Capture`、`Service`）；`runtime/learning.MemoryEntry` | `ParseMemory`、`RenderMemory`、`MemoryStore`、`RunReview`、`ApplyCapture` |
 | media | `ContentTypeAttachmentRef`（`runtime/media` 常量） | `IsImage`、`DataURL`、`LoadWorkspaceImage`、`FormatReadImageResult`… |
 

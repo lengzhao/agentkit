@@ -1,0 +1,18 @@
+{
+  "description": "替换为本 workflow 的一句话说明（模型选路用）",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "key": { "type": "string", "description": "示例入参" }
+    },
+    "required": ["key"]
+  },
+  "steps": [
+    {
+      "id": "prep",
+      "type": "script",
+      "run": "echo -n {{ .inputs.key | quote }}"
+    }
+  ],
+  "result": "ok: {{ .steps.prep.stdout }}"
+}

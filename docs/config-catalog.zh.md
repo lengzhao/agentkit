@@ -1632,6 +1632,23 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `credentials` | `credentials.Store` |  |
 
+## `tool/workflow`
+
+- 返回类型：`agentkit.Tool`
+- 源码：[`plugins/tool/workflow/workflow.go`](../plugins/tool/workflow/workflow.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `dirs` | `[]string` | — | Dirs are scoped workflow directories in precedence order (first dir wins on duplicate names). Defaults to local:workflows then global:workflows. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `runtime`（必填） | `agentkit.ToolRuntime` | Runtime executes tool steps; use a sibling tools/runtime instance without tool/workflow itself (cycle break, same pattern as tool/subagent). |
+| `workspace`（必填） | `workspace.Service` |  |
+| `llm` | `agentkit.LLMProvider` | LLM is required only when a workflow uses model steps. |
+| `subagent` | `subagent.Spawner` | Subagent is required only when a workflow uses agent steps. |
+| `telemetry` | `telemetry.Toolkit` | Telemetry receives workflow.run / workflow.step events. |
+
 ## `tools/deferred`
 
 - 返回类型：`agentkit.ToolRuntime`
