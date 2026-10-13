@@ -624,6 +624,20 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		return stepOutcome{}, err
 	}
 
+	if isEmptyCompletion(assistant, usage) {
+		observationEnd.Err = rtllm.ErrEmptyCompletion
+		slog.Warn("assistant step empty completion",
+			"agent_id", a.id,
+			"session_id", sess.ID(),
+			"model", model,
+			"stop_reason", assistant.StopReason,
+			"content_parts", len(assistant.Content),
+			"output_tokens", usageTokens(usage, "output"),
+		)
+		_ = persistAssistantWithStopReason(ctx, sess, a.id, assistant, agentkit.AssistantStopReasonEmpty)
+		return stepOutcome{}, rtllm.ErrEmptyCompletion
+	}
+
 	if err := appendAssistantMessage(ctx, sess, a.id, assistant); err != nil {
 		observationEnd.Err = err
 		return stepOutcome{}, err
@@ -839,6 +853,43 @@ func (a *Runtime) appendInterruptedToolCalls(ctx context.Context, sess agentkit.
 // user turn (agent/chain later nodes pass an empty message).
 func isEmptyMessage(msg agentkit.ModelMessage) bool {
 	return len(msg.Content) == 0 && len(msg.ToolCalls) == 0 && len(msg.ToolResults) == 0
+}
+
+// isEmptyCompletion reports a successful stream that produced nothing the user
+// can act on: no tool calls, no text, and no outbound media parts.
+// Thinking-only completions still count as empty (platforms do not render them
+// as the assistant reply). A reported usage with zero output tokens is always
+// treated as empty.
+func isEmptyCompletion(msg agentkit.ModelMessage, usage *agentkit.Usage) bool {
+	if len(msg.ToolCalls) > 0 {
+		return false
+	}
+	if usage != nil && usage.OutputTokens == 0 {
+		return true
+	}
+	for _, part := range msg.Content {
+		switch part.Type {
+		case "text", "":
+			if strings.TrimSpace(part.Text) != "" {
+				return false
+			}
+		case "image", "image_url", "document", "file", "audio", "video":
+			return false
+		}
+	}
+	return true
+}
+
+func usageTokens(u *agentkit.Usage, kind string) int {
+	if u == nil {
+		return 0
+	}
+	switch kind {
+	case "output":
+		return u.OutputTokens
+	default:
+		return u.InputTokens
+	}
 }
 
 func cancelReasonFromError(err error) (string, bool) {

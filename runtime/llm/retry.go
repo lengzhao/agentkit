@@ -104,11 +104,19 @@ var (
 	}, "|"))
 )
 
+// ErrEmptyCompletion marks a step whose model stream ended successfully but
+// produced no tool calls and no user-visible content (often usage.output_tokens == 0).
+// Agent step retry treats it as transient, same class as upstream parse/stream glitches.
+var ErrEmptyCompletion = errors.New("empty model completion")
+
 // IsRetryableError reports whether an error looks transient and safe to retry.
 // Context overflow and quota exhaustion are excluded.
 func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, ErrEmptyCompletion) {
+		return true
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false

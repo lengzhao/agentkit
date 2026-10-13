@@ -108,6 +108,9 @@ const (
 	AssistantStopReasonAborted = "aborted"
 	// AssistantStopReasonLength means output hit the token limit; tool args may be truncated.
 	AssistantStopReasonLength = "length"
+	// AssistantStopReasonEmpty means the model completed with no tool calls and no
+	// user-visible content; persisted for audit on retry/failure paths.
+	AssistantStopReasonEmpty = "empty"
 )
 
 // ModelMessage is model-visible content only. Session routing lives on event

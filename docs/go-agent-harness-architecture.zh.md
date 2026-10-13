@@ -1200,6 +1200,7 @@ LLM Runtime 负责：
 - 流式 chunk 归一化。
 - 使用量统计。
 - provider 错误分类和可重试策略（含 OpenAI 兼容流 SSE chunk JSON 截断，如 `unexpected end of JSON input`；Agent 默认 `retry.enabled` 下按 step 自动重试，Session 仅在 step 成功后才 append assistant 消息）。
+- **空 completion 检测与重试**：模型流正常结束（EOF）但产出为零价值时（无 tool call、无可见文本/媒体、或 `output_tokens=0`），`runStep` 将其识别为 `ErrEmptyCompletion` 并走 step retry；重试耗尽后 turn 以错误结束（不再静默 `no-tool-calls`）。仅 thinking 无正文的 completion 仍视为空。空 completion 的 assistant 不落盘（`assistantMessageWorthPersisting` 为空时跳过），审计依赖 WARN 日志。`AssistantStopReasonEmpty = "empty"` 保留给需要持久化标记的场景。
 
 ## 7. 能力扩展模型
 
