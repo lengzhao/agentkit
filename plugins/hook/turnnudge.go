@@ -23,7 +23,7 @@ type TurnNudgeConfig struct {
 	// N minutes of turn elapsed time (default 10). 0 keeps the default; set a very
 	// large value to disable.
 	TimeIntervalMinutes int `json:"timeIntervalMinutes"`
-	// StepLimit is the model-step budget for one turn (default 60). Once reached,
+	// StepLimit is the model-step budget for one turn (default 100). Once reached,
 	// every further tool result carries LimitMessage telling the model to summarize
 	// and end the turn. 0 keeps the default; set a very large value to disable.
 	StepLimit int `json:"stepLimit"`
@@ -45,7 +45,7 @@ type TurnNudgeDeps struct{}
 const (
 	defaultStepInterval        = 20
 	defaultTimeIntervalMinutes = 10
-	defaultStepLimit           = 60
+	defaultStepLimit           = 100
 	defaultTimeLimitMinutes    = 60
 	defaultNudgeMessage        = "[turn-nudge] Budget status: {steps} steps, {elapsed} elapsed this turn."
 	defaultLimitMessage        = "[turn-nudge] LIMIT REACHED: this turn has used {steps} steps over {elapsed}, hitting the configured budget. Do not start any new work. Summarize what is done and what remains, then end the turn now (call finish if available)."

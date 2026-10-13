@@ -186,7 +186,7 @@ hook.turn-continue.default:
 hook.turn-nudge.default:
     config:
         stepInterval: 20
-        stepLimit: 60
+        stepLimit: 100
         timeIntervalMinutes: 10
         timeLimitMinutes: 60
     use: hook/turn-nudge

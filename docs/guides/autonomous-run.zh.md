@@ -8,7 +8,7 @@
 
 L0 默认的交互主 agent（`agent.assistant.default`）的 `hooks.default` **不含** `hook/turn-continue`：segment 内工具循环在模型不再调用工具时结束，与 Pi 类似。需要自主续跑与完成判定时，换用 `agent.worker.default`（`hooks.worker` 已挂 `hook/turn-continue`），或在自定义 agent 的 `deps.hooks` 里挂上该 hook。`agent/coding` 的 `maxSteps` 默认 **200**（整 turn、跨 segment 累计）；显式 `maxSteps: 0` 表示不限制。触顶时 Agent 以 `step-limit` 错误收尾（与 cancel 类似写入 `turn/end` 元数据）；Loop 在转发 `turn/end` 前通过 outbound 下发用户可见说明，不再调用 `TurnStopping` 续跑。token 等其它上限仍在 `OnTurnStopping` 里根据 `TurnStopping.Tokens` 等自行裁决。
 
-硬顶之外，`hooks.default` 与 `hooks.worker` 均挂了 `hook/turn-nudge`（软提醒，两档）：未达限制时，每 20 个模型步或每 10 分钟（`stepInterval` / `timeIntervalMinutes`）在工具结果末尾追加预算数值（`{steps}` / `{elapsed}`，仅告知不含指令）；达到 60 步或 60 分钟（`stepLimit` / `timeLimitMinutes`）后，每次工具结果都改发 `limitMessage`，要求模型立即总结并结束 turn。步数取自 `BeforeStep.Step`，与 `maxSteps` 同口径（一步可并行多个工具调用，同一步的批次只注入一次数值提醒）。它只注入提示、不做停/续裁决，且按 turn 重置计数（`BeforeStep` 的 `Step=0, Segment=0`）。
+硬顶之外，`hooks.default` 与 `hooks.worker` 均挂了 `hook/turn-nudge`（软提醒，两档）：未达限制时，每 20 个模型步或每 10 分钟（`stepInterval` / `timeIntervalMinutes`）在工具结果末尾追加预算数值（`{steps}` / `{elapsed}`，仅告知不含指令）；达到 100 步或 60 分钟（`stepLimit` / `timeLimitMinutes`）后，每次工具结果都改发 `limitMessage`，要求模型立即总结并结束 turn。步数取自 `BeforeStep.Step`，与 `maxSteps` 同口径（一步可并行多个工具调用，同一步的批次只注入一次数值提醒）。它只注入提示、不做停/续裁决，且按 turn 重置计数（`BeforeStep` 的 `Step=0, Segment=0`）。
 
 引入 `TurnStopping` 之后，自主运行的 turn 可由若干 **segment** 组成：
 
