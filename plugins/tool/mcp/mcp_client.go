@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -272,18 +273,22 @@ func connectServer(ctx context.Context, server serverConfig, creds credentials.S
 	return client, nil
 }
 
-func connectURL(url, typ string, staticHeaders map[string]string, binds []bindConfig) (*mcpclient.Client, error) {
+func connectURL(rawURL, typ string, staticHeaders map[string]string, binds []bindConfig) (*mcpclient.Client, error) {
+	endpoint, httpClient, err := prepareEndpoint(rawURL)
+	if err != nil {
+		return nil, err
+	}
 	headerFn := mergeHeaderFunc(staticHeaders, binds)
 	switch strings.ToLower(typ) {
 	case "sse":
-		return mcpclient.NewSSEMCPClient(url, mcpclient.WithHeaderFunc(headerFn))
+		return mcpclient.NewSSEMCPClient(endpoint, sseClientOptions(headerFn, httpClient)...)
 	case "http", "streamable", "streamable-http", "streamable_http":
-		return mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn))
+		return mcpclient.NewStreamableHttpClient(endpoint, streamableClientOptions(headerFn, httpClient)...)
 	case "":
-		if client, err := mcpclient.NewStreamableHttpClient(url, transport.WithHTTPHeaderFunc(headerFn)); err == nil && client != nil {
+		if client, err := mcpclient.NewStreamableHttpClient(endpoint, streamableClientOptions(headerFn, httpClient)...); err == nil && client != nil {
 			return client, nil
 		}
-		client, err := mcpclient.NewSSEMCPClient(url, mcpclient.WithHeaderFunc(headerFn))
+		client, err := mcpclient.NewSSEMCPClient(endpoint, sseClientOptions(headerFn, httpClient)...)
 		if err != nil {
 			return nil, err
 		}
@@ -294,6 +299,22 @@ func connectURL(url, typ string, staticHeaders map[string]string, binds []bindCo
 	default:
 		return nil, fmt.Errorf("unsupported mcp transport type %q", typ)
 	}
+}
+
+func sseClientOptions(headerFn transport.HTTPHeaderFunc, httpClient *http.Client) []transport.ClientOption {
+	opts := []transport.ClientOption{mcpclient.WithHeaderFunc(headerFn)}
+	if httpClient != nil {
+		opts = append(opts, mcpclient.WithHTTPClient(httpClient))
+	}
+	return opts
+}
+
+func streamableClientOptions(headerFn transport.HTTPHeaderFunc, httpClient *http.Client) []transport.StreamableHTTPCOption {
+	opts := []transport.StreamableHTTPCOption{transport.WithHTTPHeaderFunc(headerFn)}
+	if httpClient != nil {
+		opts = append(opts, transport.WithHTTPBasicClient(httpClient))
+	}
+	return opts
 }
 
 func initializeClient(ctx context.Context, client *mcpclient.Client) error {

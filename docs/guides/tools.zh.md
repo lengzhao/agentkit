@@ -174,6 +174,10 @@ tools.default:
       "headers": {
         "X-agenthub-apikey": "env:AGENTHUB_API_KEY"
       }
+    },
+    "local": {
+      "url": "unix:///tmp/agentkit-mcp.sock:/mcp",
+      "type": "streamable-http"
     }
   }
 }
@@ -183,8 +187,8 @@ tools.default:
 |---|---|
 | `command` / `args` | stdio 子进程 |
 | `env` | 值可为 `env:NAME`，经 `credentials.integrations` 解析；scope 为 `mcp.<server 名>`（与 `api.json` 的 `openapi.<api>` 对称） |
-| `url` | HTTP/SSE 端点；值可为 `env:NAME` |
-| `type` | `sse`、`http` / `streamable` / `streamable-http`；留空先尝试 streamable 再 SSE |
+| `url` | HTTP/SSE 端点，或 Unix socket `unix:///<socket>[:/<http-path>]`。HTTP 路径写在 `:` 后面（`unix:///tmp/mcp.sock:/mcp`），省略时请求 `/`。`sse` 与 streamable HTTP 共用这条拨号。值可为 `env:NAME` |
+| `type` | `sse`、`http` / `streamable` / `streamable-http`；留空先尝试 streamable 再 SSE。`unix://` 不单独占一个 type |
 | `transport` | `type` 的别名（与部分部署模板兼容） |
 | `headers` | 每次请求都带上的静态 header；值可为 `env:NAME` |
 | `prefix` | 模型可见工具名前缀，默认 `<server>__` |

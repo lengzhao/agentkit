@@ -53,6 +53,10 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取并缓存在内存。改
       "headers": {
         "X-agenthub-apikey": "env:AGENTHUB_API_KEY"
       }
+    },
+    "local": {
+      "url": "unix:///tmp/agentkit-mcp.sock:/mcp",
+      "type": "streamable-http"
     }
   }
 }
@@ -64,7 +68,7 @@ MCP 配置在**进程启动时**由 `mcp.default` 读取并缓存在内存。改
 |---|---|
 | `command` / `args` | stdio 子进程 MCP server |
 | `env` | 环境变量；值可为 `env:NAME`，经 credentials 解析 |
-| `url` | HTTP/SSE 远程端点；值可为 `env:NAME` |
+| `url` | HTTP/SSE 端点，或 Unix socket `unix:///<socket>[:/<http-path>]`（如 `unix:///tmp/mcp.sock:/mcp`，省略 HTTP 路径时为 `/`）。`sse` 与 streamable HTTP 都支持。值可为 `env:NAME` |
 | `type` | `sse`、`http` / `streamable` / `streamable-http`；留空时先 streamable 再 SSE |
 | `transport` | `type` 的别名 |
 | `headers` | 每次请求都带上的静态 header；值可为 `env:NAME` |
