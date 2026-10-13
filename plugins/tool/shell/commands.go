@@ -10,6 +10,16 @@ import (
 	"github.com/lengzhao/agentkit/runtime/tooloutput"
 )
 
+// StructuredShell is an optional capability on tool/shell-bash: run a command
+// and get raw stdout/stderr/exit code without model-facing truncation or
+// "Command exited with code" text. Workflow script steps prefer this over
+// parsing bash tool output.
+type StructuredShell interface {
+	// RunStructured executes command in the tool's workspace work dir (bash -lc),
+	// with optional per-call timeout in seconds. Callers may wrap with cd.
+	RunStructured(ctx context.Context, command string, timeoutSeconds *float64) (stdout, stderr string, exitCode int, err error)
+}
+
 type shellBashBundle struct {
 	tool agentkit.Tool
 	exec *bashExecutor
@@ -27,6 +37,11 @@ func (b *shellBashBundle) Call(ctx context.Context, input json.RawMessage) (stri
 
 func (b *shellBashBundle) Commands() []agentkit.Command {
 	return []agentkit.Command{shellSlashCommand{exec: b.exec}}
+}
+
+// RunStructured implements StructuredShell.
+func (b *shellBashBundle) RunStructured(ctx context.Context, command string, timeoutSeconds *float64) (stdout, stderr string, exitCode int, err error) {
+	return b.exec.RunStructured(ctx, command, timeoutSeconds)
 }
 
 type shellSlashCommand struct {

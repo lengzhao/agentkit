@@ -24,6 +24,7 @@ tool.workflow.default:
   deps:
     runtime: tools.runtime.workflow
     workspace: workspace.default
+    shell: tool.shell-bash.default   # 推荐：script step 走 StructuredShell，不解析 bash 文案
     telemetry: telemetry.toolkit
     # llm: llm.gpt          # 含 model step
     # subagent: subagent.inprocess.default  # 含 agent step

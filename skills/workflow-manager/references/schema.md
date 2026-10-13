@@ -22,7 +22,7 @@
 
 | type | 必填 | 要点 |
 |---|---|---|
-| `script` | `run` | sibling **`bash`**；可选 `dir`（默认 workflow 文件目录）、`timeoutSeconds` |
+| `script` | `run` | **优先 `deps.shell`**（StructuredShell）直接执行；未配时回退 sibling **`bash`** 并解析文案（不推荐）。可选 `dir`（默认 workflow 文件目录）、`timeoutSeconds` |
 | `tool` | `tool`, `args` | sibling `ToolRuntime`；policy/hooks 生效；`args` 叶子字符串可模板化 |
 | `model` | `prompt` | 单次补全；可选 `model`、`outputSchema`、`maxInputBytes`（默认 16KB，超限 **fail**） |
 | `agent` | `agent`, `task` | 同步子 agent；task 自包含；大正文用路径 |

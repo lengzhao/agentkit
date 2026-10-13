@@ -120,10 +120,21 @@ func NewShellBash(cfg ShellBashConfig, deps ShellBashDeps) (agentkit.Tool, error
 
 func (e *bashExecutor) runForModel(ctx context.Context, input ShellInput) (string, error) {
 	out, runErr := e.run(ctx, input.Command, input.Timeout)
+	return e.formatModelResult(ctx, out, runErr)
+}
+
+func (e *bashExecutor) formatModelResult(ctx context.Context, out ShellOutput, runErr error) (string, error) {
 	workDir, _ := e.workspace.Resolve(ctx, e.relWorkDir)
 	return tooloutput.BashModelResult(ctx, e.workspace, workDir, tooloutput.BashStreams{
 		Stdout: out.Stdout, Stderr: out.Stderr, ExitCode: out.ExitCode,
 	}, runErr)
+}
+
+// RunStructured implements StructuredShell: raw streams + exit code, no
+// model-facing truncation or "Command exited" suffix.
+func (e *bashExecutor) RunStructured(ctx context.Context, command string, timeoutSeconds *float64) (stdout, stderr string, exitCode int, err error) {
+	out, runErr := e.run(ctx, command, timeoutSeconds)
+	return out.Stdout, out.Stderr, out.ExitCode, runErr
 }
 
 func (e *bashExecutor) run(ctx context.Context, command string, perCallTimeout *float64) (ShellOutput, error) {

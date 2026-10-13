@@ -82,15 +82,15 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 
 ### 3.1 `script`：脚本
 
-经 sibling `ToolRuntime` 调用 **`bash` 工具**（`tool/shell-bash`）：与模型手调 bash 同一条执行、截断与 spill 语义；`run` 渲染后包成 `cd <dir> && …`（`dir` 默认 workflow 文件所在目录）。`deps.runtime` 必须挂载 `bash`。
+优先经 **`deps.shell`**（`tool/shell-bash` 的 StructuredShell 能力）直接执行，返回原始 stdout/stderr/exit code，不解析模型文案；`run` 渲染后包成 `cd <dir> && …`（`dir` 默认 workflow 文件所在目录）。未注入 `deps.shell` 时回退为经 sibling `ToolRuntime` 调 **`bash`** 工具并解析文本（仅兼容用，不推荐）。`deps.runtime` 仍用于 `tool` step。
 
 | 字段 | 说明 |
 |---|---|
 | `run` | 模板渲染后的 shell 片段（在 `dir` 下执行） |
-| `timeoutSeconds` | 传给 bash 的 `timeout`（秒）；未设则用 bash 插件默认 |
+| `timeoutSeconds` | 传给 shell 的 timeout（秒）；未设则用插件默认 |
 | `dir` | 工作目录，默认该 workflow 文件所在目录 |
 
-bash 返回的合并输出写入 `.stdout` / `.text`；若 bash 已 spill，从 `Full output:` 解析 `.path`，超大时引擎另写 `{{ .workflow.runDir }}/<step>.out` 作 workflow 侧引用。非零退出、超时、取消 fail step。
+合并输出写入 `.stdout` / `.text`；超 50KB 时引擎写 `{{ .workflow.runDir }}/<step>.out` 并暴露 `.path`。非零退出、超时、取消 fail step。
 
 ### 3.2 `tool`：工具调用
 
@@ -189,7 +189,8 @@ bash 返回的合并输出写入 `.stdout` / `.text`；若 bash 已 spill，从 
 
 嵌套 step 不产生模型可见消息，但必须留痕：
 
-- telemetry：每次运行一个 `workflow.run` 事件、每 step 一个 `workflow.step` 事件（attrs：workflow / run_id / step / type / status / duration_ms / 截断 error）；失败另有 `slog.Warn`
+- telemetry：每次运行一个 **`workflow.run` span**（KindSpan，input = workflow 名 + 截断的 args、output = 渲染后的 result、error 置错误级；attrs：workflow / run_id）；每 step 一个 **`workflow.step` span**（KindTool，input = 截断的 step 配置、output = step 视图；attrs：workflow / run_id / step / type），层级为 `agent.turn → tool.workflow → workflow.run → workflow.step`；step span 带 `Scope`，其下再嵌套两类观测：**script step 走 `deps.shell` 时的 `workflow.script` span**（input = 命令、output = 合并 stdout/stderr、非零退出置错误级——否则无法观测到未经过 ToolRuntime 的 bash 执行）与 **model step 的 `llm.generation`**（model、prompt messages、补全文本，与 agent loop 的 generation 同构）；失败另有 `slog.Warn`
+- **outbound（SSE）**：每 step 会向父 turn 的 `OutboundEmit` 发一对 `tool/call` + `tool/result`（tool step 用真实工具名，script step 用 `script` 伪工具名），平台过程卡/调试 SSE 可看到 workflow 内部调用；**不写入 session 事件**，主模型下一轮不会看到嵌套工具历史
 - session 自定义事件待真实消费者（如离线审计）出现再加，不为未来需求预留契约
 - workflow 的 `result` 渲染输出是主模型唯一可见内容，满足 "Model-visible ⟺ Logged"
 
@@ -215,12 +216,13 @@ tool.workflow.default:
   deps:
     runtime: tools.runtime.workflow   # 兄弟实例，不含 tool/workflow 自身（防环，同 tool/subagent 模式）
     workspace: workspace.default
+    shell: tool.shell-bash.default     # 推荐，script step 走结构化执行（StructuredShell）
     llm: llm.fast                      # 可选，model step 用（单实例 + step 的 model 字段，同 tool/recognize）
     subagent: subagent.default         # 可选，agent step 用
-    telemetry: telemetry.default       # 可选，workflow.run / workflow.step 事件
+    telemetry: telemetry.toolkit       # 可选，workflow.run/step/script span + model step generation
 ```
 
-- 引擎与插件同包 `plugins/tool/workflow`（解析、调度、模板、step 执行与 `pluginkit` 注册）；script step 不单独起进程，只调 sibling runtime 的 `bash`
+- 引擎与插件同包 `plugins/tool/workflow`（解析、调度、模板、step 执行与 `pluginkit` 注册）；script step 优先用 `deps.shell`（StructuredShell）结构化执行，未配时回退调 sibling runtime 的 `bash`
 - `/workflow` 命令列出已发现的 workflow（来源目录、step 数），仅为人读，不经模型
 
 与"每 workflow 一个动态工具（ToolProvider）"的形态相比，`name + args` 单工具放弃了 per-workflow 静态 input schema，换来：新增 workflow 零配置图改动、工具列表不随目录膨胀、`tools/deferred` 下只有一个常驻工具——与 `delegate`、`skill` 的取舍一致。

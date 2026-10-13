@@ -15,6 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // MaxViewBytes caps the inline view a step state exposes to templates; larger
@@ -24,17 +25,28 @@ const MaxViewBytes = 50 * 1024
 // Engine runs workflows against injected capabilities. All fields except
 // Workspace are optional per step type; a step whose capability is missing
 // fails with a clear error.
+// StructuredShell runs a command and returns raw stdout/stderr/exit code
+// (e.g. tool/shell-bash StructuredShell capability). Used for script steps
+// when available instead of parsing bash tool text.
+type StructuredShell interface {
+	RunStructured(ctx context.Context, command string, timeoutSeconds *float64) (stdout, stderr string, exitCode int, err error)
+}
+
 type Engine struct {
 	// Tools executes tool steps through the policy/approval pipeline. Use a
 	// sibling tools/runtime instance that does not include tool/workflow.
 	Tools agentkit.ToolRuntime
 	// Workspace resolves scoped dirs and the artifact root.
 	Workspace workspace.Service
+	// Shell runs script steps with raw output (no text parsing). When nil,
+	// script steps call the bash tool through Tools and parse its output.
+	Shell StructuredShell
 	// LLM backs model steps (one-shot completion).
 	LLM agentkit.LLMProvider
 	// Subagent backs agent steps.
 	Subagent subagent.Spawner
-	// Telemetry receives workflow.step / workflow.run events.
+	// Telemetry receives workflow.run / workflow.step / workflow.script spans
+	// and model-step generations (nested tool.workflow → run → step → …).
 	Telemetry captelemetry.Toolkit
 }
 
@@ -88,6 +100,16 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, args map[string]any) (st
 		return "", err
 	}
 	runID := time.Now().UTC().Format("20060102T150405") + "-" + uuid.NewString()[:8]
+	ctx, endRun := e.beginRunObservation(ctx, wf, runID, args)
+	result, runErr := e.run(ctx, wf, runID, args)
+	if endRun != nil {
+		endRun(captelemetry.ObservationEnd{Output: result, Err: runErr})
+	}
+	return result, runErr
+}
+
+// run is the telemetry-instrumented body of Run (see beginRunObservation).
+func (e *Engine) run(ctx context.Context, wf *Workflow, runID string, args map[string]any) (string, error) {
 	runDir, err := e.artifactDir(ctx, runID)
 	if err != nil {
 		return "", err
@@ -115,11 +137,6 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, args map[string]any) (st
 			break
 		}
 	}
-	e.recordEvent(ctx, "workflow.run", map[string]string{
-		"workflow": wf.Name,
-		"run_id":   runID,
-		"status":   runStatus(failed),
-	})
 	if failed != nil {
 		return "", failed
 	}
@@ -130,20 +147,48 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, args map[string]any) (st
 	return result, nil
 }
 
-func runStatus(err error) string {
-	if err != nil {
-		return "error"
+// beginRunObservation starts a workflow.run span under the enclosing
+// tool.workflow span; step spans nest inside it via the ToolParent chain.
+func (e *Engine) beginRunObservation(ctx context.Context, wf *Workflow, runID string, args map[string]any) (context.Context, func(captelemetry.ObservationEnd)) {
+	if e.Telemetry == nil {
+		return ctx, nil
 	}
-	return "ok"
+	return e.Telemetry.BeginObservation(ctx, e.Telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
+		Name:  "workflow.run",
+		Kind:  captelemetry.KindSpan,
+		Input: runInputSummary(wf, args),
+		Attributes: map[string]string{
+			"workflow": wf.Name,
+			"run_id":   runID,
+		},
+	}))
+}
+
+func runInputSummary(wf *Workflow, args map[string]any) string {
+	raw, err := json.Marshal(map[string]any{"name": wf.Name, "args": args})
+	if err != nil {
+		return wf.Name
+	}
+	return truncateRunes(string(raw), 1024)
 }
 
 func (e *Engine) runStep(ctx context.Context, wf *Workflow, runID string, step *Step, data map[string]any) *stepState {
-	started := time.Now()
 	state := &stepState{status: "ok"}
-	stepCtx := ctx
+
+	// Begin a workflow.step span so nested tool/script observations parent under it.
+	stepCtx, endObservation := e.beginStepObservation(ctx, wf, runID, step)
+	defer func() {
+		if endObservation != nil {
+			endObservation(captelemetry.ObservationEnd{
+				Output: state.view,
+				Err:    stepError(state),
+			})
+		}
+	}()
+
 	cancel := func() {}
 	if step.TimeoutSeconds > 0 {
-		stepCtx, cancel = context.WithTimeout(ctx, time.Duration(step.TimeoutSeconds)*time.Second)
+		stepCtx, cancel = context.WithTimeout(stepCtx, time.Duration(step.TimeoutSeconds)*time.Second)
 	}
 	defer cancel()
 
@@ -165,24 +210,82 @@ func (e *Engine) runStep(ctx context.Context, wf *Workflow, runID string, step *
 		state.err = err.Error()
 		slog.Warn("workflow step failed", "workflow", wf.Name, "step", step.ID, "type", step.Type, "error", err)
 	}
-	attrs := map[string]string{
-		"workflow":    wf.Name,
-		"run_id":      runID,
-		"step":        step.ID,
-		"type":        step.Type,
-		"status":      state.status,
-		"duration_ms": fmt.Sprint(time.Since(started).Milliseconds()),
-	}
-	if state.err != "" {
-		attrs["error"] = truncateRunes(state.err, 200)
-	}
-	e.recordEvent(ctx, "workflow.step", attrs)
 	return state
 }
 
-func (e *Engine) recordEvent(ctx context.Context, name string, attrs map[string]string) {
-	if e.Telemetry != nil {
-		e.Telemetry.RecordEvent(ctx, name, attrs)
+// beginStepObservation starts a workflow.step span with input = step config
+// (truncated). Returns ctx with the span as tool parent, and an end func.
+func (e *Engine) beginStepObservation(ctx context.Context, wf *Workflow, runID string, step *Step) (context.Context, func(captelemetry.ObservationEnd)) {
+	if e.Telemetry == nil {
+		return ctx, nil
+	}
+	input := stepInputSummary(step)
+	ctx, end := e.Telemetry.BeginObservation(ctx, e.Telemetry.ObservationMetaFromContext(ctx, captelemetry.ObservationMeta{
+		Name:  "workflow.step",
+		Kind:  captelemetry.KindTool,
+		Input: input,
+		// Scope parents nested generations (model step) and events
+		// (workflow.script) under this step span.
+		Scope: true,
+		Attributes: map[string]string{
+			"workflow": wf.Name,
+			"run_id":   runID,
+			"step":     step.ID,
+			"type":     step.Type,
+		},
+	}))
+	return ctx, end
+}
+
+func stepInputSummary(step *Step) string {
+	raw, err := json.Marshal(step)
+	if err != nil {
+		return step.Type
+	}
+	return truncateRunes(string(raw), 1024)
+}
+
+func stepError(state *stepState) error {
+	if state.err == "" {
+		return nil
+	}
+	return fmt.Errorf("%s", state.err)
+}
+
+// emitStepToolEvents forwards one step's tool call/result to the parent turn's
+// outbound hook (like subagent forwarding). No session append: step internals
+// stay out of the main conversation history.
+func (e *Engine) emitStepToolEvents(ctx context.Context, call agentkit.ToolCall, result agentkit.ToolResult) {
+	emit := rctx.OutboundEmitFromContext(ctx)
+	if emit == nil {
+		return
+	}
+	route := rctx.RouteRefFromContext(ctx)
+	turnID := ""
+	if v, ok := ctx.Value(agentkit.KeyTurnID).(string); ok {
+		turnID = v
+	}
+	agentID := rctx.AgentIDFromContext(ctx)
+	if agentID == "" {
+		agentID = agentkit.AgentID("workflow")
+	}
+	if err := emit(ctx, agentkit.OutboundEvent{
+		Route:   route,
+		AgentID: agentID,
+		Type:    agentkit.EventToolCall,
+		Data:    rctx.MarshalOutboundData(call),
+		TurnID:  turnID,
+	}); err != nil {
+		slog.Debug("workflow step tool/call emit failed", "tool", call.Name, "err", err)
+	}
+	if err := emit(ctx, agentkit.OutboundEvent{
+		Route:   route,
+		AgentID: agentID,
+		Type:    agentkit.EventToolResult,
+		Data:    rctx.MarshalOutboundData(result),
+		TurnID:  turnID,
+	}); err != nil {
+		slog.Debug("workflow step tool/result emit failed", "tool", call.Name, "err", err)
 	}
 }
 

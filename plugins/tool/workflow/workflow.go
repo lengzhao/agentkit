@@ -32,12 +32,17 @@ type WorkflowDeps struct {
 	Subagent subagent.Spawner `json:"subagent,omitempty"`
 	// Telemetry receives workflow.run / workflow.step events.
 	Telemetry captelemetry.Toolkit `json:"telemetry,omitempty"`
+	// Shell runs script steps with raw output (no model formatting). Inject the
+	// same tool/shell-bash instance (StructuredShell); omit to fall back to
+	// calling the bash tool through Runtime and parsing its text output.
+	Shell StructuredShell `json:"shell,omitempty"`
 }
 
 // NewWorkflow registers tool/workflow: Run a fixed pipeline from the workflows directory by name.
 //
 // Best practices:
-//   - Point deps.runtime at a sibling tools/runtime that includes tool/shell-bash (bash) and the tools your steps call, and never includes tool/workflow itself.
+//   - Point deps.runtime at a sibling tools/runtime that includes the tools your steps call, and never includes tool/workflow itself.
+//   - For script steps, inject deps.shell with the same tool/shell-bash instance (StructuredShell) to avoid parsing bash text; otherwise the engine calls the bash tool through Runtime.
 //   - Keep step data exchange by reference: scripts and tools read/write files; the model only sees the rendered result.
 //   - Mount through tools/runtime deps.tools; the "workflow" slash command is contributed via CommandProvider on the same instance.
 func NewWorkflow(cfg WorkflowConfig, deps WorkflowDeps) (agentkit.Tool, error) {
@@ -127,6 +132,7 @@ func (t *workflowTool) Call(ctx context.Context, raw json.RawMessage) (string, e
 		LLM:       t.deps.LLM,
 		Subagent:  t.deps.Subagent,
 		Telemetry: t.deps.Telemetry,
+		Shell:     t.deps.Shell,
 	}
 	result, err := engine.Run(ctx, wf, args)
 	if err != nil {

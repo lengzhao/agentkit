@@ -12,7 +12,7 @@ description: 编写、调优、排查 AgentKit tool/workflow 声明式管线（w
 | 路径 | `local:workflows`（`work/workflows/`，优先）→ `global:workflows`（如 `.agentkit/workflows/`）；**name = 文件名去 `.json`** |
 | 生效 | 保存 JSON/脚本后**下一轮**即生效；`workflow` 描述与 **`/workflow`** 每次重读目录，**无 reload 命令** |
 | 不变量 | 主对话不接触大 payload；中间数据用 `{{ .workflow.runDir }}` 与 `.steps.<id>.path` |
-| 前置 | `tool/workflow` 已挂主 runtime；`deps.runtime` 含 **`bash`** + tool step 工具，**不含** `tool/workflow` |
+| 前置 | `tool/workflow` 已挂主 runtime；`deps.runtime` 含 tool step 工具，**不含** `tool/workflow`；script step 推荐再配 **`deps.shell`**（`tool/shell-bash` StructuredShell） |
 | 重启 | 仅改 YAML（dirs、sibling runtime、挂 workflow 工具）需重启进程 |
 
 仓库设计文档：`docs/guides/workflow.zh.md`（与代码冲突时以代码为准）。

@@ -15,6 +15,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
+	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 type stubWorkspace struct{ root string }
@@ -128,7 +131,101 @@ func writeWorkflow(t *testing.T, dir, name, body string) {
 	}
 }
 
-func engineWith(ws stubWorkspace) *Engine { return &Engine{Workspace: ws} }
+// testShell runs commands with bash -lc and returns raw output (StructuredShell).
+type testShell struct{}
+
+func (testShell) RunStructured(ctx context.Context, command string, _ *float64) (string, string, int, error) {
+	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+	exitCode := 0
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return "", "", 0, runErr
+		}
+	}
+	return stdout.String(), stderr.String(), exitCode, nil
+}
+
+func engineWith(ws stubWorkspace) *Engine { return &Engine{Workspace: ws, Shell: testShell{}} }
+
+func TestEngineStepEmitsToolCallAndResult(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	wfDir := filepath.Join(root, "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wf := &Workflow{
+		Name: "emit", Description: "d", Dir: wfDir,
+		Steps: []Step{
+			{ID: "one", Type: StepScript, Run: "echo emitted"},
+		},
+		Result: "{{ .steps.one.stdout }}",
+	}
+	var events []agentkit.OutboundEvent
+	emit := agentkit.OutboundEmit(func(_ context.Context, ev agentkit.OutboundEvent) error {
+		events = append(events, ev)
+		return nil
+	})
+	ctx := rctx.ContextWithOutboundEmit(context.Background(), emit)
+	engine := engineWith(stubWorkspace{root})
+	if _, err := engine.Run(ctx, wf, nil); err != nil {
+		t.Fatal(err)
+	}
+	var toolCalls, toolResults int
+	for _, ev := range events {
+		if ev.Type == agentkit.EventToolCall {
+			toolCalls++
+		}
+		if ev.Type == agentkit.EventToolResult {
+			toolResults++
+		}
+	}
+	if toolCalls < 1 || toolResults < 1 {
+		t.Fatalf("expected at least one tool/call and one tool/result, got %d call(s) %d result(s)", toolCalls, toolResults)
+	}
+}
+
+func TestEngineScriptFallbackToBashTool(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	wfDir := filepath.Join(root, "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wf := &Workflow{
+		Name: "fb", Description: "d", Dir: wfDir,
+		Steps: []Step{
+			{ID: "one", Type: StepScript, Run: "echo fallback"},
+		},
+		Result: "{{ .steps.one.stdout }}",
+	}
+	rt := &stubToolRuntime{}
+	engine := &Engine{Workspace: stubWorkspace{root}, Tools: rt} // Shell nil → fallback path
+	out, err := engine.Run(context.Background(), wf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "fallback") {
+		t.Fatalf("out = %q", out)
+	}
+	var bashCall *agentkit.ToolCall
+	for i := range rt.calls {
+		if rt.calls[i].Name == bashToolName {
+			bashCall = &rt.calls[i]
+			break
+		}
+	}
+	if bashCall == nil {
+		t.Fatal("expected bash tool call when deps.shell is not set")
+	}
+}
 
 func TestEngineScriptStepByReference(t *testing.T) {
 	t.Parallel()
@@ -314,6 +411,57 @@ func TestEngineModelStepSchema(t *testing.T) {
 	}
 }
 
+func TestEngineModelStepRecordsGeneration(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "gen", Description: "d",
+		Steps: []Step{
+			{ID: "m", Type: StepModel, Model: "stub-model", Prompt: "say hi"},
+		},
+		Result: "{{ .steps.m.text }}",
+	}
+	rec := &rttelemetry.RecordingExporter{}
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rttelemetry.WithExporter(context.Background(), rec)
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	engine.LLM = &stubLLM{text: "hi"}
+	engine.Telemetry = tk
+	if _, err := engine.Run(ctx, wf, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, observations, _ := rec.Snapshot()
+	var step, gen *rttelemetry.RecordedObservation
+	for i := range observations {
+		switch observations[i].Meta.Name {
+		case "workflow.step":
+			step = &observations[i]
+		case "llm.generation":
+			gen = &observations[i]
+		}
+	}
+	if step == nil || gen == nil {
+		t.Fatalf("expected workflow.step and llm.generation, got %+v", observations)
+	}
+	if gen.ParentID != step.ID {
+		t.Fatalf("llm.generation parent = %q, want %q (workflow.step)", gen.ParentID, step.ID)
+	}
+	if gen.Meta.Kind != captelemetry.KindGeneration {
+		t.Fatalf("generation kind = %q", gen.Meta.Kind)
+	}
+	if gen.Meta.Model != "stub-model" {
+		t.Fatalf("generation model = %q", gen.Meta.Model)
+	}
+	if len(gen.Meta.GenerationMessages) == 0 {
+		t.Fatal("generation input messages empty")
+	}
+	if gen.End.Output != "hi" {
+		t.Fatalf("generation output = %q", gen.End.Output)
+	}
+}
+
 func TestEngineModelStepSchemaViolation(t *testing.T) {
 	t.Parallel()
 	wf := &Workflow{
@@ -416,5 +564,91 @@ func TestEngineRunRecordsStepStatesForResult(t *testing.T) {
 	}
 	if out != "hello\nworld\n" {
 		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestEngineStepSpanParentsUnderToolObservation(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "obs", Description: "d",
+		Steps: []Step{
+			{ID: "one", Type: StepScript, Run: "echo nested"},
+		},
+		Result: "{{ .steps.one.stdout }}",
+	}
+	rec := &rttelemetry.RecordingExporter{}
+	tk, err := rttelemetry.NewToolkit(struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rttelemetry.WithExporter(context.Background(), rec)
+	// Simulate the tool.workflow span the tools runtime opens around Execute.
+	ctx, endOuter := tk.BeginObservation(ctx, captelemetry.ObservationMeta{
+		Name: "tool.workflow",
+		Kind: captelemetry.KindTool,
+	})
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	engine.Telemetry = tk
+	if _, err := engine.Run(ctx, wf, nil); err != nil {
+		t.Fatal(err)
+	}
+	endOuter(captelemetry.ObservationEnd{})
+
+	_, observations, _ := rec.Snapshot()
+	var outer, run, step *rttelemetry.RecordedObservation
+	for i := range observations {
+		switch observations[i].Meta.Name {
+		case "tool.workflow":
+			outer = &observations[i]
+		case "workflow.run":
+			run = &observations[i]
+		case "workflow.step":
+			step = &observations[i]
+		}
+	}
+	if outer == nil {
+		t.Fatal("tool.workflow observation not recorded")
+	}
+	if run == nil {
+		t.Fatal("workflow.run span not recorded")
+	}
+	if step == nil {
+		t.Fatal("workflow.step span not recorded")
+	}
+	if run.ParentID != outer.ID {
+		t.Fatalf("workflow.run parent = %q, want %q (tool.workflow)", run.ParentID, outer.ID)
+	}
+	if run.Meta.Input == "" {
+		t.Fatal("workflow.run input is empty")
+	}
+	if run.End.Output == "" {
+		t.Fatal("workflow.run output is empty")
+	}
+	if step.ParentID != run.ID {
+		t.Fatalf("workflow.step parent = %q, want %q (workflow.run)", step.ParentID, run.ID)
+	}
+	if !step.Meta.Scope {
+		t.Fatal("workflow.step span must set Scope so nested events/generations parent under it")
+	}
+	if step.Meta.Input == "" {
+		t.Fatal("workflow.step input is empty")
+	}
+	if step.End.Output == "" {
+		t.Fatal("workflow.step output is empty")
+	}
+	var script *rttelemetry.RecordedObservation
+	for i := range observations {
+		if observations[i].Meta.Name == "workflow.script" {
+			script = &observations[i]
+		}
+	}
+	if script == nil {
+		t.Fatal("workflow.script span not recorded")
+	}
+	if script.ParentID != step.ID {
+		t.Fatalf("workflow.script parent = %q, want %q (workflow.step)", script.ParentID, step.ID)
+	}
+	if script.Meta.Input == "" || script.End.Output == "" {
+		t.Fatal("workflow.script input/output is empty")
 	}
 }
