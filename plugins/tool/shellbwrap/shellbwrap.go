@@ -160,6 +160,15 @@ func (b *bundle) Commands() []agentkit.Command {
 	return []agentkit.Command{slashCommand{exec: b.exec}}
 }
 
+// RunStructured implements the StructuredShell capability (consumed by
+// tool/workflow script steps): raw streams + exit code, no model-facing
+// formatting. Script steps thereby stay inside the sandbox view, same as the
+// bash tool. Satisfied structurally — plugins must not import each other.
+func (b *bundle) RunStructured(ctx context.Context, command string, timeoutSeconds *float64) (stdout, stderr string, exitCode int, err error) {
+	out, runErr := b.exec.run(ctx, command, timeoutSeconds)
+	return out.Stdout, out.Stderr, out.ExitCode, runErr
+}
+
 type slashCommand struct {
 	exec *executor
 }

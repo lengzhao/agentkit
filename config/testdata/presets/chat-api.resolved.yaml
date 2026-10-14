@@ -685,6 +685,15 @@ tool.web-fetch-http.default:
         maxRedirects: 5
         timeoutSeconds: 30
     use: tool/web-fetch-http
+tool.workflow.default:
+    deps:
+        llm: llm.default
+        runtime: tools.runtime.workflow
+        shell: tool.shell-bash.default
+        subagent: subagent.default
+        telemetry: telemetry.toolkit
+        workspace: workspace.default
+    use: tool/workflow
 tools.default:
     config:
         defaultTimeoutSeconds: 120
@@ -701,6 +710,7 @@ tools.default:
         dynamicTools:
             - mcp.default
             - openapi.default
+            - tool.workflow.default
         hooks: hooks.default
         policies:
             - policy.dangerous-shell.default
@@ -719,6 +729,21 @@ tools.default:
             - tool.memory.default
             - tool.schedule.default
     use: tools/deferred
+tools.runtime.workflow:
+    config:
+        defaultTimeoutSeconds: 120
+    deps:
+        dynamicTools:
+            - mcp.default
+            - openapi.default
+        hooks: hooks.default
+        policies:
+            - policy.dangerous-shell.default
+        toolPacks:
+            - tool.fs-workspace.default
+        tools:
+            - tool.shell-bash.default
+    use: tools/runtime
 tools.subagent.default:
     config:
         defaultTimeoutSeconds: 120
