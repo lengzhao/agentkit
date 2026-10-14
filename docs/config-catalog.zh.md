@@ -397,6 +397,16 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `providers` | `[]agentkit.HookProvider` |  |
 
+## `lark-event/logger`
+
+- 返回类型：`*logger.Handler`
+- 源码：[`plugins/larkevent/logger.go`](../plugins/larkevent/logger.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `eventTypes` | `[]string` | — | EventTypes 是 Lark 事件类型字符串（如 drive.file.created_v1）， 需与 Lark 开发者后台的事件订阅保持一致。 |
+| `logRaw` | `bool` | — | LogRaw 为 true 时记录完整事件 JSON（默认只记录类型与上下文摘要）。 |
+
 ## `learning/default`
 
 - 返回类型：`*learning.Service`
@@ -674,12 +684,14 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `port` | `string` | — |  |
 | `callbackPath` | `string` | — |  |
 | `unknownCardAction` | `string` | — | forward (default) \| ignore |
+| `forwardEventsToAgent` | `[]string` | — | ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型 （如 drive.file.created_v1）。事件序列化为一条 inbound 消息： 带 chat_id 进对应群会话，只带 user_id 进 p2p 会话，都无则进 平台专属 events 会话（只处理、无回复目标）。事件类型需在 Lark 开发者后台同步订阅。 |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `workspace` | `workspace.Service` |  |
+| `eventHandlers` | `[]larkevent.Handler` | EventHandlers 订阅自定义 Lark 事件的 handler 插件（cap/larkevent）。 每个 handler 自行声明 EventTypes()，平台按事件类型聚合后注册 OnCustomizedEvent；同一事件类型可命中多个 handler。 |
 
 ## `platform/http`
 
@@ -725,12 +737,14 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `port` | `string` | — |  |
 | `callbackPath` | `string` | — |  |
 | `unknownCardAction` | `string` | — | forward (default) \| ignore |
+| `forwardEventsToAgent` | `[]string` | — | ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型 （如 drive.file.created_v1）。事件序列化为一条 inbound 消息： 带 chat_id 进对应群会话，只带 user_id 进 p2p 会话，都无则进 平台专属 events 会话（只处理、无回复目标）。事件类型需在 Lark 开发者后台同步订阅。 |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `workspace` | `workspace.Service` |  |
+| `eventHandlers` | `[]larkevent.Handler` | EventHandlers 订阅自定义 Lark 事件的 handler 插件（cap/larkevent）。 每个 handler 自行声明 EventTypes()，平台按事件类型聚合后注册 OnCustomizedEvent；同一事件类型可命中多个 handler。 |
 
 ## `platform/multiplex`
 

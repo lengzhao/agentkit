@@ -21,6 +21,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
@@ -102,7 +103,10 @@ type Platform struct {
 	// activeThreadSessions tracks thread sessionKeys that have been engaged
 	// by an @bot mention, allowing subsequent attachment-only messages in the
 	// same thread to pass the group @ filter.
-	activeThreadSessions       sync.Map
+	activeThreadSessions sync.Map
+	// eventHandlers / forwardToAgent drive custom event routing; see events.go.
+	eventHandlers  []caplarkevent.Handler
+	forwardToAgent map[string]bool
 }
 
 type feishuRequestFunc func(client *lark.Client, options ...larkcore.RequestOptionFunc) error

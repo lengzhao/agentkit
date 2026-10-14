@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
@@ -58,9 +59,18 @@ func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, c
 	return p.createMessage(ctx, rc.chatID, msgType, content, "send (reply fallback)")
 }
 
+// receiveIDType 按 id 前缀选择 receive_id_type：ou_ 前缀是用户 open_id
+// （自定义事件直转 agent 的 p2p 会话回复），其余按 chat_id。
+func receiveIDType(id string) string {
+	if strings.HasPrefix(id, "ou_") {
+		return "open_id"
+	}
+	return "chat_id"
+}
+
 func (p *Platform) createMessage(ctx context.Context, chatID, msgType, content, op string) error {
 	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType("chat_id").
+		ReceiveIdType(receiveIDType(chatID)).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(chatID).
 			MsgType(msgType).

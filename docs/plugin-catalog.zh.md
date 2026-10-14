@@ -104,8 +104,8 @@ flowchart TB
 | `runner` | `agentkit.Runner` | 进程 root，启动 Platform + Loop + `schedule.Runtime`，管理 StartStop；`sessionScope` 折叠 delivery SessionID（默认 channel）；`maxConcurrentTurns` 控制跨 session 并发（默认 64，同 session 内始终保序）；`config.inject` 在 dispatch 前 prepend `[meta ...]`（sender_id / timestamp / task_id 等，对齐 cc-connect）；per-turn panic 隔离，关停等待 in-flight turn | DSH Loader root / Pi AgentSession 外层 |
 | `platform/cli` | `agentkit.Platform` + `permission.Capable` | 终端 stdin/stdout；稳定 delivery `cli:default`，经 `session/store` active-session 映射恢复 conversation；slash 走 `common.ProcessSlash`（含 `/new`、`/help`）；allow/deny 与 ask 经 Permission 协议读 stdin | Pi TUI / DSH headless |
 | `platform/slack` | `agentkit.Platform` + `chathistory.Provider` | Slack Socket Mode；生成 cc-connect 风格 SessionID；Block Kit `perm:` / `cmd:` / 未知 `block_actions` forward（`unknownCardAction`）；供 `tool/chat-history` 读取频道/线程历史 | cc-connect `platform/slack` |
-| `platform/feishu` | `agentkit.Platform` + `chathistory.Provider` | 飞书 WebSocket；生成 cc-connect 风格 SessionID；rich 单卡 Patch（thinking / tool / 正文同卡刷新）；`showThinking` / `showToolProgress`；卡片 `perm:` / `nav:` / `act:` / `cmd:` / 未知回调 forward（`unknownCardAction`）；供 `tool/chat-history` 读取 IM 群/话题历史 | cc-connect `platform/feishu` |
-| `platform/lark` | `agentkit.Platform` + `chathistory.Provider` | 国际版 Lark（`platform/feishu` 的 domain 预设）；流式卡片配置同 feishu | cc-connect `platform/feishu` |
+| `platform/feishu` | `agentkit.Platform` + `chathistory.Provider` | 飞书 WebSocket；生成 cc-connect 风格 SessionID；rich 单卡 Patch（thinking / tool / 正文同卡刷新）；`showThinking` / `showToolProgress`；卡片 `perm:` / `nav:` / `act:` / `cmd:` / 未知回调 forward（`unknownCardAction`）；自定义事件：`deps.eventHandlers` 注入 `cap/larkevent.Handler` 插件按事件类型订阅（同一类型可命中多个），`config.forwardEventsToAgent` 把事件序列化为 inbound 消息直转 agent（按事件上下文路由群/p2p 会话，无上下文进 `<platform>:events` 只处理不回复）；供 `tool/chat-history` 读取 IM 群/话题历史 | cc-connect `platform/feishu` |
+| `platform/lark` | `agentkit.Platform` + `chathistory.Provider` | 国际版 Lark（`platform/feishu` 的 domain 预设）；流式卡片与自定义事件配置同 feishu | cc-connect `platform/feishu` |
 | `platform/chat-api` | `agentkit.Platform` | HTTP + SSE 调试台；会话/消息 API（可选 `deps.sessionIndex` 与 `session-query` 共用 SQLite 索引列会话）；SSE 断线重连（`POST /chat-messages` + `run_id`）；`POST /runs/{id}/cancel`；文件上传下载；`registerOnly` 时只挂载 `http.DefaultServeMux`，由 `platform/http` 等插件监听 | `sessionIndex` |
 | `platform/multiplex` | `agentkit.Platform` | 聚合多个 Platform（CLI + IM 等共存） | 多入口 fan-in / 按 PlatformID 精确回写（`PlatformID` 为空则拒绝，不广播） |
 | `platform/http` | `agentkit.Platform` | 监听并服务 `http.DefaultServeMux`；与 `chat-api.registerOnly` 或其它 `http.Handle` 扩展组合 | DSH Web Host |
@@ -443,6 +443,7 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 | `telemetry/langfuse` | `telemetry.Exporter` | Langfuse 导出；默认 v4（OTLP `/api/public/otel/v1/traces`），`ingestVersion: v3` 走旧批处理接口（`/api/public/ingestion`） |
 | `telemetry/none` | `telemetry.Exporter` | 无遥测 |
 | `telemetry/otel` | `telemetry.Exporter` | 通用 OpenTelemetry（未做） |
+| `lark-event/logger` | `cap/larkevent.Handler` | Lark 自定义事件示例 handler：按 `config.eventTypes` 订阅并 slog 记录；注入 `platform/feishu` / `platform/lark` 的 `deps.eventHandlers` |
 
 ### 3.8 Commands（不经过模型）
 

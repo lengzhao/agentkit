@@ -17,6 +17,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -55,6 +56,12 @@ type Config struct {
 	Port                       string            `json:"port"`
 	CallbackPath               string            `json:"callbackPath"`
 	UnknownCardAction          string            `json:"unknownCardAction"` // forward (default) | ignore
+	// ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型
+	// （如 drive.file.created_v1）。事件序列化为一条 inbound 消息：
+	// 带 chat_id 进对应群会话，只带 user_id 进 p2p 会话，都无则进
+	// 平台专属 events 会话（只处理、无回复目标）。事件类型需在
+	// Lark 开发者后台同步订阅。
+	ForwardEventsToAgent []string `json:"forwardEventsToAgent,omitempty"`
 }
 
 // SetDefaults implements pluginkit.Defaulter. Emoji 字段保留 "none" 哨兵语义：
@@ -91,6 +98,10 @@ type Deps struct {
 	Commands     agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
 	Workspace    workspace.Service     `json:"workspace,omitempty"`
+	// EventHandlers 订阅自定义 Lark 事件的 handler 插件（cap/larkevent）。
+	// 每个 handler 自行声明 EventTypes()，平台按事件类型聚合后注册
+	// OnCustomizedEvent；同一事件类型可命中多个 handler。
+	EventHandlers []caplarkevent.Handler `json:"eventHandlers,omitempty"`
 }
 
 type inboundMessage struct {
@@ -246,6 +257,13 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		}
 	}
 
+	forwardToAgent := map[string]bool{}
+	for _, eventType := range cfg.ForwardEventsToAgent {
+		if eventType = strings.TrimSpace(eventType); eventType != "" {
+			forwardToAgent[eventType] = true
+		}
+	}
+
 	var clientOpts []lark.ClientOptionFunc
 	clientOpts = append(clientOpts, lark.WithOpenBaseUrl(domain))
 
@@ -289,6 +307,8 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		sessionScope:               rctx.ParseScope(cfg.SessionScope),
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
+		eventHandlers:              deps.EventHandlers,
+		forwardToAgent:             forwardToAgent,
 	}
 	p.outbound = common.NewOutbound(p.sendText, p.sendMediaPart)
 	return p, nil
@@ -391,6 +411,10 @@ func (p *Platform) run(ctx context.Context) {
 		OnP2BotMenuV6(func(ctx context.Context, event *larkapplication.P2BotMenuV6) error {
 			return p.onBotMenu(event)
 		})
+
+	// deps.eventHandlers 声明的订阅 + config.forwardEventsToAgent 的
+	// agent 直转，统一注册为 OnCustomizedEvent（见 events.go）。
+	p.eventHandler = p.registerCustomEvents(p.eventHandler)
 
 	if p.useInteractiveCard {
 		slog.Info(p.platformTag + ": interactive card mode enabled, ensure card.action.trigger event is subscribed in Feishu console")

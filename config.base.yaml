@@ -101,10 +101,12 @@ platform.feishu:
     showToolProgress: true
     showThinking: true
     asyncSubagentProgressCard: true  # async delegate 时单独一张后台过程卡
+    # forwardEventsToAgent: []  # 直转 agent 的自定义事件类型（同 platform.lark 注释）
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
     workspace: workspace.default
+    # eventHandlers: []         # cap/larkevent.Handler 插件（同 platform.lark 注释）
 
 # 国际版 Lark。凭证：LARK_APP_ID + LARK_APP_SECRET
 platform.lark:
@@ -118,10 +120,20 @@ platform.lark:
     showToolProgress: true
     showThinking: true
     asyncSubagentProgressCard: true
+    # forwardEventsToAgent: []  # 直转 agent 的自定义事件类型（如 drive.file.created_v1；需在 Lark 后台订阅）
   deps:
     commands: commands.default
     sessionStore: sessionStore.default
     workspace: workspace.default
+    # eventHandlers:            # cap/larkevent.Handler 插件，按事件类型订阅自定义事件
+    #   - lark-event.logger
+
+# Lark 自定义事件示例 handler（cap/larkevent.Handler）：订阅事件并打日志
+# lark-event.logger:
+#   use: lark-event/logger
+#   config:
+#     eventTypes:
+#       - drive.file.created_v1
 
 # HTTP + SSE（BFF / 调试台）。加入 platform.default.deps.platforms 或与 platform/http 组合（listenAddr: "-" 由 http 监听）。
 platform.chat-api:
