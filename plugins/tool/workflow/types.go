@@ -9,6 +9,7 @@
 package workflow
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -65,9 +66,16 @@ type Step struct {
 
 // Parse decodes and validates one workflow file body.
 func Parse(name string, data []byte) (*Workflow, error) {
+	// UseNumber keeps integer literals exact. decoding into any otherwise
+	// turns every JSON number into float64 and rounds integers above 2^53.
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var wf Workflow
-	if err := json.Unmarshal(data, &wf); err != nil {
+	if err := dec.Decode(&wf); err != nil {
 		return nil, fmt.Errorf("workflow %q: invalid JSON: %w", name, err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("workflow %q: invalid JSON: trailing data", name)
 	}
 	wf.Name = name
 	if err := wf.validate(); err != nil {

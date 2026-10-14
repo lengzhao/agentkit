@@ -291,6 +291,73 @@ func TestEngineScriptStepByReference(t *testing.T) {
 	}
 }
 
+func TestEngineToolStepInjectsObjectPayload(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	wfDir := filepath.Join(root, "workflows")
+	const big = "9007199254740993"
+	writeWorkflow(t, wfDir, "update", `{
+	  "description": "inject dataset object",
+	  "steps": [
+	    {"id":"emit","type":"script","run":"printf '%s' '{\"count\":42,\"id\":`+big+`}' > {{ .workflow.runDir }}/payload.json && cat {{ .workflow.runDir }}/payload.json"},
+	    {"id":"update","type":"tool","tool":"capitaldesk_update_dataset","args":{
+	      "datasetKey":"dailyData",
+	      "expectedVersion": 3,
+	      "note":"audit",
+	      "payload":"{{ readJSON (printf \"%s/payload.json\" .workflow.runDir) }}"
+	    }}
+	  ],
+	  "result": "id={{ dig .steps.emit.json \"id\" }}"
+	}`)
+	wf := discoverOne(t, root)
+	rt := &stubToolRuntime{content: `{"status":"ok"}`}
+	engine := engineWith(stubWorkspace{root})
+	engine.Tools = rt
+	out, err := engine.Run(context.Background(), wf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "id="+big {
+		t.Fatalf("result = %q", out)
+	}
+	var update *agentkit.ToolCall
+	for i := range rt.calls {
+		if rt.calls[i].Name == "capitaldesk_update_dataset" {
+			update = &rt.calls[i]
+			break
+		}
+	}
+	if update == nil {
+		t.Fatalf("tool not called; calls = %+v", rt.calls)
+	}
+	text := string(update.Input)
+	if strings.Contains(text, `"payload":"`) {
+		t.Fatalf("payload encoded as string: %s", text)
+	}
+	if !strings.Contains(text, `"id":`+big) {
+		t.Fatalf("integer literal lost: %s", text)
+	}
+	if !strings.Contains(text, `"expectedVersion":3`) {
+		t.Fatalf("expectedVersion = %s", text)
+	}
+	dec := json.NewDecoder(bytes.NewReader(update.Input))
+	dec.UseNumber()
+	var args map[string]any
+	if err := dec.Decode(&args); err != nil {
+		t.Fatal(err)
+	}
+	payload, ok := args["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload type = %T in %s", args["payload"], text)
+	}
+	if payload["id"] != json.Number(big) || payload["count"] != json.Number("42") {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if _, isFloat := payload["id"].(float64); isFloat {
+		t.Fatal("payload.id is float64")
+	}
+}
+
 func TestEngineScriptSpillWritesArtifact(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

@@ -1,47 +1,31 @@
 ---
 name: workflow-manager
-description: 编写、调优、排查 AgentKit tool/workflow 声明式管线（workflows/*.json）。在 (1) 新增/修改 workflow 或 workflows/scripts、(2) 用 workflow 工具试跑或迭代失败 step、(3) 设计 script→tool/model/agent 串联且大 payload 只传路径、(4) 说明或修改 tools.runtime.workflow（含 bash 与 step 所需动态工具）、(5) workflow 未被发现、args 校验、bash/model/agent step 报错时使用。字段与模板细则读 skill 内 references/schema.md；YAML 装配读 references/assembly.md。
+description: 编写、修改、试跑和排查 AgentKit 的 workflows/*.json 管线（script、tool、model、agent step）。在这些情况使用：(1) 新建或修改 workflow 文件与同目录脚本，(2) 下游 tool 的参数是 object/array 或大 JSON 不能进主模型，(3) 按 step id 修失败步骤，(4) 修改 tools.runtime.workflow 或 tool.workflow.default。没有名为 workflow 的工具，模型入口是 workflow__<文件名>。字段读 references/schema.md，YAML 读 references/assembly.md。
 ---
 
 # Workflow 维护
 
-## 运行态
+没有名为 `workflow` 的工具。调用 **`workflow__` + 文件名（去掉 `.json`）**。
 
-| 项 | 行为 |
-|---|---|
-| 路径 | `local:workflows`（`work/workflows/`，优先）→ `global:workflows`（如 `.agentkit/workflows/`）；**工具名 = `workflow__` + 文件名去 `.json`** |
-| 生效 | 保存 JSON/脚本后**下一轮**即生效；Provider 每次 `ListTools` 重读目录，**无 reload 命令** |
-| 不变量 | 主对话不接触大 payload；中间数据用 `{{ .workflow.runDir }}` 与 `.steps.<id>.path` |
-| 前置 | base 已默认装配（`tools.default` 的 `deps.dynamicTools`，零配置可用）；sibling `deps.runtime` 含 tool step 工具、**不含** `tool/workflow`；script step 经 **`deps.shell`**（shell-bash / sandbox 下 shell-bwrap 的 StructuredShell） |
-| 重启 | 仅改 YAML（dirs、sibling runtime、挂 workflow 工具）需重启进程 |
+与 `docs/guides/workflow.zh.md` 冲突时以代码为准。
 
-仓库设计文档：`docs/guides/workflow.zh.md`（与代码冲突时以代码为准）。
+## 分流
 
-## 作者流程
+1. 判断任务：
+   - **写或改管线** → 写文件
+   - **改 dirs、sibling runtime、telemetry** → 只读 [references/assembly.md](references/assembly.md)，改完重启进程
+   - **某 step 已失败** → 读 [references/schema.md](references/schema.md) 的排查表，按报错里的 step id 改对应 step
 
-1. 确认 inputs 仅为小参数（ID、日期）；大文件只在 step 间用路径传递。
-2. 在 `work/workflows/`（租户）或 `global:workflows/`（共享）写 `*.json`；脚本与 JSON **同目录**或 `scripts/` 子目录；script 经 **`bash`**（`cd <workflow目录> && run`）。
-3. 对照 [references/schema.md](references/schema.md) 填 `description`（必填）、`inputs`、`steps`、`result`；可从 [assets/minimal-workflow.json](assets/minimal-workflow.json) 复制骨架。
-4. **试跑**：直接调 **`workflow__<name>`** 工具，入参即 workflow 的 `inputs`；列表用 **`/workflow`**。错误含 **step id**，按 id 改对应 step。
-5. 收紧 `description`（模型选路）与 `result`（短摘要）；勿把 step 全文日志放进 `result`。
+## 写文件
 
-`tool` step 使用**模型可见工具名**（如 `prefix__operation`）。动态工具未出现时，先请用户 `/mcp -u` 或 `/openapi -u`，再查工具列表。
+1. `inputs` 只放小参数（ID、日期、datasetKey）。大 JSON 写到 `{{ .workflow.runDir }}` 下的文件。
+2. 文件放本地路径（优先）或全局路径。脚本与 JSON 同目录，或放 `scripts/`。
+3. 从 [assets/minimal-workflow.json](assets/minimal-workflow.json) 复制骨架。字段规则读 [references/schema.md](references/schema.md)。
+4. 按下游 tool 的 schema 写 `args`：
+   - 工具收 **path**：`{{ .workflow.runDir }}/文件`
+   - 工具收 **object 或 array**（没有 path 字段）：整段 `readJSON`，或上一步已是 JSON 时 `{{ .steps.<id>.json }}`。从 [assets/object-args-workflow.json](assets/object-args-workflow.json) 复制。不要把 JSON 文本填进该字段。
+5. `tool` 填模型可见名（如 `prefix__operation`）。看不到 MCP/OpenAPI 工具时，让用户执行 `/mcp -u` 或 `/openapi -u`。
+6. 试跑：调用 `workflow__<文件名>`，入参即 `inputs`。披露开启时先 `tool_search` 这个名字。列表让用户执行 `/workflow`。
+7. `description` 写给模型选路。`result` 只留短摘要，不放 step 全文。
 
-## 分场景读参考
-
-| 任务 | 读 |
-|---|---|
-| 字段、step 类型、模板、`dig`/`quote`、场景与反模式 | [references/schema.md](references/schema.md) |
-| `tool.workflow` / `tools.runtime.workflow` YAML | [references/assembly.md](references/assembly.md) |
-| 冒烟样例 | 本仓库 `global:workflows/ping.json`、`marker.json` |
-
-## 快速排查
-
-| 现象 | 先查 |
-|---|---|
-| 工具列表无新 workflow | 目录、`description` 必填、JSON 合法；`/workflow` 输出中 `[load error]` |
-| script 失败 | sibling runtime 是否含 `bash`；`run` 与 `quote` |
-| tool 失败 | 工具是否在 `tools.runtime.workflow`；工具名是否为模型侧名称 |
-| model/agent 失败 | 是否配 `deps.llm` / `deps.subagent`；prompt 是否超 `maxInputBytes` |
-
-更多条目见 [references/schema.md#排查](references/schema.md#排查)。
+保存 JSON 或脚本后下一轮生效，不用 reload。只改 YAML 才重启。sibling `deps.runtime` 要包含 step 调用的工具，且不能包含 `tool/workflow`。

@@ -338,15 +338,21 @@ func truncateRunes(s string, max int) string {
 }
 
 // parseJSONContent returns the decoded value when content is a JSON
-// object/array, else nil.
+// object/array, else nil. Numbers stay json.Number so a later tool arg
+// does not see them as float64.
 func parseJSONContent(content string) any {
 	trimmed := strings.TrimSpace(content)
-	if !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
+	if !jsonComposite(trimmed) {
 		return nil
 	}
-	var value any
-	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
+	value, err := decodeJSON(trimmed)
+	if err != nil {
 		return nil
 	}
-	return value
+	switch value.(type) {
+	case map[string]any, []any:
+		return value
+	default:
+		return nil
+	}
 }

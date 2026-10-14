@@ -73,6 +73,7 @@ func (e *Engine) runScriptStep(ctx context.Context, wf *Workflow, runID string, 
 	if bashErr := bashStepError(result.Content); bashErr != "" {
 		return fmt.Errorf("%s", bashErr)
 	}
+	state.json = parseJSONContent(result.Content)
 	state.view, state.path = e.spillView(ctx, runID, step.ID, ".out", result.Content)
 	if spill := bashSpillPath(result.Content); spill != "" && state.path == "" {
 		state.path = spill
@@ -139,6 +140,7 @@ func (e *Engine) runScriptStepStructured(ctx context.Context, wf *Workflow, runI
 	if strings.TrimSpace(stderr) != "" {
 		combined = strings.TrimRight(combined, "\n") + "\n[stderr]\n" + stderr
 	}
+	state.json = parseJSONContent(stdout)
 	state.view, state.path = e.spillView(ctx, runID, step.ID, ".out", combined)
 	if exitCode != 0 {
 		return fmt.Errorf("script step %q: exit code %d: %s", step.ID, exitCode, truncateRunes(stderr+stdout, 400))

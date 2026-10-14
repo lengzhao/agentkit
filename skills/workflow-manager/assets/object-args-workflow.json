@@ -1,0 +1,27 @@
+{
+  "description": "替换为一句话说明（模型靠此选择 workflow__<文件名>）",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "datasetKey": { "type": "string", "description": "小参数，不放大 JSON" }
+    },
+    "required": ["datasetKey"]
+  },
+  "steps": [
+    {
+      "id": "build",
+      "type": "script",
+      "run": "python3 scripts/build.py --out {{ .workflow.runDir }}/payload.json"
+    },
+    {
+      "id": "update",
+      "type": "tool",
+      "tool": "替换为模型可见工具名",
+      "args": {
+        "datasetKey": "{{ .inputs.datasetKey }}",
+        "payload": "{{ readJSON (printf \"%s/payload.json\" .workflow.runDir) }}"
+      }
+    }
+  ],
+  "result": "dataset={{ .inputs.datasetKey }} status={{ dig .steps.update.json \"status\" }}"
+}

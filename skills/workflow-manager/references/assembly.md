@@ -37,6 +37,6 @@ tools.default:
       - tool.workflow.default
 ```
 
-每个 workflow 文件暴露为 **`workflow__<name>`** 工具（`inputs` 即工具 InputSchema）；主 runtime 是 `tools/deferred` 时随 MCP/OpenAPI 走渐进披露三桥。
+每个文件成为一个 `workflow__<name>` 动态工具（`inputs` 即 InputSchema）。主 runtime 为 `tools/deferred` 时，用 `tool_search` 按 `workflow__` 查找后再按名调用。调用名和 `/workflow` 命令见 [SKILL.md](../SKILL.md)。
 
 `telemetry` 必须是 **`telemetry.toolkit`**（进程内 Toolkit），不能填 `telemetry.default`（Langfuse exporter）。
