@@ -1634,7 +1634,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 ## `tool/workflow`
 
-- 返回类型：`agentkit.Tool`
+- 返回类型：`agentkit.ToolProvider`
 - 源码：[`plugins/tool/workflow/workflow.go`](../plugins/tool/workflow/workflow.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
@@ -1647,7 +1647,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `workspace`（必填） | `workspace.Service` |  |
 | `llm` | `agentkit.LLMProvider` | LLM is required only when a workflow uses model steps. |
 | `subagent` | `subagent.Spawner` | Subagent is required only when a workflow uses agent steps. |
-| `telemetry` | `telemetry.Toolkit` | Telemetry receives workflow.run / workflow.step events. |
+| `telemetry` | `telemetry.Toolkit` | Telemetry receives workflow.run / workflow.step / workflow.script spans. |
+| `shell` | `workflow.StructuredShell` | Shell runs script steps with raw output (no model formatting). Inject the same tool/shell-bash instance (StructuredShell); omit to fall back to calling the bash tool through Runtime and parsing its text output. |
 
 ## `tools/deferred`
 

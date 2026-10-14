@@ -1,5 +1,6 @@
-// Package workflow registers tool/workflow: run a named declarative pipeline
-// (script / tool / model / agent steps) with model-small name+args input, so
+// Package workflow registers tool/workflow: expose each discovered declarative
+// pipeline (script / tool / model / agent steps) as its own dynamic tool, so
+// the model calls a workflow directly with a structured input schema while
 // large payloads flow between steps without crossing the main model.
 package workflow
 
@@ -7,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
@@ -30,7 +32,7 @@ type WorkflowDeps struct {
 	LLM agentkit.LLMProvider `json:"llm,omitempty"`
 	// Subagent is required only when a workflow uses agent steps.
 	Subagent subagent.Spawner `json:"subagent,omitempty"`
-	// Telemetry receives workflow.run / workflow.step events.
+	// Telemetry receives workflow.run / workflow.step / workflow.script spans.
 	Telemetry captelemetry.Toolkit `json:"telemetry,omitempty"`
 	// Shell runs script steps with raw output (no model formatting). Inject the
 	// same tool/shell-bash instance (StructuredShell); omit to fall back to
@@ -38,14 +40,18 @@ type WorkflowDeps struct {
 	Shell StructuredShell `json:"shell,omitempty"`
 }
 
-// NewWorkflow registers tool/workflow: Run a fixed pipeline from the workflows directory by name.
+// toolNamePrefix namespaces workflow tools like MCP's server__tool convention.
+const toolNamePrefix = "workflow__"
+
+// NewWorkflow registers tool/workflow: one dynamic tool per workflow file.
 //
 // Best practices:
+//   - Mount through tools/runtime deps.dynamicTools; with tools/deferred the workflow tools join MCP/OpenAPI behind the disclosure bridges.
 //   - Point deps.runtime at a sibling tools/runtime that includes the tools your steps call, and never includes tool/workflow itself.
 //   - For script steps, inject deps.shell with the same tool/shell-bash instance (StructuredShell) to avoid parsing bash text; otherwise the engine calls the bash tool through Runtime.
 //   - Keep step data exchange by reference: scripts and tools read/write files; the model only sees the rendered result.
-//   - Mount through tools/runtime deps.tools; the "workflow" slash command is contributed via CommandProvider on the same instance.
-func NewWorkflow(cfg WorkflowConfig, deps WorkflowDeps) (agentkit.Tool, error) {
+//   - The "workflow" slash command is contributed via CommandProvider on the same instance.
+func NewWorkflow(cfg WorkflowConfig, deps WorkflowDeps) (agentkit.ToolProvider, error) {
 	if deps.Runtime == nil {
 		return nil, fmt.Errorf("tool/workflow requires runtime dependency")
 	}
@@ -56,113 +62,101 @@ func NewWorkflow(cfg WorkflowConfig, deps WorkflowDeps) (agentkit.Tool, error) {
 	if len(dirs) == 0 {
 		dirs = DefaultDirs
 	}
-	return &workflowTool{dirs: dirs, deps: deps}, nil
-}
-
-type workflowTool struct {
-	dirs []string
-	deps WorkflowDeps
-}
-
-type workflowInput struct {
-	Name string          `json:"name"`
-	Args json.RawMessage `json:"args,omitempty"`
-}
-
-func (t *workflowTool) Name() string { return "workflow" }
-
-func (t *workflowTool) InputSchema() agentkit.JSONSchema {
-	return agentkit.JSONSchema{
-		Type: "object",
-		Properties: map[string]agentkit.JSONSchema{
-			"name": {Type: "string", Description: "Workflow name (file name without .json in the workflows directory)"},
-			"args": {Type: "object", Description: "Arguments matching the workflow's declared inputs"},
+	return &workflowProvider{
+		dirs: dirs,
+		deps: deps,
+		engine: &Engine{
+			Tools:     deps.Runtime,
+			Workspace: deps.Workspace,
+			LLM:       deps.LLM,
+			Subagent:  deps.Subagent,
+			Telemetry: deps.Telemetry,
+			Shell:     deps.Shell,
 		},
-		Required: []string{"name"},
-	}
+	}, nil
 }
 
-// Description lists the currently discovered workflows; tools/runtime calls it
-// when assembling the catalog, so edits to workflow files show up next turn.
-// It also prints the resolved search directories: the model needs an absolute
-// location when creating a new workflow file (the scoped local:/global: config
-// syntax is meaningless to it).
-func (t *workflowTool) Description() string {
-	var b strings.Builder
-	b.WriteString("Run a fixed pipeline (script/tool/model/agent steps) by name. " +
-		"Intermediate data stays in files and tool calls; only the pipeline's rendered result returns here, " +
-		"so use workflows for large payloads that must not pass through the conversation.\n")
-	ctx := context.Background()
-	b.WriteString("Workflow search directories (first hit wins; write new workflows to the first writable one):\n")
-	for _, scoped := range t.dirs {
-		dir, err := t.deps.Workspace.Resolve(ctx, scoped)
-		if err != nil {
-			fmt.Fprintf(&b, "- %s (unresolved: %v)\n", scoped, err)
-			continue
-		}
-		fmt.Fprintf(&b, "- %s\n", dir)
-	}
-	b.WriteString("Available workflows:\n")
-	workflows, errs := Discover(ctx, t.deps.Workspace, t.dirs)
-	if len(workflows) == 0 {
-		b.WriteString("(none found; create a .json file in the first search directory)\n")
-	}
-	for _, wf := range workflows {
-		fmt.Fprintf(&b, "- %s: %s (path: %s)", wf.Name, wf.Description, wf.Path)
-		if schema := wf.InputsJSONSchema(); schema != "" {
-			fmt.Fprintf(&b, " args schema: %s", schema)
-		}
-		b.WriteString("\n")
-	}
+type workflowProvider struct {
+	dirs   []string
+	deps   WorkflowDeps
+	engine *Engine
+}
+
+// ListTools re-discovers the workflow directories on every call (tools/runtime
+// refreshes dynamic providers per turn), so file edits take effect next turn.
+func (p *workflowProvider) ListTools(ctx context.Context) ([]agentkit.Tool, error) {
+	workflows, errs := Discover(ctx, p.deps.Workspace, p.dirs)
 	for _, err := range errs {
-		fmt.Fprintf(&b, "- [load error] %v\n", err)
+		slog.Warn("tool/workflow discovery skipped a file", "err", err)
 	}
-	return b.String()
+	tools := make([]agentkit.Tool, 0, len(workflows))
+	for _, wf := range workflows {
+		tools = append(tools, &workflowRunTool{wf: wf, engine: p.engine})
+	}
+	return tools, nil
 }
 
-func (t *workflowTool) Call(ctx context.Context, raw json.RawMessage) (string, error) {
-	var input workflowInput
-	if err := json.Unmarshal(raw, &input); err != nil {
-		return fmt.Sprintf("invalid workflow input: %v", err), nil
+// workflowRunTool runs one specific workflow file; args are the workflow inputs.
+type workflowRunTool struct {
+	wf     *Workflow
+	engine *Engine
+}
+
+func (t *workflowRunTool) Name() string { return toolNamePrefix + sanitizeToolName(t.wf.Name) }
+
+func (t *workflowRunTool) Description() string {
+	// The file path lets the model edit this workflow in place; new workflows
+	// follow the same directory (see /workflow and the workflow-manager skill).
+	return strings.TrimSpace(t.wf.Description) + "\nWorkflow file: " + t.wf.Path
+}
+
+func (t *workflowRunTool) InputSchema() agentkit.JSONSchema {
+	if len(t.wf.Inputs) > 0 {
+		return agentkit.JSONSchema{Raw: t.wf.Inputs}
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		return "workflow name is required", nil
-	}
-	wf, err := Find(ctx, t.deps.Workspace, t.dirs, name)
-	if err != nil {
-		return err.Error(), nil
-	}
+	return agentkit.JSONSchema{Type: "object"}
+}
+
+func (t *workflowRunTool) Call(ctx context.Context, raw json.RawMessage) (string, error) {
 	args := map[string]any{}
-	if len(input.Args) > 0 {
-		if err := json.Unmarshal(input.Args, &args); err != nil {
-			return fmt.Sprintf("workflow %q: args must be a JSON object: %v", name, err), nil
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return fmt.Sprintf("workflow %q: args must be a JSON object: %v", t.wf.Name, err), nil
 		}
 	}
-	engine := &Engine{
-		Tools:     t.deps.Runtime,
-		Workspace: t.deps.Workspace,
-		LLM:       t.deps.LLM,
-		Subagent:  t.deps.Subagent,
-		Telemetry: t.deps.Telemetry,
-		Shell:     t.deps.Shell,
-	}
-	result, err := engine.Run(ctx, wf, args)
+	result, err := t.engine.Run(ctx, t.wf, args)
 	if err != nil {
 		return err.Error(), nil
 	}
 	return result, nil
 }
 
-// Commands contributes /workflow for human inspection (list discovered files).
-func (t *workflowTool) Commands() []agentkit.Command {
-	return []agentkit.Command{&workflowCommand{tool: t}}
+// sanitizeToolName maps a workflow file name to a model-tool-legal name
+// (OpenAI-style [a-zA-Z0-9_-]); collisions are dropped by tools/runtime.
+func sanitizeToolName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
 }
 
-var _ agentkit.CommandProvider = (*workflowTool)(nil)
+// Commands contributes /workflow for human inspection (list discovered files).
+func (p *workflowProvider) Commands() []agentkit.Command {
+	return []agentkit.Command{&workflowCommand{provider: p}}
+}
+
+var (
+	_ agentkit.ToolProvider    = (*workflowProvider)(nil)
+	_ agentkit.CommandProvider = (*workflowProvider)(nil)
+	_ agentkit.Tool            = (*workflowRunTool)(nil)
+)
 
 type workflowCommand struct {
-	tool *workflowTool
+	provider *workflowProvider
 }
 
 func (c *workflowCommand) Name() string        { return "workflow" }
@@ -170,13 +164,13 @@ func (c *workflowCommand) Alias() string       { return "wf" }
 func (c *workflowCommand) Description() string { return "List discovered workflows" }
 
 func (c *workflowCommand) CommandExec(ctx context.Context, _ string) (string, error) {
-	workflows, errs := Discover(ctx, c.tool.deps.Workspace, c.tool.dirs)
+	workflows, errs := Discover(ctx, c.provider.deps.Workspace, c.provider.dirs)
 	var b strings.Builder
 	if len(workflows) == 0 {
 		b.WriteString("no workflows found\n")
 	}
 	for _, wf := range workflows {
-		fmt.Fprintf(&b, "%s\t%d steps\t%s\n  %s\n", wf.Name, len(wf.Steps), wf.Path, wf.Description)
+		fmt.Fprintf(&b, "%s\t%d steps\t%s\n  %s\n", toolNamePrefix+sanitizeToolName(wf.Name), len(wf.Steps), wf.Path, wf.Description)
 	}
 	for _, err := range errs {
 		fmt.Fprintf(&b, "[load error] %v\n", err)

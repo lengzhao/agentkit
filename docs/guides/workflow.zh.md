@@ -71,7 +71,7 @@ workflows/
 
 | 字段 | 说明 |
 |---|---|
-| `description` | 工具描述；汇集进 `workflow` 工具的描述文本供模型选路 |
+| `description` | 工具描述；即 `workflow__<name>` 工具的模型侧描述，供模型选路 |
 | `inputs` | JSON Schema；`args` 在执行前按此校验，校验失败作为工具错误返回（模型可修正重试） |
 | `steps[]` | 串行执行；`id` 在模板上下文中引用 |
 | `result` | 模板，渲染后作为工具结果返回给主模型（走既有 spill 截断） |
@@ -189,43 +189,53 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 
 嵌套 step 不产生模型可见消息，但必须留痕：
 
-- telemetry：每次运行一个 **`workflow.run` span**（KindSpan，input = workflow 名 + 截断的 args、output = 渲染后的 result、error 置错误级；attrs：workflow / run_id）；每 step 一个 **`workflow.step` span**（KindTool，input = 截断的 step 配置、output = step 视图；attrs：workflow / run_id / step / type），层级为 `agent.turn → tool.workflow → workflow.run → workflow.step`；step span 带 `Scope`，其下再嵌套两类观测：**script step 走 `deps.shell` 时的 `workflow.script` span**（input = 命令、output = 合并 stdout/stderr、非零退出置错误级——否则无法观测到未经过 ToolRuntime 的 bash 执行）与 **model step 的 `llm.generation`**（model、prompt messages、补全文本，与 agent loop 的 generation 同构）；失败另有 `slog.Warn`
+- telemetry：每次运行一个 **`workflow.run` span**（KindSpan，input = workflow 名 + 截断的 args、output = 渲染后的 result、error 置错误级；attrs：workflow / run_id）；每 step 一个 **`workflow.step` span**（KindTool，input = 截断的 step 配置、output = step 视图；attrs：workflow / run_id / step / type），层级为 `agent.turn → tool.workflow__<name> → workflow.run → workflow.step`；step span 带 `Scope`，其下再嵌套两类观测：**script step 走 `deps.shell` 时的 `workflow.script` span**（input = 命令、output = 合并 stdout/stderr、非零退出置错误级——否则无法观测到未经过 ToolRuntime 的 bash 执行）与 **model step 的 `llm.generation`**（model、prompt messages、补全文本，与 agent loop 的 generation 同构）；失败另有 `slog.Warn`
 - **outbound（SSE）**：每 step 会向父 turn 的 `OutboundEmit` 发一对 `tool/call` + `tool/result`（tool step 用真实工具名，script step 用 `script` 伪工具名），平台过程卡/调试 SSE 可看到 workflow 内部调用；**不写入 session 事件**，主模型下一轮不会看到嵌套工具历史
 - session 自定义事件待真实消费者（如离线审计）出现再加，不为未来需求预留契约
 - workflow 的 `result` 渲染输出是主模型唯一可见内容，满足 "Model-visible ⟺ Logged"
 
 ## 7. 装配
 
-`tool/workflow` 是**单个静态工具**（工具名 `workflow`），模型按名调用：
+`tool/workflow` 是**动态工具 Provider**（`agentkit.ToolProvider`）：**每个 workflow 文件暴露为一个模型工具**，工具名 `workflow__<name>`（name 为文件名去扩展名，非法字符转 `_`，同 MCP `server__tool` 惯例），模型直接调用：
 
 ```json
-{ "name": "buyback_ledger", "args": { "date": "2026-10-13" } }
+// 工具 workflow__buyback_ledger 的入参
+{ "date": "2026-10-13" }
 ```
 
-- `name`：workflow 文件名（去扩展名）；`args`：对应该 workflow 的 `inputs`
-- 工具描述由引擎动态汇集：**搜索目录的绝对路径列表**（模型新建 workflow 的定位依据，scoped `local:`/`global:` 语法对模型无意义）+ **每个 workflow 一段（name + description + path + inputs 摘要）**，与 subagent 靠 `prompt/section/subagents` 列名单同理；`args` 在工具侧按 `inputs` schema 校验，非法即返回校验错误（模型可修正重试），不进入管线
-- 目录按调用重读（同 subagent `Definitions` 每次调用重读）：编辑 workflow 文件**即改即生效**，无需 `/workflow -u`
+- 工具的 `InputSchema` 就是该 workflow 声明的 `inputs`（JSON Schema 原样透传），模型侧获得**结构化参数校验**；无 `inputs` 时是空 object schema
+- 工具描述 = workflow 的 `description` + 文件绝对路径（模型编辑该文件的定位依据；新建 workflow 的目录约定由 workflow-manager skill 提供）
+- `args` 在引擎侧仍按 `inputs` schema 二次校验（防御），非法即返回校验错误文本（模型可修正重试），不进入管线
+- 目录按调用重读（`tools/runtime` 每轮刷新 dynamic provider）：编辑 workflow 文件**即改即生效**，无需 reload 命令
+- 挂 `tools/deferred`（base 默认）时，workflow 工具与 MCP/OpenAPI 一样走渐进披露三桥，目录 token 不随 workflow 数量膨胀
+
+`config.base.yaml` 已默认装配下列实例并挂进 `tools.default` 的 `deps.dynamicTools`（与 `mcp.default` / `openapi.default` 同槽位），**零配置即可用**；定制时覆盖同 id 实例（整颗替换）：
 
 ```yaml
+# step 执行面：sibling tools/runtime，不含 tool/workflow 自身（防环，同 tool/subagent 模式）
+tools.runtime.workflow:
+  use: tools/runtime
+  deps:
+    tools: [tool.shell-bash.default]
+    toolPacks: [tool.fs-workspace.default]
+    dynamicTools: [mcp.default, openapi.default]   # tool step 可调 MCP/OpenAPI 工具
+    policies: [policy.dangerous-shell.default]
+
 tool.workflow.default:
   use: tool/workflow
-  config:
-    dirs:
-      - local:workflows        # 租户 work/workflows/，默认
-      - global:workflows       # 全局共享，先命中 local 赢
+  # config.dirs 默认 local:workflows → global:workflows（先命中 local 赢）
   deps:
-    runtime: tools.runtime.workflow   # 兄弟实例，不含 tool/workflow 自身（防环，同 tool/subagent 模式）
+    runtime: tools.runtime.workflow
     workspace: workspace.default
-    shell: tool.shell-bash.default     # 推荐，script step 走结构化执行（StructuredShell）
-    llm: llm.fast                      # 可选，model step 用（单实例 + step 的 model 字段，同 tool/recognize）
-    subagent: subagent.default         # 可选，agent step 用
-    telemetry: telemetry.toolkit       # 可选，workflow.run/step/script span + model step generation
+    shell: tool.shell-bash.default     # script step 结构化执行；sandbox preset 的 shell-bwrap 同样实现 StructuredShell
+    llm: llm.default                   # model step
+    subagent: subagent.default         # agent step
+    telemetry: telemetry.toolkit       # workflow.run/step/script span + model step generation
 ```
 
 - 引擎与插件同包 `plugins/tool/workflow`（解析、调度、模板、step 执行与 `pluginkit` 注册）；script step 优先用 `deps.shell`（StructuredShell）结构化执行，未配时回退调 sibling runtime 的 `bash`
-- `/workflow` 命令列出已发现的 workflow（来源目录、step 数），仅为人读，不经模型
-
-与"每 workflow 一个动态工具（ToolProvider）"的形态相比，`name + args` 单工具放弃了 per-workflow 静态 input schema，换来：新增 workflow 零配置图改动、工具列表不随目录膨胀、`tools/deferred` 下只有一个常驻工具——与 `delegate`、`skill` 的取舍一致。
+- `/workflow` 命令列出已发现的 workflow（工具名、step 数、文件路径），仅为人读，不经模型
+- step 内工具调用仍走 sibling `deps.runtime`，policy / approval / hooks 照常生效；主 runtime 的 `allowTools`/`denyTools` 按 `workflow__<name>` 过滤
 
 ## 8. 场景路径速查
 

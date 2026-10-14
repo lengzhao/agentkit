@@ -15,7 +15,7 @@ description: 维护已部署 AgentKit 进程的运行时配置（config.yaml、p
 | `mcp.json` | 请用户执行 **`/mcp -u`**（或 `/mcp add`） |
 | `api.json`、`api/*.json` | 请用户执行 **`/openapi -u`**（或 `/openapi add`） |
 | `agents/*.md`、`skills/*/SKILL.md`、`AGENTS.md`、`memory.md` | **下一轮**自动从磁盘读取，无需重启 |
-| `workflows/*.json`（及旁路脚本） | **`workflow` 工具 / `/workflow` 每次调用重读**，无需重启 |
+| `workflows/*.json`（及旁路脚本） | **Provider 每轮重读**（`workflow__*` 工具列表下一轮更新），无需重启 |
 
 改 YAML / preset / `.env` 后必须**请用户重启 agent 进程**。改 MCP / OpenAPI 后请用户执行对应 slash command。不要声称「已生效」，直到用户确认重启或 reload。
 

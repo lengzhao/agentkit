@@ -121,6 +121,19 @@ func (s *stubSpawner) Run(_ context.Context, req subagent.Request) (subagent.Res
 	return s.res, nil
 }
 
+// discoverOne loads the single workflow under <root>/workflows.
+func discoverOne(t *testing.T, root string) *Workflow {
+	t.Helper()
+	wfs, errs := Discover(context.Background(), stubWorkspace{root}, []string{"local:workflows"})
+	if len(errs) > 0 {
+		t.Fatal(errs[0])
+	}
+	if len(wfs) != 1 {
+		t.Fatalf("workflows = %d, want 1", len(wfs))
+	}
+	return wfs[0]
+}
+
 func writeWorkflow(t *testing.T, dir, name, body string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -240,10 +253,7 @@ func TestEngineScriptStepByReference(t *testing.T) {
 	  ],
 	  "result": "submitted: {{ .steps.submit.text }}"
 	}`)
-	wf, err := Find(context.Background(), stubWorkspace{root}, []string{"local:workflows"}, "gen")
-	if err != nil {
-		t.Fatal(err)
-	}
+	wf := discoverOne(t, root)
 	rt := &stubToolRuntime{content: `{"status":"ok"}`}
 	engine := engineWith(stubWorkspace{root})
 	engine.Tools = rt
@@ -293,10 +303,7 @@ func TestEngineScriptSpillWritesArtifact(t *testing.T) {
 	  ],
 	  "result": "path={{ .steps.send.text }}"
 	}`)
-	wf, err := Find(context.Background(), stubWorkspace{root}, []string{"local:workflows"}, "big")
-	if err != nil {
-		t.Fatal(err)
-	}
+	wf := discoverOne(t, root)
 	rt := &stubToolRuntime{content: "ok"}
 	engine := engineWith(stubWorkspace{root})
 	engine.Tools = rt

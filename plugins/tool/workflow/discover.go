@@ -73,22 +73,3 @@ func Discover(ctx context.Context, ws workspace.Service, dirs []string) ([]*Work
 	}
 	return out, errs
 }
-
-// Find discovers workflows and returns the named one.
-func Find(ctx context.Context, ws workspace.Service, dirs []string, name string) (*Workflow, error) {
-	workflows, errs := Discover(ctx, ws, dirs)
-	for _, wf := range workflows {
-		if wf.Name == name {
-			return wf, nil
-		}
-	}
-	available := make([]string, 0, len(workflows))
-	for _, wf := range workflows {
-		available = append(available, wf.Name)
-	}
-	err := fmt.Errorf("workflow %q not found; available: %s", name, strings.Join(available, ", "))
-	if len(errs) > 0 {
-		err = fmt.Errorf("%w (discovery errors: %v)", err, errs)
-	}
-	return nil, err
-}

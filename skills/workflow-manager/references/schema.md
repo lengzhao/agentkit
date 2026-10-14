@@ -13,8 +13,8 @@
 
 | 字段 | 说明 |
 |---|---|
-| `description` | 必填 |
-| `inputs` | 可选 JSON Schema；有则 `workflow` 的 `args` 校验失败即工具错误 |
+| `description` | 必填；即 `workflow__<name>` 工具的模型侧描述 |
+| `inputs` | 可选 JSON Schema；即工具的 InputSchema（模型侧结构化校验），引擎侧二次校验失败即工具错误 |
 | `steps` | 必填，**串行**；`id` 唯一 |
 | `result` | 必填 |
 
@@ -75,9 +75,9 @@
 
 ## 反模式
 
-- 主 turn `read` 大 JSON 再整段填入 `workflow` args。
+- 主 turn `read` 大 JSON 再整段填入 `workflow__<name>` 的入参。
 - `result` 或 model `prompt` 展开全文日志/文件内容。
-- workflow 内嵌套调 `workflow`（runtime 通常不含且易环）。
+- workflow 内嵌套调 `workflow__*`（sibling runtime 不含且易环）。
 - script 里 `curl` 绕过 `tool` step（失去 policy/审计）。
 
 ## 排查
