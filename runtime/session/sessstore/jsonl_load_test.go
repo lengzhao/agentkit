@@ -127,3 +127,30 @@ func TestScanSessionFileMultipleOversizedLines(t *testing.T) {
 		t.Fatalf("tail seq = %d, want 3", events[2].Seq)
 	}
 }
+
+func TestScanSessionFileTruncatedTail(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "truncated.jsonl")
+	good := `{"Seq":1,"Type":"user/message","Data":{"Role":"user","Content":[{"type":"text","text":"hi"}]}}`
+	if err := os.WriteFile(path, []byte(good+"\n"+`{"Seq":2,"Type":"user/message","Data":{"Role":"user","Content":[{"type":"text","text":"bro`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	events, maxSeq, trimmed, err := ScanSessionFile(path, 0)
+	if err != nil {
+		t.Fatalf("ScanSessionFile truncated: %v", err)
+	}
+	if len(events) != 1 || maxSeq != 1 || trimmed {
+		t.Fatalf("events=%d maxSeq=%d trimmed=%v", len(events), maxSeq, trimmed)
+	}
+
+	repaired, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(repaired), good+"\n") {
+		t.Fatalf("repaired file = %q", repaired)
+	}
+}

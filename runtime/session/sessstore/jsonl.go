@@ -154,7 +154,7 @@ func appendJSONLLine(path string, raw []byte) error {
 	if _, err := f.Write(append(raw, '\n')); err != nil {
 		return err
 	}
-	return nil
+	return f.Sync()
 }
 
 func (s *JSONL) Read(ctx context.Context, from agentkit.EventSeq) ([]agentkit.SessionEvent, error) {
