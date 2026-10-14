@@ -9,4 +9,5 @@ func init() {
 	pluginkit.Register("prompt/section/skills", NewSkillsSection)
 	pluginkit.Register("prompt/section/static", NewStatic)
 	pluginkit.Register("prompt/section/subagents", NewSubagentsSection)
+	pluginkit.Register("prompt/section/workspace-dirs", NewWorkspaceDirs)
 }

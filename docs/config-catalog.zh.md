@@ -956,6 +956,21 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `subagent`（必填） | `subagent.Spawner` |  |
 | `llm` | `agentkit.LLMProvider` |  |
 
+## `prompt/section/workspace-dirs`
+
+- 返回类型：`agentkit.SectionProvider`
+- 源码：[`plugins/prompt/workspacedirs.go`](../plugins/prompt/workspacedirs.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `name` | `string` | `workspace-dirs` | Name is section label, used for ordering and debugging. |
+| `intro` | `string` | — | Intro is optional lead-in text rendered above the directory groups, e.g. the legend of the local:/global: configuration vocabulary. |
+| `entries` | `[]prompt.WorkspaceDirEntry` | — | Entries are directory groups in display order. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `workspace`（必填） | `workspace.Service` |  |
+
 ## `runner`
 
 - 返回类型：`agentkit.Runner`

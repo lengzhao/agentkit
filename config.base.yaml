@@ -692,6 +692,7 @@ prompt.default:
       - prompt.memory.default
       - prompt.skills.default
       - prompt.subagents.default
+      - prompt.workspace-dirs.default
 
 prompt.persona.default:
   use: prompt/section/static
@@ -739,6 +740,7 @@ prompt.worker.default:
       - prompt.memory.default
       - prompt.skills.default
       - prompt.subagents.default
+      - prompt.workspace-dirs.default
 
 prompt.persona.worker:
   use: prompt/section/static
@@ -817,11 +819,31 @@ prompt.skills.default:
   deps:
     skills: skills.default
 
+# 把 local:/global: 配置词汇解析成本会话的绝对路径注入 prompt：
+# agent 据此知道 workflow/skill 目录在哪、新建文件放哪、同名优先级。
+# dirs 分别与 tool.workflow.default（DefaultDirs）、skills.default.config.dirs 保持一致。
+prompt.workspace-dirs.default:
+  use: prompt/section/workspace-dirs
+  config:
+    intro: "可写目录（本会话解析出的绝对路径；local: 为当前工作区根，tenant 模式下按 channel 隔离——不同 channel 路径不同、互不可见；global: 为全局共享根——所有 channel 相同）"
+    entries:
+      - label: workflows（tool/workflow 的扫描目录，workflow__<name> 工具来自这些 JSON 文件）
+        dirs:
+          - global:workflows
+          - local:workflows
+        note: 同名文件 local 覆盖 global（tool/workflow 发现时 local 恒优先）；新建 workflow 放 global:workflows 则所有 channel 可用，放 local:workflows 仅当前 channel 可见；保存后下一轮生效，无需 reload。
+      - label: skills（skill/filesystem 的扫描目录，skill 工具加载的 SKILL.md 来自这些目录）
+        dirs:
+          - local:skills
+          - global:skills
+        note: 同名 skill local 覆盖 global；新建 skill 放 local:skills 仅当前 channel 可用，放 global:skills 所有 channel 共享；每个 skill 一个子目录（skills/<name>/SKILL.md），保存后下一轮生效。
+  deps:
+    workspace: workspace.default
+
 skills.default:
   use: skill/filesystem
   config:
     dirs:
-      - local:../skills
       - local:skills
       - global:skills
   deps:

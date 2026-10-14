@@ -167,6 +167,7 @@ platform.http:
 | `prompt/section/skills` | `agentkit.SectionProvider` | Skill catalog 注入 | DSH/Pi Skills |
 | `prompt/section/memory` | `agentkit.SectionProvider` | `global:memory.md` + 租户 local `memory.md`（无目录递归）；同 turn 冻结快照 | — |
 | `prompt/section/subagents` | `agentkit.SectionProvider` | 可委派子 Agent 名单注入；定义在磁盘上会变，所以走每轮重建的 section 而不是 `delegate` 的静态 description。可选 `deps.llm`：主模型为 text-only 且存在**显式**声明 `modalities` 含 image 的子 Agent 时，追加委派看图提示 | — |
+| `prompt/section/workspace-dirs` | `agentkit.SectionProvider` | 把配置的 scoped 目录（`local:`/`global:`）解析成本会话绝对路径注入 prompt，并附优先级/生效规则 note；每轮按请求 ctx 解析，`workspace/tenant` 下各租户 local 根各自正确 | — |
 | `prompt/section/time` | `agentkit.SectionProvider` | 当前时间上下文（roadmap） | DSH `time-context` |
 | `llm/router` | `agentkit.LLMProvider` | 按 `config.models[].id` 将 `LLMRequest.Model` 路由到 `deps.protocols` 中某一协议实例；未命中走 `deps.default`。Agent 只选模型名。设计 [plans/2026-09-23-llm-protocol-router-design.md](plans/2026-09-23-llm-protocol-router-design.md) | Pi `Models` 分发 / Hermes `api_mode` |
 | `llm/openai-chat` | `agentkit.LLMProvider` | OpenAI Chat Completions；`config.models[]` 供 router catalog | Pi openai-completions |

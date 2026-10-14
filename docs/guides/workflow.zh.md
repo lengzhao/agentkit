@@ -31,6 +31,8 @@ flowchart TB
 
 与 `agents/*.md` 的 subagent 模式同构：**一个目录、一个文件一个 workflow**。默认目录为租户 `work/workflows/`，可用 `local:`/`global:` 前缀叠加（先命中者赢，同 `mcp.json`）。
 
+模型侧不直接看到 `local:`/`global:` 词汇：`config.base.yaml` 的 `prompt.workspace-dirs.default`（`prompt/section/workspace-dirs`）每轮把扫描目录解析成本会话的绝对路径（含多租户 local 根）与优先规则注入 system prompt，agent 据此知道在哪读、在哪新建。覆盖 `tool/workflow` 的 `config.dirs` 时同步更新该 section 的 entries。
+
 ```
 workflows/
 ├── buyback_ledger.json     # 一个文件 = 一个 workflow，name 取文件名（去扩展名）
@@ -99,10 +101,25 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 | 字段 | 说明 |
 |---|---|
 | `tool` | 模型侧清洗后的工具名（如 `ledger__import`） |
-| `args` | object，叶子字符串递归按模板渲染；标量原样保留 |
+| `args` | object。叶子字符串按模板渲染；渲染结果若是 JSON object/array，解析成对象/数组再传给 tool。数字保持 JSON 字面量（`json.Number`），不会先变成 `float64` |
 | `timeoutSeconds` | 默认随 runtime |
 
-工具结果是合法 JSON object/array 时自动解析进 `.steps.<id>.json`（可 `dig`），`.text` 始终是结果文本（超 50KB 同样 spill 出 `.path`）。
+工具结果是合法 JSON object/array 时自动解析进 `.steps.<id>.json`（可 `dig`），`.text` 始终是结果文本（超 50KB 同样 spill 出 `.path`）。script step 的 stdout 同样：整段输出是 JSON object/array 时写入 `.steps.<id>.json`。
+
+需要把文件或上一步的 JSON **作为 object 参数**交给 tool（schema 的 `type: object`，没有 path 字段）时，叶子写成整段 JSON，引擎解析后再编码，避免 payload 变成 JSON 字符串：
+
+```json
+{ "id": "build", "type": "script",
+  "run": "python3 scripts/build.py --out {{ .workflow.runDir }}/payload.json" },
+{ "id": "update", "type": "tool", "tool": "capitaldesk_update_dataset",
+  "args": {
+    "datasetKey": "dailyData",
+    "expectedVersion": "{{ dig .steps.prev.json \"version\" }}",
+    "payload": "{{ readJSON (printf \"%s/payload.json\" .workflow.runDir) }}"
+  } }
+```
+
+`payload` 收到的是对象。文件里的整数（含超过 2^53 的整数）按原文传递，不会先变成 `float64` 再四舍五入。`readJSON` 只允许读取该 workflow 文件所在目录和本次 `runDir`。上一步 stdout / tool 结果已是对象时，直接写 `"payload": "{{ .steps.build.json }}"`。叶子只有一段插值且结果是 JSON 数字时按数字传入（如上面的 `expectedVersion`）。静态字符串 `"42"` 和路径、备注仍是字符串。
 
 ### 3.3 `model`：单次补全
 
@@ -133,7 +150,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
   "args": { "path": "{{ .workflow.runDir }}/ledger.json", "meta": "{{ .steps.convert.json }}" } }
 ```
 
-`{{ .steps.convert.json }}` 直接渲染为紧凑 JSON（复合值经 `dig` 逐层取值）。模型输出不符合 `outputSchema`（或非 JSON）时 step 失败，不静默降级为文本，错误可经 `continueOnError` 裁决。
+`{{ .steps.convert.json }}` 在 tool `args` 里解析为对象再传入（复合值经 `dig` 逐层取值）。模型输出不符合 `outputSchema`（或非 JSON）时 step 失败，不静默降级为文本，错误可经 `continueOnError` 裁决。
 
 ### 3.4 `agent`：子 Agent
 
@@ -155,7 +172,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 
 ## 4. 数据传递：by reference 优先
 
-模板引擎用 `text/template`，funcmap 保持极小：`dig`（JSON 取值）、`quote`、`join`。不引 sprig，不暴露文件读写函数。
+模板引擎用 `text/template`，funcmap 保持极小：`dig`（JSON 取值）、`quote`、`join`、`readJSON`（只读 workflow 目录或本次 `runDir` 下的 JSON object/array）。不引 sprig。
 
 模板上下文：
 
@@ -173,6 +190,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 约定：
 
 - **大 payload 一律 by reference**：step 输出超阈值写 `work/workflow/<run>/<step>.out`，下游引用 `.path`，工具/脚本自己读文件
+- **tool 要 object 参数时 by value 注入**：`readJSON` 读 `runDir` 下的文件，或 `{{ .steps.<id>.json }}` 引用上一步对象。引擎把 JSON object/array 解析后放进 `args`，数字用 `json.Number` 保留字面量
 - **小数据 by value**：经 `dig` 从结构化输出取字段
 - step 中间态只在内存 + workspace，不进 session 事件流，主模型不可见
 
