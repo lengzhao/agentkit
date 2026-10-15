@@ -67,6 +67,23 @@ func (p *Platform) appendTurnReactionIfActive(sessionID agentkit.SessionID, rc r
 	batch.rcs = append(batch.rcs, rc)
 }
 
+// findActive returns the reply context matching messageID while the batch is
+// still active (turn in flight). Inactive batches never match, so recalling a
+// message of a finished turn does not stop a subsequent turn.
+func (b *turnReactionBatch) findActive(messageID string) (replyContext, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.active {
+		return replyContext{}, false
+	}
+	for _, rc := range b.rcs {
+		if rc.messageID == messageID {
+			return rc, true
+		}
+	}
+	return replyContext{}, false
+}
+
 func (p *Platform) finishTurnReactions(sessionID agentkit.SessionID) []replyContext {
 	batch := p.turnReactionBatchFor(sessionID)
 	batch.mu.Lock()

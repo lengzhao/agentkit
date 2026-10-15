@@ -46,6 +46,10 @@ type Config struct {
 	GroupOnly                  bool              `json:"groupOnly"`
 	RespondToAtEveryoneAndHere bool              `json:"respondToAtEveryoneAndHere"`
 	ReplyToTrigger             *bool             `json:"replyToTrigger"`
+	// StopOnRecall 为 nil 时默认 true：用户撤回触发（或 steer 进）进行中
+	// turn 的消息时，平台自动按 /stop 取消该 turn；显式 false 关闭。
+	// 撤回与进行中 turn 无关的旧消息不影响执行。
+	StopOnRecall               *bool             `json:"stopOnRecall"`
 	ResolveMentions            bool              `json:"resolveMentions"`
 	PeerBots                   map[string]string `json:"peerBots"`
 	ShowThinking               *bool             `json:"showThinking"`
@@ -241,6 +245,11 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		noReplyToTrigger = true
 	}
 
+	stopOnRecall := true
+	if cfg.StopOnRecall != nil {
+		stopOnRecall = *cfg.StopOnRecall
+	}
+
 	replyInThread := true
 	if cfg.ReplyInThread != nil {
 		replyInThread = *cfg.ReplyInThread
@@ -297,6 +306,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		replyInThread:              replyInThread,
 		resolveMentions:            cfg.ResolveMentions,
 		noReplyToTrigger:           noReplyToTrigger,
+		stopOnRecall:               stopOnRecall,
 		unknownCardAction:          common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
 		client:                     lark.NewClient(cfg.AppID, cfg.AppSecret, clientOpts...),
 		replayClient:               newFeishuReplayClient(cfg.AppID, cfg.AppSecret, domain),

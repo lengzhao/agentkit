@@ -680,6 +680,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `groupOnly` | `bool` | — |  |
 | `respondToAtEveryoneAndHere` | `bool` | — |  |
 | `replyToTrigger` | `*bool` | — |  |
+| `stopOnRecall` | `*bool` | `true` | 撤回触发（或 steer 进）进行中 turn 的消息时自动按 `/stop` 取消该 turn；false 关闭 |
 | `resolveMentions` | `bool` | — |  |
 | `peerBots` | `map[string]string` | — |  |
 | `showThinking` | `*bool` | — |  |
@@ -733,6 +734,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `groupOnly` | `bool` | — |  |
 | `respondToAtEveryoneAndHere` | `bool` | — |  |
 | `replyToTrigger` | `*bool` | — |  |
+| `stopOnRecall` | `*bool` | `true` | 撤回触发（或 steer 进）进行中 turn 的消息时自动按 `/stop` 取消该 turn；false 关闭 |
 | `resolveMentions` | `bool` | — |  |
 | `peerBots` | `map[string]string` | — |  |
 | `showThinking` | `*bool` | — |  |

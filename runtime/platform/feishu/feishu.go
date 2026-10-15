@@ -58,6 +58,7 @@ type Platform struct {
 	threadNoMention            bool
 	replyInThread              bool
 	noReplyToTrigger           bool
+	stopOnRecall               bool
 	unknownCardAction          string
 	resolveMentions            bool
 	cfg                        Config

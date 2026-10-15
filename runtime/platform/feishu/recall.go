@@ -11,7 +11,9 @@ import (
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 const recalledMessageTTL = 10 * time.Minute
@@ -157,5 +159,68 @@ func (p *Platform) onMessageRecalled(_ context.Context, event *larkim.P2MessageR
 		"recall_type", stringValue(event.Event.RecallType),
 	)
 
+	// 异步派发 /stop：busy session 解析可能读 SessionStore，
+	// 不应阻塞 SDK 事件分发 goroutine（同 onMessage 的异步惯例）。
+	if p.stopOnRecall {
+		go p.cancelTurnsForRecalledMessage(messageID)
+	}
+
 	return nil
+}
+
+// cancelTurnsForRecalledMessage 撤回触发（或 steer 进）进行中 turn 的消息时，
+// 对该 session 派发 /stop 取消当前 turn。仅匹配进行中 turn 关联的消息
+// （turn reaction batch，含 trigger 与 steer 消息）；撤回无关旧消息不影响
+// 正在执行的 turn。
+func (p *Platform) cancelTurnsForRecalledMessage(messageID string) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" || p.commands == nil {
+		return
+	}
+	p.turnReactions.Range(func(key, value any) bool {
+		sessionID, ok := key.(agentkit.SessionID)
+		if !ok {
+			return true
+		}
+		batch, ok := value.(*turnReactionBatch)
+		if !ok {
+			return true
+		}
+		rc, hit := batch.findActive(messageID)
+		if !hit {
+			return true
+		}
+		p.stopSessionForRecall(sessionID, rc)
+		return true
+	})
+}
+
+// stopSessionForRecall 以撤回消息所在 session 的路由上下文派发 /stop。
+// /stop 内部的 busy session 解析会按 delivery、scope 与 active 子 session
+// 等候选 id 校验 IsSessionBusy，turn 已结束时为无操作。撤回是平台级自动化
+// 而非用户输入的 slash，因此不受 disablePlatformSlash 影响。
+func (p *Platform) stopSessionForRecall(sessionID agentkit.SessionID, rc replyContext) {
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+		Platform:   p.platformTag,
+		DeliveryID: sessionID,
+		ChannelID:  rc.chatID,
+		ThreadID:   threadIDFromSessionKey(string(sessionID)),
+	})
+	outcome, err := common.ProcessSlash(context.Background(), p.commands, common.SlashContext{
+		Route:        route,
+		SessionScope: p.sessionScope,
+	}, "/stop")
+	if err != nil {
+		slog.Warn(p.tag()+": recall stop dispatch failed",
+			"session_id", sessionID,
+			"message_id", rc.messageID,
+			"error", err,
+		)
+		return
+	}
+	slog.Info(p.tag()+": turn stop dispatched by message recall",
+		"session_id", sessionID,
+		"message_id", rc.messageID,
+		"reply", outcome.Reply,
+	)
 }

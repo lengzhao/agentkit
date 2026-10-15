@@ -267,6 +267,8 @@ platform.default:
 
 `/stop` 由 `runner` 贡献，通过 `Loop.Cancel` 打断当前 session 正在执行的 turn（取消进行中的 step，并在下一步边界收尾）。与 `Steer` 不同，**不会**把消息注入对话历史。
 
+**撤回消息自动取消（飞书 / Lark）**：用户撤回触发（或 steer 进）进行中 turn 的消息时，平台收到 `im.message.recalled_v1` 事件后对该 session 自动派发 `/stop`（`stopOnRecall` 默认 `true`，显式 `false` 关闭）。匹配基于进行中 turn 的 reaction batch（trigger + steer 消息），撤回与进行中 turn 无关的旧消息不影响执行；turn 已结束时撤回为无操作。该自动化不受 `disablePlatformSlash` 影响，取消后的 `turn/end` 表现（cancelledEmoji、流式卡「已取消」说明）与手动 `/stop` 一致。
+
 | 平台 | 行为 |
 |---|---|
 | 飞书 / Slack / chat-api | slash 在入队前本地处理，turn 进行中也可 `/stop`（`disablePlatformSlash: true` 时 slash 仅作普通用户消息入队，无本地 `/stop`） |
