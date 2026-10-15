@@ -30,7 +30,7 @@ type Deps struct {
 	Agents    []agentkit.Agent      `json:"agents"`
 	Telemetry captelemetry.Exporter `json:"telemetry,omitempty"`
 	// SessionStore, Workspace and ModelCatalog are optional and only serve the
-	// catalog slash commands (/agent, /model, /acp) the loop contributes via
+	// catalog slash commands (/agent, /model) the loop contributes via
 	// agentkit.CommandProvider; turn dispatch never touches them.
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
 	Workspace    workspace.Service     `json:"workspace,omitempty"`
@@ -104,8 +104,8 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 }
 
 // Commands implements agentkit.CommandProvider: the loop owns the agent
-// catalog, so it contributes the catalog slash commands (/agent, /model,
-// /acp) itself. commands/registry collects them through the generic
+// catalog, so it contributes the catalog slash commands (/agent, /model)
+// itself. commands/registry collects them through the generic
 // WireContributions channel; turn dispatch is unaffected when the optional
 // command deps are absent.
 func (l *Default) Commands() []agentkit.Command {
@@ -113,7 +113,6 @@ func (l *Default) Commands() []agentkit.Command {
 	return []agentkit.Command{
 		AgentCommand(agents, l.sessionStore, l.defaultAgent, l.workspace),
 		ModelCommand(agents, l.sessionStore, l.defaultAgent, l.workspace, l.modelCatalog),
-		ACPCommand(agents, l.sessionStore),
 	}
 }
 

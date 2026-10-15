@@ -548,7 +548,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `agents`（必填） | `[]agentkit.Agent` |  |
 | `telemetry` | `telemetry.Exporter` |  |
-| `sessionStore` | `agentkit.SessionStore` | SessionStore, Workspace and ModelCatalog are optional and only serve the catalog slash commands (/agent, /model, /acp) the loop contributes via agentkit.CommandProvider; turn dispatch never touches them. |
+| `sessionStore` | `agentkit.SessionStore` | SessionStore, Workspace and ModelCatalog are optional and only serve the catalog slash commands (/agent, /model) the loop contributes via agentkit.CommandProvider; turn dispatch never touches them. |
 | `workspace` | `workspace.Service` |  |
 | `modelCatalog` | `llm.ModelCatalog` |  |
 

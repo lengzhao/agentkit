@@ -423,7 +423,7 @@ type AppInitializer interface {
 - `loop/default` 贡献 `/agent`、`/agent <id>` 与 `/agent use <id>`：列出已装配 agent、展示当前 session 生效 agent 与 loop 默认 agent、查看详情、为当前 session 绑定 agent；插件 kind 文档仍通过 `/plugin agent/coding` 查看。
 - `subagent/inprocess` 贡献 `/subagent` 与 `/subagent <name>`：前者列出当前 workspace 默认目录（`local:agents`、`global:agents`）下的子 Agent 定义；后者展示定义详情，若名称匹配不到定义则回退到 `subagent/*` kind 的 `go doc`。
 
-slash 命令按领域归各自插件所有：能力插件实现 `agentkit.CommandProvider` 自行贡献（`loop/default` → `/agent`、`/acp`、`/model`，`llm/fallback` → `/fallback`，`subagent/inprocess` → `/subagent`、`/submodel`），`commands/registry` 经 `build.WireContributions` 统一收集；不为单个命令做跨插件的定制 deps 或分派逻辑。新增模型/运行态相关的只读或可配视图时，由对应能力插件贡献自己的命令，而不是塞进 `/model`。
+slash 命令按领域归各自插件所有：能力插件实现 `agentkit.CommandProvider` 自行贡献（`loop/default` → `/agent`、`/model`，`llm/fallback` → `/fallback`，`subagent/inprocess` → `/subagent`、`/submodel`），`commands/registry` 经 `build.WireContributions` 统一收集；不为单个命令做跨插件的定制 deps 或分派逻辑。新增模型/运行态相关的只读或可配视图时，由对应能力插件贡献自己的命令，而不是塞进 `/model`。
 
 ### 5.4 Typed Hooks
 
@@ -1372,7 +1372,7 @@ agentkit/
 │   ├── session/sessbind/   # agent/model 绑定与 active-session 解析（操作 SessionStore 接口）
 │   ├── session/sessevents/ # 会话事件追加与运行状态查询（Append*/RunState/恢复，纯函数）
 │   ├── session/sessindex/  # session/sqlite-index：会话 FTS 索引（SQLite）
-│   └── command/            # slash 命令注册表与 /agent、/model、/acp 内建命令
+│   └── command/            # slash 命令注册表（收集/过滤/分发；命令由各插件自贡献）
 ├── cap/                    # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
 ├── plugins/                # 工具、Hook、Policy、Prompt、learning 等插件
 │   ├── tool/fs/            # tool/fs-workspace、tool/fs-memory

@@ -351,7 +351,7 @@ Slash 命令**不必**在 `commands.default.deps` 里逐个挂：只要贡献方
 |---|---|---|
 | `/plugin` | `commands/registry` | `platform.deps.commands` |
 | `/new`, `/session` | `session/commands` | `commands.default` → `sessionCommands.default` |
-| `/agent`, `/acp`, `/model` | `loop/default` | loop 自身实现 `CommandProvider`，`WireContributions` 统一收集（无新增依赖边，不构成 `platform → commands → loop` 环）；可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令展示 |
+| `/agent`, `/model` | `loop/default` | loop 自身实现 `CommandProvider`，`WireContributions` 统一收集（无新增依赖边，不构成 `platform → commands → loop` 环）；可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令展示 |
 | `/env` | `credentials/integrations` | `mcp.default` / `openapi.default` → `credentials.integrations`（或显式挂入图） |
 | `/mcp`, `/openapi` | `tool/mcp`, `tool/openapi` | `tools.deps.dynamicTools` |
 | `/shell`, `/send`, `/cron` | 对应 tool | `tools.deps.tools` |

@@ -14,10 +14,10 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
-	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
 	"github.com/lengzhao/agentkit/cap/filesystem"
-	"github.com/lengzhao/agentkit/cap/workspace"
+	capsandbox "github.com/lengzhao/agentkit/cap/sandbox"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/acpclient"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
@@ -49,7 +49,7 @@ type bridge struct {
 	connOps chan connOp
 	// proc is the current subprocess snapshot. It is written exclusively by
 	// connLoop (via ensureConnOp / subprocessExitOp / detachReleaseOp) and read
-	// by callers from any goroutine (sessionState, cancel, prompt). A Load may
+	// by callers from any goroutine (cancel, prompt). A Load may
 	// return nil or a stale proc that is about to be replaced; readers treat nil
 	// as "needs reconnect" on the next prompt. This is best-effort: correctness
 	// of prompt/cancel relies on connLoop serializing the real connection state.
@@ -65,7 +65,6 @@ type subprocess struct {
 	done          chan struct{} // closed after cmd.Wait returns
 	sessions      sync.Map      // agentkit.SessionID -> acp.SessionId
 	acpSessions   sync.Map      // acp.SessionId -> agentkit.SessionID
-	states        sync.Map      // agentkit.SessionID -> *sessionState
 }
 
 func (proc *subprocess) alive() bool {
@@ -137,10 +136,9 @@ func (b *bridge) bindDir(context.Context) (string, error) {
 	return defaultBindDir, nil
 }
 
-func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID acp.SessionId, state *sessionState) {
+func (proc *subprocess) trackSession(sessionID agentkit.SessionID, acpSessionID acp.SessionId) {
 	proc.sessions.Store(sessionID, acpSessionID)
 	proc.acpSessions.Store(acpSessionID, sessionID)
-	proc.states.Store(sessionID, state)
 }
 
 func terminateAndWaitSubprocess(proc *subprocess, cancel context.CancelFunc) {
@@ -208,15 +206,13 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if bind, ok, err := loadACPSessionBind(ctx, b.fs, bindPath); err != nil {
 		return "", err
 	} else if ok && bind.Cwd == cwd {
-		resp, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
+		_, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
 			SessionId:  bind.ACPSessionID,
 			Cwd:        cwd,
 			McpServers: mcpServers,
 		})
 		if err == nil {
-			state := newSessionState()
-			state.applyBootstrap(resp.ConfigOptions, resp.Modes)
-			proc.trackSession(sessionID, bind.ACPSessionID, state)
+			proc.trackSession(sessionID, bind.ACPSessionID)
 			slog.Info("acp-remote: resumed acp session", "session_id", sessionID, "acp_session_id", bind.ACPSessionID)
 			return bind.ACPSessionID, nil
 		}
@@ -230,9 +226,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if err != nil {
 		return "", fmt.Errorf("acp session/new: %w", err)
 	}
-	state := newSessionState()
-	state.applyBootstrap(resp.ConfigOptions, resp.Modes)
-	proc.trackSession(sessionID, resp.SessionId, state)
+	proc.trackSession(sessionID, resp.SessionId)
 	if err := saveACPSessionBind(ctx, b.fs, bindPath, acpSessionBind{
 		AgentID:      agentID,
 		ACPSessionID: resp.SessionId,
@@ -250,62 +244,6 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		}
 	}
 	return resp.SessionId, nil
-}
-
-func (b *bridge) sessionState(sessionID agentkit.SessionID) (*sessionState, bool) {
-	proc := b.proc.Load()
-	if proc == nil {
-		return nil, false
-	}
-	v, ok := proc.states.Load(sessionID)
-	if !ok {
-		return nil, false
-	}
-	return v.(*sessionState), true
-}
-
-func (b *bridge) setConfigOption(ctx context.Context, acpSessionID acp.SessionId, opt configOptionRef, value string) (acp.SetSessionConfigOptionResponse, error) {
-	proc, err := b.ensureConn(ctx)
-	if err != nil {
-		return acp.SetSessionConfigOptionResponse{}, err
-	}
-	if opt.boolean {
-		parsed, err := parseBoolValue(value)
-		if err != nil {
-			return acp.SetSessionConfigOptionResponse{}, err
-		}
-		return proc.conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
-			Boolean: &acp.SetSessionConfigOptionBoolean{
-				SessionId: acpSessionID,
-				ConfigId:  opt.id,
-				Type:      "boolean",
-				Value:     parsed,
-			},
-		})
-	}
-	if len(opt.options) > 0 {
-		if _, ok := opt.options[value]; !ok {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("invalid value %q for config %q", value, opt.id)
-		}
-	}
-	return proc.conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
-		ValueId: &acp.SetSessionConfigOptionValueId{
-			SessionId: acpSessionID,
-			ConfigId:  opt.id,
-			Value:     acp.SessionConfigValueId(value),
-		},
-	})
-}
-
-func parseBoolValue(value string) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true", "1", "on", "yes":
-		return true, nil
-	case "false", "0", "off", "no":
-		return false, nil
-	default:
-		return false, fmt.Errorf("invalid boolean value %q (use true or false)", value)
-	}
 }
 
 func (b *bridge) prompt(ctx context.Context, acpSessionID acp.SessionId, prompt []acp.ContentBlock) (acpPromptResponse, error) {
@@ -344,14 +282,6 @@ type bridgeClient struct {
 var _ acp.Client = (*bridgeClient)(nil)
 
 func (c *bridgeClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
-	proc := c.bridge.proc.Load()
-	if proc != nil {
-		if v, ok := proc.acpSessions.Load(params.SessionId); ok {
-			if st, ok := proc.states.Load(v.(agentkit.SessionID)); ok {
-				st.(*sessionState).applyUpdate(params.Update)
-			}
-		}
-	}
 	turn := c.bridge.currentTurn()
 	if turn == nil || turn.emitter == nil {
 		return nil

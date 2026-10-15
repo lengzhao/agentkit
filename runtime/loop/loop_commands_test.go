@@ -9,8 +9,9 @@ import (
 	rtloop "github.com/lengzhao/agentkit/runtime/loop"
 )
 
-// loop/default 作为 agent 目录属主，经 CommandProvider 自贡献 /agent、/model、/acp，
+// loop/default 作为 agent 目录属主，经 CommandProvider 自贡献 /agent、/model，
 // 由 commands/registry 统一收集；可选命令 deps 缺席时也不影响 turn 分发。
+// 领域专属命令（/acp、/fallback、/submodel）由各自插件贡献。
 func TestLoopContributesCatalogCommands(t *testing.T) {
 	t.Parallel()
 
@@ -29,7 +30,7 @@ func TestLoopContributesCatalogCommands(t *testing.T) {
 	for _, cmd := range provider.Commands() {
 		byName[cmd.Name()] = cmd
 	}
-	for _, name := range []string{"agent", "model", "acp"} {
+	for _, name := range []string{"agent", "model"} {
 		if byName[name] == nil {
 			t.Fatalf("missing /%s command", name)
 		}

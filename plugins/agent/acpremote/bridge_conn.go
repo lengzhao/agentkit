@@ -120,15 +120,6 @@ func (b *bridge) connLoop() {
 	for op := range b.connOps {
 		op.run(b, &st)
 	}
-	// connOps closed: retire sessionState owner goroutines so they do not leak.
-	if st.proc != nil {
-		st.proc.states.Range(func(_, v any) bool {
-			if s, ok := v.(*sessionState); ok {
-				s.Stop()
-			}
-			return true
-		})
-	}
 }
 
 // stop closes connOps, retiring the connLoop goroutine. Call after Close (or

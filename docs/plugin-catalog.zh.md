@@ -140,7 +140,7 @@ platform.http:
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `loop/default` | `agentkit.Loop` + `agentkit.CommandProvider` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key；作为 agent 目录属主贡献 `/agent`、`/acp`、`/model` 命令（可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令，不影响分发） | DSH `agent-loop` / Pi `agentLoop` |
+| `loop/default` | `agentkit.Loop` + `agentkit.CommandProvider` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key；作为 agent 目录属主贡献 `/agent`、`/model` 命令（可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令，不影响分发） | DSH `agent-loop` / Pi `agentLoop` |
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation（roadmap） | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；`config`：`id` / `model` / `retry` / `maxSteps`（默认 200，`0`=不限）/ `maxPromptTokens`（发送前兜底，`0`=关闭）；自主续跑靠 `deps.hooks`（如 `hook/turn-continue`） | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
@@ -286,16 +286,8 @@ agent.claude.default:
 - **自定义网关 / 代理**：`ANTHROPIC_BASE_URL` 指向兼容 Anthropic Messages API 的 base URL
 - 通过 `/agent use claude` 或 chat-api `agent_id=claude` 切换；主 agent 也可 `delegate` 到 `claude`
 
-**ACP 会话配置（`/acp`）**：AgentKit slash 与 ACP 子进程原生命令是两套东西。`/model` 等原生命令在 ACP 规范里只能通过 `session/prompt` 发送，与直接对话等价；**真正独立的控制面**是 `session/set_config_option`（model / mode / boolean 等）。`/acp` 只走后者：
 
-```text
-/acp                              # 列出 acp-remote agent
-/acp claude                       # 查看 config options 与原生命令目录
-/acp claude config                # 列出可改的 config 及可选值
-/acp claude config model claude-sonnet-5   # session/set_config_option
-```
-
-原生命令（如 `/fast`）在与该 agent 对话时直接输入即可；目录由 ACP `available_commands_update` 缓存展示，不经过 `/acp` 执行。
+**原生命令**：ACP 子进程的原生斜杠命令（如 `/fast`）与 AgentKit slash 是两套东西——在与该 agent 对话时直接输入即可（ACP 规范里经 `session/prompt` 发送，与直接对话等价）。`session/set_config_option` 控制面当前不暴露，远端 agent 的 model/mode 在启动配置里确定。
 
 ### 3.3 Tool 插件（模型可见工具）
 
@@ -456,7 +448,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | 贡献方 | 命令 |
 |---|---|
 | `commands/registry` | `/plugin` |
-| `loop/default` | `/agent`、`/acp`、`/model` |
+| `loop/default` | `/agent`、`/model` |
 | `runner` | `/stop`、`/me`（`/whoami`） |
 | `subagent/inprocess` | `/subagent`、`/submodel` |
 | `llm/fallback` | `/fallback`（`/fb`） |

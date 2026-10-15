@@ -213,10 +213,11 @@ func agentDoc(agents []agentkit.Agent, name string) (string, error) {
 		if string(ag.ID()) != name {
 			continue
 		}
+		doc := fmt.Sprintf("agent %q", name)
 		if entry, ok := ag.(agentkit.AgentCatalogEntry); ok {
-			return entry.AgentCatalogEntry(), nil
+			doc = entry.AgentCatalogEntry()
 		}
-		return fmt.Sprintf("agent %q", name), nil
+		return doc, nil
 	}
 	return "", fmt.Errorf("unknown agent %q (try /agent)", name)
 }

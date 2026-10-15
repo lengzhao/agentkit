@@ -42,3 +42,4 @@ config.yaml
 .cursor/
 .DS_Store
 .codegraph/
+.codex/
