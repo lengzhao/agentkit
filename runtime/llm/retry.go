@@ -124,6 +124,9 @@ func IsRetryableError(err error) bool {
 	if IsContextOverflowError(err) {
 		return false
 	}
+	if IsSafetyError(err) {
+		return false
+	}
 	msg := err.Error()
 	if strings.Contains(strings.ToLower(msg), "client.timeout exceeded") {
 		return false
@@ -143,6 +146,27 @@ func IsContextOverflowError(err error) bool {
 		return false
 	}
 	return contextOverflowPattern.MatchString(err.Error())
+}
+
+var safetyErrorPattern = regexp.MustCompile(`(?i)` + strings.Join([]string{
+	`flagged by safety`,
+	`safety.?check`,
+	`content.?filter`,
+	`content.?policy`,
+	`content.?management`,
+	`data_inspection_failed`,
+	`output.?blocked`,
+}, "|"))
+
+// IsSafetyError reports provider content-safety rejections (typically HTTP 400
+// "input text was flagged by safety checks"). They are never transient: retrying
+// the identical payload always fails, so the agent should compact-and-retry
+// once, then degrade gracefully instead of dying mid-turn.
+func IsSafetyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return safetyErrorPattern.MatchString(err.Error())
 }
 
 // IsQuotaError reports quota or billing failures that are not worth retrying on the same provider.

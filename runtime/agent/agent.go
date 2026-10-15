@@ -306,9 +306,10 @@ func (a *Runtime) runSegment(
 	ctrl turnControl,
 	run *turnRun,
 ) (agentkit.TurnStopReason, error) {
-	// Overflow recovery is per segment: a long autonomous run must be able to
-	// compact again after the first recovery.
+	// Overflow and safety recovery are per segment: a long autonomous run must
+	// be able to recover again after the first one.
 	overflowRecoveryAttempted := false
+	safetyRecoveryAttempted := false
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -355,10 +356,14 @@ func (a *Runtime) runSegment(
 
 		stepRetry := newStepRetry(a.retry)
 
-		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted, pos)
+		outcome, err := a.runStepWithOverflowRecovery(stepCtx, sess, emit, run.llmModel, stepRetry, &overflowRecoveryAttempted, &safetyRecoveryAttempted, pos)
 		if err != nil {
 			_ = sessevents.Default.AppendStepEnd(context.WithoutCancel(ctx), sess, a.id, stepIndex)
 			endStepOnce()
+			var sse *safetyStopError
+			if errors.As(err, &sse) {
+				return a.finishSafetyBlockedTurn(ctx, sess, emit, run, sse)
+			}
 			return "", err
 		}
 

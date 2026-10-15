@@ -26,6 +26,7 @@ flowchart TD
 | `Reason` | 触发条件 |
 |---|---|
 | `no-tool-calls` | assistant 只回文本，没有工具调用 |
+| `safety-blocked` | 模型服务商内容安全系统拦截（HTTP 400 "flagged by safety checks" 类错误），agent 自动强制 compaction 替换历史后重试仍被拒绝，于是合成一条解释性 assistant 消息优雅收尾（不再让整轮以无输出硬失败） |
 
 ## 2. 停/续契约
 

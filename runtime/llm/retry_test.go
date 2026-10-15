@@ -44,6 +44,35 @@ func TestIsContextOverflowError(t *testing.T) {
 	}
 }
 
+func TestIsSafetyError(t *testing.T) {
+	t.Parallel()
+
+	// 线上真实报错（trace 373cf049）：400 + flagged by safety checks。
+	flagged := &openai.APIError{HTTPStatusCode: 400, Message: "The input text was flagged by safety checks. Please modify your request and try again."}
+	if !IsSafetyError(flagged) {
+		t.Fatal("expected safety error for flagged input")
+	}
+	for _, msg := range []string{
+		"content_filter",
+		"data_inspection_failed",
+		"violates content policy",
+	} {
+		if !IsSafetyError(errors.New(msg)) {
+			t.Fatalf("expected safety error for %q", msg)
+		}
+	}
+	if IsSafetyError(errors.New("rate limit exceeded")) {
+		t.Fatal("rate limit is not a safety error")
+	}
+	if IsSafetyError(errors.New("maximum context length exceeded")) {
+		t.Fatal("overflow is not a safety error")
+	}
+	// 安全错误不可按瞬态重试（相同 payload 重试必然复发）。
+	if IsRetryableError(flagged) {
+		t.Fatal("safety errors must not be retryable")
+	}
+}
+
 func TestIsQuotaError(t *testing.T) {
 	t.Parallel()
 	if !IsQuotaError(errors.New("insufficient_quota")) {

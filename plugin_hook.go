@@ -82,6 +82,10 @@ const (
 	// StopStepLimit means the turn hit the agent maxSteps cap before starting
 	// another model step.
 	StopStepLimit TurnStopReason = "step-limit"
+	// StopSafetyBlocked means the provider's content-safety system rejected the
+	// request even after a compaction-and-retry recovery, so the turn ends with
+	// a synthesized explanatory message instead of a hard failure.
+	StopSafetyBlocked TurnStopReason = "safety-blocked"
 )
 
 // TurnStopping is invoked when the agent is about to end a turn segment. Hooks
