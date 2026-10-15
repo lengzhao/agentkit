@@ -9,8 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
+	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit/cap/permission"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
@@ -27,6 +29,12 @@ type Config struct {
 type Deps struct {
 	Agents    []agentkit.Agent      `json:"agents"`
 	Telemetry captelemetry.Exporter `json:"telemetry,omitempty"`
+	// SessionStore, Workspace and ModelCatalog are optional and only serve the
+	// catalog slash commands (/agent, /model, /acp) the loop contributes via
+	// agentkit.CommandProvider; turn dispatch never touches them.
+	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Workspace    workspace.Service     `json:"workspace,omitempty"`
+	ModelCatalog capllm.ModelCatalog   `json:"modelCatalog,omitempty"`
 }
 
 // SetDefaults implements pluginkit.Defaulter.
@@ -52,6 +60,9 @@ type Default struct {
 	defaultAgent    agentkit.AgentID
 	followUpMode    agentkit.FollowUpMode
 	telemetry       captelemetry.Exporter
+	sessionStore    agentkit.SessionStore
+	workspace       workspace.Service
+	modelCatalog    capllm.ModelCatalog
 	sessionControls sync.Map // SessionID -> *Control
 	sessionBusy     sync.Map // SessionID -> struct{}
 }
@@ -86,7 +97,24 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 		defaultAgent: defaultID,
 		followUpMode: mode,
 		telemetry:    exp,
+		sessionStore: deps.SessionStore,
+		workspace:    deps.Workspace,
+		modelCatalog: deps.ModelCatalog,
 	}, nil
+}
+
+// Commands implements agentkit.CommandProvider: the loop owns the agent
+// catalog, so it contributes the catalog slash commands (/agent, /model,
+// /acp) itself. commands/registry collects them through the generic
+// WireContributions channel; turn dispatch is unaffected when the optional
+// command deps are absent.
+func (l *Default) Commands() []agentkit.Command {
+	agents := l.Agents()
+	return []agentkit.Command{
+		AgentCommand(agents, l.sessionStore, l.defaultAgent, l.workspace),
+		ModelCommand(agents, l.sessionStore, l.defaultAgent, l.workspace, l.modelCatalog),
+		ACPCommand(agents, l.sessionStore),
+	}
 }
 
 // DefaultAgentID returns the loop fallback agent when no session bind is set.

@@ -17,14 +17,6 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
-agent.catalogCommands.default:
-    deps:
-        llm: llm.router
-        loop: loop.default
-        sessionStore: sessionStore.default
-        subagents: subagent.default
-        workspace: workspace.default
-    use: agent/catalog-commands
 agent.cursor.default:
     config:
         authMethod: cursor_login
@@ -327,7 +319,10 @@ loop.default:
             - agent.assistant.default
             - agent.worker.default
             - agent.cursor.default
+        modelCatalog: llm.router
+        sessionStore: sessionStore.default
         telemetry: telemetry.default
+        workspace: workspace.default
     use: loop/default
 mcp.default:
     config:
@@ -397,6 +392,7 @@ prompt.default:
             - prompt.memory.default
             - prompt.skills.default
             - prompt.subagents.default
+            - prompt.workspace-dirs.default
     use: prompt/assembler/default
 prompt.memory.default:
     deps:
@@ -482,7 +478,25 @@ prompt.worker.default:
             - prompt.memory.default
             - prompt.skills.default
             - prompt.subagents.default
+            - prompt.workspace-dirs.default
     use: prompt/assembler/default
+prompt.workspace-dirs.default:
+    config:
+        entries:
+            - dirs:
+                - global:workflows
+                - local:workflows
+              label: workflows（tool/workflow 的扫描目录，workflow__<name> 工具来自这些 JSON 文件）
+              note: 同名文件 local 覆盖 global（tool/workflow 发现时 local 恒优先）；新建 workflow 放 global:workflows 则所有 channel 可用，放 local:workflows 仅当前 channel 可见；保存后下一轮生效，无需 reload。
+            - dirs:
+                - local:skills
+                - global:skills
+              label: skills（skill/filesystem 的扫描目录，skill 工具加载的 SKILL.md 来自这些目录）
+              note: 同名 skill local 覆盖 global；新建 skill 放 local:skills 仅当前 channel 可用，放 global:skills 所有 channel 共享；每个 skill 一个子目录（skills/<name>/SKILL.md），保存后下一轮生效。
+        intro: '可写目录（本会话解析出的绝对路径；local: 为当前工作区根，tenant 模式下按 channel 隔离——不同 channel 路径不同、互不可见；global: 为全局共享根——所有 channel 相同）'
+    deps:
+        workspace: workspace.default
+    use: prompt/section/workspace-dirs
 runner.default:
     config:
         inject:
@@ -495,7 +509,6 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
-        catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
         loop: loop.default
@@ -552,7 +565,6 @@ sessionStore.default:
 skills.default:
     config:
         dirs:
-            - local:../skills
             - local:skills
             - global:skills
     deps:

@@ -202,7 +202,7 @@ func TestEffectiveModelSubagentGlobalOrderWithoutDefinition(t *testing.T) {
 		t.Fatalf("EffectiveModel = %q, want child-global-model (parent session bind must not apply)", got)
 	}
 
-	// 1) 子 agent 专属 global（/model -g sub researcher）优先，压过 wildcard 与父键。
+	// 1) 子 agent 专属 global（/submodel researcher）优先，压过 wildcard 与父键。
 	if err := sessbind.SetGlobalModelBind(ctx, ws, sessbind.SubagentModelWildcardKey, "wildcard-model"); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestEffectiveModelSubagentGlobalOrderWithoutDefinition(t *testing.T) {
 		t.Fatalf("EffectiveModel = %q, want child-global-model", got)
 	}
 
-	// 2) 子键清空后先用 wildcard（/model -g sub *）。
+	// 2) 子键清空后先用 wildcard（/submodel *）。
 	if err := sessbind.SetGlobalModelBind(ctx, ws, "sub:researcher", ""); err != nil {
 		t.Fatal(err)
 	}

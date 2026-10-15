@@ -9,8 +9,11 @@ import (
 	"github.com/lengzhao/agentkit/runtime/subagent/definition"
 )
 
+// Commands implements agentkit.CommandProvider: subagent/inprocess contributes
+// its own slash commands (/subagent, /submodel), collected by commands/registry
+// through the generic WireContributions channel.
 func (s *Spawner) Commands() []agentkit.Command {
-	return []agentkit.Command{HelpCommand(s.workspace, s.dirs)}
+	return []agentkit.Command{HelpCommand(s.workspace, s.dirs), ModelCommand(s.workspace, s)}
 }
 
 // HelpCommand exposes the subagent definition help slash command.

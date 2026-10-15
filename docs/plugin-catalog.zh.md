@@ -140,12 +140,11 @@ platform.http:
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `loop/default` | `agentkit.Loop` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key | DSH `agent-loop` / Pi `agentLoop` |
+| `loop/default` | `agentkit.Loop` + `agentkit.CommandProvider` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key；作为 agent 目录属主贡献 `/agent`、`/acp`、`/model` 命令（可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令，不影响分发） | DSH `agent-loop` / Pi `agentLoop` |
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation（roadmap） | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；`config`：`id` / `model` / `retry` / `maxSteps`（默认 200，`0`=不限）/ `maxPromptTokens`（发送前兜底，`0`=关闭）；自主续跑靠 `deps.hooks`（如 `hook/turn-continue`） | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
 | `agent/chain` | `agentkit.Agent` | 顺序链：一次入站依次跑 `config.nodes` 引用的多个 Agent（deps `agents` 注入），共享同一 session；入站 user 消息只在首个节点落盘。跳过/重复执行策略由包装插件承载，chain 本身不做 | — |
-| `agent/catalog-commands` | `agentkit.CommandProvider` | `/agent`、`/model`、`/acp` slash；deps 注入 `loop`、`sessionStore`、`workspace` | — |
 | `agent/readonly` | `agentkit.Agent` | 只读审查 Agent（roadmap） | DSH permission preset |
 | `session/memory` | `agentkit.Session` | 内存 Session（测试用） | — |
 | `session/jsonl` | `agentkit.Session` | 单文件 JSONL 追加日志 | Pi JSONL v3 |
@@ -193,7 +192,7 @@ llm.default:
 
 **`llm/router`**：`deps.protocols` 列出协议插件实例；`deps.default` 为兜底实例（可不填 `models`，不参与精确匹配）。各协议在 `config.models[].id` 注册模型 id，**全局不可重复**。Agent `deps.llm` 指向 router 时仅配置 `config.model`；`/model` 只改模型名，下一 step 自动换协议。示例见设计 doc。
 
-**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。推荐 `deps.llm: llm/router`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`，协议由 router 按模型 id 选择。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。网关返回 `Model '<id>' is not available in this group`（常见 HTTP 404）在 `retryable` / `quota` / `any` 下都会切下一候选，且**不会**对同一模型做 provider retry。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。包装 router 时 **`ModalitiesForModel` 随当前 attempt 的 model 变化**（与 LLM 调用前 `PrepareMessagesForLLM` 一致）。每次切换到下一候选时通过 telemetry 记录 **`llm.fallback` 事件**（`phase`、`from_*` / `to_*`、`reason`、`fallback_on`），便于 Langfuse trace 排查。
+**`llm/fallback`**：装饰器插件，包装一个或多个底层 `LLMProvider`。推荐 `deps.llm: llm/router`，在 fallback 里列 `fallbackModels`；主 model 来自 agent 的 `config.model`，协议由 router 按模型 id 选择。跨 provider 时在 `deps.fallbacks` 列出多个实例并配 `config.models`。`fallbackOn` 默认 `retryable`（复用 `llm.IsRetryableError`；**首 token 超时** `context.DeadlineExceeded` 在尚未输出任何内容时也会切下一候选）。网关返回 `Model '<id>' is not available in this group`（常见 HTTP 404）在 `retryable` / `quota` / `any` 下都会切下一候选，且**不会**对同一模型做 provider retry。`context.Canceled` 不触发 fallback。也可设 `quota` 或 `any`。包装 router 时 **`ModalitiesForModel` 随当前 attempt 的 model 变化**（与 LLM 调用前 `PrepareMessagesForLLM` 一致）。每次切换到下一候选时通过 telemetry 记录 **`llm.fallback` 事件**（`phase`、`from_*` / `to_*`、`reason`、`fallback_on`），便于 Langfuse trace 排查。同时以 `agentkit.CommandProvider` 贡献只读 slash **`/fallback`**（展示 `fallbackOn`、配置模型与 attempt 链），由 `commands/registry` 统一收集。
 
 ```yaml
 llm.default:
@@ -408,7 +407,7 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 | `memory/default` | `CommandProvider` + `cap/memory.Service` | 租户 `memory.md`、ledger、staged、`/memory` 命令；`tool/memory` 与 prompt 注入；存储走 deps `fs` |
 | `learning/default` | `CommandProvider` | Grounded Dreaming、Skill Workshop；`/learn` 巩固与技能（记忆见 `/memory`）；sidecar（dreaming state/diary/report、review nudge/quota、skills policy、workshop proposals）走 deps `fs` |
 | `learning/dream-sweep` | `schedule.Runtime` | 后台三阶段 dreaming sweep（默认每天 03:00） |
-| `subagent/inprocess` | `subagent.Spawner` + `subagent.SubmitBinder` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；frontmatter `async: true`（或工具参数覆盖）时异步委派：立即返回 `status=running`，完成后经 runner 投递 `[subagent-complete]` follow-up turn。`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
+| `subagent/inprocess` | `subagent.Spawner` + `subagent.SubmitBinder` + `agentkit.CommandProvider` | 进程内子 Agent：定义来自 `dirs` 下的 `agents/*.md`（frontmatter + 正文即 system prompt），串行 `Run` 一个子 agent 并只把结论带回；frontmatter `async: true`（或工具参数覆盖）时异步委派：立即返回 `status=running`，完成后经 runner 投递 `[subagent-complete]` follow-up turn。`deps.tools` 必须是**不含 `tool/subagent`** 的兄弟实例（既避开依赖环，也让"子 agent 不能再委派"成为结构性事实）。贡献 `/subagent`、`/submodel` 命令。详见 [guides/subagent.zh.md](guides/subagent.zh.md) |
 | `subagent/loop-agent` | `subagent.Spawner` + `subagent.SubmitBinder` | 委派到 Loop 里已注册的 agent（如 `agent/acp-remote` 的 `cursor`）。可委派名单来自实例 `config.agents`；支持 `async: true`：立即返回 `status=running`，完成后经 runner 向父 session 投递 follow-up turn。deps 可注入 `telemetry`（通常 `telemetry.default`），为每次子 agent 运行导出独立 Langfuse trace |
 | `subagent/composite` | `subagent.Spawner` + `subagent.SubmitBinder` | 合并 `inprocess` 与 `loop-agent` 的可委派名单；L0 `subagent.default` 使用此 kind |
 | `subagent/rpc` | `subagent.Spawner` | RPC 子 Agent（roadmap） |
@@ -457,9 +456,10 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | 贡献方 | 命令 |
 |---|---|
 | `commands/registry` | `/plugin` |
-| `agent/catalog-commands` | `/agent`、`/acp` |
+| `loop/default` | `/agent`、`/acp`、`/model` |
 | `runner` | `/stop`、`/me`（`/whoami`） |
-| `subagent/inprocess` | `/subagent` |
+| `subagent/inprocess` | `/subagent`、`/submodel` |
+| `llm/fallback` | `/fallback`（`/fb`） |
 | `session/commands` | `/new`、`/session` |
 | `hook/before-step` | `/compact` |
 | `hook/turn-continue` | `/status` |

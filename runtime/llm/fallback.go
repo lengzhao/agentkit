@@ -115,6 +115,28 @@ func parseFallbackMode(raw string) (fallbackMode, error) {
 
 func (f *Fallback) Name() string { return "fallback" }
 
+func (f *Fallback) UsesRequestModel() bool { return f.useReqModel }
+
+func (f *Fallback) ConfiguredModels() []string {
+	return append([]string(nil), f.models...)
+}
+
+func (f *Fallback) FallbackOn() string { return string(f.fallbackOn) }
+
+func (f *Fallback) ChainFor(primary string) []string {
+	targets := f.buildTargets(primary)
+	if len(targets) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if m := strings.TrimSpace(t.model); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func (f *Fallback) Modalities() []string {
 	return f.ModalitiesForModel("")
 }

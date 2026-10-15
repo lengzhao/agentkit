@@ -211,8 +211,6 @@ func prepareRunnableGraph(graph map[string]any) {
 	if runnerNode, ok := graph["runner.default"].(map[string]any); ok {
 		deps := asMap(runnerNode["deps"])
 		deps["schedules"] = []any{}
-		// catalogCommands → loop.default pulls L0 agents + llm.router/deepseek into the build.
-		delete(deps, "catalogCommands")
 		delete(deps, "init")
 		runnerNode["deps"] = deps
 	}

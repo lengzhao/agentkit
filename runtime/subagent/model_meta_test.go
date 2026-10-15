@@ -80,7 +80,7 @@ func TestInprocessTelemetryModelGlobalOrderWithoutDefinition(t *testing.T) {
 	})
 	def := capsubagent.Definition{Name: "researcher"}
 
-	// 1) 子 agent 专属 global（/model -g sub researcher）优先，压过 wildcard。
+	// 1) 子 agent 专属 global（/submodel researcher）优先，压过 wildcard。
 	if err := sessbind.SetGlobalModelBind(ctx, ws, "sub:researcher", "child-global-model"); err != nil {
 		t.Fatal(err)
 	}

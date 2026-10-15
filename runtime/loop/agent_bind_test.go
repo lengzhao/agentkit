@@ -1,4 +1,4 @@
-package command
+package loop
 
 import (
 	"context"
@@ -10,15 +10,15 @@ import (
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
-type stubAgent struct {
+type stubBindAgent struct {
 	id agentkit.AgentID
 }
 
-func (s stubAgent) ID() agentkit.AgentID { return s.id }
+func (s stubBindAgent) ID() agentkit.AgentID { return s.id }
 
-func (s stubAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
+func (s stubBindAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
 
-func TestDispatchAgentUsePersistsBind(t *testing.T) {
+func TestAgentUseCommandPersistsBind(t *testing.T) {
 	t.Parallel()
 
 	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
@@ -26,17 +26,10 @@ func TestDispatchAgentUsePersistsBind(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := sessstore.NewStaticStore(mem)
-	reg, err := NewFromProviders(Config{}, []agentkit.CommandProvider{
-		stubProvider{commands: []agentkit.Command{
-			AgentCommand([]agentkit.Agent{stubAgent{id: "reviewer"}}, store, "reviewer", nil),
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	cmd := AgentCommand([]agentkit.Agent{stubBindAgent{id: "reviewer"}}, store, "reviewer", nil)
 
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
-	out, err := reg.Dispatch(ctx, "agent", "use reviewer")
+	out, err := cmd.CommandExec(ctx, "use reviewer")
 	if err != nil {
 		t.Fatal(err)
 	}

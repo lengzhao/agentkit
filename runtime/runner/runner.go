@@ -57,9 +57,6 @@ type Deps struct {
 	Schedules    []capschedule.Runtime     `json:"schedules,omitempty"`
 	Init         []agentkit.AppInitializer `json:"init,omitempty"`
 	Telemetry    captelemetry.Exporter     `json:"telemetry,omitempty"`
-	// CatalogCommands pulls agent catalog slash commands (/agent, /acp) into the
-	// build graph without routing through commands/registry (which platform depends on).
-	CatalogCommands agentkit.CommandProvider `json:"catalogCommands,omitempty"`
 }
 
 type Root struct {
@@ -117,7 +114,6 @@ func New(cfg Config, deps Deps) (agentkit.Runner, error) {
 	if deps.Loop == nil {
 		return nil, fmt.Errorf("runner requires loop")
 	}
-	_ = deps.CatalogCommands
 	cfg.SetDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err

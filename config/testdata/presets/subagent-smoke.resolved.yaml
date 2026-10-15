@@ -17,14 +17,6 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
-agent.catalogCommands.default:
-    deps:
-        llm: llm.router
-        loop: loop.default
-        sessionStore: sessionStore.default
-        subagents: subagent.default
-        workspace: workspace.default
-    use: agent/catalog-commands
 agent.cursor.default:
     config:
         authMethod: cursor_login
@@ -46,25 +38,6 @@ agent.cursor.default:
         telemetry: telemetry.toolkit
         workspace: workspace.default
     use: agent/acp-remote
-agent.worker.default:
-    config:
-        id: worker
-        maxPromptTokens: 1000000
-        model: gpt-5.4
-        retry:
-            baseDelayMs: 2000
-            enabled: true
-            maxRetries: 3
-    deps:
-        compaction:
-            - compaction.pipeline.worker
-        hooks: hooks.worker
-        llm: llm.fallback
-        prompt: prompt.worker.default
-        sessionStore: sessionStore.default
-        tools: tools.worker.default
-        workspace: workspace.default
-    use: agent/coding
 bootstrap.shell.default:
     config:
         commands:
@@ -85,13 +58,6 @@ compaction.pipeline.default:
         services:
             - compaction.prune.default
             - compaction.token-limit.default
-    use: compaction/pipeline
-compaction.pipeline.worker:
-    deps:
-        chain: compaction.chain.default
-        services:
-            - compaction.prune.default
-            - compaction.token-limit.worker
     use: compaction/pipeline
 compaction.prune.default:
     config:
@@ -115,16 +81,6 @@ compaction.token-limit.default:
         charsPerToken: 3
         contextWindow: 1048576
         triggerRatio: 0.92
-    deps:
-        chain: compaction.chain.default
-        services:
-            - compaction.summary.default
-    use: compaction/token-limit
-compaction.token-limit.worker:
-    config:
-        charsPerToken: 3
-        contextWindow: 1048576
-        triggerRatio: 0.7
     deps:
         chain: compaction.chain.default
         services:
@@ -182,24 +138,10 @@ hook.before-step.default:
         compaction: compaction.pipeline.default
         sessionStore: sessionStore.default
     use: hook/before-step
-hook.before-step.worker:
-    deps:
-        compaction: compaction.pipeline.worker
-        sessionStore: sessionStore.default
-    use: hook/before-step
 hook.session-index.default:
     deps:
         index: sessionIndex.default
     use: hook/session-index
-hook.turn-continue.default:
-    config:
-        maxContinuations: 30
-        requireFinish: true
-        requireTodosDone: true
-        stallLimit: 3
-    deps:
-        sessionStore: sessionStore.default
-    use: hook/turn-continue
 hook.turn-nudge.default:
     config:
         stepInterval: 20
@@ -213,13 +155,6 @@ hooks.default:
             - hook.before-step.default
             - hook.session-index.default
             - hook.background-review.default
-            - hook.turn-nudge.default
-    use: hooks/runtime
-hooks.worker:
-    deps:
-        providers:
-            - hook.before-step.worker
-            - hook.turn-continue.default
             - hook.turn-nudge.default
     use: hooks/runtime
 learning.default:
@@ -330,14 +265,6 @@ llm.router:
             - llm.gpt
             - llm.deepseek
     use: llm/router
-loop.default:
-    deps:
-        agents:
-            - agent.assistant.default
-            - agent.worker.default
-            - agent.cursor.default
-        telemetry: telemetry.default
-    use: loop/default
 mcp.default:
     config:
         files:
@@ -383,6 +310,7 @@ prompt.default:
             - prompt.memory.default
             - prompt.skills.default
             - prompt.subagents.default
+            - prompt.workspace-dirs.default
     use: prompt/assembler/default
 prompt.memory.default:
     deps:
@@ -424,27 +352,6 @@ prompt.persona.default:
             - 工具失败时说明原因并给出替代方案，而不是静默放弃
         name: persona
     use: prompt/section/static
-prompt.persona.worker:
-    config:
-        content: |
-            你是「工作助手」（worker），负责把用户交代的任务从头到尾做完，而不是只做一轮问答。
-
-            ## 工作方式
-            - 收到任务后先用 todo 拆成可执行步骤，并标记当前进行项
-            - 持续推进：读文件、搜索、执行命令、验证结果，直到全部完成或明确受阻
-            - 全部完成或无法继续时，必须调用 finish（status=completed 或 blocked，summary 写清成果与遗留项）
-            - 不要停在「我建议你…」就结束；能自己做的就自己做
-
-            ## 风格
-            - 默认中文；进展与结论结构化、可核对
-            - 涉及事实与代码时优先用工具验证，不编造
-            - 破坏性操作前用 ask_user 确认（若平台支持交互）
-
-            ## 边界
-            - 工具失败时说明原因并换方案，不静默放弃
-            - 不提供违法、有害内容的协助
-        name: persona
-    use: prompt/section/static
 prompt.skills.default:
     deps:
         skills: skills.default
@@ -460,15 +367,23 @@ prompt.subagents.default:
         llm: llm.fallback
         subagent: subagent.default
     use: prompt/section/subagents
-prompt.worker.default:
+prompt.workspace-dirs.default:
+    config:
+        entries:
+            - dirs:
+                - global:workflows
+                - local:workflows
+              label: workflows（tool/workflow 的扫描目录，workflow__<name> 工具来自这些 JSON 文件）
+              note: 同名文件 local 覆盖 global（tool/workflow 发现时 local 恒优先）；新建 workflow 放 global:workflows 则所有 channel 可用，放 local:workflows 仅当前 channel 可见；保存后下一轮生效，无需 reload。
+            - dirs:
+                - local:skills
+                - global:skills
+              label: skills（skill/filesystem 的扫描目录，skill 工具加载的 SKILL.md 来自这些目录）
+              note: 同名 skill local 覆盖 global；新建 skill 放 local:skills 仅当前 channel 可用，放 global:skills 所有 channel 共享；每个 skill 一个子目录（skills/<name>/SKILL.md），保存后下一轮生效。
+        intro: '可写目录（本会话解析出的绝对路径；local: 为当前工作区根，tenant 模式下按 channel 隔离——不同 channel 路径不同、互不可见；global: 为全局共享根——所有 channel 相同）'
     deps:
-        sections:
-            - prompt.persona.worker
-            - prompt.agents-md.default
-            - prompt.memory.default
-            - prompt.skills.default
-            - prompt.subagents.default
-    use: prompt/assembler/default
+        workspace: workspace.default
+    use: prompt/section/workspace-dirs
 runner.default:
     config:
         inject:
@@ -481,7 +396,6 @@ runner.default:
         sessionScope: channel
         shutdownTimeoutSeconds: 10
     deps:
-        catalogCommands: agent.catalogCommands.default
         init:
             - bootstrap.shell.default
         loop:
@@ -542,7 +456,6 @@ sessionStore.default:
 skills.default:
     config:
         dirs:
-            - local:../skills
             - local:skills
             - global:skills
     deps:
@@ -675,11 +588,6 @@ tool.subagent.default:
     deps:
         subagent: subagent.default
     use: tool/subagent
-tool.todo.default:
-    deps:
-        sessionEvents: session.events
-        sessionStore: sessionStore.default
-    use: tool/todo
 tool.web-fetch-http.default:
     config:
         allowPrivateHosts: false
@@ -760,35 +668,6 @@ tools.subagent.default:
             - tool.web-fetch-http.default
             - tool.skill.default
     use: tools/runtime
-tools.worker.default:
-    config:
-        defaultTimeoutSeconds: 120
-        enabled: auto
-        toolTimeouts:
-            ask_user: 900
-            delegate: 900
-    deps:
-        dynamicTools:
-            - mcp.default
-            - openapi.default
-        hooks: hooks.worker
-        policies:
-            - policy.dangerous-shell.default
-        toolPacks:
-            - tool.fs-workspace.default
-            - tool.recognize.default
-        tools:
-            - tool.shell-bash.default
-            - tool.skill.default
-            - tool.subagent.default
-            - tool.web-fetch-http.default
-            - tool.ask-user.default
-            - tool.send.default
-            - tool.chat-history.default
-            - tool.schedule.default
-            - tool.todo.default
-            - tool.finish.default
-    use: tools/deferred
 workspace.default:
     config:
         global: ~/.agentkit

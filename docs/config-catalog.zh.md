@@ -34,21 +34,6 @@
 | `telemetry`（必填） | `telemetry.Toolkit` |  |
 | `sandbox` | `sandbox.Service` | Sandbox wraps the ACP subprocess command with the tenant sandbox view (e.g. sandbox/bwrap) at spawn time. Nil defaults to capsandbox.Disabled() (passthrough). |
 
-## `agent/catalog-commands`
-
-- 返回类型：`agentkit.CommandProvider`
-- 源码：[`runtime/command/catalog_commands.go`](../runtime/command/catalog_commands.go)
-
-无 config 字段。
-
-| deps 字段 | 类型 | 说明 |
-|---|---|---|
-| `loop`（必填） | `agentkit.AgentCatalogLoop` |  |
-| `sessionStore`（必填） | `agentkit.SessionStore` |  |
-| `workspace`（必填） | `workspace.Service` |  |
-| `subagents` | `subagent.Spawner` | Subagents (optional) enables /model subagent name validation and listing. |
-| `llm` | `agentkit.LLMProvider` | LLM (optional, ideally llm/router) enables the model catalog in /model show output and unknown-model warnings on set. |
-
 ## `agent/chain`
 
 - 返回类型：`agentkit.Agent`
@@ -214,10 +199,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `llm`（必填） | `agentkit.LLMProvider` |  |
 | `sessionEvents`（必填） | `session.Compaction` |  |
 
-> **保留语义（2026-10 修正）**：切点选择会 pin 住**当前轮的触发 user message**（最后一个 turn-start）——保留尾部永不从它之后开始，兜底裁剪也永不丢弃最后一条 user message。此前大 tool result 占满 `keepRecentTokens` 预算时，用户指令会被摘要/截断掉，agent 在轮次中段丢失任务（线上事故：模型花十余步试图从磁盘"重建用户意图"）。
->
-> **长单轮退化形态**：当历史已全部摘要、当前轮自身就超过保留预算时，兜底裁剪按「触发消息 > 旧摘要 > 最新尾部」的优先级保留，丢弃中段（早期工具噪音）。触发消息逐字保留；原始内容在 session 事件日志中不丢失，仅模型可见视图被裁剪。
-
 ## `compaction/token-limit`
 
 - 返回类型：`compaction.Service`
@@ -234,8 +215,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `chain`（必填） | `compaction.Chain` |  |
 | `services`（必填） | `[]compaction.Service` | Services run only once the threshold is crossed, with Force set. |
-
-> **估算语义（2026-10 修正）**：触发估算只反映**当前活上下文**——取「活消息字符估算」与「provider 最近一次上报 usage」的较大者。历史版本会把 session 事件日志全量逻辑字符计入（db 后端在压缩后 `Read(0)` 返回全量日志），长会话中该累计值单调增长并永久越过阈值，导致每一步都触发 compaction（线上事故：单轮 58 步内 43 次压缩、21 分钟摘要开销）。迟触发由 `runStepWithOverflowRecovery` 的 overflow 强制压缩兜底，是更便宜的方向。
 
 ## `credentials/env`
 
@@ -569,6 +548,9 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `agents`（必填） | `[]agentkit.Agent` |  |
 | `telemetry` | `telemetry.Exporter` |  |
+| `sessionStore` | `agentkit.SessionStore` | SessionStore, Workspace and ModelCatalog are optional and only serve the catalog slash commands (/agent, /model, /acp) the loop contributes via agentkit.CommandProvider; turn dispatch never touches them. |
+| `workspace` | `workspace.Service` |  |
+| `modelCatalog` | `llm.ModelCatalog` |  |
 
 ## `memory/default`
 
@@ -680,7 +662,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `groupOnly` | `bool` | — |  |
 | `respondToAtEveryoneAndHere` | `bool` | — |  |
 | `replyToTrigger` | `*bool` | — |  |
-| `stopOnRecall` | `*bool` | `true` | 撤回触发（或 steer 进）进行中 turn 的消息时自动按 `/stop` 取消该 turn；false 关闭 |
+| `stopOnRecall` | `*bool` | — | StopOnRecall 为 nil 时默认 true：用户撤回触发（或 steer 进）进行中 turn 的消息时，平台自动按 /stop 取消该 turn；显式 false 关闭。 撤回与进行中 turn 无关的旧消息不影响执行。 |
 | `resolveMentions` | `bool` | — |  |
 | `peerBots` | `map[string]string` | — |  |
 | `showThinking` | `*bool` | — |  |
@@ -734,7 +716,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `groupOnly` | `bool` | — |  |
 | `respondToAtEveryoneAndHere` | `bool` | — |  |
 | `replyToTrigger` | `*bool` | — |  |
-| `stopOnRecall` | `*bool` | `true` | 撤回触发（或 steer 进）进行中 turn 的消息时自动按 `/stop` 取消该 turn；false 关闭 |
+| `stopOnRecall` | `*bool` | — | StopOnRecall 为 nil 时默认 true：用户撤回触发（或 steer 进）进行中 turn 的消息时，平台自动按 /stop 取消该 turn；显式 false 关闭。 撤回与进行中 turn 无关的旧消息不影响执行。 |
 | `resolveMentions` | `bool` | — |  |
 | `peerBots` | `map[string]string` | — |  |
 | `showThinking` | `*bool` | — |  |
@@ -1002,7 +984,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `schedules` | `[]schedule.Runtime` |  |
 | `init` | `[]agentkit.AppInitializer` |  |
 | `telemetry` | `telemetry.Exporter` |  |
-| `catalogCommands` | `agentkit.CommandProvider` | CatalogCommands pulls agent catalog slash commands (/agent, /acp) into the build graph without routing through commands/registry (which platform depends on). |
 
 ## `sandbox/bwrap`
 

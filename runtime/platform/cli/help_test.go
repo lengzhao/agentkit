@@ -12,6 +12,7 @@ import (
 	cw "github.com/lengzhao/agentkit/cap/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/command"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/platform/cli"
 	"github.com/lengzhao/agentkit/runtime/subagent"
 	"github.com/lengzhao/agentkit/runtime/subagent/definition"
@@ -71,7 +72,7 @@ func testHelpCommands(t *testing.T) agentkit.Commands {
 type agentProvider struct{}
 
 func (agentProvider) Commands() []agentkit.Command {
-	return []agentkit.Command{command.AgentHelpCommand([]agentkit.Agent{
+	return []agentkit.Command{loop.AgentHelpCommand([]agentkit.Agent{
 		stubHelpAgent{id: "assistant"},
 	})}
 }

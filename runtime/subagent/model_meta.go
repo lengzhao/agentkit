@@ -28,7 +28,7 @@ func telemetryModel(def capsubagent.Definition, ag agentkit.Agent) string {
 // inprocessTelemetryModel is the model id recorded for Langfuse and the child LLM.
 // It resolves exactly like the child runtime does (sessbind.ResolveSubagentModel):
 // agents/<name>.md `model:` first, then global binds keyed by the child agent
-// (explicit /model -g sub <name> config), the subagents wildcard (sub:*), then
+// (explicit /submodel <name> config), the subagents wildcard (sub:*), then
 // by the parent agent.
 func inprocessTelemetryModel(
 	ctx context.Context,

@@ -25,4 +25,5 @@ var (
 	_ agentkit.ModelModalityAwareLLM = (*Router)(nil)
 	_ agentkit.ModelModalityAwareLLM = (*Fallback)(nil)
 	_ capllm.ModelCatalog            = (*OpenAI)(nil)
+	_ agentkit.CommandProvider       = (*Fallback)(nil)
 )

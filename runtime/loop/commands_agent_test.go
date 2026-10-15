@@ -1,4 +1,4 @@
-package command_test
+package loop_test
 
 import (
 	"context"
@@ -6,30 +6,30 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/command"
+	rtloop "github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
-type stubAgent struct {
+type stubDetailAgent struct {
 	id     agentkit.AgentID
 	detail string
 }
 
-func (s stubAgent) ID() agentkit.AgentID { return s.id }
+func (s stubDetailAgent) ID() agentkit.AgentID { return s.id }
 
-func (s stubAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
+func (s stubDetailAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
 
-func (s stubAgent) AgentCatalogEntry() string { return s.detail }
+func (s stubDetailAgent) AgentCatalogEntry() string { return s.detail }
 
 func TestAgentHelpCommand(t *testing.T) {
 	t.Parallel()
 	agents := []agentkit.Agent{
-		stubAgent{id: "assistant", detail: "agent \"assistant\"\nkind: agent/coding\nmodel: gpt-5.4"},
-		stubAgent{id: "reviewer", detail: "agent \"reviewer\"\nkind: agent/coding"},
+		stubDetailAgent{id: "assistant", detail: "agent \"assistant\"\nkind: agent/coding\nmodel: gpt-5.4"},
+		stubDetailAgent{id: "reviewer", detail: "agent \"reviewer\"\nkind: agent/coding"},
 	}
-	cmd := command.AgentHelpCommand(agents)
+	cmd := rtloop.AgentHelpCommand(agents)
 	cases := []struct {
 		name string
 		args []string
@@ -80,10 +80,10 @@ func TestAgentListShowsSessionAgent(t *testing.T) {
 	}
 	store := sessstore.NewStaticStore(mem)
 	agents := []agentkit.Agent{
-		stubAgent{id: "assistant"},
-		stubAgent{id: "reviewer"},
+		stubDetailAgent{id: "assistant"},
+		stubDetailAgent{id: "reviewer"},
 	}
-	cmd := command.AgentCommand(agents, store, "assistant", nil)
+	cmd := rtloop.AgentCommand(agents, store, "assistant", nil)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "cli:test", Workspace: "cli:test"})
 
 	out, err := cmd.CommandExec(ctx, "")
@@ -121,9 +121,9 @@ func TestAgentGlobalUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := sessstore.NewStaticStore(mem)
-	agents := []agentkit.Agent{stubAgent{id: "assistant"}, stubAgent{id: "worker"}}
+	agents := []agentkit.Agent{stubDetailAgent{id: "assistant"}, stubDetailAgent{id: "worker"}}
 	ws := rtworkspace.Static(t.TempDir())
-	cmd := command.AgentCommand(agents, store, "assistant", ws)
+	cmd := rtloop.AgentCommand(agents, store, "assistant", ws)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
 		Conversation: "cli:test",
 		Workspace:    "cli:test",

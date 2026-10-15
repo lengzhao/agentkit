@@ -10,7 +10,7 @@ import (
 
 // SubagentModelWildcardKey is the global models key that applies to every
 // in-process subagent without a more specific entry. Written by
-// `/model -g sub * <model>`; it never affects the main agent.
+// `/submodel * <model>`; it never affects the main agent.
 const SubagentModelWildcardKey agentkit.AgentID = "sub:*"
 
 // ResolveSubagentModel resolves the model for an in-process subagent step.
@@ -19,9 +19,9 @@ const SubagentModelWildcardKey agentkit.AgentID = "sub:*"
 //  1. defModel — agents/<name>.md `model:` is a capability contract authored
 //     together with the prompt and modalities; runtime overrides never win.
 //  2. global models[<childAgentID>] — the explicit per-subagent config written
-//     by `/model -g sub <name> <model>`.
+//     by `/submodel <name> <model>`.
 //  3. global models[SubagentModelWildcardKey] — the all-subagents policy
-//     written by `/model -g sub * <model>`; main agent is unaffected.
+//     written by `/submodel * <model>`; main agent is unaffected.
 //  4. global models[<parentAgentID>] — the parent agent's `/model -g` choice,
 //     the general default specific keys refine.
 //

@@ -1,4 +1,4 @@
-package command
+package loop
 
 import (
 	"context"

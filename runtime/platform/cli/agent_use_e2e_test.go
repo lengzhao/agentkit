@@ -75,25 +75,21 @@ func TestE2ECLIAgentUseBindsAndRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loopInst, err := loop.New(loop.Config{DefaultAgent: "coder"}, loop.Deps{Agents: []agentkit.Agent{coder, reviewer}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	loopCatalog, ok := loopInst.(agentkit.AgentCatalogLoop)
-	if !ok {
-		t.Fatal("loop must implement AgentCatalogLoop")
-	}
-	catalog, err := command.NewCatalogCommands(command.CatalogCommandsConfig{}, command.CatalogCommandsDeps{
-		Loop:         loopCatalog,
+	loopInst, err := loop.New(loop.Config{DefaultAgent: "coder"}, loop.Deps{
+		Agents:       []agentkit.Agent{coder, reviewer},
 		SessionStore: store,
 		Workspace:    ws,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	loopCommands, ok := loopInst.(agentkit.CommandProvider)
+	if !ok {
+		t.Fatal("loop must implement CommandProvider")
+	}
 	commands, err := command.NewFromProviders(command.Config{}, []agentkit.CommandProvider{
 		sessionCmds,
-		catalog,
+		loopCommands,
 	})
 	if err != nil {
 		t.Fatal(err)

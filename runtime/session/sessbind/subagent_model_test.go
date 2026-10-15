@@ -22,7 +22,7 @@ func TestResolveSubagentModel(t *testing.T) {
 		t.Fatalf("got %q, want from-md", got)
 	}
 
-	// 2) 无定义时用子 agent 专属 global（/model -g sub <名>）。
+	// 2) 无定义时用子 agent 专属 global（/submodel <名>）。
 	if err := sessbind.SetGlobalModelBind(ctx, ws, "sub:researcher", "child-global-model"); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestResolveSubagentModel(t *testing.T) {
 		t.Fatalf("got %q, want child-global-model", got)
 	}
 
-	// 2b) wildcard 键（/model -g sub * <model>）位于子键之后、父键之前：
+	// 2b) wildcard 键（/submodel * <model>）位于子键之后、父键之前：
 	// specific beats general。
 	if err := sessbind.SetGlobalModelBind(ctx, ws, sessbind.SubagentModelWildcardKey, "wildcard-model"); err != nil {
 		t.Fatal(err)

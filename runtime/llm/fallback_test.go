@@ -82,6 +82,29 @@ func (s *stubStream) Recv() (agentkit.LLMEvent, error) {
 
 func (s *stubStream) Close() error { return nil }
 
+func TestFallbackChainFor(t *testing.T) {
+	t.Parallel()
+
+	fallback, err := NewFallback(FallbackConfig{
+		FallbackModels: []string{"gpt-4o-mini", "gpt-4o"},
+		FallbackOn:     "quota",
+	}, FallbackDeps{Provider: &stubProvider{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fb, ok := fallback.(*Fallback)
+	if !ok {
+		t.Fatal("expected *Fallback")
+	}
+	chain := fb.ChainFor("gpt-5.4")
+	if len(chain) != 3 || chain[0] != "gpt-5.4" || chain[1] != "gpt-4o-mini" || chain[2] != "gpt-4o" {
+		t.Fatalf("chain = %v", chain)
+	}
+	if !fb.UsesRequestModel() || fb.FallbackOn() != "quota" {
+		t.Fatalf("usesReq=%v mode=%q", fb.UsesRequestModel(), fb.FallbackOn())
+	}
+}
+
 func TestNewFallbackRequiresProvider(t *testing.T) {
 	t.Parallel()
 	_, err := NewFallback(FallbackConfig{FallbackModels: []string{"gpt-4o"}}, FallbackDeps{})

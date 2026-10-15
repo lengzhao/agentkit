@@ -59,16 +59,16 @@ model: ""                 # 可省，默认用 Spawner 的 llm dep 的默认模�
 | 顺序 | 来源 | 说明 |
 |------|------|------|
 | 1 | `agents/<name>.md` 的 `model:` | 定义文件是能力契约（prompt、`modalities`、`model` 一体 authored），运行时不覆盖 |
-| 2 | `models["sub:<名>"]`（`/model -g sub <名> <model>`） | 显式给该子 Agent 配的全局模型，所有会话生效；`reset` 清除 |
-| 3 | `models["sub:*"]`（`/model -g sub * <model>`） | wildcard：给所有未单独配置的子 Agent 配的全局模型（specific beats general：被第 2 层覆盖时让位）；`reset` 清除 |
+| 2 | `models["sub:<名>"]`（`/submodel <名> <model>`） | 显式给该子 Agent 配的全局模型，所有会话生效；`reset` 清除 |
+| 3 | `models["sub:*"]`（`/submodel * <model>`） | wildcard：给所有未单独配置的子 Agent 配的全局模型（specific beats general：被第 2 层覆盖时让位）；`reset` 清除 |
 | 4 | `models["<父agent>"]`（`/model -g <model>`） | 父 agent 的全局默认，作为未单独配置子 Agent 的一般默认 |
 | 5 | 兜底 | 1–4 全空时为空，由 LLM 实例自身默认决定 |
 
 设计要点：
 
 - **子 session 与父会话的 session bind 都不参与**：子 session 是每次 delegate 新建的临时 id（没有 `/model` 入口）；父会话 bind 属于主 agent 的会话语义。子 Agent 模型只由「定义 + 全局配置」决定。
-- 想改某个子 Agent 的模型：写 md 的 `model:`（定义层），或 `/model -g sub <名> <model>`（配置层）；想整体换档：`/model -g <model>`，未单独配置的子 Agent 跟随；想只给子 Agent 整体换档而不动主 agent：`/model -g sub * <model>`。
-- `/model -g sub`（不带名）列出子 Agent 模型总览：wildcard、每个已定义子 Agent（含 md `model:` 优先提示）与 stale 条目。
+- 想改某个子 Agent 的模型：写 md 的 `model:`（定义层），或 `/submodel <名> <model>`（配置层）；想整体换档：`/model -g <model>`，未单独配置的子 Agent 跟随；想只给子 Agent 整体换档而不动主 agent：`/submodel * <model>`。
+- `/submodel`（不带名）列出子 Agent 模型总览：wildcard、每个已定义子 Agent（含 md `model:` 优先提示）与 stale 条目。`/submodel` 由 `subagent/inprocess` 插件自身贡献（替代旧的 `/model -g sub` 写法）。
 - Langfuse 上 `subagent.<name>` span 的 planned `model` 与实际 LLM 调用使用同一解析函数。
 
 Loop 子 Agent（`subagent/loop-agent`，如 `cursor`）不走此链：模型由定义 `model` / 目标 Loop agent 配置（或远端 ACP 自身）决定。
