@@ -214,6 +214,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `llm`（必填） | `agentkit.LLMProvider` |  |
 | `sessionEvents`（必填） | `session.Compaction` |  |
 
+> **保留语义（2026-10 修正）**：切点选择会 pin 住**当前轮的触发 user message**（最后一个 turn-start）——保留尾部永不从它之后开始，兜底裁剪也永不丢弃最后一条 user message。此前大 tool result 占满 `keepRecentTokens` 预算时，用户指令会被摘要/截断掉，agent 在轮次中段丢失任务（线上事故：模型花十余步试图从磁盘"重建用户意图"）。
+
 ## `compaction/token-limit`
 
 - 返回类型：`compaction.Service`
@@ -230,6 +232,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `chain`（必填） | `compaction.Chain` |  |
 | `services`（必填） | `[]compaction.Service` | Services run only once the threshold is crossed, with Force set. |
+
+> **估算语义（2026-10 修正）**：触发估算只反映**当前活上下文**——取「活消息字符估算」与「provider 最近一次上报 usage」的较大者。历史版本会把 session 事件日志全量逻辑字符计入（db 后端在压缩后 `Read(0)` 返回全量日志），长会话中该累计值单调增长并永久越过阈值，导致每一步都触发 compaction（线上事故：单轮 58 步内 43 次压缩、21 分钟摘要开销）。迟触发由 `runStepWithOverflowRecovery` 的 overflow 强制压缩兜底，是更便宜的方向。
 
 ## `credentials/env`
 

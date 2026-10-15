@@ -65,6 +65,31 @@ func TestFindCutPointUsesRecordedLogicalChars(t *testing.T) {
 	}
 }
 
+// 事故回归：当前轮的触发 user message 必须留在保留尾部。修复前 keepRecent
+// 预算被近期巨大的 tool result 占满时，切点会落在触发消息之后，用户指令被
+// 摘要掉，模型在轮次中段丢失任务（trace 中出现多步"重建用户意图"的螺旋）。
+func TestFindCutPointPinsInflightTurnTrigger(t *testing.T) {
+	t.Parallel()
+
+	big := stringsRepeat("x", 4000)
+	indexed := []capscompaction.IndexedMessage{
+		{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "old question"}}}, Seq: 1, IsTurnStart: true},
+		{Message: agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "old reply"}}}, Seq: 2},
+		{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "publish the wiki now"}}}, Seq: 3, IsTurnStart: true},
+		{Message: agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "c1", Name: "bash"}}}, Seq: 4},
+		{Message: agentkit.ModelMessage{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "c1", Name: "bash", Content: big}}}, Seq: 5},
+		{Message: agentkit.ModelMessage{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: big}}}, Seq: 6},
+	}
+	// 小 keep 预算：不 pin 时切点落在 index 4+（触发消息被摘要）。
+	cut := rtcompaction.FindCutPoint(indexed, 0, len(indexed), 50)
+	if cut.FirstKeptIndex > 3 {
+		t.Fatalf("FirstKeptIndex = %d, want <= 3: in-flight turn trigger must stay in the retained tail", cut.FirstKeptIndex)
+	}
+	if cut.IsSplitTurn {
+		t.Fatal("pinned cut at the turn trigger must not be treated as a split turn")
+	}
+}
+
 func stringsRepeat(s string, n int) string {
 	out := make([]byte, n)
 	for i := range out {

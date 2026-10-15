@@ -75,10 +75,23 @@ func dropOldestMessagesToFit(messages []agentkit.ModelMessage, maxChars int) ([]
 	if total <= maxChars {
 		return messages, false
 	}
+	// Never drop the last user message: it is the in-flight turn's trigger.
+	// Losing it mid-turn leaves the agent without the live instruction (the
+	// model then burns steps trying to reconstruct the task from disk).
+	maxDrop := len(messages) - 1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			maxDrop = i
+			break
+		}
+	}
 	drop := 0
-	for drop < len(messages)-1 && total > maxChars {
+	for drop < maxDrop && total > maxChars {
 		total -= estimateMessageChars(messages[drop])
 		drop++
+	}
+	if drop == 0 {
+		return messages, false
 	}
 	out := messages[drop:]
 	for len(out) > 0 && len(out[0].ToolResults) > 0 {

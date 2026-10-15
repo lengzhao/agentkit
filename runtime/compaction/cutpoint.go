@@ -56,6 +56,21 @@ func FindCutPoint(messages []capscompaction.IndexedMessage, startIndex, endIndex
 		}
 	}
 
+	// Pin the in-flight turn's trigger: the retained tail must never start
+	// after the last turn-start (the live user instruction). Summarizing it
+	// away makes the agent lose the task mid-turn — observed as a multi-step
+	// "reconstruct what the user asked" spiral after a truncation marker.
+	// The retained tail may exceed keepRecentTokens as a result; per-message
+	// bounding downstream still caps individual oversized messages.
+	for i := endIndex - 1; i >= startIndex; i-- {
+		if messages[i].IsTurnStart {
+			if cutIndex > i {
+				cutIndex = i
+			}
+			break
+		}
+	}
+
 	startsTurn := messages[cutIndex].IsTurnStart
 	turnStartIndex := -1
 	if !startsTurn {
