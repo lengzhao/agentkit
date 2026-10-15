@@ -215,6 +215,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `sessionEvents`（必填） | `session.Compaction` |  |
 
 > **保留语义（2026-10 修正）**：切点选择会 pin 住**当前轮的触发 user message**（最后一个 turn-start）——保留尾部永不从它之后开始，兜底裁剪也永不丢弃最后一条 user message。此前大 tool result 占满 `keepRecentTokens` 预算时，用户指令会被摘要/截断掉，agent 在轮次中段丢失任务（线上事故：模型花十余步试图从磁盘"重建用户意图"）。
+>
+> **长单轮退化形态**：当历史已全部摘要、当前轮自身就超过保留预算时，兜底裁剪按「触发消息 > 旧摘要 > 最新尾部」的优先级保留，丢弃中段（早期工具噪音）。触发消息逐字保留；原始内容在 session 事件日志中不丢失，仅模型可见视图被裁剪。
 
 ## `compaction/token-limit`
 

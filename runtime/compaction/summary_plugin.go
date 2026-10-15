@@ -202,9 +202,20 @@ func (s *summaryService) maxInputChars() int {
 }
 
 // truncateOnlyCompaction handles forced compaction when there is nothing to
-// summarize (e.g. the whole history is one oversized message): it persists a
-// compaction event whose retained tail is the bounded history, so overflow
-// recovery retries with a bounded prompt instead of the same oversized one.
+// summarize (e.g. the whole history is one oversized message, or one long
+// in-flight turn fills the retained budget): it persists a compaction event
+// whose retained tail is the bounded history, so overflow recovery retries
+// with a bounded prompt instead of the same oversized one.
+//
+// Retention priority when the budget cannot hold everything:
+//  1. the in-flight turn's trigger (last user message) — never dropped, or
+//     the agent loses the live instruction mid-turn;
+//  2. the previous summary checkpoint — dropped middle history's only record;
+//  3. the newest messages, contiguous from the end.
+//
+// The dropped middle is exactly the early-turn tool noise that made the turn
+// oversized. Durable session events keep the full originals; only the
+// model-visible retained tail is selected.
 func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcompaction.Request, indexed []capcompaction.IndexedMessage, boundaryStart int, tokensBefore int) (capcompaction.Result, error) {
 	if len(indexed) == 0 {
 		return capcompaction.Result{}, nil
@@ -215,17 +226,55 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 	if boundaryStart > len(indexed) {
 		boundaryStart = len(indexed)
 	}
-	bounded, ok := FitIndexedMessagesToBudget(indexed, s.maxRetainedChars())
-	if !ok {
-		slog.Warn("forced compaction did not apply: nothing to summarize and no oversized retained content",
-			"session_id", req.SessionID,
-			"agent_id", req.AgentID,
-			"indexed_messages", len(indexed),
-			"tokens_before", tokensBefore,
-			"keep_recent_tokens", s.cfg.KeepRecentTokens,
-		)
-		return capcompaction.Result{}, nil
+	maxChars := s.maxRetainedChars()
+
+	// Per-message bound first: neutralize hydratable attachments and cap each
+	// message, so no single message can blow the whole tail budget.
+	msgs := make([]agentkit.ModelMessage, len(indexed))
+	for i, item := range indexed {
+		msgs[i] = item.Message
 	}
+	changed := false
+	for i, msg := range msgs {
+		if next, ok := neutralizeAttachmentParts(msg); ok {
+			msgs[i] = next
+			changed = true
+		}
+	}
+	if out, truncated := TruncateOversizedMessageTexts(msgs, maxChars); truncated {
+		msgs = out
+		changed = true
+	}
+
+	total := 0
+	for _, msg := range msgs {
+		total += estimateMessageChars(msg)
+	}
+	summarySurvived := boundaryStart == 1
+	if total <= maxChars {
+		if !changed {
+			slog.Warn("forced compaction did not apply: nothing to summarize and no oversized retained content",
+				"session_id", req.SessionID,
+				"agent_id", req.AgentID,
+				"indexed_messages", len(indexed),
+				"tokens_before", tokensBefore,
+				"keep_recent_tokens", s.cfg.KeepRecentTokens,
+			)
+			return capcompaction.Result{}, nil
+		}
+	} else {
+		changed = true
+		keep := s.selectRetainedWithinBudget(msgs, boundaryStart, maxChars)
+		summarySurvived = boundaryStart == 1 && len(keep) > 0 && keep[0]
+		out := msgs[:0]
+		for i, msg := range msgs {
+			if keep[i] {
+				out = append(out, msg)
+			}
+		}
+		msgs = out
+	}
+
 	summary := agentkit.ModelMessage{
 		Role: "user",
 		Content: []agentkit.ContentPart{{
@@ -233,22 +282,16 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 			Text: "[Earlier context could not be summarized: a single message exceeded the retention budget and was truncated.]",
 		}},
 	}
-	drop := len(indexed) - len(bounded)
-	if drop < 0 {
-		drop = 0
+	tail := msgs
+	// Promote the retained previous summary into the summary slot when it
+	// survived selection AND a non-empty tail remains: derive treats an empty
+	// RetainedTail as a legacy marker and replays events after BeforeSeq (0
+	// here), which would resurrect compacted-away history.
+	if summarySurvived && len(msgs) > 1 {
+		summary = msgs[0]
+		tail = msgs[1:]
 	}
-	tail := bounded
-	firstKept := indexed[drop].Seq
-	// Promote the bounded previous summary only when a non-empty tail remains:
-	// derive treats an empty RetainedTail as a legacy marker and replays events
-	// after BeforeSeq (0 here), which would resurrect compacted-away history.
-	if boundaryStart > drop && len(bounded) > 1 {
-		summary = bounded[0]
-		tail = bounded[1:]
-		if drop+1 < len(indexed) {
-			firstKept = indexed[drop+1].Seq
-		}
-	}
+	firstKept := indexed[len(indexed)-1].Seq
 	slog.Info("forced compaction applied without summary: bounded oversized retained content",
 		"session_id", req.SessionID,
 		"agent_id", req.AgentID,
@@ -267,6 +310,74 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 		return capcompaction.Result{}, err
 	}
 	return capcompaction.Result{Applied: true}, nil
+}
+
+// selectRetainedWithinBudget picks which messages survive a forced truncation,
+// in priority order: the last user message (in-flight turn trigger), the
+// previous summary checkpoint (index 0 when boundaryStart == 1), then the
+// newest contiguous suffix. Everything else — the middle — is dropped.
+func (s *summaryService) selectRetainedWithinBudget(msgs []agentkit.ModelMessage, boundaryStart int, maxChars int) []bool {
+	keep := make([]bool, len(msgs))
+	budget := maxChars
+
+	lastUser := -1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" && i >= boundaryStart {
+			lastUser = i
+			break
+		}
+	}
+	if lastUser >= 0 {
+		keep[lastUser] = true
+		budget -= estimateMessageChars(msgs[lastUser])
+	}
+	if boundaryStart == 1 && len(msgs) > 0 {
+		if c := estimateMessageChars(msgs[0]); c <= budget {
+			keep[0] = true
+			budget -= c
+		}
+	}
+	// Newest contiguous suffix after the trigger; stop at the first message
+	// that no longer fits to keep the tail coherent.
+	for i := len(msgs) - 1; i > lastUser; i-- {
+		c := estimateMessageChars(msgs[i])
+		if c > budget {
+			break
+		}
+		keep[i] = true
+		budget -= c
+	}
+	// A tool result at the suffix boundary is an orphan (its call was dropped
+	// in the middle): drop it rather than confuse the provider.
+	for i := lastUser + 1; i < len(msgs); i++ {
+		if !keep[i] {
+			continue
+		}
+		if len(msgs[i].ToolResults) > 0 {
+			keep[i] = false
+			continue
+		}
+		break
+	}
+	// Never emit an empty selection: an empty RetainedTail is a legacy marker
+	// for derive and would resurrect compacted-away history on reload. Keep
+	// the trigger (or the first message) even if it alone busts the budget —
+	// it has already been capped to maxChars by the per-message bound.
+	keptAny := false
+	for _, k := range keep {
+		if k {
+			keptAny = true
+			break
+		}
+	}
+	if !keptAny && len(keep) > 0 {
+		idx := lastUser
+		if idx < 0 {
+			idx = 0
+		}
+		keep[idx] = true
+	}
+	return keep
 }
 
 func latestCompactionData(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, capcompaction.EventData, bool) {

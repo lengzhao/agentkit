@@ -736,3 +736,83 @@ func TestSummaryForceNeverWritesEmptyRetainedTail(t *testing.T) {
 		}
 	}
 }
+
+// 长单轮场景：历史已被摘要，当前轮自身就超过保留预算（正是 trace 373cf049
+// 的形态）。truncateOnly 必须保「旧摘要 + 当前轮触发消息 + 最新尾部」，
+// 丢弃中段工具噪音，且不得产出空 RetainedTail。
+func TestSummaryForceLongTurnKeepsSummaryTriggerAndNewestTail(t *testing.T) {
+	t.Parallel()
+
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:long-turn-middle-drop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// 既有压缩检查点（历史摘要）。
+	if err := sessevents.Default.AppendCompaction(ctx, sess, "a", capcompaction.EventData{
+		BeforeSeq: 0,
+		Kind:      capcompaction.KindSummary,
+		Summary: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "历史摘要"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 当前轮：触发消息 + 大量中段工具噪音。
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: "把 FACTS.md 发布到 wiki"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ {
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventAssistantMessage, agentkit.ModelMessage{
+			Role:    "assistant",
+			Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 2000)}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 100}, testSummaryDeps(t, &okSummaryLLM{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true,
+	})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("forced compaction must apply for an oversized single turn")
+	}
+
+	data := lastCompactionData(t, ctx, sess)
+	if len(data.RetainedTail) == 0 {
+		t.Fatal("retained tail must not be empty")
+	}
+	// 旧摘要提升到 Summary 槽位。
+	if len(data.Summary.Content) == 0 || !strings.Contains(data.Summary.Content[0].Text, "历史摘要") {
+		t.Fatalf("previous summary must be preserved, got %#v", data.Summary.Content)
+	}
+	// 触发消息在尾部且逐字保留。
+	if got := data.RetainedTail[0].Content[0].Text; got != "把 FACTS.md 发布到 wiki" {
+		t.Fatalf("retained tail head = %q, want the in-flight trigger verbatim", got)
+	}
+	// 中段被丢弃：尾部总量远小于原始 20k 字符。
+	total := 0
+	for _, msg := range data.RetainedTail {
+		for _, part := range msg.Content {
+			total += len(part.Text)
+		}
+	}
+	if total > 4000 {
+		t.Fatalf("middle must be dropped, retained tail total chars = %d", total)
+	}
+}
