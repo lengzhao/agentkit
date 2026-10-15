@@ -698,3 +698,52 @@ func TestBuildRichCardKeepsToolPanelAfterFinalizedSteps(t *testing.T) {
 		t.Fatalf("card missing collapsible panel: %s", card)
 	}
 }
+
+func TestBuildRichCardEmptyWithoutContent(t *testing.T) {
+	t.Parallel()
+	if got := buildRichCard(cardStatusWorking, "", nil, "", true, time.Second); got != "" {
+		t.Fatalf("content-free working segment must yield empty card, got %q", got)
+	}
+	if got := buildRichCard(cardStatusThinking, "", nil, "  ", false, time.Second); got != "" {
+		t.Fatalf("content-free thinking segment must yield empty card, got %q", got)
+	}
+}
+
+func TestBuildRichCardTerminalKeepsStatusLine(t *testing.T) {
+	t.Parallel()
+	got := buildRichCard(cardStatusDone, "", nil, "", false, 2*time.Second)
+	if !strings.Contains(got, "☑️") {
+		t.Fatalf("terminal card must keep status line, got %q", got)
+	}
+}
+
+// 零输出消息段（如 ACP follow-up turn 无可见内容）不得创建空卡片气泡。
+func TestRichMessageEndSkipsCardForEmptySegment(t *testing.T) {
+	t.Parallel()
+	p := &Platform{useInteractiveCard: true, showToolProgress: true}
+	delivery := agentkit.SessionID("feishu:oc_chat:u:U1")
+	p.deliveries.Store(delivery, replyContext{chatID: "oc_chat"})
+	event := agentkit.OutboundEvent{
+		TurnID: "turn-empty",
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+			Platform:   "feishu",
+			DeliveryID: delivery,
+			ReplyTo:    "om_msg",
+		}),
+		Type: agentkit.EventMessageEnd,
+		Data: rctx.MarshalOutboundData(agentkit.MessageEndPayload{
+			Message: agentkit.ModelMessage{Role: "assistant"},
+		}),
+	}
+	if err := p.handleRichStreamMessageEnd(context.Background(), event); err != nil {
+		t.Fatalf("handleRichStreamMessageEnd: %v", err)
+	}
+	streamKey := p.streamKeyForOutbound(event)
+	st := p.streamState(streamKey)
+	st.lock()
+	handle := st.progressHandle
+	st.unlock()
+	if handle != nil {
+		t.Fatal("empty message segment must not create a progress card")
+	}
+}

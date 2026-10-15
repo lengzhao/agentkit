@@ -174,6 +174,8 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 `turn/end` 先关 CardKit 流式再整卡 Patch；仅正文变长且工具区未变时走 `main_text` 元素流式。整卡更新会关闭实体的流式模式，之后元素流式会报 **300309「streaming mode is closed」**——平台识别后在 state 里标记 `bodyStreamClosed`，本卡后续直接走整卡 patch，重建新卡时重置。
 
+**空内容不建卡**：`buildRichCard` 在无折叠区且正文为空（非终态没有状态行可显示）时返回空串，调用方据此跳过建卡；`message/end` 对零输出消息段（如 ACP follow-up turn 无可见内容）在尚未建卡时直接跳过 flush——避免渲染出只有空 `main_text` 元素的空消息气泡。终态（☑️/已取消/出错）状态行始终保留，不受影响。
+
 **失败降级与心跳**：卡片创建/更新失败（如 CardKit 间歇性 403）**不会中断 agent turn**——更新失败时重建新进度卡片并替换 handle，**旧卡不删除**（删除在 Lark 客户端显示为「撤回了一条消息」，观感差），因此**新卡只展示旧卡未成功展示的增量内容**（state 记录全局已展示位置 `ackedBody`/`ackedSteps`，重建时作为新卡的 `cardBodyBase`/`cardStepsBase`，正文按前缀裁剪、步骤按下标裁剪；前缀不匹配时回退全文保证不丢）。相对旧卡无新增内容时不重建空卡，保留旧 handle 等下一轮 flush 重试。重建失败则 handle 置空、下一轮 flush 重试创建；创建失败同理直接降级。创建失败带**指数退避**（2s 起步、上限 30s，成功清零），避免网关持续故障时每个流式 delta 都打一次创建 API。`turn/end` 定稿走**三级降级**保证最终答复不丢：patch 当前卡（增量内容）→ 失败则消息接口（`Im.Message.Patch`）挽救 → 再失败另发一张最终增量卡（旧卡保留）→ 最后纯文本增量补发，纯文本按 5s/20s/60s 重试，全部失败才记 Error 日志。卡片创建后若超过 10s 无任何更新（长 LLM 推理期间无出站流量，CardKit 实体可能被回收），心跳定时器会自动轻量 flush 一次（页脚 elapsed 随时间变化）保持卡片活跃；`turn/end` 清理心跳。
 
 `enableFeishuCard: false` 时出站为纯文本。

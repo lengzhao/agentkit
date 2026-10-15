@@ -376,6 +376,12 @@ func buildRichCard(status cardStatus, _ string, steps []toolStep, markdown strin
 	}
 
 	bodyMD := richCardBodyMarkdown(status, markdown, elapsed)
+	// 无面板且正文为空（非终态没有状态行可显示）时不产出卡片：调用方以空串
+	// 作为「无可展示内容」信号跳过建卡，避免渲染出只有空 markdown 元素的
+	// 空消息气泡（如 ACP follow-up turn 零输出时的 message/end flush）。
+	if panelMap == nil && strings.TrimSpace(bodyMD) == "" {
+		return ""
+	}
 	markdownMap := map[string]any{
 		"tag":        "markdown",
 		"element_id": richCardMainTextElementID,

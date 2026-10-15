@@ -971,7 +971,15 @@ func (p *Platform) handleRichStreamMessageEnd(ctx context.Context, event agentki
 		return p.flushRichCard(ctx, streamKey, true)
 	}
 	st.finalizedBodyText = st.richCardDisplayBody()
+	// 无正文、无步骤且尚未建卡的消息段（如 ACP 零输出的 follow-up turn）
+	// 不触发 flush：建卡只会得到一张空卡片气泡。
+	nothingToShow := strings.TrimSpace(st.finalizedBodyText) == "" &&
+		len(p.renderRichSteps(st)) == 0 &&
+		st.progressHandle == nil
 	st.unlock()
+	if nothingToShow {
+		return nil
+	}
 	// 整卡落盘（关闭 streaming、去掉进行中页脚），避免仅流式 main_text 时页脚残留在旧 JSON。
 	return p.flushRichCard(ctx, streamKey, false)
 }
