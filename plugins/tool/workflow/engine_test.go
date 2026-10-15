@@ -460,6 +460,63 @@ func TestEngineContinueOnError(t *testing.T) {
 	}
 }
 
+// swallowTimeoutRuntime mirrors runtime/tools: an expired call deadline becomes
+// the benign timeout sentinel result with err=nil.
+type swallowTimeoutRuntime struct{ stubToolRuntime }
+
+func (s *swallowTimeoutRuntime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	if strings.Contains(string(call.Input), "sleep") {
+		<-ctx.Done()
+		return agentkit.ToolResultFromTimeout(call), nil
+	}
+	return s.stubToolRuntime.Execute(ctx, call)
+}
+
+func TestEngineScriptStepTimeoutSurfacesAsError(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "wf-timeout", Description: "d",
+		Steps: []Step{
+			{ID: "slow", Type: StepScript, Run: "sleep 30", TimeoutSeconds: 1, ContinueOnError: true},
+			{ID: "after", Type: StepScript, Run: "echo ok"},
+		},
+		Result: "slow={{ .steps.slow.status }} err={{ .steps.slow.error }} after={{ .steps.after.status }}",
+	}
+	engine := &Engine{Workspace: stubWorkspace{t.TempDir()}, Tools: &swallowTimeoutRuntime{}}
+	out, err := engine.Run(context.Background(), wf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "slow=error err=" + agentkit.ToolTimeoutResultText + " after=ok"
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
+	}
+}
+
+func TestEngineToolStepRuntimeTimeoutSentinelFails(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "wf-tool-timeout", Description: "d",
+		Steps:  []Step{{ID: "call", Type: StepTool, Tool: "slow__tool"}},
+		Result: "call={{ .steps.call.status }}",
+	}
+	engine := &Engine{
+		Workspace: stubWorkspace{t.TempDir()},
+		Tools:     &stubToolRuntime{content: agentkit.ToolTimeoutResultText},
+	}
+	_, err := engine.Run(context.Background(), wf, nil)
+	if err == nil || !strings.Contains(err.Error(), agentkit.ToolTimeoutResultText) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBashStepErrorRecognizesRuntimeTimeoutSentinel(t *testing.T) {
+	t.Parallel()
+	if got := bashStepError(agentkit.ToolTimeoutResultText); got == "" {
+		t.Fatal("bashStepError did not flag the runtime timeout sentinel")
+	}
+}
+
 func TestEngineModelStepSchema(t *testing.T) {
 	t.Parallel()
 	wf := &Workflow{

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
@@ -102,19 +103,71 @@ type workflowRunTool struct {
 	engine *Engine
 }
 
+// timeoutSecondsArg is the reserved call argument overriding the workflow
+// tool's default execution timeout (see CallTimeout). It is consumed by the
+// tool wrapper and never reaches the workflow's declared inputs.
+const timeoutSecondsArg = "timeoutSeconds"
+
 func (t *workflowRunTool) Name() string { return toolNamePrefix + sanitizeToolName(t.wf.Name) }
 
 func (t *workflowRunTool) Description() string {
 	// The file path lets the model edit this workflow in place; new workflows
 	// follow the same directory (see /workflow and the workflow-manager skill).
-	return strings.TrimSpace(t.wf.Description) + "\nWorkflow file: " + t.wf.Path
+	// The default timeout lets the model size the outer call against the inner
+	// step timeouts (sum of step timeouts + buffer; pass timeoutSeconds to
+	// override).
+	return fmt.Sprintf("%s\nWorkflow file: %s\nDefault timeout: %ds (pass timeoutSeconds to override)",
+		strings.TrimSpace(t.wf.Description), t.wf.Path, t.wf.DefaultTimeoutSeconds())
 }
 
 func (t *workflowRunTool) InputSchema() agentkit.JSONSchema {
-	if len(t.wf.Inputs) > 0 {
-		return agentkit.JSONSchema{Raw: t.wf.Inputs}
+	schema := make(map[string]any, len(t.wf.Inputs)+2)
+	for k, v := range t.wf.Inputs {
+		schema[k] = v
 	}
-	return agentkit.JSONSchema{Type: "object"}
+	if _, ok := schema["type"]; !ok {
+		schema["type"] = "object"
+	}
+	// Copy the properties map so the reserved argument never leaks into the
+	// workflow's declared inputs (engine-side validation uses wf.Inputs).
+	srcProps, _ := t.wf.Inputs["properties"].(map[string]any)
+	props := make(map[string]any, len(srcProps)+1)
+	for k, v := range srcProps {
+		props[k] = v
+	}
+	if _, declared := props[timeoutSecondsArg]; !declared {
+		props[timeoutSecondsArg] = map[string]any{
+			"type": "integer",
+			"description": fmt.Sprintf("Per-call timeout in seconds; defaults to %d (sum of step timeouts + %ds buffer).",
+				t.wf.DefaultTimeoutSeconds(), TimeoutBufferSeconds),
+		}
+	}
+	schema["properties"] = props
+	return agentkit.JSONSchema{Raw: schema}
+}
+
+// CallTimeout implements agentkit.CallTimeoutProvider: the per-call timeout is
+// the reserved timeoutSeconds argument, or the summed step timeouts plus a
+// buffer when omitted. tools/runtime prefers it over a smaller configured
+// timeout, so inner step timeouts always fire before the outer call deadline.
+func (t *workflowRunTool) CallTimeout(raw json.RawMessage) time.Duration {
+	if secs := timeoutSecondsFrom(raw); secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return time.Duration(t.wf.DefaultTimeoutSeconds()) * time.Second
+}
+
+func timeoutSecondsFrom(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var input struct {
+		TimeoutSeconds int `json:"timeoutSeconds"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return 0
+	}
+	return input.TimeoutSeconds
 }
 
 func (t *workflowRunTool) Call(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -124,6 +177,7 @@ func (t *workflowRunTool) Call(ctx context.Context, raw json.RawMessage) (string
 			return fmt.Sprintf("workflow %q: args must be a JSON object: %v", t.wf.Name, err), nil
 		}
 	}
+	delete(args, timeoutSecondsArg) // consumed by CallTimeout, not a workflow input
 	result, err := t.engine.Run(ctx, t.wf, args)
 	if err != nil {
 		return err.Error(), nil
@@ -150,9 +204,10 @@ func (p *workflowProvider) Commands() []agentkit.Command {
 }
 
 var (
-	_ agentkit.ToolProvider    = (*workflowProvider)(nil)
-	_ agentkit.CommandProvider = (*workflowProvider)(nil)
-	_ agentkit.Tool            = (*workflowRunTool)(nil)
+	_ agentkit.ToolProvider        = (*workflowProvider)(nil)
+	_ agentkit.CommandProvider     = (*workflowProvider)(nil)
+	_ agentkit.Tool                = (*workflowRunTool)(nil)
+	_ agentkit.CallTimeoutProvider = (*workflowRunTool)(nil)
 )
 
 type workflowCommand struct {

@@ -281,6 +281,82 @@ func TestRuntimeDelegateExtendsToolTimeoutFromInput(t *testing.T) {
 	}
 }
 
+// stubCallTimeoutTool implements agentkit.CallTimeoutProvider (e.g. workflow
+// tools declaring their summed step timeouts as the per-call bound).
+type stubCallTimeoutTool struct {
+	stubTool
+	timeout time.Duration
+}
+
+func (t stubCallTimeoutTool) CallTimeout(json.RawMessage) time.Duration { return t.timeout }
+
+func sleepUnlessCanceled(ctx context.Context, d time.Duration) (string, error) {
+	select {
+	case <-time.After(d):
+		return "done", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func TestRuntimeCallTimeoutProviderExtendsConfiguredTimeout(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		DefaultTimeoutSeconds: 1,
+	}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubCallTimeoutTool{
+			stubTool: stubTool{
+				name: "workflow__slow",
+				fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+					return sleepUnlessCanceled(ctx, 1500*time.Millisecond)
+				},
+			},
+			timeout: 3 * time.Second,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "workflow__slow"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "done" {
+		t.Fatalf("unexpected result: %q", tools.ResultText(result))
+	}
+}
+
+func TestRuntimeCallTimeoutProviderDoesNotShrinkConfiguredTimeout(t *testing.T) {
+	t.Parallel()
+
+	rt, err := tools.NewRuntime(tools.RuntimeConfig{
+		DefaultTimeoutSeconds: 2,
+	}, tools.RuntimeDeps{
+		Tools: []agentkit.Tool{stubCallTimeoutTool{
+			stubTool: stubTool{
+				name: "workflow__fast",
+				fn: func(ctx context.Context, _ json.RawMessage) (string, error) {
+					return sleepUnlessCanceled(ctx, 1500*time.Millisecond)
+				},
+			},
+			timeout: time.Second,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+
+	result, err := rt.Execute(context.Background(), agentkit.ToolCall{ID: "call-1", Name: "workflow__fast"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if tools.ResultText(result) != "done" {
+		t.Fatalf("unexpected result: %q", tools.ResultText(result))
+	}
+}
+
 func TestRuntimeExecuteCopiesPolicyAuditOnDeny(t *testing.T) {
 	t.Parallel()
 

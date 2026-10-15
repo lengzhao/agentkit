@@ -3,6 +3,7 @@ package agentkit
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // Tool is the model-visible consumer plugin type.
@@ -21,6 +22,14 @@ type Tool interface {
 // Implementations re-read configuration or rediscover remote tools on each call.
 type ToolProvider interface {
 	ListTools(context.Context) ([]Tool, error)
+}
+
+// CallTimeoutProvider lets a tool declare a per-call execution timeout derived
+// from its definition and call input (e.g. a workflow's summed step timeouts).
+// tools/runtime uses it when it exceeds the configured timeout, mirroring the
+// delegate per-call timeout rule; returning <= 0 falls back to configuration.
+type CallTimeoutProvider interface {
+	CallTimeout(input json.RawMessage) time.Duration
 }
 
 // ToolPack is one plugin instance that exposes one or more model-visible tools.

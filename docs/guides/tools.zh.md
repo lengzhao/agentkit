@@ -38,6 +38,16 @@ tools.default:
 
 `tools/runtime`（`tools/deferred` 透传内层）在组 catalog 时对**整段**插件 `Tool.Name()` 做清洗：仅保留 `A-Za-z0-9_`，其余字符（含 `.`、`-`）变为 `_`，以满足 OpenAI Responses 等对 `function_call.name` 的 `^[a-zA-Z0-9_-]+$` 约束。`Visible` 与 `Execute` 均使用清洗后的名称。`allowTools` / `denyTools`、`toolTimeouts` 在加载时会做同一套清洗（仍可直接写 MCP/OpenAPI 的 canonical 原名）；`tools/deferred` 的 `eagerTools` / `deferTools` 亦按清洗名匹配。依赖 `ToolCall.Name` 的 **policy**（如 `policy/path-denylist` 的 `tools`）应写模型侧清洗后的名称。若清洗后重名，按静态工具 → 动态 provider 顺序、同层按 canonical 名字典序，**先注册者保留、后者丢弃** 并 `slog.Warn`。
 
+## `tools/runtime` 每次调用超时
+
+单次工具执行的墙钟按以下顺序解析（`tools/deferred` 透传内层，同一套逻辑）：
+
+1. `toolTimeouts[<工具名>]`（模型侧清洗名或 canonical 原名均可）；
+2. 缺省用 `defaultTimeoutSeconds`；
+3. **per-call 放宽**：工具实现 `agentkit.CallTimeoutProvider`（如 `workflow__<name>` 按管线 step 超时求和给出默认值）或 `delegate` 的入参 `timeoutSeconds`，且 per-call 值大于配置值时，取 per-call 值；配置值更大时仍取配置值。
+
+超时结果不中止 turn：runtime 返回哨兵文本 `tool execution timed out`（`agentkit.ToolTimeoutResultText`，`Audit.decision=timeout`）且 `err=nil`，模型可据此调整重试。调用方（如 workflow 引擎）应把该哨兵识别为失败，而不是正常结果。
+
 ## 网络工具
 
 ### 插件一览

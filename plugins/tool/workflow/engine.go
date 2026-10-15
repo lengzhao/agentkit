@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -205,6 +206,12 @@ func (e *Engine) runStep(ctx context.Context, wf *Workflow, runID string, step *
 	default:
 		err = fmt.Errorf("unknown step type %q", step.Type)
 	}
+	if err == nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+		// The sibling tools runtime converts an expired deadline into a benign
+		// sentinel result (agentkit.ToolResultFromTimeout) with err=nil; without
+		// this check a timed-out script/tool step would be recorded as ok.
+		err = stepTimeoutError(step)
+	}
 	if err != nil {
 		state.status = "error"
 		state.err = err.Error()
@@ -250,6 +257,14 @@ func stepError(state *stepState) error {
 		return nil
 	}
 	return fmt.Errorf("%s", state.err)
+}
+
+// stepTimeoutError builds the step failure for an expired step context.
+func stepTimeoutError(step *Step) error {
+	if step.TimeoutSeconds > 0 {
+		return fmt.Errorf("step timed out after %ds", step.TimeoutSeconds)
+	}
+	return fmt.Errorf("step timed out: enclosing execution deadline exceeded")
 }
 
 // emitStepToolEvents forwards one step's tool call/result to the parent turn's

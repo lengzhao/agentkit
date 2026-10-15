@@ -169,6 +169,11 @@ func (e *Engine) beginScriptObservation(ctx context.Context, wf *Workflow, runID
 
 // bashStepError maps tool/shell-bash model text back to a step failure.
 func bashStepError(content string) string {
+	// The tools runtime reports per-tool timeouts as this exact sentinel body
+	// with err=nil (agentkit.ToolResultFromTimeout); treat it as step failure.
+	if content == agentkit.ToolTimeoutResultText {
+		return content
+	}
 	if strings.Contains(content, "\n\nCommand exited with code") {
 		return truncateRunes(content, 400)
 	}
@@ -211,6 +216,11 @@ func (e *Engine) runToolStep(ctx context.Context, wf *Workflow, runID string, st
 	e.emitStepToolEvents(ctx, call, result)
 	if err != nil {
 		return err
+	}
+	// A per-tool timeout from the sibling runtime arrives as the sentinel body
+	// with err=nil; it must fail the step, not pass as a normal result.
+	if result.Content == agentkit.ToolTimeoutResultText {
+		return fmt.Errorf("tool step %q: %s", step.ID, agentkit.ToolTimeoutResultText)
 	}
 	state.json = parseJSONContent(result.Content)
 	state.view, state.path = e.spillView(ctx, runID, step.ID, ".out", result.Content)

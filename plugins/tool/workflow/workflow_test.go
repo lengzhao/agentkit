@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 )
@@ -80,13 +81,21 @@ func TestProviderListsOneToolPerWorkflow(t *testing.T) {
 	if !ok || props["msg"] == nil {
 		t.Fatalf("schema Raw = %v", schema.Raw)
 	}
+	// 保留字 timeoutSeconds 注入模型侧 schema，供覆盖默认总超时。
+	if props[timeoutSecondsArg] == nil {
+		t.Fatalf("schema missing reserved %s: %v", timeoutSecondsArg, schema.Raw)
+	}
+	if !strings.Contains(pipe.Description(), "Default timeout:") {
+		t.Fatalf("desc missing default timeout: %q", pipe.Description())
+	}
 
 	ping := toolByName(t, ctx, provider, "workflow__ping")
-	if len(ping.InputSchema().Raw) != 0 {
-		t.Fatalf("ping has no inputs, schema Raw should be empty: %v", ping.InputSchema().Raw)
+	pingProps, ok := ping.InputSchema().Raw["properties"].(map[string]any)
+	if !ok || len(pingProps) != 1 || pingProps[timeoutSecondsArg] == nil {
+		t.Fatalf("ping schema should carry only the reserved timeout arg: %v", ping.InputSchema().Raw)
 	}
-	if ping.InputSchema().Type != "object" {
-		t.Fatalf("ping schema type = %q", ping.InputSchema().Type)
+	if ping.InputSchema().Raw["type"] != "object" {
+		t.Fatalf("ping schema type = %q", ping.InputSchema().Raw["type"])
 	}
 }
 
@@ -164,6 +173,80 @@ func TestProviderDiscoversEditsNextCall(t *testing.T) {
 	tools, err = provider.ListTools(ctx)
 	if err != nil || len(tools) != 2 {
 		t.Fatalf("tools = %v err = %v", tools, err)
+	}
+}
+
+func TestWorkflowDefaultTimeoutSeconds(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{Steps: []Step{
+		{ID: "s", Type: StepScript, Run: "echo"},                    // 未设 → 120
+		{ID: "t", Type: StepTool, Tool: "x", TimeoutSeconds: 30},    // 30
+		{ID: "m", Type: StepModel, Prompt: "p"},                     // 未设 → 120
+		{ID: "a", Type: StepAgent, Agent: "x", Task: "y"},           // 未设 → 900
+		{ID: "a2", Type: StepAgent, Agent: "x", Task: "y", TimeoutSeconds: 60}, // 60
+	}}
+	want := 120 + 30 + 120 + 900 + 60 + TimeoutBufferSeconds
+	if got := wf.DefaultTimeoutSeconds(); got != want {
+		t.Fatalf("DefaultTimeoutSeconds = %d, want %d", got, want)
+	}
+}
+
+func TestWorkflowRunToolCallTimeout(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeWorkflow(t, filepath.Join(root, "workflows"), "pipe", echoPipeline)
+	provider := newTestProvider(t, root)
+	tool := toolByName(t, context.Background(), provider, "workflow__pipe")
+
+	tp, ok := tool.(agentkit.CallTimeoutProvider)
+	if !ok {
+		t.Fatal("workflow tool does not implement CallTimeoutProvider")
+	}
+	// echoPipeline: script(120) + tool(120) + buffer(5)
+	if got := tp.CallTimeout(json.RawMessage(`{"msg":"hi"}`)); got != 245*time.Second {
+		t.Fatalf("default CallTimeout = %v, want 245s", got)
+	}
+	if got := tp.CallTimeout(json.RawMessage(`{"msg":"hi","timeoutSeconds":42}`)); got != 42*time.Second {
+		t.Fatalf("override CallTimeout = %v, want 42s", got)
+	}
+	if got := tp.CallTimeout(nil); got != 245*time.Second {
+		t.Fatalf("empty input CallTimeout = %v, want 245s", got)
+	}
+}
+
+func TestWorkflowRunToolStripsReservedTimeoutArg(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// additionalProperties: false —— timeoutSeconds 若漏进引擎侧校验会直接失败。
+	writeWorkflow(t, filepath.Join(root, "workflows"), "strict", `{
+  "description": "strict inputs",
+  "inputs": {"type":"object","properties":{"msg":{"type":"string"}},"required":["msg"],"additionalProperties":false},
+  "steps": [{"id":"p","type":"script","run":"echo {{ .inputs.msg | quote }}"}],
+  "result": "{{ .steps.p.stdout }}"
+}`)
+	provider := newTestProvider(t, root)
+	tool := toolByName(t, context.Background(), provider, "workflow__strict")
+	out, err := tool.Call(context.Background(), json.RawMessage(`{"msg":"hi","timeoutSeconds":30}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "hi" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestWorkflowInputSchemaDoesNotMutateDeclaredInputs(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeWorkflow(t, filepath.Join(root, "workflows"), "pipe", echoPipeline)
+	provider := newTestProvider(t, root)
+	tool := toolByName(t, context.Background(), provider, "workflow__pipe")
+	_ = tool.InputSchema()
+	// 保留字只能存在于模型侧 schema 副本，不得污染 workflow 声明的 inputs。
+	wt := tool.(*workflowRunTool)
+	props, _ := wt.wf.Inputs["properties"].(map[string]any)
+	if _, leaked := props[timeoutSecondsArg]; leaked {
+		t.Fatalf("reserved arg leaked into declared inputs: %v", wt.wf.Inputs)
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	capsubagent "github.com/lengzhao/agentkit/cap/subagent"
 )
 
 // Step types.
@@ -21,6 +23,17 @@ const (
 	StepTool   = "tool"
 	StepModel  = "model"
 	StepAgent  = "agent"
+)
+
+const (
+	// TimeoutBufferSeconds is added to the summed step timeouts when computing
+	// the workflow tool's default call timeout, leaving room for result
+	// rendering after the final step.
+	TimeoutBufferSeconds = 5
+	// DefaultStepTimeoutSeconds estimates a script/tool/model step without an
+	// explicit timeoutSeconds when computing the default call timeout (agent
+	// steps use the subagent delegation default).
+	DefaultStepTimeoutSeconds = 120
 )
 
 // Workflow is one parsed pipeline file. Name comes from the file name.
@@ -144,6 +157,29 @@ func (s Step) validate(wfName string) error {
 		return fail("unknown step type %q (want script, tool, model, or agent)", s.Type)
 	}
 	return nil
+}
+
+// DefaultTimeoutSeconds estimates the workflow's wall-clock upper bound: steps
+// run serially, so it sums the per-step timeouts (unbounded steps contribute
+// their type default) plus a small buffer. It backs the workflow tool's
+// default per-call timeout (agentkit.CallTimeoutProvider), keeping the outer
+// call deadline behind every inner step timeout.
+func (wf *Workflow) DefaultTimeoutSeconds() int {
+	total := TimeoutBufferSeconds
+	for _, step := range wf.Steps {
+		total += step.effectiveTimeoutSeconds()
+	}
+	return total
+}
+
+func (s Step) effectiveTimeoutSeconds() int {
+	if s.TimeoutSeconds > 0 {
+		return s.TimeoutSeconds
+	}
+	if s.Type == StepAgent {
+		return capsubagent.DefaultDelegationTimeoutSeconds
+	}
+	return DefaultStepTimeoutSeconds
 }
 
 // InputsJSONSchema returns the declared inputs schema as a JSON string for the

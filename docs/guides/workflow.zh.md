@@ -92,7 +92,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 | `timeoutSeconds` | 传给 shell 的 timeout（秒）；未设则用插件默认 |
 | `dir` | 工作目录，默认该 workflow 文件所在目录 |
 
-合并输出写入 `.stdout` / `.text`；超 50KB 时引擎写 `{{ .workflow.runDir }}/<step>.out` 并暴露 `.path`。非零退出、超时、取消 fail step。
+合并输出写入 `.stdout` / `.text`；超 50KB 时引擎写 `{{ .workflow.runDir }}/<step>.out` 并暴露 `.path`。非零退出、超时、取消 fail step——bash 回退路径下 runtime 把超时转成哨兵文本（`tool execution timed out`，见 [tools.zh.md](tools.zh.md)）时同样按失败处理，不会误记为 `ok`。
 
 ### 3.2 `tool`：工具调用
 
@@ -102,7 +102,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 |---|---|
 | `tool` | 模型侧清洗后的工具名（如 `ledger__import`） |
 | `args` | object。叶子字符串按模板渲染；渲染结果若是 JSON object/array，解析成对象/数组再传给 tool。数字保持 JSON 字面量（`json.Number`），不会先变成 `float64` |
-| `timeoutSeconds` | 默认随 runtime |
+| `timeoutSeconds` | step ctx 墙钟；默认随 runtime。sibling runtime 的 per-tool 超时哨兵（`tool execution timed out`）同样 fail step |
 
 工具结果是合法 JSON object/array 时自动解析进 `.steps.<id>.json`（可 `dig`），`.text` 始终是结果文本（超 50KB 同样 spill 出 `.path`）。script step 的 stdout 同样：整段输出是 JSON object/array 时写入 `.steps.<id>.json`。
 
@@ -160,7 +160,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 |---|---|
 | `agent` | 子 agent 定义名 |
 | `task` | 模板渲染的自包含指令（子 session 为空，所需事实必须写入） |
-| `timeoutSeconds` | 默认 900；同时受宿主 `toolTimeouts` 口径约束 |
+| `timeoutSeconds` | 默认 900；外层工具墙钟见"两层超时"一节 |
 
 语义约束：
 
@@ -200,8 +200,23 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 |---|---|
 | 控制流 | v1 仅串行；并行/分支待真实需求再加 |
 | 失败 | 默认中止整轮，`continueOnError: true` 可选；错误带已完成 step 摘要，不带 payload |
-| 超时 | per-step `timeoutSeconds` + 整体 ctx 透传；workflow 工具自身超时需覆盖最长管线 |
+| 超时 | 两层：内层 per-step `timeoutSeconds`，外层 `workflow__<name>` 工具调用墙钟（默认 Σ step + 5s，见下节） |
 | 取消 | `/stop` 经 ctx 中止当前 step，管线随之中止 |
+
+### 两层超时：外层调用 vs 内层 step
+
+```mermaid
+flowchart LR
+  M["主模型"] -->|"workflow__x(timeoutSeconds?)"| R["tools/runtime<br/>外层 per-call 墙钟<br/>默认 Σ step + 5s"]
+  R --> E["workflow 引擎"]
+  E --> S1["step 1<br/>timeoutSeconds"]
+  E --> S2["step 2<br/>timeoutSeconds"]
+```
+
+- **内层**：每个 step 的 `timeoutSeconds`（agent step 默认 900；script/tool/model 未设时随 shell / runtime 默认）。到时即 fail step，`continueOnError` 可裁决继续；step 超时与 agent step 超时的语义一致，都记 `status=error`。
+- **外层**：`workflow__<name>` 作为模型工具受 `tools/runtime` per-call 墙钟约束。workflow 工具实现 `agentkit.CallTimeoutProvider`，runtime 在 per-call 值大于配置值（`toolTimeouts` / `defaultTimeoutSeconds`）时取 per-call 值（同 `delegate` 规则，见 [tools.zh.md](tools.zh.md)），因此**外层默认落在所有内层超时之后**，内层超时总是先触发、错误能进入 result 模板。
+- 外层默认取值 = **Σ step 超时 + 5s 缓冲**：显式 `timeoutSeconds` 按实计；未设的 script/tool/model step 估 120s、agent step 估 900s（仅为估算上界，不改变 step 自身的超时行为）。工具描述中写明 `Default timeout: <n>s`；模型可传保留参数 `timeoutSeconds` 覆盖本次外层墙钟（该参数由工具壳消费，注入模型侧 InputSchema，但不进入 workflow 的 `.inputs` 与引擎侧校验）。
+- 反例：把 `toolTimeouts["workflow__x"]` 配得**小于**管线总时长时外层先触发，整轮结果被替换成 `tool execution timed out`，内层 step 状态全部丢失——配置时外层必须大于内层总和（有了 per-call 默认值后通常无需再配）。
 
 ## 6. 审计与观测
 
@@ -221,8 +236,8 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 { "date": "2026-10-13" }
 ```
 
-- 工具的 `InputSchema` 就是该 workflow 声明的 `inputs`（JSON Schema 原样透传），模型侧获得**结构化参数校验**；无 `inputs` 时是空 object schema
-- 工具描述 = workflow 的 `description` + 文件绝对路径（模型编辑该文件的定位依据；新建 workflow 的目录约定由 workflow-manager skill 提供）
+- 工具的 `InputSchema` 就是该 workflow 声明的 `inputs`（JSON Schema 原样透传），模型侧获得**结构化参数校验**；无 `inputs` 时是空 object schema。schema 副本上额外注入保留参数 `timeoutSeconds`（外层墙钟覆盖，见"两层超时"），不污染 workflow 声明的 `inputs`
+- 工具描述 = workflow 的 `description` + 文件绝对路径（模型编辑该文件的定位依据；新建 workflow 的目录约定由 workflow-manager skill 提供）+ `Default timeout: <n>s`（默认外层墙钟，模型据此决定是否传 `timeoutSeconds`）
 - `args` 在引擎侧仍按 `inputs` schema 二次校验（防御），非法即返回校验错误文本（模型可修正重试），不进入管线
 - 目录按调用重读（`tools/runtime` 每轮刷新 dynamic provider）：编辑 workflow 文件**即改即生效**，无需 reload 命令
 - 挂 `tools/deferred`（base 默认）时，workflow 工具与 MCP/OpenAPI 一样走渐进披露三桥，目录 token 不随 workflow 数量膨胀
