@@ -180,6 +180,21 @@ func (a *Runtime) finishSafetyBlockedTurn(
 	if err := appendAssistantMessage(context.WithoutCancel(ctx), sess, a.id, msg); err != nil {
 		return "", err
 	}
+	// Declare the run blocked so the turn-continue hook stops instead of
+	// re-entering the same deterministic rejection loop (the pinned trigger
+	// message can never be compacted away when IT is the flagged content),
+	// which would also re-deliver the same notice to the user every segment.
+	// Best-effort: delivering the explanation matters more than the marker.
+	if err := sessevents.Default.AppendRunFinish(context.WithoutCancel(ctx), sess, a.id, capsession.RunFinishData{
+		Status:  capsession.FinishBlocked,
+		Summary: "provider content-safety rejection persisted after compact-retry",
+	}); err != nil {
+		slog.Warn("safety-blocked turn: run/finish marker not recorded",
+			"agent_id", a.id,
+			"session_id", sess.ID(),
+			"err", err,
+		)
+	}
 	if err := newStreamEmitter(ctx, sess.ID(), a.id, emit).finalize(msg); err != nil {
 		return "", err
 	}

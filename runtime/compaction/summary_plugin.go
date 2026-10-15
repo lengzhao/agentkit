@@ -250,6 +250,11 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 	for _, msg := range msgs {
 		total += estimateMessageChars(msg)
 	}
+	// FirstKeptSeq is the seq of the first retained message (the contract:
+	// "first retained event after compaction"). MemoryCutoffSeq derives the
+	// in-memory trim horizon from it, so it must not point past messages that
+	// were actually kept.
+	firstKept := indexed[0].Seq
 	summarySurvived := boundaryStart == 1
 	if total <= maxChars {
 		if !changed {
@@ -263,14 +268,19 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 			return capcompaction.Result{}, nil
 		}
 	} else {
-		changed = true
 		keep := s.selectRetainedWithinBudget(msgs, boundaryStart, maxChars)
 		summarySurvived = boundaryStart == 1 && len(keep) > 0 && keep[0]
 		out := msgs[:0]
+		firstSet := false
 		for i, msg := range msgs {
-			if keep[i] {
-				out = append(out, msg)
+			if !keep[i] {
+				continue
 			}
+			if !firstSet {
+				firstKept = indexed[i].Seq
+				firstSet = true
+			}
+			out = append(out, msg)
 		}
 		msgs = out
 	}
@@ -291,7 +301,6 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 		summary = msgs[0]
 		tail = msgs[1:]
 	}
-	firstKept := indexed[len(indexed)-1].Seq
 	slog.Info("forced compaction applied without summary: bounded oversized retained content",
 		"session_id", req.SessionID,
 		"agent_id", req.AgentID,

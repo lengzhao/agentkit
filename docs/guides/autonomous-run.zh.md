@@ -26,7 +26,7 @@ flowchart TD
 | `Reason` | 触发条件 |
 |---|---|
 | `no-tool-calls` | assistant 只回文本，没有工具调用 |
-| `safety-blocked` | 模型服务商内容安全系统拦截（HTTP 400 "flagged by safety checks" 类错误），agent 自动强制 compaction 替换历史后重试仍被拒绝，于是合成一条解释性 assistant 消息优雅收尾（不再让整轮以无输出硬失败） |
+| `safety-blocked` | 模型服务商内容安全系统拦截（HTTP 400 "flagged by safety checks" 类错误），agent 自动强制 compaction 替换历史后重试仍被拒绝，于是合成一条解释性 assistant 消息优雅收尾（不再让整轮以无输出硬失败），并写入 `run/finish`（`blocked`）标记本轮终止——否则自主运行的停/续判定只看 pending todos，会把确定性拒绝当成"还有活"反复续跑、每段重投同一条拦截通知 |
 
 ## 2. 停/续契约
 
@@ -145,7 +145,7 @@ agent.assistant.default:
 - **巨型单消息兜底**：retained tail 中单条消息文本超过 `keepRecentTokens` 预算时，`compaction/summary` 在压缩事件里截断其模型可见视图（落盘原文不动）；记录大小超预算的附件 part 会被替换成带路径的文本提示，防止压缩后 hydrate 重新膨胀；整条历史就是一条巨型消息、无可摘要时，强制压缩写入「截断式」compaction 事件，而不是静默 no-op。
 - **摘要输入有界**：序列化摘要输入时单条消息截断（100k 字符）、总量超 `maxInputTokens`（默认 400k）则丢弃最旧消息并标注；嵌入 prompt 的上一轮 `<previous-summary>` 与本轮生成的摘要都按 `reserveTokens` 截断（含标记 ≤ 预算、按 rune 边界切断），保证摘要请求与落盘摘要都不会超出 summary 模型窗口。
 - **摘要流只收最终正文**：`summarizeOnce` 走 `llm.CollectAssistantText`（`message` 事件覆盖累计结果，否则只拼 `Delta`）。OpenAI 兼容流每个 `text_delta` 会同时带累计 Message 快照，若两者都写入，摘要会按 chunk 数平方膨胀并落盘，下一轮 `Prepare` 又从 `boundaryStart=1` 跳过这条摘要，会话会卡在 not applied。
-- **巨型旧摘要可自愈**：强制压缩在 `Prepare` 为空时对**整段 indexed**（含上一次 summary）做 `FitIndexedMessagesToBudget`：中和全部可 hydrate 附件（存储里很小的 `attachment_ref` 仍会在发送前胀成 data: URL）、单条截断、再丢最旧直到总量落入 `keepRecentTokens` 字符预算。截断结果（含标记）必须 ≤ 预算。写出的压缩事件保证 `RetainedTail` 非空——空 tail 会被 derive 当作 legacy 标记从 `BeforeSeq` 全量回放，导致已压缩历史复活。`maxPromptTokens` 必须大于 assembled system prompt；压缩只缩小 session 历史。
+- **巨型旧摘要可自愈**：强制压缩在 `Prepare` 为空时对**整段 indexed**（含上一次 summary）做兜底裁剪（`truncateOnlyCompaction`）：先逐条限界——中和全部可 hydrate 附件（存储里很小的 `attachment_ref` 仍会在发送前胀成 data: URL）、单条文本截断（含标记 ≤ `keepRecentTokens` 字符预算）；总量仍超预算时按优先级选择保留：**当前轮触发消息（最后一条 user message，永不丢）> 旧摘要检查点 > 最新连续尾部**，丢弃中段（正是让本轮超限的早期工具噪音），尾部边界的孤儿 tool result 一并丢弃。写出的压缩事件 `FirstKeptSeq` 指向第一条保留事件的 seq，且保证 `RetainedTail` 非空——空 tail 会被 derive 当作 legacy 标记从 `BeforeSeq` 全量回放，导致已压缩历史复活。原始内容在 session 事件日志中不丢失，仅模型可见视图被裁剪。`maxPromptTokens` 必须大于 assembled system prompt；压缩只缩小 session 历史。
 
 ## 6. 崩溃恢复
 

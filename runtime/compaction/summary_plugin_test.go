@@ -797,6 +797,12 @@ func TestSummaryForceLongTurnKeepsSummaryTriggerAndNewestTail(t *testing.T) {
 	if len(data.RetainedTail) == 0 {
 		t.Fatal("retained tail must not be empty")
 	}
+	// FirstKeptSeq 是第一条保留事件的 seq（旧摘要检查点 = 上个 compaction
+	// 事件的 seq 1），而不是历史最后一条消息的 seq——后者会把内存修剪
+	// 边界推过实际保留的消息，Read(0) 退化为全量扫描。
+	if data.FirstKeptSeq != 1 {
+		t.Fatalf("FirstKeptSeq = %d, want 1 (first retained event)", data.FirstKeptSeq)
+	}
 	// 旧摘要提升到 Summary 槽位。
 	if len(data.Summary.Content) == 0 || !strings.Contains(data.Summary.Content[0].Text, "历史摘要") {
 		t.Fatalf("previous summary must be preserved, got %#v", data.Summary.Content)

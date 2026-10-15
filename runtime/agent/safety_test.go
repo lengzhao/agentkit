@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/prompt"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -178,5 +179,17 @@ func TestRunTurnSafetyPersistsEndsGracefully(t *testing.T) {
 	}
 	if got := safetyRecoveryEvents(t, ctx, mem); got != 1 {
 		t.Fatalf("safety recovery events = %d, want 1", got)
+	}
+
+	// 必须写入 run/finish(blocked)：否则自主运行的 turn-continue hook 只看
+	// pending todos，会把确定性拒绝的安全错误当成"还有活"反复续跑，每段都
+	// 向用户重投同一条拦截通知。
+	events, err := derive.ReadAllEvents(ctx, mem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finish := capsession.FinishAfter(events, capsession.RunStartSeq(events))
+	if finish == nil || finish.Status != capsession.FinishBlocked {
+		t.Fatalf("safety-blocked turn must record run/finish(blocked), got %+v", finish)
 	}
 }

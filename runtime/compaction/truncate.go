@@ -40,66 +40,6 @@ func BoundOversizedIndexedMessages(indexed []capscompaction.IndexedMessage, maxC
 	return out, changed || truncated
 }
 
-// FitIndexedMessagesToBudget is the force-compaction send budget: neutralize
-// every hydratable part (stored attachment_ref can be tiny but hydrate into a
-// huge data: URL), cap each message, then drop oldest messages until the total
-// fits maxChars. Durable session events keep the original content.
-func FitIndexedMessagesToBudget(indexed []capscompaction.IndexedMessage, maxChars int) ([]agentkit.ModelMessage, bool) {
-	msgs := make([]agentkit.ModelMessage, len(indexed))
-	for i, item := range indexed {
-		msgs[i] = item.Message
-	}
-	if maxChars <= 0 {
-		return msgs, false
-	}
-	changed := false
-	for i, msg := range msgs {
-		if next, ok := neutralizeAttachmentParts(msg); ok {
-			msgs[i] = next
-			changed = true
-		}
-	}
-	msgs, truncated := TruncateOversizedMessageTexts(msgs, maxChars)
-	msgs, dropped := dropOldestMessagesToFit(msgs, maxChars)
-	return msgs, changed || truncated || dropped
-}
-
-func dropOldestMessagesToFit(messages []agentkit.ModelMessage, maxChars int) ([]agentkit.ModelMessage, bool) {
-	if len(messages) <= 1 {
-		return messages, false
-	}
-	total := 0
-	for _, msg := range messages {
-		total += estimateMessageChars(msg)
-	}
-	if total <= maxChars {
-		return messages, false
-	}
-	// Never drop the last user message: it is the in-flight turn's trigger.
-	// Losing it mid-turn leaves the agent without the live instruction (the
-	// model then burns steps trying to reconstruct the task from disk).
-	maxDrop := len(messages) - 1
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
-			maxDrop = i
-			break
-		}
-	}
-	drop := 0
-	for drop < maxDrop && total > maxChars {
-		total -= estimateMessageChars(messages[drop])
-		drop++
-	}
-	if drop == 0 {
-		return messages, false
-	}
-	out := messages[drop:]
-	for len(out) > 0 && len(out[0].ToolResults) > 0 {
-		out = out[1:]
-	}
-	return out, true
-}
-
 // neutralizeAttachmentParts replaces hydratable attachment parts (and inline
 // data: payloads) with a text hint that keeps the source reference, so the
 // model can re-read the file via tools if it still needs the content.
