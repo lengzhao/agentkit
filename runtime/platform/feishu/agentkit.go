@@ -59,8 +59,13 @@ type Config struct {
 	// ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型
 	// （如 drive.file.created_v1）。事件序列化为一条 inbound 消息：
 	// 带 chat_id 进对应群会话，只带 user_id 进 p2p 会话，都无则进
-	// 平台专属 events 会话（只处理、无回复目标）。事件类型需在
-	// Lark 开发者后台同步订阅。
+	// 平台专属 events 会话（只处理、无回复目标）。妙记/会议等用户身份
+	// 订阅事件（minutes.minute.generated_v1、vc.*）按 subscriber_ids[0]
+	// 的 open_id 路由到该用户的 p2p 会话。事件类型需在 Lark 开发者后台
+	// 同步订阅；用户身份事件还需用户 OAuth 授权后用 user_access_token
+	// 调对应服务端订阅 API 注册（见 docs/guides/lark-user-events.zh.md）。
+	// 停机期间未 ack 的事件由飞书重推补送，重启后仍会投递（不按进程
+	// 启动时间丢弃），重复投递由 event_id 去重。
 	ForwardEventsToAgent []string `json:"forwardEventsToAgent,omitempty"`
 }
 

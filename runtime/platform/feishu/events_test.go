@@ -72,6 +72,27 @@ func TestParseCustomEvent(t *testing.T) {
 			wantType: "drive.file.created_v1",
 		},
 		{
+			name: "subscriber_ids carries user identity",
+			body: `{
+				"schema":"2.0",
+				"header":{"event_id":"e4","event_type":"minutes.minute.generated_v1","create_time":"1792045223366"},
+				"event":{"minute_token":"token1","subscriber_ids":[{"open_id":"ou_sub","user_id":"u1"}]}
+			}`,
+			wantID:    "e4",
+			wantType:  "minutes.minute.generated_v1",
+			wantUser:  "ou_sub",
+			wantHasTs: true,
+		},
+		{
+			name: "empty subscriber_ids falls back to empty user",
+			body: `{
+				"header":{"event_id":"e5","event_type":"vc.note.generated_v1"},
+				"event":{"subscriber_ids":[]}
+			}`,
+			wantID:   "e5",
+			wantType: "vc.note.generated_v1",
+		},
+		{
 			name:     "invalid json falls back to registered type",
 			body:     `not-json`,
 			wantType: "fallback.type",
@@ -155,6 +176,30 @@ func TestDispatchCustomEventDedup(t *testing.T) {
 	case <-h.handled:
 		t.Fatal("duplicate event reached handler")
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// 重启前的旧事件（飞书重推补送）不应被进程启动时间过滤丢弃——
+// 停机期间的事件正是靠重推送达，重复投递由 event_id 去重兜底。
+func TestDispatchCustomEventAcceptsPreStartEvent(t *testing.T) {
+	h := &recordingHandler{eventTypes: []string{"a_v1"}, handled: make(chan string, 1)}
+	p := &Platform{
+		platformTag: "lark",
+		inbox:       common.NewInbox(4),
+		dedup:       &common.MessageDedup{},
+	}
+	route := &customEventRoute{handlers: []caplarkevent.Handler{h}}
+	// create_time 为 1 小时前，远早于进程启动时间
+	body := []byte(`{"header":{"event_id":"old-1","event_type":"a_v1","create_time":"1700000000000"},"event":{}}`)
+	p.dispatchCustomEvent("a_v1", route, &larkevent.EventReq{Body: body})
+
+	select {
+	case id := <-h.handled:
+		if id != "old-1" {
+			t.Fatalf("handled event_id = %q, want old-1", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pre-start event was dropped; retries after downtime must be accepted")
 	}
 }
 

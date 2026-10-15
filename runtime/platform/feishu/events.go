@@ -15,7 +15,6 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	"github.com/lengzhao/agentkit"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -86,10 +85,9 @@ func (p *Platform) dispatchCustomEvent(eventType string, route *customEventRoute
 		slog.Debug(p.tag()+": duplicate custom event ignored", "event_type", eventType, "event_id", evt.EventID)
 		return
 	}
-	if !evt.createTime.IsZero() && common.IsOldMessage(evt.createTime) {
-		slog.Debug(p.tag()+": ignoring old custom event after restart", "event_type", eventType, "event_id", evt.EventID)
-		return
-	}
+	// 注意：自定义事件不按进程启动时间过滤。飞书对未 ack 的事件会持续
+	// 重推，重启后补送正是停机期间事件的送达保障；重复投递由 event_id
+	// 去重兜底（与 IM 消息不同，事件没有"历史积压回放"语义）。
 
 	for _, h := range route.handlers {
 		go func(h caplarkevent.Handler) {
@@ -152,7 +150,26 @@ func parseCustomEvent(eventType string, body []byte) customEvent {
 		"user_id",
 		"open_id",
 	)
+	if evt.UserID == "" {
+		evt.UserID = firstSubscriberOpenID(payload)
+	}
 	return evt
+}
+
+// firstSubscriberOpenID 从 subscriber_ids 数组取第一个 open_id：妙记/会议等
+// 用户身份订阅事件（minutes.minute.generated_v1、vc.*）用 subscriber_ids
+// 携带订阅者（授权用户）上下文，用于路由到该用户的 p2p 会话。
+func firstSubscriberOpenID(payload map[string]any) string {
+	subs, ok := payload["subscriber_ids"].([]any)
+	if !ok || len(subs) == 0 {
+		return ""
+	}
+	first, ok := subs[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	openID, _ := first["open_id"].(string)
+	return openID
 }
 
 // firstString 按顺序尝试点分路径，返回第一个命中的非空字符串。
