@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -138,6 +139,80 @@ func TestTokenLimitUsesReportedUsageWhenLarger(t *testing.T) {
 	}
 	if inner.calls != 1 {
 		t.Fatalf("inner calls = %d, want 1: reported usage should trip the gate", inner.calls)
+	}
+}
+
+// fullLogSession emulates the db-backed session contract: after a compaction
+// trimmed the in-memory cache, Read(0) serves the FULL durable event log,
+// including messages that compaction long since removed from the live context.
+type fullLogSession struct {
+	id     agentkit.SessionID
+	events []agentkit.SessionEvent
+}
+
+func (s *fullLogSession) ID() agentkit.SessionID { return s.id }
+func (s *fullLogSession) Append(_ context.Context, ev agentkit.SessionEvent) (agentkit.EventSeq, error) {
+	ev.Seq = agentkit.EventSeq(len(s.events) + 1)
+	s.events = append(s.events, ev)
+	return ev.Seq, nil
+}
+func (s *fullLogSession) Read(_ context.Context, from agentkit.EventSeq) ([]agentkit.SessionEvent, error) {
+	out := make([]agentkit.SessionEvent, 0, len(s.events))
+	for _, ev := range s.events {
+		if ev.Seq > from {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+func (s *fullLogSession) DeriveMessages(context.Context) ([]agentkit.ModelMessage, error) {
+	return nil, nil
+}
+
+// Regression: a long session whose durable log holds megabytes of already
+// compacted-away history must not trip the gate when the LIVE context is
+// small. The pre-fix estimate summed logical chars over Read(0) — cumulative
+// across compactions — so every step compacted once the log crossed the
+// threshold (observed: 43 compactions in a single 58-step turn).
+func TestTokenLimitIgnoresCompactedAwaySessionHistory(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sess := &fullLogSession{id: "test:full-log"}
+	// Two weeks of heavy history, long since compacted away: the durable log
+	// keeps it, the live context does not.
+	huge := strings.Repeat("h", 2_000_000)
+	raw, err := json.Marshal(agentkit.ModelMessage{
+		Role:    "user",
+		Content: []agentkit.ContentPart{{Type: "text", Text: huge}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sess.Append(ctx, agentkit.SessionEvent{
+		Type: agentkit.EventUserMessage, AgentID: "a", Data: raw,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	inner := &countingService{}
+	svc, err := NewTokenLimit(TokenLimitConfig{MaxTokens: 8000, CharsPerToken: 4}, TokenLimitDeps{
+		Chain:    mustChain(t),
+		Services: []capcompaction.Service{inner},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Live context is tiny: only the historical log is large.
+	if _, err := svc.Compact(ctx, capcompaction.Request{
+		SessionID: sess.ID(),
+		Session:   sess,
+		Messages:  messagesOfSize(400),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if inner.calls != 0 {
+		t.Fatalf("inner calls = %d, want 0: compacted-away history must not trip the gate", inner.calls)
 	}
 }
 

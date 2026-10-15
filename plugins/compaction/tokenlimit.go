@@ -126,17 +126,18 @@ func (s *tokenLimitService) Compact(ctx context.Context, req compaction.Request)
 // estimate takes the larger of two imperfect signals. The provider's last
 // reported prompt size is exact but one step stale; the character heuristic
 // covers the current history but misjudges dense or non-Latin content. Taking
-// the max errs toward compacting slightly early, which is the cheap mistake.
+// the max errs toward compacting slightly early.
+//
+// The estimate must reflect the LIVE context only. Summing logical chars over
+// the whole session event log is wrong here: after any compaction the db-backed
+// session serves Read(0) from the full event table (trimmed → readAllFromDB),
+// so the sum grows monotonically across compactions and, in long sessions,
+// permanently exceeds the threshold — compaction then fires on every step and
+// the summarizer burns the turn. An occasional late trigger is the cheap
+// mistake instead: runStepWithOverflowRecovery already force-compacts and
+// retries when the provider rejects an oversized prompt.
 func (s *tokenLimitService) estimate(ctx context.Context, req compaction.Request) int {
 	heuristic := capsession.EstimateMessagesChars(req.Messages) / s.charsPerToken
-	if req.Session != nil {
-		if events, err := req.Session.Read(ctx, 0); err == nil {
-			logical := capsession.SumLogicalCharsFromEvents(events, req.AgentID) / s.charsPerToken
-			if logical > heuristic {
-				heuristic = logical
-			}
-		}
-	}
 	reported := s.reportedTokens(ctx, req)
 	if reported > heuristic {
 		return reported
