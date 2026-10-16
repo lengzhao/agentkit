@@ -19,7 +19,7 @@ func dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, inpu
 		UserID:    input.UserID,
 	})
 	if err != nil {
-		return ChatHistoryOutput{}, err
+		return ChatHistoryOutput{}, fmt.Errorf("chat_history: resolve delivery route: %w; hint: pass sessionId explicitly (the target chat's delivery id) or a userId", err)
 	}
 
 	provider := deps.router.ChatHistoryFor(route.PlatformID)

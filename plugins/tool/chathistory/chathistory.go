@@ -34,7 +34,7 @@ type ChatHistoryInput struct {
 	After     string `json:"after,omitempty" jsonschema:"Only messages after this unix timestamp (seconds)"`
 	Order     string `json:"order,omitempty" jsonschema:"Sort order: asc or desc (default desc)"`
 	Query     string `json:"query,omitempty" jsonschema:"Optional keyword filter applied to message content"`
-	Thread    *bool  `json:"thread,omitempty" jsonschema:"When true, scope to the current thread when available (default true)"`
+	Thread    *bool  `json:"thread,omitempty" jsonschema:"When true (default), scope to the current reply chain/topic, including group messages posted before the chain became a topic; false reads the whole chat"`
 }
 
 type ChatHistoryOutput struct {
