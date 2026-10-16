@@ -19,14 +19,15 @@ agent.assistant.default:
     use: agent/coding
 agent.codex.default:
     config:
-        authHint: Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 OPENAI_API_KEY）。
+        authHint: Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 CODEX_API_KEY / OPENAI_API_KEY）。
         autoApprove: false
         command:
             - npx
             - -y
-            - '@zed-industries/codex-acp'
+            - '@agentclientprotocol/codex-acp'
         cwd: work
         env:
+            CODEX_API_KEY: ""
             OPENAI_API_KEY: test-key
         id: codex
         releaseSubprocessAfterTurn: true

@@ -294,7 +294,7 @@ agent.claude.default:
     sessionEvents: session.events
     telemetry: telemetry.toolkit
 
-# 通过 ACP 调用 codex-acp（OpenAI Codex CLI 的 Zed ACP 适配器）。授权用 /sh codex login，或注入 OPENAI_API_KEY（见 docs/plugin-catalog.zh.md §3.2）。
+# 通过 ACP 调用 codex-acp（OpenAI Codex CLI 无官方 ACP，用 agentclientprotocol 组织维护的适配器）。授权用 /sh codex login，或注入 CODEX_API_KEY / OPENAI_API_KEY（见 docs/plugin-catalog.zh.md §3.2）。
 agent.codex.default:
   use: agent/acp-remote
   config:
@@ -302,11 +302,12 @@ agent.codex.default:
     command:
       - npx
       - -y
-      - "@zed-industries/codex-acp"
+      - "@agentclientprotocol/codex-acp"
     cwd: work
     releaseSubprocessAfterTurn: true
-    authHint: "Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 OPENAI_API_KEY）。"
+    authHint: "Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 CODEX_API_KEY / OPENAI_API_KEY）。"
     env:
+      CODEX_API_KEY: ${var:CODEX_API_KEY:-}
       OPENAI_API_KEY: ${var:OPENAI_API_KEY:-}
     autoApprove: false
   deps:

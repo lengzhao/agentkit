@@ -265,18 +265,19 @@ agent.claude.default:
 - **自定义网关 / 代理**：`ANTHROPIC_BASE_URL` 指向兼容 Anthropic Messages API 的 base URL
 - 通过 `/agent use claude` 或 chat-api `agent_id=claude` 切换；主 agent 也可 `delegate` 到 `claude`
 
-**Codex CLI（`codex-acp`）**：通过 `npx @zed-industries/codex-acp` 启动 ACP 子进程（Zed 为 OpenAI Codex CLI 维护的 ACP 适配器，需先安装 codex CLI）；不设 `authMethod`，授权用 `codex login`（读取 `~/.codex/auth.json`）或注入 `OPENAI_API_KEY`：
+**Codex CLI（`codex-acp`）**：Codex CLI 没有官方内置 ACP（[openai/codex#30052](https://github.com/openai/codex/issues/30052) 仍 open），通过 `npx @agentclientprotocol/codex-acp` 启动 ACP 子进程（agentclientprotocol 组织维护的适配器，包内自带兼容版本的 `@openai/codex` 依赖，可用 `CODEX_PATH` 指定其他 codex 二进制）。适配器在 initialize 时声明 ACP auth methods：ChatGPT 登录（远程环境设 `NO_BROWSER=1` 隐藏）或 API key（`CODEX_API_KEY` 优先于 `OPENAI_API_KEY`）；L0 不设 `authMethod`，凭证由 env 注入，用户也可自行 `codex login`（写 `~/.codex/auth.json`）：
 
 ```yaml
 agent.codex.default:
   use: agent/acp-remote
   config:
     id: codex
-    command: [npx, -y, "@zed-industries/codex-acp"]
+    command: [npx, -y, "@agentclientprotocol/codex-acp"]
     cwd: work
     releaseSubprocessAfterTurn: true
-    authHint: "Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 OPENAI_API_KEY）。"
+    authHint: "Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 CODEX_API_KEY / OPENAI_API_KEY）。"
     env:
+      CODEX_API_KEY: ${var:CODEX_API_KEY:-}
       OPENAI_API_KEY: ${var:OPENAI_API_KEY:-}
     autoApprove: false
   deps:
