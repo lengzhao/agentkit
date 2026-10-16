@@ -17,6 +17,26 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.codex.default:
+    config:
+        authHint: Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 OPENAI_API_KEY）。
+        autoApprove: false
+        command:
+            - npx
+            - -y
+            - '@zed-industries/codex-acp'
+        cwd: work
+        env:
+            OPENAI_API_KEY: test-key
+        id: codex
+        releaseSubprocessAfterTurn: true
+    deps:
+        fs: filesystem.local.state
+        sessionEvents: session.events
+        sessionStore: sessionStore.default
+        telemetry: telemetry.toolkit
+        workspace: workspace.default
+    use: agent/acp-remote
 agent.cursor.default:
     config:
         authHint: ACP 认证失败。请执行 /sh agent login 完成授权后重试。
@@ -325,6 +345,7 @@ loop.default:
             - agent.assistant.default
             - agent.worker.default
             - agent.cursor.default
+            - agent.codex.default
         modelCatalog: llm.router
         sessionStore: sessionStore.default
         telemetry: telemetry.default
@@ -618,10 +639,16 @@ subagent.loop.default:
               description: 复杂编码与深度分析，通过 Claude Agent SDK（ACP）执行。简单问答不要委派。
               name: claude
               timeoutSeconds: 1800
+            - agent: codex
+              async: true
+              description: 复杂编码与代码审查，通过 OpenAI Codex CLI（ACP）执行。简单问答不要委派。
+              name: codex
+              timeoutSeconds: 1800
         timeoutSeconds: 1800
     deps:
         agents:
             - agent.cursor.default
+            - agent.codex.default
         sessionStore: sessionStore.default
         telemetry: telemetry.default
     use: subagent/loop-agent

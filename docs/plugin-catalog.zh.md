@@ -217,7 +217,7 @@ llm.fallback:
 
 - **工作目录**：`config.cwd`（未设则默认 `work/`，与 `tool/shell-bash` 一致）同时作为 ACP 子进程的 `cmd.Dir` 与 `session/new` 的 `Cwd`。代码仓库在 `work/agent-harness` 等子目录时设 `cwd: work/agent-harness`（或 `local:work/agent-harness`）。bind 文件会记录 cwd；变更 cwd 后会新建 ACP session 而非 resume 旧 cwd。
 - **认证失败提示**：`config.authMethod` 非空时会调用 ACP `Authenticate`；失败时向用户发送 `config.authHint`（未配置则发通用提示），然后返回错误。用户自行通过 `/sh` 或终端完成登录后重试，例如 `/sh agent login`。
-- **子进程清理**：L0 对 `agent.cursor` / `agent.claude` 启用 `releaseSubprocessAfterTurn: true`——每个 RunTurn 结束后按进程组 SIGTERM/SIGKILL 回收 `agent acp` 及其子进程（language server、worker-server 等），避免多次委派后内存上涨。Unix 上使用进程组；子进程异常退出时会取消进行中的 `Prompt`，让 async 委派尽快失败并触发 `subagent/end` + follow-up，而不是挂到 `timeoutSeconds`。
+- **子进程清理**：L0 对 `agent.cursor` / `agent.claude` / `agent.codex` 启用 `releaseSubprocessAfterTurn: true`——每个 RunTurn 结束后按进程组 SIGTERM/SIGKILL 回收 `agent acp` 及其子进程（language server、worker-server 等），避免多次委派后内存上涨。Unix 上使用进程组；子进程异常退出时会取消进行中的 `Prompt`，让 async 委派尽快失败并触发 `subagent/end` + follow-up，而不是挂到 `timeoutSeconds`。
 - **API Key 路径**（可选）：`agent -p` 用 `CURSOR_API_KEY`；ACP 用 `CURSOR_AUTH_TOKEN`（`--auth-token`），与 `cursor_login` 互斥。
 - **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 经 deps `fs` 写入 `acp/<session>/acp-session.<agentId>.json`（插件自有目录，与 session 存储后端无关；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
 - **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 `session/resume` 均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
@@ -264,6 +264,27 @@ agent.claude.default:
 - **API Key**：`OPENAI_API_KEY` 等（`/env add` 写入 `global:secrets.enc.json`，或 export；需 L1 配置 `credentials.*.config.secretsKey`）
 - **自定义网关 / 代理**：`ANTHROPIC_BASE_URL` 指向兼容 Anthropic Messages API 的 base URL
 - 通过 `/agent use claude` 或 chat-api `agent_id=claude` 切换；主 agent 也可 `delegate` 到 `claude`
+
+**Codex CLI（`codex-acp`）**：通过 `npx @zed-industries/codex-acp` 启动 ACP 子进程（Zed 为 OpenAI Codex CLI 维护的 ACP 适配器，需先安装 codex CLI）；不设 `authMethod`，授权用 `codex login`（读取 `~/.codex/auth.json`）或注入 `OPENAI_API_KEY`：
+
+```yaml
+agent.codex.default:
+  use: agent/acp-remote
+  config:
+    id: codex
+    command: [npx, -y, "@zed-industries/codex-acp"]
+    cwd: work
+    releaseSubprocessAfterTurn: true
+    authHint: "Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 OPENAI_API_KEY）。"
+    env:
+      OPENAI_API_KEY: ${var:OPENAI_API_KEY:-}
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    sessionStore: sessionStore.default
+```
+
+- 通过 `/agent use codex` 或 chat-api `agent_id=codex` 切换；主 agent 也可 `delegate` 到 `codex`
 
 
 **原生命令**：ACP 子进程的原生斜杠命令（如 `/fast`）与 AgentKit slash 是两套东西——在与该 agent 对话时直接输入即可（ACP 规范里经 `session/prompt` 发送，与直接对话等价）。`session/set_config_option` 控制面当前不暴露，远端 agent 的 model/mode 在启动配置里确定。

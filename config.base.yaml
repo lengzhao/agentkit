@@ -188,6 +188,7 @@ loop.default:
       - agent.worker.default
       - agent.cursor.default
       - agent.claude.default
+      - agent.codex.default
     telemetry: telemetry.default
     # 以下仅服务 loop 自贡献的目录命令（/agent、/model、/acp），与 turn 分发无关
     sessionStore: sessionStore.default
@@ -285,6 +286,28 @@ agent.claude.default:
     env:
       ANTHROPIC_API_KEY: ${var:ANTHROPIC_API_KEY}
       ANTHROPIC_BASE_URL: ${var:ANTHROPIC_BASE_URL:-}
+    autoApprove: false
+  deps:
+    workspace: workspace.default
+    fs: filesystem.local.state
+    sessionStore: sessionStore.default
+    sessionEvents: session.events
+    telemetry: telemetry.toolkit
+
+# 通过 ACP 调用 codex-acp（OpenAI Codex CLI 的 Zed ACP 适配器）。授权用 /sh codex login，或注入 OPENAI_API_KEY（见 docs/plugin-catalog.zh.md §3.2）。
+agent.codex.default:
+  use: agent/acp-remote
+  config:
+    id: codex
+    command:
+      - npx
+      - -y
+      - "@zed-industries/codex-acp"
+    cwd: work
+    releaseSubprocessAfterTurn: true
+    authHint: "Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 OPENAI_API_KEY）。"
+    env:
+      OPENAI_API_KEY: ${var:OPENAI_API_KEY:-}
     autoApprove: false
   deps:
     workspace: workspace.default
@@ -422,12 +445,18 @@ subagent.loop.default:
         agent: claude
         async: true
         timeoutSeconds: 1800
+      - name: codex
+        description: 复杂编码与代码审查，通过 OpenAI Codex CLI（ACP）执行。简单问答不要委派。
+        agent: codex
+        async: true
+        timeoutSeconds: 1800
   deps:
     sessionStore: sessionStore.default
     telemetry: telemetry.default
     agents:
       - agent.cursor.default
       - agent.claude.default
+      - agent.codex.default
 
 # Static refs (apiKeyRef, botTokenRef, web search keys): process env + optional encrypted file.
 credentials.default:
