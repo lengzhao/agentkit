@@ -19,6 +19,7 @@ agent.assistant.default:
     use: agent/coding
 agent.cursor.default:
     config:
+        authHint: ACP 认证失败。请执行 /sh agent login 完成授权后重试。
         authMethod: cursor_login
         autoApprove: false
         command:

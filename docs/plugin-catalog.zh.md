@@ -211,35 +211,13 @@ llm.fallback:
     provider: llm.default
 ```
 
-**`agent/acp-remote`**：通过 stdio ACP 调用外部 Agent 子进程（如 Cursor CLI `agent acp`）。`authMethod: cursor_login` 时，登录与 ACP 是两条独立链路：
-
-```mermaid
-sequenceDiagram
-  participant U as 用户
-  participant AK as AgentKit
-  participant CLI as agent login
-  participant ACP as agent acp
-
-  U->>AK: 发消息
-  AK->>ACP: initialize + authenticate + session/new
-  alt ACP 认证失败
-    AK->>CLI: 阻塞运行 login
-    CLI-->>U: 打印/返回授权链接
-    Note over CLI: Cursor 自行轮询 OAuth
-    CLI-->>AK: 登录成功
-    AK->>ACP: 重试 initialize + authenticate + session/new
-  end
-  AK->>ACP: prompt
-  ACP-->>U: 回复
-```
+**`agent/acp-remote`**：通过 stdio ACP 调用外部 Agent 子进程（如 Cursor CLI `agent acp`、Claude Agent SDK 等）。环境准备（安装依赖、授权登录）由用户自行处理，acp-remote 只负责连接与失败提示。
 
 要点：
 
 - **工作目录**：`config.cwd`（未设则默认 `work/`，与 `tool/shell-bash` 一致）同时作为 ACP 子进程的 `cmd.Dir` 与 `session/new` 的 `Cwd`。代码仓库在 `work/agent-harness` 等子目录时设 `cwd: work/agent-harness`（或 `local:work/agent-harness`）。bind 文件会记录 cwd；变更 cwd 后会新建 ACP session 而非 resume 旧 cwd。
+- **认证失败提示**：`config.authMethod` 非空时会调用 ACP `Authenticate`；失败时向用户发送 `config.authHint`（未配置则发通用提示），然后返回错误。用户自行通过 `/sh` 或终端完成登录后重试，例如 `/sh agent login`。
 - **子进程清理**：L0 对 `agent.cursor` / `agent.claude` 启用 `releaseSubprocessAfterTurn: true`——每个 RunTurn 结束后按进程组 SIGTERM/SIGKILL 回收 `agent acp` 及其子进程（language server、worker-server 等），避免多次委派后内存上涨。Unix 上使用进程组；子进程异常退出时会取消进行中的 `Prompt`，让 async 委派尽快失败并触发 `subagent/end` + follow-up，而不是挂到 `timeoutSeconds`。
-- **先连 ACP**：不调用 `agent status` 预检；直接启动 `agent acp`，认证失败再登录。
-- **登录**：`agent login`（配置注入 `NO_OPEN_BROWSER=1`），由 Cursor CLI 阻塞等待浏览器授权；stdout/stderr 原样透传到对话。
-- **不要混用**：`authenticate` 返回的链接与 `agent login` 的 challenge 不是同一次 OAuth；登录只走 `agent login`。
 - **API Key 路径**（可选）：`agent -p` 用 `CURSOR_API_KEY`；ACP 用 `CURSOR_AUTH_TOKEN`（`--auth-token`），与 `cursor_login` 互斥。
 - **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 经 deps `fs` 写入 `acp/<session>/acp-session.<agentId>.json`（插件自有目录，与 session 存储后端无关；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
 - **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 `session/resume` 均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
@@ -255,6 +233,7 @@ agent.cursor.default:
     cwd: work
     releaseSubprocessAfterTurn: true
     authMethod: cursor_login
+    authHint: "ACP 认证失败。请执行 /sh agent login 完成授权后重试。"
     env:
       NO_OPEN_BROWSER: "1"
     autoApprove: false

@@ -10,6 +10,14 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 )
 
+func commandEnv(extra map[string]string) []string {
+	env := os.Environ()
+	for k, v := range extra {
+		env = append(env, k+"="+v)
+	}
+	return env
+}
+
 // connLocalState is owned exclusively by connLoop (no mutex).
 type connLocalState struct {
 	proc         *subprocess
@@ -246,7 +254,7 @@ func (b *bridge) authenticateSubprocess(ctx context.Context, proc *subprocess) e
 	if _, err := proc.conn.Authenticate(ctx, acp.AuthenticateRequest{
 		MethodId: b.cfg.AuthMethod,
 	}); err != nil {
-		return fmt.Errorf("acp authenticate: %w (ensure cursor cli is logged in via agent login)", err)
+		return fmt.Errorf("acp authenticate: %w", err)
 	}
 	proc.authenticated = true
 	return nil

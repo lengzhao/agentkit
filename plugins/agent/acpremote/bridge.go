@@ -79,7 +79,7 @@ func (proc *subprocess) alive() bool {
 	}
 }
 
-func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit, sandbox capsandbox.Service) *bridge {
+func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit, sandbox capsandbox.Service, _ func(context.Context) error) *bridge {
 	b := &bridge{
 		cfg:        cfg,
 		workspace:  ws,

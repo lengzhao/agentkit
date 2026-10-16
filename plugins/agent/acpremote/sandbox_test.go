@@ -50,7 +50,7 @@ func TestConnectSubprocessSandboxWrapArgv(t *testing.T) {
 	}
 
 	cfg := Config{Command: slices.Clone(inner)}
-	b := newBridge(cfg, ws, nil, nil, nil, rec)
+	b := newBridge(cfg, ws, nil, nil, nil, rec, nil)
 	defer b.stop()
 
 	_, err := b.ensureConn(context.Background())
@@ -94,7 +94,7 @@ func TestConnectSubprocessSandboxWrapFailClosed(t *testing.T) {
 
 	rec := &agenttest.RecordingSandbox{WrapErr: errors.New("sandbox unavailable")}
 	cfg := Config{Command: []string{"/acp/agent"}}
-	b := newBridge(cfg, ws, nil, nil, nil, rec)
+	b := newBridge(cfg, ws, nil, nil, nil, rec, nil)
 	defer b.stop()
 
 	_, err := b.ensureConn(context.Background())

@@ -41,18 +41,21 @@ type Config struct {
 	ClientName string `json:"clientName,omitempty"`
 	// ClientVersion is sent in initialize; defaults to "0.1.0".
 	ClientVersion string `json:"clientVersion,omitempty"`
+	// AuthHint is shown to the user when ACP authenticate fails (e.g.
+	// "Run /sh agent login to authorize, then retry").
+	AuthHint string `json:"authHint,omitempty"`
 }
 
 // Deps holds injected capabilities for the ACP client side.
 type Deps struct {
-	Workspace     workspace.Service       `json:"workspace"`
+	Workspace workspace.Service `json:"workspace"`
 	// FS stores ACP session resume binds (tenant-relative acp/ dir).
 	FS            filesystem.Service      `json:"fs"`
 	SessionStore  agentkit.SessionStore   `json:"sessionStore,omitempty"`
 	SessionEvents capsession.Conversation `json:"sessionEvents,omitempty"`
 	// SessionMCP supplies harness MCP servers for session/new (not project mcp.json).
 	SessionMCP capacp.SessionMCPProvider `json:"sessionMcp,omitempty"`
-	Telemetry  captelemetry.Toolkit        `json:"telemetry"`
+	Telemetry  captelemetry.Toolkit      `json:"telemetry"`
 	// Sandbox wraps the ACP subprocess command with the tenant sandbox view
 	// (e.g. sandbox/bwrap) at spawn time. Nil defaults to
 	// capsandbox.Disabled() (passthrough).
@@ -132,16 +135,8 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 }
 
 func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.telemetry, a.sandbox))
+	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.telemetry, a.sandbox, nil))
 	return v.(*bridge)
-}
-
-func (a *Runtime) dropBridge(sessionID agentkit.SessionID) {
-	if v, ok := a.bridges.LoadAndDelete(sessionID); ok {
-		br := v.(*bridge)
-		_ = br.Close()
-		br.stop()
-	}
 }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
@@ -201,8 +196,18 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	}()
 
 	brid := a.bridgeFor(sessionID)
-	acpSessionID, err := a.ensureACPSessionWithAuth(ctx, emit, sessionID)
+	acpSessionID, err := brid.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
 	if err != nil {
+		if authHint := a.authHintForError(err); authHint != "" {
+			_ = emit(ctx, agentkit.OutboundEvent{
+				AgentID: a.id,
+				Type:    agentkit.EventAssistantMessage,
+				Data: rctx.MarshalOutboundData(agentkit.ModelMessage{
+					Role:    "assistant",
+					Content: []agentkit.ContentPart{{Type: "text", Text: authHint}},
+				}),
+			})
+		}
 		return err
 	}
 
@@ -261,6 +266,20 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		}
 		return nil
 	}
+}
+
+// authHintForError returns the user-facing hint when ACP connect/authenticate fails.
+func (a *Runtime) authHintForError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if a.cfg.AuthHint != "" {
+		return a.cfg.AuthHint
+	}
+	if a.cfg.AuthMethod != "" {
+		return fmt.Sprintf("ACP 认证失败（%s）。请检查凭证后重试。", a.cfg.AuthMethod)
+	}
+	return ""
 }
 
 func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, typ agentkit.EventType, payload any) error {

@@ -247,7 +247,7 @@ agent.worker.default:
     compaction:
       - compaction.pipeline.worker
 
-# 通过 ACP 调用 Cursor CLI（agent acp）。需先在本机完成 agent login；子进程注入 NO_OPEN_BROWSER=1（见 docs/plugin-catalog.zh.md §3.2）。
+# 通过 ACP 调用 Cursor CLI（agent acp）。认证失败时提示用户执行 /sh agent login（见 docs/plugin-catalog.zh.md §3.2）。
 agent.cursor.default:
   use: agent/acp-remote
   config:
@@ -259,6 +259,7 @@ agent.cursor.default:
     cwd: work
     releaseSubprocessAfterTurn: true
     authMethod: cursor_login
+    authHint: "ACP 认证失败。请执行 /sh agent login 完成授权后重试。"
     env:
       NO_OPEN_BROWSER: "1"
       CURSOR_ENABLE: ${var:CURSOR_ENABLE:-1}
