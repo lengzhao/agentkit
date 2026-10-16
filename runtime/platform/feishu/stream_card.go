@@ -954,8 +954,15 @@ func (p *Platform) finalizeRichTurnEndAsync(
 				slog.Warn(p.tag()+": send final rich card on turn end failed, falling back to plain text", "session_id", streamKey, "error", err)
 			} else {
 				delivered = true
-				// 旧卡保留不删：删除在 Lark 客户端显示为「撤回」，观感差；
-				// 旧卡内容可能不全，但最终卡已完整呈现。
+				// 新最终卡已送达：撤回过时的旧卡。与中途更新不同（旧卡是当时
+				// 唯一内容，删除会留「撤回了一条消息」灰条且可能丢失进度），
+				// 定稿时新卡已是完整答复，旧卡只是过时残影——撤回换来会话里
+				// 只有一份答案。必须先发后撤，保证任何时刻答复不丢。
+				if handle != nil {
+					if delErr := p.DeletePreviewMessage(parent, handle); delErr != nil {
+						slog.Warn(p.tag()+": recall stale progress card failed, leaving it in place", "session_id", streamKey, "error", delErr)
+					}
+				}
 				_ = newHandle
 			}
 		}

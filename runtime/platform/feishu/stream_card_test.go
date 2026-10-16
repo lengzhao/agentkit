@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -600,6 +601,63 @@ func TestFlushRichCardUpdateFailureNeverSendsNewMessage(t *testing.T) {
 	}
 	if got := imCalls.Load(); got != 0 {
 		t.Fatalf("mid-turn update failure must never send a new message, got %d sends", got)
+	}
+}
+
+// TestFinalizeTurnEndRecallsStaleCardAfterReplacement：定稿 patch 与挽救均失败时，
+// 另发新最终卡成功后必须撤回旧卡（先发后撤，任何时刻答复不丢），
+// 避免会话里同时存在过时进度卡与最终卡两张气泡。
+func TestFinalizeTurnEndRecallsStaleCardAfterReplacement(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	record := func(ev string) {
+		mu.Lock()
+		order = append(order, ev)
+		mu.Unlock()
+	}
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/open-apis/cardkit/v1/cards":
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"card_id":"c2"}}`))
+		case strings.Contains(r.URL.Path, "/settings"):
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success"}`))
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/open-apis/cardkit/v1/cards/"):
+			// 定稿 patch（CardKit 实体更新）持续失败。
+			_, _ = w.Write([]byte(`{"code":99999,"msg":"boom"}`))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/open-apis/im/v1/messages/"):
+			record("delete")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reply"):
+			record("reply")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"message_id":"m2"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"code":99999,"msg":"boom"}`))
+		}
+	}))
+	defer srv.Close()
+	p.useInteractiveCard = true
+
+	old := &feishuPreviewHandle{messageID: "m1", chatID: "oc_test", cardID: "c1"}
+	rc := replyContext{chatID: "oc_test", messageID: "om_trigger"}
+	content := `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"final answer"}]}}`
+	p.finalizeRichTurnEndAsync(context.Background(), agentkit.SessionID("turn-finalize-recall"),
+		old, content, "final answer", "", capsession.TurnEndData{}, agentkit.SessionID("lark:oc_test"), rc, true)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		n := len(order)
+		mu.Unlock()
+		if n >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) != 2 || order[0] != "reply" || order[1] != "delete" {
+		t.Fatalf("expected [reply delete] (send new final card, then recall stale one), got %v", order)
 	}
 }
 
