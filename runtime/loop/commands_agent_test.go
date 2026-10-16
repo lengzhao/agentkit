@@ -145,3 +145,55 @@ func TestAgentGlobalUse(t *testing.T) {
 		t.Fatalf("list = %q", out)
 	}
 }
+
+func TestAgentChannelUse(t *testing.T) {
+	t.Parallel()
+
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := sessstore.NewStaticStore(mem)
+	agents := []agentkit.Agent{stubDetailAgent{id: "assistant"}, stubDetailAgent{id: "worker"}}
+	ws, err := rtworkspace.New(rtworkspace.Config{
+		Global: t.TempDir(),
+		Local:  t.TempDir(),
+		Scope:  "local",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := rtloop.AgentCommand(agents, store, "assistant", ws)
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Conversation: "cli:test",
+		Workspace:    "cli:test",
+	})
+
+	out, err := cmd.CommandExec(ctx, "-c use worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "channel agent: worker") {
+		t.Fatalf("out = %q", out)
+	}
+
+	out, err = cmd.CommandExec(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Active agent: worker") || !strings.Contains(out, "Channel override: worker") {
+		t.Fatalf("list = %q", out)
+	}
+
+	out, err = cmd.CommandExec(ctx, "--channel reset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "channel agent reset; loop default: assistant") {
+		t.Fatalf("reset = %q", out)
+	}
+
+	if _, err := cmd.CommandExec(ctx, "-g -c use worker"); err == nil {
+		t.Fatal("expected combined flag error")
+	}
+}

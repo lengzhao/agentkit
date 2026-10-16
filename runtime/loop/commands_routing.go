@@ -44,20 +44,32 @@ func resolveCatalogSessionID(ctx context.Context, store agentkit.SessionStore) (
 }
 
 // resolveCatalogAgentRouting matches runner inbound resolution (without per-message agent_id).
-func resolveCatalogAgentRouting(ctx context.Context, deps catalogRoutingDeps) (effective, sessionBind, globalBind, loopDefault agentkit.AgentID, err error) {
+func resolveCatalogAgentRouting(ctx context.Context, deps catalogRoutingDeps) (effective, sessionBind, channelBind, globalBind, loopDefault agentkit.AgentID, err error) {
 	loopDefault = deps.defaultAgent
 	sessionID, err := resolveCatalogSessionID(ctx, deps.store)
 	if err != nil {
-		return "", "", "", loopDefault, err
+		return "", "", "", "", loopDefault, err
 	}
-	effective, sessionBind, globalBind, err = sessbind.ResolveAgentID(ctx, deps.store, deps.workspace, sessionID, "")
+	effective, sessionBind, channelBind, globalBind, err = sessbind.ResolveAgentID(ctx, deps.store, deps.workspace, sessionID, "")
 	if err != nil {
-		return "", "", "", loopDefault, err
+		return "", "", "", "", loopDefault, err
 	}
 	if effective == "" && loopDefault != "" {
 		effective = loopDefault
 	}
-	return effective, sessionBind, globalBind, loopDefault, nil
+	return effective, sessionBind, channelBind, globalBind, loopDefault, nil
+}
+
+func peelChannelFlag(args []string) (channel bool, rest []string) {
+	for _, arg := range args {
+		switch arg {
+		case "-c", "--channel":
+			channel = true
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return channel, rest
 }
 
 func configuredModel(agents []agentkit.Agent, agentID agentkit.AgentID) string {

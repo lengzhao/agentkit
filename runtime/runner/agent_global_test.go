@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -43,5 +44,51 @@ func TestRunnerResolvesGlobalAgentBind(t *testing.T) {
 	}
 	if loop.lastAgent != "reviewer" {
 		t.Fatalf("agent = %q, want reviewer", loop.lastAgent)
+	}
+}
+
+func TestRunnerResolvesChannelAgentBind(t *testing.T) {
+	t.Parallel()
+
+	const sessionID = agentkit.SessionID("slack:C001")
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: sessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := mapSessionStore{
+		sessions: map[agentkit.SessionID]agentkit.Session{sessionID: mem},
+	}
+	ws, err := rtworkspace.NewTenant(rtworkspace.TenantConfig{
+		Global:    t.TempDir(),
+		LocalBase: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Workspace: "slack:C001"})
+	if err := sessbind.SetGlobalAgentBind(ctx, ws, "global-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessbind.SetChannelAgentBind(ctx, ws, "channel-agent"); err != nil {
+		t.Fatal(err)
+	}
+
+	loop := &agentRecordingLoop{}
+	evt := deliveryUserEvent("slack", "U1", rctx.BuildDeliverySessionID("slack", "C001", "", "U1"), "hi")
+	evt.AgentID = "request-agent"
+	root, err := runner.New(runner.Config{}, runner.Deps{
+		Platform:     &scriptedPlatform{events: []agentkit.MessageEvent{evt}},
+		Loop:         loop,
+		SessionStore: store,
+		Workspace:    ws,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Run(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if loop.lastAgent != "channel-agent" {
+		t.Fatalf("agent = %q, want channel-agent", loop.lastAgent)
 	}
 }

@@ -10,34 +10,42 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// ResolveAgentID applies session bind, global default, then explicit event agent id.
+// ResolveAgentID applies session bind, channel bind, global default, then explicit event agent id.
+// The bind results are the stored values at each layer, including layers that lost to a higher priority.
 func ResolveAgentID(
 	ctx context.Context,
 	store agentkit.SessionStore,
 	ws workspace.Service,
 	sessionID agentkit.SessionID,
 	eventAgent agentkit.AgentID,
-) (effective, sessionBind, globalBind agentkit.AgentID, err error) {
+) (effective, sessionBind, channelBind, globalBind agentkit.AgentID, err error) {
 	sessionBind, err = AgentBind(ctx, store, sessionID)
 	if err != nil {
-		return "", "", "", err
-	}
-	if id := strings.TrimSpace(string(sessionBind)); id != "" {
-		return agentkit.AgentID(id), sessionBind, "", nil
+		return "", "", "", "", err
 	}
 	if ws != nil {
+		channelBind, err = ChannelAgentBind(ctx, ws)
+		if err != nil {
+			return "", "", "", "", err
+		}
 		globalBind, err = GlobalAgentBind(ctx, ws)
 		if err != nil {
-			return "", "", "", err
+			return "", "", "", "", err
 		}
-		if id := strings.TrimSpace(string(globalBind)); id != "" {
-			return agentkit.AgentID(id), "", globalBind, nil
-		}
+	}
+	if id := strings.TrimSpace(string(sessionBind)); id != "" {
+		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
+	}
+	if id := strings.TrimSpace(string(channelBind)); id != "" {
+		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
+	}
+	if id := strings.TrimSpace(string(globalBind)); id != "" {
+		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
 	}
 	if id := strings.TrimSpace(string(eventAgent)); id != "" {
-		return agentkit.AgentID(id), "", "", nil
+		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
 	}
-	return "", "", "", nil
+	return "", sessionBind, channelBind, globalBind, nil
 }
 
 // AgentBind returns the per-session agent override, or "" when unset.
@@ -74,6 +82,31 @@ func GlobalAgentBind(ctx context.Context, ws workspace.Service) (agentkit.AgentI
 		return "", err
 	}
 	return data.AgentID, nil
+}
+
+// ChannelAgentBind returns the current channel's default agent id, or "" when unset.
+func ChannelAgentBind(ctx context.Context, ws workspace.Service) (agentkit.AgentID, error) {
+	if ws == nil {
+		return "", nil
+	}
+	data, err := loadChannelRuntime(ctx, ws)
+	if err != nil {
+		return "", err
+	}
+	return data.AgentID, nil
+}
+
+// SetChannelAgentBind sets or clears the current channel's default agent id.
+func SetChannelAgentBind(ctx context.Context, ws workspace.Service, agent agentkit.AgentID) error {
+	if ws == nil {
+		return errors.New("workspace is required for channel agent binding")
+	}
+	data, err := loadChannelRuntime(ctx, ws)
+	if err != nil {
+		return err
+	}
+	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(agent)))
+	return saveChannelRuntime(ctx, ws, data)
 }
 
 // SetGlobalAgentBind sets or clears the workspace-wide default agent id.

@@ -82,11 +82,12 @@ Runner 每次入站先拿 delivery / effective key 查 active mapping，解析�
 | 优先级 | 来源 | 存储 |
 |---|---|---|
 | 1 | Session runtime | `sessions/<session-id>/runtime.json`（`agentId` / `model`，由 `/agent use`、`/model` 写入） |
+| 1.2 | Channel runtime | 当前 channel 租户根下的 `local:runtime.json`（`agentId`，由 `/agent -c use` 写入；`/new` 不清除，同群各会话共享） |
 | 1.5 | Global runtime | `global:runtime.json`（`agentId`、`models`，由 `/agent -g`、`/model -g` 写入） |
 | 2 | 单条消息 | Platform 入站时填入 `MessageEvent.AgentID`（如 chat-api 请求体显式 `agent_id`、定时任务指定 agent） |
 | 3 | 默认 | `loop.defaultAgent` |
 
-Runner **不**维护静态路由表。`/agent use` 写入 resolved session 工作目录下的 `runtime.json` 后优先生效；Platform 仅在请求显式指定 agent 时写入 `MessageEvent.AgentID`（chat-api 不再把 conversation/platform 默认值当作 per-message override）。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
+Runner **不**维护静态路由表。`/agent use` 写入 resolved session 工作目录下的 `runtime.json` 后优先生效；`/agent -c use` 写入当前 channel 租户根的 `local:runtime.json`，同群会话共享且 `/new` 不清除。Platform 仅在请求显式指定 agent 时写入 `MessageEvent.AgentID`（chat-api 不再把 conversation/platform 默认值当作 per-message override）。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
 
 ## 2. 识别不同用户
 

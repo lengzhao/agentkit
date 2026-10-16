@@ -116,7 +116,7 @@ func (c modelCommand) catalogRoutingDeps() catalogRoutingDeps {
 }
 
 func (c modelCommand) show(ctx context.Context, globalOnly bool) (string, error) {
-	effective, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
+	effective, _, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
 	if err != nil {
 		return "", err
 	}
@@ -224,7 +224,7 @@ func (c modelCommand) set(ctx context.Context, global bool, model string) (strin
 }
 
 func (c modelCommand) setGlobal(ctx context.Context, model string) (string, error) {
-	agentID, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
+	agentID, _, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
 	if err != nil {
 		return "", err
 	}
@@ -239,7 +239,7 @@ func (c modelCommand) setGlobal(ctx context.Context, model string) (string, erro
 
 func (c modelCommand) clear(ctx context.Context, global bool) (string, error) {
 	if global {
-		agentID, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
+		agentID, _, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
 		if err != nil {
 			return "", err
 		}
@@ -265,7 +265,7 @@ func (c modelCommand) clear(ctx context.Context, global bool) (string, error) {
 	if err := sessbind.SetSessionModelBind(ctx, c.store, sessionID, ""); err != nil {
 		return "", err
 	}
-	agentID, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
+	agentID, _, _, _, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())
 	if err != nil {
 		return "", err
 	}

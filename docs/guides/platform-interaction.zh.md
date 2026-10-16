@@ -307,9 +307,18 @@ slash 命令按领域由各自插件贡献（`/model` 由 `loop/default`，`/fal
 
 与 `/agent use` 相同，会话模型绑定写在当前 active conversation（`/new` 子会话各自独立）。ACP 远程 agent 不使用模型覆盖。
 
-**Agent 全局默认**：`/agent -g use <id>` 写入 `global:runtime.json` 的 `agentId`，对所有未设会话覆盖的会话生效；`/agent -g reset` 清除。优先级：会话 `runtime.json` → 全局 → 请求里的 `agent_id` → `loop.defaultAgent`。会话/全局 agent 绑定优先于 chat-api 请求体中的 `agent_id`。
+**Agent 默认**：
 
-`/model -g` 的全局条目按**当前路由到的 agent id**（含 `/agent -g use`）写入 `global:runtime.json`，与 runner 入站解析一致。**会话级 `/model` 只作用于主 agent**：进程内子 Agent 的模型是显式配置（md `model:` → `/submodel <名>` → `/submodel *` → 父 agent 的 `-g`），不随会话内 `/model` 变化，见 [subagent.zh.md §模型解析](subagent.zh.md#模型解析进程内子-agent)。旧写法 `/model fallback` 与 `/model -g sub` 已分别迁移到 `/fallback` 与 `/submodel`，输入旧语法会报错并提示新命令。
+| 命令 | 写入 | 生效范围 |
+|---|---|---|
+| `/agent use <id>` | 当前会话 `runtime.json` 的 `agentId` | 仅这段会话；`/new` 之后的新会话不继承 |
+| `/agent -c use <id>` | 当前 channel 的 `local:runtime.json` 的 `agentId` | 同一 channel 里还没设会话覆盖的会话（`workspace/tenant` 下即该群的租户根；`/new` 不清除） |
+| `/agent -g use <id>` | `global:runtime.json` 的 `agentId` | 所有还没设会话或 channel 覆盖的 channel |
+| `/agent reset`、`/agent -c reset`、`/agent -g reset` | 清除对应层 | — |
+
+`-c` 与 `-g` 不能同时使用。优先级：会话 `runtime.json` → channel `local:runtime.json` → 全局 `global:runtime.json` → 请求里的 `agent_id` → `loop.defaultAgent`。会话、channel、全局 agent 绑定优先于 chat-api 请求体中的 `agent_id`。
+
+`/model -g` 的全局条目按**当前路由到的 agent id**（含 `/agent -c use` 与 `/agent -g use`）写入 `global:runtime.json`，与 runner 入站解析一致。**会话级 `/model` 只作用于主 agent**：进程内子 Agent 的模型是显式配置（md `model:` → `/submodel <名>` → `/submodel *` → 父 agent 的 `-g`），不随会话内 `/model` 变化，见 [subagent.zh.md §模型解析](subagent.zh.md#模型解析进程内子-agent)。旧写法 `/model fallback` 与 `/model -g sub` 已分别迁移到 `/fallback` 与 `/submodel`，输入旧语法会报错并提示新命令。
 
 **Agent 自主切换**：挂载 `tool/set-model` 后，Agent 可调用 `set_model` 写入同一会话 `runtime.json` 覆盖（下一 turn 生效，`allowModels` 白名单约束可选范围）；与 `agent/chain` 组合可实现「路由节点识别意图并切模型 → 主节点执行」的编排，见 [agent-chain.zh.md](agent-chain.zh.md)。
 
