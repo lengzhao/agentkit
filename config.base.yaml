@@ -283,9 +283,9 @@ agent.claude.default:
       - "@agentclientprotocol/claude-agent-acp"
     cwd: work
     releaseSubprocessAfterTurn: true
-    env:
-      ANTHROPIC_API_KEY: ${var:ANTHROPIC_API_KEY}
-      ANTHROPIC_BASE_URL: ${var:ANTHROPIC_BASE_URL:-}
+    # env:
+    #   ANTHROPIC_API_KEY: ${var:ANTHROPIC_API_KEY}
+    #   ANTHROPIC_BASE_URL: ${var:ANTHROPIC_BASE_URL:-}
     autoApprove: false
   deps:
     workspace: workspace.default
