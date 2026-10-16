@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -58,6 +59,30 @@ type Output struct {
 	AnchorSeq int64                            `json:"anchor_seq,omitempty"`
 }
 
+// markCurrentSession flags the session the caller is running in and moves it
+// to the front: same session first, then the rest of the channel by recency.
+// Index rows may use either the raw session id (sql-index) or the
+// filename-encoded form with ':' replaced by '_' (sqlite-index), so both are
+// matched.
+func markCurrentSession(ctx context.Context, sessions []capsessionindex.SessionSummary) {
+	current := string(rctx.SessionIDFromContext(ctx))
+	if current == "" {
+		return
+	}
+	encoded := strings.ReplaceAll(current, ":", "_")
+	for i := range sessions {
+		if sessions[i].SessionID == current || sessions[i].SessionID == encoded {
+			sessions[i].Current = true
+			if i > 0 {
+				cur := sessions[i]
+				copy(sessions[1:i+1], sessions[:i])
+				sessions[0] = cur
+			}
+			return
+		}
+	}
+}
+
 func init() {
 	pluginkit.Register("tool/session-query", New)
 }
@@ -104,6 +129,7 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 			if err != nil {
 				return Output{}, err
 			}
+			markCurrentSession(ctx, sessions)
 			return Output{Mode: "list", Sessions: sessions, Count: len(sessions)}, nil
 		case "scroll":
 			sid := strings.TrimSpace(input.SessionID)
@@ -129,7 +155,7 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 			return Output{}, fmt.Errorf("mode must be search, list, or scroll")
 		}
 	}).
-		Description("Search past conversations (mode=search), list recent sessions (mode=list), or scroll messages around a hit (mode=scroll with session_id and seq from search). Same-tenant only.").
+		Description("Search past conversations (mode=search), list recent sessions ordered by last activity (mode=list; your current session is marked Current), or scroll messages around a hit (mode=scroll with session_id and seq from search). Same-tenant only.").
 		Build()
 	if err != nil {
 		return nil, err

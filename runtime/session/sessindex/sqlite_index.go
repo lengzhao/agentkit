@@ -183,10 +183,10 @@ func (s *SQLiteIndex) ListSessions(ctx context.Context, limit int) ([]capsession
 			COALESCE((
 				SELECT MAX(f.mtime_ns) FROM files f
 				WHERE f.path LIKE '%/' || m.session_id || '.jsonl'
-			), 0)
+			), 0) AS last_mod_ns
 		FROM messages m
 		GROUP BY m.session_id
-		ORDER BY MAX(m.seq) DESC
+		ORDER BY last_mod_ns DESC
 		LIMIT ?`, limit)
 	if err != nil {
 		return nil, err

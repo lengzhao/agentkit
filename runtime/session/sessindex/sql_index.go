@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
@@ -64,6 +66,27 @@ func NewSQLIndex(cfg SQLIndexConfig, _ SQLIndexDeps) (capsessionindex.Service, e
 
 func (s *SQLIndex) isSQLite() bool { return s.driver == "sqlite" }
 
+// tenantFilter returns a WHERE fragment scoping session ids to the caller's
+// workspace: channel-scope sessions collapse to the workspace key itself,
+// thread/user scopes append ":..." segments. Empty when no workspace is known.
+func tenantFilter(ctx context.Context, column string) (string, []any) {
+	wsKey := strings.TrimSpace(rctx.WorkspaceFromContext(ctx))
+	if wsKey == "" {
+		return "", nil
+	}
+	return fmt.Sprintf(" AND (%s = ? OR substr(%s, 1, ?) = ?)", column, column),
+		[]any{wsKey, len(wsKey) + 1, wsKey + ":"}
+}
+
+// sessionInTenant reports whether sessionID belongs to the caller's workspace.
+func sessionInTenant(ctx context.Context, sessionID string) bool {
+	wsKey := strings.TrimSpace(rctx.WorkspaceFromContext(ctx))
+	if wsKey == "" {
+		return true
+	}
+	return sessionID == wsKey || strings.HasPrefix(sessionID, wsKey+":")
+}
+
 func (s *SQLIndex) q(query string) string {
 	return sessstore.SQLPlaceholderQuery(s.driver, query)
 }
@@ -105,6 +128,12 @@ func (s *SQLIndex) ensureSchema() error {
 			return fmt.Errorf("session/sql-index schema: %w", err)
 		}
 	}
+	// Migration: recency tracking for ListSessions ordering. Tolerate re-runs.
+	if _, err := s.db.Exec(`ALTER TABLE ak_session_index_state ADD COLUMN max_created_at_ns BIGINT NOT NULL DEFAULT 0`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") && !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("session/sql-index migrate max_created_at_ns: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -113,20 +142,22 @@ func (s *SQLIndex) SyncSessions(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cond, condArgs := tenantFilter(ctx, "e.session_id")
 	rows, err := s.db.QueryContext(ctx, s.q(`
 		SELECT e.session_id, e.seq, e.payload
 		FROM ak_session_events e
 		LEFT JOIN ak_session_index_state st ON st.session_id = e.session_id
-		WHERE e.seq > COALESCE(st.max_seq, 0)
-		ORDER BY e.session_id, e.seq`))
+		WHERE e.seq > COALESCE(st.max_seq, 0)`+cond+`
+		ORDER BY e.session_id, e.seq`), condArgs...)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
 	type pending struct {
-		msgs   []indexableMessage
-		maxSeq int64
+		msgs         []indexableMessage
+		maxSeq       int64
+		maxCreatedNs int64
 	}
 	bySession := make(map[string]*pending)
 	var order []string
@@ -150,6 +181,9 @@ func (s *SQLIndex) SyncSessions(ctx context.Context) error {
 		if seq > p.maxSeq {
 			p.maxSeq = seq
 		}
+		if ns := ev.CreatedAt.UnixNano(); ns > p.maxCreatedNs {
+			p.maxCreatedNs = ns
+		}
 		p.msgs = append(p.msgs, extractIndexableMessages([]agentkit.SessionEvent{ev})...)
 	}
 	if err := rows.Err(); err != nil {
@@ -169,8 +203,10 @@ func (s *SQLIndex) SyncSessions(ctx context.Context) error {
 	}
 	defer insert.Close()
 
-	upsertState := `INSERT INTO ak_session_index_state (session_id, max_seq) VALUES (?, ?)
-		ON CONFLICT(session_id) DO UPDATE SET max_seq = excluded.max_seq`
+	upsertState := `INSERT INTO ak_session_index_state (session_id, max_seq, max_created_at_ns) VALUES (?, ?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			max_seq = excluded.max_seq,
+			max_created_at_ns = MAX(ak_session_index_state.max_created_at_ns, excluded.max_created_at_ns)`
 
 	for _, sessionID := range order {
 		p := bySession[sessionID]
@@ -179,7 +215,7 @@ func (s *SQLIndex) SyncSessions(ctx context.Context) error {
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, s.q(upsertState), sessionID, p.maxSeq); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(upsertState), sessionID, p.maxSeq, p.maxCreatedNs); err != nil {
 			return err
 		}
 	}
@@ -200,23 +236,28 @@ func (s *SQLIndex) Search(ctx context.Context, query string, limit int) ([]capse
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cond, condArgs := tenantFilter(ctx, "session_id")
 	var rows *sql.Rows
 	var err error
 	if s.isSQLite() {
 		escaped := strings.ReplaceAll(query, `"`, `""`)
-		rows, err = s.db.QueryContext(ctx, `
+		args := append([]any{`"` + escaped + `"`}, condArgs...)
+		args = append(args, limit)
+		rows, err = s.db.QueryContext(ctx, s.q(`
 			SELECT session_id, seq, role, snippet(ak_session_fts, 3, '[', ']', '…', 32)
 			FROM ak_session_fts
-			WHERE ak_session_fts MATCH ?
+			WHERE ak_session_fts MATCH ?`+cond+`
 			ORDER BY rank
-			LIMIT ?`, `"`+escaped+`"`, limit)
+			LIMIT ?`), args...)
 	} else {
+		args := append([]any{"%" + query + "%"}, condArgs...)
+		args = append(args, limit)
 		rows, err = s.db.QueryContext(ctx, s.q(`
 			SELECT session_id, seq, role, substr(body, 1, 200)
 			FROM ak_session_fts
-			WHERE body LIKE ?
+			WHERE body LIKE ?`+cond+`
 			ORDER BY session_id, seq
-			LIMIT ?`), "%"+query+"%", limit)
+			LIMIT ?`), args...)
 	}
 	if err != nil {
 		return nil, err
@@ -243,12 +284,19 @@ func (s *SQLIndex) ListSessions(ctx context.Context, limit int) ([]capsessionind
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cond, condArgs := tenantFilter(ctx, "m.session_id")
+	where := " WHERE 1=1" + cond
+	args := append(condArgs, limit)
 	rows, err := s.db.QueryContext(ctx, s.q(`
-		SELECT session_id, COUNT(*), MAX(seq)
-		FROM ak_session_fts
-		GROUP BY session_id
-		ORDER BY MAX(seq) DESC
-		LIMIT ?`), limit)
+		SELECT m.session_id, COUNT(*), MAX(m.seq),
+			COALESCE((
+				SELECT st.max_created_at_ns FROM ak_session_index_state st
+				WHERE st.session_id = m.session_id
+			), 0) AS last_mod_ns
+		FROM ak_session_fts m`+where+`
+		GROUP BY m.session_id
+		ORDER BY last_mod_ns DESC
+		LIMIT ?`), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -256,16 +304,24 @@ func (s *SQLIndex) ListSessions(ctx context.Context, limit int) ([]capsessionind
 	var out []capsessionindex.SessionSummary
 	for rows.Next() {
 		var sum capsessionindex.SessionSummary
-		if err := rows.Scan(&sum.SessionID, &sum.MessageCount, &sum.LastSeq); err != nil {
+		var lastModNs int64
+		if err := rows.Scan(&sum.SessionID, &sum.MessageCount, &sum.LastSeq, &lastModNs); err != nil {
 			return nil, err
+		}
+		if lastModNs > 0 {
+			sum.LastMod = time.Unix(0, lastModNs).UTC()
 		}
 		out = append(out, sum)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// LastMod: latest event time per session from the durable log.
+	// Fallback for sessions synced before max_created_at_ns existed: latest
+	// event time from the durable log.
 	for i := range out {
+		if !out[i].LastMod.IsZero() {
+			continue
+		}
 		var raw []byte
 		err := s.db.QueryRowContext(ctx, s.q(
 			`SELECT payload FROM ak_session_events WHERE session_id = ? ORDER BY seq DESC LIMIT 1`),
@@ -295,6 +351,9 @@ func (s *SQLIndex) ScrollMessages(ctx context.Context, sessionID string, anchorS
 	if before == 0 && after == 0 {
 		before = 3
 		after = 3
+	}
+	if !sessionInTenant(ctx, sessionID) {
+		return nil, fmt.Errorf("session %q is outside the current workspace; hint: only sessions from the current chat/channel are accessible, use mode=list to see them", sessionID)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

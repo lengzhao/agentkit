@@ -20,6 +20,8 @@ type SessionSummary struct {
 	LastSeq      int64
 	// LastMod is the session JSONL mtime at last index sync (append activity).
 	LastMod time.Time
+	// Current marks the session the caller is running in, when known.
+	Current bool
 }
 
 // MessageRow is one indexed transcript line for scroll / browse.
@@ -36,7 +38,7 @@ type Service interface {
 	SyncSessions(ctx context.Context) error
 	// Search runs FTS over indexed messages for the current workspace database.
 	Search(ctx context.Context, query string, limit int) ([]Hit, error)
-	// ListSessions returns recently active sessions (by last indexed seq, then file mtime).
+	// ListSessions returns recently active sessions, most recently active first.
 	ListSessions(ctx context.Context, limit int) ([]SessionSummary, error)
 	// ScrollMessages returns messages around anchorSeq in one session (before/after counts).
 	ScrollMessages(ctx context.Context, sessionID string, anchorSeq int64, before, after int) ([]MessageRow, error)

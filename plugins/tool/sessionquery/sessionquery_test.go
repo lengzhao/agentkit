@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
 
@@ -26,11 +27,11 @@ type stubIndex struct {
 		err      error
 	}
 	scroll struct {
-		sessionID       string
-		seq             int64
-		before, after   int
-		msgs            []capsessionindex.MessageRow
-		err             error
+		sessionID     string
+		seq           int64
+		before, after int
+		msgs          []capsessionindex.MessageRow
+		err           error
 	}
 }
 
@@ -128,6 +129,35 @@ func TestSessionListMode(t *testing.T) {
 	out := callTool(t, tool, `{"mode":"list","limit":5}`)
 	if out.Mode != "list" || out.Count != 2 || idx.list.limit != 5 {
 		t.Fatalf("out=%+v list.limit=%d", out, idx.list.limit)
+	}
+}
+
+// The caller's own session is flagged Current and moved to the front, so the
+// model can anchor "this conversation" even when other sessions are busier.
+func TestSessionListMarksAndPromotesCurrent(t *testing.T) {
+	idx := &stubIndex{}
+	idx.list.sessions = []capsessionindex.SessionSummary{
+		{SessionID: "lark_oc_a_t_om_other", MessageCount: 30},
+		{SessionID: "lark_oc_a_t_om_cur", MessageCount: 1},
+	}
+	tool, err := New(Config{}, Deps{Index: idx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rctx.WithConversation(context.Background(), "lark:oc_a:t:om_cur")
+	raw := agenttest.CallTool(t, ctx, tool, `{"mode":"list"}`)
+	var out Output
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal %q: %v", raw, err)
+	}
+	if len(out.Sessions) != 2 {
+		t.Fatalf("sessions = %+v", out.Sessions)
+	}
+	if out.Sessions[0].SessionID != "lark_oc_a_t_om_cur" || !out.Sessions[0].Current {
+		t.Fatalf("current session not promoted: %+v", out.Sessions)
+	}
+	if out.Sessions[1].Current {
+		t.Fatalf("other session wrongly flagged: %+v", out.Sessions)
 	}
 }
 
