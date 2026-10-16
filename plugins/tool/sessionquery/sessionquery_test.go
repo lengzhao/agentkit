@@ -211,6 +211,17 @@ func TestSessionSyncError(t *testing.T) {
 	}
 }
 
+func TestSessionInvalidScope(t *testing.T) {
+	tool, err := New(Config{}, Deps{Index: &stubIndex{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := callToolErrText(t, tool, `{"mode":"list","scope":"everywhere"}`)
+	if !strings.Contains(msg, "scope must be") {
+		t.Fatalf("got %q", msg)
+	}
+}
+
 func TestSessionUnknownMode(t *testing.T) {
 	tool, err := New(Config{}, Deps{Index: &stubIndex{}})
 	if err != nil {

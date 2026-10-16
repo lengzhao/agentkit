@@ -68,8 +68,12 @@ func (s *SQLIndex) isSQLite() bool { return s.driver == "sqlite" }
 
 // tenantFilter returns a WHERE fragment scoping session ids to the caller's
 // workspace: channel-scope sessions collapse to the workspace key itself,
-// thread/user scopes append ":..." segments. Empty when no workspace is known.
+// thread/user scopes append ":..." segments. Empty when global scope was
+// requested or no workspace is known.
 func tenantFilter(ctx context.Context, column string) (string, []any) {
+	if rctx.SessionIndexGlobalFromContext(ctx) {
+		return "", nil
+	}
 	wsKey := strings.TrimSpace(rctx.WorkspaceFromContext(ctx))
 	if wsKey == "" {
 		return "", nil
@@ -80,6 +84,9 @@ func tenantFilter(ctx context.Context, column string) (string, []any) {
 
 // sessionInTenant reports whether sessionID belongs to the caller's workspace.
 func sessionInTenant(ctx context.Context, sessionID string) bool {
+	if rctx.SessionIndexGlobalFromContext(ctx) {
+		return true
+	}
 	wsKey := strings.TrimSpace(rctx.WorkspaceFromContext(ctx))
 	if wsKey == "" {
 		return true

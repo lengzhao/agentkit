@@ -155,9 +155,9 @@ platform.http:
 | `session/events` | `cap/session.Events`（组合 `Conversation` / `RunLog` / `Compaction` / `Skills`，另含恢复标记方法） | 会话事件追加/索引契约的标准实现（无状态）；插件经 `sessionEvents` 注入同一实例，deps 类型取最小面（todo/finish→`RunLog`，skill→`Skills`，compaction/summary→`Compaction`，acp-remote→`Conversation`）；runtime 经 `sessevents.Default` 单例追加契约事件 | — |
 | `session/commands` | `agentkit.CommandProvider` | `/new`、`/session` 会话生命周期 slash；deps 注入 `sessionStore` | — |
 | `session/sqlite-index` | `cap/sessionindex.Service` | 租户内 session JSONL 的 SQLite FTS5 索引（`sessions/.index.sqlite`）；`Sync(ctx)` 自行按 `sessionsRel`（默认 `sessions`）解析会话目录 | DSH session-query-sqlite |
-| `session/sql-index` | `cap/sessionindex.Service` | 从 `session/sql` 主库（`ak_session_events`）增量派生 FTS（水位表 `ak_session_index_state`，含 `max_created_at_ns` 供按最近活跃排序）；索引与会话同库同 DSN，Docker 只需持久化一处；所有查询按 ctx workspace（channel）过滤，不跨租户；SQLite 用 FTS5，PG 用普通表 + `LIKE`（`tsvector` 留作后续） | — |
+| `session/sql-index` | `cap/sessionindex.Service` | 从 `session/sql` 主库（`ak_session_events`）增量派生 FTS（水位表 `ak_session_index_state`，含 `max_created_at_ns` 供按最近活跃排序）；索引与会话同库同 DSN，Docker 只需持久化一处；查询默认按 ctx workspace（channel）过滤，`rctx.WithSessionIndexGlobal` 可显式放开全局；SQLite 用 FTS5，PG 用普通表 + `LIKE`（`tsvector` 留作后续） | — |
 | `hook/session-index` | `agentkit.HookProvider` | 每轮成功后异步刷新 session FTS | — |
-| `tool/session-query` | `agentkit.Tool` | `session_search`：`mode=search`（FTS）、`list`（按最近活跃排序，当前会话标 `Current` 并置顶）、`scroll`；范围限定当前 channel（workspace），不跨群/频道 | DSH session-query |
+| `tool/session-query` | `agentkit.Tool` | `session_search`：`mode=search`（FTS）、`list`（按最近活跃排序，当前会话标 `Current` 并置顶）、`scroll`；默认限定当前 channel（workspace），`scope=global` 显式查全局（仅 sql-index 等共享库后端生效） | DSH session-query |
 | `tool/memory` | `agentkit.Tool` | 主 agent `memory`：`add` / `replace` / `remove`（`memory.md`）；Hermes 式 WHEN/HOW/SKIP 说明（`MemoryToolDescription`） | memory.default |
 | `prompt/assembler/default` | `agentkit.PromptAssembler` | Section 排序与组装 | DSH `system-prompt` |
 | `prompt/section/agents-md` | `agentkit.SectionProvider` | AGENTS.md 层级加载（deps `fs` 接 unrestricted 实例；向上遍历传宿主机绝对路径，非本地后端静默 miss）；`prompt/section/file` 的预设别名 | DSH `agent-instructions` / Pi AGENTS.md |

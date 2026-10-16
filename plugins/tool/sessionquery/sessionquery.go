@@ -37,6 +37,9 @@ func (c *Config) Validate() error {
 // Input supports Hermes-style session_search shapes: search (FTS), list (browse sessions), scroll (context around a hit).
 type Input struct {
 	Mode string `json:"mode,omitempty" jsonschema:"search (default) | list | scroll"`
+	// Scope: channel (default) restricts to the current chat; global spans all
+	// channels (only honored by shared-store backends such as session/sql-index).
+	Scope string `json:"scope,omitempty" jsonschema:"channel (default) | global"`
 	// Search: FTS query. List: ignored. Scroll: optional when jumping to a session without a hit.
 	Query string `json:"query,omitempty" jsonschema:"Keywords for mode=search"`
 	// Scroll: session id from a prior search hit or list row.
@@ -99,6 +102,13 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 	defaultLimit := cfg.DefaultLimit
 	idx := deps.Index
 	tool, err := agentkit.NewTool[Input, Output]("session_search", func(ctx context.Context, input Input) (Output, error) {
+		switch strings.ToLower(strings.TrimSpace(input.Scope)) {
+		case "", "channel":
+		case "global":
+			ctx = rctx.WithSessionIndexGlobal(ctx)
+		default:
+			return Output{}, fmt.Errorf("scope must be channel or global")
+		}
 		if err := idx.SyncSessions(ctx); err != nil {
 			return Output{}, err
 		}
@@ -155,7 +165,7 @@ func New(cfg Config, deps Deps) (agentkit.Tool, error) {
 			return Output{}, fmt.Errorf("mode must be search, list, or scroll")
 		}
 	}).
-		Description("Search past conversations (mode=search), list recent sessions ordered by last activity (mode=list; your current session is marked Current), or scroll messages around a hit (mode=scroll with session_id and seq from search). Same-tenant only.").
+		Description("Search past conversations (mode=search), list recent sessions ordered by last activity (mode=list; your current session is marked Current), or scroll messages around a hit (mode=scroll with session_id and seq from search). Defaults to the current chat/channel; pass scope=global to search across all channels.").
 		Build()
 	if err != nil {
 		return nil, err

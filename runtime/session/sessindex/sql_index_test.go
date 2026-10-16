@@ -204,4 +204,27 @@ func TestSQLIndexTenantScoping(t *testing.T) {
 	if _, err := idx.ScrollMessages(ctxA, "lark:oc_b:t:om_2", 0, 0, 0); err == nil {
 		t.Fatal("scroll on foreign session should fail")
 	}
+
+	// scope=global opts out of channel scoping explicitly.
+	ctxGlobal := rctx.WithSessionIndexGlobal(ctxA)
+	if err := idx.SyncSessions(ctxGlobal); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err = idx.ListSessions(ctxGlobal, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("global list = %+v", sessions)
+	}
+	hits, err = idx.Search(ctxGlobal, "secret", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("global search = %+v", hits)
+	}
+	if _, err := idx.ScrollMessages(ctxGlobal, "lark:oc_b:t:om_2", 0, 0, 0); err != nil {
+		t.Fatalf("global scroll: %v", err)
+	}
 }
