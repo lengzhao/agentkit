@@ -3,7 +3,9 @@ package feishu
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -553,115 +555,51 @@ func TestCreateProgressCardBackoff(t *testing.T) {
 	st.unlock()
 }
 
-func TestRecoverRichCardUpdateFailureSwallowsAndClearsHandle(t *testing.T) {
-	// useInteractiveCard=false → SendPreviewStart 返回 errNotSupported，模拟重建失败。
-	p := &Platform{}
-	sessionID := agentkit.SessionID("session-recover")
-	st := p.streamState(sessionID)
-	st.lock()
-	st.progressHandle = &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
-	st.bodyText = "new content" // 有增量内容才会触发重建
-	st.unlock()
+// TestFlushRichCardUpdateFailureNeverSendsNewMessage 是「更新模式」的核心回归
+// 测试（对齐 cc-connect）：进度卡中途更新失败绝不重建新消息——handle 保留、
+// 不发任何新 IM 消息，内容随下一次成功 flush 在同一张卡上补齐。
+// 这是线上「单 turn 多响应框」的根治路径。
+func TestFlushRichCardUpdateFailureNeverSendsNewMessage(t *testing.T) {
+	var imCalls atomic.Int32 // IM 消息发送（Reply/Create）次数：必须始终为 0
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/open-apis/im/v1/messages"):
+			imCalls.Add(1)
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{"message_id":"m_new"}}`))
+		default:
+			// CardKit 更新持续失败（非 transient 的 JSON 错误，快速返回）。
+			_, _ = w.Write([]byte(`{"code":99999,"msg":"boom"}`))
+		}
+	}))
+	defer srv.Close()
+	p.useInteractiveCard = true
 
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
-
+	streamKey := agentkit.SessionID("lark:oc_test:reply:om_trigger")
+	st := p.richStreamState(streamKey)
+	old := &feishuPreviewHandle{messageID: "m1", chatID: "oc_test", cardID: "c1"}
 	st.lock()
-	if st.progressHandle != nil {
-		st.unlock()
-		t.Fatal("expected handle cleared after failed recreate")
-	}
-	st.unlock()
-
-	// 重建失败不限次数：再次失败仍走同一路径（handle 保持为空，下轮 flush 重试创建）。
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
-	st.lock()
-	if st.progressHandle != nil {
-		st.unlock()
-		t.Fatal("expected handle still cleared")
-	}
-	st.unlock()
-}
-
-func TestRecoverRichCardRecreateBudgetExhausted(t *testing.T) {
-	// 重建预算用尽后：不再发新卡，保留旧 handle 等下轮 flush 重试同一张卡。
-	p := &Platform{}
-	sessionID := agentkit.SessionID("session-recover-budget")
-	st := p.streamState(sessionID)
-	st.lock()
-	old := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
 	st.progressHandle = old
-	st.bodyText = "new content" // 有增量内容，正常路径本会触发重建
-	st.recreateCount = maxStreamCardRecreates
+	st.bodyText = "hello"
 	st.unlock()
 
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
+	for i := 0; i < 3; i++ {
+		if err := p.flushRichCard(context.Background(), streamKey, true); err != nil {
+			t.Fatalf("flush %d: %v", i, err)
+		}
+	}
+	p.clearStream(streamKey)
 
 	st.lock()
 	defer st.unlock()
 	if st.progressHandle != old {
-		t.Fatal("expected old handle kept when recreate budget exhausted")
+		t.Fatal("update failure must keep the same card handle (update mode, no recreate)")
 	}
-}
-
-func TestRecoverRichCardRecreateConsumesBudgetOnSuccess(t *testing.T) {
-	// 重建成功才消耗预算；失败（handle 被清空等下轮重试）不计入。
-	p := &Platform{}
-	sessionID := agentkit.SessionID("session-recover-budget-consume")
-	st := p.streamState(sessionID)
-	st.lock()
-	st.progressHandle = &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
-	st.bodyText = "new content"
-	st.unlock()
-
-	// useInteractiveCard=false → SendPreviewStart 失败：预算不变，handle 清空。
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
-	st.lock()
-	defer st.unlock()
-	if st.recreateCount != 0 {
-		t.Fatalf("failed recreate must not consume budget, got %d", st.recreateCount)
+	if st.updateFailCount != 3 {
+		t.Fatalf("expected 3 consecutive failures recorded, got %d", st.updateFailCount)
 	}
-	if st.progressHandle != nil {
-		t.Fatal("expected handle cleared after failed recreate")
-	}
-}
-
-func TestRecoverRichCardUpdateFailureKeepsHandleWhenNoNewContent(t *testing.T) {
-	// 相对旧卡无新增内容时不重建空卡，保留旧 handle 等下轮 flush 重试。
-	p := &Platform{}
-	sessionID := agentkit.SessionID("session-recover-noop")
-	st := p.streamState(sessionID)
-	st.lock()
-	old := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
-	st.progressHandle = old
-	st.bodyText = "same"
-	st.ackedBody = "same" // 旧卡已展示全部内容
-	st.unlock()
-
-	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
-
-	st.lock()
-	defer st.unlock()
-	if st.progressHandle != old {
-		t.Fatal("expected old handle kept when no new content")
-	}
-}
-
-func TestRichCardIncrementalBodyAndSteps(t *testing.T) {
-	st := streamStateLiteral(streamStateData{cardBodyBase: "第一段", cardStepsBase: 1})
-	if got := st.richCardIncrementalBody("第一段\n\n第二段"); got != "第二段" {
-		t.Fatalf("incremental body = %q, want 第二段", got)
-	}
-	// 前缀不匹配时回退全文，保证不丢内容。
-	if got := st.richCardIncrementalBody("重写后的全文"); got != "重写后的全文" {
-		t.Fatalf("fallback body = %q", got)
-	}
-	steps := []toolStep{{Name: "a"}, {Name: "b"}, {Name: "c"}}
-	inc := st.richCardIncrementalSteps(steps)
-	if len(inc) != 2 || inc[0].Name != "b" {
-		t.Fatalf("incremental steps = %#v", inc)
-	}
-	if got := st.richCardIncrementalSteps(nil); got != nil {
-		t.Fatalf("nil steps = %#v", got)
+	if got := imCalls.Load(); got != 0 {
+		t.Fatalf("mid-turn update failure must never send a new message, got %d sends", got)
 	}
 }
 

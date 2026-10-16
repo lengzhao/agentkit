@@ -29,10 +29,9 @@ type streamStateData struct {
 	// 每个流式 delta 都打一次创建 API。
 	createFailCount  int
 	nextCreateAfter  time.Time
-	// recreateCount 是本 stream 内「更新失败 → 重建新卡」成功发送新消息的次数，
-	// 受 maxStreamCardRecreates 预算约束：重建是异常路径而非恢复常态，
-	// 预算用尽后保留旧卡等下一轮 flush 重试，避免故障窗口内持续产生新气泡。
-	recreateCount int
+	// updateFailCount 是同一 handle 上连续更新失败的次数（成功 flush 清零），
+	// 仅作日志观测：更新模式下失败不触发任何重建，下轮 flush 自然重试同一张卡。
+	updateFailCount int
 	// bodyStreamClosed 为 true 表示 CardKit 实体流式模式已关闭（300309），
 	// 本卡后续 flush 直接走整卡 patch；重建新卡时重置。
 	bodyStreamClosed bool
@@ -42,14 +41,6 @@ type streamStateData struct {
 	richCardPanelVersion        uint64
 	richCardFlushedPanelVersion uint64
 	lastRichCardBodyStreamRunes int
-	// 增量重建：故障重建新卡时旧卡不删除，新卡只展示旧卡未成功展示的增量，
-	// 避免同一内容在多张卡重复刷屏。cardBodyBase/cardStepsBase 是当前活跃卡
-	// 创建时全局已展示的正文前缀/步骤数；ackedBody/ackedSteps 是全局已成功
-	// 展示（flush 成功）到的位置，重建时作为新卡的 base。
-	cardBodyBase string
-	cardStepsBase int
-	ackedBody    string
-	ackedSteps   int
 	// route 是该 stream 的 IM 投递地址（从首个出站事件的 Route 捕获），
 	// 供心跳、防抖 flush、turn/end 定稿等异步路径使用，无需再查事件。
 	route     agentkit.RouteRef

@@ -93,32 +93,6 @@ func (st *streamState) richCardDisplayBody() string {
 	return st.committedBodyText + richCardBodySegmentSeparator + inflight
 }
 
-// richCardIncrementalBody 返回当前活跃卡片应展示的正文：全局 display body 减去
-// 本卡创建时已被旧卡展示的前缀（cardBodyBase）。前缀不匹配（如 body 被重写）时
-// 回退为全文，保证内容不丢。
-func (st *streamState) richCardIncrementalBody(full string) string {
-	base := st.cardBodyBase
-	if base == "" {
-		return full
-	}
-	if strings.HasPrefix(full, base) {
-		return strings.TrimLeft(full[len(base):], "\n ")
-	}
-	return full
-}
-
-// richCardIncrementalSteps 返回当前活跃卡片应展示的步骤（扣除旧卡已展示的前缀）。
-func (st *streamState) richCardIncrementalSteps(steps []toolStep) []toolStep {
-	base := st.cardStepsBase
-	if base <= 0 {
-		return steps
-	}
-	if base >= len(steps) {
-		return nil
-	}
-	return steps[base:]
-}
-
 func subagentToolLabel(agent string) string {
 	return "子Agent:" + strings.TrimSpace(agent)
 }
@@ -168,6 +142,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 	if status == "" {
 		status = cardStatusThinking
 	}
+	// 更新模式：每次 flush 渲染全量快照（正文 + 全部步骤），同一张卡原地更新。
 	var body string
 	var fullBody string
 	if st.bodyFn != nil {
@@ -178,11 +153,10 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		if strings.TrimSpace(fullBody) != "" {
 			st.finalizedBodyText = fullBody
 		}
-		// 当前卡只展示增量部分（旧卡已展示的前缀不重复）。
-		body = st.richCardIncrementalBody(fullBody)
+		body = fullBody
 	}
 	allSteps := p.renderRichSteps(st)
-	displaySteps := st.richCardIncrementalSteps(allSteps)
+	displaySteps := allSteps
 	handle := st.progressHandle
 	elapsed := progressElapsed(st)
 	panelVer := st.richCardPanelVersion
@@ -210,9 +184,6 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.lastProgressUpdate = time.Now()
 		st.richCardFlushedPanelVersion = panelVer
 		st.lastRichCardBodyStreamRunes = len([]rune(body))
-		// 新卡已展示 base..now，全局已展示位置推进到当前全文。
-		st.ackedBody = fullBody
-		st.ackedSteps = len(allSteps)
 		st.unlock()
 		p.deleteEvictedProgressCards(ctx, evicted)
 		p.scheduleRichCardKeepalive(streamKey)
@@ -227,9 +198,8 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 			if streamErr == nil {
 				st.lock()
 				st.lastProgressUpdate = time.Now()
+				st.updateFailCount = 0
 				st.lastRichCardBodyStreamRunes = len([]rune(body))
-				st.ackedBody = fullBody
-				st.ackedSteps = len(allSteps)
 				st.unlock()
 				p.scheduleRichCardKeepalive(streamKey)
 				return nil
@@ -251,102 +221,30 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		err = p.patchRichCard(ctx, handle, content)
 	}
 	if err != nil {
-		// 卡片更新失败（如 CardKit 间歇性 403）不应中断 agent turn：重建新进度
-		// 卡片替换 handle，新卡只展示旧卡未成功展示的增量内容（旧卡不删除，
-		// 避免「撤回」提示）。重建失败则 handle 置空、下轮 flush 重试创建。
-		p.recoverRichCardUpdateFailure(ctx, streamKey, rc, err)
+		// 更新模式（对齐 cc-connect）：进度卡只原地更新，中途失败绝不重建新
+		// 消息。streamState 内容单调累积，跳过一帧什么都不丢——下一次成功的
+		// flush 会把同一张卡补齐到最新。投递保证由 turn/end 定稿兜底
+		// （patch 失败才新发一条最终答复），因此中途失败只记日志并等下轮。
+		st.lock()
+		st.updateFailCount++
+		fails := st.updateFailCount
+		st.unlock()
+		slog.Warn(p.tag()+": rich card update failed, keep card and retry on next flush",
+			"session_id", streamKey, "consecutive_failures", fails, "error", err)
+		p.scheduleRichCardKeepalive(streamKey)
 		return nil
 	}
 	st.lock()
 	st.lastProgressUpdate = time.Now()
+	st.updateFailCount = 0
 	st.richCardFlushedPanelVersion = panelVer
 	st.lastRichCardBodyStreamRunes = len([]rune(body))
-	st.ackedBody = fullBody
-	st.ackedSteps = len(allSteps)
 	if !streaming && len(displaySteps) > 0 {
 		st.finalizedSteps = append([]toolStep(nil), displaySteps...)
 	}
 	st.unlock()
 	p.scheduleRichCardKeepalive(streamKey)
 	return nil
-}
-
-// recoverRichCardUpdateFailure 在卡片更新失败时保持 turn 存活：重建新进度卡片并
-// 替换 handle。旧卡保留不删（删除在 Lark 客户端显示为「撤回」），因此新卡只展示
-// 旧卡未成功展示的增量内容（base = 全局已展示位置 acked），避免重复刷屏。
-// 若相对旧卡没有任何新增内容，则保留旧 handle 等下一轮 flush 重试，不建新卡。
-// 重建失败则 handle 置空，下一轮 flush 会再次走创建路径。错误不上抛，最终答复由
-// turn/end 降级链兜底。
-// maxStreamCardRecreates 是每个 stream 内「更新失败 → 重建新卡」的预算：
-// 重建会在会话里新增一条消息（旧卡不撤回），预算 1 保证单 turn 最多因故障
-// 多出一条气泡；预算用尽后保留旧 handle，靠后续 flush/心跳重试同一张卡。
-const maxStreamCardRecreates = 1
-
-func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, cause error) {
-	st := p.streamState(streamKey)
-	st.lock()
-	if st.recreateCount >= maxStreamCardRecreates {
-		st.unlock()
-		slog.Warn(p.tag()+": rich card update failed, recreate budget exhausted; keep old card and retry on next flush",
-			"session_id", streamKey, "recreates", st.recreateCount, "error", cause)
-		p.scheduleRichCardKeepalive(streamKey)
-		return
-	}
-	oldHandle := st.progressHandle
-	oldBodyBase, oldStepsBase := st.cardBodyBase, st.cardStepsBase
-	// 以全局已展示位置作为新卡 base：新卡只渲染增量。
-	st.cardBodyBase = st.ackedBody
-	st.cardStepsBase = st.ackedSteps
-	fullBody := st.richCardDisplayBody()
-	if st.bodyFn != nil {
-		fullBody = st.bodyFn(false)
-	}
-	incBody := st.richCardIncrementalBody(fullBody)
-	incSteps := st.richCardIncrementalSteps(p.renderRichSteps(st))
-	status := st.status
-	if status == "" {
-		status = cardStatusThinking
-	}
-	elapsed := progressElapsed(st)
-	st.progressHandle = nil
-	st.unlock()
-
-	if oldHandle != nil && strings.TrimSpace(incBody) == "" && len(incSteps) == 0 {
-		// 相对旧卡无新增内容：重建只会产生一张空卡，保留旧卡等下次 flush 重试。
-		st.lock()
-		st.progressHandle = oldHandle
-		st.cardBodyBase = oldBodyBase
-		st.cardStepsBase = oldStepsBase
-		st.unlock()
-		slog.Warn(p.tag()+": rich card update failed, no new content; retry on next flush", "session_id", streamKey, "error", cause)
-		p.scheduleRichCardKeepalive(streamKey)
-		return
-	}
-
-	slog.Warn(p.tag()+": rich card update failed, recreating progress card with incremental content", "session_id", streamKey, "error", cause)
-	content := buildRichCard(status, "", incSteps, incBody, false, elapsed)
-	newHandle, err := p.createProgressCard(ctx, streamKey, rc, content)
-	if err != nil {
-		if !errors.Is(err, errRichCardCreateCooldown) {
-			slog.Warn(p.tag()+": recreate rich card failed, retry on next flush", "session_id", streamKey, "error", err)
-		}
-		return
-	}
-	st.lock()
-	st.progressHandle = newHandle
-	st.bodyStreamClosed = false // 新实体流式模式重新可用
-	st.recreateCount++       // 新消息已发出，消耗一次重建预算
-	st.enqueueCard(streamCardProgress, newHandle)
-	evicted := p.evictStreamCardsLocked(st)
-	st.lastProgressUpdate = time.Now()
-	st.richCardFlushedPanelVersion = st.richCardPanelVersion
-	st.lastRichCardBodyStreamRunes = len([]rune(incBody))
-	// 新卡已展示 base..now，全局已展示位置推进到当前全文。
-	st.ackedBody = fullBody
-	st.ackedSteps = len(p.renderRichSteps(st))
-	st.unlock()
-	p.deleteEvictedProgressCards(ctx, evicted)
-	p.scheduleRichCardKeepalive(streamKey)
 }
 
 // errRichCardCreateCooldown 表示卡片创建处于失败退避期，本次不真正发起 API 调用。
@@ -1132,10 +1030,9 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	if len(allSteps) == 0 && len(st.finalizedSteps) > 0 {
 		allSteps = append([]toolStep(nil), st.finalizedSteps...)
 	}
-	// 当前卡只展示增量（旧卡已展示的前缀不重复）；纯文本兜底同样用增量，
-	// 因为旧卡仍保留着前文。
-	bodyText := strings.TrimSpace(st.richCardIncrementalBody(fullBody))
-	displaySteps := st.richCardIncrementalSteps(allSteps)
+	// 更新模式：定稿与纯文本兜底均使用全量内容，保证最终答复完整。
+	bodyText := strings.TrimSpace(fullBody)
+	displaySteps := allSteps
 	elapsed := progressElapsed(st)
 	st.status = finalStatus
 	st.bodyText = ""

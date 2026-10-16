@@ -76,7 +76,7 @@ func isTenantAccessTokenInvalid(err error) bool {
 
 // Transient retry constants for network-level failures.
 const (
-	maxTransientRetries    = 3
+	maxTransientRetries    = 4
 	transientRetryInitial  = 500 * time.Millisecond
 	transientRetryMaxDelay = 5 * time.Second
 )
@@ -103,6 +103,13 @@ func isTransientError(err error) bool {
 	// Unwrapped string checks for common transient symptoms that may
 	// appear in wrapped Feishu SDK errors.
 	msg := err.Error()
+	// 出口代理/边缘网关（TLB 等）拦截响应：非 JSON 空 body + 403/5xx。
+	// Lark API 自身永远返回 JSON，非 JSON 响应说明请求未到达应用层，
+	// 属于网关抖动，退避重试通常成功（CardKit 同 seq 重试已被 300317
+	// 良性化兜底，重复落地无副作用）。
+	if strings.Contains(msg, "response content-type not json") {
+		return true
+	}
 	for _, substr := range []string{
 		"connection reset by peer",
 		"broken pipe",
