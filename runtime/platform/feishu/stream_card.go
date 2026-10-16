@@ -508,9 +508,11 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 	interval := p.richCardPatchThrottle(st)
 	elapsed := time.Since(st.lastProgressUpdate)
 	bodyGrowth := len([]rune(displayBody)) - st.lastRichCardBodyStreamRunes
+	// 限频（对齐 cc-connect）：间隔与最小增量两个条件同时满足才立即 flush，
+	// 否则由防抖定时器在间隔边界兜底——快模型高频 delta 下写请求速率同样
+	// 被压到 1/interval，避免打满出口代理（TLB 403）与 Lark 流式更新限流。
 	shouldFlushNow := st.progressHandle == nil ||
-		elapsed >= interval ||
-		(p.canRichCardStreamBody(st, st.progressHandle) && bodyGrowth >= richCardBodyStreamMinRunes)
+		(elapsed >= interval && bodyGrowth >= richCardBodyStreamMinRunes)
 	st.unlock()
 	if shouldFlushNow {
 		p.cancelBodyFlushTimer(sessionID)

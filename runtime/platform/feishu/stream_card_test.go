@@ -661,6 +661,48 @@ func TestFinalizeTurnEndRecallsStaleCardAfterReplacement(t *testing.T) {
 	}
 }
 
+// TestRichBodyDeltaThrottleCapsFlushRate：快模型高频 delta 下，写请求速率必须被
+// 压到 1/interval——立即 flush 需要「间隔 + 最小增量」同时满足（对齐 cc-connect），
+// 否则由防抖定时器在间隔边界兜底一次。回归：旧实现 minRunes 为 OR 条件，
+// 10 次连续 delta 会产生约 10 次立即写请求。
+func TestRichBodyDeltaThrottleCapsFlushRate(t *testing.T) {
+	var streamCalls atomic.Int32
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/elements/") {
+			streamCalls.Add(1)
+		}
+		_, _ = w.Write([]byte(`{"code":0,"msg":"success"}`))
+	}))
+	defer srv.Close()
+	p.useInteractiveCard = true
+
+	streamKey := agentkit.SessionID("lark:oc_test:reply:om_trigger")
+	st := p.richStreamState(streamKey)
+	st.lock()
+	st.progressHandle = &feishuPreviewHandle{messageID: "m1", chatID: "oc_test", cardID: "c1"}
+	st.lastProgressUpdate = time.Now() // 刚 flush 过：后续 delta 距间隔起点很近
+	st.status = cardStatusWorking      // 已进入正文态：不触发 panel 版本切换，走 200ms 元素流式
+	st.unlock()
+
+	chunk := strings.Repeat("x", 100) // 每个 delta 都超过 minRunes(20)
+	for i := 0; i < 10; i++ {
+		if err := p.handleRichBodyDelta(context.Background(), streamKey, chunk); err != nil {
+			t.Fatalf("delta %d: %v", i, err)
+		}
+	}
+	// 间隔未到：不允许任何立即 flush（旧实现此处已约 10 次写请求）。
+	if got := streamCalls.Load(); got != 0 {
+		t.Fatalf("throttle bypassed: %d immediate stream writes within one interval", got)
+	}
+	// 防抖定时器在间隔边界兜底：最终恰好一次 flush 带上全部累积内容。
+	time.Sleep(400 * time.Millisecond)
+	if got := streamCalls.Load(); got != 1 {
+		t.Fatalf("expected exactly 1 debounced flush, got %d", got)
+	}
+	p.clearStream(streamKey)
+}
+
 func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 	p := &Platform{}
 	sessionID := agentkit.SessionID("session-body-timer")

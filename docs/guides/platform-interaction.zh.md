@@ -174,6 +174,8 @@ Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 
 
 `turn/end` 先关 CardKit 流式再整卡 Patch；仅正文变长且工具区未变时走 `main_text` 元素流式。整卡更新会关闭实体的流式模式，之后元素流式会报 **300309「streaming mode is closed」**——平台识别后在 state 里标记 `bodyStreamClosed`，本卡后续直接走整卡 patch，新建卡片时重置。同一 `card_id` 的 CardKit 写请求按「取 seq + HTTP 往返」整体串行（handle 级 `reqMu`），杜绝并发在途请求乱序落地被 **300317「sequence number compare failed」**拒绝；残留的 300317（响应丢失后同 seq 重试、或跨进程写同一实体）按**良性**处理——卡片内容单调累积，被拒的旧帧直接丢弃视为成功，不重试、不上抛。
 
+**更新限频**（对齐 cc-connect）：正文元素流式按 200ms 间隔 + 最小增量 20 字符节流，两个条件**同时满足**才立即 flush，否则由防抖定时器在间隔边界兜底一次——快模型高频 delta 下写请求速率同样被压到 1/interval，避免打满出口代理（TLB 403）与 Lark 流式更新限流；不满足元素流式条件时退化为 1.5s 整卡 patch 节流。
+
 **空内容不建卡**：`buildRichCard` 在无折叠区且正文为空（非终态没有状态行可显示）时返回空串，调用方据此跳过建卡；`message/end` 对零输出消息段（如 ACP follow-up turn 无可见内容）在尚未建卡时直接跳过 flush——避免渲染出只有空 `main_text` 元素的空消息气泡。终态（☑️/已取消/出错）状态行始终保留，不受影响。
 
 **失败降级与心跳**（更新模式，对齐 cc-connect）：卡片创建/更新失败（如出口代理间歇性 403）**不会中断 agent turn**，且**更新失败绝不中途重建新消息**——streamState 内容单调累积（每次 flush 渲染全量快照），跳过一帧什么都不丢，下一次成功 flush 把同一张卡补齐到最新；失败仅记日志（含连续失败计数 `updateFailCount`）并等下轮 flush / 心跳重试同一张卡。出口代理 / 边缘网关的非 JSON 响应（TLB 403/5xx 空 body，请求未到达 Lark 应用层）归类为 transient 错误统一退避重试。创建失败带**指数退避**（2s 起步、上限 30s，成功清零），避免网关持续故障时每个流式 delta 都打一次创建 API；创建失败不产出任何消息，下轮 flush 重试创建。`turn/end` 定稿走**三级降级**保证最终答复不丢：patch 当前卡 → 失败则消息接口（`Im.Message.Patch`）挽救 → 再失败另发一张最终卡，**成功后随即撤回旧卡**（先发后撤：新卡已是完整答复，旧卡只是过时残影，撤回换来会话里只有一份答案；与中途更新保留旧卡的策略相反，因为那时旧卡是唯一内容）→ 最后纯文本补发，纯文本按 5s/20s/60s 重试，全部失败才记 Error 日志。卡片创建后若超过 10s 无任何更新（长 LLM 推理期间无出站流量，CardKit 实体可能被回收），心跳定时器会自动轻量 flush 一次（页脚 elapsed 随时间变化）保持卡片活跃；`turn/end` 定稿前停止心跳。
