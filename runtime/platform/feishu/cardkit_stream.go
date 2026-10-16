@@ -62,23 +62,50 @@ func (p *Platform) createCardEntity(ctx context.Context, cardJSON string) (strin
 	return *resp.Data.CardId, nil
 }
 
+// larkErrCardSeqConflict 是 CardKit 300317「sequence number compare failed」：
+// 本帧已被更新的状态取代。卡片内容单调累积（每次 flush 渲染全量快照），被拒的
+// 旧帧直接丢弃即为正确语义——重试同 seq 必然再撞 300317，上抛则会误触卡片重建。
+const larkErrCardSeqConflict = 300317
+
+// isSeqConflictResponse 识别 300317 并记 debug 日志；返回 true 表示调用方应按
+// 成功处理（新帧已在服务端生效，或丢失响应的请求实际已落地）。
+func (p *Platform) isSeqConflictResponse(operation, cardID string, code int, msg string) bool {
+	if code != larkErrCardSeqConflict {
+		return false
+	}
+	slog.Debug(p.tag()+": "+operation+" superseded by newer frame (seq conflict), dropping stale frame",
+		"card_id", cardID, "code", code, "msg", msg)
+	return true
+}
+
 // patchRichCard closes CardKit streaming (when needed) then replaces the full card JSON.
 func (p *Platform) patchRichCard(ctx context.Context, handle any, cardJSON string) error {
 	h, ok := handle.(*feishuPreviewHandle)
 	if !ok || h == nil || strings.TrimSpace(h.cardID) == "" || !isCardJSON(cardJSON) {
 		return p.UpdateMessage(ctx, handle, cardJSON)
 	}
-	if err := p.closeCardStreaming(ctx, h); err != nil && !isCardStreamingClosedError(err) {
+	// close + update 必须在同一次持锁内完成，避免两个原子操作之间被其他写入插入。
+	h.reqMu.Lock()
+	defer h.reqMu.Unlock()
+	if err := p.closeCardStreamingLocked(ctx, h); err != nil && !isCardStreamingClosedError(err) {
 		slog.Warn(p.tag()+": close card streaming before rich patch failed", "card_id", h.cardID, "error", err)
 	}
 	h.mu.Lock()
 	h.streaming = false
 	h.elementID = ""
 	h.mu.Unlock()
-	return p.updateCardEntity(ctx, h, cardJSON)
+	return p.updateCardEntityLocked(ctx, h, cardJSON)
 }
 
 func (p *Platform) updateCardEntity(ctx context.Context, h *feishuPreviewHandle, cardJSON string) error {
+	h.reqMu.Lock()
+	defer h.reqMu.Unlock()
+	return p.updateCardEntityLocked(ctx, h, cardJSON)
+}
+
+// updateCardEntityLocked 调用方须持有 h.reqMu：取 seq 与 HTTP 往返整体串行，
+// 保证同一 card_id 的请求按取号顺序到达服务端。
+func (p *Platform) updateCardEntityLocked(ctx context.Context, h *feishuPreviewHandle, cardJSON string) error {
 	seq := h.nextSequence()
 	card := larkcardkit.NewCardBuilder().
 		Type("card_json").
@@ -98,6 +125,9 @@ func (p *Platform) updateCardEntity(ctx context.Context, h *feishuPreviewHandle,
 			if err != nil {
 				return fmt.Errorf("%s: update card entity: %w", p.tag(), err)
 			}
+			if p.isSeqConflictResponse("update card entity", h.cardID, resp.Code, resp.Msg) {
+				return nil
+			}
 			if !resp.Success() {
 				return fmt.Errorf("%s: update card entity code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
 			}
@@ -110,6 +140,8 @@ func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHa
 	if strings.TrimSpace(elementID) == "" {
 		return fmt.Errorf("%s: stream card content: empty element_id", p.tag())
 	}
+	h.reqMu.Lock()
+	defer h.reqMu.Unlock()
 	seq := h.nextSequence()
 	req := larkcardkit.NewContentCardElementReqBuilder().
 		CardId(h.cardID).
@@ -125,6 +157,9 @@ func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHa
 			resp, err := client.Cardkit.V1.CardElement.Content(ctx, req, options...)
 			if err != nil {
 				return fmt.Errorf("%s: stream card content: %w", p.tag(), err)
+			}
+			if p.isSeqConflictResponse("stream card content", h.cardID, resp.Code, resp.Msg) {
+				return nil
 			}
 			if !resp.Success() {
 				return fmt.Errorf("%s: stream card content code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
@@ -145,7 +180,8 @@ func isCardStreamingClosedError(err error) bool {
 		strings.Contains(msg, fmt.Sprintf("code=%d", larkErrCardStreamingClosed))
 }
 
-func (p *Platform) closeCardStreaming(ctx context.Context, h *feishuPreviewHandle) error {
+// closeCardStreamingLocked 调用方须持有 h.reqMu（见 patchRichCard）。
+func (p *Platform) closeCardStreamingLocked(ctx context.Context, h *feishuPreviewHandle) error {
 	seq := h.nextSequence()
 	settings := map[string]any{
 		"config": map[string]any{
@@ -169,6 +205,9 @@ func (p *Platform) closeCardStreaming(ctx context.Context, h *feishuPreviewHandl
 			resp, err := client.Cardkit.V1.Card.Settings(ctx, req, options...)
 			if err != nil {
 				return fmt.Errorf("%s: close card streaming: %w", p.tag(), err)
+			}
+			if p.isSeqConflictResponse("close card streaming", h.cardID, resp.Code, resp.Msg) {
+				return nil
 			}
 			if !resp.Success() {
 				return fmt.Errorf("%s: close card streaming code=%d msg=%s", p.tag(), resp.Code, resp.Msg)

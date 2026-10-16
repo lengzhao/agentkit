@@ -582,6 +582,49 @@ func TestRecoverRichCardUpdateFailureSwallowsAndClearsHandle(t *testing.T) {
 	st.unlock()
 }
 
+func TestRecoverRichCardRecreateBudgetExhausted(t *testing.T) {
+	// 重建预算用尽后：不再发新卡，保留旧 handle 等下轮 flush 重试同一张卡。
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-recover-budget")
+	st := p.streamState(sessionID)
+	st.lock()
+	old := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
+	st.progressHandle = old
+	st.bodyText = "new content" // 有增量内容，正常路径本会触发重建
+	st.recreateCount = maxStreamCardRecreates
+	st.unlock()
+
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
+
+	st.lock()
+	defer st.unlock()
+	if st.progressHandle != old {
+		t.Fatal("expected old handle kept when recreate budget exhausted")
+	}
+}
+
+func TestRecoverRichCardRecreateConsumesBudgetOnSuccess(t *testing.T) {
+	// 重建成功才消耗预算；失败（handle 被清空等下轮重试）不计入。
+	p := &Platform{}
+	sessionID := agentkit.SessionID("session-recover-budget-consume")
+	st := p.streamState(sessionID)
+	st.lock()
+	st.progressHandle = &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
+	st.bodyText = "new content"
+	st.unlock()
+
+	// useInteractiveCard=false → SendPreviewStart 失败：预算不变，handle 清空。
+	p.recoverRichCardUpdateFailure(context.Background(), sessionID, replyContext{}, context.DeadlineExceeded)
+	st.lock()
+	defer st.unlock()
+	if st.recreateCount != 0 {
+		t.Fatalf("failed recreate must not consume budget, got %d", st.recreateCount)
+	}
+	if st.progressHandle != nil {
+		t.Fatal("expected handle cleared after failed recreate")
+	}
+}
+
 func TestRecoverRichCardUpdateFailureKeepsHandleWhenNoNewContent(t *testing.T) {
 	// 相对旧卡无新增内容时不重建空卡，保留旧 handle 等下轮 flush 重试。
 	p := &Platform{}

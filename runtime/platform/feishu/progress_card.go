@@ -20,7 +20,11 @@ import (
 // Card 2.0 path needs mu/status/lastContent to let SetPreviewStatus patch
 // the header color without re-rendering the whole card.
 type feishuPreviewHandle struct {
-	mu          sync.Mutex
+	mu sync.Mutex
+	// reqMu 串行化同一 card_id 的 CardKit 写请求（取 seq + HTTP 往返整体持锁）。
+	// CardKit 要求 sequence 严格递增到达；并发在途请求经代理连接池乱序落地
+	// 会被 300317「sequence number compare failed」拒绝。
+	reqMu       sync.Mutex
 	messageID   string
 	chatID      string
 	cardID      string

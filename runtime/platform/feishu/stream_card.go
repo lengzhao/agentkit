@@ -277,9 +277,21 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 // 若相对旧卡没有任何新增内容，则保留旧 handle 等下一轮 flush 重试，不建新卡。
 // 重建失败则 handle 置空，下一轮 flush 会再次走创建路径。错误不上抛，最终答复由
 // turn/end 降级链兜底。
+// maxStreamCardRecreates 是每个 stream 内「更新失败 → 重建新卡」的预算：
+// 重建会在会话里新增一条消息（旧卡不撤回），预算 1 保证单 turn 最多因故障
+// 多出一条气泡；预算用尽后保留旧 handle，靠后续 flush/心跳重试同一张卡。
+const maxStreamCardRecreates = 1
+
 func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, cause error) {
 	st := p.streamState(streamKey)
 	st.lock()
+	if st.recreateCount >= maxStreamCardRecreates {
+		st.unlock()
+		slog.Warn(p.tag()+": rich card update failed, recreate budget exhausted; keep old card and retry on next flush",
+			"session_id", streamKey, "recreates", st.recreateCount, "error", cause)
+		p.scheduleRichCardKeepalive(streamKey)
+		return
+	}
 	oldHandle := st.progressHandle
 	oldBodyBase, oldStepsBase := st.cardBodyBase, st.cardStepsBase
 	// 以全局已展示位置作为新卡 base：新卡只渲染增量。
@@ -323,6 +335,7 @@ func (p *Platform) recoverRichCardUpdateFailure(ctx context.Context, streamKey a
 	st.lock()
 	st.progressHandle = newHandle
 	st.bodyStreamClosed = false // 新实体流式模式重新可用
+	st.recreateCount++       // 新消息已发出，消耗一次重建预算
 	st.enqueueCard(streamCardProgress, newHandle)
 	evicted := p.evictStreamCardsLocked(st)
 	st.lastProgressUpdate = time.Now()
@@ -1098,6 +1111,8 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 		finalStatus = cardStatusError
 	}
 	stopStreamTimer(&st.bodyFlushTimer)
+	// 定稿前停心跳：避免定稿 patch 与在途心跳 flush 竞争同一 card_id 的写锁/序号。
+	stopStreamTimer(&st.keepaliveTimer)
 	handle := st.progressHandle
 	botReplyID := botReplyMessageID(st)
 	fullBody := strings.TrimSpace(st.richCardDisplayBody())

@@ -29,6 +29,10 @@ type streamStateData struct {
 	// 每个流式 delta 都打一次创建 API。
 	createFailCount  int
 	nextCreateAfter  time.Time
+	// recreateCount 是本 stream 内「更新失败 → 重建新卡」成功发送新消息的次数，
+	// 受 maxStreamCardRecreates 预算约束：重建是异常路径而非恢复常态，
+	// 预算用尽后保留旧卡等下一轮 flush 重试，避免故障窗口内持续产生新气泡。
+	recreateCount int
 	// bodyStreamClosed 为 true 表示 CardKit 实体流式模式已关闭（300309），
 	// 本卡后续 flush 直接走整卡 patch；重建新卡时重置。
 	bodyStreamClosed bool
