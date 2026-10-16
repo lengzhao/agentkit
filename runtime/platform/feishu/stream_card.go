@@ -194,7 +194,9 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		h := handle.(*feishuPreviewHandle)
 		streamText := streamBodyMarkdownForCardKit(body)
 		if strings.TrimSpace(streamText) != "" {
-			streamErr := p.streamCardElementByID(ctx, h, richCardMainTextElementID, streamText)
+			// 中途帧用 quick 预算：失败快速返回，内容累积等下一帧补齐，
+			// 避免故障期多重重试持续锤网关并长时间占用同卡写锁。
+			streamErr := p.streamCardElementByID(ctx, h, richCardMainTextElementID, streamText, retryProfileQuick)
 			if streamErr == nil {
 				st.lock()
 				st.lastProgressUpdate = time.Now()
@@ -216,9 +218,10 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 
 	var err error
 	if streaming {
-		err = p.UpdateMessage(ctx, handle, content)
+		err = p.updateMessageProfile(ctx, handle, content, retryProfileQuick)
 	} else {
-		err = p.patchRichCard(ctx, handle, content)
+		// message/end 段定稿：标准预算即可，turn/end 定稿负责最终投递保证。
+		err = p.patchRichCard(ctx, handle, content, retryProfileStandard)
 	}
 	if err != nil {
 		// 更新模式（对齐 cc-connect）：进度卡只原地更新，中途失败绝不重建新
@@ -938,7 +941,9 @@ func (p *Platform) finalizeRichTurnEndAsync(
 	go func() {
 		delivered := false
 		if handle != nil {
-			if err := p.patchRichCard(parent, handle, content); err != nil {
+			// 定稿 patch 用 finalize 预算（3 次、~4s）：只覆盖短暂抖动；
+			// 窗口更长时快速进入降级链，最终投递由纯文本长重试兜底。
+			if err := p.patchRichCard(parent, handle, content, retryProfileFinalize); err != nil {
 				// CardKit 路径失败时尝试消息接口整卡更新（不同路径可能仍可用），
 				// 挽救成功则旧卡直接成为最终卡，无需另发新卡。
 				if salvageErr := p.UpdateMessage(parent, handle, content); salvageErr == nil {

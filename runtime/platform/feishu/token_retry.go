@@ -76,9 +76,27 @@ func isTenantAccessTokenInvalid(err error) bool {
 
 // Transient retry constants for network-level failures.
 const (
-	maxTransientRetries    = 4
-	transientRetryInitial  = 500 * time.Millisecond
-	transientRetryMaxDelay = 5 * time.Second
+	transientRetryInitial = 500 * time.Millisecond
+)
+
+// transientRetryProfile 描述一组 transient 重试预算。整体策略：各档都保持
+// 短预算、快速失败/快速降级——长故障窗口下尽快走完降级链（新最终卡 → 纯文本），
+// 最终投递保证由降级链末端纯文本的 5s/20s/60s 长重试覆盖，而不是让卡片路径
+// 在故障期长时间重试锤网关。
+type transientRetryProfile struct {
+	maxRetries int
+	maxDelay   time.Duration
+}
+
+var (
+	// retryProfileStandard：普通发送/消息类请求，2 次重试、~1.5s（0.5+1）。
+	retryProfileStandard = transientRetryProfile{maxRetries: 2, maxDelay: 5 * time.Second}
+	// retryProfileQuick：中途流式帧（元素流式/整卡 patch），1 次重试、~1s
+	// 快速失败——内容在 streamState 单调累积，下一次 flush 自动补齐。
+	retryProfileQuick = transientRetryProfile{maxRetries: 1, maxDelay: 1 * time.Second}
+	// retryProfileFinalize：turn/end 定稿 patch，3 次重试、~4s——只覆盖短暂
+	// 抖动；窗口更长时快速进入降级链（另发最终卡 + 撤回旧卡 → 纯文本兜底）。
+	retryProfileFinalize = transientRetryProfile{maxRetries: 3, maxDelay: 5 * time.Second}
 )
 
 // isTransientError returns true if the error is a transient network error
@@ -126,12 +144,18 @@ func isTransientError(err error) bool {
 }
 
 // withTransientRetry wraps an operation with exponential-backoff retry on
-// transient network errors. Non-transient errors are returned immediately.
-// Jitter (up to +25% of delay) is added to prevent thundering-herd retries.
+// transient network errors (standard profile). Non-transient errors are
+// returned immediately.
 func (p *Platform) withTransientRetry(ctx context.Context, operation string, fn func() error) error {
+	return p.withTransientRetryProfile(ctx, operation, retryProfileStandard, fn)
+}
+
+// withTransientRetryProfile 按给定预算做指数退避重试。
+// Jitter (up to +25% of delay) is added to prevent thundering-herd retries.
+func (p *Platform) withTransientRetryProfile(ctx context.Context, operation string, profile transientRetryProfile, fn func() error) error {
 	var lastErr error
 	delay := transientRetryInitial
-	for attempt := 0; attempt <= maxTransientRetries; attempt++ {
+	for attempt := 0; attempt <= profile.maxRetries; attempt++ {
 		lastErr = fn()
 		if lastErr == nil {
 			if attempt > 0 {
@@ -145,7 +169,7 @@ func (p *Platform) withTransientRetry(ctx context.Context, operation string, fn 
 		if !isTransientError(lastErr) {
 			return lastErr
 		}
-		if attempt == maxTransientRetries {
+		if attempt == profile.maxRetries {
 			break
 		}
 		// Add jitter: up to +25% of delay to spread out concurrent retries.
@@ -154,7 +178,7 @@ func (p *Platform) withTransientRetry(ctx context.Context, operation string, fn 
 		slog.Warn(p.tag()+": transient error, retrying",
 			"operation", operation,
 			"attempt", attempt+1,
-			"max_retries", maxTransientRetries,
+			"max_retries", profile.maxRetries,
 			"delay", actualDelay,
 			"error", lastErr,
 		)
@@ -163,9 +187,9 @@ func (p *Platform) withTransientRetry(ctx context.Context, operation string, fn 
 			return fmt.Errorf("%s: %s retry cancelled: %w (last error: %v)", p.tag(), operation, ctx.Err(), lastErr)
 		case <-time.After(actualDelay):
 		}
-		delay = min(delay*2, transientRetryMaxDelay)
+		delay = min(delay*2, profile.maxDelay)
 	}
-	return fmt.Errorf("%s failed after %d retries: %w", operation, maxTransientRetries, lastErr)
+	return fmt.Errorf("%s failed after %d retries: %w", operation, profile.maxRetries, lastErr)
 }
 
 func stringValue(v *string) string {

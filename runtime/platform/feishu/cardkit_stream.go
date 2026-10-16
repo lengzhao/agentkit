@@ -79,33 +79,35 @@ func (p *Platform) isSeqConflictResponse(operation, cardID string, code int, msg
 }
 
 // patchRichCard closes CardKit streaming (when needed) then replaces the full card JSON.
-func (p *Platform) patchRichCard(ctx context.Context, handle any, cardJSON string) error {
+// profile 决定 transient 重试预算：中途帧传 retryProfileQuick/Standard，
+// turn/end 定稿传 retryProfileFinalize 以熬过出口网关故障窗口。
+func (p *Platform) patchRichCard(ctx context.Context, handle any, cardJSON string, profile transientRetryProfile) error {
 	h, ok := handle.(*feishuPreviewHandle)
 	if !ok || h == nil || strings.TrimSpace(h.cardID) == "" || !isCardJSON(cardJSON) {
-		return p.UpdateMessage(ctx, handle, cardJSON)
+		return p.updateMessageProfile(ctx, handle, cardJSON, profile)
 	}
 	// close + update 必须在同一次持锁内完成，避免两个原子操作之间被其他写入插入。
 	h.reqMu.Lock()
 	defer h.reqMu.Unlock()
-	if err := p.closeCardStreamingLocked(ctx, h); err != nil && !isCardStreamingClosedError(err) {
+	if err := p.closeCardStreamingLocked(ctx, h, profile); err != nil && !isCardStreamingClosedError(err) {
 		slog.Warn(p.tag()+": close card streaming before rich patch failed", "card_id", h.cardID, "error", err)
 	}
 	h.mu.Lock()
 	h.streaming = false
 	h.elementID = ""
 	h.mu.Unlock()
-	return p.updateCardEntityLocked(ctx, h, cardJSON)
+	return p.updateCardEntityLocked(ctx, h, cardJSON, profile)
 }
 
-func (p *Platform) updateCardEntity(ctx context.Context, h *feishuPreviewHandle, cardJSON string) error {
+func (p *Platform) updateCardEntity(ctx context.Context, h *feishuPreviewHandle, cardJSON string, profile transientRetryProfile) error {
 	h.reqMu.Lock()
 	defer h.reqMu.Unlock()
-	return p.updateCardEntityLocked(ctx, h, cardJSON)
+	return p.updateCardEntityLocked(ctx, h, cardJSON, profile)
 }
 
 // updateCardEntityLocked 调用方须持有 h.reqMu：取 seq 与 HTTP 往返整体串行，
 // 保证同一 card_id 的请求按取号顺序到达服务端。
-func (p *Platform) updateCardEntityLocked(ctx context.Context, h *feishuPreviewHandle, cardJSON string) error {
+func (p *Platform) updateCardEntityLocked(ctx context.Context, h *feishuPreviewHandle, cardJSON string, profile transientRetryProfile) error {
 	seq := h.nextSequence()
 	card := larkcardkit.NewCardBuilder().
 		Type("card_json").
@@ -119,7 +121,7 @@ func (p *Platform) updateCardEntityLocked(ctx context.Context, h *feishuPreviewH
 			Build()).
 		Build()
 
-	return p.withTransientRetry(ctx, "update card entity", func() error {
+	return p.withTransientRetryProfile(ctx, "update card entity", profile, func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "update card entity", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Cardkit.V1.Card.Update(ctx, req, options...)
 			if err != nil {
@@ -136,7 +138,7 @@ func (p *Platform) updateCardEntityLocked(ctx context.Context, h *feishuPreviewH
 	})
 }
 
-func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHandle, elementID, content string) error {
+func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHandle, elementID, content string, profile transientRetryProfile) error {
 	if strings.TrimSpace(elementID) == "" {
 		return fmt.Errorf("%s: stream card content: empty element_id", p.tag())
 	}
@@ -152,7 +154,7 @@ func (p *Platform) streamCardElementByID(ctx context.Context, h *feishuPreviewHa
 			Build()).
 		Build()
 
-	return p.withTransientRetry(ctx, "stream card content", func() error {
+	return p.withTransientRetryProfile(ctx, "stream card content", profile, func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "stream card content", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Cardkit.V1.CardElement.Content(ctx, req, options...)
 			if err != nil {
@@ -181,7 +183,7 @@ func isCardStreamingClosedError(err error) bool {
 }
 
 // closeCardStreamingLocked 调用方须持有 h.reqMu（见 patchRichCard）。
-func (p *Platform) closeCardStreamingLocked(ctx context.Context, h *feishuPreviewHandle) error {
+func (p *Platform) closeCardStreamingLocked(ctx context.Context, h *feishuPreviewHandle, profile transientRetryProfile) error {
 	seq := h.nextSequence()
 	settings := map[string]any{
 		"config": map[string]any{
@@ -200,7 +202,7 @@ func (p *Platform) closeCardStreamingLocked(ctx context.Context, h *feishuPrevie
 			Build()).
 		Build()
 
-	return p.withTransientRetry(ctx, "close card streaming", func() error {
+	return p.withTransientRetryProfile(ctx, "close card streaming", profile, func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "close card streaming", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Cardkit.V1.Card.Settings(ctx, req, options...)
 			if err != nil {

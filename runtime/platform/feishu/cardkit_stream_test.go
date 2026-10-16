@@ -98,7 +98,7 @@ func TestUpdateCardEntitySeqConflictIsBenign(t *testing.T) {
 	defer srv.Close()
 
 	h := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
-	if err := p.updateCardEntity(context.Background(), h, `{"schema":"2.0"}`); err != nil {
+	if err := p.updateCardEntity(context.Background(), h, `{"schema":"2.0"}`, retryProfileStandard); err != nil {
 		t.Fatalf("300317 must be treated as benign (stale frame dropped), got %v", err)
 	}
 	if got := calls.Load(); got != 1 {
@@ -116,7 +116,7 @@ func TestStreamCardElementSeqConflictIsBenign(t *testing.T) {
 	defer srv.Close()
 
 	h := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
-	if err := p.streamCardElementByID(context.Background(), h, "main_text", "hello"); err != nil {
+	if err := p.streamCardElementByID(context.Background(), h, "main_text", "hello", retryProfileStandard); err != nil {
 		t.Fatalf("300317 on element stream must be benign, got %v", err)
 	}
 	if got := calls.Load(); got != 1 {
@@ -132,7 +132,7 @@ func TestUpdateCardEntityRealErrorPropagates(t *testing.T) {
 	defer srv.Close()
 
 	h := &feishuPreviewHandle{messageID: "m1", cardID: "c1"}
-	err := p.updateCardEntity(context.Background(), h, `{"schema":"2.0"}`)
+	err := p.updateCardEntity(context.Background(), h, `{"schema":"2.0"}`, retryProfileStandard)
 	if err == nil || !strings.Contains(err.Error(), "300309") {
 		t.Fatalf("non-300317 errors must propagate, got %v", err)
 	}
@@ -169,7 +169,7 @@ func TestCardKitWritesSerializedPerHandle(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- p.updateCardEntity(context.Background(), h, `{"schema":"2.0"}`)
+			errs <- p.updateCardEntity(context.Background(), h, `{"schema":"2.0"}`, retryProfileStandard)
 		}()
 	}
 	wg.Wait()

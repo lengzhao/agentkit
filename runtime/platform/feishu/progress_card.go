@@ -559,7 +559,14 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 
 // UpdateMessage edits an existing card message identified by previewHandle.
 // Uses the Patch API (HTTP PATCH) which is required for interactive card messages.
+// 对外固定标准重试预算；需要其他预算的调用方走 updateMessageProfile。
 func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content string) error {
+	return p.updateMessageProfile(ctx, previewHandle, content, retryProfileStandard)
+}
+
+// updateMessageProfile 同 UpdateMessage，但允许调用方指定 transient 重试预算
+// （中途流式帧用 retryProfileQuick 快速失败，定稿挽救用 retryProfileStandard）。
+func (p *Platform) updateMessageProfile(ctx context.Context, previewHandle any, content string, profile transientRetryProfile) error {
 	if !p.useInteractiveCard {
 		return errNotSupported
 	}
@@ -574,7 +581,7 @@ func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content
 		if !isCardJSON(content) {
 			cardJSON = buildFinalPreviewCardJSON(content)
 		}
-		return p.updateCardEntity(ctx, h, cardJSON)
+		return p.updateCardEntity(ctx, h, cardJSON, profile)
 	}
 
 	cardJSON := ""
@@ -599,7 +606,7 @@ func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content
 			Content(cardJSON).
 			Build()).
 		Build()
-	return p.withTransientRetry(ctx, "patch message", func() error {
+	return p.withTransientRetryProfile(ctx, "patch message", profile, func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "patch message", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Im.Message.Patch(ctx, req, options...)
 			if err != nil {
