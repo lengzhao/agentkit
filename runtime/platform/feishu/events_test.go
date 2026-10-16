@@ -212,9 +212,9 @@ func TestForwardEventToAgentRouting(t *testing.T) {
 		wantRcChat   string
 		wantChatType string
 	}{
-		{name: "group context", chatID: "oc_1", userID: "ou_1", wantSession: "lark:oc_1:u:ou_1", wantRcChat: "oc_1", wantChatType: "group"},
-		{name: "user only", userID: "ou_1", wantSession: "lark:ou_1:u:ou_1", wantRcChat: "ou_1", wantChatType: "p2p"},
-		{name: "no context", wantSession: "lark:events", wantRcChat: "", wantChatType: ""},
+		{name: "group context", chatID: "oc_1", userID: "ou_1", wantSession: "lark:evt:e1:u:ou_1", wantRcChat: "oc_1", wantChatType: "group"},
+		{name: "user only", userID: "ou_1", wantSession: "lark:evt:e1:u:ou_1", wantRcChat: "ou_1", wantChatType: "p2p"},
+		{name: "no context", wantSession: "lark:evt:e1", wantRcChat: "", wantChatType: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,6 +250,17 @@ func TestForwardEventToAgentRouting(t *testing.T) {
 				t.Errorf("inbound content = %q, want [事件] x_v1 prefix", text)
 			}
 		})
+	}
+}
+
+func TestForwardEventSessionKeyIsolatedPerEvent(t *testing.T) {
+	a := forwardEventSessionKey("lark", customEvent{Event: caplarkevent.Event{EventID: "e1", UserID: "ou_1"}})
+	b := forwardEventSessionKey("lark", customEvent{Event: caplarkevent.Event{EventID: "e2", UserID: "ou_1"}})
+	if a == b {
+		t.Fatalf("same user should get distinct sessions: %q", a)
+	}
+	if a != "lark:evt:e1:u:ou_1" || b != "lark:evt:e2:u:ou_1" {
+		t.Fatalf("sessions = %q and %q", a, b)
 	}
 }
 

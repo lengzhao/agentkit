@@ -3,6 +3,8 @@ package feishu
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -205,9 +207,19 @@ func digString(m map[string]any, segs []string) (string, bool) {
 	return "", false
 }
 
-// forwardEventToAgent 把事件直转 agent：按事件上下文路由会话——
-// 带 chat_id 进对应群会话、只带 user_id 进 p2p 会话（回复走 open_id）、
-// 都无则进平台专属 events 会话（只处理，无回复目标）。
+// forwardEventSessionKey 为直转 agent 的自定义事件分配独立 session，避免同群/同用户
+// 多次事件共享历史。回复目标仍由 replyContext 的 chat_id / open_id 决定。
+func forwardEventSessionKey(platformTag string, evt customEvent) string {
+	id := strings.TrimSpace(evt.EventID)
+	if id == "" {
+		sum := sha256.Sum256(evt.Raw)
+		id = hex.EncodeToString(sum[:8])
+	}
+	return string(rctx.BuildDeliverySessionID(platformTag, "evt:"+id, "", evt.UserID))
+}
+
+// forwardEventToAgent 把事件直转 agent：每条事件使用独立 session（见 forwardEventSessionKey）。
+// 回复按事件上下文路由——带 chat_id 回群、仅 user_id 时回 p2p（open_id）、都无则无回复目标。
 func (p *Platform) forwardEventToAgent(evt customEvent) {
 	chatID := evt.ChatID
 	chatType := ""
@@ -218,11 +230,7 @@ func (p *Platform) forwardEventToAgent(evt customEvent) {
 		chatID = evt.UserID
 		chatType = "p2p"
 	}
-	channel := chatID
-	if channel == "" {
-		channel = "events"
-	}
-	sessionKey := string(rctx.BuildDeliverySessionID(p.tag(), channel, "", evt.UserID))
+	sessionKey := forwardEventSessionKey(p.tag(), evt)
 
 	content := fmt.Sprintf("[事件] %s\n%s", evt.Type, prettyEventJSON(evt.Raw))
 	slog.Info(p.tag()+": forwarding custom event to agent",
