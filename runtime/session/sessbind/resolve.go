@@ -17,17 +17,18 @@ func ResolveAgentID(
 	store agentkit.SessionStore,
 	ws workspace.Service,
 	sessionID agentkit.SessionID,
+	entryKey agentkit.SessionID,
 	eventAgent agentkit.AgentID,
 ) (effective, sessionBind, channelBind, globalBind agentkit.AgentID, err error) {
 	sessionBind, err = AgentBind(ctx, store, sessionID)
 	if err != nil {
 		return "", "", "", "", err
 	}
+	channelBind, err = ChannelAgentBind(ctx, store, ws, entryKey)
+	if err != nil {
+		return "", "", "", "", err
+	}
 	if ws != nil {
-		channelBind, err = ChannelAgentBind(ctx, ws)
-		if err != nil {
-			return "", "", "", "", err
-		}
 		globalBind, err = GlobalAgentBind(ctx, ws)
 		if err != nil {
 			return "", "", "", "", err
@@ -84,29 +85,41 @@ func GlobalAgentBind(ctx context.Context, ws workspace.Service) (agentkit.AgentI
 	return data.AgentID, nil
 }
 
-// ChannelAgentBind returns the current channel's default agent id, or "" when unset.
-func ChannelAgentBind(ctx context.Context, ws workspace.Service) (agentkit.AgentID, error) {
+// ChannelAgentBind returns the channel default for entryKey (stable delivery /
+// active-entry id). Falls back to legacy local:runtime.json when tenant-scoped.
+func ChannelAgentBind(ctx context.Context, store agentkit.SessionStore, ws workspace.Service, entryKey agentkit.SessionID) (agentkit.AgentID, error) {
+	if entryKey != "" && store != nil {
+		id, err := AgentBind(ctx, store, entryKey)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(string(id)) != "" {
+			return id, nil
+		}
+	}
 	if ws == nil {
 		return "", nil
 	}
-	data, err := loadChannelRuntime(ctx, ws)
+	data, err := loadChannelRuntimeLegacy(ctx, ws)
 	if err != nil {
 		return "", err
 	}
 	return data.AgentID, nil
 }
 
-// SetChannelAgentBind sets or clears the current channel's default agent id.
-func SetChannelAgentBind(ctx context.Context, ws workspace.Service, agent agentkit.AgentID) error {
-	if ws == nil {
-		return errors.New("workspace is required for channel agent binding")
+// SetChannelAgentBind sets or clears the channel default for entryKey.
+func SetChannelAgentBind(ctx context.Context, store agentkit.SessionStore, ws workspace.Service, entryKey agentkit.SessionID, agent agentkit.AgentID) error {
+	agent = agentkit.AgentID(strings.TrimSpace(string(agent)))
+	if entryKey == "" {
+		return errors.New("channel entry key is required")
 	}
-	data, err := loadChannelRuntime(ctx, ws)
-	if err != nil {
+	if store == nil {
+		return errors.New("session store is required for channel agent binding")
+	}
+	if err := SetSessionAgentBind(ctx, store, entryKey, agent); err != nil {
 		return err
 	}
-	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(agent)))
-	return saveChannelRuntime(ctx, ws, data)
+	return clearChannelRuntimeLegacy(ctx, ws)
 }
 
 // SetGlobalAgentBind sets or clears the workspace-wide default agent id.

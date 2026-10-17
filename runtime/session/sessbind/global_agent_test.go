@@ -29,19 +29,20 @@ func TestResolveAgentIDPriority(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := sessstore.NewStaticStore(mem)
-	const sid = agentkit.SessionID("cli:agent-prio")
+	const entry = agentkit.SessionID("cli:agent-prio")
+	const sid = agentkit.SessionID("cli:agent-prio:child")
 
 	if err := store.SetAgentBind(ctx, sid, "session-agent"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessbind.SetChannelAgentBind(ctx, ws, "channel-agent"); err != nil {
+	if err := sessbind.SetChannelAgentBind(ctx, store, ws, entry, "channel-agent"); err != nil {
 		t.Fatal(err)
 	}
 	if err := sessbind.SetGlobalAgentBind(ctx, ws, "global-agent"); err != nil {
 		t.Fatal(err)
 	}
 
-	got, sess, ch, glob, err := sessbind.ResolveAgentID(ctx, store, ws, sid, "request-agent")
+	got, sess, ch, glob, err := sessbind.ResolveAgentID(ctx, store, ws, sid, entry, "request-agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func TestResolveAgentIDPriority(t *testing.T) {
 	if err := store.SetAgentBind(ctx, sid, ""); err != nil {
 		t.Fatal(err)
 	}
-	got, sess, ch, glob, err = sessbind.ResolveAgentID(ctx, store, ws, sid, "request-agent")
+	got, sess, ch, glob, err = sessbind.ResolveAgentID(ctx, store, ws, sid, entry, "request-agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,10 +61,10 @@ func TestResolveAgentIDPriority(t *testing.T) {
 		t.Fatalf("channel wins: got=%q sess=%q channel=%q glob=%q", got, sess, ch, glob)
 	}
 
-	if err := sessbind.SetChannelAgentBind(ctx, ws, ""); err != nil {
+	if err := sessbind.SetChannelAgentBind(ctx, store, ws, entry, ""); err != nil {
 		t.Fatal(err)
 	}
-	got, _, ch, glob, err = sessbind.ResolveAgentID(ctx, store, ws, sid, "request-agent")
+	got, _, ch, glob, err = sessbind.ResolveAgentID(ctx, store, ws, sid, entry, "request-agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +75,7 @@ func TestResolveAgentIDPriority(t *testing.T) {
 	if err := sessbind.SetGlobalAgentBind(ctx, ws, ""); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _, _, err = sessbind.ResolveAgentID(ctx, store, ws, sid, "request-agent")
+	got, _, _, _, err = sessbind.ResolveAgentID(ctx, store, ws, sid, entry, "request-agent")
 	if err != nil || got != "request-agent" {
 		t.Fatalf("request wins: got=%q err=%v", got, err)
 	}

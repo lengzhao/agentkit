@@ -10,7 +10,11 @@ import (
 )
 
 func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, conversation agentkit.SessionID) (agentkit.AgentID, error) {
-	effective, _, _, _, err := sessbind.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, event.AgentID)
+	entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+	if entryKey == "" {
+		entryKey = conversation
+	}
+	effective, _, _, _, err := sessbind.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, entryKey, event.AgentID)
 	return effective, err
 }
 

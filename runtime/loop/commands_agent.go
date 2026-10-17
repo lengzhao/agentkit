@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 )
 
@@ -90,7 +91,11 @@ func (c agentCommand) useAgent(ctx context.Context, scope agentBindScope, name s
 		}
 		return fmt.Sprintf("global agent: %s", name), nil
 	case agentBindChannel:
-		if err := sessbind.SetChannelAgentBind(ctx, c.workspace, agentkit.AgentID(name)); err != nil {
+		entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+		if entryKey == "" {
+			return "", fmt.Errorf("channel entry key is required")
+		}
+		if err := sessbind.SetChannelAgentBind(ctx, c.store, c.workspace, entryKey, agentkit.AgentID(name)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("channel agent: %s", name), nil
@@ -120,7 +125,11 @@ func (c agentCommand) clearBind(ctx context.Context, scope agentBindScope) (stri
 		}
 		return "global agent reset", nil
 	case agentBindChannel:
-		if err := sessbind.SetChannelAgentBind(ctx, c.workspace, ""); err != nil {
+		entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+		if entryKey == "" {
+			return "", fmt.Errorf("channel entry key is required")
+		}
+		if err := sessbind.SetChannelAgentBind(ctx, c.store, c.workspace, entryKey, ""); err != nil {
 			return "", err
 		}
 		_, _, _, globalBind, _, err := resolveCatalogAgentRouting(ctx, c.catalogRoutingDeps())

@@ -320,7 +320,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		agentID:                    cfg.ResolveAgentID(),
 		commands:                   deps.Commands,
 		workspace:                  deps.Workspace,
-		sessionScope:               rctx.ParseScope(cfg.SessionScope),
+		sessionScope:               cfg.SlashSessionScope(),
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
 		eventHandlers:              deps.EventHandlers,

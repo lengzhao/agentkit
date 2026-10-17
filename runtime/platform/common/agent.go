@@ -16,9 +16,22 @@ type AgentRoutingConfig struct {
 	// SessionScope mirrors runner.config.sessionScope for platform-local slash
 	// commands (/new active-session mapping). Empty defaults to channel.
 	SessionScope string `json:"sessionScope"`
+	// RunnerSessionScope must match runner.config.sessionScope. Slash commands
+	// (/agent, /new, /model) resolve active-session and agent binds with this
+	// scope. When empty, SessionScope is used.
+	RunnerSessionScope string `json:"runnerSessionScope"`
 	// DisablePlatformSlash skips platform-local slash dispatch (/help, /new, /stop, …).
 	// Slash-prefixed user text is enqueued as a normal agent turn instead.
 	DisablePlatformSlash bool `json:"disablePlatformSlash"`
+}
+
+// SlashSessionScope returns the scope platform slash commands must use for
+// active-session and agent bind resolution. It must match runner.config.sessionScope.
+func (c AgentRoutingConfig) SlashSessionScope() agentkit.SessionScope {
+	if raw := strings.TrimSpace(c.RunnerSessionScope); raw != "" {
+		return rctx.ParseScope(raw)
+	}
+	return rctx.ParseScope(c.SessionScope)
 }
 
 func (c AgentRoutingConfig) ResolveAgentID() agentkit.AgentID {

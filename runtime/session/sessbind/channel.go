@@ -11,13 +11,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/filesystem"
 )
 
-// channelRuntimeRel is the current channel's agent overlay.
-// workspace/tenant resolves local: against the tenant root for this turn's
-// workspace key (platform:channel). workspace/default resolves it against the
-// single local project root.
+// channelRuntimeRel is a legacy channel agent overlay path (workspace/tenant only).
 const channelRuntimeRel = "local:runtime.json"
 
 // ChannelRuntimeData holds channel-scoped dynamic overrides.
@@ -33,12 +29,7 @@ type channelRuntimeCacheEntry struct {
 
 var channelRuntimeCache sync.Map
 
-func normalizeChannelRuntime(data ChannelRuntimeData) ChannelRuntimeData {
-	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
-	return data
-}
-
-func loadChannelRuntime(ctx context.Context, ws workspace.Service) (ChannelRuntimeData, error) {
+func loadChannelRuntimeLegacy(ctx context.Context, ws workspace.Service) (ChannelRuntimeData, error) {
 	if ws == nil {
 		return ChannelRuntimeData{}, nil
 	}
@@ -76,7 +67,7 @@ func loadChannelRuntime(ctx context.Context, ws workspace.Service) (ChannelRunti
 			return ChannelRuntimeData{}, err
 		}
 	}
-	data = normalizeChannelRuntime(data)
+	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
 
 	modTime := time.Time{}
 	if statErr == nil {
@@ -86,27 +77,15 @@ func loadChannelRuntime(ctx context.Context, ws workspace.Service) (ChannelRunti
 	return data, nil
 }
 
-func saveChannelRuntime(ctx context.Context, ws workspace.Service, data ChannelRuntimeData) error {
+func clearChannelRuntimeLegacy(ctx context.Context, ws workspace.Service) error {
 	if ws == nil {
-		return errors.New("workspace is required")
+		return nil
 	}
-	data = normalizeChannelRuntime(data)
 	path, err := ws.Resolve(ctx, channelRuntimeRel)
 	if err != nil {
 		return err
 	}
-	if data.AgentID == "" {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		channelRuntimeCache.Delete(path)
-		return nil
-	}
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	if err := filesystem.WriteAtomic(path, raw, 0o644); err != nil {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	channelRuntimeCache.Delete(path)

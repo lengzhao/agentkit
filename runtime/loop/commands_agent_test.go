@@ -149,7 +149,7 @@ func TestAgentGlobalUse(t *testing.T) {
 func TestAgentChannelUse(t *testing.T) {
 	t.Parallel()
 
-	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "cli:test"})
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "slack:C001"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,10 +164,12 @@ func TestAgentChannelUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := rtloop.AgentCommand(agents, store, "assistant", ws)
-	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-		Conversation: "cli:test",
-		Workspace:    "cli:test",
-	})
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "", "U1")
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{
+		PlatformID: "slack",
+		UserID:     "U1",
+	}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
 	out, err := cmd.CommandExec(ctx, "-c use worker")
 	if err != nil {

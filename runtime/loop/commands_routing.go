@@ -24,7 +24,10 @@ func parseCatalogSlashArgs(args string) (global bool, payload string, rest []str
 }
 
 func resolveCatalogSessionID(ctx context.Context, store agentkit.SessionStore) (agentkit.SessionID, error) {
-	sessionID := rctx.SessionIDFromContext(ctx)
+	sessionID := rctx.ActiveEntryKeyFromContext(ctx)
+	if sessionID == "" {
+		sessionID = rctx.SessionIDFromContext(ctx)
+	}
 	if sessionID == "" {
 		return "", nil
 	}
@@ -50,7 +53,11 @@ func resolveCatalogAgentRouting(ctx context.Context, deps catalogRoutingDeps) (e
 	if err != nil {
 		return "", "", "", "", loopDefault, err
 	}
-	effective, sessionBind, channelBind, globalBind, err = sessbind.ResolveAgentID(ctx, deps.store, deps.workspace, sessionID, "")
+	entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+	if entryKey == "" {
+		entryKey = sessionID
+	}
+	effective, sessionBind, channelBind, globalBind, err = sessbind.ResolveAgentID(ctx, deps.store, deps.workspace, sessionID, entryKey, "")
 	if err != nil {
 		return "", "", "", "", loopDefault, err
 	}

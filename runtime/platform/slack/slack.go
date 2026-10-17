@@ -162,7 +162,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		apiURL:           apiURL,
 		commands:         deps.Commands,
 		workspace:        deps.Workspace,
-		sessionScope:     rctx.ParseScope(cfg.SessionScope),
+		sessionScope:     cfg.SlashSessionScope(),
 		inbox:            common.NewInbox(64),
 		channelNameCache: make(map[string]string),
 		typingStops:      make(map[agentkit.SessionID]func()),

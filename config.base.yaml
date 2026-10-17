@@ -77,6 +77,7 @@ platform.cli:
 platform.slack:
   use: platform/slack
   config:
+    runnerSessionScope: channel # 与 runner.config.sessionScope 一致，供 /agent /new /model 解析 active entry
     botTokenRef: ${env:SLACK_BOT_TOKEN}
     appTokenRef: ${env:SLACK_APP_TOKEN}
     allowFrom: "" # 用户 ID 白名单，逗号分隔（如 UAAA,UBBB）；空或 * = 全部
@@ -92,6 +93,7 @@ platform.slack:
 platform.feishu:
   use: platform/feishu
   config:
+    runnerSessionScope: channel
     appId: ${var:FEISHU_APP_ID}
     appSecret: ${var:FEISHU_APP_SECRET}
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部
@@ -111,6 +113,7 @@ platform.feishu:
 platform.lark:
   use: platform/lark
   config:
+    runnerSessionScope: channel
     appId: ${var:LARK_APP_ID}
     appSecret: ${var:LARK_APP_SECRET}
     allowFrom: "" # 用户 open_id 白名单，逗号分隔（如 ou_aaa,ou_bbb）；空或 * = 全部

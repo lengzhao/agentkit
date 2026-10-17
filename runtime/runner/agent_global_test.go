@@ -57,6 +57,7 @@ func TestRunnerResolvesChannelAgentBind(t *testing.T) {
 	}
 	store := mapSessionStore{
 		sessions: map[agentkit.SessionID]agentkit.Session{sessionID: mem},
+		binds:    map[agentkit.SessionID]agentkit.AgentID{},
 	}
 	ws, err := rtworkspace.NewTenant(rtworkspace.TenantConfig{
 		Global:    t.TempDir(),
@@ -65,11 +66,13 @@ func TestRunnerResolvesChannelAgentBind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Workspace: "slack:C001"})
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "", "U1")
+	env := rctx.ResolveEnvelope(deliveryUserEvent("slack", "U1", delivery, ""), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 	if err := sessbind.SetGlobalAgentBind(ctx, ws, "global-agent"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessbind.SetChannelAgentBind(ctx, ws, "channel-agent"); err != nil {
+	if err := sessbind.SetChannelAgentBind(ctx, store, ws, sessionID, "channel-agent"); err != nil {
 		t.Fatal(err)
 	}
 
