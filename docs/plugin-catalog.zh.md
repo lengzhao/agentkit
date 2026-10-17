@@ -219,8 +219,8 @@ llm.fallback:
 - **认证失败提示**：`config.authMethod` 非空时会调用 ACP `Authenticate`；失败时向用户发送 `config.authHint`（未配置则发通用提示），然后返回错误。用户自行通过 `/sh` 或终端完成登录后重试，例如 `/sh agent login`。
 - **子进程清理**：L0 对 `agent.cursor` / `agent.claude` / `agent.codex` 启用 `releaseSubprocessAfterTurn: true`——每个 RunTurn 结束后按进程组 SIGTERM/SIGKILL 回收 `agent acp` 及其子进程（language server、worker-server 等），避免多次委派后内存上涨。Unix 上使用进程组；子进程异常退出时会取消进行中的 `Prompt`，让 async 委派尽快失败并触发 `subagent/end` + follow-up，而不是挂到 `timeoutSeconds`。
 - **API Key 路径**（可选）：`agent -p` 用 `CURSOR_API_KEY`；ACP 用 `CURSOR_AUTH_TOKEN`（`--auth-token`），与 `cursor_login` 互斥。
-- **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 经 deps `fs` 写入 `acp/<session>/acp-session.<agentId>.json`（插件自有目录，与 session 存储后端无关；多个 `acp-remote` 按 agent id 分文件）。进程重启后优先 `session/resume`；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
-- **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 `session/resume` 均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
+- **会话续聊（Docker 重启）**：`NewSession` 成功后把 ACP `sessionId` 经 deps `fs` 写入 `acp/<session>/acp-session.<agentId>.json`（插件自有目录，与 session 存储后端无关；多个 `acp-remote` 按 agent id 分文件）。有 bind 时经 deps `sessionRestore`（`acp/session-restore`）尝试 `session/resume` 或 `session/load`（见 `strategy`）；失败则 `NewSession` 并从 `sessionStore` 重放 harness 历史。未注入 `sessionRestore` 时仅尝试 `session/resume`（兼容旧配置）。**Cursor CLI**（[官方 ACP 文档](https://cursor.com/cn/docs/cli/acp)）不实现 `session/resume`，但 `session/load` 可恢复**已 prompt 过**的会话（`session/new` 返回的 id 在首次 prompt 后由 Cursor 持久化，子进程重启后 load 同 id 即恢复上下文）；L0 `agent.cursor` 使用 `strategy: cursor`（= load）。`session/new` 后尚未 prompt 的会话不会被持久化，load 报 not found 属预期，回退 `NewSession` 无损失（本就无历史）。Claude 侧 transcript 在 `~/.claude/projects/`，容器内需挂载该目录与 `sessions/` 工作区。
+- **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 restore 方法均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
 - **出站工具结果**：ACP `ToolCallUpdate` 在 `completed` / `failed` 时除 `toolcall_end` 外还会发 harness `tool/result`（输出取自 `rawOutput` / `content`），供飞书过程卡与 `forwardParentEmit` 转发的 async 子 Agent 进度展示；不写入 harness session 事件流（与 Loop 内 `tool.Execute` 路径不同）。
 - **Langfuse**：每个 ACP `Prompt` 对应一条 `acp.generation` observation（input 为本 turn 用户消息；output 含 `AgentThoughtChunk` 与最终回复）；ACP 上报的 `ToolCall` 导出为嵌套 span。Cursor 在进程内执行且未通过 ACP 推送的工具调用不会出现在 Langfuse；token/model 以远端 Agent 为准，harness 不补全。
 
@@ -240,9 +240,12 @@ agent.cursor.default:
   deps:
     workspace: workspace.default
     sessionStore: sessionStore.default
+    sessionRestore: acp.sessionRestore.cursor
 ```
 
 通过 `/agent use cursor` 或 chat-api `agent_id=cursor` 切换到此 Agent。
+
+**`acp/session-restore`**：为 `agent/acp-remote` 提供 `cap/acp.SessionRestorer`。`config.strategy`：`resume` | `load` | `auto`（按 initialize 能力先 resume 再 load）| `skip` | `cursor`（等同 load，面向 Cursor CLI——其不支持 `session/resume`，但 `session/load` 可跨进程恢复已 prompt 的会话）。
 
 **Claude Agent SDK（`claude-agent-acp`）**：通过 `npx @agentclientprotocol/claude-agent-acp` 启动 ACP 子进程；不设 `authMethod`，凭证由 env 注入子进程（需 Node.js ≥ 22）：
 

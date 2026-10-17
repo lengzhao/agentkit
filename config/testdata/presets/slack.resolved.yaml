@@ -1,3 +1,7 @@
+acp.sessionRestore.cursor:
+    config:
+        strategy: cursor
+    use: acp/session-restore
 agent.assistant.default:
     config:
         id: assistant
@@ -17,6 +21,23 @@ agent.assistant.default:
         tools: tools.default
         workspace: workspace.default
     use: agent/coding
+agent.claude.default:
+    config:
+        autoApprove: false
+        command:
+            - npx
+            - -y
+            - '@agentclientprotocol/claude-agent-acp'
+        cwd: work
+        id: claude
+        releaseSubprocessAfterTurn: true
+    deps:
+        fs: filesystem.local.state
+        sessionEvents: session.events
+        sessionStore: sessionStore.default
+        telemetry: telemetry.toolkit
+        workspace: workspace.default
+    use: agent/acp-remote
 agent.codex.default:
     config:
         authHint: Codex ACP 连接失败。请确认已安装 codex CLI 并执行 /sh codex login 完成授权后重试（或配置 CODEX_API_KEY / OPENAI_API_KEY）。
@@ -56,6 +77,7 @@ agent.cursor.default:
     deps:
         fs: filesystem.local.state
         sessionEvents: session.events
+        sessionRestore: acp.sessionRestore.cursor
         sessionStore: sessionStore.default
         telemetry: telemetry.toolkit
         workspace: workspace.default
@@ -341,6 +363,7 @@ loop.default:
             - agent.assistant.default
             - agent.worker.default
             - agent.cursor.default
+            - agent.claude.default
             - agent.codex.default
         modelCatalog: llm.router
         sessionStore: sessionStore.default
@@ -620,6 +643,7 @@ subagent.loop.default:
     deps:
         agents:
             - agent.cursor.default
+            - agent.claude.default
             - agent.codex.default
         sessionStore: sessionStore.default
         telemetry: telemetry.default

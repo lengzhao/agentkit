@@ -251,6 +251,12 @@ agent.worker.default:
     compaction:
       - compaction.pipeline.worker
 
+# Cursor CLI 不实现 session/resume，但支持 session/load 恢复已 prompt 过的会话（进程重启后仍生效）。
+acp.sessionRestore.cursor:
+  use: acp/session-restore
+  config:
+    strategy: cursor
+
 # 通过 ACP 调用 Cursor CLI（agent acp）。认证失败时提示用户执行 /sh agent login（见 docs/plugin-catalog.zh.md §3.2）。
 agent.cursor.default:
   use: agent/acp-remote
@@ -273,6 +279,7 @@ agent.cursor.default:
     fs: filesystem.local.state
     sessionStore: sessionStore.default
     sessionEvents: session.events
+    sessionRestore: acp.sessionRestore.cursor
     telemetry: telemetry.toolkit
 
 # 通过 ACP 调用 claude-agent-acp（Claude Agent SDK）。需 Node.js ≥ 22；凭证经子进程 env 注入（见 docs/plugin-catalog.zh.md §3.2）。

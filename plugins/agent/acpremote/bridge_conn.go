@@ -235,7 +235,13 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 	slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
 
 	done := make(chan struct{})
-	proc := &subprocess{cmd: cmd, conn: conn, client: client, done: done}
+	proc := &subprocess{
+		cmd:               cmd,
+		conn:              conn,
+		client:            client,
+		done:              done,
+		agentCapabilities: initResp.AgentCapabilities,
+	}
 	st.proc = proc
 	go b.waitSubprocess(proc)
 	if err := b.authenticateSubprocess(ctx, proc); err != nil {

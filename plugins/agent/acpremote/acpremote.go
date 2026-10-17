@@ -55,7 +55,9 @@ type Deps struct {
 	SessionEvents capsession.Conversation `json:"sessionEvents,omitempty"`
 	// SessionMCP supplies harness MCP servers for session/new (not project mcp.json).
 	SessionMCP capacp.SessionMCPProvider `json:"sessionMcp,omitempty"`
-	Telemetry  captelemetry.Toolkit      `json:"telemetry"`
+	// SessionRestore customizes session/resume vs session/load before session/new fallback.
+	SessionRestore capacp.SessionRestorer `json:"sessionRestore,omitempty"`
+	Telemetry      captelemetry.Toolkit   `json:"telemetry"`
 	// Sandbox wraps the ACP subprocess command with the tenant sandbox view
 	// (e.g. sandbox/bwrap) at spawn time. Nil defaults to
 	// capsandbox.Disabled() (passthrough).
@@ -64,16 +66,17 @@ type Deps struct {
 
 // Runtime proxies turns to an external ACP agent over stdio.
 type Runtime struct {
-	id            agentkit.AgentID
-	cfg           Config
-	workspace     workspace.Service
-	fs            filesystem.Service
-	sessionStore  agentkit.SessionStore
-	sessionEvents capsession.Conversation
-	sessionMCP    capacp.SessionMCPProvider
-	telemetry     captelemetry.Toolkit
-	sandbox       capsandbox.Service
-	bridges       sync.Map // agentkit.SessionID -> *bridge
+	id             agentkit.AgentID
+	cfg            Config
+	workspace      workspace.Service
+	fs             filesystem.Service
+	sessionStore   agentkit.SessionStore
+	sessionEvents  capsession.Conversation
+	sessionMCP     capacp.SessionMCPProvider
+	sessionRestore capacp.SessionRestorer
+	telemetry      captelemetry.Toolkit
+	sandbox        capsandbox.Service
+	bridges        sync.Map // agentkit.SessionID -> *bridge
 }
 
 func init() {
@@ -122,20 +125,21 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		sandbox = capsandbox.Disabled()
 	}
 	return &Runtime{
-		id:            id,
-		cfg:           cfg,
-		workspace:     deps.Workspace,
-		fs:            deps.FS,
-		sessionStore:  deps.SessionStore,
-		sessionEvents: deps.SessionEvents,
-		sessionMCP:    deps.SessionMCP,
-		telemetry:     deps.Telemetry,
-		sandbox:       sandbox,
+		id:             id,
+		cfg:            cfg,
+		workspace:      deps.Workspace,
+		fs:             deps.FS,
+		sessionStore:   deps.SessionStore,
+		sessionEvents:  deps.SessionEvents,
+		sessionMCP:     deps.SessionMCP,
+		sessionRestore: deps.SessionRestore,
+		telemetry:      deps.Telemetry,
+		sandbox:        sandbox,
 	}, nil
 }
 
 func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.telemetry, a.sandbox, nil))
+	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.sessionRestore, a.telemetry, a.sandbox, nil))
 	return v.(*bridge)
 }
 

@@ -7,6 +7,15 @@
 （来自插件 Config 的 SetDefaults）与字段注释；deps 表列出依赖注入点。字段级校验规则
 （Validate）在装配期生效，可用 `agent config validate` 在不构造实例的情况下检查配置。
 
+## `acp/session-restore`
+
+- 返回类型：`acp.SessionRestorer`
+- 源码：[`plugins/acp/sessionrestore/sessionrestore.go`](../plugins/acp/sessionrestore/sessionrestore.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `strategy` | `acpclient.RestoreStrategy` | `auto` | Strategy: resume \| load \| auto \| skip \| cursor (cursor = load for Cursor CLI). |
+
 ## `agent/acp-remote`
 
 - 返回类型：`agentkit.Agent`
@@ -32,6 +41,7 @@
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `sessionEvents` | `session.Conversation` |  |
 | `sessionMcp` | `acp.SessionMCPProvider` | SessionMCP supplies harness MCP servers for session/new (not project mcp.json). |
+| `sessionRestore` | `acp.SessionRestorer` | SessionRestore customizes session/resume vs session/load before session/new fallback. |
 | `telemetry`（必填） | `telemetry.Toolkit` |  |
 | `sandbox` | `sandbox.Service` | Sandbox wraps the ACP subprocess command with the tenant sandbox view (e.g. sandbox/bwrap) at spawn time. Nil defaults to capsandbox.Disabled() (passthrough). |
 

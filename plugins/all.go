@@ -3,6 +3,7 @@
 package all
 
 import (
+	_ "github.com/lengzhao/agentkit/plugins/acp/sessionrestore"
 	_ "github.com/lengzhao/agentkit/plugins/agent/acpremote"
 	_ "github.com/lengzhao/agentkit/plugins/agent/chain"
 	_ "github.com/lengzhao/agentkit/plugins/approval"

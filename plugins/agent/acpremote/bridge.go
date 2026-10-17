@@ -39,12 +39,13 @@ type acpPromptResponse struct {
 }
 
 type bridge struct {
-	cfg        Config
-	workspace  workspace.Service
-	fs         filesystem.Service
-	sessionMCP capacp.SessionMCPProvider
-	telemetry  captelemetry.Toolkit
-	sandbox    capsandbox.Service
+	cfg            Config
+	workspace      workspace.Service
+	fs             filesystem.Service
+	sessionMCP     capacp.SessionMCPProvider
+	sessionRestore capacp.SessionRestorer
+	telemetry      captelemetry.Toolkit
+	sandbox        capsandbox.Service
 
 	connOps chan connOp
 	// proc is the current subprocess snapshot. It is written exclusively by
@@ -58,13 +59,14 @@ type bridge struct {
 }
 
 type subprocess struct {
-	cmd           *exec.Cmd
-	conn          *acp.ClientSideConnection
-	client        *bridgeClient
-	authenticated bool
-	done          chan struct{} // closed after cmd.Wait returns
-	sessions      sync.Map      // agentkit.SessionID -> acp.SessionId
-	acpSessions   sync.Map      // acp.SessionId -> agentkit.SessionID
+	cmd               *exec.Cmd
+	conn              *acp.ClientSideConnection
+	client            *bridgeClient
+	authenticated     bool
+	agentCapabilities acp.AgentCapabilities
+	done              chan struct{} // closed after cmd.Wait returns
+	sessions          sync.Map      // agentkit.SessionID -> acp.SessionId
+	acpSessions       sync.Map      // acp.SessionId -> agentkit.SessionID
 }
 
 func (proc *subprocess) alive() bool {
@@ -79,15 +81,16 @@ func (proc *subprocess) alive() bool {
 	}
 }
 
-func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, telemetry captelemetry.Toolkit, sandbox capsandbox.Service, _ func(context.Context) error) *bridge {
+func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionMCP capacp.SessionMCPProvider, sessionRestore capacp.SessionRestorer, telemetry captelemetry.Toolkit, sandbox capsandbox.Service, _ func(context.Context) error) *bridge {
 	b := &bridge{
-		cfg:        cfg,
-		workspace:  ws,
-		fs:         fs,
-		sessionMCP: sessionMCP,
-		telemetry:  telemetry,
-		sandbox:    sandbox,
-		connOps:    make(chan connOp),
+		cfg:            cfg,
+		workspace:      ws,
+		fs:             fs,
+		sessionMCP:     sessionMCP,
+		sessionRestore: sessionRestore,
+		telemetry:      telemetry,
+		sandbox:        sandbox,
+		connOps:        make(chan connOp),
 	}
 	go b.connLoop()
 	return b
@@ -206,17 +209,25 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 	if bind, ok, err := loadACPSessionBind(ctx, b.fs, bindPath); err != nil {
 		return "", err
 	} else if ok && bind.Cwd == cwd {
-		_, err := proc.conn.ResumeSession(ctx, acp.ResumeSessionRequest{
-			SessionId:  bind.ACPSessionID,
-			Cwd:        cwd,
-			McpServers: mcpServers,
+		restorer := b.sessionRestore
+		if restorer == nil {
+			restorer = acpclient.NewRestorer(acpclient.StrategyResume)
+		}
+		restored, err := restorer.Restore(ctx, proc.conn, capacp.SessionRestoreParams{
+			HarnessSessionID:  sessionID,
+			AgentID:           agentID,
+			ACPSessionID:      bind.ACPSessionID,
+			Cwd:               cwd,
+			McpServers:        mcpServers,
+			AgentCapabilities: proc.agentCapabilities,
 		})
-		if err == nil {
+		if err != nil {
+			return "", err
+		}
+		if restored {
 			proc.trackSession(sessionID, bind.ACPSessionID)
-			slog.Info("acp-remote: resumed acp session", "session_id", sessionID, "acp_session_id", bind.ACPSessionID)
 			return bind.ACPSessionID, nil
 		}
-		slog.Warn("acp-remote: resume failed, creating new session", "session_id", sessionID, "err", err)
 	}
 
 	resp, err := proc.conn.NewSession(ctx, acp.NewSessionRequest{
