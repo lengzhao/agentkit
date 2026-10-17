@@ -20,7 +20,7 @@ description: 编写、修改、试跑和排查 AgentKit 的 workflows/*.json 管
 
 1. `inputs` 只放小参数（ID、日期、datasetKey）。大 JSON 写到 `{{ .workflow.runDir }}` 下的文件。
 2. 文件放本地路径（优先）或全局路径。脚本与 JSON 同目录，或放 `scripts/`。
-3. 从 [assets/minimal-workflow.json](assets/minimal-workflow.json) 复制骨架。字段规则读 [references/schema.md](references/schema.md)。
+3. 从 [assets/minimal-workflow.json](assets/minimal-workflow.json) 复制骨架；需要条件分支或并行时从 [assets/dag-workflow.json](assets/dag-workflow.json) 复制。字段规则读 [references/schema.md](references/schema.md)。
 4. 按下游 tool 的 schema 写 `args`：
    - 工具收 **path**：`{{ .workflow.runDir }}/文件`
    - 工具收 **object 或 array**（没有 path 字段）：整段 `readJSON`，或上一步已是 JSON 时 `{{ .steps.<id>.json }}`。从 [assets/object-args-workflow.json](assets/object-args-workflow.json) 复制。不要把 JSON 文本填进该字段。

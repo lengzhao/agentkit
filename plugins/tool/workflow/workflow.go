@@ -114,8 +114,8 @@ func (t *workflowRunTool) Description() string {
 	// The file path lets the model edit this workflow in place; new workflows
 	// follow the same directory (see /workflow and the workflow-manager skill).
 	// The default timeout lets the model size the outer call against the inner
-	// step timeouts (sum of step timeouts + buffer; pass timeoutSeconds to
-	// override).
+	// step timeouts (critical path of step timeouts + buffer; pass
+	// timeoutSeconds to override).
 	return fmt.Sprintf("%s\nWorkflow file: %s\nDefault timeout: %ds (pass timeoutSeconds to override)",
 		strings.TrimSpace(t.wf.Description), t.wf.Path, t.wf.DefaultTimeoutSeconds())
 }
@@ -138,7 +138,7 @@ func (t *workflowRunTool) InputSchema() agentkit.JSONSchema {
 	if _, declared := props[timeoutSecondsArg]; !declared {
 		props[timeoutSecondsArg] = map[string]any{
 			"type": "integer",
-			"description": fmt.Sprintf("Per-call timeout in seconds; defaults to %d (sum of step timeouts + %ds buffer).",
+			"description": fmt.Sprintf("Per-call timeout in seconds; defaults to %d (critical path of step timeouts + %ds buffer).",
 				t.wf.DefaultTimeoutSeconds(), TimeoutBufferSeconds),
 		}
 	}
@@ -147,9 +147,10 @@ func (t *workflowRunTool) InputSchema() agentkit.JSONSchema {
 }
 
 // CallTimeout implements agentkit.CallTimeoutProvider: the per-call timeout is
-// the reserved timeoutSeconds argument, or the summed step timeouts plus a
-// buffer when omitted. tools/runtime prefers it over a smaller configured
-// timeout, so inner step timeouts always fire before the outer call deadline.
+// the reserved timeoutSeconds argument, or the critical path of step timeouts
+// plus a buffer when omitted. tools/runtime prefers it over a smaller
+// configured timeout, so inner step timeouts always fire before the outer
+// call deadline.
 func (t *workflowRunTool) CallTimeout(raw json.RawMessage) time.Duration {
 	if secs := timeoutSecondsFrom(raw); secs > 0 {
 		return time.Duration(secs) * time.Second

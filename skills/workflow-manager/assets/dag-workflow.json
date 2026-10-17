@@ -1,0 +1,52 @@
+{
+  "description": "并行取数 → 汇合校验 → 条件提交（dependsOn DAG + when 条件骨架）",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "date": { "type": "string", "description": "业务日期，小参数" }
+    },
+    "required": ["date"]
+  },
+  "steps": [
+    {
+      "id": "gen",
+      "type": "script",
+      "run": "python3 scripts/gen_ledger.py {{ .inputs.date | quote }} --out {{ .workflow.runDir }}/ledger.json"
+    },
+    {
+      "id": "fetch",
+      "type": "script",
+      "dependsOn": [],
+      "run": "python3 scripts/fetch_ref.py {{ .inputs.date | quote }} --out {{ .workflow.runDir }}/ref.json"
+    },
+    {
+      "id": "check",
+      "type": "model",
+      "dependsOn": ["gen", "fetch"],
+      "prompt": "对照两边统计摘要，判定账本是否可提交：{{ .steps.gen.stdout }} || {{ .steps.fetch.stdout }}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "reason": { "type": "string" }
+        },
+        "required": ["ok", "reason"]
+      }
+    },
+    {
+      "id": "submit",
+      "type": "tool",
+      "tool": "替换为模型可见工具名",
+      "when": "{{ eq (dig .steps.check.json \"ok\") true }}",
+      "args": { "path": "{{ .workflow.runDir }}/ledger.json" }
+    },
+    {
+      "id": "alert",
+      "type": "script",
+      "dependsOn": ["check"],
+      "when": "{{ eq (dig .steps.check.json \"ok\") false }}",
+      "run": "echo 校验未通过：{{ dig .steps.check.json \"reason\" | quote }}"
+    }
+  ],
+  "result": "submit={{ .steps.submit.status }} alert={{ .steps.alert.status }} reason={{ dig .steps.check.json \"reason\" }}"
+}

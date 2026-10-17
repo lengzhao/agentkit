@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,7 +52,8 @@ type Engine struct {
 	Telemetry captelemetry.Toolkit
 }
 
-// stepState is one finished step's template-visible outcome.
+// stepState is one finished step's template-visible outcome. Status is one of
+// "ok", "error", or "skipped" (when evaluated false).
 type stepState struct {
 	status  string
 	view    string // truncated inline view (stdout / text / summary)
@@ -89,7 +91,8 @@ func (s *stepState) templateData() map[string]any {
 	}
 }
 
-// Run executes the workflow serially and returns the rendered result template.
+// Run executes the workflow level by level (dependency DAG; serial when no
+// step declares dependsOn) and returns the rendered result template.
 func (e *Engine) Run(ctx context.Context, wf *Workflow, args map[string]any) (string, error) {
 	if e.Workspace == nil {
 		return "", fmt.Errorf("workflow engine requires workspace")
@@ -127,14 +130,37 @@ func (e *Engine) run(ctx context.Context, wf *Workflow, runID string, args map[s
 	}
 	stepsData := data["steps"].(map[string]any)
 
+	levels := wf.levels()
+	if levels == nil {
+		return "", fmt.Errorf("workflow %q: dependency cycle detected", wf.Name)
+	}
 	var failed error
-	for i := range wf.Steps {
-		step := &wf.Steps[i]
-		state := e.runStep(ctx, wf, runID, step, data)
-		states[step.ID] = state
-		stepsData[step.ID] = state.templateData()
-		if state.err != "" && !step.ContinueOnError {
-			failed = fmt.Errorf("workflow %q step %q: %s", wf.Name, step.ID, state.err)
+	for _, level := range levels {
+		// Steps in one level only read data produced by earlier levels; writes
+		// to states/stepsData happen after the level's Wait, so the goroutines
+		// share the template data map safely.
+		levelStates := make([]*stepState, len(level))
+		var wg sync.WaitGroup
+		for k, idx := range level {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				levelStates[k] = e.runStep(ctx, wf, runID, &wf.Steps[idx], data)
+			}()
+		}
+		wg.Wait()
+		for k, idx := range level {
+			step := &wf.Steps[idx]
+			state := levelStates[k]
+			states[step.ID] = state
+			stepsData[step.ID] = state.templateData()
+			if state.err != "" && !step.ContinueOnError && failed == nil {
+				failed = fmt.Errorf("workflow %q step %q: %s", wf.Name, step.ID, state.err)
+			}
+		}
+		// Same-level siblings always run to completion; the failure aborts the
+		// next level (the serial "break" generalizes to "start no new level").
+		if failed != nil {
 			break
 		}
 	}
@@ -194,17 +220,30 @@ func (e *Engine) runStep(ctx context.Context, wf *Workflow, runID string, step *
 	defer cancel()
 
 	var err error
-	switch step.Type {
-	case StepScript:
-		err = e.runScriptStep(stepCtx, wf, runID, step, data, state)
-	case StepTool:
-		err = e.runToolStep(stepCtx, wf, runID, step, data, state)
-	case StepModel:
-		err = e.runModelStep(stepCtx, wf, step, data, state)
-	case StepAgent:
-		err = e.runAgentStep(stepCtx, wf, step, data, state)
-	default:
-		err = fmt.Errorf("unknown step type %q", step.Type)
+	if when := strings.TrimSpace(step.When); when != "" {
+		ok, whenErr := e.evalWhen(wf, step, data)
+		switch {
+		case whenErr != nil:
+			err = fmt.Errorf("when condition: %w", whenErr)
+		case !ok:
+			state.status = "skipped"
+			slog.Debug("workflow step skipped (when evaluated false)", "workflow", wf.Name, "step", step.ID)
+			return state
+		}
+	}
+	if err == nil {
+		switch step.Type {
+		case StepScript:
+			err = e.runScriptStep(stepCtx, wf, runID, step, data, state)
+		case StepTool:
+			err = e.runToolStep(stepCtx, wf, runID, step, data, state)
+		case StepModel:
+			err = e.runModelStep(stepCtx, wf, step, data, state)
+		case StepAgent:
+			err = e.runAgentStep(stepCtx, wf, step, data, state)
+		default:
+			err = fmt.Errorf("unknown step type %q", step.Type)
+		}
 	}
 	if err == nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
 		// The sibling tools runtime converts an expired deadline into a benign
@@ -218,6 +257,22 @@ func (e *Engine) runStep(ctx context.Context, wf *Workflow, runID string, step *
 		slog.Warn("workflow step failed", "workflow", wf.Name, "step", step.ID, "type", step.Type, "error", err)
 	}
 	return state
+}
+
+// evalWhen renders the step's when template against the current data and maps
+// the result to a boolean: empty, "0", and "false" (any case) are falsy,
+// everything else truthy. Templates compose conditions with the built-in
+// comparison funcs (eq, ne, lt, gt, and, or, not).
+func (e *Engine) evalWhen(wf *Workflow, step *Step, data map[string]any) (bool, error) {
+	rendered, err := renderTemplate(wf.Name+"."+step.ID+".when", step.When, data)
+	if err != nil {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(rendered)) {
+	case "", "0", "false":
+		return false, nil
+	}
+	return true, nil
 }
 
 // beginStepObservation starts a workflow.step span with input = step config

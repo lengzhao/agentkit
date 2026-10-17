@@ -58,6 +58,16 @@ type Step struct {
 	ContinueOnError bool `json:"continueOnError,omitempty"`
 	TimeoutSeconds  int  `json:"timeoutSeconds,omitempty"`
 
+	// When is a template rendered after the step's dependencies complete;
+	// a falsy result ("", "0", "false") skips the step with status "skipped".
+	// Built-in comparison funcs (eq, ne, lt, gt, and, or, not) cover most
+	// conditions, e.g. {{ eq (dig .steps.check.json "ok") true }}.
+	When string `json:"when,omitempty"`
+	// DependsOn lists the step ids this step waits for. nil (absent) keeps the
+	// serial default — wait for the previous step in file order; an explicit
+	// array (even empty) replaces that edge, enabling DAG fan-out/join.
+	DependsOn []string `json:"dependsOn,omitempty"`
+
 	// script
 	Run string `json:"run,omitempty"`
 	Dir string `json:"dir,omitempty"`
@@ -117,6 +127,9 @@ func (wf *Workflow) validate() error {
 			return err
 		}
 	}
+	if err := wf.validateGraph(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(wf.Result) == "" {
 		return fmt.Errorf("workflow %q: result template is required", wf.Name)
 	}
@@ -159,17 +172,15 @@ func (s Step) validate(wfName string) error {
 	return nil
 }
 
-// DefaultTimeoutSeconds estimates the workflow's wall-clock upper bound: steps
-// run serially, so it sums the per-step timeouts (unbounded steps contribute
-// their type default) plus a small buffer. It backs the workflow tool's
-// default per-call timeout (agentkit.CallTimeoutProvider), keeping the outer
-// call deadline behind every inner step timeout.
+// DefaultTimeoutSeconds estimates the workflow's wall-clock upper bound as
+// the critical path (longest dependency chain) of per-step timeouts plus a
+// small buffer — serial workflows form one chain, so the estimate equals the
+// old sum-of-all-steps, while parallel branches overlap instead of adding up.
+// It backs the workflow tool's default per-call timeout
+// (agentkit.CallTimeoutProvider), keeping the outer call deadline behind
+// every inner step timeout.
 func (wf *Workflow) DefaultTimeoutSeconds() int {
-	total := TimeoutBufferSeconds
-	for _, step := range wf.Steps {
-		total += step.effectiveTimeoutSeconds()
-	}
-	return total
+	return wf.criticalPathSeconds() + TimeoutBufferSeconds
 }
 
 func (s Step) effectiveTimeoutSeconds() int {

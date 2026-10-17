@@ -8,10 +8,10 @@
 |---|---|
 | `description` | 必填。即 `workflow__<文件名>` 的模型侧描述 |
 | `inputs` | 可选 JSON Schema，即该工具的 InputSchema。引擎校验失败则返回工具错误 |
-| `steps` | 必填，串行。`id` 唯一 |
+| `steps` | 必填。默认按文件顺序串行；`dependsOn` 可组 DAG（同层并行）。`id` 唯一 |
 | `result` | 必填。text/template，渲染后返回主模型 |
 
-骨架：[assets/minimal-workflow.json](../assets/minimal-workflow.json)。object 参数骨架：[assets/object-args-workflow.json](../assets/object-args-workflow.json)。
+骨架：[assets/minimal-workflow.json](../assets/minimal-workflow.json)。object 参数骨架：[assets/object-args-workflow.json](../assets/object-args-workflow.json)。条件/并行 DAG 骨架：[assets/dag-workflow.json](../assets/dag-workflow.json)。
 
 ## Step
 
@@ -22,7 +22,11 @@
 | `model` | `prompt` | 单次补全。可选 `model`、`outputSchema`、`maxInputBytes`（默认 16KB，超出即失败） |
 | `agent` | `agent`, `task` | 同步子 agent。task 自包含；长文只传路径 |
 
-公共字段：`continueOnError`、`timeoutSeconds`（≥0）。
+公共字段：`continueOnError`、`timeoutSeconds`（≥0）、`when`、`dependsOn`。
+
+- `when`：模板，依赖完成后渲染；结果为 `""`/`"0"`/`"false"` 时跳过该 step（`status: "skipped"`）。条件用模板内置 `eq`/`ne`/`lt`/`gt`/`and`/`or`/`not`，如 `{{ eq (dig .steps.check.json "ok") true }}`。
+- `dependsOn`：缺省 = 依赖前一个 step（串行）；显式数组只依赖列出的 id，空数组 `[]` 断开串行边、与前面 step 并行。引用必须存在、全图无环。同层并行 step 不要写同一文件。
+- `status` 取值：`ok` / `error` / `skipped`。依赖失败（`continueOnError`）或跳过**不会**自动阻止下游，下游用 `when` 自行裁决。
 
 ## 模板
 

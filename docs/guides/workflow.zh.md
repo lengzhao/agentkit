@@ -75,7 +75,7 @@ workflows/
 |---|---|
 | `description` | 工具描述；即 `workflow__<name>` 工具的模型侧描述，供模型选路 |
 | `inputs` | JSON Schema；`args` 在执行前按此校验，校验失败作为工具错误返回（模型可修正重试） |
-| `steps[]` | 串行执行；`id` 在模板上下文中引用 |
+| `steps[]` | 默认按文件顺序串行；声明 `dependsOn` 后按 DAG 分层、同层并行（见 §3.5）；`id` 在模板与依赖中引用 |
 | `result` | 模板，渲染后作为工具结果返回给主模型（走既有 spill 截断） |
 
 script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件所在目录**解析（脚本与管线同仓管理）；step 产物写每次运行的 artifact 目录，模板经 `{{ .workflow.runDir }}` 引用（workspace `work/workflow/<run>/`，引擎在运行开始时创建）。
@@ -170,6 +170,48 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 
 **agent step 是"模型必须消化大正文"的正规泄压阀**：子 Agent 与主 Agent 共享 workspace 但上下文隔离，task 里传文件路径，子 Agent 在自己上下文里读整份数据，只有 summary 回到 workflow。
 
+## 3.5 控制流：when 与 dependsOn
+
+step 支持条件执行与 DAG 编排；不声明时行为与纯串行版本完全一致。
+
+### when：条件执行
+
+`when` 是模板，在该 step 的依赖完成后渲染；结果为 `""`、`"0"`、`"false"`（忽略大小写与首尾空白）时**跳过**该 step，记 `status: "skipped"`，其余值执行为真。条件组合用 text/template 内置比较函数（`eq`/`ne`/`lt`/`gt`/`and`/`or`/`not`），不新增 funcmap：
+
+```json
+{ "id": "submit", "type": "tool", "tool": "ledger__import",
+  "when": "{{ eq (dig .steps.check.json \"ok\") true }}",
+  "args": { "path": "{{ .workflow.runDir }}/ledger.json" } }
+```
+
+模板渲染失败（如 `dig` 取不到键）按 step 失败处理，由 `continueOnError` 裁决。解析期即校验 `when` 模板语法，写错函数名会在加载时报 `[load error]` 而不是运行期才发现。
+
+### dependsOn：DAG 与并行
+
+- **缺省（字段不写）**：依赖前一个 step——即串行默认，旧 workflow 文件语义不变
+- **显式数组（含空数组 `[]`）**：只依赖列出的 step id；`"dependsOn": []` 断开隐式串行边，可与前面的 step 同层并行
+- 解析期校验：引用必须存在、无自引用、无重复、全图（含隐式串行边）**无环**
+- 引擎按依赖分层（Kahn），同层 step 并发执行，层内全部结束后才把结果写回模板数据
+
+```mermaid
+flowchart LR
+  A["gen"] --> C["audit<br/>dependsOn: [gen, fetch]"]
+  B["fetch<br/>dependsOn: []"] --> C
+  C --> D["submit<br/>when: audit.ok"]
+```
+
+并发安全约定：同层 step 只读更早层产出的 `.steps.*`，spill 产物各自写 `runDir/<step>.out`；**不要让两个并行 step 写同一个文件**。同层多个 step 的 outbound（SSE）事件可能交错，按 tool call id 配对即可。
+
+### 失败与跳过语义
+
+| 情形 | 行为 |
+|---|---|
+| step 失败，无 `continueOnError` | 同层 sibling 跑完后中止整轮（不再开新层）；串行管线等同旧版的 break |
+| step 失败，`continueOnError: true` | 记 `status: "error"` 并继续；**下游不自动跳过**，用 `when` 自行裁决（如 `{{ eq .steps.a.status "error" }}` 走补偿分支） |
+| `when` 为假 | 记 `skipped`；下游照常执行，可经 `.steps.<id>.status` 感知 |
+
+不做 `goto`/回边循环：声明式管线保持可静态校验、可审计；需要动态决策的路由交给 `agent` step（子 Agent 自主判断）或主模型在多次 `workflow__*` 调用间完成。
+
 ## 4. 数据传递：by reference 优先
 
 模板引擎用 `text/template`，funcmap 保持极小：`dig`（JSON 取值）、`quote`、`join`、`readJSON`（只读 workflow 目录或本次 `runDir` 下的 JSON object/array）。不引 sprig。
@@ -183,7 +225,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 .steps.<id>.stdout/.text  # 截断视图（小数据 by value）
 .steps.<id>.path          # 全文文件路径（大 payload by reference）
 .steps.<id>.json          # model/tool step 的结构化输出；直接渲染为紧凑 JSON，dig 逐层取值
-.steps.<id>.status        # ok / error
+.steps.<id>.status        # ok / error / skipped（when 为假）
 .steps.<id>.session       # agent step 的子 session id（审计）
 ```
 
@@ -198,7 +240,7 @@ script step 的 `run`、`dir` 里的相对路径，相对**该 workflow 文件�
 
 | 项 | 行为 |
 |---|---|
-| 控制流 | v1 仅串行；并行/分支待真实需求再加 |
+| 控制流 | 默认串行；`dependsOn` 组 DAG、同层并行，`when` 条件跳过（§3.5） |
 | 失败 | 默认中止整轮，`continueOnError: true` 可选；错误带已完成 step 摘要，不带 payload |
 | 超时 | 两层：内层 per-step `timeoutSeconds`，外层 `workflow__<name>` 工具调用墙钟（默认 Σ step + 5s，见下节） |
 | 取消 | `/stop` 经 ctx 中止当前 step，管线随之中止 |
@@ -215,7 +257,7 @@ flowchart LR
 
 - **内层**：每个 step 的 `timeoutSeconds`（agent step 默认 900；script/tool/model 未设时随 shell / runtime 默认）。到时即 fail step，`continueOnError` 可裁决继续；step 超时与 agent step 超时的语义一致，都记 `status=error`。
 - **外层**：`workflow__<name>` 作为模型工具受 `tools/runtime` per-call 墙钟约束。workflow 工具实现 `agentkit.CallTimeoutProvider`，runtime 在 per-call 值大于配置值（`toolTimeouts` / `defaultTimeoutSeconds`）时取 per-call 值（同 `delegate` 规则，见 [tools.zh.md](tools.zh.md)），因此**外层默认落在所有内层超时之后**，内层超时总是先触发、错误能进入 result 模板。
-- 外层默认取值 = **Σ step 超时 + 5s 缓冲**：显式 `timeoutSeconds` 按实计；未设的 script/tool/model step 估 120s、agent step 估 900s（仅为估算上界，不改变 step 自身的超时行为）。工具描述中写明 `Default timeout: <n>s`；模型可传保留参数 `timeoutSeconds` 覆盖本次外层墙钟（该参数由工具壳消费，注入模型侧 InputSchema，但不进入 workflow 的 `.inputs` 与引擎侧校验）。
+- 外层默认取值 = **关键路径（最长依赖链）Σ step 超时 + 5s 缓冲**：显式 `timeoutSeconds` 按实计；未设的 script/tool/model step 估 120s、agent step 估 900s（仅为估算上界，不改变 step 自身的超时行为）。无 `dependsOn` 的串行管线全图只有一条链，等同全量求和；并行分支重叠，不再叠加进估值。工具描述中写明 `Default timeout: <n>s`；模型可传保留参数 `timeoutSeconds` 覆盖本次外层墙钟（该参数由工具壳消费，注入模型侧 InputSchema，但不进入 workflow 的 `.inputs` 与引擎侧校验）。
 - 反例：把 `toolTimeouts["workflow__x"]` 配得**小于**管线总时长时外层先触发，整轮结果被替换成 `tool execution timed out`，内层 step 状态全部丢失——配置时外层必须大于内层总和（有了 per-call 默认值后通常无需再配）。
 
 ## 6. 审计与观测

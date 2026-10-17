@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/subagent"
@@ -652,6 +653,199 @@ func TestEngineAgentStepForcedSync(t *testing.T) {
 	}
 	if spawner.req.TimeoutSeconds == nil || *spawner.req.TimeoutSeconds != 30 {
 		t.Fatalf("timeout = %v", spawner.req.TimeoutSeconds)
+	}
+}
+
+func TestEngineWhenSkipsStep(t *testing.T) {
+	t.Parallel()
+	newWF := func(when string) *Workflow {
+		return &Workflow{
+			Name: "cond", Description: "d",
+			Steps: []Step{
+				{ID: "gen", Type: StepScript, Run: "echo data"},
+				{ID: "gated", Type: StepScript, Run: "echo should-not-print", When: when},
+			},
+			Result: "gated={{ .steps.gated.status }} view={{ .steps.gated.stdout }}",
+		}
+	}
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	out, err := engine.Run(context.Background(), newWF(`{{ eq .inputs.mode "run" }}`), map[string]any{"mode": "skip"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "gated=skipped view=" {
+		t.Fatalf("out = %q", out)
+	}
+	out, err = engine.Run(context.Background(), newWF(`{{ eq .inputs.mode "run" }}`), map[string]any{"mode": "run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "gated=ok view=should-not-print\n" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestEngineWhenOnPreviousStepStatus(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "gate-on-status", Description: "d",
+		Steps: []Step{
+			{ID: "a", Type: StepScript, Run: "exit 1", ContinueOnError: true},
+			{ID: "b", Type: StepScript, Run: "echo recovered", When: `{{ eq .steps.a.status "error" }}`},
+			{ID: "c", Type: StepScript, Run: "echo no", When: `{{ eq .steps.a.status "ok" }}`},
+		},
+		Result: "a={{ .steps.a.status }} b={{ .steps.b.status }} c={{ .steps.c.status }}",
+	}
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	out, err := engine.Run(context.Background(), wf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "a=error b=ok c=skipped" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestEngineWhenTemplateErrorFailsStep(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "bad-when", Description: "d",
+		Steps: []Step{
+			{ID: "a", Type: StepScript, Run: "echo x", When: `{{ dig .steps.nope.json "x" }}`},
+		},
+		Result: "never",
+	}
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	_, err := engine.Run(context.Background(), wf, nil)
+	if err == nil || !strings.Contains(err.Error(), "when condition") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEngineDAGRunsLevelConcurrently(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "dag", Description: "d",
+		Steps: []Step{
+			{ID: "a", Type: StepScript, Run: "sleep 1 && echo A"},
+			// 显式空 dependsOn 断开隐式串行边，与 a 同层并行。
+			{ID: "b", Type: StepScript, Run: "sleep 1 && echo B", DependsOn: []string{}},
+			{ID: "join", Type: StepScript, DependsOn: []string{"a", "b"},
+				Run: `echo "{{ .steps.a.stdout }}{{ .steps.b.stdout }}"`},
+		},
+		Result: "{{ .steps.join.stdout }}",
+	}
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	start := time.Now()
+	out, err := engine.Run(context.Background(), wf, nil)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "A\nB\n\n" {
+		t.Fatalf("out = %q", out)
+	}
+	// 串行需 ≥2s；并行一层约 1s。
+	if elapsed > 1800*time.Millisecond {
+		t.Fatalf("elapsed = %v, want parallel (~1s), serial would be >=2s", elapsed)
+	}
+}
+
+func TestEngineDAGFailureAbortsLaterLevels(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mark := func(name string) string {
+		return filepath.Join(root, name+".ran")
+	}
+	wf := &Workflow{
+		Name: "abort", Description: "d", Dir: root,
+		Steps: []Step{
+			{ID: "bad", Type: StepScript, Run: "exit 1"},
+			{ID: "side", Type: StepScript, DependsOn: []string{}, Run: "touch " + mark("side")},
+			{ID: "after", Type: StepScript, DependsOn: []string{"bad"}, Run: "touch " + mark("after")},
+		},
+		Result: "never",
+	}
+	engine := engineWith(stubWorkspace{root})
+	_, err := engine.Run(context.Background(), wf, nil)
+	if err == nil || !strings.Contains(err.Error(), `step "bad"`) {
+		t.Fatalf("err = %v", err)
+	}
+	// 同层 sibling 跑完；失败中止的是下一层。
+	if _, statErr := os.Stat(mark("side")); statErr != nil {
+		t.Fatalf("same-level sibling did not finish: %v", statErr)
+	}
+	if _, statErr := os.Stat(mark("after")); !os.IsNotExist(statErr) {
+		t.Fatal("dependent level ran despite the abort")
+	}
+}
+
+func TestEngineSkippedDependencyDoesNotBlockDependent(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{
+		Name: "skip-dep", Description: "d",
+		Steps: []Step{
+			{ID: "maybe", Type: StepScript, Run: "echo x", When: "false"},
+			{ID: "downstream", Type: StepScript, Run: "echo ran"},
+		},
+		Result: "maybe={{ .steps.maybe.status }} downstream={{ .steps.downstream.status }}",
+	}
+	engine := engineWith(stubWorkspace{t.TempDir()})
+	out, err := engine.Run(context.Background(), wf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "maybe=skipped downstream=ok" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestWorkflowValidateDependsOnAndWhen(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		steps   string
+		wantErr string
+	}{
+		{"unknown dep", `[{"id":"a","type":"script","run":"true","dependsOn":["ghost"]}]`, "matches no step id"},
+		{"self dep", `[{"id":"a","type":"script","run":"true","dependsOn":["a"]}]`, "itself"},
+		{"duplicate dep", `[{"id":"a","type":"script","run":"true"},{"id":"b","type":"script","run":"true","dependsOn":["a","a"]}]`, "duplicate dependsOn"},
+		{"cycle", `[{"id":"a","type":"script","run":"true","dependsOn":["b"]},{"id":"b","type":"script","run":"true","dependsOn":["a"]}]`, "cycle"},
+		{"backward dep cycle", `[{"id":"a","type":"script","run":"true","dependsOn":["b"]},{"id":"b","type":"script","run":"true"}]`, "cycle"},
+		{"bad when", `[{"id":"a","type":"script","run":"true","when":"{{"}]`, "invalid when template"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			body := `{"description":"d","steps":` + tc.steps + `,"result":"ok"}`
+			_, err := Parse("case", []byte(body))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+	// 合法 DAG：fan-out + join 通过校验。
+	body := `{"description":"d","steps":[
+	  {"id":"a","type":"script","run":"true"},
+	  {"id":"b","type":"script","run":"true","dependsOn":[]},
+	  {"id":"c","type":"script","run":"true","dependsOn":["a","b"],"when":"{{ eq .steps.a.status \"ok\" }}"}
+	],"result":"ok"}`
+	if _, err := Parse("ok", []byte(body)); err != nil {
+		t.Fatalf("valid DAG rejected: %v", err)
+	}
+}
+
+func TestWorkflowDefaultTimeoutCriticalPath(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{Steps: []Step{
+		{ID: "a", Type: StepScript, Run: "echo", TimeoutSeconds: 120},
+		{ID: "b", Type: StepScript, Run: "echo", TimeoutSeconds: 30, DependsOn: []string{}},
+		{ID: "c", Type: StepScript, Run: "echo", TimeoutSeconds: 60, DependsOn: []string{"a", "b"}},
+	}}
+	// 关键路径 max(120, 30) + 60 + 5；串行求和会是 215。
+	want := 120 + 60 + TimeoutBufferSeconds
+	if got := wf.DefaultTimeoutSeconds(); got != want {
+		t.Fatalf("DefaultTimeoutSeconds = %d, want %d", got, want)
 	}
 }
 

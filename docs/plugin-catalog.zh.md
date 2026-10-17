@@ -315,7 +315,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/web-fetch-scripted` | — | `web_fetch` | 预置页面，测试与冒烟 |
 | `tool/skill` | `skills`, `sessionStore` | `skill` | 按名加载 `SKILL.md` 并注入会话；附属文件用 `read`，脚本用 `bash` |
 | `tool/subagent` | `subagent` | `delegate` | 子 Agent 委派 |
-| `tool/workflow` | `runtime`, `workspace`（可选 `llm`、`subagent`、`telemetry`、`shell`） | `workflow__<name>`（每 workflow 文件一个动态工具，挂 `deps.dynamicTools`） | 把 workflows 目录里的声明式管线（script/tool/model/agent step 串行）各暴露为一个工具，`inputs` 即工具 InputSchema，中间数据 by reference 不过主模型；`deps.runtime` 必须是不含 `tool/workflow` 自身的兄弟实例。详见 [guides/workflow.zh.md](guides/workflow.zh.md) |
+| `tool/workflow` | `runtime`, `workspace`（可选 `llm`、`subagent`、`telemetry`、`shell`） | `workflow__<name>`（每 workflow 文件一个动态工具，挂 `deps.dynamicTools`） | 把 workflows 目录里的声明式管线（script/tool/model/agent step，默认串行，支持 `dependsOn` DAG 并行与 `when` 条件）各暴露为一个工具，`inputs` 即工具 InputSchema，中间数据 by reference 不过主模型；`deps.runtime` 必须是不含 `tool/workflow` 自身的兄弟实例。详见 [guides/workflow.zh.md](guides/workflow.zh.md) |
 | `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |

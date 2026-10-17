@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -247,6 +248,37 @@ func TestWorkflowInputSchemaDoesNotMutateDeclaredInputs(t *testing.T) {
 	props, _ := wt.wf.Inputs["properties"].(map[string]any)
 	if _, leaked := props[timeoutSecondsArg]; leaked {
 		t.Fatalf("reserved arg leaked into declared inputs: %v", wt.wf.Inputs)
+	}
+}
+
+// TestSkillAssetsParse guards the workflow-manager skill's example files:
+// every asset must stay a valid workflow (schema + graph validation).
+func TestSkillAssetsParse(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join("..", "..", "..", "skills", "workflow-manager", "assets")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no skill assets found")
+	}
+	for _, entry := range entries {
+		entry := entry
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		t.Run(entry.Name(), func(t *testing.T) {
+			t.Parallel()
+			raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := strings.TrimSuffix(entry.Name(), ".json")
+			if _, err := Parse(name, raw); err != nil {
+				t.Fatalf("skill asset %s: %v", entry.Name(), err)
+			}
+		})
 	}
 }
 
