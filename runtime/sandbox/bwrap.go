@@ -109,17 +109,43 @@ func (s *Sandbox) WrapArgv(ctx context.Context, workDir string, inner []string) 
 	for _, m := range v.rwMaps {
 		args = append(args, "--bind", m.src, m.dst)
 	}
-	// Sensitive files masked with /dev/null (must come after the global
-	// ro-bind and ro/rwBinds, so rwBinds binding the global root or its parent
-	// cannot re-expose secrets).
+	// Sensitive files masked empty with a shared empty regular file (must
+	// come after the global ro-bind and ro/rwBinds, so rwBinds binding the
+	// global root or its parent cannot re-expose secrets). Not /dev/null:
+	// mounts inside a user namespace are nodev, so a bound device node opens
+	// with EACCES instead of reading empty. A failed mask fails closed (a
+	// leaked secret is worse than a failed command).
+	needMaskFile := false
 	for _, p := range v.secretPaths {
 		if _, err := os.Stat(p); err == nil {
-			args = append(args, "--ro-bind", "/dev/null", p)
+			needMaskFile = true
+			break
+		}
+	}
+	if !needMaskFile {
+		for _, p := range v.hidePaths {
+			if info, err := os.Stat(p); err == nil && !info.IsDir() {
+				needMaskFile = true
+				break
+			}
+		}
+	}
+	roMaskFile := ""
+	if needMaskFile {
+		if file, err := s.ensureRoMaskFile(v.globalRoot); err != nil {
+			return nil, fmt.Errorf("sandbox: mask file unavailable: %w", err)
+		} else {
+			roMaskFile = file
+		}
+	}
+	for _, p := range v.secretPaths {
+		if _, err := os.Stat(p); err == nil {
+			args = append(args, "--ro-bind", roMaskFile, p)
 		}
 	}
 	// Mask paths apply last and can cover any subpath exposed by previous
 	// binds: dirs get a ro-bind of the shared read-only empty dir, files get
-	// /dev/null.
+	// the shared empty file.
 	roMaskDir := ""
 	if len(v.hidePaths) > 0 {
 		if dir, err := s.ensureRoMaskDir(v.globalRoot); err != nil {
@@ -138,7 +164,7 @@ func (s *Sandbox) WrapArgv(ctx context.Context, workDir string, inner []string) 
 				args = append(args, "--tmpfs", p)
 			}
 		} else {
-			args = append(args, "--ro-bind", "/dev/null", p)
+			args = append(args, "--ro-bind", roMaskFile, p)
 		}
 	}
 	args = append(args,

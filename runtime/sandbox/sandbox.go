@@ -188,6 +188,11 @@ type Sandbox struct {
 	// concern. Lazily created under the data root (so host /tmp cleanup
 	// policies cannot delete the mask source).
 	roMaskDir  string
+	// roMaskFile is a shared empty regular file ro-bound onto masked files.
+	// /dev/null cannot be used: filesystems mounted inside a user namespace
+	// are forced nodev, so opening a bound device node fails with EACCES
+	// instead of yielding empty content.
+	roMaskFile string
 	roMaskOnce sync.Once
 	roMaskErr  error
 	// viewCache caches rendered views per tenant root for viewCacheTTL:
@@ -652,9 +657,29 @@ func (s *Sandbox) ensureRoMaskDir(globalRoot string) (string, error) {
 			s.roMaskErr = err
 			return
 		}
+		file := filepath.Join(dir, "empty")
+		f, err := os.OpenFile(file, os.O_RDONLY|os.O_CREATE, 0o444)
+		if err != nil {
+			s.roMaskErr = err
+			return
+		}
+		if err := f.Close(); err != nil {
+			s.roMaskErr = err
+			return
+		}
 		s.roMaskDir = dir
+		s.roMaskFile = file
 	})
 	return s.roMaskDir, s.roMaskErr
+}
+
+// ensureRoMaskFile lazily creates the shared empty mask file (see roMaskFile)
+// used to mask secret/hidePath files empty.
+func (s *Sandbox) ensureRoMaskFile(globalRoot string) (string, error) {
+	if _, err := s.ensureRoMaskDir(globalRoot); err != nil {
+		return "", err
+	}
+	return s.roMaskFile, nil
 }
 
 // resolveClean resolves a workspace-relative path and normalizes it

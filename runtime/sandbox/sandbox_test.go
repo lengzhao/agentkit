@@ -49,8 +49,8 @@ func TestWrapBwrapMasksNeighborTenants(t *testing.T) {
 	if !strings.Contains(joined, "--ro-bind\x00"+global) {
 		t.Fatalf("expected ro-bind of global root, argv=%v", argv)
 	}
-	if !strings.Contains(joined, "/dev/null\x00"+filepath.Join(global, "secrets.enc.json")) {
-		t.Fatalf("expected secrets.enc.json masked, argv=%v", argv)
+	if !strings.Contains(joined, s.roMaskFile+"\x00"+filepath.Join(global, "secrets.enc.json")) {
+		t.Fatalf("expected secrets.enc.json masked with the shared empty file, argv=%v", argv)
 	}
 	// Network stack preserved: no unshare-net; pid namespace must be isolated
 	// (prevent killing host processes)
@@ -319,12 +319,13 @@ func TestWrapBwrapConfigurablePaths(t *testing.T) {
 		t.Fatalf("nonexistent path must be skipped, argv=%v", argv)
 	}
 	// Dirs are masked by ro-binding the shared read-only empty dir (invisible,
-	// writes EROFS); files are masked with /dev/null
+	// writes EROFS); files are masked with the shared empty regular file
+	// (/dev/null is unusable: userns mounts are nodev, reads fail EACCES).
 	if !strings.Contains(joined, "--ro-bind\x00"+s.roMaskDir+"\x00"+hideDir) {
 		t.Fatalf("expected ro-bind mask of hideDir, argv=%v", argv)
 	}
-	if !strings.Contains(joined, "--ro-bind\x00/dev/null\x00"+hideFile) {
-		t.Fatalf("expected /dev/null mask of hideFile, argv=%v", argv)
+	if !strings.Contains(joined, "--ro-bind\x00"+s.roMaskFile+"\x00"+hideFile) {
+		t.Fatalf("expected empty-file mask of hideFile, argv=%v", argv)
 	}
 	// systemBinds overrides the default list: /usr in, /lib out
 	if !strings.Contains(joined, "--ro-bind\x00/usr\x00/usr") {

@@ -38,7 +38,7 @@ func TestSubprocessAndInProcessViewAlignment(t *testing.T) {
 	}
 	joined := strings.Join(argv, "\x00")
 
-	if !strings.Contains(joined, "/dev/null\x00"+secret) {
+	if !strings.Contains(joined, s.roMaskFile+"\x00"+secret) {
 		t.Fatalf("subprocess argv must mask secret denied in-process, argv=%v", argv)
 	}
 	tenantsBase := filepath.Dir(local)
