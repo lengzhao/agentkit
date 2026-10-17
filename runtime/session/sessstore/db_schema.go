@@ -78,10 +78,7 @@ func ensureSQLiteFileParentDir(dsn string) error {
 	if strings.Contains(dsn, "mode=memory") {
 		return nil
 	}
-	path := dsn
-	if strings.HasPrefix(path, "file:") {
-		path = strings.TrimPrefix(path, "file:")
-	}
+	path := strings.TrimPrefix(dsn, "file:")
 	if path == "" || path == ":memory:" {
 		return nil
 	}
