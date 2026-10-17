@@ -42,7 +42,8 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 
 	var ingestions atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/public/ingestion" {
+		// 默认 v4 走 OTLP，v3 走批处理 ingestion，两条路径都算一次导出。
+		if r.URL.Path == "/api/public/ingestion" || r.URL.Path == "/api/public/otel/v1/traces" {
 			ingestions.Add(1)
 			body, _ := io.ReadAll(r.Body)
 			var payload map[string]any
