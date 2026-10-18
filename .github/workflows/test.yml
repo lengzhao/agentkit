@@ -29,7 +29,8 @@ jobs:
         run: ./scripts/test.sh integration
 
   sysint:
-    runs-on: ubuntu-latest
+    # Keep the userns/AppArmor setup on a known runner release.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -37,6 +38,26 @@ jobs:
           go-version-file: go.mod
       - name: Install bubblewrap
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Configure bubblewrap user namespaces
+        run: |
+          # Ubuntu 24.04 restricts capabilities in unprivileged user namespaces.
+          # Scope the exception to the bwrap entry point on this CI VM;
+          # descendants inherit it. Keep the global AppArmor restriction on.
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = "1" ]; then
+            # Capture the original denial before loading the CI profile.
+            if ! bwrap --unshare-user --uid 0 --gid 0 --unshare-pid --dev-bind / / true; then
+              sudo journalctl -k -g 'apparmor="DENIED"' -n 20 --no-pager
+            fi
+            sudo install -m 0644 .github/ci/bwrap.apparmor /etc/apparmor.d/bwrap
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+      - name: Verify bubblewrap user and PID namespaces
+        run: |
+          # Match runtime/sandbox's first probe, as the regular runner user.
+          if ! bwrap --unshare-user --uid 0 --gid 0 --unshare-pid --dev-bind / / true; then
+            sudo journalctl -k -n 100 --no-pager
+            exit 1
+          fi
       # Real bwrap isolation tests; fails (not skips) when bwrap is unusable.
       - name: Sandbox system-integration tests
         run: ./scripts/test.sh sysint

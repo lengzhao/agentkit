@@ -1,0 +1,9 @@
+# CI-only user namespace permission for Ubuntu 24.04's bubblewrap binary.
+# The sandbox's mount and namespace isolation is still enforced by bwrap.
+# See Ubuntu 24.04 release notes: "Unprivileged user namespace restrictions".
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
