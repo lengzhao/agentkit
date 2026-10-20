@@ -32,7 +32,7 @@
 | `authMethod` | `string` | — | AuthMethod is passed to authenticate when non-empty (e.g. "cursor_login"). |
 | `clientName` | `string` | `agentkit` | ClientName is sent in initialize; defaults to "agentkit". |
 | `clientVersion` | `string` | `0.1.0` | ClientVersion is sent in initialize; defaults to "0.1.0". |
-| `authHint` | `string` | — | AuthHint is shown to the user when ACP authenticate fails (e.g. "Run /sh agent login to authorize, then retry"). |
+| `authHint` | `string` | — | AuthHint overrides the user-facing guidance when ACP requires authentication, during connection, session creation, or a prompt. Secret values are never included. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
