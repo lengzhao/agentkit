@@ -41,8 +41,8 @@ type Config struct {
 	ClientName string `json:"clientName,omitempty"`
 	// ClientVersion is sent in initialize; defaults to "0.1.0".
 	ClientVersion string `json:"clientVersion,omitempty"`
-	// AuthHint is shown to the user when ACP authenticate fails (e.g.
-	// "Run /sh agent login to authorize, then retry").
+	// AuthHint overrides the user-facing guidance when ACP requires authentication,
+	// during connection, session creation, or a prompt. Secret values are never included.
 	AuthHint string `json:"authHint,omitempty"`
 }
 
@@ -158,7 +158,10 @@ func (a *Runtime) AgentCatalogEntry() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
+func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnErr error) {
+	// Handle authentication errors from every stage, including session/prompt.
+	// The runner displays this error once; preserve its cause for inspection.
+	defer func() { turnErr = a.withAuthGuidance(turnErr) }()
 	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
@@ -202,16 +205,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	brid := a.bridgeFor(sessionID)
 	acpSessionID, err := brid.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
 	if err != nil {
-		if authHint := a.authHintForError(err); authHint != "" {
-			_ = emit(ctx, agentkit.OutboundEvent{
-				AgentID: a.id,
-				Type:    agentkit.EventAssistantMessage,
-				Data: rctx.MarshalOutboundData(agentkit.ModelMessage{
-					Role:    "assistant",
-					Content: []agentkit.ContentPart{{Type: "text", Text: authHint}},
-				}),
-			})
-		}
+
 		return err
 	}
 
@@ -270,20 +264,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 		}
 		return nil
 	}
-}
-
-// authHintForError returns the user-facing hint when ACP connect/authenticate fails.
-func (a *Runtime) authHintForError(err error) string {
-	if err == nil {
-		return ""
-	}
-	if a.cfg.AuthHint != "" {
-		return a.cfg.AuthHint
-	}
-	if a.cfg.AuthMethod != "" {
-		return fmt.Sprintf("ACP 认证失败（%s）。请检查凭证后重试。", a.cfg.AuthMethod)
-	}
-	return ""
 }
 
 func (a *Runtime) emitLifecycle(ctx context.Context, emit agentkit.OutboundEmit, typ agentkit.EventType, payload any) error {
