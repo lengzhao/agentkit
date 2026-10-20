@@ -222,7 +222,9 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 			AgentCapabilities: proc.agentCapabilities,
 		})
 		if err != nil {
-			return "", err
+			wrapped := wrapACPStageError("session/restore", err)
+			logACPRemoteError(agentID, b.cfg, sessionID, "session/restore", wrapped)
+			return "", wrapped
 		}
 		if restored {
 			proc.trackSession(sessionID, bind.ACPSessionID)
@@ -235,7 +237,9 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		McpServers: mcpServers,
 	})
 	if err != nil {
-		return "", fmt.Errorf("acp session/new: %w", err)
+		wrapped := wrapACPStageError("session/new", err)
+		logACPRemoteError(agentID, b.cfg, sessionID, "session/new", wrapped)
+		return "", wrapped
 	}
 	proc.trackSession(sessionID, resp.SessionId)
 	if err := saveACPSessionBind(ctx, b.fs, bindPath, acpSessionBind{
@@ -270,8 +274,10 @@ func (b *bridge) prompt(ctx context.Context, acpSessionID acp.SessionId, prompt 
 		Prompt:    prompt,
 	})
 	if err != nil {
-		slog.Warn("acp-remote: prompt failed", "session_id", sessionID, "acp_session_id", acpSessionID, "duration", time.Since(start), "err", err)
-		return acpPromptResponse{}, err
+		wrapped := wrapACPStageError("session/prompt", err)
+		logACPRemoteError(b.cfg.ID, b.cfg, sessionID, "session/prompt", wrapped)
+		slog.Warn("acp-remote: prompt failed", "session_id", sessionID, "acp_session_id", acpSessionID, "duration", time.Since(start), "detail", acpErrorDetail(wrapped), "err", wrapped)
+		return acpPromptResponse{}, wrapped
 	}
 	slog.Info("acp-remote: prompt done", "session_id", sessionID, "acp_session_id", acpSessionID, "duration", time.Since(start), "stop_reason", resp.StopReason)
 	return acpPromptResponse{stopReason: string(resp.StopReason)}, nil
