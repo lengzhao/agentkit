@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func commandEnv(extra map[string]string) []string {
@@ -230,7 +231,9 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 	if err != nil {
 		terminateProcessGroup(cmd)
 		_ = cmd.Wait()
-		return nil, fmt.Errorf("acp initialize: %w", err)
+		wrapped := wrapACPStageError("initialize", err)
+		logACPRemoteError(b.cfg.ID, b.cfg, rctx.SessionIDFromContext(ctx), "initialize", wrapped)
+		return nil, wrapped
 	}
 	slog.Info("acp-remote: connected", "protocol", initResp.ProtocolVersion)
 
@@ -245,6 +248,7 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 	st.proc = proc
 	go b.waitSubprocess(proc)
 	if err := b.authenticateSubprocess(ctx, proc); err != nil {
+		logACPRemoteError(b.cfg.ID, b.cfg, rctx.SessionIDFromContext(ctx), "authenticate", err)
 		old, cancel := detachSubprocess(st)
 		terminateAndWaitSubprocess(old, cancel)
 		return nil, err
@@ -260,7 +264,7 @@ func (b *bridge) authenticateSubprocess(ctx context.Context, proc *subprocess) e
 	if _, err := proc.conn.Authenticate(ctx, acp.AuthenticateRequest{
 		MethodId: b.cfg.AuthMethod,
 	}); err != nil {
-		return fmt.Errorf("acp authenticate: %w", err)
+		return wrapACPStageError("authenticate", err)
 	}
 	proc.authenticated = true
 	return nil

@@ -116,12 +116,19 @@ func TestRunTurnAuthGuidanceAtBothStages(t *testing.T) {
 			if !errors.As(err, &protocol) || protocol.Code != -32000 {
 				t.Fatalf("protocol cause lost: %v", err)
 			}
-			for _, want := range []string{"认证", "export", "ANTHROPIC_AUTH_TOKEN=已设置"} {
+			for _, want := range []string{"认证", "export", "ANTHROPIC_AUTH_TOKEN=已设置", "错误详情", "Authentication required"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Fatalf("missing %s: %v", want, err)
 				}
 			}
-			if strings.Contains(err.Error(), "secret-from-config") || strings.Contains(err.Error(), "secret-from-server") || strings.Contains(err.Error(), `"code"`) {
+			if stage == "session" {
+				if !strings.Contains(err.Error(), "session/new") {
+					t.Fatalf("missing stage in detail: %v", err)
+				}
+			} else if !strings.Contains(err.Error(), "session/prompt") {
+				t.Fatalf("missing stage in detail: %v", err)
+			}
+			if strings.Contains(err.Error(), "secret-from-config") || strings.Contains(err.Error(), "secret-from-server") {
 				t.Fatalf("unsafe raw error: %v", err)
 			}
 			if messages != 0 {

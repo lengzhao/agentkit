@@ -161,7 +161,7 @@ func (a *Runtime) AgentCatalogEntry() string {
 func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnErr error) {
 	// Handle authentication errors from every stage, including session/prompt.
 	// The runner displays this error once; preserve its cause for inspection.
-	defer func() { turnErr = a.withAuthGuidance(turnErr) }()
+	defer func() { turnErr = a.withAuthGuidance(ctx, turnErr) }()
 	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")

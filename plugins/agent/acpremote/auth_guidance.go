@@ -3,10 +3,12 @@ package acpremote
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 
-	acp "github.com/coder/acp-go-sdk"
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // authGuidanceError exposes a safe, actionable message while retaining the
@@ -16,20 +18,29 @@ type authGuidanceError struct {
 	hint  string
 }
 
-func (e *authGuidanceError) Error() string { return e.hint }
+func (e *authGuidanceError) Error() string {
+	detail := acpErrorDetail(e.cause)
+	if detail == "" {
+		return e.hint
+	}
+	return e.hint + "\n\n错误详情：" + detail
+}
 func (e *authGuidanceError) Unwrap() error { return e.cause }
 
 func isACPAuthenticationError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var request *acp.RequestError
-	if errors.As(err, &request) {
-		return request != nil && request.Code == -32000
+	if re := requestErrorFromChain(err); re != nil && re.Code == -32000 {
+		return true
 	}
 	// Compatibility with adapters which flatten the protocol error to text.
 	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "authentication required") || strings.Contains(text, "authentication failed") || strings.Contains(text, "not authenticated")
+	return strings.Contains(text, "authentication required") ||
+		strings.Contains(text, "authentication failed") ||
+		strings.Contains(text, "not authenticated") ||
+		strings.Contains(text, `"code":-32000`) ||
+		strings.Contains(text, "code -32000")
 }
 
 func (a *Runtime) authHintForError(err error) string {
@@ -73,11 +84,46 @@ func authEnvironmentKeys(cfg Config) []string {
 	}
 }
 
-func (a *Runtime) withAuthGuidance(err error) error {
+func (a *Runtime) withAuthGuidance(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	sessionID := rctx.SessionIDFromContext(ctx)
+	attrs := []any{
+		"agent_id", a.id,
+		"session_id", sessionID,
+		"command", strings.Join(a.cfg.Command, " "),
+		"stage", acpErrorStage(err),
+		"detail", acpErrorDetail(err),
+		"err", err,
+	}
+	if re := requestErrorFromChain(err); re != nil {
+		attrs = append(attrs, "acp_code", re.Code, "acp_message", re.Message)
+	}
 	if hint := a.authHintForError(err); hint != "" {
+		slog.Warn("acp-remote: authentication required", attrs...)
 		return &authGuidanceError{cause: err, hint: hint}
 	}
+	slog.Error("acp-remote: turn failed", attrs...)
 	return err
+}
+
+func logACPRemoteError(agentID agentkit.AgentID, cfg Config, sessionID agentkit.SessionID, stage string, err error) {
+	if err == nil {
+		return
+	}
+	attrs := []any{
+		"agent_id", agentID,
+		"session_id", sessionID,
+		"command", strings.Join(cfg.Command, " "),
+		"stage", stage,
+		"detail", acpErrorDetail(err),
+		"err", err,
+	}
+	if re := requestErrorFromChain(err); re != nil {
+		attrs = append(attrs, "acp_code", re.Code, "acp_message", re.Message)
+	}
+	slog.Warn("acp-remote: "+stage+" failed", attrs...)
 }
 
 // Compile-time assurance that wrapping continues to satisfy the error contract.
