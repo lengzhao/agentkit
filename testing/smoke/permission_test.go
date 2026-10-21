@@ -229,7 +229,7 @@ func runPermissionLoopSmoke(t *testing.T, tc permissionLoopCase) {
 	events := agenttest.SessionEvents(t, ctx, store, sessionID)
 	if tc.wantDenied {
 		agenttest.AssertNoToolResultWithContent(t, events, "call-echo", "secret")
-		agenttest.AssertToolResultContains(t, events, "call-echo", "resolved")
+		agenttest.AssertToolResultContains(t, events, "call-echo", "denied by user")
 	} else {
 		agenttest.AssertToolResultContains(t, events, "call-echo", tc.wantToolResult)
 	}
