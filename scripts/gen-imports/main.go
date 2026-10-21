@@ -65,7 +65,9 @@ func collectImports(root string) ([]string, error) {
 				return err
 			}
 			imports = append(imports, modulePath+"/"+filepath.ToSlash(rel))
-			return filepath.SkipDir
+			// Keep walking: a plugin package may contain another plugin package
+			// (for example sessstore/sqlite) that must be imported on its own.
+			return nil
 		})
 		if err != nil {
 			return nil, err

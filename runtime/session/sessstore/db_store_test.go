@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	_ "modernc.org/sqlite"
 )
 
 func TestSQLStoreIsolatesSessionsByID(t *testing.T) {

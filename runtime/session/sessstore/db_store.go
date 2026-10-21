@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "modernc.org/sqlite"
 )
 
 type SQLStoreConfig struct {
@@ -91,7 +89,9 @@ type SQLStore struct {
 	cache           sessionCache
 }
 
-// NewSQLStore registers session/sql: durable sessions in SQLite/Postgres (or any database/sql backend).
+// NewSQLStore registers session/sql: durable sessions in any database/sql backend.
+// This package does not import drivers. session/sqlite and session/postgres
+// register modernc.org/sqlite and pgx from their own packages.
 func NewSQLStore(cfg SQLStoreConfig, _ SQLStoreDeps) (agentkit.SessionStore, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
