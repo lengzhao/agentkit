@@ -1136,7 +1136,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `session/sql-index`
 
 - 返回类型：`sessionindex.Service`
-- 源码：[`runtime/session/sessindex/sql_index.go`](../runtime/session/sessindex/sql_index.go)
+- 源码：[`runtime/session/sessindex/sqlindex/sql_index.go`](../runtime/session/sessindex/sqlindex/sql_index.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|

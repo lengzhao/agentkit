@@ -7,10 +7,8 @@ import (
 
 func init() {
 	pluginkit.Register("session/sqlite-index", NewSQLiteIndex)
-	pluginkit.Register("session/sql-index", NewSQLIndex)
 }
 
 var (
 	_ capsessionindex.Service = (*SQLiteIndex)(nil)
-	_ capsessionindex.Service = (*SQLIndex)(nil)
 )

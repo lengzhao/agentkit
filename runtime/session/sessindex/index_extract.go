@@ -7,16 +7,16 @@ import (
 	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
-// indexableMessage is one searchable row from a session log.
-type indexableMessage struct {
+// IndexableMessage is one searchable row from a session log.
+type IndexableMessage struct {
 	Seq  int64
 	Role string
 	Text string
 }
 
-// extractIndexableMessages returns user/assistant text from session events.
-func extractIndexableMessages(events []agentkit.SessionEvent) []indexableMessage {
-	var out []indexableMessage
+// ExtractIndexableMessages returns user/assistant text from session events.
+func ExtractIndexableMessages(events []agentkit.SessionEvent) []IndexableMessage {
+	var out []IndexableMessage
 	for _, ev := range events {
 		switch ev.Type {
 		case agentkit.EventUserMessage, agentkit.EventAssistantMessage:
@@ -28,7 +28,7 @@ func extractIndexableMessages(events []agentkit.SessionEvent) []indexableMessage
 			if text == "" {
 				continue
 			}
-			out = append(out, indexableMessage{
+			out = append(out, IndexableMessage{
 				Seq:  int64(ev.Seq),
 				Role: msg.Role,
 				Text: text,

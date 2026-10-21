@@ -1,4 +1,4 @@
-package sessindex
+package sqlindex
 
 import (
 	"context"
@@ -13,7 +13,9 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsessionindex "github.com/lengzhao/agentkit/cap/sessionindex"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessindex"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
+	"github.com/lengzhao/pluginkit"
 	_ "modernc.org/sqlite"
 )
 
@@ -45,6 +47,12 @@ type SQLIndex struct {
 	db     *sql.DB
 	mu     sync.Mutex
 }
+
+func init() {
+	pluginkit.Register("session/sql-index", NewSQLIndex)
+}
+
+var _ capsessionindex.Service = (*SQLIndex)(nil)
 
 // NewSQLIndex registers session/sql-index: FTS over session/sql durable events.
 func NewSQLIndex(cfg SQLIndexConfig, _ SQLIndexDeps) (capsessionindex.Service, error) {
@@ -162,7 +170,7 @@ func (s *SQLIndex) SyncSessions(ctx context.Context) error {
 	defer rows.Close()
 
 	type pending struct {
-		msgs         []indexableMessage
+		msgs         []sessindex.IndexableMessage
 		maxSeq       int64
 		maxCreatedNs int64
 	}
@@ -191,7 +199,7 @@ func (s *SQLIndex) SyncSessions(ctx context.Context) error {
 		if ns := ev.CreatedAt.UnixNano(); ns > p.maxCreatedNs {
 			p.maxCreatedNs = ns
 		}
-		p.msgs = append(p.msgs, extractIndexableMessages([]agentkit.SessionEvent{ev})...)
+		p.msgs = append(p.msgs, sessindex.ExtractIndexableMessages([]agentkit.SessionEvent{ev})...)
 	}
 	if err := rows.Err(); err != nil {
 		return err

@@ -341,7 +341,7 @@ func (s *SQLiteIndex) syncOneFile(db *sql.DB, path string) error {
 	if err != nil {
 		return err
 	}
-	msgs := extractIndexableMessages(events)
+	msgs := ExtractIndexableMessages(events)
 
 	tx, err := db.Begin()
 	if err != nil {

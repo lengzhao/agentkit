@@ -1,4 +1,4 @@
-package sessindex_test
+package sqlindex_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
-	"github.com/lengzhao/agentkit/runtime/session/sessindex"
+	sessindex "github.com/lengzhao/agentkit/runtime/session/sessindex/sqlindex"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 )
 
