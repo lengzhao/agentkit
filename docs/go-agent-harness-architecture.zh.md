@@ -1444,9 +1444,11 @@ go run ./cmd/agent --preset coding "inspect this repo"
 
 `telemetry/langfuse` 经 `cap/telemetry` 接口与 `runtime/telemetry` 旁路导出 turn 链路到 Langfuse UI。Session JSONL 仍是权威事实源；导出失败写 `slog.Warn`，不阻断 turn。
 
+`telemetry/none` 与 `telemetry/langfuse` 分属 `plugins/telemetry/none` 与 `plugins/telemetry/langfuse`。只导入 none 的二进制不会链入 Langfuse SDK 与 OpenTelemetry。
+
 导出支持两种 Langfuse ingestion 接口，由 `ingestVersion` 选择（默认 `v4`）：
 
-- `v4`（默认）：OpenTelemetry OTLP/HTTP 接口 `POST {baseUrl}/api/public/otel/v1/traces`（带 `x-langfuse-ingestion-version: 4` 头），适用于 Langfuse server v4。Trace/Span/Generation/Event 翻译成 OTel span（Generation 带 `langfuse.observation.type=generation`，Event 为零时长 span），turn ID 派生为 OTel trace ID（UUID 直接映射，其他取 SHA-256 前 16 字节），属性映射见 `plugins/telemetry/langfuse_otel.go`。
+- `v4`（默认）：OpenTelemetry OTLP/HTTP 接口 `POST {baseUrl}/api/public/otel/v1/traces`（带 `x-langfuse-ingestion-version: 4` 头），适用于 Langfuse server v4。Trace/Span/Generation/Event 翻译成 OTel span（Generation 带 `langfuse.observation.type=generation`，Event 为零时长 span），turn ID 派生为 OTel trace ID（UUID 直接映射，其他取 SHA-256 前 16 字节），属性映射见 `plugins/telemetry/langfuse/langfuse_otel.go`。
 - `v3`：旧批处理接口 `POST {baseUrl}/api/public/ingestion`（henomis/langfuse-go SDK），适用于 Langfuse server v3 及更早。
 
 | AgentKit | Langfuse | 插入点 |

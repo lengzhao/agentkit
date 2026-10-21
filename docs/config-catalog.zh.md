@@ -1258,7 +1258,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 ## `telemetry/langfuse`
 
 - 返回类型：`telemetry.Exporter`
-- 源码：[`plugins/telemetry/langfuse.go`](../plugins/telemetry/langfuse.go)
+- 源码：[`plugins/telemetry/langfuse/langfuse.go`](../plugins/telemetry/langfuse/langfuse.go)
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|

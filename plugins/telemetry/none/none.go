@@ -1,4 +1,4 @@
-package telemetry
+package none
 
 import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"

@@ -14,7 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
-	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
+	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry/langfuse"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"

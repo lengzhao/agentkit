@@ -1,4 +1,4 @@
-package telemetry_test
+package langfuse_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
-	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
+	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry/langfuse"
 	rtfilesystem "github.com/lengzhao/agentkit/runtime/filesystem"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"

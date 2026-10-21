@@ -1,4 +1,4 @@
-package telemetry_test
+package langfuse_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	plugincredentials "github.com/lengzhao/agentkit/plugins/credentials"
-	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry"
+	plugintelemetry "github.com/lengzhao/agentkit/plugins/telemetry/langfuse"
 )
 
 type otlpRequest struct {
