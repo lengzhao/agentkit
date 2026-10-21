@@ -25,13 +25,13 @@ func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts
 	if len(parts) == 0 {
 		return fmt.Errorf("assistant message requires content")
 	}
-	route, err := ResolveRoute(ctx, opts.Route)
+	route, err := rctx.ResolveRoute(ctx, opts.Route)
 	if err != nil {
 		return err
 	}
 	modelMsg := agentkit.ModelMessage{Role: "assistant", Content: parts}
 	event := agentkit.OutboundEvent{
-		Route:      OutboundRoute(route.PlatformID, route.SessionID),
+		Route:      rctx.OutboundRoute(route.PlatformID, route.SessionID),
 		AgentID:    route.AgentID,
 		PlatformID: route.PlatformID,
 		UserID:     route.UserID,

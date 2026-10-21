@@ -2,7 +2,7 @@ package common
 
 import (
 	"github.com/lengzhao/agentkit/cap/delivery"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type (
@@ -10,7 +10,10 @@ type (
 	DeliveryRouteInput = delivery.RouteInput
 )
 
+// ResolveDeliveryRoute and NormalizeDeliverySessionID re-export the rctx
+// helpers so platforms do not import runtime/delivery (which registers the
+// delivery/assistant plugin).
 var (
-	ResolveDeliveryRoute       = rtdelivery.ResolveRoute
-	NormalizeDeliverySessionID = rtdelivery.NormalizeSessionID
+	ResolveDeliveryRoute       = rctx.ResolveRoute
+	NormalizeDeliverySessionID = rctx.NormalizeSessionID
 )

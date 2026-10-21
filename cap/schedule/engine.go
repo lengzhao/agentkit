@@ -10,7 +10,9 @@ type Cron interface {
 
 // Engine evaluates cron expressions and job fire times. The standard
 // implementation lives in runtime/schedule (schedule/engine kind) and is
-// injected via deps.
+// injected via deps. runtime/loop and runtime/runner only read the schedule
+// fire-metadata helpers in this package, so they do not import the engine
+// implementation.
 type Engine interface {
 	ParseCron(expr string) (Cron, error)
 	NextFire(job Job, after time.Time) (time.Time, bool)

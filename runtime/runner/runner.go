@@ -17,7 +17,6 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -81,6 +80,7 @@ type Root struct {
 //   - Platforms emit delivery SessionIDs; runner applies sessionScope and agent routing before dispatch.
 //   - Ordering within a session is preserved at any concurrency; only cross-session turns overlap.
 //   - A panicking or failing turn is reported on its session and never kills the process.
+//
 // SetDefaults implements pluginkit.Defaulter.
 func (c *Config) SetDefaults() {
 	if c.MaxConcurrentTurns == 0 {
@@ -375,7 +375,7 @@ func permissionCapability(platform agentkit.Platform, platformID string) permiss
 // ask_user.
 func inboundPermissionCapability(platform agentkit.Platform, event agentkit.MessageEvent) permission.Capability {
 	cap := permissionCapability(platform, event.PlatformID)
-	if rtschedule.IsFireTurn(event.Metadata) {
+	if capschedule.IsFireTurn(event.Metadata) {
 		cap.Interactive = false
 	}
 	return cap

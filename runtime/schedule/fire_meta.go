@@ -1,63 +1,15 @@
 package schedule
 
-import (
-	"strings"
+import capschedule "github.com/lengzhao/agentkit/cap/schedule"
 
-	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+// Deprecated: schedule fire-metadata helpers moved to cap/schedule so
+// runtime/loop and runtime/runner do not pull in the engine implementation.
+// This alias keeps the old import path working; new code should import
+// cap/schedule directly.
+var (
+	FireMeta               = capschedule.FireMeta
+	SessionModeFromMeta    = capschedule.SessionModeFromMeta
+	IsStatelessSessionMode = capschedule.IsStatelessSessionMode
+	IsFireTurn             = capschedule.IsFireTurn
+	IsFireStateless        = capschedule.IsFireStateless
 )
-
-// FireMeta returns schedule fire metadata when present on an inbound event.
-func FireMeta(metadata map[string]any) (map[string]any, bool) {
-	if len(metadata) == 0 {
-		return nil, false
-	}
-	raw, ok := metadata["schedule"].(map[string]any)
-	if !ok || len(raw) == 0 {
-		return nil, false
-	}
-	return raw, true
-}
-
-// SessionModeFromMeta reads sessionMode from schedule fire metadata.
-func SessionModeFromMeta(meta map[string]any) string {
-	if len(meta) == 0 {
-		return ""
-	}
-	mode, _ := meta["sessionMode"].(string)
-	return strings.ToLower(strings.TrimSpace(mode))
-}
-
-// IsStatelessSessionMode reports whether a schedule turn should avoid inheriting
-// the delivery conversation's active session history.
-func IsStatelessSessionMode(mode string) bool {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", capschedule.SessionModeStateless, capschedule.SessionModeFresh:
-		return true
-	default:
-		return false
-	}
-}
-
-// IsFireTurn reports whether metadata marks a schedule-fired inbound turn.
-func IsFireTurn(metadata map[string]any) bool {
-	meta, ok := FireMeta(metadata)
-	if !ok {
-		return false
-	}
-	fired, _ := meta["fired"].(bool)
-	return fired
-}
-
-// IsFireStateless reports whether a schedule-fired inbound event should run in a
-// fresh side session without parent history.
-func IsFireStateless(metadata map[string]any) bool {
-	meta, ok := FireMeta(metadata)
-	if !ok {
-		return false
-	}
-	fired, _ := meta["fired"].(bool)
-	if !fired {
-		return false
-	}
-	return IsStatelessSessionMode(SessionModeFromMeta(meta))
-}

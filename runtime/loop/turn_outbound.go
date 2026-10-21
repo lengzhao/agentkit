@@ -7,7 +7,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
-	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -60,7 +59,7 @@ func emitStepLimitNotice(ctx context.Context, emit agentkit.OutboundEmit, turnEn
 	if cap <= 0 {
 		cap = end.Steps
 	}
-	text := agent.StepLimitUserMessage(cap)
+	text := stepLimitUserMessage(cap)
 	msg := agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},

@@ -1368,11 +1368,24 @@ agentkit/
 ├── runtime/                # Runner、Loop、Platform、Agent 等核心实现
 │   ├── rctx/               # 运行时上下文协议：ctx 读写器、路由 codec、workspace 键名（仅依赖根包）
 │   ├── session/derive/     # 事件 → 模型消息投影（sanitize/hydrate/prune/spill）
-│   ├── session/sessstore/  # SessionStore 实现（JSONL/memory/static、sidecar、命令插件）
+│   ├── session/sessstore/  # JSONL/memory/static、sidecar、命令插件；session/sql 实现（不含驱动）
+│   │   ├── sqlite/         # session/sqlite，单独链入 modernc.org/sqlite
+│   │   └── postgres/       # session/postgres，单独链入 pgx
 │   ├── session/sessbind/   # agent/model 绑定与 active-session 解析（操作 SessionStore 接口）
 │   ├── session/sessevents/ # 会话事件追加与运行状态查询（Append*/RunState/恢复，纯函数）
-│   ├── session/sessindex/  # session/sqlite-index：会话 FTS 索引（SQLite）
+│   ├── session/sessindex/  # session/sqlite-index：会话 FTS 索引（仅 SQLite）
+│   │   └── sqlindex/       # session/sql-index：同库 FTS（pgx + SQLite）
 │   └── command/            # slash 命令注册表（收集/过滤/分发；命令由各插件自贡献）
+
+跨包纯函数边界（避免 import 链带入插件注册）：
+
+| 纯函数 | 位置 | 为什么不在实现包 |
+|---|---|---|
+| step-limit 错误判定与用户文案（`isStepLimitError` / `stepLimitUserMessage`） | 各自包内（`runtime/agent/maxsteps.go` + `runtime/loop/steplimit.go`） | 逻辑极简单（错误串匹配 + 固定文案），不抽共享包；loop 用 `err.Error() == string(StopStepLimit)` 判定，不再 import `runtime/agent`（及其 `llm/*`、`compaction/*`） |
+| schedule fire 元数据（`IsFireTurn` / `IsFireStateless`） | `cap/schedule` | loop/runner 只读元数据；放 cap 后不再 import `runtime/schedule`（`schedule/engine` 注册） |
+| delivery 路由（`ResolveRoute` / `NormalizeSessionID` / `OutboundRoute`） | `runtime/rctx` | 平台/工具解析路由；rctx 是所有 runtime 层的公共依赖且只依赖根包+cap 类型，放这里后 `runtime/platform/common` 不再 import `runtime/delivery`（`delivery/assistant` 注册）；`cap/delivery` 只保留 `Route`/`RouteInput`/`Sender`/`Assistant` 类型 |
+
+实现包（`runtime/schedule`、`runtime/delivery`）保留同名 deprecated wrapper，旧 import 路径继续可用。
 ├── cap/                    # 可替换能力接口与 DTO（workspace、compaction、telemetry…）
 ├── plugins/                # 工具、Hook、Policy、Prompt、learning 等插件
 │   ├── tool/fs/            # tool/fs-workspace、tool/fs-memory

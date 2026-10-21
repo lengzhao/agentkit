@@ -11,11 +11,10 @@ import (
 	"github.com/lengzhao/agentkit"
 	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit/cap/permission"
+	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	rtschedule "github.com/lengzhao/agentkit/runtime/schedule"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -297,7 +296,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	turnInput := input
 	turnInput.Emit = wrapTurnEndNotices(rttelemetry.WrapOutboundEmit(ctx, stampTurnID(input.Emit, turnID)))
 	runErr = ag.RunTurn(ctx, turnInput)
-	if agent.IsStepLimitError(runErr) {
+	if isStepLimitError(runErr) {
 		runErr = nil
 	}
 	return runErr
@@ -400,10 +399,10 @@ func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID a
 	}
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	if len(metadata) > 0 {
-		if rtschedule.IsFireTurn(metadata) {
+		if capschedule.IsFireTurn(metadata) {
 			ctx = context.WithValue(ctx, agentkit.KeyScheduleFireTurn, true)
 		}
-		if rtschedule.IsFireStateless(metadata) {
+		if capschedule.IsFireStateless(metadata) {
 			ctx = context.WithValue(ctx, agentkit.KeyScheduleStateless, true)
 		}
 	}

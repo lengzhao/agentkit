@@ -3,6 +3,8 @@ package agent
 import (
 	"errors"
 	"fmt"
+
+	"github.com/lengzhao/agentkit"
 )
 
 const defaultMaxSteps = 200
@@ -31,8 +33,11 @@ type stepLimitError struct {
 	cap int
 }
 
+// Error must stay equal to string(agentkit.StopStepLimit): runtime/loop
+// detects step-limit errors by comparing err.Error() with that value without
+// importing this package.
 func (e *stepLimitError) Error() string {
-	return "step-limit"
+	return string(agentkit.StopStepLimit)
 }
 
 func newStepLimitError(cap int) error {
