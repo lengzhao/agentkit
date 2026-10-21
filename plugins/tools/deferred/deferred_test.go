@@ -75,8 +75,34 @@ func TestVisibleReplacesDynamicWithBridges(t *testing.T) {
 	if !names["read"] || names["mcp__ping"] {
 		t.Fatalf("names = %v", names)
 	}
-	if !names[deferred.ToolSearch] || !names[deferred.ToolDescribe] || !names[deferred.ToolCall] {
+	if !names[deferred.ToolSearch] || !names[deferred.ToolList] || !names[deferred.ToolDescribe] || !names[deferred.ToolCall] {
 		t.Fatalf("missing bridge tools: %v", names)
+	}
+}
+
+func TestListDoesNotReveal(t *testing.T) {
+	t.Parallel()
+	outer, err := deferred.New(deferred.Config{DisclosureConfig: deferred.DisclosureConfig{Enabled: deferred.EnabledOn}}, runtimeDeps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := rctx.WithState(context.Background(), rctx.NewState())
+	payload, _ := json.Marshal(map[string]any{"offset": 0, "limit": 50})
+	result, err := outer.Execute(ctx, agentkit.ToolCall{ID: "1", Name: deferred.ToolList, Input: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Content, "mcp__ping") {
+		t.Fatalf("list should include deferrable name: %s", result.Content)
+	}
+	specs, err := outer.Visible(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range specs {
+		if s.Name == "mcp__ping" {
+			t.Fatalf("tool_list must not reveal tools")
+		}
 	}
 }
 

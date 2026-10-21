@@ -2,7 +2,7 @@
 
 本文覆盖三类动态/外部工具：**网络抓取与搜索**、**MCP 动态工具**、**OpenAPI 动态工具**。
 
-MCP / OpenAPI 工具过多时的**渐进式披露**（`tool_search` / `tool_describe` / `tool_call`）见 [deferred-tools.zh.md](deferred-tools.zh.md)：对外使用 `tools/deferred` 包装 `tools/runtime`，内层 catalog 仍用本文的 `dynamicTools` 挂载方式。
+MCP / OpenAPI 工具过多时的**渐进式披露**（`tool_search` / `tool_list` / `tool_describe` / `tool_call`）见 [deferred-tools.zh.md](deferred-tools.zh.md)：对外使用 `tools/deferred` 包装 `tools/runtime`，内层 catalog 仍用本文的 `dynamicTools` 挂载方式。
 
 ## `tools/runtime` 工具过滤
 

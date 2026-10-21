@@ -14,6 +14,7 @@ type catalogEntry struct {
 	Tokens      []string
 	SearchText  string
 	SourceLabel string
+	CJKBigrames map[string]int
 }
 
 func buildCatalog(specs []agentkit.ToolSpec) []catalogEntry {
@@ -26,6 +27,7 @@ func buildCatalog(specs []agentkit.ToolSpec) []catalogEntry {
 			Tokens:      tokenize(text),
 			SearchText:  text,
 			SourceLabel: label,
+			CJKBigrames: buildCJKBigrames(spec.Name, text),
 		})
 	}
 	return out

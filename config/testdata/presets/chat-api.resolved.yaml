@@ -763,6 +763,9 @@ tools.default:
     config:
         defaultTimeoutSeconds: 120
         enabled: auto
+        listDefaultLimit: 50
+        listMaxBytes: 8192
+        listMaxLimit: 200
         listing: auto
         listingMaxTokens: 4000
         maxSearchLimit: 25

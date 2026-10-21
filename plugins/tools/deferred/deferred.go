@@ -29,7 +29,7 @@ type staticToolNames interface {
 
 // New registers tools/deferred: same config/deps shape as tools/runtime; builds runtime internally.
 //
-// Set config.enabled true to replace dynamic tool schemas with tool_search / tool_describe / tool_call.
+// Set config.enabled true to replace dynamic tool schemas with tool_search / tool_list / tool_describe / tool_call.
 func New(cfg Config, deps Deps) (agentkit.ToolRuntime, error) {
 	cfg = cfg.Normalize()
 	inner, err := tools.NewRuntime(cfg.RuntimeConfig, deps)
@@ -179,6 +179,8 @@ func (d *Runtime) Execute(ctx context.Context, call agentkit.ToolCall) (agentkit
 	switch call.Name {
 	case ToolSearch:
 		return d.executeBridgeObserved(ctx, call, "tool.deferred.search", nil, d.executeSearch)
+	case ToolList:
+		return d.executeBridgeObserved(ctx, call, "tool.deferred.list", nil, d.executeList)
 	case ToolDescribe:
 		return d.executeBridgeObserved(ctx, call, "tool.deferred.describe", nil, d.executeDescribe)
 	case ToolCall:

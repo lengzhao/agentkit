@@ -7,7 +7,7 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-// searchCatalog ranks tools using token overlap, BM25, and raw substring signals combined.
+// searchCatalog ranks tools using token overlap, BM25, raw substring, and CJK 2-gram signals combined.
 func searchCatalog(catalog []catalogEntry, query string, limit int) []agentkit.ToolSpec {
 	if limit <= 0 {
 		limit = 5
@@ -20,6 +20,7 @@ func searchCatalog(catalog []catalogEntry, query string, limit int) []agentkit.T
 	bm25 := buildBM25Index(catalog)
 	bm25Scores := bm25.scoresForQuery(q)
 	qLower := strings.ToLower(q)
+	pureCJK := isPureCJKQuery(q)
 
 	type ranked struct {
 		spec  agentkit.ToolSpec
@@ -27,10 +28,16 @@ func searchCatalog(catalog []catalogEntry, query string, limit int) []agentkit.T
 	}
 	hits := make([]ranked, 0, len(catalog))
 	for i, entry := range catalog {
+		sub := scoreSubstring(qLower, entry)
+		if pureCJK {
+			sub = max(sub, scoreCJKSubstring(q, entry))
+		}
 		combined := combineSearchScores(
 			float64(scoreQuery(q, entry)),
 			bm25Scores[i],
-			scoreSubstring(qLower, entry),
+			sub,
+			scoreCJK2Gram(q, entry),
+			pureCJK,
 		)
 		if combined <= 0 {
 			continue
@@ -53,12 +60,18 @@ func searchCatalog(catalog []catalogEntry, query string, limit int) []agentkit.T
 	return out
 }
 
-func combineSearchScores(tokenScore float64, bm25Score float64, substringScore float64) float64 {
+func combineSearchScores(tokenScore, bm25Score, substringScore, cjk2Score float64, pureCJK bool) float64 {
 	// Union: any signal can surface a tool; ranking uses weighted sum of normalized legs.
-	if tokenScore <= 0 && bm25Score <= 0 && substringScore <= 0 {
+	if tokenScore <= 0 && bm25Score <= 0 && substringScore <= 0 && cjk2Score <= 0 {
 		return 0
 	}
-	return tokenScore*12 + bm25Score*8 + substringScore*15
+	subW := 15.0
+	cjk2W := 6.0
+	if pureCJK {
+		subW = 28.0
+		cjk2W = 14.0
+	}
+	return tokenScore*12 + bm25Score*8 + substringScore*subW + cjk2Score*cjk2W
 }
 
 // scoreSubstring catches queries that token/BM25 miss (punctuation, partial names, CJK adjacent ASCII).

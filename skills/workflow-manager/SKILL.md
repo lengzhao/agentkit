@@ -24,7 +24,7 @@ description: 编写、修改、试跑和排查 AgentKit 的 workflows/*.json 管
 4. 按下游 tool 的 schema 写 `args`：
    - 工具收 **path**：`{{ .workflow.runDir }}/文件`
    - 工具收 **object 或 array**（没有 path 字段）：整段 `readJSON`，或上一步已是 JSON 时 `{{ .steps.<id>.json }}`。从 [assets/object-args-workflow.json](assets/object-args-workflow.json) 复制。不要把 JSON 文本填进该字段。
-5. `tool` 填模型可见名（如 `prefix__operation`）。看不到 MCP/OpenAPI 工具时，让用户执行 `/mcp -u` 或 `/openapi -u`。
+5. `tool` 填模型可见名（如 `prefix__operation`）。看不到 MCP/OpenAPI 工具时，用 `tool_list` 分页浏览或 `tool_search` 检索；改配置后让用户执行 `/mcp -u` 或 `/openapi -u`。
 6. 试跑：调用 `workflow__<文件名>`，入参即 `inputs`。披露开启时先 `tool_search` 这个名字。列表让用户执行 `/workflow`。
 7. `description` 写给模型选路。`result` 只留短摘要，不放 step 全文。
 

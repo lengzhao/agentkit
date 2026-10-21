@@ -282,7 +282,7 @@ flowchart LR
 - 工具描述 = workflow 的 `description` + 文件绝对路径（模型编辑该文件的定位依据；新建 workflow 的目录约定由 workflow-manager skill 提供）+ `Default timeout: <n>s`（默认外层墙钟，模型据此决定是否传 `timeoutSeconds`）
 - `args` 在引擎侧仍按 `inputs` schema 二次校验（防御），非法即返回校验错误文本（模型可修正重试），不进入管线
 - 目录按调用重读（`tools/runtime` 每轮刷新 dynamic provider）：编辑 workflow 文件**即改即生效**，无需 reload 命令
-- 挂 `tools/deferred`（base 默认）时，workflow 工具与 MCP/OpenAPI 一样走渐进披露三桥，目录 token 不随 workflow 数量膨胀
+- 挂 `tools/deferred`（base 默认）时，workflow 工具与 MCP/OpenAPI 一样走渐进披露四桥（`tool_search` / `tool_list` / `tool_describe` / `tool_call`），目录 token 不随 workflow 数量膨胀
 
 `config.base.yaml` 已默认装配下列实例并挂进 `tools.default` 的 `deps.dynamicTools`（与 `mcp.default` / `openapi.default` 同槽位），**零配置即可用**；定制时覆盖同 id 实例（整颗替换）：
 

@@ -1687,7 +1687,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `RuntimeConfig` | `tools.RuntimeConfig` | — |  |
-| `DisclosureConfig` | `deferred.DisclosureConfig` | `{auto 5 4000 5 25 auto 5 on [] []}` |  |
+| `DisclosureConfig` | `deferred.DisclosureConfig` | `{auto 5 4000 5 25 50 200 8192 auto 5 on [] []}` |  |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|

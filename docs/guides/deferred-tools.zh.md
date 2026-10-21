@@ -2,7 +2,7 @@
 
 当 MCP / OpenAPI 等动态工具数量很大时，每轮把全部 JSON Schema 塞进 LLM 会占用大量上下文，且多数工具与当前任务无关。本文定义 **包装型 `ToolRuntime`**：`tools/deferred` 包在 `tools/runtime` 之外，对模型做渐进披露（progressive disclosure），对执行仍走内层完整的 policy / hooks / 审批链路。
 
-参考实现思路：[Hermes Tool Search](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/tool-search.md)（`tool_search` / `tool_describe` / `tool_call` 三桥 + listing）。
+参考实现思路：[Hermes Tool Search](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/tool-search.md)（`tool_search` / `tool_list` / `tool_describe` / `tool_call` 四桥 + listing）。
 
 相关文档：[tools.zh.md](tools.zh.md)、[go-agent-harness-architecture.zh.md](../go-agent-harness-architecture.zh.md)、[subagent.zh.md](subagent.zh.md)、[plugin-state.zh.md](plugin-state.zh.md)（reveal 状态已迁移到统一 turn State）。
 
@@ -11,7 +11,7 @@
 ### 目标
 
 - **常驻工具**（`deps.tools` / `deps.toolPacks`）每轮完整暴露给模型。
-- **动态工具**（`deps.dynamicTools`：MCP、OpenAPI 等）在开启披露时，模型侧主要看到三座「桥」工具，按需搜索 schema、再调用。
+- **动态工具**（`deps.dynamicTools`：MCP、OpenAPI 等）在开启披露时，模型侧主要看到四座「桥」工具：分页列举、关键词检索、加载 schema、再调用。
 - 桥上的 `tool_call` 解开为真实工具名后，由 **内层 `tools/runtime`** 执行（policy、approval、hooks、timeout 与今天一致）。
 - 子 Agent、worker、主 Agent 可通过 **不同 tools 实例** 选择是否启用披露（例如子 agent 无 MCP 则继续裸 `tools/runtime`）。
 
@@ -117,7 +117,7 @@ sequenceDiagram
   D->>R: Visible(ctx)
   R-->>D: specs[] 全量（含 MCP schema）
   D->>D: Classify + Assemble(config)
-  Note over D: eager 保留<br/>deferrable 替换为三桥 + listing
+  Note over D: eager 保留<br/>deferrable 替换为四桥 + listing
   D-->>Loop: 精简 specs[]
 ```
 
@@ -128,7 +128,7 @@ sequenceDiagram
 3. **揭示（reveal）**：本 turn 中已被 `tool_search` 命中或 `tool_describe` 加载的 deferrable 工具，提升为 eager，完整 schema 直接进入列表，模型后续 step 可**直接调用**（无需再走 `tool_call` 桥）。揭示集合存于 **turn 级 ctx 状态袋**（`rctx.State`，见 [plugin-state.zh.md](plugin-state.zh.md)），turn 结束即失效，下一轮 agent 重新 search 自愈；上限 24 个/turn，超出后最早揭示的工具回落为仅桥可达；runner 未注入状态袋时降级为不揭示。注意：**是否出桥的激活判定基于揭示前的 deferrable 体量**，reveal 只影响组装，不会翻转披露状态（否则 auto 模式下揭示后剩余体量跌破阈值会导致全量 schema 突变注入）。
 4. **组装**：
    - 无剩余 deferrable，或 `enabled: false` → 原样返回。
-   - 有剩余 deferrable 且 `enabled: true` → 返回 `eager specs（含已揭示）+ bridge specs`（三桥）；其余 deferrable 的完整 schema **不**进入列表。
+   - 有剩余 deferrable 且 `enabled: true` → 返回 `eager specs（含已揭示）+ bridge specs`（四桥）；其余 deferrable 的完整 schema **不**进入列表。
 5. 若内层配置了 `allowTools` / `denyTools`，过滤在 **inner.Visible** 已生效；外层组装基于过滤后的列表。
 
 **Listing（披露层级）**：与 Hermes 类似，将 deferrable 工具的「名称 + 短描述」嵌入 `tool_search` 的 description（受 `listingMaxTokens` 与 `thresholdPct` 约束）。超预算时降级为仅名称、再降级为按来源（MCP server / OpenAPI api）一行摘要，避免模型误以为能力不存在。
@@ -142,7 +142,7 @@ sequenceDiagram
   participant R as tools/runtime inner
 
   Loop->>D: Execute(call)
-  alt call 为 tool_search / tool_describe
+  alt call 为 tool_search / tool_list / tool_describe
     D->>R: Visible(ctx) 作 catalog
     D->>D: Search / Describe(catalog)
     D-->>Loop: JSON 文本结果
@@ -164,7 +164,7 @@ sequenceDiagram
 - **批量路径（`PreflightTool` / `RunToolBody`）**：披露激活时桥工具在 **preflight 阶段完整执行**（`runBody=false`），不再转给内层——内层 catalog 无桥名，会误判 `tool not found`。eager 工具与被揭示后由模型直接调用的 deferrable 工具照常委托内层 preflight（policy / approval / hooks 链不变）。
 - **unwrap 在外层、委托在内层**：`tool_call` 不得在内层注册为 stub 后绕过 policy。
 - `tool_search` / `tool_describe` 为只读目录操作，不经过 MCP 网络；catalog 来自当前 `inner.Visible`（与 Hermes `skip_tool_search_assembly` 等价）。
-- **揭示写入**：`tool_search` 的命中名与 `tool_describe` 的成功加载名都会写入本 session 的揭示集合（见 §4.1），下一步 `Visible` 起模型可直接调用。
+- **揭示写入**：`tool_search` 的命中名与 `tool_describe` 的成功加载名都会写入本 session 的揭示集合（见 §4.1），下一步 `Visible` 起模型可直接调用。`tool_list` **不**揭示（仅短描述分页浏览）。
 - Telemetry：unwrap 后由 inner 记录 **真实工具名** 的 `tool.<name>` span（与 Hermes activity 一致）；桥工具自身记录 `tool.deferred.search` / `tool.deferred.describe` / `tool.deferred.call` span（`tool_call` 附带 `deferred_target` 属性）。
 - **诊断**：`tool_describe` 若加载到「描述很长但 `inputSchema` 无 `properties`」的工具，会 `slog.Warn`（`tools/deferred: tool_describe loaded hollow input schema`），附带 `tool`、`description_len`、`input_schema_bytes`，便于区分 AgentHub catalog 空 schema 与模型未填参。
 
@@ -173,6 +173,7 @@ sequenceDiagram
 | 模型工具名 | 作用 |
 |------------|------|
 | `tool_search` | 多 query 并行检索 deferrable catalog；返回按 query 分组的命中名 + 共享 `tools` 摘要 map；**top-N 命中内联完整 schema**（见 `searchInlineSchemaMax`），命中即揭示，模型可直接按名调用 |
+| `tool_list` | 按名称稳定排序分页列举 deferrable 工具（`offset` / `limit` / 可选 `source` 前缀过滤）；仅短描述，**不揭示**、不内联完整 schema；续页用返回的 `next_offset` |
 | `tool_describe` | 批量加载完整 `parameters` JSON Schema；仅用于 search 结果未内联 schema 的命中 |
 | `tool_call` | `calls: [{name, arguments}, …]`；本地工具单次一条；批量规则首版与 Hermes 对齐（仅同类可批，混合拒绝）；`callBridge: off` 时不下发该桥 |
 
@@ -200,8 +201,8 @@ sequenceDiagram
 **激活条件**：
 
 - `enabled: off`（或 `false`）→ 始终透传，与 `tools/runtime` 一致。
-- `enabled: on`（或 `true`）→ 存在 deferrable 即注入三桥。
-- `enabled: auto`（默认）→ 仅当 deferrable 工具 schema 估算 token ≥ `thresholdPct` × 上下文窗口（未传入窗口时按 200K 估算）才注入三桥；少量 MCP 时保持全量可见。
+- `enabled: on`（或 `true`）→ 存在 deferrable 即注入四桥。
+- `enabled: auto`（默认）→ 仅当 deferrable 工具 schema 估算 token ≥ `thresholdPct` × 上下文窗口（未传入窗口时按 200K 估算）才注入四桥；少量 MCP 时保持全量可见。
 
 `eagerTools` 列出的工具名**永不 defer**（可含动态 MCP 名），优先于 `deferTools`。
 
@@ -217,6 +218,9 @@ sequenceDiagram
 | `listing` | string | `auto` | `auto` / `on` / `off`：是否嵌入 catalog 清单到 `tool_search` description |
 | `searchDefaultLimit` | int | `5` | 单次 query 默认命中数 |
 | `maxSearchLimit` | int | `25` | query 的 `limit` 硬顶 |
+| `listDefaultLimit` | int | `50` | `tool_list` 默认每页条数 |
+| `listMaxLimit` | int | `200` | `tool_list` 的 `limit` 硬顶（≤500） |
+| `listMaxBytes` | int | `8192` | 单页 JSON 字节预算（超出则少返条目并 `truncated: true`） |
 | `searchInlineSchemaMax` | int | `5` | `tool_search` 结果内联完整 schema 的 top-N 命中数（另受约 8KB 字节预算约束）；`0`=默认，负数=关闭内联 |
 | `callBridge` | `on` \| `off` | `on` | `off` 时不下发 `tool_call` 桥（揭示后按名直接调用）；误调返回禁用提示 |
 | `eagerTools` | []string | 空 | 永不 defer 的工具名（静态 + 动态均可）；优先于 `deferTools` |
@@ -232,7 +236,7 @@ sequenceDiagram
 
 约定：
 
-- 主 Agent 注入 `tools.default`（deferred）→ 子 Agent 过滤的是 **组装后的可见名**（含三桥，不含数百 MCP 名）。
+- 主 Agent 注入 `tools.default`（deferred）→ 子 Agent 过滤的是 **组装后的可见名**（含四桥，不含数百 MCP 名）。
 - `tool_call` unwrap 后 `inner.Execute` 仍执行 catalog 中的真实工具；若子 Agent 的 `tools:` 白名单不含该真实名，应在 **filter Execute** 层拒绝（今日 subagent 按 allowlist 拒绝）。因此子 Agent 定义里若要用 MCP，须在 `tools:` 中列出具体 MCP 名，或主 Agent 不给子 Agent 挂带 MCP 的 catalog——与现网行为一致，需在 subagent 文档补一句。
 
 推荐包装顺序：
@@ -251,7 +255,7 @@ Skill 目录在 prompt 中；`skill` 工具保持 eager。与工具桥互补，�
 
 ### 7.4 Policy
 
-Policy 仅评估 **unwrap 后的** `call.Name`。`tool_search` / `tool_describe` 默认 allow；若需限制可后续加专用 policy kind。
+Policy 仅评估 **unwrap 后的** `call.Name`。`tool_search` / `tool_list` / `tool_describe` 默认 allow；若需限制可后续加专用 policy kind。
 
 ## 8. 代码布局
 
@@ -259,10 +263,10 @@ Policy 仅评估 **unwrap 后的** `call.Name`。`tool_search` / `tool_describe`
 plugins/tools/deferred/
   register.go         # pluginkit.Register("tools/deferred", New)
   deferred.go         # ToolRuntime 包装：Visible / Execute
-  handlers.go         # tool_search / tool_describe / tool_call
+  handlers.go         # tool_search / tool_list / tool_describe / tool_call
   config.go           # 配置解析与默认值
   classify.go         # eager vs deferrable
-  assemble.go         # 三桥 schema + listing
+  assemble.go         # 四桥 schema + listing
   catalog.go          # 检索索引与 listing 文本
   bridge.go           # JSON 参数解析
   reveal.go           # 揭示集合读写（基于 rctx.State turn 袋）
@@ -282,7 +286,7 @@ runtime/tools/
 
 | 阶段 | 行为 |
 |------|------|
-| **已实现** | `tool_search` 组合三路信号并加权排序：**token 重叠**、**BM25**（轻量英文 stem）、**名称/全文子串**；任一路命中即可入榜，避免单一路径漏召回 |
+| **已实现** | `tool_search` 组合多路信号并加权排序：**token 重叠**、**BM25**（轻量英文 stem）、**名称/全文子串**；**纯中文 query**（仅 Han + 标点/数字）时提高子串权重，并叠加 **CJK 2-gram**（从工具名与 SearchText 抽连续汉字 bigram 做重叠计分）；任一路命中即可入榜 |
 | **P3** | 按 MCP server / OpenAPI api 分组 listing 与 `available_sources` 提示 |
 
 ## 10. 实施计划

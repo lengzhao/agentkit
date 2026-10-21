@@ -30,6 +30,9 @@ type DisclosureConfig struct {
 	ListingMaxTokens   int            `json:"listingMaxTokens"`
 	SearchDefaultLimit int            `json:"searchDefaultLimit"`
 	MaxSearchLimit     int            `json:"maxSearchLimit"`
+	ListDefaultLimit   int            `json:"listDefaultLimit"`
+	ListMaxLimit       int            `json:"listMaxLimit"`
+	ListMaxBytes       int            `json:"listMaxBytes"`
 	Listing            string         `json:"listing"` // auto | on | off
 	// SearchInlineSchemaMax inlines full input schemas for the top-N search hits
 	// in the tool_search result, so the model can invoke immediately without
@@ -74,6 +77,15 @@ func (c *DisclosureConfig) SetDefaults() {
 	if c.MaxSearchLimit == 0 {
 		c.MaxSearchLimit = 25
 	}
+	if c.ListDefaultLimit == 0 {
+		c.ListDefaultLimit = 50
+	}
+	if c.ListMaxLimit == 0 {
+		c.ListMaxLimit = 200
+	}
+	if c.ListMaxBytes == 0 {
+		c.ListMaxBytes = defaultListMaxBytes
+	}
 	if c.SearchInlineSchemaMax == 0 {
 		c.SearchInlineSchemaMax = defaultSearchInlineSchemaMax
 	}
@@ -101,6 +113,18 @@ func (c *DisclosureConfig) Validate() error {
 	}
 	if c.SearchDefaultLimit > c.MaxSearchLimit {
 		return fmt.Errorf("tools/deferred searchDefaultLimit (%d) exceeds maxSearchLimit (%d)", c.SearchDefaultLimit, c.MaxSearchLimit)
+	}
+	if c.ListDefaultLimit <= 0 || c.ListMaxLimit <= 0 {
+		return fmt.Errorf("tools/deferred listDefaultLimit and listMaxLimit must be positive")
+	}
+	if c.ListMaxLimit > 500 {
+		return fmt.Errorf("tools/deferred listMaxLimit must be <= 500, got %d", c.ListMaxLimit)
+	}
+	if c.ListDefaultLimit > c.ListMaxLimit {
+		return fmt.Errorf("tools/deferred listDefaultLimit (%d) exceeds listMaxLimit (%d)", c.ListDefaultLimit, c.ListMaxLimit)
+	}
+	if c.ListMaxBytes < 512 {
+		return fmt.Errorf("tools/deferred listMaxBytes must be >= 512, got %d", c.ListMaxBytes)
 	}
 	switch c.Listing {
 	case "on", "off", "auto":
@@ -140,6 +164,21 @@ func (c DisclosureConfig) Normalize() DisclosureConfig {
 	}
 	if out.MaxSearchLimit > 50 {
 		out.MaxSearchLimit = 50
+	}
+	if out.ListDefaultLimit <= 0 {
+		out.ListDefaultLimit = 50
+	}
+	if out.ListMaxLimit <= 0 {
+		out.ListMaxLimit = 200
+	}
+	if out.ListMaxLimit > 500 {
+		out.ListMaxLimit = 500
+	}
+	if out.ListMaxBytes <= 0 {
+		out.ListMaxBytes = defaultListMaxBytes
+	}
+	if out.ListDefaultLimit > out.ListMaxLimit {
+		out.ListDefaultLimit = out.ListMaxLimit
 	}
 	if out.SearchInlineSchemaMax == 0 {
 		out.SearchInlineSchemaMax = defaultSearchInlineSchemaMax

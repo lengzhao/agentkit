@@ -906,7 +906,7 @@ tools.default:
     toolTimeouts:
       delegate: 900
       ask_user: 900
-    # 渐进披露：enabled 为 auto | on | off（兼容布尔 false/true）。auto=defer 体量超 thresholdPct 上下文才出三桥；on=有 deferrable 即出桥。
+    # 渐进披露：enabled 为 auto | on | off（兼容布尔 false/true）。auto=defer 体量超 thresholdPct 上下文才出四桥；on=有 deferrable 即出桥。
     enabled: auto
     # eagerTools:  # 永不 defer 的工具名（含 MCP 动态名），优先于 deferTools
     #   - some_mcp__tool
@@ -914,6 +914,9 @@ tools.default:
     listingMaxTokens: 4000
     searchDefaultLimit: 5
     maxSearchLimit: 25
+    listDefaultLimit: 50
+    listMaxLimit: 200
+    listMaxBytes: 8192
     listing: auto
   deps:
     hooks: hooks.default

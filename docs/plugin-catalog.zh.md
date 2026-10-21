@@ -299,7 +299,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 
 | Kind | 依赖 | 职责 |
 |---|---|---|
-| `tools/deferred` | 与 `tools/runtime` 相同（`hooks`、`tools`、`toolPacks`、`dynamicTools`、`policies`、`approval`） | 内部构造 runtime；`enabled: true` 时将动态工具换为 `tool_search` / `tool_describe` / `tool_call`，unwrap 后走同一执行平面 |
+| `tools/deferred` | 与 `tools/runtime` 相同（`hooks`、`tools`、`toolPacks`、`dynamicTools`、`policies`、`approval`） | 内部构造 runtime；`enabled: true` 时将动态工具换为 `tool_search` / `tool_list` / `tool_describe` / `tool_call`，unwrap 后走同一执行平面 |
 
 | Kind | 依赖 | 模型工具名 | 职责 |
 |---|---|---|---|

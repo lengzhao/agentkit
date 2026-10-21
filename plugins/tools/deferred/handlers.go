@@ -10,6 +10,23 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+func (d *Runtime) executeList(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	offset, limit, source, err := parseListInput(call.Input, d.cfg.ListDefaultLimit, d.cfg.ListMaxLimit)
+	if err != nil {
+		return bridgeError(call, err.Error()), nil
+	}
+	catalog, err := d.deferrableCatalog(ctx)
+	if err != nil {
+		return bridgeError(call, err.Error()), nil
+	}
+	page := listCatalogPage(catalog, offset, limit, d.cfg.ListMaxBytes, source)
+	body, err := json.Marshal(page)
+	if err != nil {
+		return bridgeError(call, err.Error()), nil
+	}
+	return agentkit.ResultFromCall(call, string(body)), nil
+}
+
 func (d *Runtime) executeSearch(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
 	queries, limit, err := parseSearchInput(call.Input, d.cfg.SearchDefaultLimit, d.cfg.MaxSearchLimit)
 	if err != nil {

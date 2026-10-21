@@ -56,6 +56,10 @@ func bridgeSpecs(deferredCount int, listing string, inlineSchemas bool, callBrid
 	if listing != "" {
 		searchDesc += "\n\nDeferred capabilities (load with " + ToolDescribe + "):\n" + listing
 	}
+	listDesc := fmt.Sprintf(
+		"Browse %d deferred tools in stable name order (paginated). Returns short descriptions only — does not reveal tools or load full schemas. Use offset/limit to page; optional source filters by API/MCP prefix (segment before __). Follow with %s for parameters or %s for keyword search.",
+		deferredCount, ToolDescribe, ToolSearch,
+	)
 	describeDesc := fmt.Sprintf(
 		"Load full JSON schemas for %s matches that came back without an inlined schema. Skip when the search result already includes the schema. Required before %s when parameters are unknown.",
 		ToolSearch, ToolCall,
@@ -84,6 +88,27 @@ func bridgeSpecs(deferredCount int, listing string, inlineSchemas bool, callBrid
 					},
 				},
 				Required: []string{"queries"},
+			},
+		},
+		{
+			Name:        ToolList,
+			Description: listDesc,
+			InputSchema: agentkit.JSONSchema{
+				Type: "object",
+				Properties: map[string]agentkit.JSONSchema{
+					"offset": {
+						Type:        "integer",
+						Description: "Start index in the sorted deferrable catalog (default 0).",
+					},
+					"limit": {
+						Type:        "integer",
+						Description: "Max tools per page (default from config).",
+					},
+					"source": {
+						Type:        "string",
+						Description: "Optional filter: MCP/OpenAPI prefix (e.g. petstore, github).",
+					},
+				},
 			},
 		},
 		{
