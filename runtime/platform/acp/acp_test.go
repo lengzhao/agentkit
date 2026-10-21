@@ -45,8 +45,12 @@ func TestPermissionToACPAllowDeny(t *testing.T) {
 	if string(req.ToolCall.ToolCallId) != "call_1" {
 		t.Fatalf("tool id = %q", req.ToolCall.ToolCallId)
 	}
-	if len(req.Options) != 2 {
+	if len(req.Options) != 3 {
 		t.Fatalf("options = %d", len(req.Options))
+	}
+	if string(req.Options[1].OptionId) != permission.DecisionAllowAll ||
+		req.Options[1].Kind != acp.PermissionOptionKindAllowAlways {
+		t.Fatalf("allow_all option = %+v", req.Options[1])
 	}
 }
 

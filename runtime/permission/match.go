@@ -22,6 +22,12 @@ func MatchAllowDeny(reply capspermission.Reply) capspermission.AllowDenyMatch {
 			out.UpdatedInput = reply.UpdatedInput
 		}
 		return out
+	case capspermission.DecisionAllowAll, "all", "a":
+		out := capspermission.AllowDenyMatch{Allow: true, Recognized: true, AllowAll: true}
+		if len(reply.UpdatedInput) > 0 {
+			out.UpdatedInput = reply.UpdatedInput
+		}
+		return out
 	case "deny", "n", "no":
 		return capspermission.AllowDenyMatch{Allow: false, Recognized: true}
 	default:

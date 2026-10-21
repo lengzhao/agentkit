@@ -291,6 +291,123 @@ func TestTryDeliverPermissionConsumesReply(t *testing.T) {
 	}
 }
 
+func TestAllowAllAutoApprovesSession(t *testing.T) {
+	t.Parallel()
+
+	ctrl := NewControl()
+	var requests atomic.Int32
+	emit := func(_ context.Context, out agentkit.OutboundEvent) error {
+		if out.Type == agentkit.EventPermissionRequest {
+			requests.Add(1)
+		}
+		return nil
+	}
+	ctx := turnContext(context.Background(), "feishu:oc_test", "feishu:oc_test", "coder", "feishu", "U1", ctrl, emit, interactiveCapability())
+
+	allowDenyReq := func() permission.Request {
+		return permission.Request{
+			Kind:     permission.KindAllowDeny,
+			ToolCall: &agentkit.ToolCall{ID: "call_1", Name: "bash"},
+		}
+	}
+
+	done := make(chan permission.Result, 1)
+	go func() {
+		result, err := ctrl.Await(ctx, allowDenyReq())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		done <- result
+	}()
+
+	waitForPending(t, ctrl)
+	if !ctrl.DeliverPermissionReply("feishu:oc_test", permission.Reply{
+		RequestID: ctrl.permissionPendingRequestID(),
+		Decision:  permission.DecisionAllowAll,
+	}) {
+		t.Fatal("expected deliver to succeed")
+	}
+
+	select {
+	case result := <-done:
+		if !result.Resolved() || !result.Allow {
+			t.Fatalf("result = %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("await did not finish")
+	}
+	if !ctrl.PermissionAllowAll() {
+		t.Fatal("expected session allow_all flag to be set")
+	}
+
+	// Subsequent allow_deny requests auto-resolve without emitting permission/request.
+	result, err := ctrl.Await(ctx, allowDenyReq())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Resolved() || !result.Allow {
+		t.Fatalf("auto-allowed result = %+v", result)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("permission/request emitted %d times, want 1", requests.Load())
+	}
+
+	// Question requests still require a human.
+	if result, err := ctrl.Await(turnContext(context.Background(), "feishu:oc_test", "feishu:oc_test", "coder", "worker", "", ctrl, emit, permission.Capability{}), permission.Request{
+		Kind:     permission.KindQuestion,
+		Question: &permission.Question{Prompt: "anyone there?"},
+	}); err != nil || result.Outcome != permission.OutcomeNoHuman {
+		t.Fatalf("question result = %+v, err = %v", result, err)
+	}
+}
+
+func TestDenyReplyCarriesHumanReadableReason(t *testing.T) {
+	t.Parallel()
+
+	ctrl := NewControl()
+	emit := func(context.Context, agentkit.OutboundEvent) error { return nil }
+	ctx := turnContext(context.Background(), "feishu:oc_test", "feishu:oc_test", "coder", "feishu", "U1", ctrl, emit, interactiveCapability())
+
+	done := make(chan permission.Result, 1)
+	go func() {
+		result, err := ctrl.Await(ctx, permission.Request{
+			Kind:     permission.KindAllowDeny,
+			ToolCall: &agentkit.ToolCall{ID: "call_1", Name: "bash"},
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		done <- result
+	}()
+
+	waitForPending(t, ctrl)
+	if !ctrl.DeliverPermissionReply("feishu:oc_test", permission.Reply{
+		RequestID: ctrl.permissionPendingRequestID(),
+		Decision:  "deny",
+	}) {
+		t.Fatal("expected deliver to succeed")
+	}
+
+	select {
+	case result := <-done:
+		if !result.Resolved() || result.Allow {
+			t.Fatalf("result = %+v", result)
+		}
+		// Reason becomes the tool result content the model sees; an empty or
+		// outcome-like reason ("resolved") makes the model think the call ran.
+		if result.Reason != "denied by user" {
+			t.Fatalf("reason = %q", result.Reason)
+		}
+		if result.Guidance == "" {
+			t.Fatal("expected guidance for denied allow_deny")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("await did not finish")
+	}
+}
+
 func waitForPending(t *testing.T, ctrl *Control) {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

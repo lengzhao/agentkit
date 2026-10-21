@@ -3,14 +3,14 @@ package permission
 // Reply is the inbound answer to a permission/request.
 //
 // Field usage by request Kind:
-//   - KindAllowDeny: Decision ("allow"/"deny", or y/n/yes/no); Text is a CLI fallback
-//     when Decision is empty. UpdatedInput carries human-edited tool arguments.
+//   - KindAllowDeny: Decision ("allow"/"deny"/"allow_all", or y/n/yes/no/all); Text is a CLI
+//     fallback when Decision is empty. UpdatedInput carries human-edited tool arguments.
 //     Cancelled means the user explicitly declined.
 //   - KindQuestion: Text and/or Selected only; do not set Decision.
 type Reply struct {
 	RequestID string `json:"requestId"`
 	UserID    string `json:"userId,omitempty"`
-	// Decision is for KindAllowDeny only ("allow"/"deny", or y/n/yes/no).
+	// Decision is for KindAllowDeny only ("allow"/"deny"/"allow_all", or y/n/yes/no/all).
 	Decision     string         `json:"decision,omitempty"`
 	Selected     []int          `json:"selected,omitempty"`
 	Text         string         `json:"text,omitempty"`

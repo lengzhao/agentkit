@@ -35,7 +35,7 @@ func (p *Platform) renderPermissionRequest(payload permission.RequestPayload) {
 		if reason == "" {
 			reason = "approval required"
 		}
-		fmt.Fprintf(os.Stderr, "\n[approval needed] tool %q: %s [y/N] ", tool, reason)
+		fmt.Fprintf(os.Stderr, "\n[approval needed] tool %q: %s [y/N/all] ", tool, reason)
 	case permission.KindQuestion:
 		if payload.Question == nil {
 			return

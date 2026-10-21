@@ -75,6 +75,7 @@ func allowDenyCard(payload permission.RequestPayload) *Card {
 		}
 	}
 	b.ListItemBtnExtra("允许", "允许", "primary", PermissionDecisionValue("allow"), permExtra("✅ 允许", "green", "allow"))
+	b.ListItemBtnExtra("全部允许", "全部允许", "primary", PermissionDecisionValue(permission.DecisionAllowAll), permExtra("✅ 全部允许", "green", permission.DecisionAllowAll))
 	b.ListItemBtnExtra("拒绝", "拒绝", "danger", PermissionDecisionValue("deny"), permExtra("❌ 拒绝", "red", "deny"))
 	return b.Build()
 }

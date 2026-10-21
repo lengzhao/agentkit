@@ -22,6 +22,16 @@ func TestMatchAllowDeny(t *testing.T) {
 		t.Fatalf("text fallback = %+v", got)
 	}
 
+	got = rtpermission.MatchAllowDeny(capspermission.Reply{Decision: "allow_all"})
+	if !got.Recognized || !got.Allow || !got.AllowAll {
+		t.Fatalf("allow_all = %+v", got)
+	}
+
+	got = rtpermission.MatchAllowDeny(capspermission.Reply{Text: "all"})
+	if !got.Recognized || !got.Allow || !got.AllowAll {
+		t.Fatalf("text allow_all fallback = %+v", got)
+	}
+
 	got = rtpermission.MatchAllowDeny(capspermission.Reply{Decision: "deny"})
 	if !got.Recognized || got.Allow {
 		t.Fatalf("deny = %+v", got)

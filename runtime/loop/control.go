@@ -23,6 +23,9 @@ type controlState struct {
 	cancelReason      string
 	capability        permission.Capability
 	permissionPending *pendingPermission
+	// permissionAllowAll is set when the user replies "allow_all" (全部允许):
+	// subsequent KindAllowDeny requests in this session auto-resolve to allow.
+	permissionAllowAll bool
 }
 
 func NewControl() *Control {

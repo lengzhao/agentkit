@@ -82,9 +82,14 @@ type RequestPayload struct {
 	Conversation string `json:"conversation,omitempty"`
 }
 
+// DecisionAllowAll is the allow/deny decision meaning "allow this and every
+// subsequent allow_deny request in the same session" (全部允许).
+const DecisionAllowAll = "allow_all"
+
 // AllowDenyMatch is the parsed allow/deny reply.
 type AllowDenyMatch struct {
 	Allow        bool
 	Recognized   bool
+	AllowAll     bool
 	UpdatedInput map[string]any
 }

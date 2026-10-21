@@ -53,8 +53,9 @@ func permissionToACP(sessionID acp.SessionId, payload permission.RequestPayload)
 			}
 		}
 		req.Options = []acp.PermissionOption{
-			{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: acp.PermissionOptionId("allow")},
-			{Kind: acp.PermissionOptionKindRejectOnce, Name: "Deny", OptionId: acp.PermissionOptionId("deny")},
+		{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: acp.PermissionOptionId("allow")},
+		{Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow All", OptionId: acp.PermissionOptionId(permission.DecisionAllowAll)},
+		{Kind: acp.PermissionOptionKindRejectOnce, Name: "Deny", OptionId: acp.PermissionOptionId("deny")},
 		}
 	case permission.KindQuestion:
 		if payload.Question != nil {
@@ -93,6 +94,8 @@ func acpPermissionToReply(requestID string, resp acp.RequestPermissionResponse) 
 	switch optionID {
 	case "allow":
 		reply.Decision = "allow"
+	case permission.DecisionAllowAll:
+		reply.Decision = permission.DecisionAllowAll
 	case "deny":
 		reply.Decision = "deny"
 		reply.Cancelled = true

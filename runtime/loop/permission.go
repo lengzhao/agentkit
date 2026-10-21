@@ -44,12 +44,28 @@ func (p *pendingPermission) signalSuperseded() {
 }
 
 func (c *Control) Await(ctx context.Context, req permission.Request) (permission.Result, error) {
+	if err := validateRequest(req); err != nil {
+		return permission.Result{}, err
+	}
+	if req.Kind == permission.KindAllowDeny && c.PermissionAllowAll() {
+		toolName := ""
+		if req.ToolCall != nil {
+			toolName = req.ToolCall.Name
+		}
+		slog.Info("permission auto-allowed (allow_all for session)",
+			"session_id", rctx.SessionIDFromContext(ctx),
+			"tool", toolName,
+			"policy_reason", req.Reason,
+		)
+		return permission.Result{
+			Outcome: permission.OutcomeResolved,
+			Allow:   true,
+			Reason:  "auto-allowed: allow_all for session",
+		}, nil
+	}
 	capab := rtpermission.CapabilityFrom(ctx)
 	if !capab.Interactive {
 		return rtpermission.NoHuman(req, "platform has no interactive user"), nil
-	}
-	if err := validateRequest(req); err != nil {
-		return permission.Result{}, err
 	}
 	if req.ID == "" {
 		req.ID = newPermissionRequestID()
@@ -150,6 +166,17 @@ func (c *Control) resolvePermissionReply(req permission.Request, reply permissio
 			}, nil
 		}
 		out := permission.Result{Outcome: permission.OutcomeResolved, Allow: matched.Allow}
+		switch {
+		case matched.AllowAll:
+			c.setPermissionAllowAll()
+			out.Reason = "allowed by user (allow_all for session)"
+		case matched.Allow:
+			out.Reason = "allowed by user"
+		default:
+			// Must stay human-readable: it becomes the tool result content the model sees.
+			out.Reason = "denied by user"
+			out.Guidance = "The user denied this action. Do not claim it succeeded; ask before retrying or choose an alternative."
+		}
 		if len(matched.UpdatedInput) > 0 {
 			out.UpdatedInput = matched.UpdatedInput
 		}
@@ -196,6 +223,21 @@ func (c *Control) registerPermissionPending(req permission.Request, capab permis
 		return nil, fmt.Errorf("permission pending already exists: %s", existing.requestID)
 	}
 	return pending, nil
+}
+
+// PermissionAllowAll reports whether the user has chosen 全部允许 for this session.
+func (c *Control) PermissionAllowAll() bool {
+	enabled := false
+	c.sync(func(st *controlState) {
+		enabled = st.permissionAllowAll
+	})
+	return enabled
+}
+
+func (c *Control) setPermissionAllowAll() {
+	c.sync(func(st *controlState) {
+		st.permissionAllowAll = true
+	})
 }
 
 func (c *Control) clearPermissionPending() {

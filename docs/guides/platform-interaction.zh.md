@@ -95,6 +95,16 @@ type Capability struct {
 
 Broker 经 `KeySessionControl`（`*loop.Control`）注入；`tools/runtime` 与 `ask_user` 通过 `permission.BrokerFrom(ctx)` 获取。
 
+### Session 级「全部允许」（allow_all）
+
+allow/deny 请求除 `allow`/`deny` 外还支持第三个 decision `allow_all`（CLI 文本输入 `all`/`a`）。用户在**同一 session**（per-conversation `Control`）内回复 `allow_all` 后：
+
+- 当前请求按 allow 裁决；
+- 该 session 后续的 `KindAllowDeny` 请求不再发出 `permission/request`，Broker 直接返回 allow（reason `auto-allowed: allow_all for session`，slog 留痕）；
+- `KindQuestion`（`ask_user` 等）不受影响，仍按原流程问人。
+
+作用域仅当前 session，进程重启或换 session 即失效。各平台入口：CLI 提示 `[y/N/all]`；飞书 / Slack / chat-api 卡片渲染「全部允许」按钮；ACP 平台映射为 `allow_always` kind 的 PermissionOption。与 `approval/auto-allow` 的区别：后者是配置图级、对挂载 agent 的所有 session 生效；`allow_all` 是运行时逐 session 的人类授权，且 Policy plane 的 deny 裁决在 Broker 之前，不受影响。
+
 ## 事件
 
 | Type | 含义 |
