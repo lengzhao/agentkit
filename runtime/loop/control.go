@@ -162,6 +162,19 @@ func (c *Control) PopSteering() []agentkit.ModelMessage {
 	return out
 }
 
+// RestoreSteering returns unconsumed input ahead of messages that arrived while
+// an agent was attempting delivery to an external runtime.
+func (c *Control) RestoreSteering(messages []agentkit.ModelMessage) {
+	if len(messages) == 0 {
+		return
+	}
+	c.sync(func(st *controlState) {
+		restored := make([]agentkit.ModelMessage, 0, len(messages)+len(st.steering))
+		restored = append(restored, messages...)
+		st.steering = append(restored, st.steering...)
+	})
+}
+
 func (c *Control) HasSteering() bool {
 	var ok bool
 	c.sync(func(st *controlState) {

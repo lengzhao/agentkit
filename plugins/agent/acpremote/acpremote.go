@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
@@ -236,11 +237,48 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		done <- promptResult{resp: resp, err: err}
 	}()
 
+	// Unsupported peers leave the queue untouched for Loop's next-turn fallback.
+	finishSteering := func() error { return nil }
+	if ctrl, ok := ctx.Value(agentkit.KeySessionControl).(steeringControl); ok {
+		if proc := brid.proc.Load(); proc != nil && proc.steeringSupported {
+			stop := make(chan struct{})
+			steeringDone := make(chan error, 1)
+			go func() {
+				steeringDone <- forwardSteering(ctx, stop, ctrl, proc.conn, acpSessionID, brid.releaseSubprocess, func(msg agentkit.ModelMessage) error {
+					if a.sessionStore == nil || a.sessionEvents == nil {
+						return nil
+					}
+					// Acknowledged input belongs in history even if the turn was
+					// cancelled just as the acknowledgement arrived.
+					persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+					defer cancel()
+					sess, err := a.sessionStore.Get(persistCtx, sessionID)
+					if err != nil {
+						return err
+					}
+					return a.sessionEvents.AppendMessage(persistCtx, sess, a.id, agentkit.EventUserMessage, msg)
+				})
+			}()
+			var once sync.Once
+			var steeringErr error
+			finishSteering = func() error {
+				once.Do(func() { close(stop); steeringErr = <-steeringDone })
+				return steeringErr
+			}
+			defer func() {
+				if err := finishSteering(); turnErr == nil {
+					turnErr = err
+				}
+			}()
+		}
+	}
+
 	select {
 	case <-ctx.Done():
 		_ = brid.cancel(context.Background(), acpSessionID)
 		return ctx.Err()
 	case result := <-done:
+		_ = finishSteering() // Join before finalizing output and persisting the assistant.
 		if result.err != nil {
 			return result.err
 		}

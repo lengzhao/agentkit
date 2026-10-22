@@ -244,6 +244,7 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 		client:            client,
 		done:              done,
 		agentCapabilities: initResp.AgentCapabilities,
+		steeringSupported: supportsSteering(initResp.Meta),
 	}
 	st.proc = proc
 	go b.waitSubprocess(proc)

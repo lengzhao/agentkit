@@ -62,6 +62,7 @@ type subprocess struct {
 	cmd               *exec.Cmd
 	conn              *acp.ClientSideConnection
 	client            *bridgeClient
+	steeringSupported bool
 	authenticated     bool
 	agentCapabilities acp.AgentCapabilities
 	done              chan struct{} // closed after cmd.Wait returns
