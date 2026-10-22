@@ -46,6 +46,43 @@ func TestBuildInboundPromptPrefixInjectList(t *testing.T) {
 	}
 }
 
+func TestFormatInboundEventThreadMetadata(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		delivery agentkit.SessionID
+		inject   []string
+		want     string
+	}{
+		{"thread", "slack:C123:t:1729500000.123:u:U1", []string{"platform", "chat_id", "thread_id"}, "[meta platform=slack chat_id=C123 thread_id=1729500000.123]\nhello"},
+		{"channel", "slack:C123:u:U1", []string{"platform", "chat_id", "thread_id"}, "[meta platform=slack chat_id=C123]\nhello"},
+		{"not configured", "slack:C123:t:1729500000.123:u:U1", []string{"chat_id"}, "[meta chat_id=C123]\nhello"},
+		{"empty thread only", "slack:C123:u:U1", []string{"thread_id"}, "hello"},
+		{"disabled", "slack:C123:t:1729500000.123:u:U1", []string{}, "hello"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root, err := runner.New(runner.Config{Inject: tt.inject}, runner.Deps{
+				Platform: &scriptedPlatform{},
+				Loop:     &recordingLoop{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			event := root.(*runner.Root).FormatInboundEventForTest(agentkit.MessageEvent{
+				PlatformID: "slack",
+				UserID:     "U1",
+				Message: agentkit.ModelMessage{
+					Role:    "user",
+					Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
+				},
+			}, tt.delivery)
+			if got := event.Message.Content[0].Text; got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildInboundPromptPrefixMentionsFromMetadata(t *testing.T) {
 	t.Parallel()
 	root, err := runner.New(runner.Config{

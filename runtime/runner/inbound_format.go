@@ -13,7 +13,7 @@ import (
 
 // Built-in inject tokens for runner.config.inject (cc-connect inject_* style).
 //
-//	sender_id sender_name sender_email platform chat_id timestamp
+//	sender_id sender_name sender_email platform chat_id thread_id timestamp
 //	mentions task_id trace_id language
 //	custom.*   — metadata keys with prefix custom.
 //	<any-key>  — exact MessageEvent.Metadata lookup
@@ -24,6 +24,7 @@ const (
 	injectMentions    = "mentions"
 	injectPlatform    = "platform"
 	injectChatID      = "chat_id"
+	injectThreadID    = "thread_id"
 	injectTimestamp   = "timestamp"
 	injectTaskID      = "task_id"
 	injectTraceID     = "trace_id"
@@ -123,6 +124,10 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 			if parts.Channel != "" {
 				attrs = append(attrs, fmt.Sprintf("chat_id=%s", parts.Channel))
 			}
+		case injectThreadID:
+			if parts.Thread != "" {
+				attrs = append(attrs, fmt.Sprintf("thread_id=%s", parts.Thread))
+			}
 		case injectTimestamp:
 			if strings.TrimSpace(event.UserID) == "" {
 				continue
@@ -181,7 +186,7 @@ func normalizeInjectAllowlist(keys []string) []string {
 func isKnownInjectToken(key string) bool {
 	switch key {
 	case injectSenderID, injectSenderName, injectSenderEmail, injectMentions, injectPlatform, injectChatID,
-		injectTimestamp, injectTaskID, injectTraceID, injectLanguage:
+		injectThreadID, injectTimestamp, injectTaskID, injectTraceID, injectLanguage:
 		return true
 	default:
 		return strings.HasSuffix(key, ".*")

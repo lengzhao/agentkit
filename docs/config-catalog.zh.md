@@ -983,7 +983,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `shutdownGraceSecondsOnSignal` | `int` | — | ShutdownGraceSecondsOnSignal caps wait after SIGINT/SIGTERM once in-flight turns are cancelled. 0 abandons immediately (default). |
 | `sessionScope` | `string` | — | SessionScope collapses platform delivery SessionIDs for Loop locking and history: "channel" (default), "thread", or "user". |
 | `maxConcurrentTurns` | `int` | `64` | MaxConcurrentTurns caps how many turns run at once across distinct effective sessions. Defaults to 64. Ordering within one session is always preserved. |
-| `inject` | `[]string` | — | Inject lists fields prepended to each inbound user message as [meta sender_id=... timestamp="..." task_id="..." ...]. Built-in tokens: sender_id, sender_name, sender_email, mentions, platform, chat_id, timestamp, task_id, trace_id, language, custom.*, or any Metadata key. L0 config.base.yaml defaults to sender_id, sender_name, timestamp; inject: [] disables. |
+| `inject` | `[]string` | — | Inject lists fields prepended to each inbound user message as [meta sender_id=... timestamp="..." task_id="..." ...]. Built-in tokens: sender_id, sender_name, sender_email, mentions, platform, chat_id, thread_id, timestamp, task_id, trace_id, language, custom.*, or any Metadata key. L0 config.base.yaml defaults to sender_id, sender_name, timestamp; inject: [] disables. |
 | `defaultTimezone` | `string` | — | DefaultTimezone is the fallback IANA timezone for inject timestamp when the platform does not implement UserTimezoneProvider. |
 
 | deps 字段 | 类型 | 说明 |

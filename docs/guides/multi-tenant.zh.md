@@ -105,6 +105,7 @@ runner.default:
       - mentions            # 可选，Metadata 有 mentions 时注入（Lark/飞书/Slack @ 提及用户）
       - platform
       - chat_id
+      - thread_id          # 可选，delivery 路由有 thread 时注入
       - timestamp         # 可选
       - task_id           # 可选，来自 Metadata
       - trace_id
@@ -116,7 +117,7 @@ runner.default:
 示例：
 
 ```text
-[meta timestamp="2026-08-31T10:00:00+08:00" timezone="Asia/Shanghai" sender_id=U111 sender_name="Alice" platform=slack chat_id=C001 task_id="job-9"]
+[meta timestamp="2026-08-31T10:00:00+08:00" timezone="Asia/Shanghai" sender_id=U111 sender_name="Alice" platform=slack chat_id=C001 thread_id=1729500000.123 task_id="job-9"]
 ```
 
 | inject 项 | 来源 | 输出 attr |
@@ -127,6 +128,7 @@ runner.default:
 | `mentions` | `MessageEvent.Metadata.mentions`（Lark/飞书/Slack 入站解析 @ 提及用户） | `mentions="name=Alice id=ou_xxx email=alice@example.com\|name=Bob id=ou_yyy email=bob@example.com"` |
 | `platform` | `MessageEvent.PlatformID` 或 delivery SessionID | `platform=slack` |
 | `chat_id` | delivery SessionID 的 channel 段 | `chat_id=C001` |
+| `thread_id` | delivery SessionID 的 thread 段；为空时省略 | `thread_id=1729500000.123` |
 | `timestamp` | 当前时间 + 时区 | `timestamp="RFC3339" timezone="IANA"` |
 | `task_id` / `trace_id` / `language` | Metadata（含常见 HTTP header 别名） | `task_id="..."` 等 |
 | `custom.*` | Metadata 键前缀匹配 | `custom.tenant="..."` 等 |
