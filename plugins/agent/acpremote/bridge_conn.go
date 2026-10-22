@@ -170,6 +170,8 @@ func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 	return r.proc, r.err
 }
 
+type subprocessContextKey struct{}
+
 func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*subprocess, error) {
 	if st.proc != nil && st.proc.alive() && (st.proc.authenticated || b.cfg.AuthMethod == "") {
 		return st.proc, nil
@@ -193,7 +195,11 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 	if err != nil {
 		return nil, fmt.Errorf("acp sandbox wrap: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	processCtx, _ := ctx.Value(subprocessContextKey{}).(context.Context)
+	if processCtx == nil {
+		processCtx = ctx
+	}
+	cmd := exec.CommandContext(processCtx, argv[0], argv[1:]...)
 	cmd.Dir = cwd
 	configureCmdProcessGroup(cmd)
 	cmd.Env = commandEnv(b.cfg.Env)

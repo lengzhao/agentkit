@@ -2,6 +2,7 @@ package acpremote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -171,6 +172,32 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	if emit == nil {
 		return fmt.Errorf("turn requires outbound emit")
 	}
+	// Remote turns must register with the same cancellation control as local steps.
+	if ctrl, ok := ctx.Value(agentkit.KeySessionControl).(interface {
+		ClearTurnCancel()
+		BeginStep(context.Context) (context.Context, func())
+	}); ok {
+		ctrl.ClearTurnCancel()
+		// Keep the reusable subprocess tied to the runner lifetime, while
+		// prompt/session requests use the cancellable turn context below.
+		ctx = context.WithValue(ctx, subprocessContextKey{}, ctx)
+		var endStep func()
+		ctx, endStep = ctrl.BeginStep(ctx)
+		defer endStep()
+	}
+	endData := sync.OnceValue(func() capsession.TurnEndData {
+		data := capsession.TurnEndData{Steps: 1}
+		if errors.Is(turnErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			data.Cancelled = true
+			data.StopReason = context.Canceled.Error()
+			if ctrl, ok := ctx.Value(agentkit.KeySessionControl).(interface{ PopCancelReason() string }); ok {
+				if reason := ctrl.PopCancelReason(); reason != "" {
+					data.StopReason = reason
+				}
+			}
+		}
+		return data
+	})
 	// Async wrapping is owned by forwardParentEmit (loop-agent / inprocess),
 	// which also holds the AsyncEmitter.Close path. Doing it here would double-
 	// wrap and leak a goroutine with no closer.
@@ -185,7 +212,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		}
 		defer func() {
 			endCtx := context.WithoutCancel(ctx)
-			_ = a.sessionEvents.AppendTurnEnd(endCtx, sess, a.id, capsession.TurnEndData{Steps: 1})
+			_ = a.sessionEvents.AppendTurnEnd(endCtx, sess, a.id, endData())
 		}()
 		if err := a.sessionEvents.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, input.Message); err != nil {
 			return err
@@ -197,7 +224,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	}
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
-		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, capsession.TurnEndData{Steps: 1})
+		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, endData())
 		if a.cfg.ReleaseSubprocessAfterTurn {
 			a.bridgeFor(sessionID).releaseSubprocess()
 		}
@@ -279,6 +306,10 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		return ctx.Err()
 	case result := <-done:
 		_ = finishSteering() // Join before finalizing output and persisting the assistant.
+		if ctx.Err() != nil {
+			_ = brid.cancel(context.Background(), acpSessionID)
+			return ctx.Err()
+		}
 		if result.err != nil {
 			return result.err
 		}

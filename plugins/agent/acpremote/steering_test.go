@@ -6,12 +6,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -159,8 +161,18 @@ func TestACPSteeringHelper(t *testing.T) {
 			reply(req.ID, map[string]any{"sessionId": "remote"})
 		case "session/prompt":
 			promptID = req.ID
+			if mode == "stop" {
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "remote", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "working"}}}})
+			}
 			if mode == "unsupported" {
 				reply(req.ID, map[string]any{"stopReason": "end_turn"})
+			}
+		case "session/cancel":
+			if mode == "stop" {
+				if err := os.WriteFile(os.Getenv("AGENTKIT_STOP_MARKER"), []byte("cancelled"), 0600); err != nil {
+					os.Exit(1)
+				}
+				reply(promptID, map[string]any{"stopReason": "cancelled"})
 			}
 		case "_session/steering":
 			reply(promptID, map[string]any{"stopReason": "end_turn"})
@@ -172,6 +184,85 @@ func TestACPSteeringHelper(t *testing.T) {
 			reply(req.ID, map[string]any{"outcome": outcome})
 		}
 	}
+}
+
+func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "cancelled")
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "stop-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag, err := New(Config{ID: "acp", Command: []string{exe, "-test.run=^TestACPSteeringHelper$"}, Cwd: dir, Env: map[string]string{"AGENTKIT_STEERING_TEST": "stop", "AGENTKIT_STOP_MARKER": marker}}, Deps{Workspace: &stubWorkspace{}, FS: bindTestFS(t, dir), Telemetry: mustToolkit(t), SessionStore: &steeringTestStore{sess: mem}, SessionEvents: mustEvents(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ag.(*Runtime).bridgeFor("stop-session").releaseSubprocess()
+	ctrl := loop.NewControl()
+	defer ctrl.Stop()
+	ctx, cancel := context.WithTimeout(agenttest.TurnContext("stop-session", "acp"), 2*time.Second)
+	defer cancel()
+	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
+	stopped := false
+	var remoteProc *subprocess
+	var end capsession.TurnEndData
+	err = ag.RunTurn(ctx, agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "work"}}}, Emit: func(_ context.Context, ev agentkit.OutboundEvent) error {
+		if ev.Type == agentkit.EventMessageUpdate && !stopped {
+			stopped = true
+			remoteProc = ag.(*Runtime).bridgeFor("stop-session").proc.Load()
+			return ctrl.Cancel(context.Background(), "/stop")
+		}
+		if ev.Type == agentkit.EventTurnEnd {
+			return json.Unmarshal(ev.Data, &end)
+		}
+		return nil
+	}})
+	if !stopped {
+		t.Fatal("remote prompt did not start")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("stop error = %v, want context.Canceled", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("stop waited for parent timeout: %v", ctx.Err())
+	}
+	if !end.Cancelled || end.StopReason != "/stop" {
+		t.Fatalf("outbound turn end = %+v", end)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("remote peer did not receive session/cancel")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if remoteProc == nil || !remoteProc.alive() {
+		t.Fatal("turn cancellation killed the reusable subprocess")
+	}
+	events, err := mem.Read(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Type == agentkit.EventTurnEnd {
+			var persisted capsession.TurnEndData
+			if err := json.Unmarshal(event.Data, &persisted); err != nil {
+				t.Fatal(err)
+			}
+			if !persisted.Cancelled || persisted.StopReason != "/stop" {
+				t.Fatalf("persisted turn end = %+v", persisted)
+			}
+			return
+		}
+	}
+	t.Fatal("missing persisted turn end")
 }
 
 func TestRunTurnSteering(t *testing.T) {
