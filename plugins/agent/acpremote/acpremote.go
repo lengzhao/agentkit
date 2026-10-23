@@ -247,6 +247,13 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		agentID:   a.id,
 	})
 	defer brid.clearTurn()
+	if proc := brid.proc.Load(); proc != nil {
+		if model, ok := proc.models.Load(acpSessionID); ok {
+			if err := emitter.emitModel(model.(string)); err != nil {
+				return err
+			}
+		}
+	}
 
 	prompt := modelMessageToPrompt(input.Message)
 	if len(prompt) == 0 {

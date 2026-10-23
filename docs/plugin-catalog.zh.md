@@ -213,6 +213,8 @@ llm.fallback:
 
 **`agent/acp-remote`**：通过 stdio ACP 调用外部 Agent 子进程（如 Cursor CLI `agent acp`、Claude Agent SDK 等）。环境准备（安装依赖、授权登录）由用户自行处理，acp-remote 只负责连接与失败提示。
 
+- **模型显示**：远端通过 ACP `configOptions`（`category: model`，未设置 category 时兼容 `id: model`）报告当前模型时，每轮通过已有 thinking 通道显示 `[model: 模型名]`，变化时同步提示。支持新建、恢复和复用会话；未提供模型信息时不显示。各平台沿用原有 thinking 展示方式，无需额外配置。
+
 要点：
 
 - **工作目录**：`config.cwd`（未设则默认 `work/`，与 `tool/shell-bash` 一致）同时作为 ACP 子进程的 `cmd.Dir` 与 `session/new` 的 `Cwd`。代码仓库在 `work/agent-harness` 等子目录时设 `cwd: work/agent-harness`（或 `local:work/agent-harness`）。bind 文件会记录 cwd；变更 cwd 后会新建 ACP session 而非 resume 旧 cwd。

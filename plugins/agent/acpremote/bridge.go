@@ -68,6 +68,7 @@ type subprocess struct {
 	agentCapabilities acp.AgentCapabilities
 	done              chan struct{} // closed after cmd.Wait returns
 	sessions          sync.Map      // agentkit.SessionID -> acp.SessionId
+	models            sync.Map      // acp.SessionId -> reported model id
 	acpSessions       sync.Map      // acp.SessionId -> agentkit.SessionID
 }
 
@@ -227,7 +228,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		if restorer == nil {
 			restorer = acpclient.NewRestorer(acpclient.StrategyResume)
 		}
-		restored, err := restorer.Restore(ctx, proc.conn, capacp.SessionRestoreParams{
+		restored, err := restorer.Restore(ctx, modelRestoreConn{SessionRestoreConn: proc.conn, proc: proc}, capacp.SessionRestoreParams{
 			HarnessSessionID:  sessionID,
 			AgentID:           agentID,
 			ACPSessionID:      bind.ACPSessionID,
@@ -255,6 +256,7 @@ func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.Sessio
 		logACPRemoteError(agentID, b.cfg, sessionID, "session/new", wrapped)
 		return "", wrapped
 	}
+	proc.models.Store(resp.SessionId, modelFromConfig(resp.ConfigOptions))
 	proc.trackSession(sessionID, resp.SessionId)
 	if err := saveACPSessionBind(ctx, b.fs, bindPath, acpSessionBind{
 		AgentID:      agentID,
@@ -313,6 +315,22 @@ type bridgeClient struct {
 var _ acp.Client = (*bridgeClient)(nil)
 
 func (c *bridgeClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
+	if update := params.Update.ConfigOptionUpdate; update != nil {
+		proc := c.bridge.proc.Load()
+		if proc == nil {
+			return nil
+		}
+		model := modelFromConfig(update.ConfigOptions)
+		proc.models.Store(params.SessionId, model)
+		turn := c.bridge.currentTurn()
+		session, ok := proc.acpSessions.Load(params.SessionId)
+		if turn != nil && ok && session == turn.sessionID {
+			if emitter, ok := turn.emitter.(*updateEmitter); ok {
+				return emitter.emitModel(model)
+			}
+		}
+		return nil
+	}
 	turn := c.bridge.currentTurn()
 	if turn == nil || turn.emitter == nil {
 		return nil

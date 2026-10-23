@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -21,6 +22,8 @@ type updateEmitter struct {
 	emit      agentkit.OutboundEmit
 	userMsg   agentkit.ModelMessage
 
+	modelMu sync.Mutex
+	model   string
 	started bool
 	textBuf strings.Builder
 	thought strings.Builder
