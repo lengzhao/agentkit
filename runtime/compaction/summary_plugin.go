@@ -95,6 +95,15 @@ func (c *SummaryConfig) Validate() error {
 }
 
 func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request) (capcompaction.Result, error) {
+	if req.MaxHistoryTokens > 0 {
+		// A forced pre-send request can have far less room than the configured
+		// retention window. Keep changes local: services are shared by turns.
+		local := *s
+		local.cfg.KeepRecentTokens = min(s.cfg.KeepRecentTokens, max(1, req.MaxHistoryTokens/2))
+		local.cfg.ReserveTokens = min(s.cfg.ReserveTokens, max(1, req.MaxHistoryTokens-local.cfg.KeepRecentTokens))
+		s = &local
+	}
+
 	if !req.Force && s.cfg.MinMessages > 0 && len(req.Messages) < s.cfg.MinMessages {
 		return capcompaction.Result{}, nil
 	}
@@ -170,12 +179,16 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 		return capcompaction.Result{}, err
 	}
 
+	if req.MaxHistoryTokens > 0 {
+		summaryText = s.boundSummaryText(summaryText)
+	}
 	data := capcompaction.EventData{
-		BeforeSeq:    prep.FirstKeptSeq - 1,
-		FirstKeptSeq: prep.FirstKeptSeq,
-		RetainedTail: prep.RetainedTail,
-		TokensBefore: prep.TokensBefore,
-		Kind:         capcompaction.KindSummary,
+		BeforeSeq:          prep.FirstKeptSeq - 1,
+		FirstKeptSeq:       prep.FirstKeptSeq,
+		RetainedTail:       prep.RetainedTail,
+		RetainedTurnStarts: retainedTurnStarts(indexed[prep.FirstKeptIndex:]),
+		TokensBefore:       prep.TokensBefore,
+		Kind:               capcompaction.KindSummary,
 		Summary: agentkit.ModelMessage{
 			Role: "user",
 			Content: []agentkit.ContentPart{{
@@ -184,10 +197,60 @@ func (s *summaryService) Compact(ctx context.Context, req capcompaction.Request)
 			}},
 		},
 	}
-	if err := s.events.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
+	if req.MaxHistoryTokens > 0 {
+		if err := s.boundSummaryTail(&data, indexed[prep.FirstKeptIndex:], req.MaxHistoryTokens); err != nil {
+			return capcompaction.Result{}, err
+		}
+	}
+	if err := s.persistCompaction(ctx, req, data); err != nil {
 		return capcompaction.Result{}, err
 	}
 	return capcompaction.Result{Applied: true}, nil
+}
+
+// boundSummaryTail applies the total history budget after summarization. Pinning
+// a live turn can retain many individually-small messages, so per-message caps
+// alone cannot enforce the caller's remaining prompt space.
+func (s *summaryService) boundSummaryTail(data *capcompaction.EventData, indexed []capcompaction.IndexedMessage, maxTokens int) error {
+	all := append([]agentkit.ModelMessage{data.Summary}, data.RetainedTail...)
+	if EstimateMessagesTokens(all) <= maxTokens {
+		return nil
+	}
+	available := maxTokens - EstimateTokens(data.Summary)
+	if available <= 0 {
+		return fmt.Errorf("history budget %d tokens leaves no room for the active task", maxTokens)
+	}
+	// Charge rounded token costs only for messages we actually select.
+	keep := s.selectRetainedByCost(data.RetainedTail, indexed, 0, available*4, func(msg agentkit.ModelMessage) int { return EstimateTokens(msg) * 4 })
+	var tail []agentkit.ModelMessage
+	var starts []bool
+	for i, msg := range data.RetainedTail {
+		if !keep[i] {
+			continue
+		}
+		if len(tail) == 0 {
+			data.FirstKeptSeq = indexed[i].Seq
+			data.BeforeSeq = data.FirstKeptSeq - 1
+		}
+		tail = append(tail, msg)
+		starts = append(starts, indexed[i].IsTurnStart)
+	}
+	data.RetainedTail = tail
+	data.RetainedTurnStarts = starts
+
+	return nil
+}
+
+// persistCompaction applies the caller's total budget to every output path,
+// including truncation-only recovery, before changing the durable model view.
+func (s *summaryService) persistCompaction(ctx context.Context, req capcompaction.Request, data capcompaction.EventData) error {
+	if req.MaxHistoryTokens > 0 {
+		messages := append([]agentkit.ModelMessage{data.Summary}, data.RetainedTail...)
+		if got := EstimateMessagesTokens(messages); got > req.MaxHistoryTokens {
+			return fmt.Errorf("history budget %d tokens cannot retain the task and summary (%d tokens)", req.MaxHistoryTokens, got)
+		}
+	}
+	return s.events.AppendCompaction(ctx, req.Session, req.AgentID, data)
 }
 
 // maxRetainedChars bounds a single retained message in the model-visible view;
@@ -211,7 +274,7 @@ func (s *summaryService) maxInputChars() int {
 //  1. the in-flight turn's trigger (last user message) — never dropped, or
 //     the agent loses the live instruction mid-turn;
 //  2. the previous summary checkpoint — dropped middle history's only record;
-//  3. the newest messages, contiguous from the end.
+//  3. recent complete tool exchanges and other context that still fit.
 //
 // The dropped middle is exactly the early-turn tool noise that made the turn
 // oversized. Durable session events keep the full originals; only the
@@ -246,6 +309,22 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 		changed = true
 	}
 
+	// Large tool outputs must leave room for task/checkpoint and small answers
+	// from the same batch. Keep IDs/pairing intact and bound only the text view.
+	for i, msg := range msgs {
+		if len(msg.ToolResults) == 0 {
+			continue
+		}
+		results := append([]agentkit.ToolResult(nil), msg.ToolResults...)
+		for j, result := range results {
+			if len(result.Content) > max(1, maxChars/4) {
+				results[j].Content = fitTruncatedText(result.Content, max(1, maxChars/4), len(result.Content))
+				changed = true
+			}
+		}
+		msgs[i].ToolResults = results
+	}
+
 	total := 0
 	for _, msg := range msgs {
 		total += estimateMessageChars(msg)
@@ -255,6 +334,7 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 	// in-memory trim horizon from it, so it must not point past messages that
 	// were actually kept.
 	firstKept := indexed[0].Seq
+	turnStarts := retainedTurnStarts(indexed)
 	summarySurvived := boundaryStart == 1
 	if total <= maxChars {
 		if !changed {
@@ -268,9 +348,10 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 			return capcompaction.Result{}, nil
 		}
 	} else {
-		keep := s.selectRetainedWithinBudget(msgs, boundaryStart, maxChars)
+		keep := s.selectRetainedWithinBudget(msgs, indexed, boundaryStart, maxChars)
 		summarySurvived = boundaryStart == 1 && len(keep) > 0 && keep[0]
 		out := msgs[:0]
+		keptTurnStarts := make([]bool, 0, len(msgs))
 		firstSet := false
 		for i, msg := range msgs {
 			if !keep[i] {
@@ -281,8 +362,10 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 				firstSet = true
 			}
 			out = append(out, msg)
+			keptTurnStarts = append(keptTurnStarts, turnStarts[i])
 		}
 		msgs = out
+		turnStarts = keptTurnStarts
 	}
 
 	summary := agentkit.ModelMessage{
@@ -294,12 +377,30 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 	}
 	tail := msgs
 	// Promote the retained previous summary into the summary slot when it
-	// survived selection AND a non-empty tail remains: derive treats an empty
+	// survived selection: derive treats an empty
 	// RetainedTail as a legacy marker and replays events after BeforeSeq (0
-	// here), which would resurrect compacted-away history.
+	// here), which would resurrect compacted-away history. Keep an explicit
+	// non-task tail marker when only the checkpoint survives.
 	if summarySurvived && len(msgs) > 1 {
 		summary = msgs[0]
 		tail = msgs[1:]
+		turnStarts = turnStarts[1:]
+	} else if summarySurvived {
+		summary = msgs[0]
+		tail = []agentkit.ModelMessage{{Role: "assistant", Content: []agentkit.ContentPart{{Type: "text", Text: "[No newer messages retained.]"}}}}
+		turnStarts = []bool{false}
+	}
+
+	data := capcompaction.EventData{
+		FirstKeptSeq:       firstKept,
+		RetainedTail:       tail,
+		RetainedTurnStarts: turnStarts,
+		TokensBefore:       tokensBefore,
+		Kind:               capcompaction.KindSummary,
+		Summary:            summary,
+	}
+	if err := s.persistCompaction(ctx, req, data); err != nil {
+		return capcompaction.Result{}, err
 	}
 	slog.Info("forced compaction applied without summary: bounded oversized retained content",
 		"session_id", req.SessionID,
@@ -308,85 +409,113 @@ func (s *summaryService) truncateOnlyCompaction(ctx context.Context, req capcomp
 		"retained_messages", len(tail),
 		"tokens_before", tokensBefore,
 	)
-	data := capcompaction.EventData{
-		FirstKeptSeq: firstKept,
-		RetainedTail: tail,
-		TokensBefore: tokensBefore,
-		Kind:         capcompaction.KindSummary,
-		Summary:      summary,
-	}
-	if err := s.events.AppendCompaction(ctx, req.Session, req.AgentID, data); err != nil {
-		return capcompaction.Result{}, err
-	}
 	return capcompaction.Result{Applied: true}, nil
 }
 
-// selectRetainedWithinBudget picks which messages survive a forced truncation,
-// in priority order: the last user message (in-flight turn trigger), the
-// previous summary checkpoint (index 0 when boundaryStart == 1), then the
-// newest contiguous suffix. Everything else — the middle — is dropped.
-func (s *summaryService) selectRetainedWithinBudget(msgs []agentkit.ModelMessage, boundaryStart int, maxChars int) []bool {
-	keep := make([]bool, len(msgs))
-	budget := maxChars
+// selectRetainedWithinBudget protects source-derived user tasks and checkpoints,
+// then keeps optional recent context in coherent units. Oversized skill/read noise
+// must not evict a confirmation merely because it is newer or has role=user.
+func (s *summaryService) selectRetainedWithinBudget(msgs []agentkit.ModelMessage, indexed []capcompaction.IndexedMessage, boundaryStart int, maxChars int) []bool {
+	return s.selectRetainedByCost(msgs, indexed, boundaryStart, maxChars, estimateMessageChars)
+}
 
+func (s *summaryService) selectRetainedByCost(msgs []agentkit.ModelMessage, indexed []capcompaction.IndexedMessage, boundaryStart int, maxChars int, size func(agentkit.ModelMessage) int) []bool {
+	keep := make([]bool, len(msgs))
 	lastUser := -1
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == "user" && i >= boundaryStart {
+	for i := len(msgs) - 1; i >= boundaryStart; i-- {
+		if indexed[i].IsTurnStart {
 			lastUser = i
 			break
 		}
 	}
+	var pinned []int
 	if lastUser >= 0 {
-		keep[lastUser] = true
-		budget -= estimateMessageChars(msgs[lastUser])
+		pinned = append(pinned, lastUser)
 	}
 	if boundaryStart == 1 && len(msgs) > 0 {
-		if c := estimateMessageChars(msgs[0]); c <= budget {
-			keep[0] = true
-			budget -= c
-		}
+		pinned = append(pinned, 0)
 	}
-	// Newest contiguous suffix after the trigger; stop at the first message
-	// that no longer fits to keep the tail coherent.
-	for i := len(msgs) - 1; i > lastUser; i-- {
-		c := estimateMessageChars(msgs[i])
-		if c > budget {
-			break
+	if len(pinned) == 0 && len(msgs) > 0 {
+		pinned = append(pinned, 0)
+	}
+	budget := maxChars
+	for n, i := range pinned {
+		allowance := budget
+		if n+1 < len(pinned) {
+			reserve := min(size(msgs[pinned[n+1]]), maxChars/2)
+			allowance = max(1, budget-reserve)
+		}
+		if size(msgs[i]) > allowance {
+			bounded, _ := TruncateOversizedMessageTexts([]agentkit.ModelMessage{msgs[i]}, max(1, allowance-len(msgs[i].Role)))
+			msgs[i] = bounded[0]
 		}
 		keep[i] = true
-		budget -= c
+		budget -= size(msgs[i])
 	}
-	// A tool result at the suffix boundary is an orphan (its call was dropped
-	// in the middle): drop it rather than confuse the provider.
-	for i := lastUser + 1; i < len(msgs); i++ {
-		if !keep[i] {
+	floor := max(boundaryStart, lastUser+1)
+	for i := len(msgs) - 1; i >= floor; {
+		if keep[i] {
+			i--
 			continue
 		}
+		start := i
+		unit := []int{i}
 		if len(msgs[i].ToolResults) > 0 {
-			keep[i] = false
+			// Select the assistant call and all of its results together, or neither.
+			for start >= floor && len(msgs[start].ToolCalls) == 0 {
+				start--
+			}
+			if start < floor {
+				i--
+				continue
+			}
+			unit = []int{start}
+			results := map[agentkit.ToolCallID]bool{}
+			for j := start + 1; j <= i; j++ {
+				if len(msgs[j].ToolResults) > 0 {
+					unit = append(unit, j)
+				}
+				for _, r := range msgs[j].ToolResults {
+					results[r.ID] = true
+				}
+			}
+			paired := true
+			for _, call := range msgs[start].ToolCalls {
+				if !results[call.ID] {
+					paired = false
+				}
+			}
+			if !paired {
+				i = start - 1
+				continue
+			}
+		} else if len(msgs[i].ToolCalls) > 0 {
+			i--
 			continue
 		}
-		break
-	}
-	// Never emit an empty selection: an empty RetainedTail is a legacy marker
-	// for derive and would resurrect compacted-away history on reload. Keep
-	// the trigger (or the first message) even if it alone busts the budget —
-	// it has already been capped to maxChars by the per-message bound.
-	keptAny := false
-	for _, k := range keep {
-		if k {
-			keptAny = true
-			break
+		cost := 0
+		for _, j := range unit {
+			if !keep[j] {
+				cost += size(msgs[j])
+			}
 		}
-	}
-	if !keptAny && len(keep) > 0 {
-		idx := lastUser
-		if idx < 0 {
-			idx = 0
+		if cost <= budget {
+			for _, j := range unit {
+				keep[j] = true
+			}
+			budget -= cost
 		}
-		keep[idx] = true
+		i = start - 1
 	}
 	return keep
+}
+
+func retainedTurnStarts(indexed []capcompaction.IndexedMessage) []bool {
+	flags := make([]bool, len(indexed))
+	for i, item := range indexed {
+		flags[i] = item.IsTurnStart
+	}
+	return flags
 }
 
 func latestCompactionData(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, capcompaction.EventData, bool) {

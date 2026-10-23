@@ -35,9 +35,11 @@ func (p *Platform) closeInteractionCard(ctx context.Context, e interaction.Event
 	if p.client == nil || e.MessageID == "" {
 		return fmt.Errorf("card update client or message ID unavailable")
 	}
-	card := common.NewCard().Title("已提交", "green").Markdown(text).Build()
-	card.Static = true
-	req := larkim.NewPatchMessageReqBuilder().MessageId(e.MessageID).Body(larkim.NewPatchMessageReqBodyBuilder().Content(renderCard(card, e.SessionID)).Build()).Build()
+	content, err := submittedFeishuCard(e.RawCard, text)
+	if err != nil {
+		return err
+	}
+	req := larkim.NewPatchMessageReqBuilder().MessageId(e.MessageID).Body(larkim.NewPatchMessageReqBodyBuilder().Content(content).Build()).Build()
 	return p.withTransientRetry(ctx, "close submitted card", func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "close submitted card", func(client *lark.Client, opts ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Im.Message.Patch(ctx, req, opts...)

@@ -60,3 +60,19 @@ func mustMarshalMsg(t *testing.T, msg agentkit.ModelMessage) json.RawMessage {
 	}
 	return raw
 }
+
+func TestSkillLoadDoesNotStartUserTurn(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{"name": "demo", "body": "instructions"})
+	indexed := derive.IndexMessagesForCompaction([]agentkit.SessionEvent{{Seq: 1, Type: agentkit.EventSkillLoad, Data: raw}}, "")
+	if len(indexed) != 1 || indexed[0].IsTurnStart {
+		t.Fatalf("skill misidentified as task: %#v", indexed)
+	}
+}
+
+func TestCompactionTailRetainsSourceTurnStarts(t *testing.T) {
+	data := json.RawMessage(`{"kind":"summary","summary":{"Role":"user","Content":[{"type":"text","text":"task checkpoint"}]},"retainedTail":[{"Role":"user","Content":[{"type":"text","text":"synthetic context"}]},{"Role":"user","Content":[{"type":"text","text":"actual user"}]}],"retainedTurnStarts":[false,true]}`)
+	indexed := derive.IndexMessagesForCompaction([]agentkit.SessionEvent{{Seq: 5, Type: agentkit.EventCompaction, Data: data}}, "")
+	if len(indexed) != 3 || indexed[1].IsTurnStart || !indexed[2].IsTurnStart {
+		t.Fatalf("lost source identity on replay: %#v", indexed)
+	}
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capcompaction "github.com/lengzhao/agentkit/cap/compaction"
+	"github.com/lengzhao/agentkit/cap/skill"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -820,5 +821,249 @@ func TestSummaryForceLongTurnKeepsSummaryTriggerAndNewestTail(t *testing.T) {
 	}
 	if total > 4000 {
 		t.Fatalf("middle must be dropped, retained tail total chars = %d", total)
+	}
+}
+
+func TestForcedCompactionPreservesTaskCheckpointAcrossSkillLoads(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	sess, err := sessstore.NewJSONL(sessstore.JSONLConfig{Path: path, ID: "test:skill-task-checkpoint"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal := "发送三个运动选项的卡片；目标已确认当前聊天 chat_id=oc_test。"
+	skillMsg := agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: derive.RenderSkillLoaded(skill.Content{Name: "lark-im", Body: strings.Repeat("instructions ", 1000)})}}}
+	if err := sessevents.Default.AppendCompaction(ctx, sess, "a", capcompaction.EventData{Kind: capcompaction.KindSummary, FirstKeptSeq: 1, Summary: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: goal}}}, RetainedTail: []agentkit.ModelMessage{skillMsg}}); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 500}, testSummaryDeps(t, &okSummaryLLM{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventAssistantMessage, agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: agentkit.ToolCallID(fmt.Sprintf("read-%d", i)), Name: "read", Input: json.RawMessage(`{"path":"SKILL.md"}`)}}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := sessevents.Default.AppendToolResult(ctx, sess, "a", agentkit.ToolResult{ID: agentkit.ToolCallID(fmt.Sprintf("read-%d", i)), Name: "read", Content: strings.Repeat("large tool context ", 1000)}); err != nil {
+			t.Fatal(err)
+		}
+		messages, err := sess.DeriveMessages(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = svc.Compact(ctx, capcompaction.Request{SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := lastCompactionData(t, ctx, sess)
+		if len(data.Summary.Content) == 0 || !strings.Contains(data.Summary.Content[0].Text, goal) {
+			t.Fatalf("task checkpoint lost: %#v", data.Summary)
+		}
+		sess, err = sessstore.NewJSONL(sessstore.JSONLConfig{Path: path, ID: "test:skill-task-checkpoint"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestForcedCompactionPreservesUserTaskAndConfirmationBeforeSkillNoise(t *testing.T) {
+	ctx := context.Background()
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:skill-confirmation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal := "发送三个运动选项的卡片"
+	for _, entry := range []struct {
+		typ agentkit.EventType
+		msg agentkit.ModelMessage
+	}{
+		{agentkit.EventUserMessage, agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: goal}}}},
+		{agentkit.EventAssistantMessage, agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "load", Name: "skill", Input: json.RawMessage(`{"name":"lark-im"}`)}, {ID: "ask", Name: "ask_user", Input: json.RawMessage(`{"question":"发送到哪里"}`)}}}},
+	} {
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", entry.typ, entry.msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := sessevents.Default.AppendSkillLoad(ctx, sess, "a", skill.Content{Name: "lark-im", Body: strings.Repeat("skill instructions ", 1000)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessevents.Default.AppendToolResult(ctx, sess, "a", agentkit.ToolResult{ID: "load", Name: "skill", Content: strings.Repeat("skill output ", 2000)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessevents.Default.AppendToolResult(ctx, sess, "a", agentkit.ToolResult{ID: "ask", Name: "ask_user", Content: `{"answer":"当前这个聊天"}`}); err != nil {
+		t.Fatal(err)
+	}
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 500}, testSummaryDeps(t, llm))
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.Compact(ctx, capcompaction.Request{SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err = sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(messages)
+	if !strings.Contains(string(raw), goal) || !strings.Contains(string(raw), "当前这个聊天") {
+		t.Fatalf("task or confirmed answer lost: %s", raw)
+	}
+	if llm.calls.Load() != 0 {
+		t.Fatal("in-flight task should survive without relying on a new summary")
+	}
+}
+
+func TestForcedRetentionKeepsParallelResultsWithoutInterleavedSkill(t *testing.T) {
+	s := &summaryService{}
+	msgs := []agentkit.ModelMessage{
+		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "发送运动卡片"}}},
+		{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "load", Name: "skill"}, {ID: "ask", Name: "ask_user"}}},
+		{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "load", Name: "skill", Content: "loaded"}}},
+		{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("skill ", 1000)}}},
+		{Role: "tool", ToolResults: []agentkit.ToolResult{{ID: "ask", Name: "ask_user", Content: `{"answer":"当前这个聊天"}`}}},
+	}
+	indexed := make([]capcompaction.IndexedMessage, len(msgs))
+	indexed[0].IsTurnStart = true
+	keep := s.selectRetainedWithinBudget(msgs, indexed, 0, 2000)
+	if !keep[0] || !keep[1] || !keep[2] || !keep[4] || keep[3] {
+		t.Fatalf("parallel confirmation dropped with optional skill: %v", keep)
+	}
+}
+
+func TestSummaryRequestBudgetDoesNotChangeSharedDefaults(t *testing.T) {
+	ctx := context.Background()
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, testSummaryDeps(t, &okSummaryLLM{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, budget := range []int{100, 0} {
+		sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: agentkit.SessionID(fmt.Sprintf("request-budget-%d", budget))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 5000)}}}); err != nil {
+			t.Fatal(err)
+		}
+		messages, err := sess.DeriveMessages(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := svc.Compact(ctx, capcompaction.Request{SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true, MaxHistoryTokens: budget})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Applied != (budget > 0) {
+			t.Fatalf("budget=%d applied=%v: per-request budget leaked or was ignored", budget, result.Applied)
+		}
+		if budget > 0 {
+			messages, err = sess.DeriveMessages(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := EstimateMessagesTokens(messages); got > budget {
+				t.Fatalf("budget=%d tokens=%d", budget, got)
+			}
+		}
+	}
+}
+
+func TestSummaryRequestBudgetBoundsAggregateActiveTurn(t *testing.T) {
+	ctx := context.Background()
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:aggregate-budget"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct {
+		typ        agentkit.EventType
+		role, text string
+	}{
+		{agentkit.EventUserMessage, "user", strings.Repeat("old", 300)},
+		{agentkit.EventAssistantMessage, "assistant", "previous reply"},
+		{agentkit.EventUserMessage, "user", "继续授权"},
+	} {
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", entry.typ, agentkit.ModelMessage{Role: entry.role, Content: []agentkit.ContentPart{{Type: "text", Text: entry.text}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 80; i++ {
+		id := agentkit.ToolCallID(fmt.Sprintf("probe-%d", i))
+		if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventAssistantMessage, agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: id, Name: "probe", Input: json.RawMessage(`{}`)}}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := sessevents.Default.AppendToolResult(ctx, sess, "a", agentkit.ToolResult{ID: id, Name: "probe", Content: strings.Repeat("x", 50)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	llm := &okSummaryLLM{}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, testSummaryDeps(t, llm))
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.Compact(ctx, capcompaction.Request{SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true, MaxHistoryTokens: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if llm.calls.Load() == 0 {
+		t.Fatal("test did not exercise normal summary path")
+	}
+	messages, err = sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := EstimateMessagesTokens(messages); got > 100 {
+		t.Fatalf("aggregate history still over target: %d tokens", got)
+	}
+	raw, _ := json.Marshal(messages)
+	if !strings.Contains(string(raw), "继续授权") {
+		t.Fatal("active task lost")
+	}
+}
+
+func TestForcedTruncationRejectsOverBudgetBeforePersisting(t *testing.T) {
+	ctx := context.Background()
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "test:tiny-force-budget"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventUserMessage, agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("x", 5000)}}}); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewSummary(SummaryConfig{KeepRecentTokens: 20000}, testSummaryDeps(t, &okSummaryLLM{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Compact(ctx, capcompaction.Request{SessionID: sess.ID(), AgentID: "a", Session: sess, Messages: messages, Force: true, MaxHistoryTokens: 20})
+	if err == nil || !strings.Contains(err.Error(), "history budget") || result.Applied {
+		t.Fatalf("over-budget truncation accepted: applied=%v err=%v", result.Applied, err)
+	}
+	events, err := sess.Read(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.Type == agentkit.EventCompaction {
+			t.Fatal("invalid compaction persisted")
+		}
+	}
+	messages, err = sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages[0].Content[0].Text != strings.Repeat("x", 5000) {
+		t.Fatal("failed compaction changed history")
 	}
 }

@@ -2,6 +2,7 @@ package derive_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -90,5 +91,32 @@ func TestDeriveMessagesSkillLoadAfterToolResult(t *testing.T) {
 	}
 	if msgs[3].Role != "user" || !strings.Contains(msgs[3].Content[0].Text, `<skill_content name="feedback-ticket-intake">`) {
 		t.Fatalf("message 3 = %+v, want skill load user message", msgs[3])
+	}
+}
+
+func TestSkillLoadWaitsForEntireParallelToolBatch(t *testing.T) {
+	ctx := context.Background()
+	sess, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "parallel-skill"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessevents.Default.AppendMessage(ctx, sess, "a", agentkit.EventAssistantMessage, agentkit.ModelMessage{Role: "assistant", ToolCalls: []agentkit.ToolCall{{ID: "load", Name: "skill"}, {ID: "ask", Name: "ask_user"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessevents.Default.AppendSkillLoad(ctx, sess, "a", skill.Content{Name: "demo", Body: "skill context"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []agentkit.ToolResult{{ID: "load", Name: "skill", Content: "loaded"}, {ID: "ask", Name: "ask_user", Content: "当前这个聊天"}} {
+		if err := sessevents.Default.AppendToolResult(ctx, sess, "a", result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(msgs)
+	if !strings.Contains(string(raw), "当前这个聊天") || len(msgs) != 4 || msgs[3].Role != "user" {
+		t.Fatalf("skill interrupted tool batch: %s", raw)
 	}
 }

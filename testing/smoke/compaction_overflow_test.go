@@ -647,3 +647,83 @@ func TestSmokeCompactionViewSurvivesStoreReopen(t *testing.T) {
 		t.Fatalf("first derived message should be the compaction summary, got %q", got)
 	}
 }
+
+type fixedOverheadPrompt struct{ chars int }
+
+func (p fixedOverheadPrompt) Assemble(_ context.Context, req agentkit.PromptRequest) ([]agentkit.ModelMessage, error) {
+	return append([]agentkit.ModelMessage{{Role: "system", Content: []agentkit.ContentPart{{Type: "text", Text: strings.Repeat("s", p.chars)}}}}, req.Messages...), nil
+}
+
+func TestSmokePreSendCompactsDefaultRetentionToRemainingHistoryBudget(t *testing.T) {
+	store, root := agenttest.TempFileStore(t)
+	sid := agentkit.SessionID("smoke:default-retention-budget")
+	ctx := agenttest.TurnContext(sid, compactionAgentID)
+	seedText(t, ctx, store, sid, "user", strings.Repeat("old history ", 200))
+	seedText(t, ctx, store, sid, "assistant", strings.Repeat("old reply ", 100))
+	summaryLLM := &countingLLM{inner: agenttest.MustScripted(t, llm.ScriptedStep{Text: "继续完成授权；确认目标是当前聊天。"})}
+	summary := mustSummaryService(t, 20000, summaryLLM)
+	chain, err := rtcompaction.NewChain(struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gated, err := plugincompaction.NewTokenLimit(plugincompaction.TokenLimitConfig{MaxTokens: 1000000}, plugincompaction.TokenLimitDeps{Chain: chain, Services: []capcompaction.Service{summary}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipeline, err := plugincompaction.NewPipeline(struct{}{}, plugincompaction.PipelineDeps{Chain: chain, Services: []capcompaction.Service{mustPruneService(t, 8192), gated}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := &gateLLM{}
+	disabled := false
+	ag, err := agent.New(agent.Config{ID: compactionAgentID, Model: "gate", MaxPromptTokens: 1000, Retry: &agent.RetryConfig{Enabled: &disabled}}, agent.Deps{SessionStore: store, LLM: main, Tools: agenttest.EmptyToolsRuntime(t), Prompt: fixedOverheadPrompt{chars: 2800}, Compaction: []capcompaction.Service{pipeline}, Workspace: rtworkspace.Static(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agenttest.RunTurn(t, ctx, ag, "继续授权")
+	if main.calls() != 1 {
+		t.Fatalf("main calls=%d", main.calls())
+	}
+	if size := main.promptSizes()[0]; size > 4000 {
+		t.Fatalf("oversized prompt sent: %d bytes", size)
+	}
+	if summaryLLM.count() == 0 {
+		t.Fatal("default retention still prevented compaction")
+	}
+	events := agenttest.SessionEvents(t, context.Background(), store, sid)
+	sess, err := store.Get(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := sess.DeriveMessages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(messages)
+	if !strings.Contains(string(raw), "继续授权") {
+		t.Fatal("lost live user task")
+	}
+	if len(compactionEvents(t, events)) == 0 {
+		t.Fatal("compaction did not persist")
+	}
+}
+
+func TestSmokePreSendReportsFixedOverheadWithoutPointlessCompaction(t *testing.T) {
+	store, root := agenttest.TempFileStore(t)
+	sid := agentkit.SessionID("smoke:fixed-overhead-budget")
+	ctx := agenttest.TurnContext(sid, compactionAgentID)
+	summaryLLM := &countingLLM{inner: agenttest.MustScripted(t, llm.ScriptedStep{Text: "unused"})}
+	main := &gateLLM{}
+	disabled := false
+	ag, err := agent.New(agent.Config{ID: compactionAgentID, Model: "gate", MaxPromptTokens: 1000, Retry: &agent.RetryConfig{Enabled: &disabled}}, agent.Deps{SessionStore: store, LLM: main, Tools: agenttest.EmptyToolsRuntime(t), Prompt: fixedOverheadPrompt{chars: 4100}, Compaction: []capcompaction.Service{mustSummaryService(t, 20000, summaryLLM)}, Workspace: rtworkspace.Static(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = runText(t, ctx, ag, "继续授权")
+	if err == nil || !strings.Contains(err.Error(), "fixed prompt") || !strings.Contains(err.Error(), "reduce system/context") {
+		t.Fatalf("unhelpful budget error: %v", err)
+	}
+	if main.calls() != 0 || summaryLLM.count() != 0 {
+		t.Fatal("sent an impossible prompt or attempted pointless compaction")
+	}
+}

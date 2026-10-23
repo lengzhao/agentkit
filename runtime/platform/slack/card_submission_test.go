@@ -48,7 +48,7 @@ func TestSlackFallbackClosesCardOnce(t *testing.T) {
 				}
 				_ = r.ParseForm()
 				body := []byte(r.Form.Get("blocks"))
-				if strings.Contains(string(body), `"type":"button"`) || !strings.Contains(string(body), "已提交") {
+				if strings.Contains(string(body), `"type":"button"`) || !strings.Contains(string(body), "已提交") || !strings.Contains(string(body), "风险偏好") || !strings.Contains(string(body), "生产") || !strings.Contains(string(body), "测试") || !strings.Contains(string(body), `"block_id":"question"`) {
 					t.Errorf("interactive card remained: %s", body)
 				}
 				updates++
@@ -62,7 +62,7 @@ func TestSlackFallbackClosesCardOnce(t *testing.T) {
 			p := &Platform{client: slackapi.New("token", slackapi.OptionAPIURL(srv.URL+"/")), inbox: common.NewInbox(4)}
 			p.userProfileCache.Store("U1", slackUserProfileEntry{})
 			var cb slackapi.InteractionCallback
-			_ = json.Unmarshal([]byte(`{"type":"block_actions","user":{"id":"U1"},"channel":{"id":"C1"},"message":{"ts":"1","text":"请选择环境"}}`), &cb)
+			_ = json.Unmarshal([]byte(`{"type":"block_actions","user":{"id":"U1"},"channel":{"id":"C1"},"message":{"ts":"1","text":"请选择环境","blocks":[{"type":"header","text":{"type":"plain_text","text":"风险偏好"}},{"type":"section","block_id":"question","text":{"type":"mrkdwn","text":"请选择环境"}},{"type":"actions","block_id":"answers","elements":[{"type":"button","action_id":"answer","text":{"type":"plain_text","text":"生产"},"value":"prod"},{"type":"button","action_id":"other","text":{"type":"plain_text","text":"测试"},"value":"test"}]}]}}`), &cb)
 			e := slackInteractionSnapshot(cb, &slackapi.BlockAction{ActionID: "answer", Type: "button", Value: "prod"}, p.buildSessionKey("C1", "U1", ""), "C1", "1", "", "prod")
 			for i := 0; i < 2; i++ {
 				if err := p.processBlockInteraction(context.Background(), e); err != nil {
@@ -142,5 +142,41 @@ func TestSlackSelectedOptionPolicyAndUnknownFormContext(t *testing.T) {
 	e = slackInteractionSnapshot(cb, a, "s", "c", "m", "", "choose")
 	if e.SubmissionMode != interaction.SubmissionPerUser {
 		t.Fatal("selected option policy ignored")
+	}
+}
+
+func TestSlackCloseModalPreservesOriginalTitle(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if !strings.HasSuffix(r.URL.Path, "views.update") {
+			t.Errorf("unexpected API: %s", r.URL.Path)
+		}
+		var req struct {
+			View slackapi.ModalViewRequest `json:"view"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
+		if req.View.Title == nil || req.View.Title.Text != "喜欢的运动" {
+			t.Errorf("lost original title: %#v", req.View.Title)
+		}
+		if req.View.Submit != nil {
+			t.Error("read-only modal retained submit")
+		}
+		if req.View.PrivateMetadata != "session-route" || req.View.CallbackID != "sports" {
+			t.Error("lost modal context")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"view":{"id":"V1"}}`))
+	}))
+	defer srv.Close()
+	p := &Platform{client: slackapi.New("token", slackapi.OptionAPIURL(srv.URL+"/"))}
+	e := interaction.Event{InteractionID: "V1", RawCard: json.RawMessage(`{"type":"modal","title":{"type":"plain_text","text":"喜欢的运动"},"submit":{"type":"plain_text","text":"提交"},"private_metadata":"session-route","callback_id":"sports","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"请选择"}}]}`)}
+	if err := p.closeInteractionCard(context.Background(), e, "已提交"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("updates=%d", calls)
 	}
 }

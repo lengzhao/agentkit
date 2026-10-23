@@ -48,16 +48,32 @@ func (p *Platform) closeInteractionCard(ctx context.Context, e interaction.Event
 	if e.Type == string(slackapi.InteractionTypeViewSubmission) {
 		return p.notifyInteractionUser(ctx, e, text)
 	}
-	card := common.NewCard().Title("已提交", "green").Markdown(text).Build()
-	card.Static = true
+	blocks, err := submittedSlackBlocks(e, text)
+	if err != nil {
+		return err
+	}
 	if e.InteractionID != "" {
-		_, err := p.client.UpdateViewContext(ctx, slackapi.ModalViewRequest{Type: slackapi.VTModal, Title: plainTextBlock("已提交"), Close: plainTextBlock("关闭"), Blocks: slackapi.Blocks{BlockSet: renderCardBlocks(card, e.SessionID)}}, "", "", e.InteractionID)
+		var view slackapi.ModalViewRequest
+		if err := json.Unmarshal(e.RawCard, &view); err != nil {
+			return fmt.Errorf("original modal unavailable: %w", err)
+		}
+		if view.Title == nil || strings.TrimSpace(view.Title.Text) == "" {
+			return fmt.Errorf("original modal title unavailable; preserving modal")
+		}
+		view.Type = slackapi.VTModal
+		view.Blocks = slackapi.Blocks{BlockSet: blocks}
+		view.Submit = nil
+		if view.Close == nil {
+			view.Close = plainTextBlock("关闭")
+		}
+		_, err := p.client.UpdateViewContext(ctx, view, "", "", e.InteractionID)
 		return err
 	}
 	if e.MessageID == "" {
 		return fmt.Errorf("card message ID unavailable")
 	}
-	return p.updateCardMessage(ctx, cardMessageRef{channel: e.ChatID, ts: e.MessageID, threadTS: e.ThreadID}, card, e.SessionID)
+	_, _, _, err = p.client.UpdateMessageContext(ctx, e.ChatID, e.MessageID, slackapi.MsgOptionBlocks(blocks...), slackapi.MsgOptionText(text, false))
+	return err
 }
 func (p *Platform) notifyInteractionUser(ctx context.Context, e interaction.Event, text string) error {
 	if p.client == nil || e.UserID == "" {

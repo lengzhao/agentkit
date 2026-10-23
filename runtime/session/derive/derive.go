@@ -3,6 +3,7 @@ package derive
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/compaction"
@@ -36,12 +37,13 @@ func DeriveMessages(ctx context.Context, events []agentkit.SessionEvent, maxTool
 }
 
 type compactionView struct {
-	AfterSeq      agentkit.EventSeq
-	Summary       *agentkit.ModelMessage
-	RetainedTail  []agentkit.ModelMessage
-	CompactionSeq agentkit.EventSeq
-	FirstKeptSeq  agentkit.EventSeq
-	HasCompaction bool
+	AfterSeq           agentkit.EventSeq
+	Summary            *agentkit.ModelMessage
+	RetainedTurnStarts []bool
+	RetainedTail       []agentkit.ModelMessage
+	CompactionSeq      agentkit.EventSeq
+	FirstKeptSeq       agentkit.EventSeq
+	HasCompaction      bool
 }
 
 func resolveCompactionView(events []agentkit.SessionEvent, agentID agentkit.AgentID) compactionView {
@@ -59,6 +61,7 @@ func resolveCompactionView(events []agentkit.SessionEvent, agentID agentkit.Agen
 	}
 	if len(data.RetainedTail) > 0 {
 		view.RetainedTail = append([]agentkit.ModelMessage(nil), data.RetainedTail...)
+		view.RetainedTurnStarts = data.RetainedTurnStarts
 		return view
 	}
 	// Legacy compaction entries without retainedTail replay events after BeforeSeq.
@@ -84,11 +87,15 @@ func indexedCompactionPrefix(view compactionView) []IndexedMessage {
 		IsTurnStart:  false,
 		LogicalChars: capsession.EstimateLogicalChars(*view.Summary),
 	}}
-	for _, msg := range view.RetainedTail {
+	for i, msg := range view.RetainedTail {
+		turnStart := legacyTurnStart(msg)
+		if len(view.RetainedTurnStarts) == len(view.RetainedTail) {
+			turnStart = view.RetainedTurnStarts[i]
+		}
 		out = append(out, IndexedMessage{
 			Message:      msg,
 			Seq:          view.FirstKeptSeq,
-			IsTurnStart:  msg.Role == "user",
+			IsTurnStart:  turnStart,
 			LogicalChars: capsession.EstimateLogicalChars(msg),
 		})
 	}
@@ -129,6 +136,7 @@ func walkIndexedEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID,
 func collectVisibleEvents(events []agentkit.SessionEvent, agentID agentkit.AgentID, afterSeq agentkit.EventSeq) []visibleWalkItem {
 	var out []visibleWalkItem
 	var pendingSkill []visibleWalkItem
+	pendingCalls := make(map[agentkit.ToolCallID]bool)
 	flushSkillLoads := func() {
 		if len(pendingSkill) == 0 {
 			return
@@ -148,9 +156,23 @@ func collectVisibleEvents(events []agentkit.SessionEvent, agentID agentkit.Agent
 				pendingSkill = append(pendingSkill, item)
 				continue
 			}
+			if item.msg.Role == "assistant" || item.isTurnStart {
+				// A new turn/round closes any incomplete older round before
+				// introducing its own calls. Keep deferred context out of it.
+				flushSkillLoads()
+				clear(pendingCalls)
+			}
+			for _, call := range item.msg.ToolCalls {
+				pendingCalls[call.ID] = true
+			}
 			out = append(out, item)
 			if item.msg.Role == "tool" {
-				flushSkillLoads()
+				for _, result := range item.msg.ToolResults {
+					delete(pendingCalls, result.ID)
+				}
+				if len(pendingCalls) == 0 {
+					flushSkillLoads()
+				}
 			}
 		}
 	}
@@ -190,12 +212,12 @@ func eventToWalkItems(ev agentkit.SessionEvent) []visibleWalkItem {
 		}
 		// Skill loads are recorded during tool execution, before the tool
 		// result event. Defer them so assistant tool_calls are immediately
-		// followed by tool messages, as providers require.
+		// followed by all tool messages in the batch, as providers require.
 		msg := skillLoadMessage(load)
 		return []visibleWalkItem{{
 			msg:          msg,
 			seq:          ev.Seq,
-			isTurnStart:  true,
+			isTurnStart:  false,
 			deferSkill:   true,
 			logicalChars: capsession.EstimateLogicalChars(msg),
 		}}
@@ -297,4 +319,18 @@ func LatestSeq(ctx context.Context, s agentkit.Session) (agentkit.EventSeq, erro
 		return 0, err
 	}
 	return capsession.LatestEventSeq(events), nil
+}
+
+// Compatibility for checkpoints written before turn-start provenance was persisted.
+// Skill envelopes are model-visible user-role context, not human turn triggers.
+func legacyTurnStart(msg agentkit.ModelMessage) bool {
+	if msg.Role != "user" {
+		return false
+	}
+	for _, part := range msg.Content {
+		if strings.HasPrefix(strings.TrimSpace(part.Text), "<skill_content name=") {
+			return false
+		}
+	}
+	return true
 }

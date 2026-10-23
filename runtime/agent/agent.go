@@ -544,7 +544,7 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 		return stepOutcome{}, err
 	}
 	if a.maxPromptTokens > 0 && len(a.compaction) > 0 {
-		messages, ctx, err = a.guardPromptSize(ctx, sess, pos, messages)
+		messages, ctx, err = a.guardPromptSize(ctx, sess, pos, messages, history)
 		if err != nil {
 			prepEnd.Err = err
 			finishPrep()
@@ -699,25 +699,37 @@ func (a *Runtime) runStep(ctx context.Context, sess agentkit.Session, emit agent
 // the assembled prompt at real send size (system prompt and inline media
 // included), force-runs compaction once when over maxPromptTokens, and fails
 // the step when the prompt still does not fit.
-func (a *Runtime) guardPromptSize(ctx context.Context, sess agentkit.Session, pos stepPosition, messages []agentkit.ModelMessage) ([]agentkit.ModelMessage, context.Context, error) {
+func (a *Runtime) guardPromptSize(ctx context.Context, sess agentkit.Session, pos stepPosition, messages, history []agentkit.ModelMessage) ([]agentkit.ModelMessage, context.Context, error) {
 	est := rtcompaction.EstimateMessagesTokens(messages)
 	if est <= a.maxPromptTokens {
 		return messages, ctx, nil
 	}
+	historyTokens := rtcompaction.EstimateMessagesTokens(history)
+	fixedTokens := max(0, est-historyTokens)
+	remaining := a.maxPromptTokens - fixedTokens
+	if remaining <= 0 {
+		return nil, ctx, fmt.Errorf("fixed prompt %d tokens leaves no history budget under maxPromptTokens %d; reduce system/context sections or increase maxPromptTokens", fixedTokens, a.maxPromptTokens)
+	}
+	// Leave headroom for the summary marker, rounding and rebuilt context.
+	targetHistory := max(1, remaining-remaining/10)
 	slog.Warn("prompt exceeds maxPromptTokens, compacting before send",
 		"agent_id", a.id,
 		"session_id", sess.ID(),
 		"estimated_tokens", est,
 		"max_prompt_tokens", a.maxPromptTokens,
+		"history_tokens", historyTokens,
+		"fixed_prompt_tokens", fixedTokens,
+		"target_history_tokens", targetHistory,
 	)
-	applied, compactErr := a.runForcedCompaction(ctx, sess)
+	applied, compactErr := a.runForcedCompaction(ctx, sess, targetHistory)
 	if compactErr != nil {
 		return nil, ctx, fmt.Errorf("pre-send compaction failed: %w", compactErr)
 	}
 	if applied == 0 {
 		return nil, ctx, fmt.Errorf("prompt %d tokens exceeds maxPromptTokens %d and compaction did not apply", est, a.maxPromptTokens)
 	}
-	history, ctx, err := a.prepareStepHistory(ctx, sess, pos)
+	var err error
+	history, ctx, err = a.prepareStepHistory(ctx, sess, pos)
 	if err != nil {
 		return nil, ctx, err
 	}

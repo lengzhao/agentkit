@@ -54,6 +54,9 @@ func TestFeishuFallbackClosesOnceEvenIfPatchFails(t *testing.T) {
 					return
 				}
 				if strings.Contains(r.URL.Path, "/messages/") {
+					if r.URL.Query().Get("card_msg_content_type") != "user_card_content" {
+						t.Error("query did not request original card JSON")
+					}
 					card := `{"header":{"title":{"content":"请选择环境"}},"elements":[{"tag":"button","name":"answer","text":{"content":"生产"},"value":{"action":"choose","answer":"prod"}}]}`
 					_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": []any{map[string]any{"message_id": "om_m", "chat_id": "oc_c", "msg_type": "interactive", "body": map[string]any{"content": card}}}}})
 					return
@@ -79,7 +82,7 @@ func TestFeishuFallbackClosesOnceEvenIfPatchFails(t *testing.T) {
 			}
 			select {
 			case body := <-patched:
-				if strings.Contains(body, `"tag":"button"`) || !strings.Contains(body, "生产") || !strings.Contains(body, "已提交") {
+				if !strings.Contains(body, `"tag":"button"`) || !strings.Contains(body, `"disabled":true`) || !strings.Contains(body, "请选择环境") || !strings.Contains(body, "生产") || !strings.Contains(body, "已提交") {
 					t.Fatalf("card did not become read-only: %s", body)
 				}
 			case <-ctx.Done():

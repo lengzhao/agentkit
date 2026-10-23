@@ -145,19 +145,26 @@ func SubmittedInteractionText(e interaction.Event) string {
 		// Routing/button metadata belongs in RawAction, not in the answer summary.
 		value := answer.Value
 		if m, ok := value.(map[string]any); ok {
-			if answer.Label != "" {
-				value = nil
-			} else {
-				value = nil
-				for _, key := range []string{"answer", "option", "selected", "value", "action"} {
-					if v, exists := m[key]; exists {
-						value = v
-						break
-					}
+			value = nil
+			for _, key := range []string{"answer", "option", "selected", "value"} {
+				if v, exists := m[key]; exists {
+					value = v
+					break
 				}
-				if value == nil {
+			}
+			if value == nil && answer.Label == "" {
+				payload := make(map[string]any)
+				for k, v := range m {
+					switch k {
+					case "action", "session_key", "agentkit_interaction":
+						continue
+					}
+					payload[k] = v
+				}
+				if len(payload) == 0 {
 					continue
 				}
+				value = interactionValue(payload)
 			}
 		}
 		b.WriteString("\n")
@@ -179,6 +186,12 @@ func SubmittedInteractionText(e interaction.Event) string {
 	return b.String()
 }
 
+// InteractionSubmissionSummary excludes the original content already present on the card.
+func InteractionSubmissionSummary(e interaction.Event) string {
+	e.CardText = ""
+	return SubmittedInteractionText(e)
+}
+
 type interactionCardResponder struct {
 	close func(context.Context, interaction.Event, string) error
 	event interaction.Event
@@ -186,7 +199,7 @@ type interactionCardResponder struct {
 
 func (r interactionCardResponder) CloseCard(ctx context.Context, text string) error {
 	if text == "" {
-		text = SubmittedInteractionText(r.event)
+		text = InteractionSubmissionSummary(r.event)
 	}
 	return r.close(ctx, r.event, text)
 }

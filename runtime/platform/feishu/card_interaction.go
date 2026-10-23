@@ -115,7 +115,7 @@ func (p *Platform) fetchCardMessage(ctx context.Context, id string) cardMessageS
 		result.err = "message client unavailable"
 		return result
 	}
-	req := larkim.NewGetMessageReqBuilder().MessageId(id).UserIdType(larkim.UserIdTypeOpenId).Build()
+	req := larkim.NewGetMessageReqBuilder().MessageId(id).UserIdType(larkim.UserIdTypeOpenId).CardMsgContentType("user_card_content").Build()
 	var resp *larkim.GetMessageResp
 	err := p.withTransientRetry(ctx, "get card message", func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "get card message", func(client *lark.Client, opts ...larkcore.RequestOptionFunc) error {

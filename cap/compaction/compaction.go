@@ -22,6 +22,10 @@ type Request struct {
 	Messages  []agentkit.ModelMessage
 	// Force skips automatic thresholds such as minMessages (manual /compact).
 	Force bool
+	// MaxHistoryTokens is an optional per-request upper budget for compacted
+	// history, after the caller reserves space for system/context overhead.
+	// Zero preserves the service configuration (manual/background compaction).
+	MaxHistoryTokens int
 }
 
 type Result struct {
@@ -37,9 +41,12 @@ type EventData struct {
 	FirstKeptSeq agentkit.EventSeq `json:"firstKeptSeq,omitempty"`
 	// RetainedTail is verbatim recent history kept for the model after compaction.
 	RetainedTail []agentkit.ModelMessage `json:"retainedTail,omitempty"`
-	TokensBefore int                   `json:"tokensBefore,omitempty"`
-	Summary      agentkit.ModelMessage `json:"summary"`
-	Kind         string                `json:"kind"`
+	// RetainedTurnStarts preserves source-event identity independently of model roles.
+	// A matching-length slice is authoritative; older records fall back to role/envelope detection.
+	RetainedTurnStarts []bool                `json:"retainedTurnStarts,omitempty"`
+	TokensBefore       int                   `json:"tokensBefore,omitempty"`
+	Summary            agentkit.ModelMessage `json:"summary"`
+	Kind               string                `json:"kind"`
 }
 
 const (

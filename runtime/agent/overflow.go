@@ -52,7 +52,7 @@ func (a *Runtime) runStepWithOverflowRecovery(
 			// gracefully instead of killing the whole turn mid-flight.
 			if !*safetyRecoveryAttempted && len(a.compaction) > 0 {
 				*safetyRecoveryAttempted = true
-				applied, compactErr := a.runForcedCompaction(ctx, sess)
+				applied, compactErr := a.runForcedCompaction(ctx, sess, 0)
 				recoveryData := capsession.OverflowRecoveryData{Reason: "safety"}
 				if compactErr != nil {
 					recoveryData.Error = compactErr.Error()
@@ -78,7 +78,7 @@ func (a *Runtime) runStepWithOverflowRecovery(
 			return msg, err
 		}
 		*overflowRecoveryAttempted = true
-		applied, compactErr := a.runForcedCompaction(ctx, sess)
+		applied, compactErr := a.runForcedCompaction(ctx, sess, 0)
 		recoveryData := capsession.OverflowRecoveryData{Reason: "overflow"}
 		if compactErr != nil {
 			recoveryData.Error = compactErr.Error()
@@ -100,7 +100,7 @@ func (a *Runtime) runStepWithOverflowRecovery(
 	}
 }
 
-func (a *Runtime) runForcedCompaction(ctx context.Context, sess agentkit.Session) (int, error) {
+func (a *Runtime) runForcedCompaction(ctx context.Context, sess agentkit.Session, maxHistoryTokens int) (int, error) {
 	before, err := latestCompactionSeq(ctx, sess)
 	if err != nil {
 		return 0, err
@@ -110,11 +110,12 @@ func (a *Runtime) runForcedCompaction(ctx context.Context, sess agentkit.Session
 		return 0, err
 	}
 	_, applied, err := rtcompaction.ApplyAll(ctx, a.compaction, compaction.Request{
-		SessionID: sess.ID(),
-		AgentID:   a.id,
-		Session:   sess,
-		Messages:  messages,
-		Force:     true,
+		SessionID:        sess.ID(),
+		AgentID:          a.id,
+		Session:          sess,
+		Messages:         messages,
+		Force:            true,
+		MaxHistoryTokens: maxHistoryTokens,
 	})
 	if err != nil {
 		return 0, err

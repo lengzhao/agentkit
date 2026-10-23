@@ -125,7 +125,7 @@ func ProcessInteraction(ctx context.Context, e interaction.Event, p InteractionP
 					err = p.NotifyUser(updateCtx, e, text)
 				}
 			} else if p.CloseCard != nil {
-				err = p.CloseCard(updateCtx, e, text)
+				err = p.CloseCard(updateCtx, e, InteractionSubmissionSummary(e))
 			}
 			cancel()
 			if err != nil {
@@ -209,6 +209,12 @@ func EnrichInteractionCard(e *interaction.Event) {
 					label = cardLabel(x["label"])
 				}
 				add(control, value, label)
+				// Feishu callback normalization unwraps a button's nested value.
+				if button, ok := value.(map[string]any); ok {
+					if nested, exists := button["value"]; exists {
+						add(control, nested, label)
+					}
+				}
 			}
 			keys := make([]string, 0, len(x))
 			for k := range x {

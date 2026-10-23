@@ -2,7 +2,9 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -183,5 +185,18 @@ func TestCardSubmissionTTLValidation(t *testing.T) {
 	}
 	if ttl, err := ParseCardSubmissionTTL(""); err != nil || ttl != 24*time.Hour {
 		t.Fatal("wrong default TTL")
+	}
+}
+
+func TestSubmittedButtonAnswerKeepsSelectedLabel(t *testing.T) {
+	e := interaction.Event{Action: "risk_level_test", RawCard: json.RawMessage(`{"elements":[{"tag":"button","text":{"content":"进取型"},"value":{"action":"risk_level_test","value":"high","test_id":"t"}}]}`), Answers: []interaction.Answer{{Value: "high"}}}
+	EnrichInteractionCard(&e)
+	text := SubmittedInteractionText(e)
+	if !strings.Contains(text, "进取型 (high)") {
+		t.Fatalf("lost selected label: %s", text)
+	}
+	e.Answers = []interaction.Answer{{Value: map[string]any{"action": "risk_level_test", "risk": "high"}}}
+	if strings.Contains(SubmittedInteractionText(e), "risk_level_test") {
+		t.Fatal("routing action shown as answer")
 	}
 }
