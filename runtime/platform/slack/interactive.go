@@ -64,10 +64,7 @@ func (p *Platform) handleBlockActionPayload(callback slack.InteractionCallback, 
 		viewSession, channel, viewThread = p.slackViewRoute(callback)
 		callback.Channel.ID = channel
 	}
-	rawValue := strings.TrimSpace(action.Value)
-	if rawValue == "" {
-		rawValue = strings.TrimSpace(action.SelectedOption.Value)
-	}
+	rawValue := slackActionValue(*action)
 	actionVal, sessionKey, extra := decodeActionValue(rawValue)
 	if sessionKey == "" && viewSession != "" {
 		sessionKey = viewSession

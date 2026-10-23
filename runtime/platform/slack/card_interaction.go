@@ -141,16 +141,20 @@ func slackInteractionSnapshot(cb slackapi.InteractionCallback, a *slackapi.Block
 		}
 	}
 
+	normalizeSlackInteraction(&e)
 	return e
 }
 
 func (p *Platform) processBlockInteraction(ctx context.Context, e interaction.Event) error {
+	ttl, _ := common.ParseCardSubmissionTTL(p.cfg.CardSubmissionTTL)
 	return common.ProcessInteraction(ctx, e, common.InteractionProcessing{
+		Submissions: &p.cardSubmissions, SubmissionTTL: ttl, CloseCard: p.closeInteractionCard, NotifyUser: p.notifyInteractionUser,
 		Mode: p.unknownCardAction, Handlers: p.interactionHandlers,
 		Allowed: func(_ context.Context, e interaction.Event) bool {
 			return common.AllowList(p.cfg.AllowFrom, e.UserID) && ((e.InteractionID != "" && e.ChatID == e.UserID) || p.channelAllowed(e.ChatID, inferSlackChannelType(e.ChatID)))
 		},
 		Enrich: func(ctx context.Context, e *interaction.Event) {
+			defer normalizeSlackInteraction(e)
 			if e.CardStatus == interaction.CardAvailable {
 				return
 			}

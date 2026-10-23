@@ -34,6 +34,7 @@ type Config struct {
 	CancelledEmoji    string `json:"cancelledEmoji"`
 	ErrorEmoji        string `json:"errorEmoji"`
 	UnknownCardAction string `json:"unknownCardAction"` // forward (default) | ignore
+	CardSubmissionTTL string `json:"cardSubmissionTTL"` // positive duration; default 24h
 }
 
 // Validate implements pluginkit.Validator.
@@ -49,7 +50,8 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("platform/slack unknownCardAction must be forward or ignore, got %q", c.UnknownCardAction)
 	}
-	return nil
+	_, err := common.ParseCardSubmissionTTL(c.CardSubmissionTTL)
+	return err
 }
 
 type Deps struct {
@@ -81,6 +83,7 @@ func (d delivery) inboundRoute(user string) agentkit.SessionRouteInput {
 }
 
 type Platform struct {
+	cardSubmissions     common.CardSubmissions
 	interactionHandlers []interaction.Handler
 	interactionDedup    common.InteractionDedup
 	cfg                 Config
@@ -156,6 +159,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 			CancelledEmoji:     cfg.CancelledEmoji,
 			ErrorEmoji:         cfg.ErrorEmoji,
 			UnknownCardAction:  cfg.UnknownCardAction,
+			CardSubmissionTTL:  cfg.CardSubmissionTTL,
 		},
 		unknownCardAction:   common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
 		interactionHandlers: deps.InteractionHandlers,

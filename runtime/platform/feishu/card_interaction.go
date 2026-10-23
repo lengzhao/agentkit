@@ -94,6 +94,7 @@ func feishuInteractionSnapshot(ev *callback.CardActionTriggerEvent, session, cha
 	for _, k := range keys {
 		add(k, a.FormValue[k])
 	}
+	normalizeFeishuInteraction(&e)
 	return e
 }
 
@@ -167,10 +168,13 @@ func (p *Platform) processCardInteraction(e interaction.Event) error {
 	e.Platform = p.tag()
 	chatType := ""
 	validRoute := true
+	ttl, _ := common.ParseCardSubmissionTTL(p.cfg.CardSubmissionTTL)
 	return common.ProcessInteraction(ctx, e, common.InteractionProcessing{
+		Submissions: &p.cardSubmissions, SubmissionTTL: ttl, CloseCard: p.closeInteractionCard, NotifyUser: p.notifyInteractionUser,
 		Mode: p.unknownCardAction, Handlers: p.interactionHandlers,
 		Enrich: func(ctx context.Context, e *interaction.Event) {
 			chatType, validRoute = p.enrichCardInteraction(ctx, e)
+			normalizeFeishuInteraction(e)
 		},
 		Allowed: func(_ context.Context, e interaction.Event) bool {
 			return validRoute && common.AllowList(p.allowChat, e.ChatID)

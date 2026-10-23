@@ -61,6 +61,7 @@ type Config struct {
 	Port                      string            `json:"port"`
 	CallbackPath              string            `json:"callbackPath"`
 	UnknownCardAction         string            `json:"unknownCardAction"` // forward (default) | ignore
+	CardSubmissionTTL         string            `json:"cardSubmissionTTL"` // positive duration; default 24h
 	// ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型
 	// （如 drive.file.created_v1）。事件序列化为一条 inbound 消息；
 	// 每条事件使用独立 session（按 event_id），避免同群/同用户事件共享历史。
@@ -102,7 +103,8 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("platform feishu/lark unknownCardAction must be forward or ignore, got %q", c.UnknownCardAction)
 	}
-	return nil
+	_, err := common.ParseCardSubmissionTTL(c.CardSubmissionTTL)
+	return err
 }
 
 type Deps struct {

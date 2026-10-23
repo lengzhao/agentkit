@@ -33,12 +33,16 @@ func InteractionEventKey(e interaction.Event) string {
 // InteractionProcessing runs in the platform's background worker. Builtin must
 // report actual handling; Enrich may fetch original card and restore routing.
 type InteractionProcessing struct {
-	Allowed  func(context.Context, interaction.Event) bool
-	Mode     string
-	Handlers []interaction.Handler
-	Builtin  func(context.Context, interaction.Event) bool
-	Enrich   func(context.Context, *interaction.Event)
-	Forward  func(context.Context, interaction.Event) error
+	Submissions   *CardSubmissions
+	SubmissionTTL time.Duration
+	CloseCard     func(context.Context, interaction.Event, string) error
+	NotifyUser    func(context.Context, interaction.Event, string) error
+	Allowed       func(context.Context, interaction.Event) bool
+	Mode          string
+	Handlers      []interaction.Handler
+	Builtin       func(context.Context, interaction.Event) bool
+	Enrich        func(context.Context, *interaction.Event)
+	Forward       func(context.Context, interaction.Event) error
 }
 
 func ProcessInteraction(ctx context.Context, e interaction.Event, p InteractionProcessing) error {
@@ -62,7 +66,11 @@ func ProcessInteraction(ctx context.Context, e interaction.Event, p InteractionP
 		if h == nil {
 			continue
 		}
-		handled, err := h.HandleInteraction(ctx, e)
+		handlerCtx := ctx
+		if p.CloseCard != nil {
+			handlerCtx = interaction.WithCardResponder(ctx, interactionCardResponder{close: p.CloseCard, event: e})
+		}
+		handled, err := h.HandleInteraction(handlerCtx, e)
 		if err != nil {
 			slog.Error("interaction: handler failed", "platform", e.Platform, "message_id", e.MessageID, "error", err)
 			continue
@@ -76,14 +84,53 @@ func ProcessInteraction(ctx context.Context, e interaction.Event, p InteractionP
 		slog.Info("interaction: configuration ignored", "platform", e.Platform, "message_id", e.MessageID)
 		return nil
 	}
+	if e.Purpose == interaction.PurposeChange {
+		slog.Debug("interaction: form change acknowledged", "platform", e.Platform, "message_id", e.MessageID)
+		return nil
+	}
 	if p.Forward != nil {
+		complete := func(error) {}
+		once := e.Purpose == interaction.PurposeSubmit && e.SubmissionMode != interaction.SubmissionRepeat && p.Submissions != nil && cardSubmissionKey(e) != ""
+		if once {
+			var duplicate bool
+			complete, duplicate = p.Submissions.Begin(e, p.SubmissionTTL)
+			if duplicate {
+				slog.Info("interaction: card already submitted", "platform", e.Platform, "message_id", e.MessageID, "user", e.UserID)
+				if p.NotifyUser != nil {
+					notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+					defer cancel()
+					if err := p.NotifyUser(notifyCtx, e, "已提交"); err != nil {
+						slog.Warn("interaction: submission notice failed", "error", err)
+					}
+				}
+				return nil
+			}
+		}
 		// Enrichment/plugins may exhaust the worker budget. Queue delivery receives
 		// a separate, bounded budget, and failures must reach the receipt owner.
 		deliveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := p.Forward(deliveryCtx, e); err != nil {
+			complete(err)
 			slog.Error("interaction: delivery failed", "platform", e.Platform, "message_id", e.MessageID, "event_id", e.EventID, "error", err)
 			return err
+		}
+		complete(nil)
+		if once {
+			updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			text := SubmittedInteractionText(e)
+			var err error
+			if e.SubmissionMode == interaction.SubmissionPerUser {
+				if p.NotifyUser != nil {
+					err = p.NotifyUser(updateCtx, e, text)
+				}
+			} else if p.CloseCard != nil {
+				err = p.CloseCard(updateCtx, e, text)
+			}
+			cancel()
+			if err != nil {
+				slog.Warn("interaction: submitted card update failed", "platform", e.Platform, "message_id", e.MessageID, "error", err)
+			}
 		}
 		slog.Info("interaction: fallback forwarded", "platform", e.Platform, "message_id", e.MessageID, "session_id", e.SessionID)
 	}

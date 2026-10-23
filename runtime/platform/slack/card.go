@@ -48,18 +48,20 @@ func decodeActionValue(raw string) (action, sessionKey string, extra map[string]
 	if raw == "" {
 		return "", "", nil
 	}
-	var payload map[string]string
+	var payload map[string]any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return raw, "", nil
 	}
-	action = payload["action"]
-	sessionKey = payload["session_key"]
+	action, _ = payload["action"].(string)
+	sessionKey, _ = payload["session_key"].(string)
 	extra = make(map[string]string, len(payload))
 	for k, v := range payload {
 		if k == "action" || k == "session_key" {
 			continue
 		}
-		extra[k] = v
+		if s, ok := v.(string); ok {
+			extra[k] = s
+		}
 	}
 	if len(extra) == 0 {
 		extra = nil

@@ -36,6 +36,7 @@ type replyContext struct {
 }
 
 type Platform struct {
+	cardSubmissions            common.CardSubmissions
 	interactionHandlers        []interaction.Handler
 	interactionDedup           common.InteractionDedup
 	platformTag                string
@@ -238,6 +239,7 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 		sessionKey = p.makeSessionKey(nil, chatID, userID)
 	}
 	snapshot := feishuInteractionSnapshot(event, sessionKey, chatID, messageID, userID, actionVal)
+	snapshot.Platform = p.tag()
 	complete, duplicate := p.interactionDedup.Begin(common.InteractionEventKey(snapshot))
 	if duplicate {
 		slog.Info(p.tag()+": duplicate card callback ignored", "message_id", messageID)
@@ -264,6 +266,11 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 		complete(nil)
 		slog.Warn(p.tag()+": malformed permission card callback ignored", "message_id", messageID)
 		return nil, nil
+	}
+	if len(p.interactionHandlers) == 0 && p.cardSubmissions.Contains(snapshot) {
+		slog.Info(p.tag()+": card already submitted", "message_id", messageID, "user", userID)
+		complete(nil)
+		return cardActionAckToast(), nil
 	}
 	snapshot.SessionID = extra["session_key"] // only an explicit hint may restore a session
 	return p.forwardUnknownCardAction(snapshot, complete)

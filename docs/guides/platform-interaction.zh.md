@@ -424,7 +424,7 @@ Feishu/Lark 的 `card.action.trigger`、Slack 的 Block Kit 操作与 modal 表�
 Feishu 返回“已提交” toast，Slack 立即确认 Socket Mode 请求；网络查询与 agent 调度不会阻塞确认。
 去重包含事件 ID（Feishu 的 `header.event_id`、Slack 的 trigger/action 标识）、操作人、会话目标、
 控件、选项、输入与表单状态；缺少事件 ID 时回退到完整操作指纹。
-不同事件即使答案相同也分别处理，因此“选 A → 选 B → 再选 A”不会吞掉最后一次选择。
+传输去重只拦截重复投递；不同事件仍进入处理链，再由下述提交策略决定是否接受。
 处理中会保留去重占位；只有实际消费或成功入队后才进入 60 秒完成窗口，投递失败会释放占位，允许重投。
 该去重不保证跨进程或重启后的 exactly-once。
 
@@ -488,3 +488,45 @@ Lark 原有 `deps.eventHandlers` 仍用于订阅其他开放平台事件，两�
 
 Slack modal 如需关联原会话，可将按钮编码格式的 `{"session_key":"slack:…"}` 放入
 `private_metadata`。缺少该信息时使用按 view ID 隔离的私聊会话；不将 modal 的 view ID 当作消息时间戳。
+
+### 默认问题卡的一次性提交
+
+仅未被内置处理或子插件消费、最终进入 agent 兜底的操作应用此策略：
+
+- 首次最终提交在内存中原子占位，成功入队后保留标记；再次提交提示“已提交”，不再触发 agent。
+- 成功入队后异步将原卡片替换为包含问题和答案的只读卡片。更新失败会记录日志，服务端标记仍然拦截后续提交。
+- 入队失败会释放占位，允许重新提交；agent 后续业务执行结果不影响卡片状态。
+- `config.cardSubmissionTTL` 为正的 Go duration，默认 `24h`。完成标记超时自动清理，处理中占位保留至投递结束。重启不恢复标记；过期后仍可收到的旧交互可以再次提交。
+
+默认普通按钮及独立选择控件为最终提交。原生表单中的修改、重置保留交互，提交按钮才提交；
+Slack modal 的 `block_actions` 为修改，`view_submission` 为最终提交。`nav:` / `cmd:` / `act:` 默认为可重复操作。
+原卡片不可用而无法判断控件用途时（飞书按钮也可能是表单重置），保留答案转发但不锁定、不关闭；卡片作者可以显式声明用途。
+
+飞书按钮的 `value`、Slack action 的 JSON `value`（modal 使用 `private_metadata`）可以声明：
+
+```json
+{
+  "agentkit_interaction": {
+    "purpose": "submit",
+    "mode": "once"
+  }
+}
+```
+
+`purpose` 支持 `submit`（最终提交）、`change`（修改，不转发 agent）、`navigation`（可重复操作）；
+`mode` 支持 `once`（默认，按平台＋会话＋卡片限制）、`per_user`（再加操作人）、`repeat`（不限制）。
+群内多人答题使用 `per_user`：保留共享卡片，向提交人发送个人回执；飞书发送私聊，Slack 使用 ephemeral。
+这避免第一位答题人关闭所有人的控件。需要自定义多人卡片展示时交由插件处理。
+
+子插件先于默认提交限制执行。返回 `true, nil` 后，平台不会设置一次性标记，也不会自动关闭卡片；
+插件自行控制长期交互、重复提交与状态。需要关闭时可以调用：
+
+```go
+if err := interaction.CloseCard(ctx, "已收到你的答案"); err != nil {
+    return true, err
+}
+return true, nil
+```
+
+空文本使用默认的问题和答案摘要。该接口只更新展示，不设置默认提交标记；插件需要自行防重。
+Slack 原生 modal 最终提交仍遵循 Slack 的确认关闭行为；消息卡片由插件决定何时更新。
