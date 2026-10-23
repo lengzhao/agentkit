@@ -26,7 +26,7 @@
 | `id` | `agentkit.AgentID` | `acp` | ID is the agent id referenced by loop.defaultAgent. |
 | `command` | `[]string` | — | Command is the subprocess to spawn, e.g. ["agent", "acp"] (Cursor CLI) or ["npx", "-y", "@zed-industries/claude-code-acp@latest"]. |
 | `env` | `map[string]string` | — | Env adds environment variables for the subprocess. |
-| `cwd` | `string` | — | Cwd is the working directory for the ACP subprocess (cmd.Dir) and session/new. Empty uses workspace work/ (same default as tool/shell-bash). |
+| `cwd` | `string` | — | Cwd is the working directory for the ACP subprocess (cmd.Dir) and session/new. Empty uses workspace work/ (same default as tool/shell-bash). Any value the workspace resolves is accepted — absolute paths and ~/ pass through unchecked — and a missing directory is created (like tool/shell-bash). |
 | `releaseSubprocessAfterTurn` | `bool` | — | ReleaseSubprocessAfterTurn kills the ACP process group after each RunTurn so Cursor child processes (language servers, worker-server) do not accumulate. |
 | `autoApprove` | `bool` | — | AutoApprove automatically grants tool permission requests without prompting. |
 | `authMethod` | `string` | — | AuthMethod is passed to authenticate when non-empty (e.g. "cursor_login"). |

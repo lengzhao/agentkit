@@ -30,7 +30,9 @@ type Config struct {
 	// Env adds environment variables for the subprocess.
 	Env map[string]string `json:"env,omitempty"`
 	// Cwd is the working directory for the ACP subprocess (cmd.Dir) and session/new.
-	// Empty uses workspace work/ (same default as tool/shell-bash).
+	// Empty uses workspace work/ (same default as tool/shell-bash). Any value the
+	// workspace resolves is accepted — absolute paths and ~/ pass through
+	// unchecked — and a missing directory is created (like tool/shell-bash).
 	Cwd string `json:"cwd,omitempty"`
 	// ReleaseSubprocessAfterTurn kills the ACP process group after each RunTurn so
 	// Cursor child processes (language servers, worker-server) do not accumulate.

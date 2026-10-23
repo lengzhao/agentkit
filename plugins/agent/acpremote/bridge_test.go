@@ -2,6 +2,7 @@ package acpremote
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -56,6 +57,70 @@ func TestResolveCwdExplicitOverride(t *testing.T) {
 	want := filepath.Join(root, "work", "agent-harness")
 	if cwd != want {
 		t.Fatalf("cwd = %q, want %q", cwd, want)
+	}
+}
+
+func TestResolveCwdCreatesMissingDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	b := newBridge(Config{Cwd: "work/repos/agentkit"}, ws, nil, nil, nil, nil, nil, nil)
+
+	cwd, err := b.resolveCwd(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "work", "repos", "agentkit")
+	if cwd != want {
+		t.Fatalf("cwd = %q, want %q", cwd, want)
+	}
+	info, err := os.Stat(cwd)
+	if err != nil {
+		t.Fatalf("cwd not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("cwd %q is not a directory", cwd)
+	}
+}
+
+// An absolute (or ~/) cwd outside the workspace root is not restricted: the
+// workspace passes it through and the missing directory is created in place.
+func TestResolveCwdAbsoluteOutsideRootIsCreated(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "anywhere", "deep")
+	ws := rtworkspace.Static(root)
+	b := newBridge(Config{Cwd: outside}, ws, nil, nil, nil, nil, nil, nil)
+
+	cwd, err := b.resolveCwd(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cwd != outside {
+		t.Fatalf("cwd = %q, want %q", cwd, outside)
+	}
+	info, err := os.Stat(cwd)
+	if err != nil {
+		t.Fatalf("cwd not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("cwd %q is not a directory", cwd)
+	}
+}
+
+func TestResolveCwdSurfacesResolveErrorWithoutMkdir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	b := newBridge(Config{Cwd: "../../escape"}, ws, nil, nil, nil, nil, nil, nil)
+
+	// Static resolves one level above root, so a deeper escape must fail and
+	// no directory may be created for the rejected path.
+	if _, err := b.resolveCwd(context.Background()); err == nil {
+		t.Fatal("expected error for escaping cwd")
 	}
 }
 

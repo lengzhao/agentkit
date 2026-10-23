@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -168,15 +169,27 @@ func (b *bridge) waitSubprocess(proc *subprocess) {
 	b.connSend(subprocessExitOp{proc: proc, err: err})
 }
 
+// resolveCwd resolves the ACP subprocess working directory and creates it when
+// missing, matching tool/shell-bash. Without the mkdir a configured cwd that
+// does not exist yet fails the subprocess (chdir) and session/new instead of
+// just starting in a fresh directory.
 func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
-	if b.cfg.Cwd != "" {
-		return b.workspace.Resolve(ctx, b.cfg.Cwd)
+	rel := b.cfg.Cwd
+	if rel == "" {
+		workDir, _ := workspace.WorkLayout(b.workspace)
+		if workDir == "" {
+			workDir = "work"
+		}
+		rel = workDir
 	}
-	workDir, _ := workspace.WorkLayout(b.workspace)
-	if workDir == "" {
-		workDir = "work"
+	cwd, err := b.workspace.Resolve(ctx, rel)
+	if err != nil {
+		return "", err
 	}
-	return b.workspace.Resolve(ctx, workDir)
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		return "", fmt.Errorf("acp-remote: mkdir cwd %s: %w", cwd, err)
+	}
+	return cwd, nil
 }
 
 func (b *bridge) ensureACPSession(ctx context.Context, sessionID agentkit.SessionID, agentID agentkit.AgentID, sessionStore agentkit.SessionStore) (acp.SessionId, error) {
