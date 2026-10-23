@@ -198,7 +198,7 @@ workspace.default:
 llm.default:
   config:                          # api / retry 继承 L0，不再静默丢失
     model: gpt-5.4
-    baseUrl: https://chatai-api.amberainsider.com/v1
+    baseUrl: https://api.example.com/v1
 
 credentials.default:
   config:
@@ -228,7 +228,7 @@ platform.slack:
   config:
     botTokenRef: ${env:SLACK_BOT_TOKEN}
     appTokenRef: ${env:SLACK_APP_TOKEN}
-    domain: https://im-gateway-sit.amberainsider.com/api/
+    domain: https://slack.com/api/
     groupReplyAll: false
   deps:
     commands: commands.default
@@ -238,7 +238,7 @@ platform.slack:
 telemetry.default:
   use: telemetry/langfuse
   config:
-    baseUrl: https://langfuse-prod.amberainsider.com
+    baseUrl: https://cloud.langfuse.com
     publicKeyRef: env:LANGFUSE_PUBLIC_KEY
     secretKeyRef: env:LANGFUSE_SECRET_KEY
     environment: development
