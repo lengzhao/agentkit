@@ -9,6 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/credentials"
+	"github.com/lengzhao/agentkit/cap/interaction"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
@@ -21,18 +22,18 @@ import (
 
 type Config struct {
 	common.AgentRoutingConfig
-	BotToken      string `json:"botToken"`
-	BotTokenRef   string `json:"botTokenRef"`
-	AppToken      string `json:"appToken"`
-	AppTokenRef   string `json:"appTokenRef"`
-	Domain        string `json:"domain"` // optional Slack Web API base URL override
-	AllowFrom       string `json:"allowFrom"`
-	AllowChannels   string `json:"allowChannels"`
-	GroupReplyAll   bool   `json:"groupReplyAll"`
-	DoneEmoji       string `json:"doneEmoji"`
-	CancelledEmoji      string `json:"cancelledEmoji"`
-	ErrorEmoji          string `json:"errorEmoji"`
-	UnknownCardAction   string `json:"unknownCardAction"` // forward (default) | ignore
+	BotToken          string `json:"botToken"`
+	BotTokenRef       string `json:"botTokenRef"`
+	AppToken          string `json:"appToken"`
+	AppTokenRef       string `json:"appTokenRef"`
+	Domain            string `json:"domain"` // optional Slack Web API base URL override
+	AllowFrom         string `json:"allowFrom"`
+	AllowChannels     string `json:"allowChannels"`
+	GroupReplyAll     bool   `json:"groupReplyAll"`
+	DoneEmoji         string `json:"doneEmoji"`
+	CancelledEmoji    string `json:"cancelledEmoji"`
+	ErrorEmoji        string `json:"errorEmoji"`
+	UnknownCardAction string `json:"unknownCardAction"` // forward (default) | ignore
 }
 
 // Validate implements pluginkit.Validator.
@@ -52,10 +53,11 @@ func (c *Config) Validate() error {
 }
 
 type Deps struct {
-	Commands     agentkit.Commands     `json:"commands,omitempty"`
-	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
-	Workspace    workspace.Service     `json:"workspace,omitempty"`
-	Credentials  credentials.Store     `json:"credentials,omitempty"`
+	InteractionHandlers []interaction.Handler `json:"interactionHandlers,omitempty"`
+	Commands            agentkit.Commands     `json:"commands,omitempty"`
+	SessionStore        agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Workspace           workspace.Service     `json:"workspace,omitempty"`
+	Credentials         credentials.Store     `json:"credentials,omitempty"`
 }
 
 type delivery struct {
@@ -79,15 +81,17 @@ func (d delivery) inboundRoute(user string) agentkit.SessionRouteInput {
 }
 
 type Platform struct {
-	cfg          Config
-	agentID      agentkit.AgentID
-	apiURL       string
-	commands     agentkit.Commands
-	sessionScope agentkit.SessionScope
-	workspace    workspace.Service
-	inbox        *common.Inbox
-	outbound     *common.Outbound
-	deliveries   sync.Map
+	interactionHandlers []interaction.Handler
+	interactionDedup    common.InteractionDedup
+	cfg                 Config
+	agentID             agentkit.AgentID
+	apiURL              string
+	commands            agentkit.Commands
+	sessionScope        agentkit.SessionScope
+	workspace           workspace.Service
+	inbox               *common.Inbox
+	outbound            *common.Outbound
+	deliveries          sync.Map
 
 	client *slack.Client
 	socket *socketmode.Client
@@ -104,8 +108,8 @@ type Platform struct {
 	typingMu    sync.Mutex
 	typingStops map[agentkit.SessionID]func()
 
-	doneEmoji      string
-	cancelledEmoji string
+	doneEmoji         string
+	cancelledEmoji    string
 	errorEmoji        string
 	unknownCardAction string
 	dedup             *common.MessageDedup
@@ -153,19 +157,20 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 			ErrorEmoji:         cfg.ErrorEmoji,
 			UnknownCardAction:  cfg.UnknownCardAction,
 		},
-		unknownCardAction: common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
-		dedup:             &common.MessageDedup{},
-		doneEmoji:      resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
-		cancelledEmoji: resolveSlackReactionEmoji(cfg.CancelledEmoji, reactionCancelled),
-		errorEmoji:     resolveSlackReactionEmoji(cfg.ErrorEmoji, reactionError),
-		agentID:          cfg.ResolveAgentID(),
-		apiURL:           apiURL,
-		commands:         deps.Commands,
-		workspace:        deps.Workspace,
-		sessionScope:     cfg.SlashSessionScope(),
-		inbox:            common.NewInbox(64),
-		channelNameCache: make(map[string]string),
-		typingStops:      make(map[agentkit.SessionID]func()),
+		unknownCardAction:   common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
+		interactionHandlers: deps.InteractionHandlers,
+		dedup:               &common.MessageDedup{},
+		doneEmoji:           resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
+		cancelledEmoji:      resolveSlackReactionEmoji(cfg.CancelledEmoji, reactionCancelled),
+		errorEmoji:          resolveSlackReactionEmoji(cfg.ErrorEmoji, reactionError),
+		agentID:             cfg.ResolveAgentID(),
+		apiURL:              apiURL,
+		commands:            deps.Commands,
+		workspace:           deps.Workspace,
+		sessionScope:        cfg.SlashSessionScope(),
+		inbox:               common.NewInbox(64),
+		channelNameCache:    make(map[string]string),
+		typingStops:         make(map[agentkit.SessionID]func()),
 	}
 	p.outbound = common.NewOutbound(p.sendText, p.sendMediaPart)
 	return p, nil
@@ -180,21 +185,24 @@ type slackUserProfileEntry struct {
 }
 
 func (p *Platform) cachedUserProfile(userID string) slackUserProfileEntry {
+	return p.cachedUserProfileContext(context.Background(), userID)
+}
+func (p *Platform) cachedUserProfileContext(ctx context.Context, userID string) slackUserProfileEntry {
 	if cached, ok := p.userProfileCache.Load(userID); ok {
 		return cached.(slackUserProfileEntry)
 	}
-	entry := p.fetchUserProfile(userID)
+	entry := p.fetchUserProfile(ctx, userID)
 	if entry.ok {
 		p.userProfileCache.Store(userID, entry)
 	}
 	return entry
 }
 
-func (p *Platform) fetchUserProfile(userID string) slackUserProfileEntry {
+func (p *Platform) fetchUserProfile(ctx context.Context, userID string) slackUserProfileEntry {
 	if p.client == nil {
 		return slackUserProfileEntry{}
 	}
-	info, err := p.client.GetUserInfoContext(context.Background(), userID)
+	info, err := p.client.GetUserInfoContext(ctx, userID)
 	if err != nil {
 		slog.Debug("slack: user profile lookup failed", "user", userID, "error", err)
 		return slackUserProfileEntry{}
@@ -214,11 +222,14 @@ func (p *Platform) fetchUserProfile(userID string) slackUserProfileEntry {
 }
 
 func (p *Platform) userProfileMetadata(userID string) map[string]any {
+	return p.userProfileMetadataContext(context.Background(), userID)
+}
+func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string) map[string]any {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil
 	}
-	entry := p.cachedUserProfile(userID)
+	entry := p.cachedUserProfileContext(ctx, userID)
 	if !entry.ok {
 		return nil
 	}

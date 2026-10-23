@@ -17,6 +17,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -29,37 +30,37 @@ var errNotSupported = fmt.Errorf("feishu: not supported")
 
 type Config struct {
 	common.AgentRoutingConfig
-	AppID                      string            `json:"appId"`
-	AppSecret                  string            `json:"appSecret"`
-	Domain                     string            `json:"domain"`
-	AllowFrom                  string            `json:"allowFrom"`
-	AllowChat                  string            `json:"allowChat"`
-	GroupReplyAll              bool              `json:"groupReplyAll"`
-	ShareSessionInChannel      bool              `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
-	ThreadIsolation            bool              `json:"threadIsolation"`
-	ReplyInThread              *bool             `json:"replyInThread"`
-	ThreadNoMention            bool              `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation
-	ReactionEmoji              string            `json:"reactionEmoji"`
-	DoneEmoji                  string            `json:"doneEmoji"`
-	CancelledEmoji             string            `json:"cancelledEmoji"`
-	ErrorEmoji                 string            `json:"errorEmoji"`
-	GroupOnly                  bool              `json:"groupOnly"`
-	RespondToAtEveryoneAndHere bool              `json:"respondToAtEveryoneAndHere"`
-	ReplyToTrigger             *bool             `json:"replyToTrigger"`
+	AppID                      string `json:"appId"`
+	AppSecret                  string `json:"appSecret"`
+	Domain                     string `json:"domain"`
+	AllowFrom                  string `json:"allowFrom"`
+	AllowChat                  string `json:"allowChat"`
+	GroupReplyAll              bool   `json:"groupReplyAll"`
+	ShareSessionInChannel      bool   `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
+	ThreadIsolation            bool   `json:"threadIsolation"`
+	ReplyInThread              *bool  `json:"replyInThread"`
+	ThreadNoMention            bool   `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation
+	ReactionEmoji              string `json:"reactionEmoji"`
+	DoneEmoji                  string `json:"doneEmoji"`
+	CancelledEmoji             string `json:"cancelledEmoji"`
+	ErrorEmoji                 string `json:"errorEmoji"`
+	GroupOnly                  bool   `json:"groupOnly"`
+	RespondToAtEveryoneAndHere bool   `json:"respondToAtEveryoneAndHere"`
+	ReplyToTrigger             *bool  `json:"replyToTrigger"`
 	// StopOnRecall 为 nil 时默认 true：用户撤回触发（或 steer 进）进行中
 	// turn 的消息时，平台自动按 /stop 取消该 turn；显式 false 关闭。
 	// 撤回与进行中 turn 无关的旧消息不影响执行。
-	StopOnRecall               *bool             `json:"stopOnRecall"`
-	ResolveMentions            bool              `json:"resolveMentions"`
-	PeerBots                   map[string]string `json:"peerBots"`
-	ShowThinking               *bool             `json:"showThinking"`
-	ShowToolProgress           *bool             `json:"showToolProgress"`
-	AsyncSubagentProgressCard  *bool             `json:"asyncSubagentProgressCard"`
-	EnableFeishuCard           *bool             `json:"enableFeishuCard"`
-	EncryptKey                 string            `json:"encryptKey"`
-	Port                       string            `json:"port"`
-	CallbackPath               string            `json:"callbackPath"`
-	UnknownCardAction          string            `json:"unknownCardAction"` // forward (default) | ignore
+	StopOnRecall              *bool             `json:"stopOnRecall"`
+	ResolveMentions           bool              `json:"resolveMentions"`
+	PeerBots                  map[string]string `json:"peerBots"`
+	ShowThinking              *bool             `json:"showThinking"`
+	ShowToolProgress          *bool             `json:"showToolProgress"`
+	AsyncSubagentProgressCard *bool             `json:"asyncSubagentProgressCard"`
+	EnableFeishuCard          *bool             `json:"enableFeishuCard"`
+	EncryptKey                string            `json:"encryptKey"`
+	Port                      string            `json:"port"`
+	CallbackPath              string            `json:"callbackPath"`
+	UnknownCardAction         string            `json:"unknownCardAction"` // forward (default) | ignore
 	// ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型
 	// （如 drive.file.created_v1）。事件序列化为一条 inbound 消息；
 	// 每条事件使用独立 session（按 event_id），避免同群/同用户事件共享历史。
@@ -105,9 +106,10 @@ func (c *Config) Validate() error {
 }
 
 type Deps struct {
-	Commands     agentkit.Commands     `json:"commands,omitempty"`
-	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
-	Workspace    workspace.Service     `json:"workspace,omitempty"`
+	InteractionHandlers []interaction.Handler `json:"interactionHandlers,omitempty"`
+	Commands            agentkit.Commands     `json:"commands,omitempty"`
+	SessionStore        agentkit.SessionStore `json:"sessionStore,omitempty"`
+	Workspace           workspace.Service     `json:"workspace,omitempty"`
 	// EventHandlers 订阅自定义 Lark 事件的 handler 插件（cap/larkevent）。
 	// 每个 handler 自行声明 EventTypes()，平台按事件类型聚合后注册
 	// OnCustomizedEvent；同一事件类型可命中多个 handler。
@@ -324,6 +326,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
 		eventHandlers:              deps.EventHandlers,
+		interactionHandlers:        deps.InteractionHandlers,
 		forwardToAgent:             forwardToAgent,
 	}
 	p.outbound = common.NewOutbound(p.sendText, p.sendMediaPart)
@@ -585,11 +588,11 @@ func (p *Platform) sendCard(ctx context.Context, rc replyContext, card *common.C
 	return p.createMessage(ctx, rc.chatID, larkim.MsgTypeInteractive, cardJSON, "send card")
 }
 
-func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, reply permission.Reply, extra map[string]string) {
+func (p *Platform) pushPermissionReply(ctx context.Context, sessionKey string, reply permission.Reply, extra map[string]string) error {
 	if strings.TrimSpace(sessionKey) == "" {
-		return
+		return fmt.Errorf("%s: missing permission session", p.tag())
 	}
-	_ = p.inbox.Push(ctx, common.PermissionReplyEventWithConversation(
+	return p.inbox.Push(ctx, common.PermissionReplyEventWithConversation(
 		p.agentID,
 		agentkit.SessionID(sessionKey),
 		p.platformTag,

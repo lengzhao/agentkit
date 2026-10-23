@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"context"
 	"regexp"
 	"strings"
 
@@ -46,6 +47,9 @@ func parseSlackUserMentions(text string) []slackUserMention {
 }
 
 func (p *Platform) mentionMetadata(text string) map[string]any {
+	return p.mentionMetadataContext(context.Background(), text)
+}
+func (p *Platform) mentionMetadataContext(ctx context.Context, text string) map[string]any {
 	mentions := parseSlackUserMentions(text)
 	if len(mentions) == 0 {
 		return nil
@@ -55,7 +59,7 @@ func (p *Platform) mentionMetadata(text string) map[string]any {
 		if p.botUserID != "" && mention.id == p.botUserID {
 			continue
 		}
-		entry := p.cachedUserProfile(mention.id)
+		entry := p.cachedUserProfileContext(ctx, mention.id)
 		name := mention.name
 		if entry.ok && entry.name != "" {
 			name = entry.name
@@ -74,5 +78,9 @@ func (p *Platform) mentionMetadata(text string) map[string]any {
 }
 
 func (p *Platform) inboundMetadata(userID, text string) map[string]any {
-	return common.MergeMetadata(p.userProfileMetadata(userID), p.mentionMetadata(text))
+	return p.inboundMetadataContext(context.Background(), userID, text)
+}
+
+func (p *Platform) inboundMetadataContext(ctx context.Context, userID, text string) map[string]any {
+	return common.MergeMetadata(p.userProfileMetadataContext(ctx, userID), p.mentionMetadataContext(ctx, text))
 }

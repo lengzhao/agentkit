@@ -21,6 +21,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/interaction"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
@@ -35,6 +36,8 @@ type replyContext struct {
 }
 
 type Platform struct {
+	interactionHandlers        []interaction.Handler
+	interactionDedup           common.InteractionDedup
 	platformTag                string
 	defaultDomain              string
 	domain                     string
@@ -98,9 +101,9 @@ type Platform struct {
 	// pendingAttachments buffers file/image/audio messages received without
 	// accompanying text, so a follow-up text message can carry them in the
 	// same user turn. See pending_attachments.go.
-	pendingMu                  sync.Mutex
-	pending                    map[string]*pendingAttachEntry
-	pendingTTL                 time.Duration
+	pendingMu  sync.Mutex
+	pending    map[string]*pendingAttachEntry
+	pendingTTL time.Duration
 	// activeThreadSessions tracks thread sessionKeys that have been engaged
 	// by an @bot mention, allowing subsequent attachment-only messages in the
 	// same thread to pass the group @ filter.
@@ -170,18 +173,18 @@ func (p *Platform) webhookHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // onCardAction handles card.action.trigger callbacks via the official SDK event dispatcher.
-// Three prefixes are supported:
-//   - nav:/xxx   — render a card page and update the original card in-place
-//   - act:/xxx   — execute an action, then render and update the card in-place
-//   - cmd:/xxx   — legacy: dispatch as a user command (sends a new message)
+// Permission replies stay on the dedicated broker path. Other operations are
+// acknowledged immediately and resolved by the background interaction chain.
 func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
-	if event.Event == nil || event.Event.Action == nil {
+	if event == nil || event.Event == nil || event.Event.Action == nil {
 		return nil, nil
 	}
 
+	slog.Info(p.tag() + ": card callback received")
 	// Check allow_chat filter: skip card actions from chats this platform doesn't own.
 	if event.Event.Context != nil && event.Event.Context.OpenChatID != "" {
 		if !common.AllowList(p.allowChat, event.Event.Context.OpenChatID) {
+			slog.Info(p.tag()+": card callback permission filtered", "chat_id", event.Event.Context.OpenChatID)
 			return nil, nil
 		}
 	}
@@ -220,6 +223,10 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 	if chatID == "" {
 		chatID = userID
 	}
+	if !common.AllowList(p.allowFrom, userID) {
+		slog.Info(p.tag()+": card callback permission filtered", "user", userID)
+		return nil, nil
+	}
 	sessionKey := p.sessionKeyFromCardAction(chatID, userID, event.Event.Action.Value)
 	extra := map[string]string{}
 	for k, v := range event.Event.Action.Value {
@@ -230,11 +237,19 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 	if sessionKey == "" && chatID != "" && userID != "" {
 		sessionKey = p.makeSessionKey(nil, chatID, userID)
 	}
+	snapshot := feishuInteractionSnapshot(event, sessionKey, chatID, messageID, userID, actionVal)
+	complete, duplicate := p.interactionDedup.Begin(common.InteractionEventKey(snapshot))
+	if duplicate {
+		slog.Info(p.tag()+": duplicate card callback ignored", "message_id", messageID)
+		return cardActionAckToast(), nil
+	}
 	if reply, ok := common.PermissionReplyFromAction(actionVal, userID, extra); ok {
-		if !common.AllowList(p.allowFrom, userID) {
-			return nil, nil
+		slog.Info(p.tag()+": permission card callback handled", "message_id", messageID)
+		err := p.pushPermissionReply(context.Background(), sessionKey, reply, extra)
+		complete(err)
+		if err != nil {
+			return nil, err
 		}
-		p.pushPermissionReply(context.Background(), sessionKey, reply, extra)
 		confirmed := common.ConfirmedCardFromReply(reply, extra)
 		return &callback.CardActionTriggerResponse{
 			Card: &callback.Card{
@@ -244,51 +259,14 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 		}, nil
 	}
 
-	// nav: / act: — synchronous card update
-	if strings.HasPrefix(actionVal, "nav:") || strings.HasPrefix(actionVal, "act:") {
-		if messageID != "" {
-			p.cardActionMsgMu.Lock()
-			if p.cardActionMsgIDs == nil {
-				p.cardActionMsgIDs = make(map[string]string)
-			}
-			p.cardActionMsgIDs[sessionKey] = messageID
-			p.cardActionMsgMu.Unlock()
-		}
-		// Feishu uses native form checker for delete-mode toggle,
-		// so return a toast without calling cardNavHandler to avoid a full card refresh.
-		if strings.HasPrefix(actionVal, "act:/delete-mode toggle ") {
-			return &callback.CardActionTriggerResponse{
-				Toast: &callback.Toast{
-					Type:    "info",
-					Content: "已记录选择（Selection recorded）",
-				},
-			}, nil
-		}
-		if strings.HasPrefix(actionVal, "act:") {
-			slog.Debug(p.tag()+": card action produced no card update", "action", actionVal)
-			return nil, nil
-		}
-		slog.Warn(p.tag()+": card nav returned nil, ignoring", "action", actionVal)
+	// Permission tokens are reserved, even if malformed: never start an agent turn.
+	if strings.HasPrefix(actionVal, "perm:") {
+		complete(nil)
+		slog.Warn(p.tag()+": malformed permission card callback ignored", "message_id", messageID)
 		return nil, nil
 	}
-
-	// cmd: — async command dispatch
-	if strings.HasPrefix(actionVal, "cmd:") {
-		cmdText := strings.TrimPrefix(actionVal, "cmd:")
-		rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
-
-		slog.Info(p.tag()+": card action dispatched as command", "cmd", cmdText, "user", userID)
-
-		go p.dispatchInbound(context.Background(), inboundMessage{
-			sessionID: agentkit.SessionID(sessionKey),
-			userID:    userID,
-			content:   cmdText,
-			rctx:      rctx,
-		})
-		return nil, nil
-	}
-
-	return p.forwardUnknownCardAction(context.Background(), event, sessionKey, chatID, messageID, userID, actionVal)
+	snapshot.SessionID = extra["session_key"] // only an explicit hint may restore a session
+	return p.forwardUnknownCardAction(snapshot, complete)
 }
 
 func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {

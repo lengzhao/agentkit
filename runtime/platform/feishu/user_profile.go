@@ -36,10 +36,13 @@ type feishuUserProfileEntry struct {
 }
 
 func (p *Platform) cachedUserProfile(userID string) feishuUserProfileEntry {
+	return p.cachedUserProfileContext(context.Background(), userID)
+}
+func (p *Platform) cachedUserProfileContext(ctx context.Context, userID string) feishuUserProfileEntry {
 	if cached, ok := p.userProfileCache.Load(userID); ok {
 		return cached.(feishuUserProfileEntry)
 	}
-	entry := p.fetchUserProfile(userID)
+	entry := p.fetchUserProfile(ctx, userID)
 	if feishuProfileEntryPopulated(entry) {
 		p.userProfileCache.Store(userID, entry)
 	}
@@ -61,12 +64,12 @@ func feishuContactUserIDType(userID string) string {
 	}
 }
 
-func (p *Platform) fetchUserProfile(userID string) feishuUserProfileEntry {
+func (p *Platform) fetchUserProfile(ctx context.Context, userID string) feishuUserProfileEntry {
 	if p.client == nil {
 		return feishuUserProfileEntry{}
 	}
 	idType := feishuContactUserIDType(userID)
-	resp, err := p.client.Contact.User.Get(context.Background(),
+	resp, err := p.client.Contact.User.Get(ctx,
 		larkcontact.NewGetUserReqBuilder().
 			UserId(userID).
 			UserIdType(idType).
@@ -150,11 +153,14 @@ func metadataString(md map[string]any, key string) string {
 }
 
 func (p *Platform) userProfileMetadata(userID string) map[string]any {
+	return p.userProfileMetadataContext(context.Background(), userID)
+}
+func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string) map[string]any {
 	userID = strings.TrimSpace(userID)
 	if userID == "" || !isValidFeishuLookupID(userID) {
 		return nil
 	}
-	entry := p.cachedUserProfile(userID)
+	entry := p.cachedUserProfileContext(ctx, userID)
 	if !entry.ok {
 		return nil
 	}

@@ -413,3 +413,78 @@ loop.default:
 外部 ACP Agent 的权限请求经 `agent/acp-remote` 桥接到同一 Broker，见 [plugin-catalog.zh.md](../plugin-catalog.zh.md) §3.2 `agent/acp-remote`。
 
 **`agent/acp-remote` 权限回传**：Broker 超时、用户拒绝或被新消息 supersede 时，桥接层向 ACP Agent 返回 `reject_once`（而非 `cancelled`），并在响应 `_meta` 中携带 `outcome` / `reason` / `guidance`，便于外部 Agent 自行决定跳过该工具后继续或结束 turn。仅 session/turn 取消（`session/cancel`、context abandoned）才回传 ACP `cancelled`。
+
+## 外部卡片回调（Feishu/Lark、Slack）
+
+通过 `lark-cli` 或其他外部工具发送的卡片，不一定属于 Permission 请求。
+Feishu/Lark 的 `card.action.trigger`、Slack 的 Block Kit 操作与 modal 表单提交，
+会转换成公共的 `cap/interaction.Event`。其他平台可以实现适配器复用同一处理链。
+
+回调先检查已有用户/群聊白名单并去重，确认接收后在后台查询原卡片、恢复会话并处理操作。
+Feishu 返回“已提交” toast，Slack 立即确认 Socket Mode 请求；网络查询与 agent 调度不会阻塞确认。
+去重包含事件 ID（Feishu 的 `header.event_id`、Slack 的 trigger/action 标识）、操作人、会话目标、
+控件、选项、输入与表单状态；缺少事件 ID 时回退到完整操作指纹。
+不同事件即使答案相同也分别处理，因此“选 A → 选 B → 再选 A”不会吞掉最后一次选择。
+处理中会保留去重占位；只有实际消费或成功入队后才进入 60 秒完成窗口，投递失败会释放占位，允许重投。
+该去重不保证跨进程或重启后的 exactly-once。
+
+处理顺序：
+
+1. Permission 操作继续进入 Permission Broker，绝不转为普通 agent 消息；残缺的 `perm:` 操作也不会兜底。
+2. 内置命令/导航处理。`cmd:`、`act:`、`nav:` 共用命令执行器，保留用户资料及 Slack 命令中的 mention metadata；通过命令注册表判断是否实际处理，未知命令继续进入后续链路。
+3. 按声明顺序调用 `deps.interactionHandlers` 子插件。
+4. 未消费的操作按 `config.unknownCardAction` 转发 agent（`forward`，默认）或忽略（`ignore`）。`ignore` 不影响内置处理或子插件。
+
+事件包含 `platform`、事件类型、操作人、消息 ID、会话和话题、控件答案（`value` 原始值及可解析的
+`label` 显示文案）、完整卡片文本、`raw_card`、`raw_action` 和 `raw_callback`。
+选项按控件名称匹配文案，值有歧义或无法匹配时保留原值。完整 JSON 作为数据保留，不依赖纯文本摘要。
+
+`card_status` 明确区分 `available`（取得内容）、`unavailable`（消息/内容/查询客户端不可用）和
+`failed`（查询报错）；后两者通过 `card_error` 说明原因。失败时仍传递答案和回调上下文。
+卡片查询使用独立于投递的较短超时预算，避免查询超时直接取消答案投递。
+最终入队另有独立的 30 秒预算；可选用户资料补充最多占用其中 2 秒，并遵守调用方取消信号。
+队列仍不可用时会记录 `delivery failed` 并释放去重占位；只有成功入队才记录 `fallback forwarded`。
+这是进程内的失败恢复机制，不提供持久化投递队列。
+
+Feishu 优先使用经当前会话与操作人校验的卡片 `session_key` 或已知投递上下文，否则按原消息恢复话题。
+开启话题隔离而查询失败、无法恢复话题时，使用按卡片消息 ID 隔离的临时会话，
+并标记 `routing_status=isolated_card_fallback`，避免混入其他会话。
+Slack 优先使用回调自带的原消息；需要查询话题回复时使用 replies API，并严格匹配消息时间戳。
+
+### 自定义交互处理子插件
+
+Feishu/Lark 与 Slack 的依赖均支持：
+
+```json
+{
+  "deps": {
+    "interactionHandlers": ["interaction-handler/my-question"]
+  },
+  "config": {
+    "unknownCardAction": "forward"
+  }
+}
+```
+
+子插件通过 pluginkit 注册工厂，返回 `interaction.Handler`：
+
+```go
+import (
+    "context"
+    "github.com/lengzhao/agentkit/cap/interaction"
+)
+
+func (h *QuestionHandler) HandleInteraction(ctx context.Context, event interaction.Event) (bool, error) {
+    if event.Action != "my_question_submit" {
+        return false, nil // 继续后续插件和 agent 兜底
+    }
+    return true, h.saveAnswer(ctx, event) // 实际消费后才返回 true
+}
+```
+
+插件必须支持并发调用并遵守 `ctx`。返回错误会记录日志并继续后续处理，避免插件故障丢失答案。
+`true, nil` 表示已消费，不再转发 agent。Permission 卡片不会进入此接口。
+Lark 原有 `deps.eventHandlers` 仍用于订阅其他开放平台事件，两类依赖互不替代。
+
+Slack modal 如需关联原会话，可将按钮编码格式的 `{"session_key":"slack:…"}` 放入
+`private_metadata`。缺少该信息时使用按 view ID 隔离的私聊会话；不将 modal 的 view ID 当作消息时间戳。
