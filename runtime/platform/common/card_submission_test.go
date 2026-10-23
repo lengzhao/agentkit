@@ -200,3 +200,19 @@ func TestSubmittedButtonAnswerKeepsSelectedLabel(t *testing.T) {
 		t.Fatal("routing action shown as answer")
 	}
 }
+
+func TestSubmittedButtonBehaviorUsesDisplayLabel(t *testing.T) {
+	payload := map[string]any{"choice": "北京", "test_id": "food_20261023"}
+	e := interaction.Event{RawCard: json.RawMessage(`{"elements":[{"tag":"button","text":{"tag":"plain_text","content":"广东"},"behaviors":[{"type":"callback","value":{"choice":"广东","test_id":"food_20261023"}}]},{"tag":"button","text":{"tag":"plain_text","content":"北京"},"behaviors":[{"type":"callback","value":{"choice":"北京","test_id":"food_20261023"}}]}]}`), Answers: []interaction.Answer{{Value: payload}}}
+	EnrichInteractionCard(&e)
+	if e.Answers[0].Label != "北京" {
+		t.Fatalf("button label missing: %#v", e.Answers[0])
+	}
+	summary := InteractionSubmissionSummary(e)
+	if summary != "已提交\n北京" {
+		t.Fatalf("technical payload leaked into display: %s", summary)
+	}
+	if e.Answers[0].Value.(map[string]any)["test_id"] != "food_20261023" {
+		t.Fatal("original answer payload was lost")
+	}
+}

@@ -203,7 +203,7 @@ func EnrichInteractionCard(e *interaction.Event) {
 					control = s
 				}
 			}
-			if value, ok := x["value"]; ok {
+			for _, value := range CardControlValues(x) {
 				label := cardLabel(x["text"])
 				if label == "" {
 					label = cardLabel(x["label"])
@@ -259,6 +259,27 @@ func EnrichInteractionCard(e *interaction.Event) {
 			}
 		}
 	}
+}
+
+// CardControlValues returns native callback payloads from legacy value fields
+// and Feishu 2.0 callback behaviors. URL behaviors have no answer payload.
+func CardControlValues(control map[string]any) []any {
+	var values []any
+	if value, ok := control["value"]; ok {
+		values = append(values, value)
+	}
+	if behaviors, ok := control["behaviors"].([]any); ok {
+		for _, raw := range behaviors {
+			behavior, ok := raw.(map[string]any)
+			if !ok || behavior["type"] != "callback" {
+				continue
+			}
+			if value, ok := behavior["value"]; ok {
+				values = append(values, value)
+			}
+		}
+	}
+	return values
 }
 
 // CardActionCommand returns only explicit platform command/navigation tokens.

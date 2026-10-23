@@ -35,7 +35,7 @@ func (p *Platform) closeInteractionCard(ctx context.Context, e interaction.Event
 	if p.client == nil || e.MessageID == "" {
 		return fmt.Errorf("card update client or message ID unavailable")
 	}
-	content, err := submittedFeishuCard(e.RawCard, text)
+	content, err := submittedFeishuCard(e, text)
 	if err != nil {
 		return err
 	}
