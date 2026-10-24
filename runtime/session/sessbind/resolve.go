@@ -89,7 +89,7 @@ func GlobalAgentBind(ctx context.Context, ws workspace.Service) (agentkit.AgentI
 // active-entry id). Falls back to legacy local:runtime.json when tenant-scoped.
 func ChannelAgentBind(ctx context.Context, store agentkit.SessionStore, ws workspace.Service, entryKey agentkit.SessionID) (agentkit.AgentID, error) {
 	if entryKey != "" && store != nil {
-		id, err := AgentBind(ctx, store, entryKey)
+		id, err := AgentBind(ctx, store, channelAgentBindKey(entryKey))
 		if err != nil {
 			return "", err
 		}
@@ -116,10 +116,17 @@ func SetChannelAgentBind(ctx context.Context, store agentkit.SessionStore, ws wo
 	if store == nil {
 		return errors.New("session store is required for channel agent binding")
 	}
-	if err := SetSessionAgentBind(ctx, store, entryKey, agent); err != nil {
+	if err := SetSessionAgentBind(ctx, store, channelAgentBindKey(entryKey), agent); err != nil {
 		return err
 	}
 	return clearChannelRuntimeLegacy(ctx, ws)
+}
+
+// channelAgentBindKey reserves a separate runtime key for channel overrides.
+// The initial session can have the same ID as entryKey, so storing the channel
+// override directly under entryKey would overwrite that session's override.
+func channelAgentBindKey(entryKey agentkit.SessionID) agentkit.SessionID {
+	return agentkit.SessionID("channel-agent:" + string(entryKey))
 }
 
 // SetGlobalAgentBind sets or clears the workspace-wide default agent id.

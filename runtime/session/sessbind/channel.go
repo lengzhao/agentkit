@@ -30,12 +30,12 @@ type channelRuntimeCacheEntry struct {
 var channelRuntimeCache sync.Map
 
 func loadChannelRuntimeLegacy(ctx context.Context, ws workspace.Service) (ChannelRuntimeData, error) {
-	if ws == nil {
-		return ChannelRuntimeData{}, nil
-	}
-	path, err := ws.Resolve(ctx, channelRuntimeRel)
+	path, err := legacyChannelRuntimePath(ctx, ws)
 	if err != nil {
 		return ChannelRuntimeData{}, err
+	}
+	if path == "" {
+		return ChannelRuntimeData{}, nil
 	}
 	info, statErr := os.Stat(path)
 	if statErr == nil {
@@ -78,16 +78,36 @@ func loadChannelRuntimeLegacy(ctx context.Context, ws workspace.Service) (Channe
 }
 
 func clearChannelRuntimeLegacy(ctx context.Context, ws workspace.Service) error {
-	if ws == nil {
-		return nil
-	}
-	path, err := ws.Resolve(ctx, channelRuntimeRel)
+	path, err := legacyChannelRuntimePath(ctx, ws)
 	if err != nil {
 		return err
+	}
+	if path == "" {
+		return nil
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	channelRuntimeCache.Delete(path)
 	return nil
+}
+
+// A shared local/global root has only a global runtime file. Never interpret
+// that file as a legacy channel override or remove it when changing a channel.
+func legacyChannelRuntimePath(ctx context.Context, ws workspace.Service) (string, error) {
+	if ws == nil {
+		return "", nil
+	}
+	local, err := ws.Resolve(ctx, channelRuntimeRel)
+	if err != nil {
+		return "", err
+	}
+	global, err := ws.Resolve(ctx, globalRuntimeRel)
+	if err != nil {
+		return "", err
+	}
+	if local == global {
+		return "", nil
+	}
+	return local, nil
 }

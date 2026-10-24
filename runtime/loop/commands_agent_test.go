@@ -199,3 +199,58 @@ func TestAgentChannelUse(t *testing.T) {
 		t.Fatal("expected combined flag error")
 	}
 }
+
+func TestAgentScopePrecedenceAndNewSession(t *testing.T) {
+	t.Parallel()
+	delivery := rctx.BuildDeliverySessionID("slack", "C001", "", "U1")
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{
+		PlatformID: "slack", UserID: "U1",
+	}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: agentkit.SessionID(env.Conversation)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := sessstore.NewStaticStore(mem)
+	cmd := rtloop.AgentCommand([]agentkit.Agent{
+		stubDetailAgent{id: "default"}, stubDetailAgent{id: "global"},
+		stubDetailAgent{id: "channel"}, stubDetailAgent{id: "session"},
+	}, store, "default", rtworkspace.Static(t.TempDir()))
+	commands, err := sessstore.NewCommands(sessstore.CommandsConfig{}, sessstore.CommandsDeps{SessionStore: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		args string
+		want string
+	}{
+		{"", "default"},
+		{"-g use global", "global"},
+		{"use session", "session"},
+		{"-c use channel", "session"},
+		{"-c reset", "session"},
+		{"-c use channel", "session"},
+		{"reset", "channel"},
+		{"use session", "session"},
+		{"/new", "channel"},
+		{"-c reset", "global"},
+		{"-g reset", "default"},
+	} {
+		t.Run(step.args+"->"+step.want, func(t *testing.T) {
+			if step.args == "/new" {
+				if _, err := commands.Commands()[0].CommandExec(ctx, ""); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := cmd.CommandExec(ctx, step.args); err != nil {
+				t.Fatal(err)
+			}
+			out, err := cmd.CommandExec(ctx, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "Active agent: "+step.want+"\n") {
+				t.Fatalf("want active agent %q; output:\n%s", step.want, out)
+			}
+		})
+	}
+}
