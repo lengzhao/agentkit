@@ -140,7 +140,7 @@ platform.http:
 
 | Kind | 返回类型 | 职责 | 参考 |
 |---|---|---|---|
-| `loop/default` | `agentkit.Loop` + `agentkit.CommandProvider` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key；作为 agent 目录属主贡献 `/agent`、`/model` 命令（可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令，不影响分发） | DSH `agent-loop` / Pi `agentLoop` |
+| `loop/default` | `agentkit.Loop` + `agentkit.CommandProvider` | Turn/Step 调度、按 `TurnEnvelope.Conversation` 串行，并向 ctx 写入 `KeyTurnEnvelope` 等 context key；作为 agent 目录属主贡献 `/agent`；仅当已配置 Agent 暴露本地模型配置能力时贡献 `/model`（仅 ACP Agent 时不显示）（可选 deps `sessionStore`/`workspace`/`modelCatalog` 只服务命令，不影响分发） | DSH `agent-loop` / Pi `agentLoop` |
 | `loop/harness` | `agentkit.Loop` | 多 Lane + 操作化 run/compaction/navigation（roadmap） | Pi AgentHarness |
 | `agent/coding` | `agentkit.Agent` | Coding Agent；`config`：`id` / `model` / `retry` / `maxSteps`（默认 200，`0`=不限）/ `maxPromptTokens`（发送前兜底，`0`=关闭）；自主续跑靠 `deps.hooks`（如 `hook/turn-continue`） | 两者默认 Agent |
 | `agent/acp-remote` | `agentkit.Agent` | 通过 ACP 调用外部 Agent（Claude Code、Cursor CLI 等） | DSH `dsh-acp` |
@@ -480,7 +480,7 @@ Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/
 | 贡献方 | 命令 |
 |---|---|
 | `commands/registry` | `/plugin` |
-| `loop/default` | `/agent`、`/model` |
+| `loop/default` | `/agent`；`/model` 仅在存在支持本地模型配置的 Agent 时注册 |
 | `runner` | `/stop`、`/me`（`/whoami`） |
 | `subagent/inprocess` | `/subagent`、`/submodel` |
 | `llm/fallback` | `/fallback`（`/fb`） |

@@ -103,16 +103,22 @@ func New(cfg Config, deps Deps) (agentkit.Loop, error) {
 }
 
 // Commands implements agentkit.CommandProvider: the loop owns the agent
-// catalog, so it contributes the catalog slash commands (/agent, /model)
-// itself. commands/registry collects them through the generic
+// catalog, so it contributes /agent and, when any agent exposes local model
+// configuration, /model. commands/registry collects them through the generic
 // WireContributions channel; turn dispatch is unaffected when the optional
 // command deps are absent.
 func (l *Default) Commands() []agentkit.Command {
 	agents := l.Agents()
-	return []agentkit.Command{
-		AgentCommand(agents, l.sessionStore, l.defaultAgent, l.workspace),
-		ModelCommand(agents, l.sessionStore, l.defaultAgent, l.workspace, l.modelCatalog),
+	commands := []agentkit.Command{AgentCommand(agents, l.sessionStore, l.defaultAgent, l.workspace)}
+	for _, ag := range agents {
+		// Match the capability already used to inspect local model defaults. ACP
+		// agents own their configuration commands and do not expose this method.
+		if _, ok := ag.(interface{ ConfiguredModel() string }); ok {
+			commands = append(commands, ModelCommand(agents, l.sessionStore, l.defaultAgent, l.workspace, l.modelCatalog))
+			break
+		}
 	}
+	return commands
 }
 
 // DefaultAgentID returns the loop fallback agent when no session bind is set.
