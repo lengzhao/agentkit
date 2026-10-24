@@ -21,6 +21,7 @@ func (p *Platform) parseMergeForward(rootMessageID string) (string, []common.Ima
 	resp, err := p.client.Im.Message.Get(context.Background(),
 		larkim.NewGetMessageReqBuilder().
 			MessageId(rootMessageID).
+			CardMsgContentType("raw_card_content").
 			Build())
 	if err != nil {
 		slog.Error(p.tag()+": fetch merge_forward sub-messages failed", "error", err)
@@ -179,6 +180,14 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
 					mt := detectMimeType(fileData)
 					*files = append(*files, common.FileAttachment{MimeType: mt, Data: fileData, FileName: fileBody.FileName})
 					sb.WriteString(fmt.Sprintf("%s[%s] %s: [file: %s]\n", indent, ts, senderName, fileBody.FileName))
+				}
+			}
+
+		case "interactive":
+			if text := extractInteractiveCardText(content); text != "" {
+				sb.WriteString(fmt.Sprintf("%s[%s] %s: [card]\n", indent, ts, senderName))
+				for _, line := range strings.Split(text, "\n") {
+					sb.WriteString(fmt.Sprintf("%s    %s\n", indent, line))
 				}
 			}
 

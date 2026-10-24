@@ -416,7 +416,7 @@ func (p *Platform) handleEvent(ctx context.Context, evt socketmode.Event) {
 				shareFiles = parseSlackInnerEventFiles(cb.InnerEvent)
 			}
 			images, audio, files := p.processSlackFileShares(shareFiles)
-			text := stripAppMentionText(ev.Text)
+			text := stripAppMentionText(extractSlackBlockMessageText(slack.Message{Msg: slack.Msg{Text: ev.Text, Blocks: ev.Blocks, Attachments: ev.Attachments}}))
 			p.onInbound(ctx, ev.Channel, "", ev.User, text, ev.ThreadTimeStamp, ev.TimeStamp, images, audio, files)
 		case *slackevents.AssistantThreadStartedEvent:
 			_ = p.client.SetAssistantThreadsStatus(slack.AssistantThreadsSetStatusParameters{
@@ -441,7 +441,13 @@ func (p *Platform) handleEvent(ctx context.Context, evt socketmode.Event) {
 				return
 			}
 			images, audio, files := p.processSlackFileShares(messageEventFiles(ev))
-			p.onInbound(ctx, ev.Channel, ev.ChannelType, ev.User, ev.Text, ev.ThreadTimeStamp, ev.TimeStamp, images, audio, files)
+			message := slack.Msg{Text: ev.Text, Blocks: ev.Blocks}
+			// The SDK stores attachments on Message for ordinary message events.
+			if ev.Message != nil {
+				message.Attachments = ev.Message.Attachments
+			}
+			text := extractSlackBlockMessageText(slack.Message{Msg: message})
+			p.onInbound(ctx, ev.Channel, ev.ChannelType, ev.User, text, ev.ThreadTimeStamp, ev.TimeStamp, images, audio, files)
 		}
 	default:
 		slog.Debug("slack: socket mode event", "type", evt.Type)

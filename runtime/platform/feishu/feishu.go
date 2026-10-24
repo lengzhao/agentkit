@@ -541,6 +541,30 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		mimeType := detectMimeType(fileData)
 		p.saveAndBuffer(sessionKey, fileData, mimeType, fileBody.FileName)
 
+	case "interactive":
+		// The event payload carries a degraded card (often just an image and
+		// empty text); re-fetch the raw card so buttons, links and headers survive.
+		text := ""
+		if m := p.fetchSingleMessage(ctx, messageID); m != nil {
+			text = m.text
+		}
+		text = interactiveCardText(text, content)
+		if text == "" || text == "[interactive card]" {
+			slog.Debug(p.tag()+": interactive card produced no content", "message_id", messageID)
+			return
+		}
+		pending := p.drainPendingAttachments(sessionKey)
+		p.dispatchCoreMessage(&inboundMessage{
+			sessionID:    agentkit.SessionID(sessionKey),
+			messageID:    messageID,
+			userID:       userID,
+			content:      "[Card]\n" + text,
+			extraContent: quotedPrefix,
+			presaved:     pending,
+			mentions:     mentions,
+			rctx:         rctx,
+		})
+
 	case "merge_forward":
 		text, images, files := p.parseMergeForward(messageID)
 		if text == "" && len(images) == 0 && len(files) == 0 {

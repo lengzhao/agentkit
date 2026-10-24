@@ -105,10 +105,7 @@ func historyMessageFromSlack(item slackapi.Message) *chathistory.Message {
 		return nil
 	}
 
-	text := strings.TrimSpace(item.Text)
-	if text == "" {
-		text = historyFallbackText(item)
-	}
+	text := extractSlackBlockMessageText(item)
 	if text == "" {
 		return nil
 	}
