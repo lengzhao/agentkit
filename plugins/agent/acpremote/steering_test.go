@@ -158,17 +158,13 @@ func TestACPSteeringHelper(t *testing.T) {
 		case "initialize":
 			reply(req.ID, map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{}, "_meta": map[string]any{"steering": map[string]any{"supported": mode != "unsupported"}}})
 		case "session/new":
-			result := map[string]any{"sessionId": "remote"}
-			if mode == "model" {
-				result["configOptions"] = []any{map[string]any{"id": "model", "type": "select", "currentValue": "remote-model", "options": []any{}}}
-			}
-			reply(req.ID, result)
+			reply(req.ID, map[string]any{"sessionId": "remote"})
 		case "session/prompt":
 			promptID = req.ID
 			if mode == "stop" {
 				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "remote", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "working"}}}})
 			}
-			if mode == "unsupported" || mode == "model" {
+			if mode == "unsupported" {
 				reply(req.ID, map[string]any{"stopReason": "end_turn"})
 			}
 		case "session/cancel":

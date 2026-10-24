@@ -213,7 +213,33 @@ llm.fallback:
 
 **`agent/acp-remote`**：通过 stdio ACP 调用外部 Agent 子进程（如 Cursor CLI `agent acp`、Claude Agent SDK 等）。环境准备（安装依赖、授权登录）由用户自行处理，acp-remote 只负责连接与失败提示。
 
-- **模型显示**：远端通过 ACP `configOptions`（`category: model`，未设置 category 时兼容 `id: model`）报告当前模型时，每轮通过已有 thinking 通道显示 `[model: 模型名]`，变化时同步提示。支持新建、恢复和复用会话；未提供模型信息时不显示。各平台沿用原有 thinking 展示方式，无需额外配置。
+- **模型查询**：通过 `/acp-<id> model show` 或 `show` 查看远端报告的当前模型；正常对话和配置更新不额外发送模型 thinking 提示。
+- **模型与通用配置命令**：每个实例直接按已有 `config.id` 提供 `/acp-<id>`，例如 `id: claude` 对应 `/acp-claude`，无需额外命令名配置；同名命令由注册器检查冲突（忽略大小写）。裸命令仅展示简洁的子命令导航，不连接远端；`mode`、`model`、`effort` 展示对应配置的当前值、初始观察值、可选值和修改示例，也可通过 `<value>` 修改。修改成功仅回显对应项；子命令后紧跟 `-g`（或 `--global`）查询/设置 AgentKit 持久化的全局默认值，仅影响之后新建的会话，不改动已有或恢复的会话，也不写厂商 CLI 配置。全局查询无需连接远端，设置会在独立配置会话验证通过后保存；`config show`（兼容 `show`）可显式查看全部配置。`config` 支持远端暴露的全部 select/boolean 配置，包含 model、effort、fast-mode 等；会话修改通过当前会话的 ACP `session/set_config_option`，并以响应的全量状态和远端主动通知为准。远端未暴露的能力会明确提示不可用，不自动修改 CLI 全局配置。
+
+```text
+/acp-claude                            # 子命令导航，不连接远端
+/acp-claude mode                       # 展示模式选项
+/acp-claude effort high                # 修改 effort，仅展示该项
+/acp-claude model show                 # 展示模型选项
+/acp-claude model opus                 # 切换当前会话模型（以远端实际可选值为准）
+/acp-claude model -g                   # 查看全局默认模型
+/acp-claude model -g opus              # 保存全局默认模型
+/acp-claude model reset                # 恢复当前连接首次观察到的模型值
+/acp-claude model -g reset             # 清除全局默认模型，不连接远端
+/acp-claude config -g reset            # 清除全部全局默认值，不连接远端
+/acp-claude config -g old-option reset # 清除单个已过时的全局配置项
+/acp-claude mode -g plan               # 保存全局默认模式
+/acp-claude effort -g high             # 保存全局默认 effort
+/acp-claude config -g fast-mode true   # 保存通用配置的全局默认值
+/acp-claude config -g show             # 查看已保存的全部全局默认值
+/acp-claude config show                # 展示全部配置
+/acp-claude config show effort         # 展示指定配置的当前值、初始值、可选值
+/acp-claude config effort high         # 设置远端配置项
+/acp-codex config fast-mode true       # 布尔配置，支持 true / false
+/acp-cursor                            # 显示子命令导航，不连接远端
+```
+
+`show` 可能启动远端进程并新建/恢复会话，但不发送 prompt；历史重放延迟到下一次正常对话。ACP 配置项没有默认值字段，因此输出明确显示 `default: (not provided)`；`initial` 是本次连接首次观察到的值，恢复会话或重连后不能当作厂商/全局默认值。远端不提供 configOptions（例如部分 Cursor ACP 版本）时无法通过协议查询/修改；需自行显式配置启动参数。`reset` 是显式重置操作：session 级恢复当前连接首次观察到的值（不是厂商默认值），global 级删除保存的默认值；`default` 仍作为普通远端选项值。配置命令默认操作超时 5 秒（含锁等待），较短的调用方超时优先；超时后仍会完成必要的子进程清理。全局查询不等待远端校验，配置校验进程每次操作后释放，以重新绑定下次请求的工作目录和沙箱。
 
 要点：
 

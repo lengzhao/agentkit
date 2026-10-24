@@ -53,7 +53,7 @@ type Config struct {
 // Deps holds injected capabilities for the ACP client side.
 type Deps struct {
 	Workspace workspace.Service `json:"workspace"`
-	// FS stores ACP session resume binds (tenant-relative acp/ dir).
+	// FS stores session resume binds (tenant-relative acp/) and global ACP defaults.
 	FS            filesystem.Service      `json:"fs"`
 	SessionStore  agentkit.SessionStore   `json:"sessionStore,omitempty"`
 	SessionEvents capsession.Conversation `json:"sessionEvents,omitempty"`
@@ -80,7 +80,12 @@ type Runtime struct {
 	sessionRestore capacp.SessionRestorer
 	telemetry      captelemetry.Toolkit
 	sandbox        capsandbox.Service
-	bridges        sync.Map // agentkit.SessionID -> *bridge
+	bridges        map[agentkit.SessionID]*bridge
+	bridgesMu      sync.Mutex
+	configBridge   *bridge
+	configBridgeMu requestMutex
+	processCtx     context.Context
+	processCancel  context.CancelFunc
 }
 
 func init() {
@@ -128,6 +133,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 	if sandbox == nil {
 		sandbox = capsandbox.Disabled()
 	}
+	processCtx, processCancel := context.WithCancel(context.Background())
 	return &Runtime{
 		id:             id,
 		cfg:            cfg,
@@ -139,12 +145,40 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		sessionRestore: deps.SessionRestore,
 		telemetry:      deps.Telemetry,
 		sandbox:        sandbox,
+		bridges:        make(map[agentkit.SessionID]*bridge),
+		processCtx:     processCtx,
+		processCancel:  processCancel,
 	}, nil
 }
 
+// Slash-owned subprocesses outlive HTTP requests and are cancelled on shutdown.
+// Cleanup waits in separate goroutines because shutdown contributions must not block.
+func (a *Runtime) ShutdownHooks() []func() {
+	return []func(){func() {
+		if a.processCancel != nil {
+			a.processCancel()
+		}
+		a.bridgesMu.Lock()
+		defer a.bridgesMu.Unlock()
+		for _, b := range a.bridges {
+			go b.releaseSubprocess()
+		}
+		if a.configBridge != nil {
+			go a.configBridge.releaseSubprocess()
+		}
+	}}
+}
+
 func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	v, _ := a.bridges.LoadOrStore(sessionID, newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.sessionRestore, a.telemetry, a.sandbox, nil))
-	return v.(*bridge)
+	a.bridgesMu.Lock()
+	defer a.bridgesMu.Unlock()
+	b := a.bridges[sessionID]
+	if b == nil {
+		b = newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.sessionRestore, a.telemetry, a.sandbox, nil)
+		b.globalDefaults = &globalConfigStore{fs: a.fs, agentID: a.id}
+		a.bridges[sessionID] = b
+	}
+	return b
 }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
@@ -233,7 +267,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	}()
 
 	brid := a.bridgeFor(sessionID)
-	acpSessionID, err := brid.ensureACPSession(ctx, sessionID, a.id, a.sessionStore)
+	acpSessionID, err := brid.ensureSession(ctx, sessionID, a.id, a.sessionStore, true)
 	if err != nil {
 
 		return err
@@ -247,13 +281,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		agentID:   a.id,
 	})
 	defer brid.clearTurn()
-	if proc := brid.proc.Load(); proc != nil {
-		if model, ok := proc.models.Load(acpSessionID); ok {
-			if err := emitter.emitModel(model.(string)); err != nil {
-				return err
-			}
-		}
-	}
 
 	prompt := modelMessageToPrompt(input.Message)
 	if len(prompt) == 0 {
