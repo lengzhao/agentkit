@@ -35,9 +35,10 @@ type Deps struct {
 
 // Registry collects slash commands contributed by built plugins.
 type Registry struct {
-	cfg    Config
-	byName map[string]agentkit.Command
-	cmds   []agentkit.Command
+	cfg       Config
+	byName    map[string]agentkit.Command
+	cmds      []agentkit.Command
+	ambiguous map[string][]string
 }
 
 // New registers commands/registry: Aggregate slash commands contributed by CommandProvider plugins.
@@ -54,24 +55,28 @@ func New(cfg Config, deps Deps) (agentkit.Commands, error) {
 
 // SetCommands registers commands from every built CommandProvider.
 func (r *Registry) SetCommands(providers []agentkit.CommandProvider) error {
-	r.byName = make(map[string]agentkit.Command)
-	r.cmds = nil
-	for _, provider := range providers {
-		if provider == nil {
+	commands, err := resolveInstanceCommands(providers)
+	if err != nil {
+		return err
+	}
+	next := &Registry{cfg: r.cfg, byName: make(map[string]agentkit.Command), ambiguous: make(map[string][]string)}
+	for _, cmd := range commands {
+		if !r.cfg.allowed(cmd.original.Name(), cmd.original.Alias(), cmd.Name(), cmd.Alias()) {
 			continue
 		}
-		for _, cmd := range provider.Commands() {
-			if cmd == nil {
-				continue
-			}
-			if !r.cfg.allowed(cmd.Name(), cmd.Alias()) {
-				continue
-			}
-			if err := r.register(cmd); err != nil {
-				return err
+		if cmd.resolutionErr != nil {
+			return cmd.resolutionErr
+		}
+		if err := next.register(cmd); err != nil {
+			return err
+		}
+		for _, pair := range [][2]string{{normalizeName(cmd.original.Name()), cmd.Name()}, {normalizeName(cmd.original.Alias()), cmd.Alias()}} {
+			if pair[0] != "" && pair[0] != pair[1] {
+				next.ambiguous[pair[0]] = append(next.ambiguous[pair[0]], pair[1])
 			}
 		}
 	}
+	r.byName, r.cmds, r.ambiguous = next.byName, next.cmds, next.ambiguous
 	return nil
 }
 
@@ -87,25 +92,19 @@ func NewFromProviders(cfg Config, providers []agentkit.CommandProvider) (*Regist
 	return r, nil
 }
 
-func (c Config) allowed(name, alias string) bool {
-	name = normalizeName(name)
-	alias = normalizeName(alias)
-	if len(c.Allow) > 0 {
-		for _, item := range c.Allow {
+func (c Config) allowed(names ...string) bool {
+	matches := func(items []string) bool {
+		for _, item := range items {
 			key := normalizeName(item)
-			if key == name || (alias != "" && key == alias) {
-				return true
+			for _, name := range names {
+				if key != "" && key == normalizeName(name) {
+					return true
+				}
 			}
 		}
 		return false
 	}
-	for _, item := range c.Deny {
-		key := normalizeName(item)
-		if key == name || (alias != "" && key == alias) {
-			return false
-		}
-	}
-	return true
+	return (len(c.Allow) == 0 || matches(c.Allow)) && !matches(c.Deny)
 }
 
 func (r *Registry) register(cmd agentkit.Command) error {
@@ -135,6 +134,17 @@ func (r *Registry) Dispatch(ctx context.Context, name string, rawArgs string) (s
 	}
 	cmd, ok := r.byName[key]
 	if !ok {
+		var alternatives []string
+		for _, name := range r.ambiguous[key] {
+			candidate := r.byName[name]
+			if candidate != nil && (!r.requiresAdmin(name, candidate) || IsAdmin(ctx)) {
+				alternatives = append(alternatives, "/"+name)
+			}
+		}
+		if len(alternatives) > 0 {
+			sort.Strings(alternatives)
+			return "", fmt.Errorf("ambiguous command /%s; use %s", key, strings.Join(alternatives, ", "))
+		}
 		return "", agentkit.ErrCommandNotHandled
 	}
 	if r.requiresAdmin(key, cmd) && !IsAdmin(ctx) {
@@ -171,6 +181,9 @@ func (r *Registry) requiresAdmin(dispatchName string, cmd agentkit.Command) bool
 		normalizeName(dispatchName),
 		normalizeName(cmd.Name()),
 		normalizeName(cmd.Alias()),
+	}
+	if resolved, ok := cmd.(instanceCommand); ok {
+		candidates = append(candidates, normalizeName(resolved.original.Name()), normalizeName(resolved.original.Alias()))
 	}
 	for _, item := range r.cfg.AdminOnly {
 		key := normalizeName(item)

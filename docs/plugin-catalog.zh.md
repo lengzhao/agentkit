@@ -473,6 +473,8 @@ L0 `config.base.yaml` 有两个实例：`filesystem.local.default`（`root: work
 
 Slash 命令由能力插件实现 `agentkit.CommandProvider` 贡献。`commands/registry` 汇总命令并支持 `allow` / `deny` 过滤（默认全部启用）；`runner` 在 `Run(ctx, buildResult)` 时通过 `build.WireContributions` 自动收集并调用 `CommandCollector.SetCommands`。Platform 通过 `deps.commands` 依赖 registry 实例。
 
+命令名或 alias 冲突时，registry 为冲突名称追加 `_实例ID`（例如 `/shell_local`、`/shell_remote`）；不冲突的名称保持不变。输入原始重名命令会提示可用的实例命令，不默认选择某个实例。`allow` / `deny` / `adminOnly` 既支持原始名称（匹配全部实例），也支持追加后缀的名称（匹配单个实例），`deny` 优先。无法通过实例 ID 消除的冲突仍会报错。
+
 | Kind | 返回类型 | 说明 |
 |---|---|---|
 | `commands/registry` | `agentkit.Commands` | 汇总 CommandProvider，支持 allow/deny 过滤；`config.admins` + `config.adminOnly` 限制仅管理员可执行的 slash（`ctx` 写入 `KeyIsAdmin`）；dispatch 日志 args 由各命令可选实现 `CommandLogSanitizer` 脱敏 |

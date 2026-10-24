@@ -312,9 +312,15 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 }
 
 func attachCommands(result *build.Result) error {
+	providers := make([]agentkit.CommandProvider, 0)
+	for _, inst := range build.CollectInstances[agentkit.CommandProvider](result) {
+		if inst.Value != nil {
+			providers = append(providers, agentkit.CommandProviderInstance{CommandProvider: inst.Value, ID: inst.ID})
+		}
+	}
 	err := build.WireContributions(
 		result,
-		func(collector agentkit.CommandCollector, providers []agentkit.CommandProvider) error {
+		func(collector agentkit.CommandCollector, _ []agentkit.CommandProvider) error {
 			return collector.SetCommands(providers)
 		},
 	)

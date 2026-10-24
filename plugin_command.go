@@ -48,3 +48,12 @@ type Commands interface {
 type CommandCollector interface {
 	SetCommands(providers []CommandProvider) error
 }
+
+// CommandProviderInstance preserves build identity while contributing commands.
+// Registries use CommandInstanceID only to disambiguate conflicting names.
+type CommandProviderInstance struct {
+	CommandProvider
+	ID string
+}
+
+func (p CommandProviderInstance) CommandInstanceID() string { return p.ID }
