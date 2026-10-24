@@ -210,16 +210,30 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	}
 	// Remote turns must register with the same cancellation control as local steps.
 	if ctrl, ok := ctx.Value(agentkit.KeySessionControl).(interface {
-		ClearTurnCancel()
 		BeginStep(context.Context) (context.Context, func())
+		PopCancelReason() string
 	}); ok {
-		ctrl.ClearTurnCancel()
 		// Keep the reusable subprocess tied to the runner lifetime, while
 		// prompt/session requests use the cancellable turn context below.
 		ctx = context.WithValue(ctx, subprocessContextKey{}, ctx)
 		var endStep func()
 		ctx, endStep = ctrl.BeginStep(ctx)
 		defer endStep()
+		// A /stop can arrive after Loop marks the session busy but before this
+		// turn registers a step. Cancel() then has no step to cancel, so the
+		// pending reason would be silently dropped by ClearTurnCancel and the
+		// subprocess would start for a turn the user already stopped.
+		//
+		// Popping the reason instead honours that request. It still clears
+		// whatever was pending (PopCancelReason consumes), so this keeps the
+		// reason from leaking further, but it treats a pending reason at turn
+		// start as "stop", not as "stale": a reason left over by a turn that
+		// already ended will also cancel this one. That matches what callers
+		// work around today (see e.g. /stop landing between turns), and local
+		// steps already honour a step-boundary reason the same way.
+		if ctrl.PopCancelReason() != "" {
+			return context.Canceled
+		}
 	}
 	endData := sync.OnceValue(func() capsession.TurnEndData {
 		data := capsession.TurnEndData{Steps: 1}
