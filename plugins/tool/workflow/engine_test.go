@@ -727,27 +727,25 @@ func TestEngineDAGRunsLevelConcurrently(t *testing.T) {
 	wf := &Workflow{
 		Name: "dag", Description: "d",
 		Steps: []Step{
-			{ID: "a", Type: StepScript, Run: "sleep 1 && echo A"},
+			{ID: "a", Type: StepScript, Run: `touch "{{ .workflow.runDir }}/a.started"; until [ -f "{{ .workflow.runDir }}/b.started" ]; do sleep 0.01; done; echo A`},
 			// 显式空 dependsOn 断开隐式串行边，与 a 同层并行。
-			{ID: "b", Type: StepScript, Run: "sleep 1 && echo B", DependsOn: []string{}},
+			{ID: "b", Type: StepScript, Run: `touch "{{ .workflow.runDir }}/b.started"; until [ -f "{{ .workflow.runDir }}/a.started" ]; do sleep 0.01; done; echo B`, DependsOn: []string{}},
 			{ID: "join", Type: StepScript, DependsOn: []string{"a", "b"},
 				Run: `echo "{{ .steps.a.stdout }}{{ .steps.b.stdout }}"`},
 		},
 		Result: "{{ .steps.join.stdout }}",
 	}
 	engine := engineWith(stubWorkspace{t.TempDir()})
-	start := time.Now()
-	out, err := engine.Run(context.Background(), wf, nil)
-	elapsed := time.Since(start)
+	// Each sibling must start before the other can finish. A serial executor
+	// hits the deadline instead of relying on wall-clock performance thresholds.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := engine.Run(ctx, wf, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out != "A\nB\n\n" {
 		t.Fatalf("out = %q", out)
-	}
-	// 串行需 ≥2s；并行一层约 1s。
-	if elapsed > 1800*time.Millisecond {
-		t.Fatalf("elapsed = %v, want parallel (~1s), serial would be >=2s", elapsed)
 	}
 }
 

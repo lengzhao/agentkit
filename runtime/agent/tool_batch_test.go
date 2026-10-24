@@ -52,8 +52,8 @@ func TestRunTurnExecutesParallelSafeToolsConcurrently(t *testing.T) {
 	}
 	provider, err := llm.NewScripted(llm.ScriptedConfig{Steps: []llm.ScriptedStep{
 		{ToolCalls: []agentkit.ToolCall{
-			{ID: "a", Name: "staggered", Input: json.RawMessage(`{}`)},
-			{ID: "b", Name: "staggered", Input: json.RawMessage(`{}`)},
+			{ID: "a", Name: "count_slow", Input: json.RawMessage(`{}`)},
+			{ID: "b", Name: "count_slow", Input: json.RawMessage(`{}`)},
 		}},
 		{Text: "done"},
 	}})
@@ -61,7 +61,7 @@ func TestRunTurnExecutesParallelSafeToolsConcurrently(t *testing.T) {
 		t.Fatal(err)
 	}
 	toolRT, err := tools.NewRuntime(tools.RuntimeConfig{}, tools.RuntimeDeps{
-		Tools: []agentkit.Tool{staggeredTool{delay: 400 * time.Millisecond}},
+		Tools: []agentkit.Tool{&countingSlowTool{allStarted: make(chan struct{})}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,8 @@ func TestRunTurnExecutesParallelSafeToolsConcurrently(t *testing.T) {
 		Conversation: string(sessionID),
 		Workspace:    string(sessionID),
 	})
-	start := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -94,13 +95,14 @@ func TestRunTurnExecutesParallelSafeToolsConcurrently(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > 700*time.Millisecond {
-		t.Fatalf("expected parallel tool batch (~400ms), took %v", elapsed)
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("parallel tools did not reach the shared barrier: %v", err)
 	}
 }
 
 type countingSlowTool struct {
-	started atomic.Int32
+	started    atomic.Int32
+	allStarted chan struct{}
 }
 
 func (*countingSlowTool) Name() string        { return "count_slow" }
@@ -109,9 +111,11 @@ func (*countingSlowTool) InputSchema() agentkit.JSONSchema {
 	return agentkit.JSONSchema{Type: "object"}
 }
 func (c *countingSlowTool) Call(ctx context.Context, _ json.RawMessage) (string, error) {
-	c.started.Add(1)
+	if c.started.Add(1) == 2 {
+		close(c.allStarted)
+	}
 	select {
-	case <-time.After(200 * time.Millisecond):
+	case <-c.allStarted:
 		return "ok", nil
 	case <-ctx.Done():
 		return "", ctx.Err()
@@ -120,7 +124,7 @@ func (c *countingSlowTool) Call(ctx context.Context, _ json.RawMessage) (string,
 
 func TestRunTurnParallelToolBatchOverlapsExecution(t *testing.T) {
 	t.Parallel()
-	tool := &countingSlowTool{}
+	tool := &countingSlowTool{allStarted: make(chan struct{})}
 	dir := t.TempDir()
 	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
@@ -159,7 +163,8 @@ func TestRunTurnParallelToolBatchOverlapsExecution(t *testing.T) {
 		Conversation: string(sessionID),
 		Workspace:    string(sessionID),
 	})
-	start := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	if err := ag.RunTurn(ctx, agentkit.TurnInput{
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -168,8 +173,8 @@ func TestRunTurnParallelToolBatchOverlapsExecution(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("run turn: %v", err)
 	}
-	if time.Since(start) > 350*time.Millisecond {
-		t.Fatalf("tools did not overlap enough: %v", time.Since(start))
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("parallel tools did not overlap: %v", err)
 	}
 	if tool.started.Load() != 2 {
 		t.Fatalf("started = %d", tool.started.Load())

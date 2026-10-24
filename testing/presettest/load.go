@@ -14,6 +14,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/config"
 	_ "github.com/lengzhao/agentkit/plugins"
+	rtlearning "github.com/lengzhao/agentkit/runtime/learning"
 	"github.com/lengzhao/agentkit/runtime/runner"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/pluginkit/build"
@@ -35,6 +36,31 @@ func Load(t *testing.T, overlayPaths ...string) manager.Document {
 	doc, err := config.LoadDocument(base, overlays...)
 	if err != nil {
 		t.Fatalf("load preset: %v", err)
+	}
+	// Preset tests must not inherit runtime.json, credentials or state from
+	// the developer's real workspace (or from another test invocation).
+	if node, ok := doc.Shared["workspace.default"]; ok {
+		cfg := asMap(node.Config)
+		isolated := t.TempDir()
+		cfg["global"] = filepath.Join(isolated, "global")
+		if node.Use == "workspace/tenant" {
+			cfg["localBase"] = filepath.Join(isolated, "tenants")
+		} else {
+			cfg["local"] = filepath.Join(isolated, "local")
+		}
+		node.Config = cfg
+		doc.Shared["workspace.default"] = node
+	}
+	// Keep the repository's bundled agent definitions available after relocating
+	// local state; resolve the default ../examples path against the real repo.
+	if node, ok := doc.Shared["subagent.inprocess.default"]; ok {
+		if dirs, ok := node.Config["dirs"].([]any); ok {
+			for i, dir := range dirs {
+				if dir == "local:../examples/agents" {
+					dirs[i] = filepath.Join(root, "examples", "agents")
+				}
+			}
+		}
 	}
 	return doc
 }
@@ -103,6 +129,17 @@ func runPresetPlatform(t *testing.T, overlayPaths []string, patch func(map[strin
 	if err != nil {
 		t.Fatalf("build runner: %v", err)
 	}
+
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := runnerInst.Stop(ctx); err != nil {
+			t.Errorf("stop runner: %v", err)
+		}
+		if err := rtlearning.WaitBackgroundReviews(ctx); err != nil {
+			t.Errorf("wait for background reviews: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

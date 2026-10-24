@@ -37,7 +37,7 @@
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
 | `workspace`（必填） | `workspace.Service` |  |
-| `fs`（必填） | `filesystem.Service` | FS stores ACP session resume binds (tenant-relative acp/ dir). |
+| `fs`（必填） | `filesystem.Service` | FS stores session resume binds (tenant-relative acp/) and global ACP defaults. |
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `sessionEvents` | `session.Conversation` |  |
 | `sessionMcp` | `acp.SessionMCPProvider` | SessionMCP supplies harness MCP servers for session/new (not project mcp.json). |
@@ -684,10 +684,12 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `port` | `string` | — |  |
 | `callbackPath` | `string` | — |  |
 | `unknownCardAction` | `string` | — | forward (default) \| ignore |
+| `cardSubmissionTTL` | `string` | — | positive duration; default 24h |
 | `forwardEventsToAgent` | `[]string` | — | ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型 （如 drive.file.created_v1）。事件序列化为一条 inbound 消息； 每条事件使用独立 session（按 event_id），避免同群/同用户事件共享历史。 回复仍按事件上下文：带 chat_id 回群，只带 user_id 回 p2p，都无则 无回复目标。妙记/会议等用户身份 订阅事件（minutes.minute.generated_v1、vc.*）按 subscriber_ids[0] 的 open_id 路由到该用户的 p2p 会话。事件类型需在 Lark 开发者后台 同步订阅；用户身份事件还需用户 OAuth 授权后用 user_access_token 调对应服务端订阅 API 注册（见 docs/guides/lark-user-events.zh.md）。 停机期间未 ack 的事件由飞书重推补送，重启后仍会投递（不按进程 启动时间丢弃），重复投递由 event_id 去重。 |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
+| `interactionHandlers` | `[]interaction.Handler` |  |
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `workspace` | `workspace.Service` |  |
@@ -738,10 +740,12 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `port` | `string` | — |  |
 | `callbackPath` | `string` | — |  |
 | `unknownCardAction` | `string` | — | forward (default) \| ignore |
+| `cardSubmissionTTL` | `string` | — | positive duration; default 24h |
 | `forwardEventsToAgent` | `[]string` | — | ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型 （如 drive.file.created_v1）。事件序列化为一条 inbound 消息； 每条事件使用独立 session（按 event_id），避免同群/同用户事件共享历史。 回复仍按事件上下文：带 chat_id 回群，只带 user_id 回 p2p，都无则 无回复目标。妙记/会议等用户身份 订阅事件（minutes.minute.generated_v1、vc.*）按 subscriber_ids[0] 的 open_id 路由到该用户的 p2p 会话。事件类型需在 Lark 开发者后台 同步订阅；用户身份事件还需用户 OAuth 授权后用 user_access_token 调对应服务端订阅 API 注册（见 docs/guides/lark-user-events.zh.md）。 停机期间未 ack 的事件由飞书重推补送，重启后仍会投递（不按进程 启动时间丢弃），重复投递由 event_id 去重。 |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
+| `interactionHandlers` | `[]interaction.Handler` |  |
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `workspace` | `workspace.Service` |  |
@@ -796,9 +800,11 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `cancelledEmoji` | `string` | — |  |
 | `errorEmoji` | `string` | — |  |
 | `unknownCardAction` | `string` | — | forward (default) \| ignore |
+| `cardSubmissionTTL` | `string` | — | positive duration; default 24h |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
+| `interactionHandlers` | `[]interaction.Handler` |  |
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |
 | `workspace` | `workspace.Service` |  |

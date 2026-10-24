@@ -95,7 +95,10 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	// cases on a single path, and decouples result delivery from the
 	// best-effort progress-card I/O.
 	subagentComplete := inboundIsSubagentComplete(scoped)
-	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) && !subagentComplete {
+	// A sequential platform may have observed turn/end before loop teardown
+	// clears its busy flag. Preserve that input as a new scheduler request.
+	queueTurn, _ := scoped.Metadata[agentkit.MetadataQueueTurn].(bool)
+	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) && !subagentComplete && !queueTurn {
 		if r.tryStopBusyInbound(ctx, scoped) {
 			return
 		}

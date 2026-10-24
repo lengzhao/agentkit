@@ -68,6 +68,10 @@ const MetadataSkipPromptMeta = "skipPromptMeta"
 // before dispatch). Loop honors a non-empty value instead of generating one.
 const MetadataTurnID = "turnId"
 
+// MetadataQueueTurn requests a new scheduled turn instead of steering into a
+// busy turn. Sequential platforms set this after their previous turn/end.
+const MetadataQueueTurn = "queueTurn"
+
 // SessionID identifies a conversation unit for Loop locking and durable history.
 // Platforms emit a delivery route (finest grain: channel + optional :t:thread
 // + optional :u:user). Runner resolves active-session mappings (/new) and writes

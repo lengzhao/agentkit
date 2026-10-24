@@ -166,6 +166,7 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	return rctx.WithInboundRoute(agentkit.MessageEvent{
 		PlatformID: platformID,
 		UserID:     cliUserID(),
+		Metadata:   map[string]any{agentkit.MetadataQueueTurn: true},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},

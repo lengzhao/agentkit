@@ -168,3 +168,40 @@ func TestBusyUserMessageStillSteers(t *testing.T) {
 		t.Fatalf("follow-ups = %v, want none", loop.followUps)
 	}
 }
+
+func TestBusyQueuedUserMessageStartsNewTurn(t *testing.T) {
+	sessionID := agentkit.SessionID("cli:default")
+	loop := &inboundRoutingLoop{busy: map[agentkit.SessionID]bool{sessionID: true}}
+	root, err := New(Config{}, Deps{Platform: eofPlatform{}, Loop: loop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submitted := make(chan agentkit.LoopRequest, 1)
+	sched := newScheduler(1, func(_ context.Context, req agentkit.LoopRequest) error {
+		submitted <- req
+		return nil
+	}, nil)
+	defer sched.stop()
+	defer sched.wait(2 * time.Second)
+	event := agentkit.MessageEvent{
+		PlatformID: "cli",
+		Envelope:   agentkit.TurnEnvelope{Route: rctx.SessionRoute("cli", string(sessionID))},
+		Message:    agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "next turn"}}},
+		Metadata:   map[string]any{agentkit.MetadataQueueTurn: true},
+	}
+	root.(*Root).handleInbound(context.Background(), sched, event)
+	loop.mu.Lock()
+	steers := len(loop.steers)
+	loop.mu.Unlock()
+	if steers != 0 {
+		t.Fatalf("queued input was steered into finishing turn: %d", steers)
+	}
+	select {
+	case req := <-submitted:
+		if !strings.Contains(textPart(req.Event.Message), "next turn") {
+			t.Fatalf("queued message = %v", req.Event.Message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued input did not start a new turn")
+	}
+}

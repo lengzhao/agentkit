@@ -538,6 +538,7 @@ runner.default:
             - sender_name
             - sender_email
             - mentions
+            - chat_id
             - timestamp
         maxConcurrentTurns: 8
         sessionScope: channel

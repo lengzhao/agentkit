@@ -347,7 +347,20 @@ func TestLoopDelegateAsyncChildInheritsSessionControl(t *testing.T) {
 		t.Fatal(err)
 	}
 	loop := spawner.(*LoopAgentSpawner)
-	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error { return nil })
+	completed := make(chan struct{})
+	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error {
+		close(completed)
+		return nil
+	})
+	// The probe is observed inside RunTurn, before session writes and subagent/end.
+	// Drain the completion notification before TempDir cleanup can remove the store.
+	t.Cleanup(func() {
+		select {
+		case <-completed:
+		case <-time.After(5 * time.Second):
+			t.Error("async child did not complete")
+		}
+	})
 
 	ctx := loopParentCtx()
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
