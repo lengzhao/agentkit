@@ -71,6 +71,21 @@ func TestAgentHelpCommand(t *testing.T) {
 	}
 }
 
+func TestAgentHelpShowsResetCommands(t *testing.T) {
+	t.Parallel()
+	for _, agents := range [][]agentkit.Agent{nil, {stubDetailAgent{id: "assistant"}}} {
+		out, err := rtloop.AgentHelpCommand(agents).CommandExec(context.Background(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, command := range []string{"/agent reset", "/agent -c reset", "/agent -g reset"} {
+			if !strings.Contains(out, command) {
+				t.Errorf("missing %q in output:\n%s", command, out)
+			}
+		}
+	}
+}
+
 func TestAgentListShowsSessionAgent(t *testing.T) {
 	t.Parallel()
 

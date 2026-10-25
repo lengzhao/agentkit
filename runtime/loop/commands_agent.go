@@ -182,14 +182,14 @@ func (c agentCommand) formatAgentList(ctx context.Context) string {
 	writeAgentRoutingHeader(&b, effective, sessionBind, channelBind, globalBind, loopDefault)
 
 	if len(ids) == 0 {
-		b.WriteString("Registered agents:\n  (none)\n\nUse /agent <id> for details.")
-		return b.String()
+		b.WriteString("Registered agents:\n  (none)\n")
+	} else {
+		b.WriteString("Registered agents:\n")
 	}
 	width := 0
 	for _, id := range ids {
 		width = max(width, len(id))
 	}
-	b.WriteString("Registered agents:\n")
 	current := strings.TrimSpace(string(effective))
 	for _, id := range ids {
 		marker := ""
@@ -202,6 +202,9 @@ func (c agentCommand) formatAgentList(ctx context.Context) string {
 	b.WriteString("\nUse /agent use <id> for this session.")
 	b.WriteString("\nUse /agent -c use <id> for this channel (until session override).")
 	b.WriteString("\nUse /agent -g use <id> for every channel (until session or channel override).")
+	b.WriteString("\nUse /agent reset to clear this session's agent override.")
+	b.WriteString("\nUse /agent -c reset to clear this channel's agent override.")
+	b.WriteString("\nUse /agent -g reset to clear the global agent override.")
 	return b.String()
 }
 
