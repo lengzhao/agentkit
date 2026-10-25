@@ -136,7 +136,6 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 			m.inbox <- incoming{id: id, err: err}
 			return
 		}
-		event.PlatformID = id
 		event.Envelope.Route.Instance = id
 		if event.Envelope.Route.Platform == "" {
 			event.Envelope.Route.Platform = p.(agentkit.PlatformIdentifier).PlatformID()
@@ -146,13 +145,11 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 }
 
 func (m *Platform) Send(ctx context.Context, out agentkit.OutboundEvent) error {
-	if err := out.RequirePlatformID(); err != nil {
+	if err := out.RequireDestination(); err != nil {
 		return err
 	}
 	destination := out.Route.DestinationID()
-	if destination == "" {
-		destination = out.PlatformID
-	}
+
 	p, ok := m.platforms[destination]
 	if !ok {
 		return fmt.Errorf("unknown platform %q", destination)

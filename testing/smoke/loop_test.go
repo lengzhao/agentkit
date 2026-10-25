@@ -36,10 +36,10 @@ func TestSmokeLoopSameSessionSequentialTurns(t *testing.T) {
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		}
 	}
-	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{AgentID: "loop-smoke", Message: msg("第一条")})); err != nil {
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{Message: msg("第一条"), Envelope: agentkit.TurnEnvelope{AgentID: "loop-smoke"}})); err != nil {
 		t.Fatalf("first dispatch: %v", err)
 	}
-	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{AgentID: "loop-smoke", Message: msg("第二条")})); err != nil {
+	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{Message: msg("第二条"), Envelope: agentkit.TurnEnvelope{AgentID: "loop-smoke"}})); err != nil {
 		t.Fatalf("second dispatch: %v", err)
 	}
 
@@ -92,8 +92,8 @@ func TestSmokeLoopSteerWhileBusy(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- loopInst.Dispatch(context.Background(), agenttest.LoopRequest(sessionID, agentkit.MessageEvent{
-			AgentID: ag.ID(),
-			Message: msg("第一条"),
+
+			Message: msg("第一条"), Envelope: agentkit.TurnEnvelope{AgentID: ag.ID()},
 		}))
 	}()
 
@@ -180,11 +180,11 @@ func TestSmokeLoopDifferentSessionsIsolated(t *testing.T) {
 	dispatch := func(sessionID agentkit.SessionID, text string) {
 		t.Helper()
 		if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(sessionID, agentkit.MessageEvent{
-			AgentID: "loop-smoke",
+
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-			},
+			}, Envelope: agentkit.TurnEnvelope{AgentID: "loop-smoke"},
 		})); err != nil {
 			t.Fatalf("dispatch %s: %v", sessionID, err)
 		}

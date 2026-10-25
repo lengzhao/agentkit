@@ -307,11 +307,10 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 	platformID := rctx.PlatformFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	return emit(ctx, agentkit.OutboundEvent{
-		Route:      rctx.RouteRefFromContext(ctx),
-		AgentID:    agentID,
-		PlatformID: platformID,
-		UserID:     userID,
-		Type:       agentkit.EventPermissionRequest,
+		Route: rctx.RouteRefFromContext(ctx).WithInstance(platformID), AgentID: agentID,
+
+		UserID: userID,
+		Type:   agentkit.EventPermissionRequest,
 		Data: rctx.MarshalOutboundData(permission.RequestPayload{
 			Request:      req,
 			Conversation: string(rctx.SessionIDFromContext(ctx)),
@@ -326,12 +325,11 @@ func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.Outb
 	resolved := result
 	resolved.ID = id
 	return emit(ctx, agentkit.OutboundEvent{
-		Route:      rctx.RouteRefFromContext(ctx),
-		AgentID:    agentID,
-		PlatformID: platformID,
-		UserID:     userID,
-		Type:       agentkit.EventPermissionResolved,
-		Data:       rctx.MarshalOutboundData(resolved),
+		Route: rctx.RouteRefFromContext(ctx).WithInstance(platformID), AgentID: agentID,
+
+		UserID: userID,
+		Type:   agentkit.EventPermissionResolved,
+		Data:   rctx.MarshalOutboundData(resolved),
 	})
 }
 

@@ -212,13 +212,11 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: ""})
 	}
 	event := rctx.WithInboundRoute(agentkit.MessageEvent{
-		AgentID:    agentID,
-		PlatformID: strings.TrimSpace(route.Platform),
-		UserID:     userID,
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: parts,
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: agentID, Route: agentkit.RouteRef{Instance: strings.TrimSpace(route.Platform)}, Actor: agentkit.ActorRef{UserID: userID}},
 	}, route)
 	if len(attachmentNotes) > 0 {
 		event.Attachments = make([]agentkit.InboundAttachment, 0, len(attachmentNotes))

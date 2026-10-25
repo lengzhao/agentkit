@@ -348,14 +348,14 @@ func (p *Platform) abort(cmd inboundCommand) (func(), error) {
 
 func (p *Platform) enqueue(text string) error {
 	event := agentkit.MessageEvent{
-		PlatformID: platformID,
+
 		Message: agentkit.ModelMessage{
 			Role: "user",
 			Content: []agentkit.ContentPart{{
 				Type: "text",
 				Text: text,
 			}},
-		},
+		}, Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID}},
 	}
 	event = rctx.WithDeliverySession(event, platformID, p.delivery)
 	return p.inbox.Push(context.Background(), event)

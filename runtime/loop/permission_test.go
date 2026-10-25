@@ -34,7 +34,7 @@ func turnContext(parent context.Context, sessionID, deliverySessionID agentkit.S
 		Conversation: string(sessionID),
 		Actor:        agentkit.ActorRef{UserID: userID},
 	}
-	return withTurnContext(parent, env, sessionID, agentID, platformID, userID, nil, ctrl, emit)
+	return withTurnContext(parent, env.WithAgentID(agentID), ctrl, emit)
 }
 
 type stubAgent struct{}

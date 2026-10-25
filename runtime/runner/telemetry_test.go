@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/agentkit/runtime/runner"
+	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
 func TestRunnerStopShutsDownTelemetry(t *testing.T) {

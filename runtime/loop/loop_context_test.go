@@ -22,12 +22,8 @@ func TestWithTurnContextSetsUserID(t *testing.T) {
 
 	ctx := withTurnContext(
 		context.Background(),
-		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456"),
-		agentkit.SessionID("slack:C001"),
-		agentkit.AgentID("coder"),
-		"slack",
-		"U456",
-		nil,
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456").WithAgentID(agentkit.AgentID("coder")),
+
 		nil,
 		nil,
 	)
@@ -47,12 +43,8 @@ func TestWithTurnContextOmitsEmptyUserID(t *testing.T) {
 			Route:        rctx.SessionRoute("cli", "cli:default"),
 			Conversation: "cli:default",
 			Workspace:    "cli:default",
-		},
-		agentkit.SessionID("cli:default"),
-		agentkit.AgentID("coder"),
-		"cli",
-		"",
-		nil,
+		}.WithAgentID(agentkit.AgentID("coder")),
+
 		nil,
 		nil,
 	)
@@ -67,12 +59,8 @@ func TestWithTurnContextSetsDeliveryRoute(t *testing.T) {
 
 	ctx := withTurnContext(
 		context.Background(),
-		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456"),
-		agentkit.SessionID("slack:C001"),
-		agentkit.AgentID("coder"),
-		"slack",
-		"U456",
-		nil,
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456").WithAgentID(agentkit.AgentID("coder")),
+
 		nil,
 		nil,
 	)
@@ -91,12 +79,8 @@ func TestWithTurnContextSetsResolvedSessionID(t *testing.T) {
 
 	ctx := withTurnContext(
 		context.Background(),
-		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001:new:20260829", "slack:C001", "U456"),
-		agentkit.SessionID("slack:C001:new:20260829"),
-		agentkit.AgentID("coder"),
-		"slack",
-		"U456",
-		nil,
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001:new:20260829", "slack:C001", "U456").WithAgentID(agentkit.AgentID("coder")),
+
 		nil,
 		nil,
 	)
@@ -115,12 +99,8 @@ func TestWithTurnContextSetsEnvelopeWorkspace(t *testing.T) {
 
 	ctx := withTurnContext(
 		context.Background(),
-		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456"),
-		agentkit.SessionID("slack:C001"),
-		agentkit.AgentID("coder"),
-		"slack",
-		"U456",
-		nil,
+		testEnvelope("slack:C001:t:111.0:u:U456", "slack:C001", "slack:C001", "U456").WithAgentID(agentkit.AgentID("coder")),
+
 		nil,
 		nil,
 	)

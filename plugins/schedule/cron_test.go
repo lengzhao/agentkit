@@ -223,14 +223,14 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 		if rctx.InboundDeliveryID(event) != "chat-api:default:t:conv_1" {
 			t.Fatalf("delivery = %q", rctx.InboundDeliveryID(event))
 		}
-		if event.PlatformID != "chat-api" {
-			t.Fatalf("platform = %q", event.PlatformID)
+		if event.Envelope.Route.Instance != "chat-api" {
+			t.Fatalf("platform = %q", event.Envelope.Route.Instance)
 		}
-		if event.UserID != "user-1" {
-			t.Fatalf("user = %q", event.UserID)
+		if event.Envelope.Actor.UserID != "user-1" {
+			t.Fatalf("user = %q", event.Envelope.Actor.UserID)
 		}
-		if event.AgentID != "assistant" {
-			t.Fatalf("agent = %q", event.AgentID)
+		if event.Envelope.AgentID != "assistant" {
+			t.Fatalf("agent = %q", event.Envelope.AgentID)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for delivery-routed cron fire")
@@ -270,7 +270,7 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 		if rctx.ConversationFromEvent(event) != "chat-api:default:t:conv_reuse" {
 			t.Fatalf("reuse conversation = %q, want delivery session", rctx.ConversationFromEvent(event))
 		}
-		meta, ok := event.Metadata["schedule"].(map[string]any)
+		meta, ok := event.Envelope.Metadata["schedule"].(map[string]any)
 		if !ok {
 			t.Fatal("missing schedule metadata")
 		}
@@ -315,7 +315,7 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 		if !strings.HasPrefix(string(rctx.ConversationFromEvent(event)), "schedule:agent-9:") {
 			t.Fatalf("stateless conversation = %q", rctx.ConversationFromEvent(event))
 		}
-		meta, ok := event.Metadata["schedule"].(map[string]any)
+		meta, ok := event.Envelope.Metadata["schedule"].(map[string]any)
 		if !ok {
 			t.Fatal("missing schedule metadata")
 		}

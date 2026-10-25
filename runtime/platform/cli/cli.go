@@ -164,13 +164,11 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	}
 	p.beginTurnWait()
 	return rctx.WithInboundRoute(agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     cliUserID(),
-		Metadata:   map[string]any{agentkit.MetadataQueueTurn: true},
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-		},
+		}, Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID}, Actor: agentkit.ActorRef{UserID: cliUserID()}, Metadata: map[string]any{agentkit.MetadataQueueTurn: true}},
 	}, agentkit.SessionRouteInput{
 		Platform:   platformID,
 		DeliveryID: p.deliveryID,

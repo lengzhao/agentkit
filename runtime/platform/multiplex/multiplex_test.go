@@ -93,8 +93,8 @@ func TestMultiplexRejectsEmptyPlatformID(t *testing.T) {
 	err = m.Send(context.Background(), agentkit.OutboundEvent{
 		Type: agentkit.EventMessageEnd,
 	})
-	if !errors.Is(err, agentkit.ErrOutboundPlatformRequired) {
-		t.Fatalf("Send() err = %v, want ErrOutboundPlatformRequired", err)
+	if !errors.Is(err, agentkit.ErrOutboundRouteRequired) {
+		t.Fatalf("Send() err = %v, want ErrOutboundRouteRequired", err)
 	}
 	if len(cli.sent) != 0 || len(slack.sent) != 0 {
 		t.Fatalf("unexpected broadcast: cli=%d slack=%d", len(cli.sent), len(slack.sent))
@@ -114,8 +114,8 @@ func TestMultiplexRoutesOutboundByPlatformID(t *testing.T) {
 	}
 
 	if err := m.Send(context.Background(), agentkit.OutboundEvent{
-		PlatformID: "slack",
-		Type:       agentkit.EventMessageEnd,
+
+		Type: agentkit.EventMessageEnd, Route: agentkit.RouteRef{Instance: "slack"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -152,8 +152,8 @@ func TestMultiplexReceiveSetsPlatformID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if event.PlatformID != "cli" {
-		t.Fatalf("PlatformID=%q, want cli", event.PlatformID)
+	if event.Envelope.Route.Instance != "cli" {
+		t.Fatalf("PlatformID=%q, want cli", event.Envelope.Route.Instance)
 	}
 	if text := event.Message.Content[0].Text; text != "hi" {
 		t.Fatalf("text=%q, want hi", text)
@@ -178,8 +178,8 @@ func TestMultiplexDisambiguatesDuplicatePlatformIDs(t *testing.T) {
 	}
 
 	if err := m.Send(context.Background(), agentkit.OutboundEvent{
-		PlatformID: "timer1",
-		Type:       agentkit.EventMessageEnd,
+
+		Type: agentkit.EventMessageEnd, Route: agentkit.RouteRef{Instance: "timer1"},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -31,14 +31,13 @@ func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts
 	}
 	modelMsg := agentkit.ModelMessage{Role: "assistant", Content: parts}
 	event := agentkit.OutboundEvent{
-		Route:      rctx.OutboundRoute(route.PlatformID, route.SessionID),
-		AgentID:    route.AgentID,
-		PlatformID: route.PlatformID,
-		UserID:     route.UserID,
-		Type:       agentkit.EventAssistantMessage,
-		Data:       rctx.MarshalOutboundData(modelMsg),
+		Route: rctx.OutboundRoute(route.PlatformID, route.SessionID).WithInstance(route.PlatformID), AgentID: route.AgentID,
+
+		UserID: route.UserID,
+		Type:   agentkit.EventAssistantMessage,
+		Data:   rctx.MarshalOutboundData(modelMsg),
 	}
-	if err := event.RequirePlatformID(); err != nil {
+	if err := event.RequireDestination(); err != nil {
 		return err
 	}
 	if opts.Raw {

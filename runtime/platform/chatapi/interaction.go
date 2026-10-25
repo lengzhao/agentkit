@@ -163,7 +163,7 @@ func (p *Platform) handleRespondInteraction(w http.ResponseWriter, r *http.Reque
 		UserID:    user,
 		Text:      answer,
 	})
-	event.Metadata = mergeInboundTurnMetadata(p.requestMetadata(r), run.id)
+	event.Envelope.Metadata = mergeInboundTurnMetadata(p.requestMetadata(r), run.id)
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return

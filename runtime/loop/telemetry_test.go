@@ -17,7 +17,7 @@ type stubAgent struct {
 	runTurn func(context.Context, agentkit.TurnInput) error
 }
 
-func (a stubAgent) ID() agentkit.AgentID { return a.id }
+func (a stubAgent) ID() agentkit.AgentID    { return a.id }
 func (a stubAgent) ConfiguredModel() string { return a.model }
 func (a stubAgent) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
 	if a.runTurn != nil {
@@ -39,12 +39,11 @@ func TestDispatchRecordsTelemetryTurn(t *testing.T) {
 	}
 
 	err = l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
-		AgentID:    "coder",
-		PlatformID: "cli",
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -71,9 +70,9 @@ type traceModelAgent struct {
 	effectiveModel  string
 }
 
-func (a traceModelAgent) ID() agentkit.AgentID { return a.id }
-func (a traceModelAgent) ConfiguredModel() string { return a.configuredModel }
-func (a traceModelAgent) EffectiveModel(context.Context) string { return a.effectiveModel }
+func (a traceModelAgent) ID() agentkit.AgentID                              { return a.id }
+func (a traceModelAgent) ConfiguredModel() string                           { return a.configuredModel }
+func (a traceModelAgent) EffectiveModel(context.Context) string             { return a.effectiveModel }
 func (a traceModelAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
 
 func TestDispatchRecordsEffectiveModelOverConfigured(t *testing.T) {
@@ -93,12 +92,11 @@ func TestDispatchRecordsEffectiveModelOverConfigured(t *testing.T) {
 	}
 
 	err = l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
-		AgentID:    "coder",
-		PlatformID: "cli",
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -128,8 +126,7 @@ func TestDispatchEmitsInboundAttachmentsSpan(t *testing.T) {
 	}
 
 	err = l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
-		AgentID:    "coder",
-		PlatformID: "cli",
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "看这张图"}},
@@ -137,7 +134,7 @@ func TestDispatchEmitsInboundAttachmentsSpan(t *testing.T) {
 		Attachments: []agentkit.InboundAttachment{
 			{Path: "upload/x.png", MIME: "image/png", Size: 12345, OrigName: "x.png", Image: true},
 			{Path: "upload/big.log", MIME: "text/plain", Size: 200000, OrigName: "big.log"},
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -182,12 +179,11 @@ func TestDispatchOmitsAttachmentSpanWhenNoAttachments(t *testing.T) {
 	}
 
 	if err := l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
-		AgentID:    "coder",
-		PlatformID: "cli",
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	})); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
@@ -233,15 +229,14 @@ func TestDispatchEmitsAttachmentSpanOnlyOnFirstTurn(t *testing.T) {
 	}
 
 	err = l.Dispatch(context.Background(), agenttest.LoopRequest("cli:default", agentkit.MessageEvent{
-		AgentID:    "coder",
-		PlatformID: "cli",
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "看这张图"}},
 		},
 		Attachments: []agentkit.InboundAttachment{
 			{Path: "upload/x.png", MIME: "image/png", Size: 12345, OrigName: "x.png", Image: true},
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)

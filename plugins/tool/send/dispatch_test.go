@@ -139,8 +139,8 @@ func TestSendSlashCommandBareFeishuChat(t *testing.T) {
 	if rctx.OutboundRouteID(platform.sent[0]) != "feishu:oc_dst" {
 		t.Fatalf("route = %q", rctx.OutboundRouteID(platform.sent[0]))
 	}
-	if platform.sent[0].PlatformID != "feishu" {
-		t.Fatalf("platformID = %q", platform.sent[0].PlatformID)
+	if platform.sent[0].Route.Instance != "feishu" {
+		t.Fatalf("platformID = %q", platform.sent[0].Route.Instance)
 	}
 	var msg agentkit.ModelMessage
 	if err := json.Unmarshal(platform.sent[0].Data, &msg); err != nil {

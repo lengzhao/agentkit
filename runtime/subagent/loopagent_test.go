@@ -191,8 +191,8 @@ func TestLoopAgentAsyncSubmitsFollowUp(t *testing.T) {
 	}
 	select {
 	case event := <-ch:
-		if event.AgentID != "assistant" {
-			t.Fatalf("agent id = %q", event.AgentID)
+		if event.Envelope.AgentID != "assistant" {
+			t.Fatalf("agent id = %q", event.Envelope.AgentID)
 		}
 		if len(event.Message.Content) == 0 || event.Message.Content[0].Text == "" {
 			t.Fatal("empty follow-up text")
@@ -246,8 +246,8 @@ func TestLoopAgentAsyncSubmitsFollowUpOnError(t *testing.T) {
 		if !strings.Contains(text, wantErr.Error()) {
 			t.Fatalf("follow-up = %q", text)
 		}
-		if event.Metadata["subagent_status"] != "failed" {
-			t.Fatalf("metadata status = %v", event.Metadata["subagent_status"])
+		if event.Envelope.Metadata["subagent_status"] != "failed" {
+			t.Fatalf("metadata status = %v", event.Envelope.Metadata["subagent_status"])
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected async follow-up submit on error")

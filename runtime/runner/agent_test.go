@@ -17,7 +17,7 @@ type agentRecordingLoop struct {
 }
 
 func (l *agentRecordingLoop) Dispatch(_ context.Context, req agentkit.LoopRequest) error {
-	l.lastAgent = req.Event.AgentID
+	l.lastAgent = req.Event.Envelope.AgentID
 	l.lastSession = rctx.ConversationFromLoopRequest(req)
 	return nil
 }
@@ -117,7 +117,7 @@ func TestRunnerResolvesLogicalStoreSessionRequiresInboundContext(t *testing.T) {
 
 	loop := &agentRecordingLoop{}
 	event := userEvent(delivery, "today")
-	event.PlatformID = "chat-api"
+	event.Envelope.Route.Instance = "chat-api"
 	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{
 		Platform:     &scriptedPlatform{events: []agentkit.MessageEvent{event}},
 		Loop:         loop,
@@ -298,9 +298,8 @@ func TestRunnerSessionBindOverridesMessageAgent(t *testing.T) {
 		Platform: &scriptedPlatform{events: []agentkit.MessageEvent{{
 			Envelope: agentkit.TurnEnvelope{
 				Route:        rctx.SessionRoute("", string(sessionID)),
-				Conversation: string(sessionID),
-			},
-			AgentID: "assistant",
+				Conversation: string(sessionID), AgentID: "assistant"},
+
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "platform default"}},
@@ -337,22 +336,21 @@ func TestRunnerScheduleStatelessIgnoresActiveSessionMapping(t *testing.T) {
 
 	loop := &agentRecordingLoop{}
 	event := agentkit.MessageEvent{
-		PlatformID: "chat-api",
+
 		Envelope: agentkit.TurnEnvelope{
-			Route:        rctx.SessionRoute("chat-api", string(delivery)),
-			Conversation: string(side),
-		},
+			Route: rctx.SessionRoute("chat-api", string(delivery)).WithInstance("chat-api"),
+
+			Conversation: string(side), Metadata: map[string]any{
+				"schedule": map[string]any{
+					"fired":       true,
+					"jobId":       "agent-1",
+					"kind":        "delay",
+					"sessionMode": "stateless",
+				},
+			}},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "remind"}},
-		},
-		Metadata: map[string]any{
-			"schedule": map[string]any{
-				"fired":       true,
-				"jobId":       "agent-1",
-				"kind":        "delay",
-				"sessionMode": "stateless",
-			},
 		},
 	}
 	root, err := runner.New(runner.Config{SessionScope: "channel"}, runner.Deps{

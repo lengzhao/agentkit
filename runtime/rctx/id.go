@@ -35,28 +35,12 @@ func ChildConversationID(parentConversation, agentName string, seq int64) string
 	return parentConversation + ":sub:" + agentName + ":" + strconv.FormatInt(seq, 10)
 }
 
-// SyncMessageEvent copies resolved envelope fields onto an inbound message.
-func SyncMessageEvent(event agentkit.MessageEvent, env agentkit.TurnEnvelope) agentkit.MessageEvent {
-	event.Envelope = env
-	if event.PlatformID == "" {
-		event.PlatformID = env.Route.Platform
-	}
-	if event.UserID == "" {
-		event.UserID = env.Actor.UserID
-	}
-	if len(event.Metadata) == 0 && len(env.Metadata) != 0 {
-		event.Metadata = env.Metadata
-	}
-	return event
-}
-
 // OutboundFromEnvelope builds an outbound event from envelope routing context.
 func OutboundFromEnvelope(env agentkit.TurnEnvelope, typ agentkit.EventType, data []byte) agentkit.OutboundEvent {
 	return agentkit.OutboundEvent{
-		Route:      env.Route,
-		PlatformID: env.Route.DestinationID(),
-		UserID:     env.Actor.UserID,
-		Type:       typ,
-		Data:       data,
+		Route:  env.Route,
+		UserID: env.Actor.UserID,
+		Type:   typ,
+		Data:   data,
 	}
 }

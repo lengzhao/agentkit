@@ -136,7 +136,7 @@ func (l *Default) Agents() []agentkit.Agent {
 }
 
 func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error {
-	ag, agentID, err := l.resolveAgent(req.Event.AgentID)
+	ag, agentID, err := l.resolveAgent(req.Event.Envelope.AgentID)
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	control := l.controlFor(conversation)
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
-	ctx = withTurnContext(ctx, req.Event.Envelope, conversation, agentID, req.Event.PlatformID, req.Event.UserID, req.Event.Metadata, control, req.Emit)
+	ctx = withTurnContext(ctx, req.Event.Envelope.WithAgentID(agentID), control, req.Emit)
 	ctx = rttelemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
@@ -228,7 +228,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	turnID := uuid.NewString()
 	// A caller-provided turn id (agentkit.MetadataTurnID) wins, so transports
 	// that register per-turn resources before dispatch can correlate them.
-	if id := turnIDFromMetadata(req.Event.Metadata); id != "" {
+	if id := turnIDFromMetadata(req.Event.Envelope.Metadata); id != "" {
 		turnID = id
 	}
 	meta := captelemetry.TurnMeta{
@@ -237,8 +237,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		DeliverySessionID: string(rctx.DeliveryFromEnvelope(req.Event.Envelope)),
 		AgentID:           string(agentID),
 		Model:             agentTraceModel(ctx, ag),
-		PlatformID:        req.Event.PlatformID,
-		UserID:            req.Event.UserID,
+		PlatformID:        req.Event.Envelope.Route.Instance,
+		UserID:            req.Event.Envelope.Actor.UserID,
 		WorkspaceKey:      req.Event.Envelope.Workspace,
 		AttachmentSources: rttelemetry.JoinAttachmentSources(rttelemetry.AttachmentSources(input.Message)),
 		Input:             rttelemetry.FormatMessage(input.Message),
@@ -248,8 +248,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		"agent_id", agentID,
 		"session_id", rctx.ConversationFromLoopRequest(req),
 		"delivery_session_id", rctx.DeliveryFromEnvelope(req.Event.Envelope),
-		"platform_id", req.Event.PlatformID,
-		"user_id", req.Event.UserID,
+		"platform_id", req.Event.Envelope.Route.Instance,
+		"user_id", req.Event.Envelope.Actor.UserID,
 	)
 	turnStarted := time.Now()
 	ctx, endTurn := rttelemetry.BeginTurn(ctx, meta)
@@ -387,22 +387,8 @@ func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentk
 	return ag, agentID, nil
 }
 
-func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, metadata map[string]any, control *Control, emit agentkit.OutboundEmit) context.Context {
-	if sessionID != "" {
-		env = env.WithConversation(string(sessionID))
-	}
-	if env.Route.Platform == "" && platformID != "" {
-		env.Route.Platform = platformID
-	}
-	if env.Actor.UserID == "" && userID != "" {
-		env.Actor.UserID = userID
-	}
-	if agentID != "" {
-		env.AgentID = agentID
-	}
-	if len(metadata) > 0 && len(env.Metadata) == 0 {
-		env.Metadata = metadata
-	}
+func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, control *Control, emit agentkit.OutboundEmit) context.Context {
+	metadata := env.Metadata
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	if len(metadata) > 0 {
 		if capschedule.IsFireTurn(metadata) {

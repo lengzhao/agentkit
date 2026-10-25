@@ -211,3 +211,15 @@ func (r RouteRef) WithInstance(instance string) RouteRef {
 	r.Instance = strings.TrimSpace(instance)
 	return r
 }
+
+// WithUserID returns an envelope with the speaking actor updated.
+func (e TurnEnvelope) WithUserID(userID string) TurnEnvelope {
+	e.Actor.UserID = userID
+	return e
+}
+
+// WithPlatformInstance returns an envelope addressed to one adapter instance.
+func (e TurnEnvelope) WithPlatformInstance(instance string) TurnEnvelope {
+	e.Route = e.Route.WithInstance(instance)
+	return e
+}

@@ -9,9 +9,9 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
-	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/llm"
 	"github.com/lengzhao/agentkit/runtime/loop"
+	rtpermission "github.com/lengzhao/agentkit/runtime/permission"
 	"github.com/lengzhao/agentkit/runtime/tools"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
@@ -88,12 +88,12 @@ func TestSmokePermissionAskTimeoutViaLoop(t *testing.T) {
 
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			PlatformID: "cli",
+
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "echo secret"}},
 			},
-			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
+			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID), Route: agentkit.RouteRef{Instance: "cli"}},
 		},
 		Capability: permission.Capability{
 			Interactive:    true,
@@ -201,12 +201,12 @@ func runPermissionLoopSmoke(t *testing.T, tc permissionLoopCase) {
 
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			PlatformID: "cli",
+
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "echo secret"}},
 			},
-			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID)},
+			Envelope: agentkit.TurnEnvelope{Conversation: string(sessionID), Route: agentkit.RouteRef{Instance: "cli"}},
 		},
 		Capability: permission.Capability{
 			Interactive: true,

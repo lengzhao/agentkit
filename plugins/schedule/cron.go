@@ -375,29 +375,26 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 
 	prompt := scheduleInboundPrompt(job)
 	evt := agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     strings.TrimSpace(job.Route.UserID),
+
 		Envelope: agentkit.TurnEnvelope{
-			Conversation: string(sessionID),
-		},
+			Conversation: string(sessionID), Route: agentkit.RouteRef{Instance: platformID}, Actor: agentkit.ActorRef{UserID: strings.TrimSpace(job.Route.UserID)}, Metadata: map[string]any{
+				"schedule": map[string]any{
+					"fired":       true,
+					"jobId":       job.ID,
+					"kind":        job.NormalizedKind(),
+					"sessionMode": c.sessionMode,
+				},
+			}},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: prompt}},
-		},
-		Metadata: map[string]any{
-			"schedule": map[string]any{
-				"fired":       true,
-				"jobId":       job.ID,
-				"kind":        job.NormalizedKind(),
-				"sessionMode": c.sessionMode,
-			},
 		},
 	}
 	if deliverySessionID != "" {
 		evt = rctx.WithDeliverySession(evt, platformID, deliverySessionID)
 	}
 	if agent := strings.TrimSpace(job.Route.AgentID); agent != "" {
-		evt.AgentID = agentkit.AgentID(agent)
+		evt.Envelope.AgentID = agentkit.AgentID(agent)
 	}
 	return evt
 }

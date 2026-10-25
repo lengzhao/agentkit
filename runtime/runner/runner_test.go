@@ -94,9 +94,9 @@ func userEvent(sessionID agentkit.SessionID, text string) agentkit.MessageEvent 
 
 func deliveryUserEvent(platform, userID string, delivery agentkit.SessionID, text string) agentkit.MessageEvent {
 	evt := agentkit.MessageEvent{
-		UserID: userID,
+
 		Envelope: agentkit.TurnEnvelope{
-			Route: rctx.SessionRoute(platform, string(delivery)),
+			Route: rctx.SessionRoute(platform, string(delivery)), Actor: agentkit.ActorRef{UserID: userID},
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -104,7 +104,7 @@ func deliveryUserEvent(platform, userID string, delivery agentkit.SessionID, tex
 		},
 	}
 	if platform != "" {
-		evt.PlatformID = platform
+		evt.Envelope.Route.Instance = platform
 	}
 	return evt
 }

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
-	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/permission"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
@@ -184,7 +184,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		ReplyTo:     msgID,
 		ScopeUserID: user,
 	}, user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
-	event.Metadata = mergeInboundTurnMetadata(p.requestMetadata(r), runID)
+	event.Envelope.Metadata = mergeInboundTurnMetadata(p.requestMetadata(r), runID)
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		p.pending.finish(runID, pendingResult{err: err})
 		p.clearActiveConv(conv.ID, runID)

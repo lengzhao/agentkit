@@ -28,12 +28,10 @@ func TestFeishuProfileEntryPopulated(t *testing.T) {
 }
 
 func TestEnrichInboundActorFromProfile(t *testing.T) {
-	ev := enrichInboundActorFromProfile(agentkit.MessageEvent{
-		UserID: "ou_x",
-		Metadata: map[string]any{
-			"displayName": "Alice",
-			"email":       "a@b.io",
-		},
+	ev := enrichInboundActorFromProfile(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "ou_x"}, Metadata: map[string]any{
+		"displayName": "Alice",
+		"email":       "a@b.io",
+	}},
 	})
 	if ev.Envelope.Actor.Name != "Alice" || ev.Envelope.Actor.Email != "a@b.io" {
 		t.Fatalf("actor %+v", ev.Envelope.Actor)

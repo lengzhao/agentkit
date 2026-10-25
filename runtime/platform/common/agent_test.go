@@ -18,11 +18,11 @@ func TestResolveAgentID(t *testing.T) {
 
 func TestInboundMessageSetsAgentID(t *testing.T) {
 	event := InboundMessage("coder", agentkit.SessionID("s1"), "slack", "u1", "hi")
-	if event.AgentID != "coder" {
-		t.Fatalf("AgentID = %q, want coder", event.AgentID)
+	if event.Envelope.AgentID != "coder" {
+		t.Fatalf("AgentID = %q, want coder", event.Envelope.AgentID)
 	}
 	delivery, ok := rctx.RouteSessionID(event.Envelope.Route)
-	if !ok || delivery != "s1" || event.PlatformID != "slack" || event.UserID != "u1" {
+	if !ok || delivery != "s1" || event.Envelope.Route.Instance != "slack" || event.Envelope.Actor.UserID != "u1" {
 		t.Fatalf("unexpected routing fields: %+v", event)
 	}
 }

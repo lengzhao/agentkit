@@ -73,11 +73,11 @@ func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 
 	ctx := context.Background()
 	if err := loopInst.Dispatch(ctx, agenttest.LoopRequest(logical, agentkit.MessageEvent{
-		AgentID: "nex",
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "委派 researcher"}},
-		},
+		}, Envelope: agentkit.TurnEnvelope{AgentID: "nex"},
 	})); err != nil {
 		t.Fatalf("loop dispatch: %v", err)
 	}

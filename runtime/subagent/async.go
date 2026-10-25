@@ -72,19 +72,16 @@ func submitSubagentComplete(ctx context.Context, submit capschedule.SubmitFunc, 
 	if parentEnv.Conversation == "" {
 		parentEnv = parentEnv.WithConversation(string(parent.conversation))
 	}
-	event := rctx.SyncMessageEvent(agentkit.MessageEvent{
-		AgentID: parentAgent,
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-		},
-		Metadata: map[string]any{
-			"subagent_complete": true,
-			"subagent_job_id":   jobID,
-			"subagent_agent":    agentName,
-			"subagent_status":   result.Status,
-		},
-	}, parentEnv)
+	parentEnv = parentEnv.WithAgentID(parentAgent).WithMetadata(map[string]any{
+		"subagent_complete": true,
+		"subagent_job_id":   jobID,
+		"subagent_agent":    agentName,
+		"subagent_status":   result.Status,
+	})
+	event := agentkit.MessageEvent{
+		Envelope: parentEnv,
+		Message:  agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: text}}},
+	}
 	if err := submit(ctx, event); err != nil {
 		slog.Error("async subagent: submit follow-up", "job_id", jobID, "err", err)
 	}
