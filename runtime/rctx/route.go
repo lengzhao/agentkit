@@ -29,8 +29,24 @@ func BuildSessionRoute(in agentkit.SessionRouteInput) agentkit.RouteRef {
 	scopeUser := strings.TrimSpace(in.ScopeUserID)
 	replyTo := strings.TrimSpace(in.ReplyTo)
 	deliveryID := strings.TrimSpace(string(in.DeliveryID))
+	// Derive the delivery id from structured fields when absent. Conversely,
+	// fill any missing structured field by parsing the delivery id so the route
+	// target is the single source of truth for routing keys: callers that pass
+	// only a delivery id (WithDeliverySession and the headless/CLI transports)
+	// no longer force every consumer to re-parse the id string.
 	if deliveryID == "" && platform != "" && channel != "" {
 		deliveryID = string(buildDeliverySessionID(platform, channel, thread, scopeUser))
+	}
+	if parts := ParseDelivery(agentkit.SessionID(deliveryID), ""); parts.Routable {
+		if channel == "" {
+			channel = parts.Channel
+		}
+		if thread == "" {
+			thread = parts.Thread
+		}
+		if scopeUser == "" {
+			scopeUser = parts.User
+		}
 	}
 	return sessionRouteFromTarget(platform, agentkit.SessionRouteTarget{
 		DeliveryID:  agentkit.SessionID(deliveryID),

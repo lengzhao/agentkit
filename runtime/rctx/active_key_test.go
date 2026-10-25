@@ -183,3 +183,47 @@ func TestBindKeysFromContextUsesActor(t *testing.T) {
 		t.Fatalf("thread = %q", keys.Thread)
 	}
 }
+
+// BuildSessionRoute backfills structured fields from the delivery id, so a
+// caller that supplies only a delivery id (WithDeliverySession and the headless
+// transports) still yields a fully-populated route target — and therefore every
+// bind level resolves without the consumer re-parsing the id string.
+func TestBuildSessionRouteBackfillsTargetFromDelivery(t *testing.T) {
+	t.Parallel()
+
+	route := rctx.WithInboundRoute(agentkit.MessageEvent{PlatformID: "lark"}, agentkit.SessionRouteInput{
+		Platform:   "lark",
+		DeliveryID: "lark:oc_d95:t:om_1:u:ou_actor",
+	}).Envelope.Route
+
+	target, ok := rctx.DecodeSessionRoute(route)
+	if !ok {
+		t.Fatal("route target missing")
+	}
+	if target.ChannelID != "oc_d95" || target.ThreadID != "om_1" || target.ScopeUserID != "ou_actor" {
+		t.Fatalf("target not backfilled: ch=%q th=%q u=%q", target.ChannelID, target.ThreadID, target.ScopeUserID)
+	}
+
+	policy := rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
+	keys := rctx.BindKeysForRoute(route, policy, "ou_actor", "")
+	if keys.Channel != "lark:oc_d95" || keys.Thread != "lark:oc_d95:t:om_1" || keys.User != "lark:oc_d95:u:ou_actor" {
+		t.Fatalf("keys ch=%q th=%q u=%q", keys.Channel, keys.Thread, keys.User)
+	}
+}
+
+// Explicit structured fields still win; backfill never overwrites them.
+func TestBuildSessionRouteKeepsExplicitTarget(t *testing.T) {
+	t.Parallel()
+
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+		Platform:    "lark",
+		DeliveryID:  "lark:oc_d95:t:om_1:u:ou_actor",
+		ChannelID:   "oc_other",
+		ThreadID:    "om_2",
+		ScopeUserID: "ou_other",
+	})
+	target, _ := rctx.DecodeSessionRoute(route)
+	if target.ChannelID != "oc_other" || target.ThreadID != "om_2" || target.ScopeUserID != "ou_other" {
+		t.Fatalf("explicit fields clobbered: %+v", target)
+	}
+}

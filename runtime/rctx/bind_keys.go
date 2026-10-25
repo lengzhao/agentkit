@@ -22,20 +22,22 @@ type BindKeys struct {
 	Session agentkit.SessionID
 }
 
-// BindKeysForRoute derives every route-scoped key under policy. session is the
-// already-resolved conversation key (inbound: the turn conversation; slash:
-// SessionIDFromContext, optionally upgraded to a /new child with
-// ResolveSessionKey).
+// BindKeysForRoute derives every route-scoped key under policy from the route's
+// structured target (ChannelID / ThreadID / ScopeUserID), which BuildSessionRoute
+// now fills for every construction path. session is the already-resolved
+// conversation key (inbound: the turn conversation; slash: SessionIDFromContext,
+// optionally upgraded to a /new child with ResolveSessionKey).
 //
-// Levels reuse the same ApplyScope semantics as the rest of routing, so a bind
-// key always equals the session id the runner would lock on for that scope.
-// userID is the actor id used when the delivery omits the :u: segment (IM
-// platforms always carry it on the delivery; callers pass
-// rctx.UserIDFromContext as the fallback). Opaque-delivery platforms
-// (ActiveEntryDelivery, e.g. chat-api) have no sub-scoping: the raw delivery id
-// is the channel key and the finer levels are empty.
+// Levels reuse the same granularity as ApplyScope, so a bind key equals the
+// session id the runner would lock on for that scope. userID is the actor id
+// (rctx.UserIDFromContext) used when neither the delivery nor the target carries
+// a :u: segment. Opaque-delivery platforms (ActiveEntryDelivery, e.g. chat-api)
+// have no sub-scoping: the raw delivery id is the channel key and the finer
+// levels are empty.
 func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string, session agentkit.SessionID) BindKeys {
+	userID = strings.TrimSpace(userID)
 	keys := BindKeys{Session: session}
+
 	delivery, ok := RouteSessionID(route)
 	if !ok || delivery == "" {
 		return keys
@@ -44,18 +46,42 @@ func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string
 		keys.Channel = delivery
 		return keys
 	}
-	parts := ParseDelivery(delivery, userID)
-	if !parts.Routable {
+
+	target, _ := DecodeSessionRoute(route)
+	channel := strings.TrimSpace(target.ChannelID)
+	thread := strings.TrimSpace(target.ThreadID)
+	scopeUser := strings.TrimSpace(target.ScopeUserID)
+	// Defensive fallback for routes built before the target was backfilled.
+	if channel == "" || (thread == "" && scopeUser == "") {
+		if parts := ParseDelivery(delivery, ""); parts.Routable {
+			if channel == "" {
+				channel = parts.Channel
+			}
+			if thread == "" {
+				thread = parts.Thread
+			}
+			if scopeUser == "" {
+				scopeUser = parts.User
+			}
+		}
+	}
+
+	if channel == "" {
 		keys.Channel = delivery
 		return keys
 	}
-	base := agentkit.SessionID(parts.Platform + ":" + parts.Channel)
+	platform := strings.TrimSpace(route.Platform)
+	base := agentkit.SessionID(platform + ":" + channel)
 	keys.Channel = base
-	if parts.Thread != "" {
-		keys.Thread = agentkit.SessionID(string(base) + ":t:" + parts.Thread)
+	if thread != "" {
+		keys.Thread = agentkit.SessionID(string(base) + ":t:" + thread)
 	}
-	if parts.User != "" {
-		keys.User = agentkit.SessionID(string(base) + ":u:" + parts.User)
+	user := scopeUser
+	if user == "" {
+		user = userID
+	}
+	if user != "" {
+		keys.User = agentkit.SessionID(string(base) + ":u:" + user)
 	}
 	return keys
 }
