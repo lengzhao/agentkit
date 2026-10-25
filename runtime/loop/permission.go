@@ -212,13 +212,16 @@ func (c *Control) registerPermissionPending(req permission.Request, capab permis
 		superseded: make(chan struct{}),
 	}
 	var existing *pendingPermission
-	c.sync(func(st *controlState) {
+	accepted := c.sync(func(st *controlState) {
 		existing = st.permissionPending
 		if existing != nil {
 			return
 		}
 		st.permissionPending = pending
 	})
+	if !accepted {
+		return nil, context.Canceled
+	}
 	if existing != nil {
 		return nil, fmt.Errorf("permission pending already exists: %s", existing.requestID)
 	}
@@ -253,20 +256,19 @@ func (c *Control) DeliverPermissionReply(_ agentkit.SessionID, reply permission.
 	if strings.TrimSpace(reply.RequestID) == "" {
 		return false
 	}
-	var pending *pendingPermission
+	delivered := false
 	c.sync(func(st *controlState) {
-		pending = st.permissionPending
+		pending := st.permissionPending
+		if pending == nil || pending.requestID != reply.RequestID {
+			return
+		}
+		if pending.scope == permission.ScopeAsker && pending.askedBy != "" && reply.UserID != "" && reply.UserID != pending.askedBy {
+			return
+		}
+		// Delivery and closing replies both run on the owner goroutine.
+		delivered = pending.deliver(reply)
 	})
-	if pending == nil {
-		return false
-	}
-	if pending.requestID != reply.RequestID {
-		return false
-	}
-	if pending.scope == permission.ScopeAsker && pending.askedBy != "" && reply.UserID != "" && reply.UserID != pending.askedBy {
-		return false
-	}
-	return pending.deliver(reply)
+	return delivered
 }
 
 func (c *Control) SupersedePending(_ agentkit.SessionID, reason string) bool {

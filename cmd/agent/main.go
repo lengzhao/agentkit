@@ -57,9 +57,7 @@ func main() {
 	slog.Info("runner starting")
 
 	runErr := runner.Run(ctx, result)
-	if runErr != nil && ctx.Err() == nil {
-		fatal("run agent", runErr)
-	}
+	runFailed := runErr != nil && ctx.Err() == nil
 	if ctx.Err() != nil {
 		slog.Info("agent shutting down", "signal", ctx.Err())
 	}
@@ -69,6 +67,9 @@ func main() {
 		slog.Warn("runner stop", "err", err)
 	}
 	slog.Info("agent stopped")
+	if runFailed {
+		fatal("run agent", runErr)
+	}
 }
 
 func runManager(addr, basePath, overlayPath string) {

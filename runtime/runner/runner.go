@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -72,6 +73,7 @@ type Root struct {
 	inject                []string
 	defaultTimezone       string
 	shutdownHooks         []func()
+	shutdownHooksOnce     sync.Once
 }
 
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
@@ -337,11 +339,13 @@ func (r *Root) collectShutdownHooks(result *build.Result) {
 }
 
 func (r *Root) runShutdownHooks() {
-	for _, fn := range r.shutdownHooks {
-		if fn != nil {
-			fn()
+	r.shutdownHooksOnce.Do(func() {
+		for _, fn := range r.shutdownHooks {
+			if fn != nil {
+				fn()
+			}
 		}
-	}
+	})
 }
 
 func (r *Root) Stop(ctx context.Context) error {

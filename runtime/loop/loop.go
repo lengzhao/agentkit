@@ -62,6 +62,8 @@ type Default struct {
 	sessionStore    agentkit.SessionStore
 	workspace       workspace.Service
 	modelCatalog    capllm.ModelCatalog
+	controlsMu      sync.Mutex
+	controlsStopped bool
 	sessionControls sync.Map // SessionID -> *Control
 	sessionBusy     sync.Map // SessionID -> struct{}
 }
@@ -361,14 +363,25 @@ func (l *Default) markSessionBusy(sessionID agentkit.SessionID, busy bool) {
 }
 
 func (l *Default) controlFor(sessionID agentkit.SessionID) *Control {
-	v, _ := l.sessionControls.LoadOrStore(sessionID, NewControl())
-	return v.(*Control)
+	l.controlsMu.Lock()
+	defer l.controlsMu.Unlock()
+	if v, ok := l.sessionControls.Load(sessionID); ok {
+		return v.(*Control)
+	}
+	c := NewControl()
+	if l.controlsStopped {
+		c.Stop()
+	}
+	l.sessionControls.Store(sessionID, c)
+	return c
 }
 
-// Stop retires every per-session Control owner goroutine. Call after the
-// runner scheduler has drained (sched.wait + sched.stop); no further Dispatch
-// may run after this returns.
+// Stop retires all session owners, including when in-flight turns are abandoned.
+// Later cleanup calls are safe and cannot create a live owner after shutdown.
 func (l *Default) Stop(_ context.Context) error {
+	l.controlsMu.Lock()
+	defer l.controlsMu.Unlock()
+	l.controlsStopped = true
 	l.sessionControls.Range(func(_, v any) bool {
 		v.(*Control).Stop()
 		return true
