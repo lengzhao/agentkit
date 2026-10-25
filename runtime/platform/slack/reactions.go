@@ -2,10 +2,12 @@ package slack
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/slack-go/slack"
 )
@@ -91,15 +93,54 @@ func (p *Platform) applyTurnSteer(ctx context.Context, event agentkit.OutboundEv
 			"session_id", string(sessionID))
 		return nil
 	}
-	// The API can finish after turn/end has drained the batch. If the swap
-	// can no longer be recorded, retire the late reaction ourselves.
+	// Swap synchronously (like Feishu) so the batch and the wire agree before
+	// this returns; turn/end then retires the current emoji instead of leaving
+	// it on a finished message. A terminal queued/injected means the message
+	// joined the running turn; next-turn/rejected undo the swap so the message
+	// keeps the plain processing reaction.
+	//
+	// The API can finish after turn/end has drained the batch; if the swap can no
+	// longer be recorded, retire the late reaction ourselves.
 	bg := context.WithoutCancel(ctx)
-	p.removeReaction(bg, d, reactionReceived)
-	p.addReaction(bg, d, p.steerEmoji)
-	if !p.turnReactionBatchFor(sessionID).swapReaction(d, p.steerEmoji) {
-		p.removeReaction(bg, d, p.steerEmoji)
+	want := p.steerEmoji
+	if !steerAckAccepted(event) {
+		want = reactionReceived
+	}
+	p.removeReaction(bg, d, p.currentReaction(sessionID, d))
+	p.addReaction(bg, d, want)
+	if !p.turnReactionBatchFor(sessionID).swapReaction(d, want) {
+		p.removeReaction(bg, d, want)
 	}
 	return nil
+}
+
+// steerAckAccepted reports whether a turn/steer event claims the message was
+// taken into the running turn's work. queued/injected mean the sender will see
+// its input folded into (or run right after) the current reply; next-turn and
+// rejected contradict that, so the swap is undone.
+func steerAckAccepted(event agentkit.OutboundEvent) bool {
+	var data capsession.TurnSteerData
+	if len(event.Data) == 0 {
+		return true
+	}
+	if err := json.Unmarshal(event.Data, &data); err != nil {
+		return true
+	}
+	switch data.Outcome {
+	case "", capsession.SteerOutcomeQueued, capsession.SteerOutcomeInjected:
+		return true
+	default:
+		return false
+	}
+}
+
+// currentReaction returns the emoji the running turn currently has on the
+// message, falling back to the processing reaction when it is untracked.
+func (p *Platform) currentReaction(sessionID agentkit.SessionID, d delivery) string {
+	if name, ok := p.turnReactionBatchFor(sessionID).reactionFor(d); ok {
+		return name
+	}
+	return reactionReceived
 }
 
 // deliveryForReaction resolves the (channel, ts) to react on for a steer event.

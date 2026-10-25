@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
@@ -312,3 +314,46 @@ func TestSessionControlsAreIsolated(t *testing.T) {
 		}
 	}
 }
+
+// Steering that survives into the post-turn drain runs as the session's next
+// turn, so its ack reports next-turn, not injected. A queue-ignoring agent
+// (like an ACP peer without steering support) is what leaves it to the drain.
+func TestSteeringDrainedAsNextTurnAcksNextTurn(t *testing.T) {
+	t.Parallel()
+
+	lp, err := loop.New(loop.Config{FollowUpMode: agentkit.FollowUpOneAtATime}, loop.Deps{
+		Agents: []agentkit.Agent{ignoringAgent{}},
+	})
+	if err != nil {
+		t.Fatalf("new loop: %v", err)
+	}
+	reporter, ok := lp.(agentkit.SteerReporter)
+	if !ok {
+		t.Fatal("loop/default must implement agentkit.SteerReporter")
+	}
+
+	ctx := testContext(testSessionID)
+	var outcomes []string
+	if err := reporter.SteerEntry(ctx, agentkit.SteerEntry{
+		Message: userMessage("steer before dispatch"),
+		Ack:     func(outcome string) { outcomes = append(outcomes, outcome) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := lp.Dispatch(context.Background(), loopReq(testSessionID, userMessage("initial"))); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	// The RunTurn pass leaves the queue untouched, so Loop drains it as the
+	// session's next turn and reports next-turn (never injected).
+	if len(outcomes) != 1 || outcomes[0] != capsession.SteerOutcomeNextTurn {
+		t.Fatalf("outcomes = %v, want [next-turn]", outcomes)
+	}
+}
+
+type ignoringAgent struct{}
+
+func (ignoringAgent) ID() agentkit.AgentID { return "ignoring" }
+
+func (ignoringAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }

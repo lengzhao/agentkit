@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/agent"
 	"github.com/lengzhao/agentkit/runtime/llm"
@@ -192,9 +193,13 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 	ctrl := loop.NewControl()
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: string(sessionID), Workspace: string(sessionID)})
 	ctx = context.WithValue(ctx, agentkit.KeySessionControl, ctrl)
-	if err := ctrl.Steer(ctx, agentkit.ModelMessage{
-		Role:    "user",
-		Content: []agentkit.ContentPart{{Type: "text", Text: "steered"}},
+	var acks []string
+	if err := ctrl.SteerEntry(ctx, agentkit.SteerEntry{
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "steered"}},
+		},
+		Ack: func(outcome string) { acks = append(acks, outcome) },
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -206,6 +211,12 @@ func TestSteerInjectsBeforeNextStep(t *testing.T) {
 		},
 	}); err != nil {
 		t.Fatalf("run turn: %v", err)
+	}
+
+	// The local agent injected the queued message at its next step boundary, so
+	// the sender must learn it was injected (not deferred to the next turn).
+	if len(acks) != 1 || acks[0] != capsession.SteerOutcomeInjected {
+		t.Fatalf("steer acks = %v, want [injected]", acks)
 	}
 
 	store, err := sessstore.NewStore(sessstore.StoreConfig{Dir: "."}, sessstore.StoreDeps{Workspace: rtworkspace.Static(dir)})
