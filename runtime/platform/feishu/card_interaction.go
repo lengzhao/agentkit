@@ -284,7 +284,7 @@ func (p *Platform) enrichCardInteraction(ctx context.Context, e *interaction.Eve
 			e.RoutingStatus = "isolated_card_fallback"
 		}
 	}
-	e.ThreadID = threadIDFromSessionKey(e.SessionID)
+	e.ThreadID = rctx.ParseDelivery(agentkit.SessionID(e.SessionID), "").Thread
 	if e.CardStatus != interaction.CardAvailable {
 		slog.Info(p.tag()+": original card unavailable", "message_id", e.MessageID, "status", e.CardStatus, "reason", e.CardError)
 	}

@@ -200,11 +200,11 @@ func (p *Platform) cancelTurnsForRecalledMessage(messageID string) {
 // 等候选 id 校验 IsSessionBusy，turn 已结束时为无操作。撤回是平台级自动化
 // 而非用户输入的 slash，因此不受 disablePlatformSlash 影响。
 func (p *Platform) stopSessionForRecall(sessionID agentkit.SessionID, rc replyContext) {
+	// ThreadID is backfilled by BuildSessionRoute from the delivery id.
 	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:   p.platformTag,
 		DeliveryID: sessionID,
 		ChannelID:  rc.chatID,
-		ThreadID:   threadIDFromSessionKey(string(sessionID)),
 	})
 	outcome, err := common.ProcessSlash(context.Background(), p.commands, common.SlashContext{
 		Route:        route,

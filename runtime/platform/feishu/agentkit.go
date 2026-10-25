@@ -720,14 +720,6 @@ func assistantText(msg agentkit.ModelMessage) string {
 	return string(b)
 }
 
-func threadIDFromSessionKey(sessionKey string) string {
-	parts := rctx.ParseDelivery(agentkit.SessionID(sessionKey), "")
-	if !parts.Routable {
-		return ""
-	}
-	return parts.Thread
-}
-
 func (p *Platform) startWebSocketMode(ctx context.Context) error {
 	wsOpts := []larkws.ClientOption{
 		larkws.WithEventHandler(p.eventHandler),
