@@ -151,6 +151,37 @@ func ActiveEntryKeyFromContext(ctx context.Context) agentkit.SessionID {
 	return ActiveEntryKey(env.Route, policy, UserIDFromContext(ctx))
 }
 
+// ChannelEntryKey returns the stable session-store key for channel-scoped
+// bindings (/agent -c). Its granularity is always the channel, regardless of the
+// configured conversation scope: a channel-level default must not fragment per
+// thread or per user, otherwise the same chat resolves a different default in
+// each thread and a bind set in one thread stays invisible from another.
+// Contrast ActiveEntryKey, whose granularity follows the turn policy and drives
+// /new active-session mapping. Opaque-delivery platforms (ActiveEntryDelivery,
+// e.g. chat-api) keep their raw delivery id.
+func ChannelEntryKey(route agentkit.RouteRef, policy RoutePolicy, userID string) agentkit.SessionID {
+	delivery, ok := RouteSessionID(route)
+	if !ok || delivery == "" {
+		return ""
+	}
+	if policy.ActiveEntryMode == ActiveEntryDelivery {
+		return delivery
+	}
+	return ApplyScope(delivery, agentkit.SessionScopeChannel, userID)
+}
+
+// ChannelEntryKeyFromContext derives the channel-scoped binding key from the
+// turn route, honouring per-platform policy for opaque-delivery platforms.
+func ChannelEntryKeyFromContext(ctx context.Context) agentkit.SessionID {
+	env := EnvelopeFromContext(ctx)
+	platform := PlatformFromContext(ctx)
+	if platform == "" {
+		platform = strings.TrimSpace(env.Route.Platform)
+	}
+	policy := RoutePolicyForPlatform(platform, DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	return ChannelEntryKey(env.Route, policy, UserIDFromContext(ctx))
+}
+
 // WorkspaceFromContext reports the tenant workspace key for the current turn.
 // Runner should set TurnEnvelope.Workspace explicitly; fallback derivation logs a warning.
 func WorkspaceFromContext(ctx context.Context) string {

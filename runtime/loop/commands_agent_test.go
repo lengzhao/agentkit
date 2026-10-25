@@ -254,3 +254,49 @@ func TestAgentScopePrecedenceAndNewSession(t *testing.T) {
 		})
 	}
 }
+
+// Regression: under a thread-scoped conversation, /agent -c must bind at the
+// channel so the default set in one thread is visible from another thread of
+// the same chat. Before the fix the key was thread-scoped and cross-thread
+// reads silently fell back to the loop default.
+func TestAgentChannelUseAppliesAcrossThreads(t *testing.T) {
+	t.Parallel()
+
+	ws, err := rtworkspace.New(rtworkspace.Config{Global: t.TempDir(), Local: t.TempDir(), Scope: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: "lark:oc_d95"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := sessstore.NewStaticStore(mem)
+	cmd := rtloop.AgentCommand([]agentkit.Agent{
+		stubDetailAgent{id: "assistant"}, stubDetailAgent{id: "worker"},
+	}, store, "assistant", ws)
+
+	threadCtx := func(topic string) context.Context {
+		delivery := rctx.BuildDeliverySessionID("lark", "oc_d95", topic, "ou_user")
+		env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{
+			PlatformID: "lark", UserID: "ou_user",
+		}, rctx.SessionRoute("lark", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
+		env = rctx.WithMetadataScope(env, agentkit.SessionScopeThread)
+		return rctx.ApplyEnvelopeToContext(context.Background(), env)
+	}
+
+	// Bind in thread A.
+	if out, err := cmd.CommandExec(threadCtx("om_topicA"), "-c use worker"); err != nil {
+		t.Fatal(err)
+	} else if !strings.Contains(out, "channel agent: worker") {
+		t.Fatalf("bind out = %q", out)
+	}
+
+	// Read back from thread B: must resolve to worker, not the loop default.
+	out, err := cmd.CommandExec(threadCtx("om_topicB"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Active agent: worker\n") {
+		t.Fatalf("cross-thread read did not see channel bind; output:\n%s", out)
+	}
+}
