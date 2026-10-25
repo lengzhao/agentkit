@@ -1,0 +1,69 @@
+package rctx
+
+import (
+	"context"
+	"strings"
+
+	"github.com/lengzhao/agentkit"
+)
+
+// BindKeys holds a turn's resolution keys for every dynamic-binding level,
+// computed in one place so no caller hand-rolls a delivery id. The global level
+// is workspace-scoped and needs no key, so it is not a field here.
+//
+// Granularity, coarse to fine: Channel < Thread|User < Session. Thread and User
+// are mutually exclusive siblings (a delivery id carries :t: or :u:, not both)
+// and are empty when the segment is absent. Session is the resolved
+// conversation history key, which may already point at a /new child.
+type BindKeys struct {
+	Channel agentkit.SessionID
+	Thread  agentkit.SessionID
+	User    agentkit.SessionID
+	Session agentkit.SessionID
+}
+
+// BindKeysForRoute derives every route-scoped key under policy. session is the
+// already-resolved conversation key (inbound: the turn conversation; slash:
+// SessionIDFromContext, optionally upgraded to a /new child with
+// ResolveSessionKey). Opaque-delivery platforms (ActiveEntryDelivery) expose the
+// raw delivery id as the channel key, matching ChannelEntryKey.
+func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string, session agentkit.SessionID) BindKeys {
+	keys := BindKeys{Session: session}
+	delivery, ok := RouteSessionID(route)
+	if !ok || delivery == "" {
+		return keys
+	}
+	// Opaque-delivery platforms (chat-api) treat the whole id as the routing
+	// key; there is no sub-scoping to split, so it is the channel key as-is.
+	if policy.ActiveEntryMode == ActiveEntryDelivery {
+		keys.Channel = delivery
+		return keys
+	}
+	parts := ParseDelivery(delivery, userID)
+	if !parts.Routable {
+		keys.Channel = delivery
+		return keys
+	}
+	base := agentkit.SessionID(parts.Platform + ":" + parts.Channel)
+	keys.Channel = base
+	if parts.Thread != "" {
+		keys.Thread = agentkit.SessionID(string(base) + ":t:" + parts.Thread)
+	}
+	if parts.User != "" {
+		keys.User = agentkit.SessionID(string(base) + ":u:" + parts.User)
+	}
+	return keys
+}
+
+// BindKeysFromContext derives keys from the turn envelope and route. Channel
+// granularity is always the channel, independent of the configured conversation
+// scope, so a channel-level default never fragments per thread.
+func BindKeysFromContext(ctx context.Context) BindKeys {
+	env := EnvelopeFromContext(ctx)
+	platform := PlatformFromContext(ctx)
+	if platform == "" {
+		platform = strings.TrimSpace(env.Route.Platform)
+	}
+	policy := RoutePolicyForPlatform(platform, DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	return BindKeysForRoute(env.Route, policy, UserIDFromContext(ctx), SessionIDFromContext(ctx))
+}
