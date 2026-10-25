@@ -181,8 +181,7 @@ func WorkspaceFromContext(ctx context.Context) string {
 	if delivery := DeliveryRouteFromContext(ctx); delivery != "" {
 		slog.Warn("workspace derived from delivery route; set TurnEnvelope.Workspace at ingress",
 			"delivery", delivery)
-		scoped := ApplyScope(delivery, agentkit.SessionScopeChannel, UserIDFromContext(ctx))
-		return WorkspaceKey(string(scoped))
+		return workspaceFromRoute(EnvelopeFromContext(ctx).Route, UserIDFromContext(ctx))
 	}
 	if conv := ConversationFromContext(ctx); conv != "" {
 		slog.Warn("workspace derived from conversation; set TurnEnvelope.Workspace at ingress",

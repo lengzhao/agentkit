@@ -19,15 +19,15 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 		return chathistory.Result{}, fmt.Errorf("slack: client not ready")
 	}
 
-	parts := rctx.ParseDelivery(req.SessionID, req.UserID)
-	if !parts.Routable || parts.Channel == "" {
+	parts, ok := rctx.DecodeSessionRoute(req.Route)
+	if !ok || parts.ChannelID == "" {
 		return chathistory.Result{}, fmt.Errorf("slack: chat_history requires a routable delivery session; hint: pass sessionId explicitly (e.g. \"slack:C0XXX\") or a userId")
 	}
-	if parts.Platform != "" && parts.Platform != "slack" {
-		return chathistory.Result{}, fmt.Errorf("slack: session platform %q does not match slack; hint: check the sessionId prefix matches the target platform", parts.Platform)
+	if req.Route.Platform != "" && req.Route.Platform != "slack" {
+		return chathistory.Result{}, fmt.Errorf("slack: session platform %q does not match slack; hint: check the sessionId prefix matches the target platform", req.Route.Platform)
 	}
-	if !p.channelAllowed(parts.Channel, inferSlackChannelType(parts.Channel)) {
-		return chathistory.Result{}, fmt.Errorf("slack: channel %q is not in the allowlist; hint: ask an admin to allow this channel, or read a channel that is already allowed", parts.Channel)
+	if !p.channelAllowed(parts.ChannelID, inferSlackChannelType(parts.ChannelID)) {
+		return chathistory.Result{}, fmt.Errorf("slack: channel %q is not in the allowlist; hint: ask an admin to allow this channel, or read a channel that is already allowed", parts.ChannelID)
 	}
 
 	limit := req.Limit
@@ -48,17 +48,17 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 		nextPage string
 		err      error
 	)
-	if req.Thread && parts.Thread != "" {
+	if req.Thread && parts.ThreadID != "" {
 		msgs, hasMore, nextPage, err = p.client.GetConversationRepliesContext(ctx, &slackapi.GetConversationRepliesParameters{
-			ChannelID: parts.Channel,
-			Timestamp: parts.Thread,
+			ChannelID: parts.ChannelID,
+			Timestamp: parts.ThreadID,
 			Cursor:    cursor,
 			Limit:     limit,
 			Oldest:    oldest,
 		})
 	} else {
 		resp, histErr := p.client.GetConversationHistoryContext(ctx, &slackapi.GetConversationHistoryParameters{
-			ChannelID: parts.Channel,
+			ChannelID: parts.ChannelID,
 			Cursor:    cursor,
 			Limit:     limit,
 			Oldest:    oldest,
@@ -72,7 +72,7 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 		}
 	}
 	if err != nil {
-		if req.Thread && parts.Thread != "" {
+		if req.Thread && parts.ThreadID != "" {
 			return chathistory.Result{}, fmt.Errorf("slack: list chat history: %w; hint: the thread may be unreadable, retry with thread=false to read the whole channel instead", err)
 		}
 		return chathistory.Result{}, fmt.Errorf("slack: list chat history: %w; hint: retry with a smaller limit, or pass before=<cursor> to page, or thread=false for whole-channel history", err)

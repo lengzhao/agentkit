@@ -355,7 +355,8 @@ func (p *Platform) enqueue(text string) error {
 				Type: "text",
 				Text: text,
 			}},
-		}, Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID}},
+		},
+		Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID}},
 	}
 	event = rctx.WithDeliverySession(event, platformID, p.delivery)
 	return p.inbox.Push(context.Background(), event)

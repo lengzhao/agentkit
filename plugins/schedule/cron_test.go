@@ -198,12 +198,9 @@ func TestCronFiresWithStoredDeliverySession(t *testing.T) {
 		Cron:    "*/5 * * * *",
 		Prompt:  "remind",
 		LastRun: clock.Now().Add(-15 * time.Minute),
-		Route: capschedule.Route{
-			DeliverySessionID: "chat-api:default:t:conv_1",
-			PlatformID:        "chat-api",
-			UserID:            "user-1",
-			AgentID:           "assistant",
-		},
+		Route:   rctx.SessionRoute("chat-api", "chat-api:default:t:conv_1"),
+		Actor:   agentkit.ActorRef{UserID: "user-1"},
+		AgentID: "assistant",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -250,10 +247,7 @@ func TestCronReuseModeUsesDeliverySession(t *testing.T) {
 		Cron:    "*/5 * * * *",
 		Prompt:  "remind",
 		LastRun: clock.Now().Add(-15 * time.Minute),
-		Route: capschedule.Route{
-			DeliverySessionID: "chat-api:default:t:conv_reuse",
-			PlatformID:        "chat-api",
-		},
+		Route:   rctx.SessionRoute("chat-api", "chat-api:default:t:conv_reuse"),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -296,9 +290,7 @@ func TestCronStatelessModeUsesPerJobSession(t *testing.T) {
 		Cron:    "*/5 * * * *",
 		Prompt:  "remind",
 		LastRun: clock.Now().Add(-15 * time.Minute),
-		Route: capschedule.Route{
-			DeliverySessionID: "chat-api:default:t:conv_1",
-		},
+		Route:   rctx.SessionRoute("chat-api", "chat-api:default:t:conv_1"),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -391,5 +383,34 @@ func TestCronStopsOnCancellation(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("cancelling did not interrupt the cron wait")
+	}
+}
+
+func TestCronReuseKeepsAdapterInstanceNamespace(t *testing.T) {
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{SessionMode: "reuse", PollSeconds: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "chat-api", Instance: "chat-api1", ChannelID: "default", ThreadID: "conv", ReplyTo: "old-message"})
+	if _, err := registry.Add(ctx, capschedule.Job{Kind: capschedule.KindCron, Prompt: "remind", Cron: "*/5 * * * *", LastRun: clock.Now().Add(-15 * time.Minute), Route: route, Actor: agentkit.ActorRef{UserID: "U1", Name: "User"}, AgentID: "assistant"}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan agentkit.MessageEvent, 1)
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error { got <- event; cancel(); return nil })
+	select {
+	case event := <-got:
+		if event.Envelope.Route.Platform != "chat-api" || event.Envelope.Route.DestinationID() != "chat-api1" {
+			t.Fatalf("route = %+v", event.Envelope.Route)
+		}
+		if event.Envelope.Conversation != "chat-api1:default:t:conv" {
+			t.Fatalf("conversation = %q", event.Envelope.Conversation)
+		}
+		if event.Envelope.Actor.Name != "User" || event.Envelope.AgentID != "assistant" {
+			t.Fatalf("attribution = %+v", event.Envelope)
+		}
+		if rctx.RouteReplyTo(event.Envelope.Route) != "" {
+			t.Fatal("schedule restored an ephemeral anchor")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("schedule did not fire")
 	}
 }

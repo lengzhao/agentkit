@@ -62,7 +62,8 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	}
 	env = env.WithConversation(conversation)
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
-	scoped := event.WithEnvelope(env)
+	scoped := event
+	scoped.Envelope = env
 	agentID, err := r.resolveAgentID(ctx, scoped, agentkit.SessionID(conversation))
 	if err != nil {
 		r.reportInboundError(ctx, env, event, err)

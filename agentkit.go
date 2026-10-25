@@ -58,11 +58,11 @@ const (
 // Example: [meta sender_id=U111 sender_name="Alice" timestamp="..." timezone="UTC"]
 const InboundMetaTag = "meta"
 
-// MetadataSkipPromptMeta, when true on MessageEvent.Metadata, tells runner not to
+// MetadataSkipPromptMeta, when true on MessageEvent.Envelope.Metadata, tells runner not to
 // prepend the optional [meta ...] inbound prefix for that turn.
 const MetadataSkipPromptMeta = "skipPromptMeta"
 
-// MetadataTurnID is the optional MessageEvent.Metadata key a transport sets to
+// MetadataTurnID is the optional MessageEvent.Envelope.Metadata key a transport sets to
 // pre-assign the turn id (e.g. to register per-turn resources such as SSE sinks
 // before dispatch). Loop honors a non-empty value instead of generating one.
 const MetadataTurnID = "turnId"
@@ -234,10 +234,4 @@ type JSONSchema struct {
 	Required    []string              `json:"required,omitempty"`
 	Items       *JSONSchema           `json:"items,omitempty"`
 	Raw         map[string]any        `json:"-"`
-}
-
-// WithEnvelope replaces the inbound context without maintaining parallel fields.
-func (e MessageEvent) WithEnvelope(env TurnEnvelope) MessageEvent {
-	e.Envelope = env
-	return e
 }

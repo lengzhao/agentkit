@@ -165,7 +165,8 @@ func TestAgentChannelUse(t *testing.T) {
 	}
 	cmd := rtloop.AgentCommand(agents, store, "assistant", ws)
 	delivery := rctx.BuildDeliverySessionID("slack", "C001", "", "U1")
-	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"}, Actor: agentkit.ActorRef{UserID: "U1"}}}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"},
+		Actor: agentkit.ActorRef{UserID: "U1"}}}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
 	out, err := cmd.CommandExec(ctx, "-c use worker")
@@ -200,7 +201,8 @@ func TestAgentChannelUse(t *testing.T) {
 func TestAgentScopePrecedenceAndNewSession(t *testing.T) {
 	t.Parallel()
 	delivery := rctx.BuildDeliverySessionID("slack", "C001", "", "U1")
-	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"}, Actor: agentkit.ActorRef{UserID: "U1"}}}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"},
+		Actor: agentkit.ActorRef{UserID: "U1"}}}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 	mem, err := sessstore.NewMemory(sessstore.MemoryConfig{ID: agentkit.SessionID(env.Conversation)})
 	if err != nil {
@@ -272,7 +274,8 @@ func TestAgentChannelUseAppliesAcrossThreads(t *testing.T) {
 
 	threadCtx := func(topic string) context.Context {
 		delivery := rctx.BuildDeliverySessionID("lark", "oc_d95", topic, "ou_user")
-		env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"}, Actor: agentkit.ActorRef{UserID: "ou_user"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
+		env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"},
+			Actor: agentkit.ActorRef{UserID: "ou_user"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
 		env = rctx.WithMetadataScope(env, agentkit.SessionScopeThread)
 		return rctx.ApplyEnvelopeToContext(context.Background(), env)
 	}

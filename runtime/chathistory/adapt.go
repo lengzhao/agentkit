@@ -1,6 +1,7 @@
 package chathistory
 
 import (
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/chathistory"
 )
 
@@ -22,10 +23,10 @@ type singlePlatformRouter struct {
 	provider chathistory.Provider
 }
 
-func (r *singlePlatformRouter) ChatHistoryFor(_ string) chathistory.Provider {
+func (r *singlePlatformRouter) ChatHistoryFor(_ agentkit.RouteRef) chathistory.Provider {
 	return r.provider
 }
 
 type noopRouter struct{}
 
-func (noopRouter) ChatHistoryFor(string) chathistory.Provider { return nil }
+func (noopRouter) ChatHistoryFor(agentkit.RouteRef) chathistory.Provider { return nil }

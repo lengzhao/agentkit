@@ -30,26 +30,26 @@ var errNotSupported = fmt.Errorf("feishu: not supported")
 
 type Config struct {
 	common.AgentRoutingConfig
-	AppID                      string `json:"appId"`
-	AppSecret                  string `json:"appSecret"`
-	Domain                     string `json:"domain"`
-	AllowFrom                  string `json:"allowFrom"`
-	AllowChat                  string `json:"allowChat"`
-	GroupReplyAll              bool   `json:"groupReplyAll"`
-	ShareSessionInChannel      bool   `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
-	ThreadIsolation            bool   `json:"threadIsolation"`
-	ReplyInThread              *bool  `json:"replyInThread"`
-	ThreadNoMention            bool   `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation
-	ReactionEmoji              string `json:"reactionEmoji"`
-	DoneEmoji                  string `json:"doneEmoji"`
-	CancelledEmoji             string `json:"cancelledEmoji"`
-	ErrorEmoji                 string `json:"errorEmoji"`
+	AppID                 string `json:"appId"`
+	AppSecret             string `json:"appSecret"`
+	Domain                string `json:"domain"`
+	AllowFrom             string `json:"allowFrom"`
+	AllowChat             string `json:"allowChat"`
+	GroupReplyAll         bool   `json:"groupReplyAll"`
+	ShareSessionInChannel bool   `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
+	ThreadIsolation       bool   `json:"threadIsolation"`
+	ReplyInThread         *bool  `json:"replyInThread"`
+	ThreadNoMention       bool   `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation
+	ReactionEmoji         string `json:"reactionEmoji"`
+	DoneEmoji             string `json:"doneEmoji"`
+	CancelledEmoji        string `json:"cancelledEmoji"`
+	ErrorEmoji            string `json:"errorEmoji"`
 	// SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。
 	// 收到 turn/steer 事件后，平台把该消息原来的处理中 reaction（reactionEmoji）
 	// 换成 SteerEmoji，让发消息的人立刻看到“这条已被当前回复接收”；turn/end 时
 	// 再统一换成 done/cancelled/error。默认 "Typing"，"none" 关闭替换
 	//（此时消息只保留处理中 reaction）。
-	SteerEmoji string `json:"steerEmoji"`
+	SteerEmoji                 string `json:"steerEmoji"`
 	GroupOnly                  bool   `json:"groupOnly"`
 	RespondToAtEveryoneAndHere bool   `json:"respondToAtEveryoneAndHere"`
 	ReplyToTrigger             *bool  `json:"replyToTrigger"`
@@ -502,7 +502,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	metadata := p.inboundMetadata(msg)
 	if text != "" {
 		outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{
-			Route:        rctx.BuildSessionRoute(msg.inboundRoute(p.platformTag)),
+			Route:        rctx.BuildSessionRoute(p.inboundRoute(msg)),
 			SessionScope: p.sessionScope,
 			UserID:       msg.userID,
 			Metadata:     metadata,
@@ -535,7 +535,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		opts.PresavedAttachments = msg.presaved
 	}
 	event := common.InboundFromContent(
-		p.agentID, msg.inboundRoute(p.platformTag), msg.userID,
+		p.agentID, p.inboundRoute(msg), msg.userID,
 		msg.content, msg.extraContent, msg.images, msg.files, msg.audio, nil,
 		opts,
 	)

@@ -199,7 +199,7 @@ func (p *Platform) processCardInteraction(e interaction.Event) error {
 			p.storeDelivery(msg.sessionID, msg.rctx)
 			return common.ProcessInteractionCommand(ctx, e, common.InteractionCommand{
 				Routing: p.cfg.AgentRoutingConfig, Commands: p.commands,
-				Slash:    common.SlashContext{Route: rctx.BuildSessionRoute(msg.inboundRoute(p.tag())), SessionScope: p.sessionScope, UserID: e.UserID},
+				Slash:    common.SlashContext{Route: rctx.BuildSessionRoute(p.inboundRoute(msg)), SessionScope: p.sessionScope, UserID: e.UserID},
 				Metadata: func(ctx context.Context, _ string) map[string]any { return p.userProfileMetadataContext(ctx, e.UserID) },
 				Reply: func(ctx context.Context, text string) error {
 					if p.client == nil {
@@ -212,7 +212,7 @@ func (p *Platform) processCardInteraction(e interaction.Event) error {
 		Forward: func(ctx context.Context, e interaction.Event) error {
 			msg := inboundMessage{sessionID: agentkit.SessionID(e.SessionID), messageID: e.MessageID, userID: e.UserID, rctx: replyContext{messageID: e.MessageID, chatID: e.ChatID, chatType: chatType, sessionKey: e.SessionID}}
 			p.storeDelivery(msg.sessionID, msg.rctx)
-			event := common.InboundFromContent(p.agentID, msg.inboundRoute(p.tag()), e.UserID, common.FormatInteraction(e), "", nil, nil, nil, nil, common.InboundOptsFor(p.workspace))
+			event := common.InboundFromContent(p.agentID, p.inboundRoute(msg), e.UserID, common.FormatInteraction(e), "", nil, nil, nil, nil, common.InboundOptsFor(p.workspace))
 			metadata := common.InteractionMetadata(ctx, func(ctx context.Context) map[string]any { return p.userProfileMetadataContext(ctx, e.UserID) })
 			return p.inbox.Push(ctx, enrichInboundActorFromProfile(common.WithMetadata(event, metadata)))
 		},

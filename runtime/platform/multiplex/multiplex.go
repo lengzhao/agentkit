@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type Config struct{}
@@ -68,6 +69,9 @@ func assignPlatformIDs(platforms []agentkit.Platform) (map[string]agentkit.Platf
 		}
 		id := uniquePlatformKey(base, i, used)
 		used[id] = struct{}{}
+		if setter, ok := p.(agentkit.PlatformInstanceSetter); ok {
+			setter.SetPlatformInstance(id)
+		}
 		out[id] = p
 	}
 	return out, nil
@@ -154,6 +158,11 @@ func (m *Platform) Send(ctx context.Context, out agentkit.OutboundEvent) error {
 	if !ok {
 		return fmt.Errorf("unknown platform %q", destination)
 	}
+	route, err := rctx.RouteForPlatform(out.Route, p.(agentkit.PlatformIdentifier).PlatformID())
+	if err != nil {
+		return err
+	}
+	out.Route = route
 	return p.Send(ctx, out)
 }
 

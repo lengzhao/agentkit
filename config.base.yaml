@@ -1144,7 +1144,6 @@ tool.chat-history.default:
   use: tool/chat-history
   deps:
     history: platform.default
-    delivery: delivery.default
 
 mcp.default:
   use: tool/mcp

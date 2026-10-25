@@ -73,7 +73,7 @@ func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) 
 	return rctx.WithDeliverySession(agentkit.MessageEvent{
 
 		Envelope: agentkit.TurnEnvelope{
-			Conversation: string(p.deliveryID), Route: agentkit.RouteRef{Instance: platformID},
+			Route: agentkit.RouteRef{Instance: p.PlatformInstance()},
 		},
 		Reply: rtpermission.MarshalReply(permission.Reply{
 			RequestID: pending.requestID,

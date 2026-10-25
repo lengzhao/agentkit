@@ -180,6 +180,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	event := common.InboundFromContent(eventAgentID, agentkit.SessionRouteInput{
 		Platform:    "chat-api",
+		Instance:    p.PlatformInstance(),
 		DeliveryID:  agentkit.SessionID(engineSessionKey),
 		ReplyTo:     msgID,
 		ScopeUserID: user,

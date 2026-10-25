@@ -11,7 +11,8 @@ func TestWithDeliveryRouteSetsEnvelope(t *testing.T) {
 	t.Parallel()
 
 	delivery := agentkit.SessionID("slack:C001:t:1:u:U1")
-	event := rctx.WithDeliverySession(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"}, Actor: agentkit.ActorRef{UserID: "U1"}}}, "slack", delivery)
+	event := rctx.WithDeliverySession(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"},
+		Actor: agentkit.ActorRef{UserID: "U1"}}}, "slack", delivery)
 
 	id, ok := rctx.RouteSessionID(event.Envelope.Route)
 	if !ok || id != delivery {
@@ -28,7 +29,8 @@ func TestWithDeliveryRouteSetsEnvelope(t *testing.T) {
 func TestWithInboundRoutePreservesReplyTo(t *testing.T) {
 	t.Parallel()
 
-	event := rctx.WithInboundRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"}, Actor: agentkit.ActorRef{UserID: "U1"}}}, agentkit.SessionRouteInput{
+	event := rctx.WithInboundRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"},
+		Actor: agentkit.ActorRef{UserID: "U1"}}}, agentkit.SessionRouteInput{
 		Platform:    "slack",
 		DeliveryID:  agentkit.SessionID("slack:C001:t:1:u:U1"),
 		ChannelID:   "C001",

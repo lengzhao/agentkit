@@ -43,7 +43,8 @@ func TestDispatchRecordsTelemetryTurn(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
+		},
+		Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -96,7 +97,8 @@ func TestDispatchRecordsEffectiveModelOverConfigured(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
+		},
+		Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -134,7 +136,8 @@ func TestDispatchEmitsInboundAttachmentsSpan(t *testing.T) {
 		Attachments: []agentkit.InboundAttachment{
 			{Path: "upload/x.png", MIME: "image/png", Size: 12345, OrigName: "x.png", Image: true},
 			{Path: "upload/big.log", MIME: "text/plain", Size: 200000, OrigName: "big.log"},
-		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
+		},
+		Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -183,7 +186,8 @@ func TestDispatchOmitsAttachmentSpanWhenNoAttachments(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
+		},
+		Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	})); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
@@ -236,7 +240,8 @@ func TestDispatchEmitsAttachmentSpanOnlyOnFirstTurn(t *testing.T) {
 		},
 		Attachments: []agentkit.InboundAttachment{
 			{Path: "upload/x.png", MIME: "image/png", Size: 12345, OrigName: "x.png", Image: true},
-		}, Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
+		},
+		Envelope: agentkit.TurnEnvelope{AgentID: "coder", Route: agentkit.RouteRef{Instance: "cli"}},
 	}))
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)

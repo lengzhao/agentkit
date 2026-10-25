@@ -33,7 +33,8 @@ func TestBuildInboundPromptPrefixInjectList(t *testing.T) {
 	}
 	r := root.(*runner.Root)
 
-	event := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "feishu"}, Actor: agentkit.ActorRef{UserID: "user123"}, Metadata: map[string]any{"displayName": "Alice"}}}
+	event := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "feishu"},
+		Actor: agentkit.ActorRef{UserID: "user123"}, Metadata: map[string]any{"displayName": "Alice"}}}
 	delivery := agentkit.SessionID("feishu:channel42:user123")
 	got := r.BuildInboundPromptPrefixForTest(event, delivery)
 	want := `[meta sender_id=user123 sender_name="Alice" platform=feishu chat_id=channel42]`
@@ -69,7 +70,9 @@ func TestFormatInboundEventThreadMetadata(t *testing.T) {
 				Message: agentkit.ModelMessage{
 					Role:    "user",
 					Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
-				}, Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"}, Actor: agentkit.ActorRef{UserID: "U1"}},
+				},
+				Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"},
+					Actor: agentkit.ActorRef{UserID: "U1"}},
 			}, tt.delivery)
 			if got := event.Message.Content[0].Text; got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
@@ -131,7 +134,8 @@ func TestBuildInboundPromptPrefixDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := root.(*runner.Root)
-	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "user1"}, Route: agentkit.RouteRef{Instance: "feishu"}}}, agentkit.SessionID("feishu:ch:user1"))
+	got := r.BuildInboundPromptPrefixForTest(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "user1"},
+		Route: agentkit.RouteRef{Instance: "feishu"}}}, agentkit.SessionID("feishu:ch:user1"))
 	if got != "" {
 		t.Fatalf("expected empty prefix, got %q", got)
 	}
@@ -274,7 +278,9 @@ func TestFormatInboundEventSkipPromptMeta(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}},
-		}, Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U1"}, Route: agentkit.RouteRef{Instance: "slack"}, Metadata: map[string]any{agentkit.MetadataSkipPromptMeta: true}},
+		},
+		Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U1"},
+			Route: agentkit.RouteRef{Instance: "slack"}, Metadata: map[string]any{agentkit.MetadataSkipPromptMeta: true}},
 	}, agentkit.SessionID("slack:C1:u:U1"))
 	if text := event.Message.Content[0].Text; text != "hello" {
 		t.Fatalf("got %q, want raw hello", text)
@@ -296,7 +302,9 @@ func TestFormatInboundEventPrependsPrefix(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}},
-		}, Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U999"}, Route: agentkit.RouteRef{Instance: "slack"}},
+		},
+		Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U999"},
+			Route: agentkit.RouteRef{Instance: "slack"}},
 	}, agentkit.SessionID("slack:C012:u:U999"))
 	want := `[meta sender_id=U999 platform=slack chat_id=C012]` + "\nhi"
 	if event.Message.Content[0].Text != want {

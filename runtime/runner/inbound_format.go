@@ -16,7 +16,7 @@ import (
 //	sender_id sender_name sender_email platform chat_id thread_id timestamp
 //	mentions task_id trace_id language
 //	custom.*   — metadata keys with prefix custom.
-//	<any-key>  — exact MessageEvent.Metadata lookup
+//	<any-key>  — exact MessageEvent.Envelope.Metadata lookup
 const (
 	injectSenderID    = "sender_id"
 	injectSenderName  = "sender_name"

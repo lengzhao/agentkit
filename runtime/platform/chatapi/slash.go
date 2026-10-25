@@ -17,6 +17,7 @@ func (p *Platform) slashContext(delivery agentkit.SessionID, conv *conversation,
 	ctx := common.SlashContext{
 		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 			Platform:    "chat-api",
+			Instance:    p.PlatformInstance(),
 			DeliveryID:  delivery,
 			ScopeUserID: user,
 		}),

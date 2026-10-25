@@ -1,11 +1,14 @@
 package multiplex
 
-import "github.com/lengzhao/agentkit/cap/chathistory"
+import (
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/chathistory"
+)
 
 var _ chathistory.Router = (*Platform)(nil)
 
-func (m *Platform) ChatHistoryFor(id string) chathistory.Provider {
-	p, ok := m.platforms[id]
+func (m *Platform) ChatHistoryFor(route agentkit.RouteRef) chathistory.Provider {
+	p, ok := m.platforms[route.DestinationID()]
 	if !ok {
 		return nil
 	}

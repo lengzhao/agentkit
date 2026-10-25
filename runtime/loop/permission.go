@@ -304,10 +304,9 @@ func (l *Default) SupersedePendingForInbound(event agentkit.MessageEvent) {
 
 func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.OutboundEmit, req permission.Request) error {
 	agentID := rctx.AgentIDFromContext(ctx)
-	platformID := rctx.PlatformFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	return emit(ctx, agentkit.OutboundEvent{
-		Route: rctx.RouteRefFromContext(ctx).WithInstance(platformID), AgentID: agentID,
+		Route: rctx.RouteRefFromContext(ctx), AgentID: agentID,
 
 		UserID: userID,
 		Type:   agentkit.EventPermissionRequest,
@@ -320,12 +319,11 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 
 func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.OutboundEmit, id string, result permission.Result) error {
 	agentID := rctx.AgentIDFromContext(ctx)
-	platformID := rctx.PlatformFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	resolved := result
 	resolved.ID = id
 	return emit(ctx, agentkit.OutboundEvent{
-		Route: rctx.RouteRefFromContext(ctx).WithInstance(platformID), AgentID: agentID,
+		Route: rctx.RouteRefFromContext(ctx), AgentID: agentID,
 
 		UserID: userID,
 		Type:   agentkit.EventPermissionResolved,

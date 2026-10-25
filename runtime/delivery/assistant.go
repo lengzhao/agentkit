@@ -10,18 +10,8 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-// AssistantMessageOptions configures proactive assistant outbound delivery.
-type AssistantMessageOptions struct {
-	Route capsdelivery.RouteInput
-	// Raw skips platform markdown conversion when the transport supports it.
-	Raw bool
-	// UseContextEmit delivers through the per-turn OutboundEmit hook when the route
-	// is the current inbox (empty SessionID and UserID).
-	UseContextEmit bool
-}
-
 // SendAssistantMessage delivers a user-visible assistant message on the resolved route.
-func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts []agentkit.ContentPart, opts AssistantMessageOptions) error {
+func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts []agentkit.ContentPart, opts capsdelivery.AssistantMessageOptions) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("assistant message requires content")
 	}
@@ -29,11 +19,15 @@ func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts
 	if err != nil {
 		return err
 	}
+	userID := strings.TrimSpace(opts.Route.UserID)
+	if userID == "" {
+		userID = rctx.UserIDFromContext(ctx)
+	}
 	modelMsg := agentkit.ModelMessage{Role: "assistant", Content: parts}
 	event := agentkit.OutboundEvent{
-		Route: rctx.OutboundRoute(route.PlatformID, route.SessionID).WithInstance(route.PlatformID), AgentID: route.AgentID,
+		Route: route, AgentID: rctx.AgentIDFromContext(ctx),
 
-		UserID: route.UserID,
+		UserID: userID,
 		Type:   agentkit.EventAssistantMessage,
 		Data:   rctx.MarshalOutboundData(modelMsg),
 	}
@@ -56,7 +50,7 @@ func SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts
 }
 
 // SendAssistantText delivers a single text assistant line (no-op when text is empty).
-func SendAssistantText(ctx context.Context, sender capsdelivery.Sender, text string, opts AssistantMessageOptions) error {
+func SendAssistantText(ctx context.Context, sender capsdelivery.Sender, text string, opts capsdelivery.AssistantMessageOptions) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
@@ -70,7 +64,7 @@ func routeIsCurrentInbox(route capsdelivery.RouteInput) bool {
 
 // SendProactiveInboxText delivers raw assistant text on the current inbox route (emit when wired).
 func SendProactiveInboxText(ctx context.Context, sender capsdelivery.Sender, text string) error {
-	return SendAssistantText(ctx, sender, text, AssistantMessageOptions{
+	return SendAssistantText(ctx, sender, text, capsdelivery.AssistantMessageOptions{
 		Raw:            true,
 		UseContextEmit: true,
 	})

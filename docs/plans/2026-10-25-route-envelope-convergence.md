@@ -41,3 +41,9 @@ Files: cap/{delivery,chathistory,schedule}; runtime/{delivery,rctx}; plugins/too
 ## Completion
 
 Update migration and routing documentation. Independently review the final diff, create a PR stacked on the route cleanup branch, and verify all CI jobs for the final commit. Preserve the existing unmerged PRs and the original checkout.
+
+## Verification record
+
+All three implementation stages are complete. Independent review found and verified fixes for native-command instance propagation, stop candidate isolation, permission return addresses, explicit instance transport IDs, attachment tenant paths, and chat-api session/file/history identities.
+
+Final local checks passed: `GOSUMDB=sum.golang.org bash scripts/test.sh unit` and `GOSUMDB=sum.golang.org bash scripts/test.sh integration`. GitHub CI is checked after publishing the stacked PR.

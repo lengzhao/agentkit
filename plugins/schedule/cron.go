@@ -351,19 +351,15 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 	now := c.now()
 	platformID := cronPlatformID
 	deliverySessionID := agentkit.SessionID("")
-	if delivery := strings.TrimSpace(job.Route.DeliverySessionID); delivery != "" {
-		deliverySessionID = agentkit.SessionID(delivery)
-		platformID = strings.TrimSpace(job.Route.PlatformID)
-		if platformID == "" {
-			platformID = rctx.ParseDelivery(deliverySessionID, job.Route.UserID).Platform
-		}
+	if delivery, ok := rctx.RouteSessionID(job.Route); ok && delivery != "" {
+		deliverySessionID = delivery
+		platformID = job.Route.DestinationID()
 	}
-
 	var sessionID agentkit.SessionID
 	switch c.sessionMode {
 	case capschedule.SessionModeReuse:
 		if deliverySessionID != "" {
-			sessionID = deliverySessionID
+			sessionID = rctx.ActiveEntryKey(job.Route, rctx.RoutePolicy{ActiveEntryMode: rctx.ActiveEntryDelivery}, job.Actor.UserID)
 		} else {
 			sessionID = c.naming.forRun(run)
 		}
@@ -373,28 +369,20 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 		sessionID = statelessSessionID(job, now)
 	}
 
-	prompt := scheduleInboundPrompt(job)
+	route := job.Route.Stable()
+	if deliverySessionID == "" {
+		route = agentkit.RouteRef{Platform: cronPlatformID, Instance: platformID}
+	}
+	route.Instance = route.DestinationID()
 	evt := agentkit.MessageEvent{
-
 		Envelope: agentkit.TurnEnvelope{
-			Conversation: string(sessionID), Route: agentkit.RouteRef{Instance: platformID}, Actor: agentkit.ActorRef{UserID: strings.TrimSpace(job.Route.UserID)}, Metadata: map[string]any{
-				"schedule": map[string]any{
-					"fired":       true,
-					"jobId":       job.ID,
-					"kind":        job.NormalizedKind(),
-					"sessionMode": c.sessionMode,
-				},
-			}},
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: prompt}},
+			Route:        route,
+			Conversation: string(sessionID),
+			Actor:        job.Actor,
+			AgentID:      job.AgentID,
+			Metadata:     map[string]any{"schedule": map[string]any{"fired": true, "jobId": job.ID, "kind": job.NormalizedKind(), "sessionMode": c.sessionMode}},
 		},
-	}
-	if deliverySessionID != "" {
-		evt = rctx.WithDeliverySession(evt, platformID, deliverySessionID)
-	}
-	if agent := strings.TrimSpace(job.Route.AgentID); agent != "" {
-		evt.Envelope.AgentID = agentkit.AgentID(agent)
+		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: scheduleInboundPrompt(job)}}},
 	}
 	return evt
 }

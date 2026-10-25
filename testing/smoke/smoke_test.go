@@ -77,7 +77,8 @@ func TestSmokeSubagentDelegateViaLoopWithStoreSession(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "委派 researcher"}},
-		}, Envelope: agentkit.TurnEnvelope{AgentID: "nex"},
+		},
+		Envelope: agentkit.TurnEnvelope{AgentID: "nex"},
 	})); err != nil {
 		t.Fatalf("loop dispatch: %v", err)
 	}

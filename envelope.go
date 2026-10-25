@@ -223,3 +223,20 @@ func (e TurnEnvelope) WithPlatformInstance(instance string) TurnEnvelope {
 	e.Route = e.Route.WithInstance(instance)
 	return e
 }
+
+// Stable removes the per-message reply anchor before retaining a destination.
+func (r RouteRef) Stable() RouteRef {
+	if r.Kind != "" && r.Kind != RouteKindSession {
+		return r
+	}
+	var target SessionRouteTarget
+	if json.Unmarshal(r.Target, &target) != nil || target.ReplyTo == "" {
+		return r
+	}
+	target.ReplyTo = ""
+	raw, err := json.Marshal(target)
+	if err == nil {
+		r.Target = raw
+	}
+	return r
+}

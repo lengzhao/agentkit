@@ -73,7 +73,7 @@ func (p *Platform) scanSessionDir(ctx context.Context, channelKey, dir string) e
 		}
 		return err
 	}
-	prefix := sessionFilePrefix(channelKey)
+	prefix := sessionFilePrefix(channelKey, p.PlatformInstance())
 	for _, ent := range entries {
 		if ent.IsDir() {
 			continue
@@ -106,7 +106,7 @@ func (p *Platform) scanSessionDir(ctx context.Context, channelKey, dir string) e
 }
 
 func (p *Platform) sessionCtx(ctx context.Context, channelKey, conversationID string) context.Context {
-	return rctx.ApplyEnvelopeToContext(ctx, sessionEnvelope(channelKey, conversationID))
+	return rctx.ApplyEnvelopeToContext(ctx, p.sessionEnvelope(channelKey, conversationID))
 }
 
 func (p *Platform) loadConversationFromSession(ctx context.Context, channelKey, conversationID, createdBy string) (*conversation, error) {
@@ -143,7 +143,7 @@ func (p *Platform) historySession(ctx context.Context, channelKey, conversationI
 	}
 	_ = userID
 	tenantCtx := p.sessionCtx(ctx, channelKey, conversationID)
-	sessionID := agentkit.SessionID(engineSessionKey(channelKey, conversationID))
+	sessionID := rctx.SessionIDFromContext(tenantCtx)
 	sess, err := p.sessionStore.Get(tenantCtx, sessionID)
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func (p *Platform) sessionsDirForChannel(ctx context.Context, channelKey, rel st
 	if p.workspace == nil {
 		return "", fmt.Errorf("chat-api: workspace is required")
 	}
-	ctx = channelWorkspaceCtx(ctx, channelKey)
+	ctx = p.channelWorkspaceCtx(ctx, channelKey)
 	return p.workspace.Resolve(ctx, rel)
 }
 

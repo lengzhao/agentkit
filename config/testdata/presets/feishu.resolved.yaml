@@ -657,7 +657,6 @@ tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
-        delivery: delivery.default
         history: platform.default
     use: tool/chat-history
 tool.finish.default:

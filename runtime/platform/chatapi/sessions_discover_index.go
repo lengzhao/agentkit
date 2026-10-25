@@ -11,7 +11,7 @@ func (p *Platform) syncConversationsFromSessionIndex(ctx context.Context, channe
 	if p.sessionIndex == nil {
 		return nil
 	}
-	tenantCtx := channelWorkspaceCtx(ctx, channelKey)
+	tenantCtx := p.channelWorkspaceCtx(ctx, channelKey)
 	if err := p.sessionIndex.SyncSessions(tenantCtx); err != nil {
 		return err
 	}
@@ -19,7 +19,7 @@ func (p *Platform) syncConversationsFromSessionIndex(ctx context.Context, channe
 	if err != nil {
 		return err
 	}
-	prefix := sessionFilePrefix(channelKey)
+	prefix := sessionFilePrefix(channelKey, p.PlatformInstance())
 	for _, sum := range summaries {
 		if sum.MessageCount <= 0 {
 			continue

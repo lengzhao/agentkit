@@ -184,7 +184,8 @@ func TestSmokeLoopDifferentSessionsIsolated(t *testing.T) {
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: text}},
-			}, Envelope: agentkit.TurnEnvelope{AgentID: "loop-smoke"},
+			},
+			Envelope: agentkit.TurnEnvelope{AgentID: "loop-smoke"},
 		})); err != nil {
 			t.Fatalf("dispatch %s: %v", sessionID, err)
 		}

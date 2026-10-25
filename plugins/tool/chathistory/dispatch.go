@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/chathistory"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, input ChatHistoryInput) (ChatHistoryOutput, error) {
@@ -14,7 +16,7 @@ func dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, inpu
 		return ChatHistoryOutput{}, fmt.Errorf("tool/chat-history requires history dependency")
 	}
 
-	route, err := deps.delivery.ResolveRoute(ctx, capsdelivery.RouteInput{
+	route, err := rctx.ResolveRoute(ctx, capsdelivery.RouteInput{
 		SessionID: input.SessionID,
 		UserID:    input.UserID,
 	})
@@ -22,25 +24,35 @@ func dispatch(ctx context.Context, deps runtimeDeps, cfg ChatHistoryConfig, inpu
 		return ChatHistoryOutput{}, fmt.Errorf("chat_history: resolve delivery route: %w; hint: pass sessionId explicitly (the target chat's delivery id) or a userId", err)
 	}
 
-	provider := deps.router.ChatHistoryFor(route.PlatformID)
+	provider := deps.router.ChatHistoryFor(route)
 	if provider == nil {
 		return ChatHistoryOutput{}, nil
 	}
 
+	if ider, ok := provider.(agentkit.PlatformIdentifier); ok {
+		route, err = rctx.RouteForPlatform(route, ider.PlatformID())
+		if err != nil {
+			return ChatHistoryOutput{}, err
+		}
+	}
 	thread := true
 	if input.Thread != nil {
 		thread = *input.Thread
 	}
 
+	userID := strings.TrimSpace(input.UserID)
+	if userID == "" {
+		userID = rctx.UserIDFromContext(ctx)
+	}
 	result, err := provider.ReadChatHistory(ctx, chathistory.Request{
-		SessionID: route.SessionID,
-		UserID:    route.UserID,
-		Limit:     clampLimit(input.Limit, cfg),
-		Before:    strings.TrimSpace(input.Before),
-		After:     strings.TrimSpace(input.After),
-		Order:     strings.TrimSpace(input.Order),
-		Query:     strings.TrimSpace(input.Query),
-		Thread:    thread,
+		Route:  route,
+		UserID: userID,
+		Limit:  clampLimit(input.Limit, cfg),
+		Before: strings.TrimSpace(input.Before),
+		After:  strings.TrimSpace(input.After),
+		Order:  strings.TrimSpace(input.Order),
+		Query:  strings.TrimSpace(input.Query),
+		Thread: thread,
 	})
 	if err != nil {
 		return ChatHistoryOutput{}, err

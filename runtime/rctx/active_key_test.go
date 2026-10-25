@@ -167,7 +167,8 @@ func TestBindKeysFromContextUsesActor(t *testing.T) {
 	t.Parallel()
 
 	delivery := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_1", "")
-	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"}, Actor: agentkit.ActorRef{UserID: "ou_actor"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"},
+		Actor: agentkit.ActorRef{UserID: "ou_actor"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
 	keys := rctx.BindKeysFromContext(ctx)

@@ -65,7 +65,7 @@ func emitStepLimitNotice(ctx context.Context, emit agentkit.OutboundEmit, turnEn
 		Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 	}
 	return emit(ctx, agentkit.OutboundEvent{
-		Route: turnEnd.Route.WithInstance(turnEnd.Route.Instance), AgentID: turnEnd.AgentID,
+		Route: turnEnd.Route, AgentID: turnEnd.AgentID,
 
 		UserID: turnEnd.UserID,
 		Type:   agentkit.EventAssistantMessage,

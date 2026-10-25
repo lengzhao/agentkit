@@ -37,14 +37,16 @@ func TestSmokeSessionScopeChannelFoldsDeliveries(t *testing.T) {
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "one"}},
-			}, Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U111"}},
+			},
+			Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U111"}},
 		},
 		{
 
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "two"}},
-			}, Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U222"}},
+			},
+			Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U222"}},
 		},
 	} {
 		_ = i
@@ -90,7 +92,8 @@ func TestSmokeSessionScopeThreadSplitsDeliveries(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "thread one"}},
-		}, Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U111"}, AgentID: "smoke"},
+		},
+		Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U111"}, AgentID: "smoke"},
 	})); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +102,8 @@ func TestSmokeSessionScopeThreadSplitsDeliveries(t *testing.T) {
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "thread two"}},
-		}, Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U222"}, AgentID: "smoke"},
+		},
+		Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "U222"}, AgentID: "smoke"},
 	})); err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/multiplex"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -212,5 +213,25 @@ func TestMultiplexDuplicateProtocolPreservesInstanceRoute(t *testing.T) {
 	}
 	if len(first.sent) != 0 || len(second.sent) != 1 {
 		t.Fatalf("wrong adapter: first=%d second=%d", len(first.sent), len(second.sent))
+	}
+}
+
+func TestExplicitInstanceDestinationUsesProtocolDelivery(t *testing.T) {
+	a, b := &stubPlatform{id: "slack"}, &stubPlatform{id: "slack"}
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{Platforms: []agentkit.Platform{a, b}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := rctx.ResolveRoute(context.Background(), delivery.RouteInput{SessionID: "slack1:C2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Send(context.Background(), agentkit.OutboundEvent{Route: route, Type: agentkit.EventMessageEnd}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.sent[0].Route
+	id, _ := rctx.RouteSessionID(got)
+	if got.Platform != "slack" || id != "slack:C2" || got.Instance != "slack1" {
+		t.Fatalf("route=%+v delivery=%s", got, id)
 	}
 }

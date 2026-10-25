@@ -29,7 +29,8 @@ func threadStore(t *testing.T, id agentkit.SessionID) (*sessstore.StaticStore, c
 // larkThreadCtx builds a thread-scoped turn context for chat oc_d95 / topic.
 func larkThreadCtx(topic string) context.Context {
 	delivery := rctx.BuildDeliverySessionID("lark", "oc_d95", topic, "ou_user")
-	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"}, Actor: agentkit.ActorRef{UserID: "ou_user"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"},
+		Actor: agentkit.ActorRef{UserID: "ou_user"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
 	env = rctx.WithMetadataScope(env, agentkit.SessionScopeThread)
 	return rctx.ApplyEnvelopeToContext(context.Background(), env)
 }
