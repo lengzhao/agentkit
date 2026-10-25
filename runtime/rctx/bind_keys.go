@@ -12,9 +12,9 @@ import (
 // is workspace-scoped and needs no key, so it is not a field here.
 //
 // Granularity, coarse to fine: Channel < Thread|User < Session. Thread and User
-// are mutually exclusive siblings (a delivery id carries :t: or :u:, not both)
-// and are empty when the segment is absent. Session is the resolved
-// conversation history key, which may already point at a /new child.
+// are mutually exclusive siblings (a delivery id carries :t: or :u:, not both).
+// A level is empty when the route carries no such segment. Session is the
+// resolved conversation history key, which may already point at a /new child.
 type BindKeys struct {
 	Channel agentkit.SessionID
 	Thread  agentkit.SessionID
@@ -25,16 +25,21 @@ type BindKeys struct {
 // BindKeysForRoute derives every route-scoped key under policy. session is the
 // already-resolved conversation key (inbound: the turn conversation; slash:
 // SessionIDFromContext, optionally upgraded to a /new child with
-// ResolveSessionKey). Opaque-delivery platforms (ActiveEntryDelivery) expose the
-// raw delivery id as the channel key, matching ChannelEntryKey.
+// ResolveSessionKey).
+//
+// Levels reuse the same ApplyScope semantics as the rest of routing, so a bind
+// key always equals the session id the runner would lock on for that scope.
+// userID is the actor id used when the delivery omits the :u: segment (IM
+// platforms always carry it on the delivery; callers pass
+// rctx.UserIDFromContext as the fallback). Opaque-delivery platforms
+// (ActiveEntryDelivery, e.g. chat-api) have no sub-scoping: the raw delivery id
+// is the channel key and the finer levels are empty.
 func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string, session agentkit.SessionID) BindKeys {
 	keys := BindKeys{Session: session}
 	delivery, ok := RouteSessionID(route)
 	if !ok || delivery == "" {
 		return keys
 	}
-	// Opaque-delivery platforms (chat-api) treat the whole id as the routing
-	// key; there is no sub-scoping to split, so it is the channel key as-is.
 	if policy.ActiveEntryMode == ActiveEntryDelivery {
 		keys.Channel = delivery
 		return keys
@@ -57,7 +62,10 @@ func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string
 
 // BindKeysFromContext derives keys from the turn envelope and route. Channel
 // granularity is always the channel, independent of the configured conversation
-// scope, so a channel-level default never fragments per thread.
+// scope, so a channel-level default never fragments per thread. The user id is
+// read from the envelope actor (UserIDFromContext), the same source the runner
+// uses for route resolution, so the user level is populated even for a delivery
+// that omitted the :u: segment.
 func BindKeysFromContext(ctx context.Context) BindKeys {
 	env := EnvelopeFromContext(ctx)
 	platform := PlatformFromContext(ctx)

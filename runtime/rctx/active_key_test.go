@@ -1,6 +1,7 @@
 package rctx_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -104,5 +105,81 @@ func TestChannelEntryKeyOpaquePlatformPassthrough(t *testing.T) {
 	policy := rctx.RoutePolicyForPlatform("chat-api", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
 	if got := rctx.ChannelEntryKey(route, policy, ""); got != delivery {
 		t.Fatalf("opaque channel key = %q, want %q", got, delivery)
+	}
+}
+
+// The user level is taken from the actor id (ctx), not only the delivery :u:
+// segment: a delivery that omits :u: still yields a user key. Opaque-delivery
+// platforms have no sub-scoping, so their finer levels stay empty.
+func TestBindKeysUserLevelFromActor(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		platform string
+		delivery agentkit.SessionID
+		policy   rctx.RoutePolicy
+		userID   string
+		wantUser agentkit.SessionID
+	}{
+		{
+			name:     "delivery carries :u:",
+			platform: "lark",
+			delivery: "lark:oc_d95:t:om_1:u:ou_actor",
+			policy:   rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)),
+			userID:   "ou_actor",
+			wantUser: "lark:oc_d95:u:ou_actor",
+		},
+		{
+			// Actor id is authoritative even when delivery omits :u:; every IM
+			// platform supplies it, so user is never empty on real traffic.
+			name:     "delivery omits :u:, actor supplies it",
+			platform: "lark",
+			delivery: "lark:oc_d95:t:om_1",
+			policy:   rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)),
+			userID:   "ou_actor",
+			wantUser: "lark:oc_d95:u:ou_actor",
+		},
+		{
+			// Opaque-delivery platform: no sub-scoping, finer levels empty.
+			name:     "opaque delivery has no user level",
+			platform: "chat-api",
+			delivery: "chat-api:default_channel:t:conv_1",
+			policy:   rctx.RoutePolicyForPlatform("chat-api", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel)),
+			userID:   "u_actor",
+			wantUser: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			keys := rctx.BindKeysForRoute(rctx.SessionRoute(tc.platform, string(tc.delivery)), tc.policy, tc.userID, "")
+			if keys.User != tc.wantUser {
+				t.Fatalf("user key = %q, want %q", keys.User, tc.wantUser)
+			}
+		})
+	}
+}
+
+// End-to-end via ctx: the actor id on the envelope populates the user level even
+// when the route delivery has no :u: segment.
+func TestBindKeysFromContextUsesActor(t *testing.T) {
+	t.Parallel()
+
+	delivery := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_1", "")
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{
+		PlatformID: "lark",
+		UserID:     "ou_actor",
+	}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+
+	keys := rctx.BindKeysFromContext(ctx)
+	if keys.User != "lark:oc_d95:u:ou_actor" {
+		t.Fatalf("user = %q (actor id not applied)", keys.User)
+	}
+	if keys.Channel != "lark:oc_d95" {
+		t.Fatalf("channel = %q", keys.Channel)
+	}
+	if keys.Thread != "lark:oc_d95:t:om_1" {
+		t.Fatalf("thread = %q", keys.Thread)
 	}
 }
