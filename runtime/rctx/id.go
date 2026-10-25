@@ -25,26 +25,6 @@ func NewSessionID(base agentkit.SessionID) agentkit.SessionID {
 	return agentkit.SessionID(string(base) + ":new:" + time.Now().UTC().Format("20060102-150405.000"))
 }
 
-// SlackSessionID builds a stable session key from Slack channel and optional thread timestamp.
-// Use threadTS from event.ThreadTimeStamp; for top-level channel messages pass "".
-func SlackSessionID(channelID, threadTS string) agentkit.SessionID {
-	if threadTS == "" {
-		return agentkit.SessionID("slack:" + channelID)
-	}
-	return agentkit.SessionID("slack:" + channelID + ":t:" + threadTS)
-}
-
-// SlackSessionIDForScope builds the effective session id for Slack components.
-// Prefer ApplyScope(BuildDeliverySessionID(...), scope, userID) in new code;
-// this helper remains for tests and direct agent invocations.
-func SlackSessionIDForScope(scope agentkit.SessionScope, channelID, threadTS, userID string) agentkit.SessionID {
-	delivery := BuildDeliverySessionID("slack", channelID, threadTS, userID)
-	if delivery == "" {
-		return ""
-	}
-	return ApplyScope(delivery, scope, userID)
-}
-
 // NewConversationID returns a fresh conversation id for /new.
 func NewConversationID(current string) string {
 	return string(NewSessionID(agentkit.SessionID(current)))

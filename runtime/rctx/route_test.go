@@ -237,3 +237,18 @@ func TestDecodeSessionRoutePayload(t *testing.T) {
 		t.Fatalf("kind = %q", route.Kind)
 	}
 }
+
+func TestSessionRouteFromDeliveryNormalizesSegments(t *testing.T) {
+	t.Parallel()
+	route := rctx.SessionRouteFromDelivery(" slack ", " slack: C001 :t: 1.0 :u: U1 ", " msg-1 ")
+	target, ok := rctx.DecodeSessionRoute(route)
+	if !ok {
+		t.Fatal("session route did not decode")
+	}
+	if route.Platform != "slack" || target.ChannelID != "C001" || target.ThreadID != "1.0" || target.ScopeUserID != "U1" || target.ReplyTo != "msg-1" {
+		t.Fatalf("route fields were not normalized: platform=%q target=%+v", route.Platform, target)
+	}
+	if target.DeliveryID != "slack: C001 :t: 1.0 :u: U1" {
+		t.Fatalf("delivery ID changed: %q", target.DeliveryID)
+	}
+}

@@ -9,7 +9,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
+
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -65,17 +65,17 @@ func TestNormalizeSessionIDBareChat(t *testing.T) {
 	t.Parallel()
 
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("feishu", "delivery")})
-	if got := rtdelivery.NormalizeSessionID(ctx, "oc_a1b2c3d4e5"); got != "feishu:oc_a1b2c3d4e5" {
+	if got := rctx.NormalizeSessionID(ctx, "oc_a1b2c3d4e5"); got != "feishu:oc_a1b2c3d4e5" {
 		t.Fatalf("feishu: got %q", got)
 	}
 	ctx = rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("slack", "delivery")})
-	if got := rtdelivery.NormalizeSessionID(ctx, "D0AK8MAHW22"); got != "slack:D0AK8MAHW22" {
+	if got := rctx.NormalizeSessionID(ctx, "D0AK8MAHW22"); got != "slack:D0AK8MAHW22" {
 		t.Fatalf("slack: got %q", got)
 	}
-	if got := rtdelivery.NormalizeSessionID(ctx, "feishu:oc_x"); got != "feishu:oc_x" {
+	if got := rctx.NormalizeSessionID(ctx, "feishu:oc_x"); got != "feishu:oc_x" {
 		t.Fatalf("explicit: got %q", got)
 	}
-	if got := rtdelivery.NormalizeSessionID(context.Background(), "oc_x"); got != "oc_x" {
+	if got := rctx.NormalizeSessionID(context.Background(), "oc_x"); got != "oc_x" {
 		t.Fatalf("no platform: got %q", got)
 	}
 }
@@ -85,7 +85,7 @@ func TestResolveRouteSlackBareChannel(t *testing.T) {
 
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("slack", "delivery")})
 	ctx = rctx.ContextWithDeliveryRoute(ctx, "slack", agentkit.SessionID("slack:C001:u:U1"))
-	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "D0AK8MAHW22"})
+	route, err := rctx.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "D0AK8MAHW22"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestResolveRouteFeishuBareChat(t *testing.T) {
 
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("feishu", "delivery")})
 	ctx = rctx.ContextWithDeliveryRoute(ctx, "feishu", agentkit.SessionID("feishu:oc_src"))
-	route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "oc_dst"})
+	route, err := rctx.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "oc_dst"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +136,8 @@ func TestSendSlashCommandBareFeishuChat(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
-	if rtdelivery.OutboundRouteID(platform.sent[0]) != "feishu:oc_dst" {
-		t.Fatalf("route = %q", rtdelivery.OutboundRouteID(platform.sent[0]))
+	if rctx.OutboundRouteID(platform.sent[0]) != "feishu:oc_dst" {
+		t.Fatalf("route = %q", rctx.OutboundRouteID(platform.sent[0]))
 	}
 	if platform.sent[0].PlatformID != "feishu" {
 		t.Fatalf("platformID = %q", platform.sent[0].PlatformID)

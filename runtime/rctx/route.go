@@ -35,17 +35,17 @@ func BuildSessionRoute(in agentkit.SessionRouteInput) agentkit.RouteRef {
 	// only a delivery id (WithDeliverySession and the headless/CLI transports)
 	// no longer force every consumer to re-parse the id string.
 	if deliveryID == "" && platform != "" && channel != "" {
-		deliveryID = string(buildDeliverySessionID(platform, channel, thread, scopeUser))
+		deliveryID = string(BuildDeliverySessionID(platform, channel, thread, scopeUser))
 	}
 	if parts := ParseDelivery(agentkit.SessionID(deliveryID), ""); parts.Routable {
 		if channel == "" {
-			channel = parts.Channel
+			channel = strings.TrimSpace(parts.Channel)
 		}
 		if thread == "" {
-			thread = parts.Thread
+			thread = strings.TrimSpace(parts.Thread)
 		}
 		if scopeUser == "" {
-			scopeUser = parts.User
+			scopeUser = strings.TrimSpace(parts.User)
 		}
 	}
 	return sessionRouteFromTarget(platform, agentkit.SessionRouteTarget{
@@ -63,21 +63,10 @@ func SessionRouteFromDelivery(platform string, delivery agentkit.SessionID, repl
 	if delivery == "" {
 		return agentkit.RouteRef{}
 	}
-	parts := ParseDelivery(delivery, "")
-	if !parts.Routable {
-		return BuildSessionRoute(agentkit.SessionRouteInput{
-			Platform:   platform,
-			DeliveryID: delivery,
-			ReplyTo:    strings.TrimSpace(replyTo),
-		})
-	}
 	return BuildSessionRoute(agentkit.SessionRouteInput{
-		Platform:    platform,
-		DeliveryID:  delivery,
-		ChannelID:   parts.Channel,
-		ThreadID:    parts.Thread,
-		ScopeUserID: parts.User,
-		ReplyTo:     replyTo,
+		Platform:   platform,
+		DeliveryID: delivery,
+		ReplyTo:    replyTo,
 	})
 }
 
@@ -150,7 +139,7 @@ func RouteSessionID(route agentkit.RouteRef) (agentkit.SessionID, bool) {
 	platform := strings.TrimSpace(route.Platform)
 	channel := strings.TrimSpace(target.ChannelID)
 	if platform != "" && channel != "" {
-		id := buildDeliverySessionID(platform, channel, target.ThreadID, target.ScopeUserID)
+		id := BuildDeliverySessionID(platform, channel, target.ThreadID, target.ScopeUserID)
 		if id != "" {
 			return id, true
 		}
@@ -214,22 +203,6 @@ func SessionRoute(platform, deliveryID string) agentkit.RouteRef {
 		Platform:   strings.TrimSpace(platform),
 		DeliveryID: agentkit.SessionID(strings.TrimSpace(deliveryID)),
 	})
-}
-
-func buildDeliverySessionID(platform, channel, thread, user string) agentkit.SessionID {
-	platform = strings.TrimSpace(platform)
-	channel = strings.TrimSpace(channel)
-	if platform == "" || channel == "" {
-		return ""
-	}
-	id := platform + ":" + channel
-	if thread = strings.TrimSpace(thread); thread != "" {
-		id += ":t:" + thread
-	}
-	if user = strings.TrimSpace(user); user != "" {
-		id += ":u:" + user
-	}
-	return agentkit.SessionID(id)
 }
 
 // DeliveryParts holds parsed segments of a platform delivery SessionID.
