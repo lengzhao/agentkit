@@ -10,7 +10,9 @@ import (
 )
 
 func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, conversation agentkit.SessionID) (agentkit.AgentID, error) {
-	entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+	// entryKey keys the channel-scoped agent bind (/agent -c); keep it at channel
+	// granularity so a bind set in one thread resolves from every thread.
+	entryKey := rctx.ChannelEntryKeyFromContext(ctx)
 	if entryKey == "" {
 		entryKey = conversation
 	}

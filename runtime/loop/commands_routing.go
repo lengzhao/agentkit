@@ -53,7 +53,7 @@ func resolveCatalogAgentRouting(ctx context.Context, deps catalogRoutingDeps) (e
 	if err != nil {
 		return "", "", "", "", loopDefault, err
 	}
-	entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+	entryKey := rctx.ChannelEntryKeyFromContext(ctx)
 	if entryKey == "" {
 		entryKey = sessionID
 	}

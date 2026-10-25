@@ -54,3 +54,55 @@ func TestActiveSessionEntryKey(t *testing.T) {
 		})
 	}
 }
+
+// A channel-scoped bind key must stay at channel granularity no matter the
+// configured conversation scope, so a bind set in one thread resolves from
+// every thread of the same chat.
+func TestChannelEntryKeyIgnoresThreadScope(t *testing.T) {
+	t.Parallel()
+
+	// Same chat, two different threads, thread-scoped conversation policy.
+	deliveryA := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_topicA", "ou_user")
+	deliveryB := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_topicB", "ou_user")
+	threadPolicy := rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)
+
+	var keys []agentkit.SessionID
+	for _, d := range []agentkit.SessionID{deliveryA, deliveryB} {
+		route := rctx.SessionRoute("lark", string(d))
+		keys = append(keys, rctx.ChannelEntryKey(route, threadPolicy, "ou_user"))
+	}
+	if keys[0] != keys[1] {
+		t.Fatalf("channel key fragmented by thread: %q != %q", keys[0], keys[1])
+	}
+	if want := agentkit.SessionID("lark:oc_d95"); keys[0] != want {
+		t.Fatalf("channel key = %q, want %q", keys[0], want)
+	}
+}
+
+// ActiveEntryKey (the /new active-session key) must still follow the thread
+// scope; only the channel bind key is pinned to the channel.
+func TestChannelEntryKeyDoesNotChangeActiveEntryKey(t *testing.T) {
+	t.Parallel()
+
+	deliveryA := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_topicA", "ou_user")
+	deliveryB := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_topicB", "ou_user")
+	threadPolicy := rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)
+
+	activeA := rctx.ActiveEntryKey(rctx.SessionRoute("lark", string(deliveryA)), threadPolicy, "ou_user")
+	activeB := rctx.ActiveEntryKey(rctx.SessionRoute("lark", string(deliveryB)), threadPolicy, "ou_user")
+	if activeA == activeB {
+		t.Fatalf("active entry key must stay thread-scoped, both = %q", activeA)
+	}
+}
+
+// Opaque-delivery platforms (ActiveEntryDelivery) keep their raw delivery id.
+func TestChannelEntryKeyOpaquePlatformPassthrough(t *testing.T) {
+	t.Parallel()
+
+	delivery := rctx.BuildDeliverySessionID("chat-api", "default_channel", "conv_1", "")
+	route := rctx.SessionRoute("chat-api", string(delivery))
+	policy := rctx.RoutePolicyForPlatform("chat-api", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	if got := rctx.ChannelEntryKey(route, policy, ""); got != delivery {
+		t.Fatalf("opaque channel key = %q, want %q", got, delivery)
+	}
+}

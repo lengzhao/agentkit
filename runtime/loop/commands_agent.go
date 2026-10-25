@@ -91,7 +91,7 @@ func (c agentCommand) useAgent(ctx context.Context, scope agentBindScope, name s
 		}
 		return fmt.Sprintf("global agent: %s", name), nil
 	case agentBindChannel:
-		entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+		entryKey := rctx.ChannelEntryKeyFromContext(ctx)
 		if entryKey == "" {
 			return "", fmt.Errorf("channel entry key is required")
 		}
@@ -125,7 +125,7 @@ func (c agentCommand) clearBind(ctx context.Context, scope agentBindScope) (stri
 		}
 		return "global agent reset", nil
 	case agentBindChannel:
-		entryKey := rctx.ActiveEntryKeyFromContext(ctx)
+		entryKey := rctx.ChannelEntryKeyFromContext(ctx)
 		if entryKey == "" {
 			return "", fmt.Errorf("channel entry key is required")
 		}
