@@ -49,7 +49,8 @@ func TestSteeringWorker(t *testing.T) {
 			ctrl := loop.NewControl()
 			defer ctrl.Stop()
 			msg := agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "change direction"}}}
-			if err := ctrl.Steer(ctx, msg); err != nil {
+			var acks []string
+			if err := ctrl.SteerEntry(ctx, agentkit.SteerEntry{Message: msg, Ack: func(outcome string) { acks = append(acks, outcome) }}); err != nil {
 				t.Fatal(err)
 			}
 			received := make(chan struct{})
@@ -99,6 +100,14 @@ func TestSteeringWorker(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error")
 				}
+				// Only an ambiguous transport failure is a terminal rejection;
+				// a protocol decode error leaves the outcome to Loop's fallback.
+				if outcome == "transportError" && (len(acks) != 1 || acks[0] != capsession.SteerOutcomeRejected) {
+					t.Fatalf("transportError acks = %v, want [rejected]", acks)
+				}
+				if outcome == "invalid" && len(acks) != 0 {
+					t.Fatalf("invalid acks = %v, want none", acks)
+				}
 				return
 			}
 			if err != nil {
@@ -108,9 +117,17 @@ func TestSteeringWorker(t *testing.T) {
 				if accepted != 1 || len(ctrl.PopSteering()) != 0 {
 					t.Fatal("injected message not consumed exactly once")
 				}
+				if len(acks) != 1 || acks[0] != capsession.SteerOutcomeInjected {
+					t.Fatalf("injected acks = %v, want [injected]", acks)
+				}
 			} else {
 				if accepted != 0 || len(ctrl.PopSteering()) != 1 {
 					t.Fatal("rejected message not restored")
+				}
+				// promptRequired / methodNotFound fall through to Loop's next turn,
+				// which acks there — the worker itself must not ack.
+				if len(acks) != 0 {
+					t.Fatalf("non-terminal acks = %v, want none", acks)
 				}
 			}
 		})
@@ -128,7 +145,7 @@ func TestRestoreSteeringPreservesOrder(t *testing.T) {
 	_ = ctrl.Steer(t.Context(), msg("second"))
 	ctrl.RestoreSteering(pending)
 	got := ctrl.PopSteering()
-	if len(got) != 2 || got[0].Content[0].Text != "first" || got[1].Content[0].Text != "second" {
+	if len(got) != 2 || got[0].Message.Content[0].Text != "first" || got[1].Message.Content[0].Text != "second" {
 		t.Fatalf("order: %+v", got)
 	}
 }

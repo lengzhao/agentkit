@@ -18,7 +18,7 @@ type Control struct {
 
 type controlState struct {
 	stepCancel        context.CancelFunc
-	steering          []agentkit.ModelMessage
+	steering          []agentkit.SteerEntry
 	followUps         []agentkit.ModelMessage
 	cancelReason      string
 	capability        permission.Capability
@@ -80,7 +80,17 @@ func (c *Control) PermissionCapability() permission.Capability {
 
 func (c *Control) Steer(_ context.Context, msg agentkit.ModelMessage) error {
 	c.sync(func(st *controlState) {
-		st.steering = append(st.steering, msg)
+		st.steering = append(st.steering, agentkit.SteerEntry{Message: msg})
+	})
+	return nil
+}
+
+// SteerEntry queues one steering message together with its outcome reporter.
+// The reporter is consumed when the queue position is resolved: locally by the
+// agent injecting at a step boundary, or by Loop running it as the next turn.
+func (c *Control) SteerEntry(_ context.Context, entry agentkit.SteerEntry) error {
+	c.sync(func(st *controlState) {
+		st.steering = append(st.steering, entry)
 	})
 	return nil
 }
@@ -150,13 +160,13 @@ func (c *Control) PopCancelReason() string {
 	return reason
 }
 
-func (c *Control) PopSteering() []agentkit.ModelMessage {
-	var out []agentkit.ModelMessage
+func (c *Control) PopSteering() []agentkit.SteerEntry {
+	var out []agentkit.SteerEntry
 	c.sync(func(st *controlState) {
 		if len(st.steering) == 0 {
 			return
 		}
-		out = append([]agentkit.ModelMessage(nil), st.steering...)
+		out = append([]agentkit.SteerEntry(nil), st.steering...)
 		st.steering = nil
 	})
 	return out
@@ -164,13 +174,13 @@ func (c *Control) PopSteering() []agentkit.ModelMessage {
 
 // RestoreSteering returns unconsumed input ahead of messages that arrived while
 // an agent was attempting delivery to an external runtime.
-func (c *Control) RestoreSteering(messages []agentkit.ModelMessage) {
-	if len(messages) == 0 {
+func (c *Control) RestoreSteering(entries []agentkit.SteerEntry) {
+	if len(entries) == 0 {
 		return
 	}
 	c.sync(func(st *controlState) {
-		restored := make([]agentkit.ModelMessage, 0, len(messages)+len(st.steering))
-		restored = append(restored, messages...)
+		restored := make([]agentkit.SteerEntry, 0, len(entries)+len(st.steering))
+		restored = append(restored, entries...)
 		st.steering = append(restored, st.steering...)
 	})
 }

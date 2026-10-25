@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -113,11 +114,20 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 			"agent_id", scoped.AgentID,
 			"preview", telemetry.SummarizeMessage(steerMsg),
 		)
-		if err := r.loop.Steer(ctx, steerMsg); err != nil {
-			r.reportInboundError(ctx, env, scoped, err)
+		// Instant ack: the message was accepted into the running turn's queue.
+		r.reportTurnSteer(ctx, env, scoped, capsession.SteerOutcomeQueued)
+		if reporter, ok := r.loop.(agentkit.SteerReporter); ok {
+			// A terminal outcome follows once the agent injects it, an ACP peer
+			// acknowledges it, or Loop defers it to the next turn.
+			ack := r.turnSteerAck(ctx, env, scoped)
+			if err := reporter.SteerEntry(ctx, agentkit.SteerEntry{Message: steerMsg, Ack: ack}); err != nil {
+				r.reportInboundError(ctx, env, scoped, err)
+			}
 			return
 		}
-		r.reportTurnSteer(ctx, env, scoped, scoped.Message)
+		if err := r.loop.Steer(ctx, steerMsg); err != nil {
+			r.reportInboundError(ctx, env, scoped, err)
+		}
 		return
 	}
 	scoped = r.formatInboundEvent(scoped, env)
@@ -188,18 +198,39 @@ func (r *Root) reportScheduleError(_ context.Context, err error) {
 	slog.Error("schedule runtime failed", "err", err)
 }
 
-// reportTurnSteer tells the platform that an inbound message was folded into a
-// running turn instead of starting a new one. The event carries the steered
-// message's own route, so platforms acknowledge that exact message (Lark swaps
-// its in-flight reaction emoji) rather than the turn's trigger message.
-// Best effort: a failed send never blocks steering.
-func (r *Root) reportTurnSteer(ctx context.Context, env agentkit.TurnEnvelope, event agentkit.MessageEvent, steered agentkit.ModelMessage) {
+// turnSteerAck builds the terminal-outcome reporter for one folded inbound
+// message. The runner has already reported SteerOutcomeQueued; this second event
+// carries wherever the message actually landed (injected mid-turn, deferred to
+// the next turn, or rejected). It fires at most once and drops a redundant
+// queued.
+func (r *Root) turnSteerAck(ctx context.Context, env agentkit.TurnEnvelope, event agentkit.MessageEvent) agentkit.SteerAck {
+	var once sync.Once
+	// The ack can fire after the turn (and its context) is gone: an agent injects
+	// at a step boundary, or an ACP steering worker settles late. Detach from the
+	// turn's cancellation so the platform notice still goes out.
+	sendCtx := context.WithoutCancel(ctx)
+	return func(outcome string) {
+		if outcome == "" || outcome == capsession.SteerOutcomeQueued {
+			return
+		}
+		once.Do(func() {
+			r.reportTurnSteer(sendCtx, env, event, outcome)
+		})
+	}
+}
+
+// reportTurnSteer emits one turn/steer event for a folded inbound message. The
+// event carries the steered message's own route, so platforms acknowledge that
+// exact message (Lark/Slack swap its in-flight reaction emoji) rather than the
+// running turn's trigger message. Best effort: a failed send never blocks
+// steering.
+func (r *Root) reportTurnSteer(ctx context.Context, env agentkit.TurnEnvelope, event agentkit.MessageEvent, outcome string) {
 	data := capsession.TurnSteerData{
-		Outcome:   capsession.SteerOutcomeQueued,
+		Outcome:   outcome,
 		SessionID: string(rctx.ConversationFromEvent(event)),
 		AgentID:   string(event.AgentID),
 		UserID:    env.Actor.UserID,
-		Preview:   clampSteerPreview(telemetry.SummarizeMessage(steered)),
+		Preview:   clampSteerPreview(telemetry.SummarizeMessage(event.Message)),
 	}
 	out := rctx.OutboundFromEnvelope(env, agentkit.EventTurnSteer, rctx.MarshalOutboundData(data))
 	out.AgentID = event.AgentID
@@ -207,6 +238,7 @@ func (r *Root) reportTurnSteer(ctx context.Context, env agentkit.TurnEnvelope, e
 		slog.Debug("reporting turn steer failed",
 			"platform", event.PlatformID,
 			"route", routeLogID(env.Route),
+			"outcome", outcome,
 			"err", err,
 		)
 	}

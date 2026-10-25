@@ -92,6 +92,22 @@ func (p *Platform) appendTurnReactionIfActive(sessionID agentkit.SessionID, d de
 	batch.tracked = append(batch.tracked, trackedReaction{delivery: d, reaction: reactionReceived})
 }
 
+// reactionFor reports the emoji currently tracked for message d while the batch
+// is active, so a swap can retire the exact reaction it replaces.
+func (b *turnReactionBatch) reactionFor(d delivery) (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.active {
+		return "", false
+	}
+	for i := range b.tracked {
+		if sameMessage(b.tracked[i].delivery, d) {
+			return b.tracked[i].reaction, true
+		}
+	}
+	return "", false
+}
+
 // swapReaction records that message d now carries name instead of the
 // processing reaction, so turn/end retires the right emoji. Returns false when
 // the message is not part of the active batch.

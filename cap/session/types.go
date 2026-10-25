@@ -64,10 +64,24 @@ type TurnSteerData struct {
 	Preview string `json:"preview,omitempty"`
 }
 
-// SteerOutcomeQueued means the message was accepted onto the running session's
-// steer queue: the agent will either inject it into the active turn or run it as
-// the session's next turn.
-const SteerOutcomeQueued = "queued"
+// The outcome vocabulary of an EventTurnSteer event. The runner reports queued
+// the moment a message is accepted; whoever resolves where it actually landed
+// reports the terminal outcome through the message's SteerAck.
+const (
+	// SteerOutcomeQueued means the message was accepted onto the running
+	// session's steer queue. It is the immediate, best-effort ack.
+	SteerOutcomeQueued = "queued"
+	// SteerOutcomeInjected means the message was folded into the turn that was
+	// already streaming (a local agent injected it at its next step boundary, or
+	// an ACP peer acknowledged `_session/steering`).
+	SteerOutcomeInjected = "injected"
+	// SteerOutcomeNextTurn means the running turn was too far along to accept
+	// steering, so the message runs as the session's next turn instead.
+	SteerOutcomeNextTurn = "next-turn"
+	// SteerOutcomeRejected means delivery failed. The message may or may not have
+	// reached the agent, so it is never retried automatically.
+	SteerOutcomeRejected = "rejected"
+)
 
 // TurnContinueData records one autonomous turn extension.
 type TurnContinueData struct {

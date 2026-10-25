@@ -230,19 +230,23 @@ platform.default:
 
 | 平台 | 收到消息 | 被并入进行中 turn（steer） | turn 结束 |
 |---|---|---|---|
-| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 该消息的处理中 reaction 替换为 `steerEmoji`（默认 `Typing`；`none` 关闭替换） | 用户消息：移除反应中的 reaction，添加 `doneEmoji`（默认 `CheckMark`）等；**`card`/`compact` 时不给机器人回复卡加 reaction**（卡片内已有 `☑️ 用时`） |
-| `platform/slack` | `eyes` | 该消息的 `eyes` 替换为 `steerEmoji`（默认 `inbox_tray`；`none` 关闭替换） | 移除消息上的 reaction；按 `turn/end` 添加 `doneEmoji`（默认 `white_check_mark`）、取消时 `cancelledEmoji`（默认 `broken_heart`）、异常时 `errorEmoji`（默认 `x`）；同一 turn 内 steer 合并的多条用户消息会一并更新 |
+| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 该消息的处理中 reaction 替换为 `steerEmoji`（默认 `Typing`；`next-turn`/`rejected` 时换回；`none` 关闭替换） | 用户消息：移除反应中的 reaction，添加 `doneEmoji`（默认 `CheckMark`）等；**`card`/`compact` 时不给机器人回复卡加 reaction**（卡片内已有 `☑️ 用时`） |
+| `platform/slack` | `eyes` | 该消息的 `eyes` 替换为 `steerEmoji`（默认 `inbox_tray`；`next-turn`/`rejected` 时换回；`none` 关闭替换） | 移除消息上的 reaction；按 `turn/end` 添加 `doneEmoji`（默认 `white_check_mark`）、取消时 `cancelledEmoji`（默认 `broken_heart`）、异常时 `errorEmoji`（默认 `x`）；同一 turn 内 steer 合并的多条用户消息会一并更新 |
 
 ### turn/steer：把「消息已并入当前回复」回报给发送者
 
 用户消息到达时若该 session 已有 turn 在执行，runner 不再为它开新 turn，而是把它**并入**当前 turn（`Loop.Steer`）：Agent 在当前 step 结束后注入，或由 Loop 作为下一个 turn 消化。这条路径此前对发送者是静默的——只有平台侧的「处理中」reaction，看不出消息是被接收进当前回复还是排队成了下一条。
 
-runner 现在会在 steer 成功后发一个 **`turn/steer`** 出站事件（payload `capsession.TurnSteerData`，`outcome: queued`），并且**带的是被并入消息自己的 route**（含 `replyTo` = 该消息 id），因此平台能精确标注这条消息。飞书 / Lark 与 Slack 都按同一事件处理：
+runner 现在会在 steer 成功后发 **`turn/steer`** 出站事件（payload `capsession.TurnSteerData`），并且**带的是被并入消息自己的 route**（含 `replyTo` = 该消息 id），因此平台能精确标注这条消息。飞书 / Lark 与 Slack 都按同一事件处理：
 
-- **飞书 / Lark**：把该消息的处理中 reaction（`reactionEmoji`）替换成 `steerEmoji`（默认 `Typing`）。新 reaction 的 id 会写回该消息在 **turn reaction batch** 中的记录，所以 `turn/end` 时移除的是替换后的 reaction。
-- **Slack**：把该消息的 `eyes` 替换成 `steerEmoji`（默认 `inbox_tray`）。Slack reaction 没有 id，改由 batch 记录每条消息当前的 emoji 名，`turn/end` 据此移除。
-- 消息不在进行中 turn 的 batch 里时（例如 turn 已在收尾）仍会做替换，只是不纳入 `turn/end` 的清理（Slack 此时无从记账，`turn/end` 会同时清 `eyes` 与 `steerEmoji`）。
+- **即时 ack**：入队成功立即发一次 `outcome: queued`，第一时间让发送者看到响应。
+- **终态 ack**：谁最终决定了消息走向谁再发一次终态——本地 agent 在下一步注入 → `injected`；ACP peer 回 `_session/steering: injected` → `injected`；peer 太晚回 `promptRequired` 或 Loop 把残留 steering 顺延成下一个 turn → `next-turn`；传输失败（可能已送达、不敢重试）→ `rejected`。`queued` 是乐观的即时值，终态才是"到底并入了哪条路径"。
+- **飞书 / Lark**：`queued`/`injected` → 把该消息的处理中 reaction（`reactionEmoji`）换成 `steerEmoji`（默认 `Typing`）；`next-turn`/`rejected` → 换回 `reactionEmoji`（撤销早先的替换，避免谎称已并入当前回复）。新 reaction 的 id 写回该消息在 **turn reaction batch** 中的记录，`turn/end` 据此移除。
+- **Slack**：同上，`eyes` ↔ `steerEmoji`（默认 `inbox_tray`）。Slack reaction 没有 id，由 batch 记录每条消息当前的 emoji 名，`turn/end` 据此移除。
+- 消息不在进行中 turn 的 batch 里时（例如 turn 已在收尾）仍会替换，只是不纳入 `turn/end` 的清理（Slack 此时无从记账，`turn/end` 会同时清 `eyes` 与 `steerEmoji`）。
 - `steerEmoji: none` 可关闭替换，行为退回「只有处理中 reaction」。
+
+实现上，`runner` 通过 `agentkit.SteerReporter`（`loop/default` 已实现）把每条 steering 消息连同它的 `SteerAck` 一起入队；消息带自己的 `Ack` 走到 agent 的注入点或 ACP peer，由**真正解析出落点**的那一层回调，再由 runner 发 `turn/steer`。不支持该能力的 Loop 实现退回普通 `Steer`，此时只有即时 `queued`。
 
 配置示例（关闭替换）：
 
