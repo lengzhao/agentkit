@@ -102,15 +102,19 @@ func (b *turnReactionBatch) reactionFor(messageID string) (string, bool) {
 }
 
 // setReaction records the reaction now on messageID so turn/end clears it.
-func (b *turnReactionBatch) setReaction(messageID, reactionID string) {
+func (b *turnReactionBatch) setReaction(messageID, reactionID string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if !b.active {
+		return false
+	}
 	for i := range b.rcs {
 		if b.rcs[i].messageID == messageID {
 			b.rcs[i].processingReactionID = reactionID
-			return
+			return true
 		}
 	}
+	return false
 }
 
 func (p *Platform) finishTurnReactions(sessionID agentkit.SessionID) []replyContext {
@@ -225,12 +229,15 @@ func (p *Platform) applyTurnSteer(event agentkit.OutboundEvent) error {
 		if oldID != "" {
 			p.removeReaction(messageID, oldID)
 		}
-		batch.setReaction(messageID, p.addReactionWithEmoji(messageID, p.steerEmoji))
+		newID := p.addReactionWithEmoji(messageID, p.steerEmoji)
+		// turn/end may have drained the batch while the API call was in flight.
+		if !batch.setReaction(messageID, newID) {
+			p.removeReaction(messageID, newID)
+		}
 		return nil
 	}
-	// The message is not part of a tracked turn (turn already unwinding, or an
-	// API-driven steer). Still acknowledge it so the sender gets the signal.
-	go p.addReactionWithEmoji(messageID, p.steerEmoji)
+	// The turn already ended or does not track this message. Avoid adding a
+	// transient reaction that no turn/end will be able to retire.
 	return nil
 }
 

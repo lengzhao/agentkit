@@ -91,14 +91,14 @@ func (p *Platform) applyTurnSteer(ctx context.Context, event agentkit.OutboundEv
 			"session_id", string(sessionID))
 		return nil
 	}
-	// Swap synchronously (like Feishu) so the batch and the wire agree before
-	// this returns; turn/end then retires steerEmoji instead of leaving it on a
-	// finished message. Messages outside the running turn's batch are still
-	// acknowledged, but nowhere to remember the swap — turn/end clears both.
+	// The API can finish after turn/end has drained the batch. If the swap
+	// can no longer be recorded, retire the late reaction ourselves.
 	bg := context.WithoutCancel(ctx)
 	p.removeReaction(bg, d, reactionReceived)
 	p.addReaction(bg, d, p.steerEmoji)
-	p.turnReactionBatchFor(sessionID).swapReaction(d, p.steerEmoji)
+	if !p.turnReactionBatchFor(sessionID).swapReaction(d, p.steerEmoji) {
+		p.removeReaction(bg, d, p.steerEmoji)
+	}
 	return nil
 }
 
