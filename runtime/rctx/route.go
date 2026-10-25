@@ -82,7 +82,31 @@ func SessionRouteFromDelivery(platform string, delivery agentkit.SessionID, repl
 }
 
 // DecodeSessionRoute decodes a session-kind RouteRef into SessionRouteTarget.
+// Any structured component missing from the payload is derived from the delivery
+// id (mirroring BuildSessionRoute's backfill), so the returned target always
+// carries channel / thread / user on every path — including bare-string and
+// legacy flat-JSON targets persisted before structured fields existed. Callers
+// therefore never re-parse the delivery id.
 func DecodeSessionRoute(route agentkit.RouteRef) (agentkit.SessionRouteTarget, bool) {
+	target, ok := decodeSessionRouteRaw(route)
+	if !ok {
+		return agentkit.SessionRouteTarget{}, false
+	}
+	if parts := ParseDelivery(target.DeliveryID, ""); parts.Routable {
+		if target.ChannelID == "" {
+			target.ChannelID = parts.Channel
+		}
+		if target.ThreadID == "" {
+			target.ThreadID = parts.Thread
+		}
+		if target.ScopeUserID == "" {
+			target.ScopeUserID = parts.User
+		}
+	}
+	return target, true
+}
+
+func decodeSessionRouteRaw(route agentkit.RouteRef) (agentkit.SessionRouteTarget, bool) {
 	if route.Kind != "" && route.Kind != agentkit.RouteKindSession {
 		return agentkit.SessionRouteTarget{}, false
 	}
@@ -135,6 +159,8 @@ func RouteSessionID(route agentkit.RouteRef) (agentkit.SessionID, bool) {
 }
 
 // RouteTargetFromRoute decodes structured delivery fields from a session route.
+// DecodeSessionRoute already backfills missing components from the delivery id,
+// so the result carries channel/thread/user on every path.
 func RouteTargetFromRoute(route agentkit.RouteRef) (RouteTarget, bool) {
 	id, ok := RouteSessionID(route)
 	if !ok {
@@ -144,24 +170,13 @@ func RouteTargetFromRoute(route agentkit.RouteRef) (RouteTarget, bool) {
 	if !ok {
 		return RouteTarget{}, false
 	}
-	out := RouteTarget{
+	return RouteTarget{
 		DeliveryID:  id,
 		ChannelID:   strings.TrimSpace(target.ChannelID),
 		ThreadID:    strings.TrimSpace(target.ThreadID),
 		ReplyTo:     strings.TrimSpace(target.ReplyTo),
 		ScopeUserID: strings.TrimSpace(target.ScopeUserID),
-	}
-	if out.ChannelID == "" {
-		parts := ParseDelivery(id, out.ScopeUserID)
-		if parts.Routable {
-			out.ChannelID = parts.Channel
-			out.ThreadID = parts.Thread
-			if out.ScopeUserID == "" {
-				out.ScopeUserID = parts.User
-			}
-		}
-	}
-	return out, true
+	}, true
 }
 
 // RouteReplyTo returns the ephemeral reply anchor for this turn, if any.

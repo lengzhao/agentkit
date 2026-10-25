@@ -2,6 +2,7 @@ package rctx_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -225,5 +226,50 @@ func TestBuildSessionRouteKeepsExplicitTarget(t *testing.T) {
 	target, _ := rctx.DecodeSessionRoute(route)
 	if target.ChannelID != "oc_other" || target.ThreadID != "om_2" || target.ScopeUserID != "ou_other" {
 		t.Fatalf("explicit fields clobbered: %+v", target)
+	}
+}
+
+// DecodeSessionRoute backfills structured components from the delivery id on
+// every path, so a bare-string target or a legacy flat-JSON target (persisted
+// before structured fields existed) still yields channel/thread/user.
+func TestDecodeSessionRouteBackfillsStructuredFields(t *testing.T) {
+	t.Parallel()
+
+	const delivery = "lark:oc_d95:t:om_1:u:ou_actor"
+
+	bare := agentkit.RouteRef{
+		Platform: "lark",
+		Kind:     agentkit.RouteKindSession,
+		Target:   json.RawMessage(`"` + delivery + `"`),
+	}
+	legacy := agentkit.RouteRef{
+		Platform: "lark",
+		Kind:     agentkit.RouteKindSession,
+		Target:   json.RawMessage(`{"deliveryId":"` + delivery + `"}`),
+	}
+	for name, route := range map[string]agentkit.RouteRef{"bare-string": bare, "legacy-flat": legacy} {
+		target, ok := rctx.DecodeSessionRoute(route)
+		if !ok {
+			t.Fatalf("%s: decode failed", name)
+		}
+		if target.ChannelID != "oc_d95" || target.ThreadID != "om_1" || target.ScopeUserID != "ou_actor" {
+			t.Fatalf("%s: not backfilled: ch=%q th=%q u=%q", name, target.ChannelID, target.ThreadID, target.ScopeUserID)
+		}
+	}
+}
+
+// Legacy flat-JSON route survives UnmarshalJSON then decodes with full fields,
+// and its bind keys resolve — the persisted-job path needs no re-parsing.
+func TestLegacyFlatRouteYieldsFullBindKeys(t *testing.T) {
+	t.Parallel()
+
+	var route agentkit.RouteRef
+	if err := json.Unmarshal([]byte(`{"platform":"lark","kind":"session","sessionId":"lark:oc_d95:t:om_1","userId":"ou_actor"}`), &route); err != nil {
+		t.Fatal(err)
+	}
+	policy := rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
+	keys := rctx.BindKeysForRoute(route, policy, "ou_actor", "")
+	if keys.Channel != "lark:oc_d95" || keys.Thread != "lark:oc_d95:t:om_1" || keys.User != "lark:oc_d95:u:ou_actor" {
+		t.Fatalf("keys ch=%q th=%q u=%q", keys.Channel, keys.Thread, keys.User)
 	}
 }

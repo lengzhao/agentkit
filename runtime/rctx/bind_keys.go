@@ -51,20 +51,6 @@ func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string
 	channel := strings.TrimSpace(target.ChannelID)
 	thread := strings.TrimSpace(target.ThreadID)
 	scopeUser := strings.TrimSpace(target.ScopeUserID)
-	// Defensive fallback for routes built before the target was backfilled.
-	if channel == "" || (thread == "" && scopeUser == "") {
-		if parts := ParseDelivery(delivery, ""); parts.Routable {
-			if channel == "" {
-				channel = parts.Channel
-			}
-			if thread == "" {
-				thread = parts.Thread
-			}
-			if scopeUser == "" {
-				scopeUser = parts.User
-			}
-		}
-	}
 
 	if channel == "" {
 		keys.Channel = delivery
