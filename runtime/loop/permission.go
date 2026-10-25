@@ -304,14 +304,12 @@ func (l *Default) SupersedePendingForInbound(event agentkit.MessageEvent) {
 
 func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.OutboundEmit, req permission.Request) error {
 	agentID := rctx.AgentIDFromContext(ctx)
-	platformID := rctx.PlatformFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	return emit(ctx, agentkit.OutboundEvent{
-		Route:      rctx.RouteRefFromContext(ctx),
-		AgentID:    agentID,
-		PlatformID: platformID,
-		UserID:     userID,
-		Type:       agentkit.EventPermissionRequest,
+		Route: rctx.RouteRefFromContext(ctx), AgentID: agentID,
+
+		UserID: userID,
+		Type:   agentkit.EventPermissionRequest,
 		Data: rctx.MarshalOutboundData(permission.RequestPayload{
 			Request:      req,
 			Conversation: string(rctx.SessionIDFromContext(ctx)),
@@ -321,17 +319,15 @@ func (c *Control) emitPermissionRequest(ctx context.Context, emit agentkit.Outbo
 
 func (c *Control) emitPermissionResolved(ctx context.Context, emit agentkit.OutboundEmit, id string, result permission.Result) error {
 	agentID := rctx.AgentIDFromContext(ctx)
-	platformID := rctx.PlatformFromContext(ctx)
 	userID := rctx.UserIDFromContext(ctx)
 	resolved := result
 	resolved.ID = id
 	return emit(ctx, agentkit.OutboundEvent{
-		Route:      rctx.RouteRefFromContext(ctx),
-		AgentID:    agentID,
-		PlatformID: platformID,
-		UserID:     userID,
-		Type:       agentkit.EventPermissionResolved,
-		Data:       rctx.MarshalOutboundData(resolved),
+		Route: rctx.RouteRefFromContext(ctx), AgentID: agentID,
+
+		UserID: userID,
+		Type:   agentkit.EventPermissionResolved,
+		Data:   rctx.MarshalOutboundData(resolved),
 	})
 }
 

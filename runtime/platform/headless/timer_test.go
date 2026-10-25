@@ -91,8 +91,8 @@ func TestTimerFiresImmediatelyThenOnInterval(t *testing.T) {
 		if got := textOfMessage(event.Message); got != "check things" {
 			t.Fatalf("prompt = %q", got)
 		}
-		if event.PlatformID != "timer" {
-			t.Fatalf("platform id = %q, want timer", event.PlatformID)
+		if event.Envelope.Route.Instance != "timer" {
+			t.Fatalf("platform id = %q, want timer", event.Envelope.Route.Instance)
 		}
 		sessions = append(sessions, rctx.InboundDeliveryID(event))
 	}

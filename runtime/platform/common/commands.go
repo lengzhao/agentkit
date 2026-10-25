@@ -70,12 +70,10 @@ func ParseSlashCommand(line string) (name, args string, ok bool) {
 func SlashCommandContext(ctx context.Context, commands agentkit.Commands, slash SlashContext) context.Context {
 	platformID := strings.TrimSpace(slash.Route.Platform)
 	policy := rctx.RoutePolicyForPlatform(platformID, rctx.DefaultRoutePolicy(slash.SessionScope))
-	event := agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     slash.UserID,
-	}
+	event := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID},
+		Actor: agentkit.ActorRef{UserID: slash.UserID}}}
 	if len(slash.Metadata) > 0 {
-		event.Metadata = slash.Metadata
+		event.Envelope.Metadata = slash.Metadata
 	}
 	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(event, slash.Route), policy)
 	env = rctx.WithMetadataScope(env, slash.SessionScope)

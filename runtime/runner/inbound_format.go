@@ -16,7 +16,7 @@ import (
 //	sender_id sender_name sender_email platform chat_id thread_id timestamp
 //	mentions task_id trace_id language
 //	custom.*   — metadata keys with prefix custom.
-//	<any-key>  — exact MessageEvent.Metadata lookup
+//	<any-key>  — exact MessageEvent.Envelope.Metadata lookup
 const (
 	injectSenderID    = "sender_id"
 	injectSenderName  = "sender_name"
@@ -37,7 +37,7 @@ type inboundFormatConfig struct {
 }
 
 func (r *Root) formatInboundEvent(event agentkit.MessageEvent, env agentkit.TurnEnvelope) agentkit.MessageEvent {
-	if event.Message.Role == "" || skipInboundPromptMeta(event.Metadata) {
+	if event.Message.Role == "" || skipInboundPromptMeta(event.Envelope.Metadata) {
 		return event
 	}
 	deliveryID, _ := rctx.RouteSessionID(env.Route)
@@ -87,8 +87,8 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 	if len(cfg.inject) == 0 {
 		return nil
 	}
-	parts := rctx.ParseDelivery(deliveryID, event.UserID)
-	platformID := strings.TrimSpace(event.PlatformID)
+	parts := rctx.ParseDelivery(deliveryID, event.Envelope.Actor.UserID)
+	platformID := strings.TrimSpace(event.Envelope.Route.Instance)
 	if platformID == "" {
 		platformID = parts.Platform
 	}
@@ -101,19 +101,19 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 		}
 		switch key {
 		case injectSenderID:
-			if id := strings.TrimSpace(event.UserID); id != "" {
+			if id := strings.TrimSpace(event.Envelope.Actor.UserID); id != "" {
 				attrs = append(attrs, fmt.Sprintf("sender_id=%s", id))
 			}
 		case injectSenderName:
-			if name := senderNameFromMetadata(event.Metadata); name != "" {
+			if name := senderNameFromMetadata(event.Envelope.Metadata); name != "" {
 				attrs = append(attrs, fmt.Sprintf(`sender_name="%s"`, promptAttrValue(name)))
 			}
 		case injectSenderEmail:
-			if email := senderEmailFromMetadata(event.Metadata); email != "" {
+			if email := senderEmailFromMetadata(event.Envelope.Metadata); email != "" {
 				attrs = append(attrs, fmt.Sprintf(`sender_email="%s"`, promptAttrValue(email)))
 			}
 		case injectMentions:
-			if mentions := mentionsFromMetadata(event.Metadata); mentions != "" {
+			if mentions := mentionsFromMetadata(event.Envelope.Metadata); mentions != "" {
 				attrs = append(attrs, fmt.Sprintf(`mentions="%s"`, promptAttrValue(mentions)))
 			}
 		case injectPlatform:
@@ -129,29 +129,29 @@ func injectPromptAttrs(cfg inboundFormatConfig, event agentkit.MessageEvent, del
 				attrs = append(attrs, fmt.Sprintf("thread_id=%s", parts.Thread))
 			}
 		case injectTimestamp:
-			if strings.TrimSpace(event.UserID) == "" {
+			if strings.TrimSpace(event.Envelope.Actor.UserID) == "" {
 				continue
 			}
-			tz := resolveUserTimezone(cfg.defaultTimezone, event.UserID, platform)
+			tz := resolveUserTimezone(cfg.defaultTimezone, event.Envelope.Actor.UserID, platform)
 			attrs = append(attrs, formatInjectTimestamp(now, tz))
 		case injectTaskID:
-			if v := contextValueFromMetadata(event.Metadata, injectTaskID, "taskId", "X-Task-Id", "X-Task-ID"); v != "" {
+			if v := contextValueFromMetadata(event.Envelope.Metadata, injectTaskID, "taskId", "X-Task-Id", "X-Task-ID"); v != "" {
 				attrs = append(attrs, fmt.Sprintf(`task_id="%s"`, promptAttrValue(v)))
 			}
 		case injectTraceID:
-			if v := contextValueFromMetadata(event.Metadata, injectTraceID, "traceId", "X-Trace-Id", "X-Trace-ID"); v != "" {
+			if v := contextValueFromMetadata(event.Envelope.Metadata, injectTraceID, "traceId", "X-Trace-Id", "X-Trace-ID"); v != "" {
 				attrs = append(attrs, fmt.Sprintf(`trace_id="%s"`, promptAttrValue(v)))
 			}
 		case injectLanguage:
-			if v := contextValueFromMetadata(event.Metadata, injectLanguage, "lang", "X-Language"); v != "" {
+			if v := contextValueFromMetadata(event.Envelope.Metadata, injectLanguage, "lang", "X-Language"); v != "" {
 				attrs = append(attrs, fmt.Sprintf(`language="%s"`, promptAttrValue(v)))
 			}
 		default:
 			if strings.HasSuffix(key, ".*") {
-				attrs = append(attrs, metadataPromptAttrs(event.Metadata, []string{item})...)
+				attrs = append(attrs, metadataPromptAttrs(event.Envelope.Metadata, []string{item})...)
 				continue
 			}
-			if v := metadataString(event.Metadata, item); v != "" {
+			if v := metadataString(event.Envelope.Metadata, item); v != "" {
 				attrs = append(attrs, fmt.Sprintf(`%s="%s"`, strings.TrimSpace(item), promptAttrValue(v)))
 			}
 		}

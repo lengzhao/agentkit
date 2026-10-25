@@ -43,7 +43,7 @@ func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string
 		return keys
 	}
 	if policy.ActiveEntryMode == ActiveEntryDelivery {
-		keys.Channel = delivery
+		keys.Channel = namespaceSessionID(route, delivery)
 		return keys
 	}
 
@@ -53,10 +53,10 @@ func BindKeysForRoute(route agentkit.RouteRef, policy RoutePolicy, userID string
 	scopeUser := strings.TrimSpace(target.ScopeUserID)
 
 	if channel == "" {
-		keys.Channel = delivery
+		keys.Channel = namespaceSessionID(route, delivery)
 		return keys
 	}
-	platform := strings.TrimSpace(route.Platform)
+	platform := route.DestinationID()
 	base := agentkit.SessionID(platform + ":" + channel)
 	keys.Channel = base
 	if thread != "" {

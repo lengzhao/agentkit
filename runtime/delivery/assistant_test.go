@@ -22,7 +22,7 @@ func (r *recordingSender) Send(_ context.Context, ev agentkit.OutboundEvent) err
 func TestSendAssistantTextEmptyNoOp(t *testing.T) {
 	t.Parallel()
 	sender := &recordingSender{}
-	if err := delivery.SendAssistantText(context.Background(), sender, "  ", delivery.AssistantMessageOptions{}); err != nil {
+	if err := delivery.SendAssistantText(context.Background(), sender, "  ", capsdelivery.AssistantMessageOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(sender.sent) != 0 {
@@ -68,7 +68,7 @@ func TestSendAssistantMessageUsesSenderWhenNoEmit(t *testing.T) {
 	ctx := rctx.ContextWithDeliveryRoute(context.Background(), "slack", agentkit.SessionID("slack:C002"))
 	ctx = rctx.WithAgentID(ctx, agentkit.AgentID("a1"))
 
-	err := delivery.SendAssistantText(ctx, sender, "hi", delivery.AssistantMessageOptions{
+	err := delivery.SendAssistantText(ctx, sender, "hi", capsdelivery.AssistantMessageOptions{
 		Route: capsdelivery.RouteInput{SessionID: "slack:C002"},
 	})
 	if err != nil {

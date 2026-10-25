@@ -4,9 +4,12 @@ package schedule
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/lengzhao/agentkit"
 )
 
 // ErrJobNotFound is returned when a registry operation targets a missing job id.
@@ -49,18 +52,11 @@ type Job struct {
 	InFlightAt time.Time `json:"inFlightAt,omitzero"`
 	// Note is free-form context the agent can leave for its future self.
 	Note string `json:"note,omitempty"`
-	// Route is the delivery context captured when tool/schedule creates the job,
-	// so a fire can route outbound messages (e.g. send) back to the origin inbox.
-	Route      Route  `json:"route,omitzero"`
-	ChannelKey string `json:"channelKey,omitempty"`
-}
-
-// Route is the delivery context a fired job restores onto its inbound event.
-type Route struct {
-	DeliverySessionID string `json:"deliverySessionId,omitempty"`
-	PlatformID        string `json:"platformId,omitempty"`
-	UserID            string `json:"userId,omitempty"`
-	AgentID           string `json:"agentId,omitempty"`
+	// Route contains only the stable destination; attribution is separate.
+	Route      agentkit.RouteRef `json:"route,omitzero"`
+	Actor      agentkit.ActorRef `json:"actor,omitzero"`
+	AgentID    agentkit.AgentID  `json:"agentId,omitempty"`
+	ChannelKey string            `json:"channelKey,omitempty"`
 }
 
 // NormalizedKind returns the job kind, inferring it from FireAt/Cron when
@@ -124,4 +120,57 @@ type Registry interface {
 	// MarkFired records that a one-shot job has been handled while retaining it
 	// for audit/listing.
 	MarkFired(ctx context.Context, id string) error
+}
+
+// UnmarshalJSON confines legacy schedule route compatibility to the read boundary.
+func (j *Job) UnmarshalJSON(data []byte) error {
+	type jobWire Job
+	var value Job
+	wire := struct {
+		*jobWire
+		Route json.RawMessage `json:"route"`
+	}{jobWire: (*jobWire)(&value)}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if len(wire.Route) > 0 && string(wire.Route) != "null" {
+		var legacy struct {
+			DeliverySessionID string `json:"deliverySessionId"`
+			PlatformID        string `json:"platformId"`
+			UserID            string `json:"userId"`
+			AgentID           string `json:"agentId"`
+		}
+		if err := json.Unmarshal(wire.Route, &legacy); err != nil {
+			return err
+		}
+		if legacy.DeliverySessionID != "" || legacy.PlatformID != "" || legacy.UserID != "" || legacy.AgentID != "" {
+			protocol, _, _ := strings.Cut(legacy.DeliverySessionID, ":")
+			if protocol == "" {
+				protocol = legacy.PlatformID
+			}
+			target, err := json.Marshal(agentkit.SessionRouteTarget{DeliveryID: agentkit.SessionID(legacy.DeliverySessionID)})
+			if err != nil {
+				return err
+			}
+			value.Route = agentkit.RouteRef{Platform: protocol, Instance: legacy.PlatformID, Kind: agentkit.RouteKindSession, Target: target}
+			if value.Actor.UserID == "" {
+				value.Actor.UserID = legacy.UserID
+			}
+			if value.AgentID == "" {
+				value.AgentID = agentkit.AgentID(legacy.AgentID)
+			}
+		} else if err := json.Unmarshal(wire.Route, &value.Route); err != nil {
+			return err
+		}
+	}
+	value.Route = value.Route.Stable()
+	*j = value
+	return nil
+}
+
+// MarshalJSON writes only the canonical stable destination, never a reply anchor.
+func (j Job) MarshalJSON() ([]byte, error) {
+	type jobWire Job
+	j.Route = j.Route.Stable()
+	return json.Marshal(jobWire(j))
 }

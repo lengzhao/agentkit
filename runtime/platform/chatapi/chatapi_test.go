@@ -413,16 +413,16 @@ func TestChatMessageMetadataHeaders(t *testing.T) {
 
 	select {
 	case ev := <-pushDone:
-		if ev.Metadata == nil {
+		if ev.Envelope.Metadata == nil {
 			t.Fatal("metadata is nil")
 		}
-		if ev.Metadata["X-Org-Id"] != "org-42" {
-			t.Fatalf("org = %v", ev.Metadata["X-Org-Id"])
+		if ev.Envelope.Metadata["X-Org-Id"] != "org-42" {
+			t.Fatalf("org = %v", ev.Envelope.Metadata["X-Org-Id"])
 		}
-		if ev.Metadata["X-Chat-API-User-Name"] != "Bob" {
-			t.Fatalf("name = %v", ev.Metadata["X-Chat-API-User-Name"])
+		if ev.Envelope.Metadata["X-Chat-API-User-Name"] != "Bob" {
+			t.Fatalf("name = %v", ev.Envelope.Metadata["X-Chat-API-User-Name"])
 		}
-		turnID, _ := ev.Metadata[agentkit.MetadataTurnID].(string)
+		turnID, _ := ev.Envelope.Metadata[agentkit.MetadataTurnID].(string)
 		if strings.TrimSpace(turnID) == "" {
 			t.Fatalf("metadata %s should be set", agentkit.MetadataTurnID)
 		}

@@ -89,11 +89,12 @@ func TestResolveRouteSlackBareChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if route.SessionID != "slack:D0AK8MAHW22" {
-		t.Fatalf("sessionID = %q", route.SessionID)
+	target, _ := rctx.DecodeSessionRoute(route)
+	if target.DeliveryID != "slack:D0AK8MAHW22" {
+		t.Fatalf("sessionID = %q", target.DeliveryID)
 	}
-	if route.PlatformID != "slack" {
-		t.Fatalf("platformID = %q", route.PlatformID)
+	if route.Platform != "slack" {
+		t.Fatalf("platformID = %q", route.Platform)
 	}
 }
 
@@ -106,11 +107,12 @@ func TestResolveRouteFeishuBareChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if route.SessionID != "feishu:oc_dst" {
-		t.Fatalf("sessionID = %q", route.SessionID)
+	target, _ := rctx.DecodeSessionRoute(route)
+	if target.DeliveryID != "feishu:oc_dst" {
+		t.Fatalf("sessionID = %q", target.DeliveryID)
 	}
-	if route.PlatformID != "feishu" {
-		t.Fatalf("platformID = %q", route.PlatformID)
+	if route.Platform != "feishu" {
+		t.Fatalf("platformID = %q", route.Platform)
 	}
 }
 
@@ -139,8 +141,8 @@ func TestSendSlashCommandBareFeishuChat(t *testing.T) {
 	if rctx.OutboundRouteID(platform.sent[0]) != "feishu:oc_dst" {
 		t.Fatalf("route = %q", rctx.OutboundRouteID(platform.sent[0]))
 	}
-	if platform.sent[0].PlatformID != "feishu" {
-		t.Fatalf("platformID = %q", platform.sent[0].PlatformID)
+	if platform.sent[0].Route.Instance != "feishu" {
+		t.Fatalf("platformID = %q", platform.sent[0].Route.Instance)
 	}
 	var msg agentkit.ModelMessage
 	if err := json.Unmarshal(platform.sent[0].Data, &msg); err != nil {

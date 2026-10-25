@@ -83,13 +83,13 @@ func WithMetadata(event agentkit.MessageEvent, metadata map[string]any) agentkit
 	if len(metadata) == 0 {
 		return event
 	}
-	if event.Metadata == nil {
-		event.Metadata = metadata
+	if event.Envelope.Metadata == nil {
+		event.Envelope.Metadata = metadata
 		return event
 	}
 	for k, v := range metadata {
-		if _, ok := event.Metadata[k]; !ok {
-			event.Metadata[k] = v
+		if _, ok := event.Envelope.Metadata[k]; !ok {
+			event.Envelope.Metadata[k] = v
 		}
 	}
 	return event

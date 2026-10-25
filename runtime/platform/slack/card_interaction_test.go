@@ -221,7 +221,7 @@ func TestSlackPrivateModalDeliveryDoesNotUseViewAsThreadTS(t *testing.T) {
 func TestInteractionQueueWaitOutlivesWorkerDeadline(t *testing.T) {
 	p := &Platform{inbox: common.NewInbox(1)}
 	p.userProfileCache.Store("U1", slackUserProfileEntry{})
-	_ = p.inbox.Push(context.Background(), agentkit.MessageEvent{UserID: "sentinel"})
+	_ = p.inbox.Push(context.Background(), agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: "sentinel"}}})
 	e := interaction.Event{Platform: "slack", Type: "block_actions", UserID: "U1", ChatID: "C1", MessageID: "m", SessionID: p.buildSessionKey("C1", "U1", ""), CardStatus: interaction.CardAvailable, RawCard: json.RawMessage(`{"text":"question"}`), Answers: []interaction.Answer{{Value: "answer"}}}
 	workerCtx, cancel := context.WithCancel(context.Background())
 	cancel()

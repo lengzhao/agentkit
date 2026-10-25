@@ -167,10 +167,8 @@ func TestBindKeysFromContextUsesActor(t *testing.T) {
 	t.Parallel()
 
 	delivery := rctx.BuildDeliverySessionID("lark", "oc_d95", "om_1", "")
-	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{
-		PlatformID: "lark",
-		UserID:     "ou_actor",
-	}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"},
+		Actor: agentkit.ActorRef{UserID: "ou_actor"}}}, rctx.SessionRoute("lark", string(delivery))), rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)))
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
 
 	keys := rctx.BindKeysFromContext(ctx)
@@ -192,7 +190,7 @@ func TestBindKeysFromContextUsesActor(t *testing.T) {
 func TestBuildSessionRouteBackfillsTargetFromDelivery(t *testing.T) {
 	t.Parallel()
 
-	route := rctx.WithInboundRoute(agentkit.MessageEvent{PlatformID: "lark"}, agentkit.SessionRouteInput{
+	route := rctx.WithInboundRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"}}}, agentkit.SessionRouteInput{
 		Platform:   "lark",
 		DeliveryID: "lark:oc_d95:t:om_1:u:ou_actor",
 	}).Envelope.Route

@@ -9,35 +9,44 @@ import (
 	delivery "github.com/lengzhao/agentkit/cap/delivery"
 )
 
-// ResolveRoute resolves the delivery session and platform from context.
-func ResolveRoute(ctx context.Context, input delivery.RouteInput) (delivery.Route, error) {
-	inbox := DeliveryRouteFromContext(ctx)
-
-	var r delivery.Route
-	switch {
-	case strings.TrimSpace(input.SessionID) != "":
-		r.SessionID = NormalizeSessionID(ctx, input.SessionID)
-	case strings.TrimSpace(input.UserID) != "":
-		r.SessionID = DeliveryWithUser(inbox, input.UserID)
-	default:
-		r.SessionID = inbox
-	}
-	if r.SessionID == "" {
-		return delivery.Route{}, fmt.Errorf("requires inbox session in context, or sessionId/userId")
-	}
-	r.AgentID = AgentIDFromContext(ctx)
-	r.PlatformID = PlatformFromContext(ctx)
-	if id := strings.TrimSpace(input.UserID); id != "" {
-		r.UserID = id
-	} else {
-		r.UserID = UserIDFromContext(ctx)
-	}
-	if p := ParseDelivery(r.SessionID, r.UserID).Platform; p != "" {
-		if r.PlatformID == "" || strings.TrimSpace(input.SessionID) != "" {
-			r.PlatformID = p
+// ResolveRoute resolves a user-facing destination selector to its stable RouteRef.
+func ResolveRoute(ctx context.Context, input delivery.RouteInput) (agentkit.RouteRef, error) {
+	current := EnvelopeFromContext(ctx).Route
+	raw := strings.TrimSpace(input.SessionID)
+	user := strings.TrimSpace(input.UserID)
+	if raw == "" && user == "" {
+		if id, ok := RouteSessionID(current); ok && id != "" {
+			return current.Stable(), nil
 		}
+		return agentkit.RouteRef{}, fmt.Errorf("requires inbox route in context, or sessionId/userId")
 	}
-	return r, nil
+	var id agentkit.SessionID
+	protocol, instance := current.Platform, current.DestinationID()
+	if raw != "" {
+		qualified := strings.Contains(raw, ":")
+		id = NormalizeSessionID(ctx, raw)
+		prefix := ParseDelivery(id, "").Platform
+		if qualified {
+			instance = prefix
+			if prefix != current.DestinationID() {
+				protocol = prefix
+			}
+		}
+		if protocol == "" {
+			protocol = prefix
+		}
+		if prefix == instance && prefix != protocol {
+			id = agentkit.SessionID(protocol + strings.TrimPrefix(string(id), prefix))
+		}
+	} else {
+		inbox, _ := RouteSessionID(current)
+		id = DeliveryWithUser(inbox, user)
+	}
+	if id == "" {
+		return agentkit.RouteRef{}, fmt.Errorf("requires inbox route in context, or sessionId/userId")
+	}
+	route := BuildSessionRoute(agentkit.SessionRouteInput{Platform: protocol, Instance: instance, DeliveryID: id})
+	return route.Stable(), nil
 }
 
 // NormalizeSessionID maps slash-style targets to delivery session ids.
@@ -59,4 +68,22 @@ func NormalizeSessionID(ctx context.Context, raw string) agentkit.SessionID {
 // OutboundRoute builds a session-kind route for proactive delivery.
 func OutboundRoute(platform string, deliveryID agentkit.SessionID) agentkit.RouteRef {
 	return SessionRouteFromDelivery(platform, deliveryID, "")
+}
+
+// RouteForPlatform resolves an instance selector into the selected leaf's protocol.
+// Transport delivery IDs keep protocol prefixes; Instance retains adapter identity.
+func RouteForPlatform(route agentkit.RouteRef, protocol string) (agentkit.RouteRef, error) {
+	destination := route.DestinationID()
+	if route.Platform != "" && route.Platform != protocol && route.Platform != destination {
+		return agentkit.RouteRef{}, fmt.Errorf("route protocol %q does not match %q", route.Platform, protocol)
+	}
+	route.Platform = protocol
+	if target, ok := DecodeSessionRoute(route); ok {
+		prefix := ParseDelivery(target.DeliveryID, "").Platform
+		if prefix == destination && prefix != protocol {
+			target.DeliveryID = agentkit.SessionID(protocol + strings.TrimPrefix(string(target.DeliveryID), prefix))
+			route = sessionRouteFromTarget(protocol, target).WithInstance(destination)
+		}
+	}
+	return route, nil
 }

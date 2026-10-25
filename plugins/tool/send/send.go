@@ -23,12 +23,12 @@ type SendConfig struct {
 }
 
 type SendDeps struct {
-	Sender    capsdelivery.Sender     `json:"sender"`
-	Delivery  capsdelivery.Assistant  `json:"delivery"`
-	Workspace workspace.Service       `json:"workspace,omitempty"`
+	Sender    capsdelivery.Sender    `json:"sender"`
+	Delivery  capsdelivery.Assistant `json:"delivery"`
+	Workspace workspace.Service      `json:"workspace,omitempty"`
 	// FS verifies attachment existence (wire an unrestricted filesystem/local
 	// instance; the resolved path is also handed to the platform as a local URL).
-	FS        filesystem.Service `json:"fs,omitempty"`
+	FS filesystem.Service `json:"fs,omitempty"`
 }
 
 type SendInput struct {

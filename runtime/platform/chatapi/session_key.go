@@ -25,34 +25,26 @@ func engineSessionKey(channelKey, conversationID string) string {
 	))
 }
 
-func channelWorkspaceEnvelope(channelKey string) agentkit.TurnEnvelope {
-	delivery := engineSessionKey(channelKey, "probe")
-	return agentkit.TurnEnvelope{
-		Workspace: rctx.WorkspaceKey(delivery),
-	}
+func (p *Platform) channelWorkspaceCtx(ctx context.Context, channelKey string) context.Context {
+	return rctx.ApplyEnvelopeToContext(ctx, p.sessionEnvelope(channelKey, "probe"))
 }
-
-func sessionEnvelope(channelKey, conversationID string) agentkit.TurnEnvelope {
-	delivery := agentkit.SessionID(engineSessionKey(channelKey, conversationID))
-	return agentkit.TurnEnvelope{
-		Conversation: string(delivery),
-		Route:        rctx.SessionRouteFromDelivery("chat-api", delivery, ""),
-		Workspace:    rctx.WorkspaceKey(string(delivery)),
-	}
-}
-
-func channelWorkspaceCtx(ctx context.Context, channelKey string) context.Context {
-	return rctx.ApplyEnvelopeToContext(ctx, channelWorkspaceEnvelope(channelKey))
+func (p *Platform) sessionEnvelope(channelKey, conversationID string) agentkit.TurnEnvelope {
+	route := rctx.SessionRouteFromDelivery("chat-api", agentkit.SessionID(engineSessionKey(channelKey, conversationID)), "").WithInstance(p.PlatformInstance())
+	return rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: route}}, rctx.RoutePolicy{ActiveEntryMode: rctx.ActiveEntryDelivery})
 }
 
 func encodeSessionChannelSegment(channelKey string) string {
 	return strings.ReplaceAll(channelKey, ":", "%3A")
 }
 
-func sessionFilePrefix(channelKey string) string {
+func sessionFilePrefix(channelKey string, instance ...string) string {
 	channel := encodeSessionChannelSegment(channelKey)
 	if channelKey == "" {
 		channel = encodeSessionChannelSegment(defaultWorkspaceChannelID)
 	}
-	return safeSessionFileSegment("chat-api:" + channel + ":t:")
+	protocol := "chat-api"
+	if len(instance) > 0 && instance[0] != "" {
+		protocol = instance[0]
+	}
+	return safeSessionFileSegment(protocol + ":" + channel + ":t:")
 }

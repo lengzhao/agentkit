@@ -213,10 +213,11 @@ func TestScheduleCapturesDeliveryFromContext(t *testing.T) {
 		t.Fatalf("jobs = %+v", stored)
 	}
 	job := stored[0]
-	if job.Route.DeliverySessionID != "chat-api:ch:t:conv" {
-		t.Fatalf("delivery = %q", job.Route.DeliverySessionID)
+	delivery, _ := rctx.RouteSessionID(job.Route)
+	if delivery != "chat-api:ch:t:conv" {
+		t.Fatalf("delivery = %q", delivery)
 	}
-	if job.Route.PlatformID != "chat-api" || job.Route.UserID != "u1" || job.Route.AgentID != "assistant" {
+	if job.Route.Platform != "chat-api" || job.Actor.UserID != "u1" || job.AgentID != "assistant" {
 		t.Fatalf("routing = %+v", job)
 	}
 	if job.Kind != capschedule.KindDelay || job.FireAt.IsZero() {

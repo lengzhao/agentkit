@@ -6,7 +6,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/chathistory"
-	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	rtchathistory "github.com/lengzhao/agentkit/runtime/chathistory"
 )
 
@@ -17,13 +16,11 @@ type ChatHistoryConfig struct {
 
 type ChatHistoryDeps struct {
 	// History is typically platform.default; adapted to chathistory.Router at init.
-	History  agentkit.Platform      `json:"history"`
-	Delivery capsdelivery.Assistant `json:"delivery"`
+	History agentkit.Platform `json:"history"`
 }
 
 type runtimeDeps struct {
-	router   chathistory.Router
-	delivery capsdelivery.Assistant
+	router chathistory.Router
 }
 
 type ChatHistoryInput struct {
@@ -50,10 +47,7 @@ func NewChatHistory(cfg ChatHistoryConfig, deps ChatHistoryDeps) (agentkit.Tool,
 	if deps.History == nil {
 		return nil, fmt.Errorf("tool/chat-history requires history dependency")
 	}
-	if deps.Delivery == nil {
-		return nil, fmt.Errorf("tool/chat-history requires delivery dependency")
-	}
-	rt := runtimeDeps{router: rtchathistory.RouterFromPlatform(deps.History), delivery: deps.Delivery}
+	rt := runtimeDeps{router: rtchathistory.RouterFromPlatform(deps.History)}
 	return agentkit.NewTool[ChatHistoryInput, ChatHistoryOutput]("chat_history", func(ctx context.Context, input ChatHistoryInput) (ChatHistoryOutput, error) {
 		return dispatch(ctx, rt, cfg, input)
 	}).

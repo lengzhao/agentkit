@@ -20,14 +20,14 @@ type Message struct {
 
 // Request describes a history read against a delivery session.
 type Request struct {
-	SessionID agentkit.SessionID
-	UserID    string
-	Limit     int
-	Before    string // page cursor (page_token)
-	After     string // start time, unix seconds
-	Order     string // asc | desc
-	Query     string // optional client-side keyword filter
-	Thread    bool   // when true and session has :t:, scope to thread messages
+	Route  agentkit.RouteRef
+	UserID string
+	Limit  int
+	Before string // page cursor (page_token)
+	After  string // start time, unix seconds
+	Order  string // asc | desc
+	Query  string // optional client-side keyword filter
+	Thread bool   // when true and session has :t:, scope to thread messages
 }
 
 // Result is a page of transport history.
@@ -45,5 +45,5 @@ type Provider interface {
 
 // Router resolves a leaf platform by PlatformID.
 type Router interface {
-	ChatHistoryFor(platformID string) Provider
+	ChatHistoryFor(route agentkit.RouteRef) Provider
 }

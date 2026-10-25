@@ -610,7 +610,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `userNameHeader` | `string` | `X-Chat-API-User-Name` |  |
 | `userEmailHeader` | `string` | `X-Chat-API-User-Email` |  |
 | `channelHeader` | `string` | `X-Chat-API-Channel` |  |
-| `metadataHeaders` | `[]string` | — | MetadataHeaders lists HTTP headers copied into MessageEvent.Metadata. |
+| `metadataHeaders` | `[]string` | — | MetadataHeaders lists HTTP headers copied into MessageEvent.Envelope.Metadata. |
 | `corsOrigins` | `[]string` | — |  |
 | `requestTimeout` | `string` | `30m0s` |  |
 | `interactionTimeout` | `string` | `10m0s` |  |
@@ -1322,7 +1322,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
 | `history`（必填） | `agentkit.Platform` | History is typically platform.default; adapted to chathistory.Router at init. |
-| `delivery`（必填） | `delivery.Assistant` |  |
 
 ## `tool/finish`
 

@@ -142,10 +142,8 @@ func TestStopCommandCancelsBusyActiveChildSession(t *testing.T) {
 	if stopCmd == nil {
 		t.Fatal("missing /stop command")
 	}
-	env := rctx.ResolveEnvelope(agentkit.MessageEvent{
-		PlatformID: "lark",
-		UserID:     "ou_user",
-	}, rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel)))
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "lark"},
+		Actor: agentkit.ActorRef{UserID: "ou_user"}}}, rctx.RoutePolicyForPlatform("lark", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel)))
 	env.Route = rctx.SessionRoute("lark", string(delivery))
 	env = rctx.WithMetadataScope(env, agentkit.SessionScopeChannel)
 	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)

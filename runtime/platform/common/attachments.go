@@ -72,8 +72,8 @@ func InboundOptsFor(ws cw.Service) *InboundOpts {
 // SaveInboundAttachments writes the given files to the upload directory and
 // returns their workspace-relative paths plus metadata. Useful for platforms
 // that buffer attachments before a text message arrives.
-func SaveInboundAttachments(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []PresavedAttachment {
-	saved := saveInboundFiles(deliveryID, files, opts)
+func SaveInboundAttachments(route agentkit.RouteRef, files []FileAttachment, opts *InboundOpts) []PresavedAttachment {
+	saved := saveInboundFiles(route, files, opts)
 	out := make([]PresavedAttachment, 0, len(saved))
 	for _, s := range saved {
 		out = append(out, PresavedAttachment{
@@ -101,6 +101,9 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		route.DeliveryID = deliveryID
 	}
 
+	routeRef := rctx.BuildSessionRoute(route)
+	inboundCtx := inboundRouteContext(routeRef)
+
 	var attachmentNotes []inboundSavedAttachment
 	for _, img := range images {
 		if len(img.Data) == 0 {
@@ -117,7 +120,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		}
 	}
 	if len(files) > 0 {
-		attachmentNotes = append(attachmentNotes, saveInboundFiles(deliveryID, files, opts)...)
+		attachmentNotes = append(attachmentNotes, saveInboundFiles(routeRef, files, opts)...)
 	}
 	for i := range images {
 		if strings.TrimSpace(images[i].WorkPath) != "" || len(images[i].Data) == 0 {
@@ -126,7 +129,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		if opts == nil || opts.Workspace == nil {
 			continue
 		}
-		saved := saveInboundFiles(deliveryID, []FileAttachment{{
+		saved := saveInboundFiles(routeRef, []FileAttachment{{
 			MimeType: images[i].MimeType,
 			Data:     images[i].Data,
 			FileName: images[i].FileName,
@@ -153,13 +156,6 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 				image:    a.Image,
 			})
 		}
-	}
-
-	var inboundCtx context.Context
-	if opts != nil && opts.Workspace != nil {
-		inboundCtx = rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-			Workspace: rctx.WorkspaceKey(string(deliveryID)),
-		})
 	}
 
 	text := strings.TrimSpace(content)
@@ -212,13 +208,13 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		parts = append(parts, agentkit.ContentPart{Type: "text", Text: ""})
 	}
 	event := rctx.WithInboundRoute(agentkit.MessageEvent{
-		AgentID:    agentID,
-		PlatformID: strings.TrimSpace(route.Platform),
-		UserID:     userID,
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: parts,
 		},
+		Envelope: agentkit.TurnEnvelope{AgentID: agentID, Route: agentkit.RouteRef{Instance: strings.TrimSpace(route.Platform)},
+			Actor: agentkit.ActorRef{UserID: userID}},
 	}, route)
 	if len(attachmentNotes) > 0 {
 		event.Attachments = make([]agentkit.InboundAttachment, 0, len(attachmentNotes))
@@ -293,15 +289,12 @@ func IsImageAttachment(mimeType, filename string) bool {
 	return rtmedia.IsImage(mimeType, filename)
 }
 
-func saveInboundFiles(deliveryID agentkit.SessionID, files []FileAttachment, opts *InboundOpts) []inboundSavedAttachment {
+func saveInboundFiles(route agentkit.RouteRef, files []FileAttachment, opts *InboundOpts) []inboundSavedAttachment {
 	if opts == nil || opts.Workspace == nil {
 		slog.Warn("common: inbound attachments require workspace")
 		return nil
 	}
-	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
-		Conversation: string(deliveryID),
-		Workspace:    rctx.WorkspaceKey(string(deliveryID)),
-	})
+	ctx := inboundRouteContext(route)
 	attachDir, err := rtws.ResolveFile(ctx, opts.Workspace, cw.UploadWorkRel(opts.Workspace))
 	if err != nil {
 		slog.Warn("common: resolve inbound upload dir failed", "error", err)
@@ -348,4 +341,9 @@ func sanitizeAttachmentFileName(name string) string {
 		return ""
 	}
 	return name
+}
+
+func inboundRouteContext(route agentkit.RouteRef) context.Context {
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: route}}, rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	return rctx.ApplyEnvelopeToContext(context.Background(), env)
 }

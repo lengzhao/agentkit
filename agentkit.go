@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -59,11 +58,11 @@ const (
 // Example: [meta sender_id=U111 sender_name="Alice" timestamp="..." timezone="UTC"]
 const InboundMetaTag = "meta"
 
-// MetadataSkipPromptMeta, when true on MessageEvent.Metadata, tells runner not to
+// MetadataSkipPromptMeta, when true on MessageEvent.Envelope.Metadata, tells runner not to
 // prepend the optional [meta ...] inbound prefix for that turn.
 const MetadataSkipPromptMeta = "skipPromptMeta"
 
-// MetadataTurnID is the optional MessageEvent.Metadata key a transport sets to
+// MetadataTurnID is the optional MessageEvent.Envelope.Metadata key a transport sets to
 // pre-assign the turn id (e.g. to register per-turn resources such as SSE sinks
 // before dispatch). Loop honors a non-empty value instead of generating one.
 const MetadataTurnID = "turnId"
@@ -170,19 +169,16 @@ type SessionEvent struct {
 // history/lock, Workspace for tenant resources, Route for outbound return path.
 type MessageEvent struct {
 	// Envelope is optional on ingress; runner fills it when empty.
-	Envelope   TurnEnvelope `json:"envelope,omitempty"`
-	AgentID    AgentID
-	PlatformID string
-	UserID     string
-	Message    ModelMessage
+	Envelope TurnEnvelope `json:"envelope,omitempty"`
+
+	Message ModelMessage
 	// Attachments carries inbound file metadata (real on-disk sizes) for
 	// telemetry. It is NOT persisted: only Message (sanitized) + Metadata are
 	// written to the session log. Platforms that save attachments to disk
 	// (IM/chat-api) populate it so observability backends can record a
 	// dedicated attachment span without re-stat'ing files.
 	Attachments []InboundAttachment `json:"attachments,omitempty"`
-	// Metadata is optional platform context copied onto persisted user messages.
-	Metadata map[string]any `json:"metadata,omitempty"`
+
 	// Reply carries a permission answer as JSON. Decode with runtime/permission.DecodeReply.
 	Reply json.RawMessage `json:"reply,omitempty"`
 }
@@ -198,15 +194,14 @@ type InboundAttachment struct {
 }
 
 // OutboundEvent is the outbound envelope from Agent/Loop to Platform. Route is
-// the return address captured at inbound. PlatformID is required; multiplex
-// rejects empty values.
+// the return address captured at inbound and selects the destination adapter.
 type OutboundEvent struct {
-	Route      RouteRef
-	AgentID    AgentID
-	PlatformID string // required
-	UserID     string
-	Type       EventType
-	Data       json.RawMessage
+	Route   RouteRef
+	AgentID AgentID
+
+	UserID string
+	Type   EventType
+	Data   json.RawMessage
 	// TurnID correlates the event with one agent turn. The loop stamps it on
 	// every outbound event so platforms can key per-turn resources (e.g. SSE
 	// sinks) without relying on conversation/delivery string equality.
@@ -214,13 +209,13 @@ type OutboundEvent struct {
 	TurnID string `json:"turnId,omitempty"`
 }
 
-// ErrOutboundPlatformRequired is returned when OutboundEvent.PlatformID is empty.
-var ErrOutboundPlatformRequired = errors.New("outbound event requires platformID")
+// ErrOutboundRouteRequired is returned when the outbound route has no destination.
+var ErrOutboundRouteRequired = errors.New("outbound event requires route destination")
 
-// RequirePlatformID reports whether the event names a target platform.
-func (e OutboundEvent) RequirePlatformID() error {
-	if strings.TrimSpace(e.PlatformID) == "" {
-		return ErrOutboundPlatformRequired
+// RequireDestination reports whether the event names a target platform.
+func (e OutboundEvent) RequireDestination() error {
+	if e.Route.DestinationID() == "" {
+		return ErrOutboundRouteRequired
 	}
 	return nil
 }

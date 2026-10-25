@@ -40,7 +40,7 @@ type Config struct {
 	UserNameHeader  string `json:"userNameHeader"`
 	UserEmailHeader string `json:"userEmailHeader"`
 	ChannelHeader   string `json:"channelHeader"`
-	// MetadataHeaders lists HTTP headers copied into MessageEvent.Metadata.
+	// MetadataHeaders lists HTTP headers copied into MessageEvent.Envelope.Metadata.
 	MetadataHeaders    []string `json:"metadataHeaders"`
 	CORSOrigins        []string `json:"corsOrigins"`
 	RequestTimeout     string   `json:"requestTimeout"`
@@ -70,6 +70,7 @@ type Deps struct {
 }
 
 type Platform struct {
+	common.InstanceIdentity
 	listenAddr            string
 	registerOnly          bool
 	path                  string

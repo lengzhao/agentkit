@@ -936,15 +936,18 @@ type SessionStore interface {
 
 ```go
 type RouteRef struct {
+    Instance string `json:"instance,omitempty"` // 具体适配器；缺省回退 Platform
     Platform string          // 投递平台 id
     Kind     RouteKind       // payload 类型，如 "session"
     Target   json.RawMessage // 由 kind 对应 codec 解码
 }
 ```
 
+`Platform` 表示协议类型，`Instance` 表示具体适配器。multiplex 以 `DestinationID()` 选择实例，逻辑会话、租户和绑定键使用实例命名空间；原始平台 delivery ID 不变。事件路由上下文只保存在 `MessageEvent.Envelope`，出站不再重复保存 PlatformID。
+
 核心层（Runner / Loop / Agent / tools）只存储或复制 `RouteRef`，不解析 `Target`。`runtime/rctx` 是 `RouteKindSession` 的 codec owner：`BuildSessionRoute` 构造、`DecodeSessionRoute` / `RouteSessionID` 解码 delivery id。JSON 读取兼容 legacy `session` 嵌套字段、flat `sessionId/channelId/...` 与旧 `data` 编码；写出统一使用 `target`。
 
-**结构化字段不变量**：`RouteRef` 是绑定解析（`BindKeys` / `sessbind`）的**唯一真源**，而不是各个消费者自己去解析 delivery id。为此 `SessionRouteTarget` 的 `ChannelID` / `ThreadID` / `ScopeUserID` 在**每条路径**都被补齐：`BuildSessionRoute` 在构造时从 delivery id 回填缺失字段（各 producer——IM、CLI、schedule、headless——只需给出自己知道的部分，例如 `WithDeliverySession` 只给 delivery id），`DecodeSessionRoute` 在解码时对裸字符串 target、legacy flat JSON（结构化字段出现前持久化的 job/事件）同样回填。因此消费端只需读结构化字段，永不重复解析字符串。反过来，`ParseDelivery` 仍是「字符串 → 组件」的底层原语，供**手上只有裸字符串**的场景使用（`ReconstructReplyCtx`、`chat_history`、`workspace_key`、schedule 的已持久化 job 等）——这两者不是替代关系：`RouteRef` 是已解析的路由，`ParseDelivery` 是把字符串变成组件。
+**结构化字段不变量**：`RouteRef` 是绑定解析（`BindKeys` / `sessbind`）的**唯一真源**，而不是各个消费者自己去解析 delivery id。为此 `SessionRouteTarget` 的 `ChannelID` / `ThreadID` / `ScopeUserID` 在**每条路径**都被补齐：`BuildSessionRoute` 在构造时从 delivery id 回填缺失字段（各 producer——IM、CLI、schedule、headless——只需给出自己知道的部分，例如 `WithDeliverySession` 只给 delivery id），`DecodeSessionRoute` 在解码时对裸字符串 target、legacy flat JSON（结构化字段出现前持久化的 job/事件）同样回填。因此消费端只需读结构化字段，永不重复解析字符串。反过来，`ParseDelivery` 仍是「字符串 → 组件」的底层原语，供**手上只有裸字符串**的场景使用（`ReconstructReplyCtx`、`workspace_key`、旧持久化数据的读取边界等）——这两者不是替代关系：`RouteRef` 是已解析的路由，`ParseDelivery` 是把字符串变成组件。
 
 路由约定：
 
@@ -1097,7 +1100,7 @@ type Agent interface {
 
 - **context key**：Loop 在 `Dispatch` 时把 `TurnEnvelope`（含 conversation、delivery route、workspace、actor）、`AgentID` 以及 per-session `Control` 写入 `ctx`；`workspace` 插件从 envelope 推导租户目录，Agent 读写历史使用 `SessionIDFromContext`。下游插件通过 deps 注入 `workspace.Service`，调用 `Resolve(ctx, rel)` 解析相对配置路径。
 - **Active Session**：Slack / 飞书等 IM 以及 chat-api 的 delivery key 是固定投递地址，`/new` 不改变它，而是在 `session/store` 里记录 `sessions/<stable>/current.json`，把 stable delivery/effective key 指向新的 SessionID；没有映射时 SessionID 默认等于 runner 折叠后的 effective id，chat-api 的 stable key 由 `conversation_id` 组成。
-- **Agent 路由**：Runner 在解析 SessionID 后统一解析 agent，再交给 Loop。优先级为 session `runtime.json` 的 `agentId`（`/agent use`）→ channel active entry 的 `agentId`（`/agent -c use`；`local:runtime.json` 仅作遗留只读回退）→ `global:runtime.json`（`/agent -g use`）→ `MessageEvent.AgentID`（请求显式指定）→ `loop.defaultAgent`。平台 slash 用 `runnerSessionScope`（与 `runner.config.sessionScope` 对齐）解析 entry key。
+- **Agent 路由**：Runner 在解析 SessionID 后统一解析 agent，再交给 Loop。优先级为 session `runtime.json` 的 `agentId`（`/agent use`）→ channel active entry 的 `agentId`（`/agent -c use`；`local:runtime.json` 仅作遗留只读回退）→ `global:runtime.json`（`/agent -g use`）→ `MessageEvent.Envelope.AgentID`（请求显式指定）→ `loop.defaultAgent`。平台 slash 用 `runnerSessionScope`（与 `runner.config.sessionScope` 对齐）解析 entry key。
 - **会话模型**：`agent/coding` 发起 LLM 前按 **会话 `runtime.json` 的 `model` → 全局 `global:runtime.json` 的 `models[<agentId>]` → agent 配置 `model`** 解析；`/model`、 `/model -g` 写入同一 overlay 文件。进程内子 Agent 例外：只走「md `model:` → `models["sub:<名>"]`（`/submodel <名>`）→ wildcard `models["sub:*"]`（`/submodel *`）→ 父 agent global」的显式链，会话 bind 不参与（见 [5.10](#510-子-agent-委派subagent)）。
 - **TurnInput**：只携带本次 turn 的业务载荷（`Message`、`Emit`），不重复携带 SessionID / AgentID / Control。
 - **Loop.Steer/FollowUp**：从 `TurnEnvelope.Conversation`（`session.SessionIDFromContext`）路由到 Loop 侧 per-session `Control` 队列；`Dispatch` 时把同一 `Control` 写入 `KeySessionControl`。Steer 对齐 Pi：入队后不 `cancelStep`，Agent 在当前 step（LLM + 工具）自然结束后、下次 LLM 调用前 `PopSteering` 注入；Runner 在 session busy 时将入站消息路由到 `Steer` 而非开新 turn。若 steering 在 segment 已决定结束、turn 尚未完全退出时到达，Agent 会再跑一个 segment 消化；`Dispatch` 在 follow-up 循环里也会 drain 残留的 steering，避免消息丢失。

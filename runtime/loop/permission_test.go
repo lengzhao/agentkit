@@ -34,7 +34,7 @@ func turnContext(parent context.Context, sessionID, deliverySessionID agentkit.S
 		Conversation: string(sessionID),
 		Actor:        agentkit.ActorRef{UserID: userID},
 	}
-	return withTurnContext(parent, env, sessionID, agentID, platformID, userID, nil, ctrl, emit)
+	return withTurnContext(parent, env.WithAgentID(agentID), ctrl, emit)
 }
 
 type stubAgent struct{}
@@ -453,4 +453,27 @@ func (c *Control) permissionPendingReplies() chan permission.Reply {
 		}
 	})
 	return ch
+}
+
+func TestPermissionEventsPreserveAdapterInstance(t *testing.T) {
+	route := rctx.SessionRoute("slack", "slack:C1").WithInstance("slack1")
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: route})
+	count := 0
+	emit := func(_ context.Context, out agentkit.OutboundEvent) error {
+		count++
+		if out.Route.DestinationID() != "slack1" {
+			t.Fatalf("instance lost: %+v", out.Route)
+		}
+		return nil
+	}
+	c := &Control{}
+	if err := c.emitPermissionRequest(ctx, emit, permission.Request{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.emitPermissionResolved(ctx, emit, "id", permission.Result{}); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("events=%d", count)
+	}
 }

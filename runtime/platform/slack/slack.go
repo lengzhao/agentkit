@@ -22,17 +22,17 @@ import (
 
 type Config struct {
 	common.AgentRoutingConfig
-	BotToken          string `json:"botToken"`
-	BotTokenRef       string `json:"botTokenRef"`
-	AppToken          string `json:"appToken"`
-	AppTokenRef       string `json:"appTokenRef"`
-	Domain            string `json:"domain"` // optional Slack Web API base URL override
-	AllowFrom         string `json:"allowFrom"`
-	AllowChannels     string `json:"allowChannels"`
-	GroupReplyAll     bool   `json:"groupReplyAll"`
-	DoneEmoji         string `json:"doneEmoji"`
-	CancelledEmoji    string `json:"cancelledEmoji"`
-	ErrorEmoji        string `json:"errorEmoji"`
+	BotToken       string `json:"botToken"`
+	BotTokenRef    string `json:"botTokenRef"`
+	AppToken       string `json:"appToken"`
+	AppTokenRef    string `json:"appTokenRef"`
+	Domain         string `json:"domain"` // optional Slack Web API base URL override
+	AllowFrom      string `json:"allowFrom"`
+	AllowChannels  string `json:"allowChannels"`
+	GroupReplyAll  bool   `json:"groupReplyAll"`
+	DoneEmoji      string `json:"doneEmoji"`
+	CancelledEmoji string `json:"cancelledEmoji"`
+	ErrorEmoji     string `json:"errorEmoji"`
 	// SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。
 	// 收到 turn/steer 事件后，平台把该消息的处理中 reaction（eyes）换成
 	// SteerEmoji，让发消息的人立刻看到"这条已被当前回复接收"；turn/end 时再
@@ -89,6 +89,7 @@ func (d delivery) inboundRoute(user string) agentkit.SessionRouteInput {
 }
 
 type Platform struct {
+	common.InstanceIdentity
 	cardSubmissions     common.CardSubmissions
 	interactionHandlers []interaction.Handler
 	interactionDedup    common.InteractionDedup
@@ -117,9 +118,9 @@ type Platform struct {
 	typingMu    sync.Mutex
 	typingStops map[agentkit.SessionID]func()
 
-	doneEmoji         string
-	cancelledEmoji    string
-	errorEmoji        string
+	doneEmoji      string
+	cancelledEmoji string
+	errorEmoji     string
 	// steerEmoji replaces a steered message's in-flight reaction so its sender
 	// sees the message was folded into the running turn.
 	steerEmoji        string
@@ -173,7 +174,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		unknownCardAction:   common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
 		interactionHandlers: deps.InteractionHandlers,
 		dedup:               &common.MessageDedup{},
-			doneEmoji:           resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
+		doneEmoji:           resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
 		steerEmoji:          resolveSlackReactionEmoji(cfg.SteerEmoji, reactionSteer),
 		cancelledEmoji:      resolveSlackReactionEmoji(cfg.CancelledEmoji, reactionCancelled),
 		errorEmoji:          resolveSlackReactionEmoji(cfg.ErrorEmoji, reactionError),
@@ -509,7 +510,7 @@ func (p *Platform) onInbound(ctx context.Context, channel, channelType, user, te
 func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text string, images []common.ImageAttachment, audio *common.AudioAttachment, files []common.FileAttachment, react bool) {
 	metadata := p.inboundMetadata(user, text)
 	outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{
-		Route:        rctx.BuildSessionRoute(d.inboundRoute(user)),
+		Route:        rctx.BuildSessionRoute(p.inboundRoute(d, user)),
 		SessionScope: p.sessionScope,
 		UserID:       user,
 		Metadata:     metadata,
@@ -535,7 +536,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 		p.appendTurnReactionIfActive(d.sessionID, d)
 		p.reactReceived(ctx, d)
 	}
-	event := common.InboundFromContent(p.agentID, d.inboundRoute(user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
+	event := common.InboundFromContent(p.agentID, p.inboundRoute(d, user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
 	_ = p.inbox.Push(ctx, common.WithMetadata(event, metadata))
 }
 

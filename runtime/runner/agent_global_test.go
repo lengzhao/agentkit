@@ -78,7 +78,7 @@ func TestRunnerResolvesChannelAgentBind(t *testing.T) {
 
 	loop := &agentRecordingLoop{}
 	evt := deliveryUserEvent("slack", "U1", rctx.BuildDeliverySessionID("slack", "C001", "", "U1"), "hi")
-	evt.AgentID = "request-agent"
+	evt.Envelope.AgentID = "request-agent"
 	root, err := runner.New(runner.Config{}, runner.Deps{
 		Platform:     &scriptedPlatform{events: []agentkit.MessageEvent{evt}},
 		Loop:         loop,

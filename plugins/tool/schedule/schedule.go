@@ -266,18 +266,10 @@ func parseAt(raw string, loc *time.Location) (time.Time, error) {
 }
 
 func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.Job {
-	if delivery := rctx.DeliveryRouteFromContext(ctx); delivery != "" {
-		job.Route.DeliverySessionID = string(delivery)
-	}
-	if platform := rctx.PlatformFromContext(ctx); platform != "" {
-		job.Route.PlatformID = strings.TrimSpace(platform)
-	}
-	if user := rctx.UserIDFromContext(ctx); user != "" {
-		job.Route.UserID = strings.TrimSpace(user)
-	}
-	if agent := rctx.AgentIDFromContext(ctx); agent != "" {
-		job.Route.AgentID = string(agent)
-	}
+	env := rctx.EnvelopeFromContext(ctx)
+	job.Route = env.Route.Stable()
+	job.Actor = env.Actor
+	job.AgentID = env.AgentID
 	job.ChannelKey = rctx.WorkspaceFromContext(ctx)
 	return job
 }

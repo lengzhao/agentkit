@@ -197,7 +197,7 @@ func (p *Platform) processBlockInteraction(ctx context.Context, e interaction.Ev
 			p.deliveries.Store(d.sessionID, d)
 			return common.ProcessInteractionCommand(ctx, e, common.InteractionCommand{
 				Routing: p.cfg.AgentRoutingConfig, Commands: p.commands,
-				Slash: common.SlashContext{Route: rctx.BuildSessionRoute(d.inboundRoute(e.UserID)), SessionScope: p.sessionScope, UserID: e.UserID},
+				Slash: common.SlashContext{Route: rctx.BuildSessionRoute(p.inboundRoute(d, e.UserID)), SessionScope: p.sessionScope, UserID: e.UserID},
 				Metadata: func(ctx context.Context, text string) map[string]any {
 					return p.inboundMetadataContext(ctx, e.UserID, text)
 				},
@@ -212,7 +212,7 @@ func (p *Platform) processBlockInteraction(ctx context.Context, e interaction.Ev
 		Forward: func(ctx context.Context, e interaction.Event) error {
 			d := interactionDelivery(e)
 			p.deliveries.Store(d.sessionID, d)
-			event := common.InboundFromContent(p.agentID, d.inboundRoute(e.UserID), e.UserID, common.FormatInteraction(e), "", nil, nil, nil, nil, common.InboundOptsFor(p.workspace))
+			event := common.InboundFromContent(p.agentID, p.inboundRoute(d, e.UserID), e.UserID, common.FormatInteraction(e), "", nil, nil, nil, nil, common.InboundOptsFor(p.workspace))
 			metadata := common.InteractionMetadata(ctx, func(ctx context.Context) map[string]any { return p.userProfileMetadataContext(ctx, e.UserID) })
 			return p.inbox.Push(ctx, common.WithMetadata(event, metadata))
 		},

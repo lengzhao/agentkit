@@ -104,17 +104,17 @@ func (p *Platform) fetchUserProfile(ctx context.Context, userID string) feishuUs
 // enrichInboundActorFromProfile copies displayName/email metadata onto envelope.actor
 // so slash commands (/me) and runner inject see sender name without a second lookup.
 func enrichInboundActorFromProfile(ev agentkit.MessageEvent) agentkit.MessageEvent {
-	if len(ev.Metadata) == 0 {
+	if len(ev.Envelope.Metadata) == 0 {
 		return ev
 	}
 	if strings.TrimSpace(ev.Envelope.Actor.UserID) == "" {
-		ev.Envelope.Actor.UserID = strings.TrimSpace(ev.UserID)
+		ev.Envelope.Actor.UserID = strings.TrimSpace(ev.Envelope.Actor.UserID)
 	}
 	if strings.TrimSpace(ev.Envelope.Actor.Name) == "" {
-		ev.Envelope.Actor.Name = profileNameFromMetadata(ev.Metadata)
+		ev.Envelope.Actor.Name = profileNameFromMetadata(ev.Envelope.Metadata)
 	}
 	if strings.TrimSpace(ev.Envelope.Actor.Email) == "" {
-		ev.Envelope.Actor.Email = profileEmailFromMetadata(ev.Metadata)
+		ev.Envelope.Actor.Email = profileEmailFromMetadata(ev.Envelope.Metadata)
 	}
 	return ev
 }
