@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
@@ -114,7 +115,9 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		)
 		if err := r.loop.Steer(ctx, steerMsg); err != nil {
 			r.reportInboundError(ctx, env, scoped, err)
+			return
 		}
+		r.reportTurnSteer(ctx, env, scoped, scoped.Message)
 		return
 	}
 	scoped = r.formatInboundEvent(scoped, env)
@@ -183,6 +186,44 @@ func (r *Root) reportInboundError(ctx context.Context, env agentkit.TurnEnvelope
 
 func (r *Root) reportScheduleError(_ context.Context, err error) {
 	slog.Error("schedule runtime failed", "err", err)
+}
+
+// reportTurnSteer tells the platform that an inbound message was folded into a
+// running turn instead of starting a new one. The event carries the steered
+// message's own route, so platforms acknowledge that exact message (Lark swaps
+// its in-flight reaction emoji) rather than the turn's trigger message.
+// Best effort: a failed send never blocks steering.
+func (r *Root) reportTurnSteer(ctx context.Context, env agentkit.TurnEnvelope, event agentkit.MessageEvent, steered agentkit.ModelMessage) {
+	data := capsession.TurnSteerData{
+		Outcome:   capsession.SteerOutcomeQueued,
+		SessionID: string(rctx.ConversationFromEvent(event)),
+		AgentID:   string(event.AgentID),
+		UserID:    env.Actor.UserID,
+		Preview:   clampSteerPreview(telemetry.SummarizeMessage(steered)),
+	}
+	out := rctx.OutboundFromEnvelope(env, agentkit.EventTurnSteer, rctx.MarshalOutboundData(data))
+	out.AgentID = event.AgentID
+	if err := r.platform.Send(ctx, out); err != nil {
+		slog.Debug("reporting turn steer failed",
+			"platform", event.PlatformID,
+			"route", routeLogID(env.Route),
+			"err", err,
+		)
+	}
+}
+
+// turnSteerPreviewRunes bounds the excerpt carried on the wire so a pasted
+// document does not travel through every platform adapter.
+const turnSteerPreviewRunes = 200
+
+// clampSteerPreview trims the steered message summary to turnSteerPreviewRunes.
+func clampSteerPreview(s string) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= turnSteerPreviewRunes {
+		return s
+	}
+	return strings.TrimSpace(string(runes[:turnSteerPreviewRunes])) + "…"
 }
 
 func (r *Root) tryStopBusyInbound(ctx context.Context, event agentkit.MessageEvent) bool {

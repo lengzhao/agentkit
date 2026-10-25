@@ -670,6 +670,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `doneEmoji` | `string` | `CheckMark` |  |
 | `cancelledEmoji` | `string` | `HEARTBROKEN` |  |
 | `errorEmoji` | `string` | `CrossMark` |  |
+| `steerEmoji` | `string` | `Typing` | SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。 收到 turn/steer 事件后，平台把该消息原来的处理中 reaction（reactionEmoji） 换成 SteerEmoji，让发消息的人立刻看到“这条已被当前回复接收”；turn/end 时 再统一换成 done/cancelled/error。默认 "Typing"，"none" 关闭替换 （此时消息只保留处理中 reaction）。 |
 | `groupOnly` | `bool` | — |  |
 | `respondToAtEveryoneAndHere` | `bool` | — |  |
 | `replyToTrigger` | `*bool` | — |  |
@@ -726,6 +727,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `doneEmoji` | `string` | `CheckMark` |  |
 | `cancelledEmoji` | `string` | `HEARTBROKEN` |  |
 | `errorEmoji` | `string` | `CrossMark` |  |
+| `steerEmoji` | `string` | `Typing` | SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。 收到 turn/steer 事件后，平台把该消息原来的处理中 reaction（reactionEmoji） 换成 SteerEmoji，让发消息的人立刻看到“这条已被当前回复接收”；turn/end 时 再统一换成 done/cancelled/error。默认 "Typing"，"none" 关闭替换 （此时消息只保留处理中 reaction）。 |
 | `groupOnly` | `bool` | — |  |
 | `respondToAtEveryoneAndHere` | `bool` | — |  |
 | `replyToTrigger` | `*bool` | — |  |
@@ -799,6 +801,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `doneEmoji` | `string` | — |  |
 | `cancelledEmoji` | `string` | — |  |
 | `errorEmoji` | `string` | — |  |
+| `steerEmoji` | `string` | — | SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。 收到 turn/steer 事件后，平台把该消息的处理中 reaction（eyes）换成 SteerEmoji，让发消息的人立刻看到"这条已被当前回复接收"；turn/end 时再 统一换成 done/cancelled/error。默认 "inbox_tray"，"none" 关闭替换 （此时消息只保留 eyes）。 |
 | `unknownCardAction` | `string` | — | forward (default) \| ignore |
 | `cardSubmissionTTL` | `string` | — | positive duration; default 24h |
 

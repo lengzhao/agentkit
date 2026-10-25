@@ -33,6 +33,12 @@ type Config struct {
 	DoneEmoji         string `json:"doneEmoji"`
 	CancelledEmoji    string `json:"cancelledEmoji"`
 	ErrorEmoji        string `json:"errorEmoji"`
+	// SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。
+	// 收到 turn/steer 事件后，平台把该消息的处理中 reaction（eyes）换成
+	// SteerEmoji，让发消息的人立刻看到"这条已被当前回复接收"；turn/end 时再
+	// 统一换成 done/cancelled/error。默认 "inbox_tray"，"none" 关闭替换
+	//（此时消息只保留 eyes）。
+	SteerEmoji        string `json:"steerEmoji"`
 	UnknownCardAction string `json:"unknownCardAction"` // forward (default) | ignore
 	CardSubmissionTTL string `json:"cardSubmissionTTL"` // positive duration; default 24h
 }
@@ -114,6 +120,9 @@ type Platform struct {
 	doneEmoji         string
 	cancelledEmoji    string
 	errorEmoji        string
+	// steerEmoji replaces a steered message's in-flight reaction so its sender
+	// sees the message was folded into the running turn.
+	steerEmoji        string
 	unknownCardAction string
 	dedup             *common.MessageDedup
 	turnTriggers      sync.Map
@@ -164,7 +173,8 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		unknownCardAction:   common.NormalizeUnknownInteraction(cfg.UnknownCardAction),
 		interactionHandlers: deps.InteractionHandlers,
 		dedup:               &common.MessageDedup{},
-		doneEmoji:           resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
+			doneEmoji:           resolveSlackReactionEmoji(cfg.DoneEmoji, reactionDone),
+		steerEmoji:          resolveSlackReactionEmoji(cfg.SteerEmoji, reactionSteer),
 		cancelledEmoji:      resolveSlackReactionEmoji(cfg.CancelledEmoji, reactionCancelled),
 		errorEmoji:          resolveSlackReactionEmoji(cfg.ErrorEmoji, reactionError),
 		agentID:             cfg.ResolveAgentID(),
@@ -272,6 +282,8 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 	switch event.Type {
 	case agentkit.EventPermissionRequest:
 		return p.sendPermissionCard(ctx, event)
+	case agentkit.EventTurnSteer:
+		return p.applyTurnSteer(ctx, event)
 	case agentkit.EventMessageStart:
 		p.stopTyping(delivery)
 		if stop := p.startTypingForSession(delivery); stop != nil {

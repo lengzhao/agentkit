@@ -20,6 +20,7 @@ const (
 	EventSummarizationRetryEnd   EventType = "summarization/retry/end"
 	EventOverflowRecovery        EventType = "overflow/recovery"
 	EventTurnContinue            EventType = "turn/continue"
+	EventTurnSteer               EventType = "turn/steer"
 	EventUsage                   EventType = "usage"
 	EventTodoUpdate              EventType = "todo/update"
 	EventRunFinish               EventType = "run/finish"

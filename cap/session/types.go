@@ -40,6 +40,35 @@ const (
 	FinishBlocked   = "blocked"
 )
 
+// TurnSteerData is the payload of an EventTurnSteer event. The runner emits it
+// on the outbound channel when an inbound message is folded into a running turn
+// (steering) instead of starting a new one, so platforms can acknowledge the
+// very message that was steered.
+//
+// The event carries the steered message's own route, not the running turn's: the
+// point is to let the platform react on that message (Lark replaces its in-flight
+// reaction emoji). Whether the agent later injects the message mid-turn or
+// consumes it as the next turn is not visible here.
+type TurnSteerData struct {
+	// Outcome is always SteerOutcomeQueued today. Reserved as the seam for agents
+	// that can report a finer result for their steering (injected mid-turn vs
+	// deferred to the next turn) without a wire change.
+	Outcome string `json:"outcome"`
+	// SessionID is the conversation the running turn belongs to.
+	SessionID string `json:"sessionId,omitempty"`
+	// AgentID is the agent handling the running turn.
+	AgentID string `json:"agentId,omitempty"`
+	// UserID identifies the sender whose message was steered.
+	UserID string `json:"userId,omitempty"`
+	// Preview is a bounded, human-readable excerpt of the steered message.
+	Preview string `json:"preview,omitempty"`
+}
+
+// SteerOutcomeQueued means the message was accepted onto the running session's
+// steer queue: the agent will either inject it into the active turn or run it as
+// the session's next turn.
+const SteerOutcomeQueued = "queued"
+
 // TurnContinueData records one autonomous turn extension.
 type TurnContinueData struct {
 	Segment  int                     `json:"segment"`

@@ -52,6 +52,9 @@ type Platform struct {
 	doneEmoji                  string
 	cancelledEmoji             string
 	errorEmoji                 string
+	// steerEmoji replaces a steered message's in-flight reaction so its sender
+	// sees the message was folded into the running turn.
+	steerEmoji                 string
 	allowFrom                  string
 	allowChat                  string
 	groupOnly                  bool
