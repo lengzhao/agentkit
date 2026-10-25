@@ -51,7 +51,7 @@ func forwardSteering(ctx context.Context, stop <-chan struct{}, ctrl steeringCon
 				return nil
 			default:
 			}
-			requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			raw, err := callSteering(requestCtx, conn, sessionID, msg, abort)
 			cancel()
 			if err != nil {
@@ -90,15 +90,33 @@ func forwardSteering(ctx context.Context, stop <-chan struct{}, ctrl steeringCon
 }
 
 // CallExtension writes synchronously before waiting for the JSON-RPC response.
-// Context cancellation alone cannot interrupt a blocked pipe write, so abort
-// must close the transport (in production, terminate the owning subprocess).
+// A cancelled response wait returns through the SDK without closing the shared
+// transport. Only abort if the call stays stuck after cancellation (for example
+// in a synchronous pipe write), allowing the SDK a short grace period to return.
 func callSteering(ctx context.Context, conn *acp.ClientSideConnection, sessionID acp.SessionId, msg agentkit.ModelMessage, abort func()) (json.RawMessage, error) {
 	aborted := make(chan struct{})
-	stopAbort := context.AfterFunc(ctx, func() { defer close(aborted); abort() })
+	finished := make(chan struct{})
+	stopAbort := context.AfterFunc(ctx, func() {
+		defer close(aborted)
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-finished:
+			return
+		case <-timer.C:
+		}
+		select {
+		case <-finished:
+			return
+		default:
+			abort()
+		}
+	})
 	raw, err := conn.CallExtension(ctx, "_session/steering", acp.PromptRequest{
 		SessionId: sessionID, Prompt: modelMessageToPrompt(msg),
 		Meta: map[string]any{"steering": map[string]any{"idleBehavior": "promptRequired"}},
 	})
+	close(finished)
 	if !stopAbort() {
 		<-aborted
 	}

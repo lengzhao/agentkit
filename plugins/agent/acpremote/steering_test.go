@@ -175,6 +175,12 @@ func TestACPSteeringHelper(t *testing.T) {
 				reply(promptID, map[string]any{"stopReason": "cancelled"})
 			}
 		case "_session/steering":
+			if mode == "delayedResponse" {
+				time.Sleep(5200 * time.Millisecond)
+				reply(promptID, map[string]any{"stopReason": "end_turn"})
+				reply(req.ID, map[string]any{"outcome": "injected"})
+				continue
+			}
 			reply(promptID, map[string]any{"stopReason": "end_turn"})
 			time.Sleep(20 * time.Millisecond)
 			outcome := mode
@@ -266,7 +272,7 @@ func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
 }
 
 func TestRunTurnSteering(t *testing.T) {
-	for _, mode := range []string{"injected", "promptRequired", "unsupported", "cancelOnAccept"} {
+	for _, mode := range []string{"injected", "promptRequired", "unsupported", "cancelOnAccept", "delayedResponse"} {
 		t.Run(mode, func(t *testing.T) {
 			exe, err := os.Executable()
 			if err != nil {
@@ -277,7 +283,11 @@ func TestRunTurnSteering(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(agenttest.TurnContext("steering-session", "acp"), 3*time.Second)
+			timeout := 3 * time.Second
+			if mode == "delayedResponse" {
+				timeout = 8 * time.Second
+			}
+			ctx, cancel := context.WithTimeout(agenttest.TurnContext("steering-session", "acp"), timeout)
 			defer cancel()
 			store := &steeringTestStore{sess: mem}
 			if mode == "cancelOnAccept" {
@@ -319,7 +329,7 @@ func TestRunTurnSteering(t *testing.T) {
 				}
 			}
 			wantUserMessages := 1
-			if mode == "injected" || mode == "cancelOnAccept" {
+			if mode == "injected" || mode == "cancelOnAccept" || mode == "delayedResponse" {
 				wantUserMessages = 2
 			}
 			if userMessages != wantUserMessages {
@@ -327,7 +337,7 @@ func TestRunTurnSteering(t *testing.T) {
 			}
 			pending := ctrl.PopSteering()
 			want := 1
-			if mode == "injected" || mode == "cancelOnAccept" {
+			if mode == "injected" || mode == "cancelOnAccept" || mode == "delayedResponse" {
 				want = 0
 			}
 			if len(pending) != want {
@@ -383,6 +393,68 @@ func TestSteeringWriteCancellation(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("steering write did not unblock")
+	}
+}
+
+// A peer can keep serving the original prompt while a steering acknowledgement
+// is delayed. Timing out the extension must leave that shared transport alive.
+func TestSteeringResponseTimeoutPreservesPrompt(t *testing.T) {
+	cr, sw := io.Pipe()
+	sr, cw := io.Pipe()
+	defer cr.Close()
+	defer sw.Close()
+	defer sr.Close()
+	defer cw.Close()
+	conn := acp.NewClientSideConnection(&bridgeClient{}, cw, cr)
+	promptReceived := make(chan struct{})
+	finishPrompt := make(chan struct{})
+	defer close(finishPrompt)
+	go func() {
+		decoder := json.NewDecoder(sr)
+		var req struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if decoder.Decode(&req) != nil {
+			return
+		}
+		promptID := append(json.RawMessage(nil), req.ID...)
+		close(promptReceived)
+		if decoder.Decode(&req) != nil {
+			return
+		}
+		// Keep reading cancellation notifications while waiting to finish.
+		go io.Copy(io.Discard, sr)
+		<-finishPrompt
+		_ = json.NewEncoder(sw).Encode(map[string]any{"jsonrpc": "2.0", "id": promptID, "result": map[string]any{"stopReason": "end_turn"}})
+	}()
+	promptDone := make(chan error, 1)
+	go func() {
+		_, err := conn.Prompt(t.Context(), acp.PromptRequest{SessionId: "remote", Prompt: []acp.ContentBlock{acp.TextBlock("work")}})
+		promptDone <- err
+	}()
+	select {
+	case <-promptReceived:
+	case <-time.After(time.Second):
+		t.Fatal("prompt not received")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	aborted := false
+	_, err := callSteering(ctx, conn, "remote", agentkit.ModelMessage{Role: "user"}, func() { aborted = true; _ = cw.Close() })
+	if err == nil {
+		t.Fatal("expected steering timeout")
+	}
+	if aborted {
+		t.Fatal("steering response timeout aborted the active prompt transport")
+	}
+	finishPrompt <- struct{}{}
+	select {
+	case err := <-promptDone:
+		if err != nil {
+			t.Fatalf("original prompt failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("original prompt did not complete")
 	}
 }
 

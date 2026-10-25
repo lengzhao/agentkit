@@ -321,7 +321,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 			stop := make(chan struct{})
 			steeringDone := make(chan error, 1)
 			go func() {
-				steeringDone <- forwardSteering(ctx, stop, ctrl, proc.conn, acpSessionID, brid.releaseSubprocess, func(msg agentkit.ModelMessage) error {
+				steeringErr := forwardSteering(ctx, stop, ctrl, proc.conn, acpSessionID, brid.releaseSubprocess, func(msg agentkit.ModelMessage) error {
 					if a.sessionStore == nil || a.sessionEvents == nil {
 						return nil
 					}
@@ -335,6 +335,8 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 					}
 					return a.sessionEvents.AppendMessage(persistCtx, sess, a.id, agentkit.EventUserMessage, msg)
 				})
+				logACPRemoteError(a.id, a.cfg, sessionID, "_session/steering", steeringErr)
+				steeringDone <- steeringErr
 			}()
 			var once sync.Once
 			var steeringErr error
