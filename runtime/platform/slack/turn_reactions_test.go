@@ -7,6 +7,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func TestTurnEndReactionsIncludeSteeredMessages(t *testing.T) {
@@ -20,12 +21,17 @@ func TestTurnEndReactionsIncludeSteeredMessages(t *testing.T) {
 	p.onTurnStartReactions(sessionID)
 	p.appendTurnReactionIfActive(sessionID, steered)
 
-	deliveries := p.finishTurnReactions(sessionID)
-	if len(deliveries) != 2 {
-		t.Fatalf("expected trigger + steered, got %+v", deliveries)
+	tracked := p.finishTurnReactions(sessionID)
+	if len(tracked) != 2 {
+		t.Fatalf("expected trigger + steered, got %+v", tracked)
 	}
-	if deliveries[0].msgTS != "1.0" || deliveries[1].msgTS != "2.0" {
-		t.Fatalf("unexpected order or ts: %+v", deliveries)
+	if tracked[0].delivery.msgTS != "1.0" || tracked[1].delivery.msgTS != "2.0" {
+		t.Fatalf("unexpected order or ts: %+v", tracked)
+	}
+	for _, entry := range tracked {
+		if entry.reaction != reactionReceived {
+			t.Fatalf("fresh entries should carry the processing reaction, got %+v", entry)
+		}
 	}
 }
 
@@ -36,9 +42,9 @@ func TestAppendTurnReactionIgnoredWhenTurnInactive(t *testing.T) {
 
 	p.appendTurnReactionIfActive(sessionID, late)
 
-	deliveries := p.finishTurnReactions(sessionID)
-	if len(deliveries) != 0 {
-		t.Fatalf("expected no tracked reactions, got %+v", deliveries)
+	tracked := p.finishTurnReactions(sessionID)
+	if len(tracked) != 0 {
+		t.Fatalf("expected no tracked reactions, got %+v", tracked)
 	}
 }
 
@@ -77,5 +83,77 @@ func TestResolveSlackReactionEmoji(t *testing.T) {
 	}
 	if resolveSlackReactionEmoji("thumbsup", "white_check_mark") != "thumbsup" {
 		t.Fatal("explicit emoji should pass through")
+	}
+}
+
+func TestApplyTurnSteerSwapsTrackedReaction(t *testing.T) {
+	p := &Platform{steerEmoji: reactionSteer}
+	sessionID := agentkit.SessionID("slack:C1")
+	trigger := delivery{channel: "C1", msgTS: "1.0", sessionID: sessionID}
+	steered := delivery{channel: "C1", msgTS: "2.0", sessionID: sessionID}
+	p.deliveries.Store(sessionID, trigger)
+
+	p.onTurnStartReactions(sessionID)
+	p.appendTurnReactionIfActive(sessionID, steered)
+
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "slack", DeliveryID: sessionID, ChannelID: "C1", ReplyTo: "2.0"}),
+	}
+	if err := p.applyTurnSteer(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+
+	// turn/end must retire the steer emoji on the steered message and the
+	// untouched processing reaction on the trigger.
+	tracked := p.finishTurnReactions(sessionID)
+	if len(tracked) != 2 {
+		t.Fatalf("tracked = %+v, want trigger + steered", tracked)
+	}
+	byTS := map[string]string{}
+	for _, entry := range tracked {
+		byTS[entry.delivery.msgTS] = entry.reaction
+	}
+	if byTS["2.0"] != reactionSteer {
+		t.Fatalf("steered message reaction = %q, want %q", byTS["2.0"], reactionSteer)
+	}
+	if byTS["1.0"] != reactionReceived {
+		t.Fatalf("trigger reaction = %q, want %q", byTS["1.0"], reactionReceived)
+	}
+}
+
+func TestApplyTurnSteerDisabledWithoutEmoji(t *testing.T) {
+	p := &Platform{}
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "slack", DeliveryID: "slack:C1", ChannelID: "C1", ReplyTo: "2.0"}),
+	}
+	if err := p.applyTurnSteer(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyTurnSteerWithoutTargetIsNoop(t *testing.T) {
+	p := &Platform{steerEmoji: reactionSteer}
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "slack", DeliveryID: "slack:C9"}),
+	}
+	if err := p.applyTurnSteer(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyTurnSteerOutsideBatchStillAcknowledges(t *testing.T) {
+	p := &Platform{steerEmoji: reactionSteer}
+	sessionID := agentkit.SessionID("slack:C2")
+	// No onTurnStartReactions: the turn is not tracking anything (already
+	// unwinding). The swap has nowhere to land, but must not error.
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "slack", DeliveryID: sessionID, ChannelID: "C2", ReplyTo: "9.0"}),
+	}
+	if err := p.applyTurnSteer(context.Background(), event); err != nil {
+		t.Fatal(err)
 	}
 }
