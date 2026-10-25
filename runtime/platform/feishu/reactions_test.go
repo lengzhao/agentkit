@@ -5,6 +5,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func TestRichStreamSkipsBotReplyReactionEmojis(t *testing.T) {
@@ -66,5 +67,62 @@ func TestBotReplyMessageIDPrefersProgressCard(t *testing.T) {
 	})
 	if id := botReplyMessageID(st); id != "progress-1" {
 		t.Fatalf("messageID = %q, want progress-1", id)
+	}
+}
+
+func TestApplyTurnSteerSwapsTrackedReaction(t *testing.T) {
+	p := &Platform{steerEmoji: "Typing", reactionEmoji: "OnIt"}
+	sessionID := agentkit.SessionID("lark:oc_steer")
+
+	// A running turn tracks the trigger and the steered message (still OnIt).
+	trigger := replyContext{messageID: "msg-1", processingReactionID: "rx-1"}
+	steered := replyContext{messageID: "msg-2", processingReactionID: "rx-2"}
+	p.onTurnStartReactions(sessionID)
+	p.appendTurnReactionIfActive(sessionID, trigger)
+	p.appendTurnReactionIfActive(sessionID, steered)
+	batch := p.turnReactionBatchFor(sessionID)
+
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", DeliveryID: sessionID, ReplyTo: "msg-2"}),
+	}
+	if err := p.applyTurnSteer(event); err != nil {
+		t.Fatal(err)
+	}
+
+	// The steer swap must retire the old reaction for that message so turn/end
+	// clears the new one instead of leaving it behind.
+	id, tracked := batch.reactionFor("msg-2")
+	if !tracked {
+		t.Fatal("steered message dropped from the turn batch")
+	}
+	if id == steered.processingReactionID {
+		t.Fatalf("steered message still tracks the processing reaction %q", id)
+	}
+	if _, still := batch.reactionFor("msg-1"); !still {
+		t.Fatal("trigger message must stay tracked")
+	}
+}
+
+func TestApplyTurnSteerDisabledWithoutEmoji(t *testing.T) {
+	p := &Platform{}
+	sessionID := agentkit.SessionID("lark:oc_off")
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", DeliveryID: sessionID, ReplyTo: "msg-1"}),
+	}
+	if err := p.applyTurnSteer(event); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyTurnSteerWithoutAnchorIsNoop(t *testing.T) {
+	p := &Platform{steerEmoji: "Typing"}
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", DeliveryID: agentkit.SessionID("lark:oc_3")}),
+	}
+	if err := p.applyTurnSteer(event); err != nil {
+		t.Fatal(err)
 	}
 }

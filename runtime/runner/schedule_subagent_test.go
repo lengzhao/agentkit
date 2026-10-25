@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"sync"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -203,5 +206,218 @@ func TestBusyQueuedUserMessageStartsNewTurn(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("queued input did not start a new turn")
+	}
+}
+
+type recordingPlatform struct {
+	mu     sync.Mutex
+	events []agentkit.OutboundEvent
+}
+
+func (p *recordingPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
+	return agentkit.MessageEvent{}, io.EOF
+}
+
+func (p *recordingPlatform) Send(_ context.Context, event agentkit.OutboundEvent) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, event)
+	return nil
+}
+
+func (p *recordingPlatform) steerEvents() []agentkit.OutboundEvent {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []agentkit.OutboundEvent
+	for _, ev := range p.events {
+		if ev.Type == agentkit.EventTurnSteer {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// A busy-session message is answered with a turn/steer event carrying the
+// steered message's own route, so the platform can mark that exact message.
+func TestBusyUserMessageEmitsTurnSteerEvent(t *testing.T) {
+	t.Parallel()
+
+	sessionID := agentkit.SessionID("lark:oc_1")
+	loop := &inboundRoutingLoop{busy: map[agentkit.SessionID]bool{sessionID: true}}
+	platform := &recordingPlatform{}
+	root, err := New(Config{}, Deps{Platform: platform, Loop: loop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	platformID := "lark"
+	r := root.(*Root)
+	sched := newScheduler(1, func(context.Context, agentkit.LoopRequest) error { return nil }, nil)
+	defer sched.stop()
+	defer sched.wait(2 * time.Second)
+
+	route := agentkit.SessionRouteInput{
+		Platform:    platformID,
+		DeliveryID:  sessionID,
+		ChannelID:   "oc_1",
+		ReplyTo:     "om_steered",
+		ScopeUserID: "ou_1",
+	}
+	event := agentkit.MessageEvent{
+		PlatformID: platformID,
+		UserID:     "ou_1",
+		AgentID:    "assistant",
+		Envelope:   agentkit.TurnEnvelope{Route: rctx.BuildSessionRoute(route)},
+		Message: agentkit.ModelMessage{
+			Role:    "user",
+			Content: []agentkit.ContentPart{{Type: "text", Text: "改一下方向"}},
+		},
+	}
+	// handleInbound resolves the conversation from the delivery route.
+	r.handleInbound(context.Background(), sched, event)
+
+	loop.mu.Lock()
+	steers := append([]string(nil), loop.steers...)
+	loop.mu.Unlock()
+	if len(steers) != 1 {
+		t.Fatalf("steers = %v, want the busy message steered", loop.steers)
+	}
+
+	events := platform.steerEvents()
+	if len(events) != 1 {
+		t.Fatalf("turn/steer events = %d, want 1", len(events))
+	}
+	got := events[0]
+	if replyTo := rctx.RouteReplyTo(got.Route); replyTo != "om_steered" {
+		t.Fatalf("steer event reply anchor = %q, want om_steered", replyTo)
+	}
+	if delivery, ok := rctx.RouteSessionID(got.Route); !ok || delivery != sessionID {
+		t.Fatalf("steer event delivery = %q, want %q", delivery, sessionID)
+	}
+	var data capsession.TurnSteerData
+	if err := json.Unmarshal(got.Data, &data); err != nil {
+		t.Fatalf("decode turn/steer payload: %v", err)
+	}
+	if data.Outcome != capsession.SteerOutcomeQueued {
+		t.Fatalf("outcome = %q, want %q", data.Outcome, capsession.SteerOutcomeQueued)
+	}
+	if data.UserID != "ou_1" || data.AgentID != "assistant" {
+		t.Fatalf("steer data = %+v", data)
+	}
+	if !strings.Contains(data.Preview, "改一下方向") {
+		t.Fatalf("preview = %q, want the steered message", data.Preview)
+	}
+}
+
+// An idle session must not emit turn/steer: the message starts its own turn.
+func TestIdleUserMessageEmitsNoTurnSteerEvent(t *testing.T) {
+	t.Parallel()
+
+	sessionID := agentkit.SessionID("lark:oc_2")
+	loop := &inboundRoutingLoop{}
+	platform := &recordingPlatform{}
+	root, err := New(Config{}, Deps{Platform: platform, Loop: loop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*Root)
+	sched := newScheduler(1, func(context.Context, agentkit.LoopRequest) error { return nil }, nil)
+	defer sched.stop()
+	defer sched.wait(2 * time.Second)
+
+	event := agentkit.MessageEvent{
+		PlatformID: "lark",
+		UserID:     "ou_2",
+		Envelope: agentkit.TurnEnvelope{
+			Route: rctx.SessionRoute("lark", string(sessionID)),
+		},
+		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}},
+	}
+	r.handleInbound(context.Background(), sched, event)
+
+	if events := platform.steerEvents(); len(events) != 0 {
+		t.Fatalf("turn/steer events = %d, want none for an idle session", len(events))
+	}
+}
+
+// End-to-end within runner+loop: a second message while a turn runs must be
+// steered and must reach the platform as a turn/steer event keyed to its own
+// message, while the trigger message keeps its own tracking.
+func TestTurnSteerEventEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	sessionID := agentkit.SessionID("lark:oc_e2e")
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+
+	ag := &blockingAgent{started: started, release: release}
+	loopPlugin, err := loop.New(loop.Config{}, loop.Deps{Agents: []agentkit.Agent{ag}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform := &recordingPlatform{}
+	root, err := New(Config{}, Deps{Platform: platform, Loop: loopPlugin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*Root)
+	sched := newScheduler(1, r.dispatch, nil)
+	defer sched.stop()
+
+	route := func(replyTo string) agentkit.TurnEnvelope {
+		return agentkit.TurnEnvelope{Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+			Platform: "lark", DeliveryID: sessionID, ChannelID: "oc_e2e", ReplyTo: replyTo, ScopeUserID: "ou_9",
+		})}
+	}
+	inbound := func(replyTo, text string) agentkit.MessageEvent {
+		return agentkit.MessageEvent{
+			PlatformID: "lark", UserID: "ou_9", AgentID: ag.ID(),
+			Envelope: route(replyTo),
+			Message:  agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: text}}},
+		}
+	}
+
+	r.handleInbound(context.Background(), sched, inbound("om_1", "第一条"))
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn did not start")
+	}
+
+	r.handleInbound(context.Background(), sched, inbound("om_2", "第二条"))
+	close(release)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if len(platform.steerEvents()) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("turn/steer events = %d, want 1", len(platform.steerEvents()))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := platform.steerEvents()[0]
+	if replyTo := rctx.RouteReplyTo(got.Route); replyTo != "om_2" {
+		t.Fatalf("steer anchor = %q, want om_2", replyTo)
+	}
+}
+
+type blockingAgent struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (a *blockingAgent) ID() agentkit.AgentID { return "blocker" }
+
+func (a *blockingAgent) RunTurn(ctx context.Context, input agentkit.TurnInput) error {
+	select {
+	case a.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-a.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

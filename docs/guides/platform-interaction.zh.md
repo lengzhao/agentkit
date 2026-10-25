@@ -228,10 +228,29 @@ platform.default:
 
 飞书 / Lark 与 Slack 在收到用户消息时会给原消息加「处理中」reaction；turn 结束（`turn/end`）或 slash 命令本地处理完成时，移除处理中 reaction，并视配置加上「完成」reaction。
 
-| 平台 | 收到消息 | turn 结束 |
-|---|---|---|
-| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 用户消息：移除处理中 reaction，添加 `doneEmoji`（默认 `CheckMark`）等；**`card`/`compact` 时不给机器人回复卡加 reaction**（卡片内已有 `☑️ 用时`） |
-| `platform/slack` | `eyes` | 移除 `eyes`；按 `turn/end` 添加 `doneEmoji`（默认 `white_check_mark`）、取消时 `cancelledEmoji`（默认 `broken_heart`）、异常时 `errorEmoji`（默认 `x`）；同一 turn 内 steer 合并的多条用户消息会一并更新 |
+| 平台 | 收到消息 | 被并入进行中 turn（steer） | turn 结束 |
+|---|---|---|---|
+| `platform/feishu` / `platform/lark` | `reactionEmoji`（默认 `OnIt`；`none` 关闭） | 该消息的处理中 reaction 替换为 `steerEmoji`（默认 `Typing`；`none` 关闭替换） | 用户消息：移除反应中的 reaction，添加 `doneEmoji`（默认 `CheckMark`）等；**`card`/`compact` 时不给机器人回复卡加 reaction**（卡片内已有 `☑️ 用时`） |
+| `platform/slack` | `eyes` | —（暂未实现） | 移除 `eyes`；按 `turn/end` 添加 `doneEmoji`（默认 `white_check_mark`）、取消时 `cancelledEmoji`（默认 `broken_heart`）、异常时 `errorEmoji`（默认 `x`）；同一 turn 内 steer 合并的多条用户消息会一并更新 |
+
+### turn/steer：把「消息已并入当前回复」回报给发送者
+
+用户消息到达时若该 session 已有 turn 在执行，runner 不再为它开新 turn，而是把它**并入**当前 turn（`Loop.Steer`）：Agent 在当前 step 结束后注入，或由 Loop 作为下一个 turn 消化。这条路径此前对发送者是静默的——只有平台侧的「处理中」reaction，看不出消息是被接收进当前回复还是排队成了下一条。
+
+runner 现在会在 steer 成功后发一个 **`turn/steer`** 出站事件（payload `capsession.TurnSteerData`，`outcome: queued`），并且**带的是被并入消息自己的 route**（含 `replyTo` = 该消息 id），因此平台能精确标注这条消息。Lark / 飞书收到后把该消息的处理中 reaction（`reactionEmoji`）替换成 `steerEmoji`：
+
+- 新 reaction 的 id 会写回该消息在 **turn reaction batch** 中的记录，所以 `turn/end` 时移除的是替换后的 reaction，而不是把 `steerEmoji` 留在已结束的消息上（随后按完成/取消/异常加对应 emoji）。
+- 消息不在进行中 turn 的 batch 里时（例如 turn 已在收尾）仍会加 `steerEmoji`，只是不再纳入 `turn/end` 的清理。
+- `steerEmoji: none` 可关闭替换，行为退回「只有处理中 reaction」。
+
+配置示例（关闭替换）：
+
+```yaml
+platform.default:
+  use: platform/feishu
+  config:
+    steerEmoji: none  # 关闭「已并入当前 turn」的 emoji 替换（默认 Typing）
+```
 
 飞书 / Lark 默认开启 reaction，无需配置。关闭示例：
 

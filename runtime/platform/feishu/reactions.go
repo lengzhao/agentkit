@@ -10,6 +10,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func (p *Platform) clearCardProcessingReaction(messageID, reactionID string) {
@@ -82,6 +83,34 @@ func (b *turnReactionBatch) findActive(messageID string) (replyContext, bool) {
 		}
 	}
 	return replyContext{}, false
+}
+
+// reactionFor reports the reaction currently tracked for messageID while the
+// batch is active, so a steer swap can retire the exact reaction it replaces.
+func (b *turnReactionBatch) reactionFor(messageID string) (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.active {
+		return "", false
+	}
+	for i := range b.rcs {
+		if b.rcs[i].messageID == messageID {
+			return b.rcs[i].processingReactionID, true
+		}
+	}
+	return "", false
+}
+
+// setReaction records the reaction now on messageID so turn/end clears it.
+func (b *turnReactionBatch) setReaction(messageID, reactionID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := range b.rcs {
+		if b.rcs[i].messageID == messageID {
+			b.rcs[i].processingReactionID = reactionID
+			return
+		}
+	}
 }
 
 func (p *Platform) finishTurnReactions(sessionID agentkit.SessionID) []replyContext {
@@ -174,8 +203,39 @@ func (p *Platform) addReaction(messageID string) string {
 	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
 }
 
+// applyTurnSteer acknowledges a steered message on the message itself: the
+// in-flight reaction is replaced by steerEmoji so the sender sees the message
+// was folded into the running turn rather than queued for a later one.
+// turn/end then replaces the same reaction with done/cancelled/error, because
+// the swap rewrites the reaction id tracked by the turn reaction batch.
+// Best effort — an emoji failure never affects the turn.
+func (p *Platform) applyTurnSteer(event agentkit.OutboundEvent) error {
+	if p.steerEmoji == "" {
+		return nil
+	}
+	messageID := strings.TrimSpace(rctx.RouteReplyTo(event.Route))
+	if messageID == "" {
+		slog.Debug(p.tag()+": turn/steer without a reply anchor",
+			"session_id", string(rctx.OutboundRouteID(event)))
+		return nil
+	}
+	sessionID := rctx.OutboundRouteID(event)
+	batch := p.turnReactionBatchFor(sessionID)
+	if oldID, tracked := batch.reactionFor(messageID); tracked {
+		if oldID != "" {
+			p.removeReaction(messageID, oldID)
+		}
+		batch.setReaction(messageID, p.addReactionWithEmoji(messageID, p.steerEmoji))
+		return nil
+	}
+	// The message is not part of a tracked turn (turn already unwinding, or an
+	// API-driven steer). Still acknowledge it so the sender gets the signal.
+	go p.addReactionWithEmoji(messageID, p.steerEmoji)
+	return nil
+}
+
 func (p *Platform) addReactionWithEmoji(messageID, emojiType string) string {
-	if emojiType == "" {
+	if emojiType == "" || p.client == nil {
 		return ""
 	}
 	resp, err := p.client.Im.MessageReaction.Create(context.Background(),
@@ -200,7 +260,7 @@ func (p *Platform) addReactionWithEmoji(messageID, emojiType string) string {
 }
 
 func (p *Platform) removeReaction(messageID, reactionID string) {
-	if reactionID == "" || messageID == "" {
+	if reactionID == "" || messageID == "" || p.client == nil {
 		return
 	}
 	resp, err := p.client.Im.MessageReaction.Delete(context.Background(),

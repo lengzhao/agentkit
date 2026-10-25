@@ -44,6 +44,12 @@ type Config struct {
 	DoneEmoji                  string `json:"doneEmoji"`
 	CancelledEmoji             string `json:"cancelledEmoji"`
 	ErrorEmoji                 string `json:"errorEmoji"`
+	// SteerEmoji 是入站消息被并入进行中 turn（steer）时替换到该消息上的 emoji。
+	// 收到 turn/steer 事件后，平台把该消息原来的处理中 reaction（reactionEmoji）
+	// 换成 SteerEmoji，让发消息的人立刻看到“这条已被当前回复接收”；turn/end 时
+	// 再统一换成 done/cancelled/error。默认 "Typing"，"none" 关闭替换
+	//（此时消息只保留处理中 reaction）。
+	SteerEmoji string `json:"steerEmoji"`
 	GroupOnly                  bool   `json:"groupOnly"`
 	RespondToAtEveryoneAndHere bool   `json:"respondToAtEveryoneAndHere"`
 	ReplyToTrigger             *bool  `json:"replyToTrigger"`
@@ -90,6 +96,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.ErrorEmoji == "" {
 		c.ErrorEmoji = "CrossMark"
+	}
+	if strings.TrimSpace(c.SteerEmoji) == "" {
+		c.SteerEmoji = "Typing"
 	}
 }
 
@@ -226,6 +235,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	doneEmoji := noneToEmpty(cfg.DoneEmoji)
 	cancelledEmoji := noneToEmpty(cfg.CancelledEmoji)
 	errorEmoji := noneToEmpty(cfg.ErrorEmoji)
+	steerEmoji := noneToEmpty(strings.TrimSpace(cfg.SteerEmoji))
 
 	useInteractiveCard := true
 	if cfg.EnableFeishuCard != nil {
@@ -300,6 +310,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		doneEmoji:                  doneEmoji,
 		cancelledEmoji:             cancelledEmoji,
 		errorEmoji:                 errorEmoji,
+		steerEmoji:                 steerEmoji,
 		allowFrom:                  cfg.AllowFrom,
 		allowChat:                  cfg.AllowChat,
 		groupOnly:                  cfg.GroupOnly,
@@ -362,6 +373,12 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 }
 
 func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error {
+	// turn/steer never touches a stream: it only re-marks the steered message.
+	// Handle it before streamKeyForOutbound so an acknowledgement cannot register
+	// stream state for a route that has no card.
+	if event.Type == agentkit.EventTurnSteer {
+		return p.applyTurnSteer(event)
+	}
 	delivery := rctx.OutboundRouteID(event)
 	streamKey := p.streamKeyForOutbound(event)
 	switch event.Type {
