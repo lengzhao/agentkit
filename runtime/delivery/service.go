@@ -5,12 +5,13 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type standardAssistant struct{}
 
 func (standardAssistant) ResolveRoute(ctx context.Context, input capsdelivery.RouteInput) (capsdelivery.Route, error) {
-	return ResolveRoute(ctx, input)
+	return rctx.ResolveRoute(ctx, input)
 }
 
 func (standardAssistant) SendAssistantMessage(ctx context.Context, sender capsdelivery.Sender, parts []agentkit.ContentPart, opts capsdelivery.AssistantMessageOptions) error {
