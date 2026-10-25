@@ -70,7 +70,9 @@ func TestResolveEffectiveModelPriority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "session-model" || sess != "session-model" || glob != "" {
+	// Unified level stack: every level's hit is reported even when a finer one
+	// wins (matches ResolveAgentID), so renderers can show all overrides.
+	if got != "session-model" || sess != "session-model" || glob != "global-model" {
 		t.Fatalf("got=%q sess=%q glob=%q", got, sess, glob)
 	}
 

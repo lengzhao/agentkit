@@ -133,13 +133,9 @@ func (c modelCommand) show(ctx context.Context, globalOnly bool) (string, error)
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	effectiveModel, sessionOverride, _, err := sessbind.ResolveEffectiveModel(
+	effectiveModel, winner, hits, err := sessbind.ResolveModelBinding(
 		ctx, c.store, c.workspace, sessionID, effective, agentDefault,
 	)
-	if err != nil {
-		return "", err
-	}
-	globalOverride, err := sessbind.GlobalModelBind(ctx, c.workspace, effective)
 	if err != nil {
 		return "", err
 	}
@@ -150,15 +146,22 @@ func (c modelCommand) show(ctx context.Context, globalOnly bool) (string, error)
 	} else {
 		b.WriteString("model: (not set)\n")
 	}
-	if sessionOverride != "" {
-		fmt.Fprintf(&b, "session override: %s\n", strings.TrimSpace(sessionOverride))
-	} else {
-		b.WriteString("session override: (none)\n")
+	// Report every level that has a hit, coarse to fine, so all overrides are
+	// visible regardless of which one won.
+	for _, lvl := range []sessbind.Level{sessbind.LevelGlobal, sessbind.LevelChannel, sessbind.LevelSession} {
+		label := map[sessbind.Level]string{
+			sessbind.LevelGlobal:  "global override",
+			sessbind.LevelChannel: "channel override",
+			sessbind.LevelSession: "session override",
+		}[lvl]
+		if v := strings.TrimSpace(hits[lvl]); v != "" {
+			fmt.Fprintf(&b, "%s: %s\n", label, v)
+		} else {
+			fmt.Fprintf(&b, "%s: (none)\n", label)
+		}
 	}
-	if globalOverride != "" {
-		fmt.Fprintf(&b, "global override: %s\n", strings.TrimSpace(globalOverride))
-	} else {
-		b.WriteString("global override: (none)\n")
+	if winner != sessbind.LevelNone {
+		fmt.Fprintf(&b, "effective from: %s level\n", winner)
 	}
 	if agentDefault != "" {
 		fmt.Fprintf(&b, "agent default: %s\n", agentDefault)
@@ -269,17 +272,19 @@ func (c modelCommand) clear(ctx context.Context, global bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	effective, _, globalOverride, err := sessbind.ResolveEffectiveModel(
+	effective, winner, hits, err := sessbind.ResolveModelBinding(
 		ctx, c.store, c.workspace, sessionID, agentID, configuredModel(c.agents, agentID),
 	)
 	if err != nil {
 		return "", err
 	}
-	if globalOverride != "" {
-		return fmt.Sprintf("session model reset; using global: %s", strings.TrimSpace(globalOverride)), nil
+	// The winner (not merely a non-empty global hit) decides the message.
+	if winner != sessbind.LevelNone && winner != sessbind.LevelSession {
+		return fmt.Sprintf("session model reset; using %s: %s", winner, strings.TrimSpace(effective)), nil
 	}
 	if effective != "" {
 		return fmt.Sprintf("session model reset; using: %s", effective), nil
 	}
+	_ = hits
 	return "session model reset", nil
 }

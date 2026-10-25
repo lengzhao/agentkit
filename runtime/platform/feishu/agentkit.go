@@ -133,11 +133,12 @@ type inboundMessage struct {
 }
 
 func (msg inboundMessage) inboundRoute(platform string) agentkit.SessionRouteInput {
+	// ThreadID is left to BuildSessionRoute, which backfills it from the delivery
+	// id, so the route target stays the single source of truth.
 	return agentkit.SessionRouteInput{
 		Platform:    platform,
 		DeliveryID:  msg.sessionID,
 		ChannelID:   msg.rctx.chatID,
-		ThreadID:    threadIDFromSessionKey(string(msg.sessionID)),
 		ReplyTo:     msg.messageID,
 		ScopeUserID: msg.userID,
 	}
@@ -717,14 +718,6 @@ func assistantText(msg agentkit.ModelMessage) string {
 		}
 	}
 	return string(b)
-}
-
-func threadIDFromSessionKey(sessionKey string) string {
-	parts := rctx.ParseDelivery(agentkit.SessionID(sessionKey), "")
-	if !parts.Routable {
-		return ""
-	}
-	return parts.Thread
 }
 
 func (p *Platform) startWebSocketMode(ctx context.Context) error {

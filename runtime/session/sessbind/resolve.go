@@ -10,8 +10,10 @@ import (
 	"github.com/lengzhao/agentkit/cap/workspace"
 )
 
-// ResolveAgentID applies session bind, channel bind, global default, then explicit event agent id.
-// The bind results are the stored values at each layer, including layers that lost to a higher priority.
+// ResolveAgentID applies the shared level stack (session, user, thread, channel,
+// global), then an explicit event agent id. The bind results are the stored
+// values at each legacy level (session/channel/global) so existing callers and
+// renderers keep working; thread/user are surfaced only through BindStack.
 func ResolveAgentID(
 	ctx context.Context,
 	store agentkit.SessionStore,
@@ -20,28 +22,16 @@ func ResolveAgentID(
 	entryKey agentkit.SessionID,
 	eventAgent agentkit.AgentID,
 ) (effective, sessionBind, channelBind, globalBind agentkit.AgentID, err error) {
-	sessionBind, err = AgentBind(ctx, store, sessionID)
+	stack := StackFromContext(ctx, ws).WithSession(sessionID).WithChannel(entryKey)
+	effectiveVal, hits, err := stack.Effective(ctx, store, AgentBinding{})
 	if err != nil {
 		return "", "", "", "", err
 	}
-	channelBind, err = ChannelAgentBind(ctx, store, ws, entryKey)
-	if err != nil {
-		return "", "", "", "", err
-	}
-	if ws != nil {
-		globalBind, err = GlobalAgentBind(ctx, ws)
-		if err != nil {
-			return "", "", "", "", err
-		}
-	}
-	if id := strings.TrimSpace(string(sessionBind)); id != "" {
-		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
-	}
-	if id := strings.TrimSpace(string(channelBind)); id != "" {
-		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
-	}
-	if id := strings.TrimSpace(string(globalBind)); id != "" {
-		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
+	sessionBind = agentkit.AgentID(hits[LevelSession])
+	channelBind = agentkit.AgentID(hits[LevelChannel])
+	globalBind = agentkit.AgentID(hits[LevelGlobal])
+	if effectiveVal != "" {
+		return agentkit.AgentID(effectiveVal), sessionBind, channelBind, globalBind, nil
 	}
 	if id := strings.TrimSpace(string(eventAgent)); id != "" {
 		return agentkit.AgentID(id), sessionBind, channelBind, globalBind, nil
@@ -122,11 +112,38 @@ func SetChannelAgentBind(ctx context.Context, store agentkit.SessionStore, ws wo
 	return clearChannelRuntimeLegacy(ctx, ws)
 }
 
-// channelAgentBindKey reserves a separate runtime key for channel overrides.
-// The initial session can have the same ID as entryKey, so storing the channel
-// override directly under entryKey would overwrite that session's override.
+// channelBindKey reserves a separate runtime key for a channel-scoped override
+// of the given kind. The initial session can have the same ID as entryKey, so
+// storing the channel override directly under entryKey would overwrite that
+// session's override.
+func channelBindKey(kind string, entryKey agentkit.SessionID) agentkit.SessionID {
+	return agentkit.SessionID("channel-" + kind + ":" + string(entryKey))
+}
+
+// channelAgentBindKey reserves the channel key for the agent kind (kept for
+// callers/tests that referenced it before kinds were parameterized).
 func channelAgentBindKey(entryKey agentkit.SessionID) agentkit.SessionID {
-	return agentkit.SessionID("channel-agent:" + string(entryKey))
+	return channelBindKey("agent", entryKey)
+}
+
+// ChannelModelBind returns the channel default model for entryKey, or "" when
+// unset. Mirrors ChannelAgentBind so agent and model share the same level stack.
+func ChannelModelBind(ctx context.Context, store agentkit.SessionStore, entryKey agentkit.SessionID) (string, error) {
+	if entryKey == "" || store == nil {
+		return "", nil
+	}
+	return ModelBind(ctx, store, channelBindKey("model", entryKey))
+}
+
+// SetChannelModelBind sets or clears the channel default model for entryKey.
+func SetChannelModelBind(ctx context.Context, store agentkit.SessionStore, entryKey agentkit.SessionID, model string) error {
+	if entryKey == "" {
+		return errors.New("channel entry key is required")
+	}
+	if store == nil {
+		return errors.New("session store is required for channel model binding")
+	}
+	return SetSessionModelBind(ctx, store, channelBindKey("model", entryKey), model)
 }
 
 // SetGlobalAgentBind sets or clears the workspace-wide default agent id.
@@ -142,7 +159,9 @@ func SetGlobalAgentBind(ctx context.Context, ws workspace.Service, agent agentki
 	return saveGlobalRuntime(ctx, ws, data)
 }
 
-// ResolveEffectiveModel applies session override, then global (per agent), then defaultModel.
+// ResolveEffectiveModel applies the shared level stack (session, user, thread,
+// channel, global-per-agent), then defaultModel. Agent and model therefore use
+// the identical level order and key computation; only the value/storage differ.
 func ResolveEffectiveModel(
 	ctx context.Context,
 	store agentkit.SessionStore,
@@ -151,24 +170,33 @@ func ResolveEffectiveModel(
 	agentID agentkit.AgentID,
 	defaultModel string,
 ) (effective, sessionOverride, globalOverride string, err error) {
-	sessionOverride, err = ModelBind(ctx, store, sessionID)
+	effective, _, hits, err := ResolveModelBinding(ctx, store, ws, sessionID, agentID, defaultModel)
 	if err != nil {
 		return "", "", "", err
 	}
-	if m := strings.TrimSpace(sessionOverride); m != "" {
-		return m, sessionOverride, "", nil
+	return effective, hits[LevelSession], hits[LevelGlobal], nil
+}
+
+// ResolveModelBinding is ResolveEffectiveModel plus the winning level and the
+// full hit map, so the /model command can report which scope won rather than
+// inferring it from a non-empty finer hit.
+func ResolveModelBinding(
+	ctx context.Context,
+	store agentkit.SessionStore,
+	ws workspace.Service,
+	sessionID agentkit.SessionID,
+	agentID agentkit.AgentID,
+	defaultModel string,
+) (effective string, winner Level, hits map[Level]string, err error) {
+	stack := StackFromContext(ctx, ws).WithSession(sessionID)
+	effective, winner, hits, err = stack.EffectiveWithLevel(ctx, store, ModelBinding{AgentID: agentID})
+	if err != nil {
+		return "", LevelNone, nil, err
 	}
-	if ws != nil && agentID != "" {
-		globalOverride, err = GlobalModelBind(ctx, ws, agentID)
-		if err != nil {
-			return "", "", "", err
-		}
-		if m := strings.TrimSpace(globalOverride); m != "" {
-			return m, "", globalOverride, nil
-		}
+	if effective != "" {
+		return effective, winner, hits, nil
 	}
-	def := strings.TrimSpace(defaultModel)
-	return def, "", "", nil
+	return strings.TrimSpace(defaultModel), LevelNone, hits, nil
 }
 
 // GlobalModelBind returns the global default model for agentID, or "" when unset.

@@ -944,6 +944,8 @@ type RouteRef struct {
 
 核心层（Runner / Loop / Agent / tools）只存储或复制 `RouteRef`，不解析 `Target`。`runtime/rctx` 是 `RouteKindSession` 的 codec owner：`BuildSessionRoute` 构造、`DecodeSessionRoute` / `RouteSessionID` 解码 delivery id。JSON 读取兼容 legacy `session` 嵌套字段、flat `sessionId/channelId/...` 与旧 `data` 编码；写出统一使用 `target`。
 
+**结构化字段不变量**：`RouteRef` 是绑定解析（`BindKeys` / `sessbind`）的**唯一真源**，而不是各个消费者自己去解析 delivery id。为此 `SessionRouteTarget` 的 `ChannelID` / `ThreadID` / `ScopeUserID` 在**每条路径**都被补齐：`BuildSessionRoute` 在构造时从 delivery id 回填缺失字段（各 producer——IM、CLI、schedule、headless——只需给出自己知道的部分，例如 `WithDeliverySession` 只给 delivery id），`DecodeSessionRoute` 在解码时对裸字符串 target、legacy flat JSON（结构化字段出现前持久化的 job/事件）同样回填。因此消费端只需读结构化字段，永不重复解析字符串。反过来，`ParseDelivery` 仍是「字符串 → 组件」的底层原语，供**手上只有裸字符串**的场景使用（`ReconstructReplyCtx`、`chat_history`、`workspace_key`、schedule 的已持久化 job 等）——这两者不是替代关系：`RouteRef` 是已解析的路由，`ParseDelivery` 是把字符串变成组件。
+
 路由约定：
 
 | 组件 | 职责 |

@@ -159,15 +159,11 @@ func ActiveEntryKeyFromContext(ctx context.Context) agentkit.SessionID {
 // Contrast ActiveEntryKey, whose granularity follows the turn policy and drives
 // /new active-session mapping. Opaque-delivery platforms (ActiveEntryDelivery,
 // e.g. chat-api) keep their raw delivery id.
+//
+// Thin wrapper over BindKeysForRoute so every binding level shares one key
+// computation.
 func ChannelEntryKey(route agentkit.RouteRef, policy RoutePolicy, userID string) agentkit.SessionID {
-	delivery, ok := RouteSessionID(route)
-	if !ok || delivery == "" {
-		return ""
-	}
-	if policy.ActiveEntryMode == ActiveEntryDelivery {
-		return delivery
-	}
-	return ApplyScope(delivery, agentkit.SessionScopeChannel, userID)
+	return BindKeysForRoute(route, policy, userID, "").Channel
 }
 
 // ChannelEntryKeyFromContext derives the channel-scoped binding key from the
