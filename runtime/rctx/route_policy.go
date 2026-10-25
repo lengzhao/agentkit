@@ -46,7 +46,7 @@ func ResolveEnvelope(event agentkit.MessageEvent, policy RoutePolicy) agentkit.T
 		platform = ParseDelivery(delivery, event.UserID).Platform
 	}
 	if env.Route.Platform == "" && delivery != "" {
-		env.Route = SessionRouteFromDelivery(platform, delivery, "")
+		env.Route.Platform = platform
 	}
 	if env.Actor.UserID == "" {
 		env.Actor.UserID = strings.TrimSpace(event.UserID)
@@ -57,9 +57,9 @@ func ResolveEnvelope(event agentkit.MessageEvent, policy RoutePolicy) agentkit.T
 	if env.Conversation == "" {
 		if delivery != "" {
 			if policy.ActiveEntryMode == ActiveEntryDelivery {
-				env.Conversation = string(delivery)
+				env.Conversation = string(namespaceSessionID(env.Route, delivery))
 			} else {
-				env.Conversation = string(ApplyScope(delivery, policy.ConversationScope, env.Actor.UserID))
+				env.Conversation = string(namespaceSessionID(env.Route, ApplyScope(delivery, policy.ConversationScope, env.Actor.UserID)))
 			}
 		}
 	}
@@ -77,9 +77,9 @@ func ActiveEntryKey(route agentkit.RouteRef, policy RoutePolicy, userID string) 
 	}
 	switch policy.ActiveEntryMode {
 	case ActiveEntryDelivery:
-		return delivery
+		return namespaceSessionID(route, delivery)
 	default:
-		return ApplyScope(delivery, policy.ConversationScope, userID)
+		return namespaceSessionID(route, ApplyScope(delivery, policy.ConversationScope, userID))
 	}
 }
 
@@ -89,7 +89,7 @@ func workspaceFromRoute(route agentkit.RouteRef, userID string) string {
 		return ""
 	}
 	scoped := ApplyScope(delivery, agentkit.SessionScopeChannel, userID)
-	return WorkspaceKey(string(scoped))
+	return WorkspaceKey(string(namespaceSessionID(route, scoped)))
 }
 
 var (
@@ -196,4 +196,17 @@ func WorkspaceFromContext(ctx context.Context) string {
 		return WorkspaceKey(conv)
 	}
 	return ""
+}
+
+// namespaceSessionID isolates logical state while leaving the transport ID intact.
+func namespaceSessionID(route agentkit.RouteRef, id agentkit.SessionID) agentkit.SessionID {
+	instance, protocol := route.DestinationID(), strings.TrimSpace(route.Platform)
+	if id == "" || instance == "" || instance == protocol {
+		return id
+	}
+	raw := string(id)
+	if protocol != "" && strings.HasPrefix(raw, protocol+":") {
+		return agentkit.SessionID(instance + strings.TrimPrefix(raw, protocol))
+	}
+	return agentkit.SessionID(instance + ":" + raw)
 }

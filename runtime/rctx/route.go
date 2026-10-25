@@ -54,7 +54,7 @@ func BuildSessionRoute(in agentkit.SessionRouteInput) agentkit.RouteRef {
 		ThreadID:    thread,
 		ScopeUserID: scopeUser,
 		ReplyTo:     replyTo,
-	})
+	}).WithInstance(in.Instance)
 }
 
 // SessionRouteFromDelivery builds a session route from a delivery SessionID.

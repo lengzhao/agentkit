@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type Config struct{}
@@ -138,16 +137,9 @@ func (m *Platform) readPlatform(ctx context.Context, id string, p agentkit.Platf
 			return
 		}
 		event.PlatformID = id
-		if delivery := rctx.InboundDeliveryID(event); delivery != "" {
-			if event.Envelope.Route.HasTarget() {
-				if event.Envelope.Route.Platform == "" {
-					route := event.Envelope.Route
-					route.Platform = id
-					event = rctx.WithDeliveryRoute(event, route)
-				}
-			} else {
-				event = rctx.WithDeliverySession(event, id, delivery)
-			}
+		event.Envelope.Route.Instance = id
+		if event.Envelope.Route.Platform == "" {
+			event.Envelope.Route.Platform = p.(agentkit.PlatformIdentifier).PlatformID()
 		}
 		m.inbox <- incoming{id: id, event: event}
 	}
@@ -157,9 +149,13 @@ func (m *Platform) Send(ctx context.Context, out agentkit.OutboundEvent) error {
 	if err := out.RequirePlatformID(); err != nil {
 		return err
 	}
-	p, ok := m.platforms[out.PlatformID]
+	destination := out.Route.DestinationID()
+	if destination == "" {
+		destination = out.PlatformID
+	}
+	p, ok := m.platforms[destination]
 	if !ok {
-		return fmt.Errorf("unknown platform %q", out.PlatformID)
+		return fmt.Errorf("unknown platform %q", destination)
 	}
 	return p.Send(ctx, out)
 }

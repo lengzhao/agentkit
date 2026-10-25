@@ -54,7 +54,7 @@ func SyncMessageEvent(event agentkit.MessageEvent, env agentkit.TurnEnvelope) ag
 func OutboundFromEnvelope(env agentkit.TurnEnvelope, typ agentkit.EventType, data []byte) agentkit.OutboundEvent {
 	return agentkit.OutboundEvent{
 		Route:      env.Route,
-		PlatformID: env.Route.Platform,
+		PlatformID: env.Route.DestinationID(),
 		UserID:     env.Actor.UserID,
 		Type:       typ,
 		Data:       data,

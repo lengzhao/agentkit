@@ -72,3 +72,28 @@ func TestDeliveryRouteFromContextPrefersEnvelope(t *testing.T) {
 		t.Fatalf("route = %v", route)
 	}
 }
+
+func TestAdapterInstancesHaveIndependentLogicalKeys(t *testing.T) {
+	t.Parallel()
+	route := rctx.SessionRoute("slack", "slack:C1:t:1:u:U1")
+	policy := rctx.DefaultRoutePolicy(agentkit.SessionScopeThread)
+	resolve := func(instance string) agentkit.TurnEnvelope {
+		r := route
+		r.Instance = instance
+		return rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: r}}, policy)
+	}
+	first, second := resolve("slack"), resolve("slack1")
+	if first.Conversation != "slack:C1:t:1" || second.Conversation != "slack1:C1:t:1" {
+		t.Fatalf("conversations: %q %q", first.Conversation, second.Conversation)
+	}
+	if first.Workspace != "slack:C1" || second.Workspace != "slack1:C1" {
+		t.Fatalf("workspaces: %q %q", first.Workspace, second.Workspace)
+	}
+	keys := rctx.BindKeysForRoute(second.Route, policy, "U1", agentkit.SessionID(second.Conversation))
+	if keys.Channel != "slack1:C1" || keys.Thread != "slack1:C1:t:1" {
+		t.Fatalf("bind keys: %+v", keys)
+	}
+	if id, _ := rctx.RouteSessionID(second.Route); id != "slack:C1:t:1:u:U1" {
+		t.Fatalf("platform delivery changed: %q", id)
+	}
+}

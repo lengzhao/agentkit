@@ -9,6 +9,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
 	"github.com/lengzhao/agentkit/runtime/platform/multiplex"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 type stubPlatform struct {
@@ -187,5 +188,29 @@ func TestMultiplexDisambiguatesDuplicatePlatformIDs(t *testing.T) {
 	}
 	if len(second.sent) != 1 {
 		t.Fatalf("second sent=%d, want 1", len(second.sent))
+	}
+}
+
+func TestMultiplexDuplicateProtocolPreservesInstanceRoute(t *testing.T) {
+	t.Parallel()
+	first := &stubPlatform{id: "slack"}
+	second := &stubPlatform{id: "slack", receive: []agentkit.MessageEvent{{Envelope: agentkit.TurnEnvelope{Route: rctx.SessionRoute("slack", "slack:C1:t:1")}, Message: agentkit.ModelMessage{Role: "user"}}}}
+	m, err := multiplex.New(multiplex.Config{}, multiplex.Deps{Platforms: []agentkit.Platform{first, second}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := m.Receive(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Envelope.Route.Platform != "slack" || event.Envelope.Route.DestinationID() != "slack1" {
+		t.Fatalf("instance route = %+v", event.Envelope.Route)
+	}
+	out := rctx.OutboundFromEnvelope(event.Envelope, agentkit.EventMessageEnd, nil)
+	if err := m.Send(context.Background(), out); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.sent) != 0 || len(second.sent) != 1 {
+		t.Fatalf("wrong adapter: first=%d second=%d", len(first.sent), len(second.sent))
 	}
 }

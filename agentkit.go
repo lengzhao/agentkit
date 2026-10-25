@@ -219,7 +219,7 @@ var ErrOutboundPlatformRequired = errors.New("outbound event requires platformID
 
 // RequirePlatformID reports whether the event names a target platform.
 func (e OutboundEvent) RequirePlatformID() error {
-	if strings.TrimSpace(e.PlatformID) == "" {
+	if strings.TrimSpace(e.PlatformID) == "" && e.Route.DestinationID() == "" {
 		return ErrOutboundPlatformRequired
 	}
 	return nil

@@ -21,13 +21,14 @@ const RouteKindSession RouteKind = "session"
 // add their own typed payload in Target; do not grow flat IM fields on RouteRef.
 type RouteRef struct {
 	Platform string          `json:"platform,omitempty"`
+	Instance string          `json:"instance,omitempty"`
 	Kind     RouteKind       `json:"kind"`
 	Target   json.RawMessage `json:"target,omitempty"`
 }
 
 // IsZero reports whether the route carries no platform, kind, or target.
 func (r RouteRef) IsZero() bool {
-	return strings.TrimSpace(r.Platform) == "" &&
+	return strings.TrimSpace(r.Platform) == "" && strings.TrimSpace(r.Instance) == "" &&
 		strings.TrimSpace(string(r.Kind)) == "" &&
 		len(r.Target) == 0
 }
@@ -39,6 +40,7 @@ func (r RouteRef) HasTarget() bool {
 
 type routeRefJSON struct {
 	Platform string          `json:"platform"`
+	Instance string          `json:"instance,omitempty"`
 	Kind     string          `json:"kind"`
 	Target   json.RawMessage `json:"target,omitempty"`
 	Session  json.RawMessage `json:"session,omitempty"`
@@ -54,6 +56,7 @@ type routeRefJSON struct {
 // SessionRouteInput carries structured session-kind route fields.
 type SessionRouteInput struct {
 	Platform    string
+	Instance    string
 	DeliveryID  SessionID
 	ChannelID   string
 	ThreadID    string
@@ -91,6 +94,7 @@ func (r *RouteRef) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	r.Platform = raw.Platform
+	r.Instance = raw.Instance
 	r.Kind = RouteKind(raw.Kind)
 	r.Target = raw.Target
 
@@ -128,11 +132,13 @@ func (r *RouteRef) UnmarshalJSON(data []byte) error {
 func (r RouteRef) MarshalJSON() ([]byte, error) {
 	type wire struct {
 		Platform string          `json:"platform,omitempty"`
+		Instance string          `json:"instance,omitempty"`
 		Kind     RouteKind       `json:"kind"`
 		Target   json.RawMessage `json:"target,omitempty"`
 	}
 	return json.Marshal(wire{
 		Platform: r.Platform,
+		Instance: r.Instance,
 		Kind:     r.Kind,
 		Target:   r.Target,
 	})
@@ -192,3 +198,16 @@ func (e TurnEnvelope) WithMetadata(metadata map[string]any) TurnEnvelope {
 	return e
 }
 
+// DestinationID selects a concrete adapter; old routes default to their protocol.
+func (r RouteRef) DestinationID() string {
+	if id := strings.TrimSpace(r.Instance); id != "" {
+		return id
+	}
+	return strings.TrimSpace(r.Platform)
+}
+
+// WithInstance returns a route targeting one adapter without changing its codec.
+func (r RouteRef) WithInstance(instance string) RouteRef {
+	r.Instance = strings.TrimSpace(instance)
+	return r
+}
