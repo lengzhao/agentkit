@@ -154,7 +154,7 @@ func (AgentBinding) Read(ctx context.Context, level Level, key agentkit.SessionI
 		id, err := ChannelAgentBind(ctx, store, ws, key)
 		return string(id), err
 	case LevelThread, LevelUser, LevelSession:
-		id, err := AgentBind(ctx, store, key)
+		id, err := AgentBind(ctx, store, scopedBindKey(level, "agent", key))
 		return string(id), err
 	default:
 		return "", nil
@@ -168,7 +168,7 @@ func (AgentBinding) Write(ctx context.Context, level Level, key agentkit.Session
 	case LevelChannel:
 		return SetChannelAgentBind(ctx, store, ws, key, agentkit.AgentID(value))
 	case LevelThread, LevelUser, LevelSession:
-		return SetSessionAgentBind(ctx, store, key, agentkit.AgentID(value))
+		return SetSessionAgentBind(ctx, store, scopedBindKey(level, "agent", key), agentkit.AgentID(value))
 	default:
 		return errors.New("unsupported agent binding level")
 	}
@@ -193,7 +193,7 @@ func (b ModelBinding) Read(ctx context.Context, level Level, key agentkit.Sessio
 	case LevelChannel:
 		return ChannelModelBind(ctx, store, key)
 	case LevelThread, LevelUser, LevelSession:
-		return ModelBind(ctx, store, key)
+		return ModelBind(ctx, store, scopedBindKey(level, "model", key))
 	default:
 		return "", nil
 	}
@@ -209,7 +209,7 @@ func (b ModelBinding) Write(ctx context.Context, level Level, key agentkit.Sessi
 	case LevelChannel:
 		return SetChannelModelBind(ctx, store, key, value)
 	case LevelThread, LevelUser, LevelSession:
-		return SetSessionModelBind(ctx, store, key, value)
+		return SetSessionModelBind(ctx, store, scopedBindKey(level, "model", key), value)
 	default:
 		return errors.New("unsupported model binding level")
 	}
@@ -247,4 +247,19 @@ func HitsFor(hits map[Level]string) []Level {
 		}
 	}
 	return out
+}
+
+// scopedBindKey keeps persistent thread/user defaults separate from the initial
+// session, whose ID can equal the route key. Session keys retain their existing
+// format so existing per-session overrides stay session-local.
+func scopedBindKey(level Level, kind string, key agentkit.SessionID) agentkit.SessionID {
+	if key == "" {
+		return ""
+	}
+	switch level {
+	case LevelThread, LevelUser:
+		return agentkit.SessionID(level.String() + "-" + kind + ":" + string(key))
+	default:
+		return key
+	}
 }
