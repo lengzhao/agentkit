@@ -39,13 +39,13 @@ func BuildSessionRoute(in agentkit.SessionRouteInput) agentkit.RouteRef {
 	}
 	if parts := ParseDelivery(agentkit.SessionID(deliveryID), ""); parts.Routable {
 		if channel == "" {
-			channel = parts.Channel
+			channel = strings.TrimSpace(parts.Channel)
 		}
 		if thread == "" {
-			thread = parts.Thread
+			thread = strings.TrimSpace(parts.Thread)
 		}
 		if scopeUser == "" {
-			scopeUser = parts.User
+			scopeUser = strings.TrimSpace(parts.User)
 		}
 	}
 	return sessionRouteFromTarget(platform, agentkit.SessionRouteTarget{
