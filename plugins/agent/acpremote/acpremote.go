@@ -48,14 +48,6 @@ type Config struct {
 	// AuthHint overrides the user-facing guidance when ACP requires authentication,
 	// during connection, session creation, or a prompt. Secret values are never included.
 	AuthHint string `json:"authHint,omitempty"`
-	// BridgeIdleTTLSeconds reclaims a session's ACP subprocess after that many
-	// seconds without a turn. One bridge (and, when ReleaseSubprocessAfterTurn
-	// is false, one long-lived CLI process) is kept per session id forever
-	// otherwise: a stateless scheduler that mints a new session per fire leaks a
-	// process every run. Eviction releases the process only; the session binding
-	// is persisted, so the next turn resumes it. Defaults to 1800; negative
-	// disables reclamation.
-	BridgeIdleTTLSeconds int `json:"bridgeIdleTTLSeconds,omitempty"`
 }
 
 // Deps holds injected capabilities for the ACP client side.
@@ -89,20 +81,12 @@ type Runtime struct {
 	telemetry      captelemetry.Toolkit
 	sandbox        capsandbox.Service
 	bridges        map[agentkit.SessionID]*bridge
-	bridgeUsed     map[agentkit.SessionID]time.Time
 	bridgesMu      sync.Mutex
-	bridgeTTL      time.Duration
-	reaperOnce     sync.Once
 	configBridge   *bridge
 	configBridgeMu requestMutex
 	processCtx     context.Context
 	processCancel  context.CancelFunc
 }
-
-// defaultBridgeIdleTTL matches the session store's default cacheIdleTTL: a
-// session that has not been used for half an hour is resumed on demand rather
-// than kept warm.
-const defaultBridgeIdleTTL = 30 * time.Minute
 
 func init() {
 	pluginkit.Register("agent/acp-remote", New)
@@ -119,9 +103,6 @@ func (c *Config) SetDefaults() {
 	}
 	if c.ClientVersion == "" {
 		c.ClientVersion = "0.1.0"
-	}
-	if c.BridgeIdleTTLSeconds == 0 {
-		c.BridgeIdleTTLSeconds = int(defaultBridgeIdleTTL / time.Second)
 	}
 }
 
@@ -165,8 +146,6 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		telemetry:      deps.Telemetry,
 		sandbox:        sandbox,
 		bridges:        make(map[agentkit.SessionID]*bridge),
-		bridgeUsed:     make(map[agentkit.SessionID]time.Time),
-		bridgeTTL:      time.Duration(cfg.BridgeIdleTTLSeconds) * time.Second,
 		processCtx:     processCtx,
 		processCancel:  processCancel,
 	}, nil
@@ -199,94 +178,7 @@ func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
 		b.globalDefaults = &globalConfigStore{fs: a.fs, agentID: a.id}
 		a.bridges[sessionID] = b
 	}
-	if a.bridgeTTL > 0 {
-		if a.bridgeUsed == nil {
-			a.bridgeUsed = make(map[agentkit.SessionID]time.Time)
-		}
-		a.bridgeUsed[sessionID] = time.Now()
-		a.reaperOnce.Do(func() { go a.reapIdleBridges() })
-	}
 	return b
-}
-
-// touchBridge renews a session's idle lease.
-func (a *Runtime) touchBridge(sessionID agentkit.SessionID) {
-	if a.bridgeTTL <= 0 {
-		return
-	}
-	a.bridgesMu.Lock()
-	defer a.bridgesMu.Unlock()
-	if _, ok := a.bridges[sessionID]; !ok {
-		return
-	}
-	if a.bridgeUsed == nil {
-		a.bridgeUsed = make(map[agentkit.SessionID]time.Time)
-	}
-	a.bridgeUsed[sessionID] = time.Now()
-}
-
-// reapIdleBridges releases the subprocess of every bridge that has been idle
-// longer than bridgeTTL, so a caller that mints a session per turn (a
-// stateless scheduler) does not accumulate one CLI process per fire. The map
-// entry is dropped as well; the next turn for that session builds a fresh
-// bridge and resumes the persisted ACP session.
-func (a *Runtime) reapIdleBridges() {
-	interval := a.bridgeTTL / 2
-	if interval < time.Minute {
-		interval = time.Minute
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-a.processCtx.Done():
-			return
-		case <-ticker.C:
-			a.evictIdleBridges(time.Now())
-		}
-	}
-}
-
-// evictIdleBridges drops and releases every idle bridge. Exposed for tests and
-// for the reaper; it never touches a bridge with a turn in flight.
-func (a *Runtime) evictIdleBridges(now time.Time) int {
-	if a.bridgeTTL <= 0 {
-		return 0
-	}
-	var stale []*bridge
-	a.bridgesMu.Lock()
-	for id, b := range a.bridges {
-		used, ok := a.bridgeUsed[id]
-		if !ok {
-			continue
-		}
-		if now.Sub(used) < a.bridgeTTL {
-			continue
-		}
-		// A turn in flight owns the subprocess; skip it and re-check next tick.
-		if b.currentTurn() != nil {
-			continue
-		}
-		delete(a.bridges, id)
-		delete(a.bridgeUsed, id)
-		stale = append(stale, b)
-	}
-	a.bridgesMu.Unlock()
-	for _, b := range stale {
-		go b.releaseSubprocess()
-	}
-	if len(stale) > 0 {
-		slog.Info("acp-remote: released idle session subprocesses",
-			"agent", a.id, "count", len(stale), "idle_ttl", a.bridgeTTL.String())
-	}
-	return len(stale)
-}
-
-// bridgeCount reports the cached bridge count (tests and diagnostics).
-func (a *Runtime) bridgeCount() int {
-	a.bridgesMu.Lock()
-	defer a.bridgesMu.Unlock()
-	return len(a.bridges)
 }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
@@ -389,9 +281,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	}()
 
 	brid := a.bridgeFor(sessionID)
-	// A turn that starts on an idle-but-cached bridge renews its lease so the
-	// reaper cannot release the process under an active turn.
-	a.touchBridge(sessionID)
 	acpSessionID, err := brid.ensureSession(ctx, sessionID, a.id, a.sessionStore, true)
 	if err != nil {
 
