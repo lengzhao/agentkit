@@ -16,9 +16,9 @@ func countingPool(t *testing.T, cfg PoolConfig) (*bridgePool, *int32Counter) {
 	counter := &int32Counter{}
 	p, err := newBridgePool(cfg, func() *bridge {
 		counter.add(1)
-		b := &bridge{connOps: make(chan connOp)}
-		// closeBridge sends a detach op and waits for it; a bridge with no
-		// conn loop would block forever, which is a test-stub artefact.
+		// Mirror newBridge's lifecycle fields: closeBridge sends a detach op and
+		// waits for it, and stop signals stopCh rather than closing connOps.
+		b := &bridge{connOps: make(chan connOp), stopCh: make(chan struct{})}
 		go b.connLoop()
 		return b
 	})
@@ -263,5 +263,65 @@ func TestConcurrentAcquireRelease(t *testing.T) {
 	}
 	if got := p.Stats().Live; got != 0 {
 		t.Fatalf("leaked %d connections", got)
+	}
+}
+
+// A slash command and a turn must contend for the same session through leases.
+// This is the invariant that replaced the old "is a turn in flight" guard: the
+// connection cannot be reclaimed while either holds a lease.
+func TestLeaseGuardsSlashCommandPath(t *testing.T) {
+	t.Parallel()
+
+	p, _ := countingPool(t, PoolConfig{Strategy: StrategyTTL, IdleTTL: time.Minute})
+	ctx := context.Background()
+	sid := agentkit.SessionID("lark:oc_demo")
+
+	// A slash command takes a lease (same call acquireLease makes in production).
+	slashLease, err := p.Acquire(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slashLease.Reused() {
+		t.Fatal("first acquire cannot be a reuse")
+	}
+
+	// A reaper sweep during the command must not reclaim it. Before the pool,
+	// this was the hole: slash commands set no turn, so a currentTurn() guard
+	// let the connection be closed under them.
+	if n := p.reapIdle(time.Now().Add(time.Hour)); n != 0 {
+		t.Fatalf("reclaimed a connection held by a slash command")
+	}
+	if got := p.Stats().Leased; got != 1 {
+		t.Fatalf("leased = %d, want 1", got)
+	}
+
+	// A concurrent turn on the same session shares the bridge rather than
+	// opening a second subprocess.
+	turnLease, err := p.Acquire(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !turnLease.Reused() {
+		t.Fatal("second acquire should reuse the warm bridge")
+	}
+	if turnLease.Bridge() != slashLease.Bridge() {
+		t.Fatal("both leases must hand back the same bridge")
+	}
+
+	slashLease.Release()
+	if got := p.Stats().Leased; got != 1 {
+		t.Fatalf("leased = %d after one release, want the turn lease still held", got)
+	}
+	// Still guarded by the remaining lease.
+	if n := p.reapIdle(time.Now().Add(time.Hour)); n != 0 {
+		t.Fatalf("reclaimed while a turn lease was outstanding")
+	}
+
+	turnLease.Release()
+	if n := p.reapIdle(time.Now().Add(time.Hour)); n != 1 {
+		t.Fatalf("reclaimed %d after all leases released, want 1", n)
+	}
+	if got := p.Stats().Live; got != 0 {
+		t.Fatalf("live = %d after reap", got)
 	}
 }

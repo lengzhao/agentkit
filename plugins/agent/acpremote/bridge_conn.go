@@ -120,21 +120,62 @@ func (op endPromptOp) run(_ *bridge, st *connLocalState) {
 	}
 }
 
-func (b *bridge) connSend(op connOp) {
-	b.connOps <- op
+// connSend hands one operation to the connection loop. It reports whether the
+// loop accepted it: after stop, a late caller (a prompt ending, a subprocess
+// reaper) is refused instead of blocking forever or panicking on a closed
+// channel.
+func (b *bridge) connSend(op connOp) bool {
+	b.stopMu.Lock()
+	if b.stopped {
+		b.stopMu.Unlock()
+		return false
+	}
+	ch := b.connOps
+	b.stopMu.Unlock()
+
+	select {
+	case ch <- op:
+		return true
+	case <-b.stopCh:
+		return false
+	}
 }
 
 func (b *bridge) connLoop() {
 	var st connLocalState
-	for op := range b.connOps {
-		op.run(b, &st)
+	for {
+		// Prefer draining work already queued; stop wins only when nothing is
+		// ready, so an op handed over just before stop still runs.
+		select {
+		case op := <-b.connOps:
+			op.run(b, &st)
+			continue
+		default:
+		}
+		select {
+		case op := <-b.connOps:
+			op.run(b, &st)
+		case <-b.stopCh:
+			return
+		}
 	}
 }
 
-// stop closes connOps, retiring the connLoop goroutine. Call after Close (or
-// dropBridge) has detached the subprocess. Safe to call once.
+// stop retires the connLoop goroutine. It signals rather than closing connOps:
+// connSend may be running concurrently (a prompt settling, a subprocess exit
+// handler), and closing the channel under it would panic.
+//
+// Call after the subprocess has been detached, or the loop exits while a
+// process is still running.
 func (b *bridge) stop() {
-	close(b.connOps)
+	b.stopMu.Lock()
+	if b.stopped {
+		b.stopMu.Unlock()
+		return
+	}
+	b.stopped = true
+	close(b.stopCh)
+	b.stopMu.Unlock()
 }
 
 // adoptProcOp seeds conn-loop state (tests).

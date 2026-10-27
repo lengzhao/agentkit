@@ -323,35 +323,3 @@ func (p *bridgePool) Close() {
 	})
 	p.wg.Wait()
 }
-
-// bridgeFor is a test-facing helper: it hands out a cached bridge for the
-// session, creating it when absent, and deliberately does NOT take a lease.
-//
-// Production code must use acquireLease - an unleleased bridge can be reclaimed
-// by the pool while it is in use. Tests use bridgeFor to assert subprocess
-// behaviour across calls, where the pool's lifetime rules would only add noise.
-func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	if a.pool == nil {
-		return nil
-	}
-	p := a.pool
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	entry := p.entries[sessionID]
-	if entry == nil {
-		b := p.newBridgeFn()
-		entry = &poolEntry{bridge: b, lastUsed: time.Now()}
-		// Always cache: the caller holds the bridge by design and releases the
-		// subprocess itself.
-		p.entries[sessionID] = entry
-	}
-	return entry.bridge
-}
-
-// bridgeCount reports cached connections (tests and diagnostics).
-func (a *Runtime) bridgeCount() int {
-	if a.pool == nil {
-		return 0
-	}
-	return a.pool.Stats().Live
-}

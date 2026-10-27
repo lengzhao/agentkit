@@ -207,7 +207,7 @@ func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ag.(*Runtime).bridgeFor("stop-session").releaseSubprocess()
+	defer releaseSessionBridge(t, ag.(*Runtime), "stop-session")
 	ctrl := loop.NewControl()
 	defer ctrl.Stop()
 	ctx, cancel := context.WithTimeout(agenttest.TurnContext("stop-session", "acp"), 2*time.Second)
@@ -219,7 +219,7 @@ func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
 	err = ag.RunTurn(ctx, agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "work"}}}, Emit: func(_ context.Context, ev agentkit.OutboundEvent) error {
 		if ev.Type == agentkit.EventMessageUpdate && !stopped {
 			stopped = true
-			remoteProc = ag.(*Runtime).bridgeFor("stop-session").proc.Load()
+			remoteProc = requireBridge(t, ag.(*Runtime), "stop-session").proc.Load()
 			return ctrl.Cancel(context.Background(), "/stop")
 		}
 		if ev.Type == agentkit.EventTurnEnd {

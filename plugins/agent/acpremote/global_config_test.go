@@ -102,7 +102,7 @@ func TestACPGlobalDefaultsDoNotOverrideRestoredSession(t *testing.T) {
 	if _, err := cmd.CommandExec(ctx, "model -g opus"); err != nil {
 		t.Fatal(err)
 	}
-	a.bridgeFor("restored").releaseSubprocess()
+	releaseSessionBridge(t, a, "restored")
 	out, err := cmd.CommandExec(ctx, "model")
 	if err != nil || !strings.Contains(out, "current: sonnet") {
 		t.Fatalf("restore was overridden: %s, %v", out, err)
