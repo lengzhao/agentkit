@@ -3,6 +3,7 @@
 package all
 
 import (
+	_ "github.com/lengzhao/agentkit/plugins/acp/sessionmcptools"
 	_ "github.com/lengzhao/agentkit/plugins/acp/sessionrestore"
 	_ "github.com/lengzhao/agentkit/plugins/agent/acpremote"
 	_ "github.com/lengzhao/agentkit/plugins/agent/chain"
@@ -40,6 +41,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/web"
 	_ "github.com/lengzhao/agentkit/plugins/tool/workflow"
 	_ "github.com/lengzhao/agentkit/plugins/tools/deferred"
+	_ "github.com/lengzhao/agentkit/plugins/tools/static"
 	_ "github.com/lengzhao/agentkit/runtime/agent"
 	_ "github.com/lengzhao/agentkit/runtime/command"
 	_ "github.com/lengzhao/agentkit/runtime/compaction"
