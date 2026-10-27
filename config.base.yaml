@@ -401,6 +401,18 @@ schedule.default:
     fs: filesystem.local.state
     engine: schedule.engine
 
+# script 类 job 的 bash 执行器（cap/shell.Executor）。不接时 script job 启动即报错：
+# schedule/cron 的 script 依赖 shell，tool/shell-bash 是模型工具、不实现该接口。
+# 定时任务建议 trimEnv: true，避免继承常驻进程的操作者环境。
+tool.shell-exec.default:
+  use: tool/shell-exec
+  config:
+    workDir: work
+    timeoutSeconds: 300
+    trimEnv: true
+  deps:
+    workspace: workspace.default
+
 # 常驻日历调度：与 tool/schedule 共用 registry，agent 排的 job 跨重启存活。
 # jobs 里声明的静态 job 必须给 deliverTo（会话 id），否则触发后没有投递目标，
 # 结果只能落在内部侧 turn 里、用户收不到；agent 自己建的 job 从对话上下文取 route，
