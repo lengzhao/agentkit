@@ -141,11 +141,13 @@ func applyGlobalConfig(ctx context.Context, proc *subprocess, remote acp.Session
 }
 
 func (a *Runtime) globalConfigBridge() *bridge {
-	a.bridgesMu.Lock()
-	defer a.bridgesMu.Unlock()
+	// Guarded by configBridgeMu, which some callers already hold when calling
+	// this (a requestMutex is not reentrant): never lock here.
 	if a.configBridge == nil {
 		// Configuration discovery never prompts, replays history or applies defaults
 		// automatically. It must not alter an existing conversation's remote session.
+		// Created outside the pool: this connection belongs to config discovery,
+		// not to any session.
 		a.configBridge = newBridge(a.cfg, a.workspace, a.fs, nil, nil, a.telemetry, a.sandbox, nil)
 	}
 	return a.configBridge

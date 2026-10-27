@@ -81,7 +81,7 @@ func TestACPGlobalReadDoesNotConnect(t *testing.T) {
 	if err != nil || !strings.Contains(out, "(not set)") {
 		t.Fatalf("global read = %s, %v", out, err)
 	}
-	if len(a.bridges) != 0 {
+	if a.bridgeCount() != 0 {
 		t.Fatal("global read initialized a bridge")
 	}
 	for _, args := range []string{"model opus -g", "model -g -g opus", "-g model opus", "config effort -g high"} {

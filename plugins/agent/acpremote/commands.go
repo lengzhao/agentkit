@@ -148,7 +148,14 @@ func (c acpCommand) CommandExec(ctx context.Context, args string) (out string, c
 	if sessionID == "" {
 		return "", fmt.Errorf("session id is required")
 	}
-	b := a.bridgeFor(sessionID)
+	lease, err := a.acquireLease(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	// A slash command holds the connection like a turn does, so the pool will
+	// not reclaim it mid-command.
+	defer lease.Release()
+	b := lease.Bridge()
 	if err := b.configMu.Lock(ctx); err != nil {
 		return "", err
 	}
