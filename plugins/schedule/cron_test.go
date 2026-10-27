@@ -414,3 +414,155 @@ func TestCronReuseKeepsAdapterInstanceNamespace(t *testing.T) {
 		t.Fatal("schedule did not fire")
 	}
 }
+
+// A failing fire (e.g. a script with a non-zero exit) must not stop the
+// calendar: later jobs in the same process still fire. Before the retry loop,
+// one bad script ended every future fire silently.
+func TestCronKeepsSchedulingAfterFailedFire(t *testing.T) {
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Two cron jobs due now. The first submit fails; the second must still run.
+	for _, id := range []string{"a-fails", "b-succeeds"} {
+		if _, err := registry.Add(ctx, capschedule.Job{
+			ID:      id,
+			Kind:    capschedule.KindCron,
+			Cron:    "*/5 * * * *",
+			Prompt:  id,
+			LastRun: clock.Now().Add(-15 * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var mu sync.Mutex
+	var seen []string
+	done := make(chan struct{})
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		text := textOfMessage(event.Message)
+		mu.Lock()
+		seen = append(seen, text)
+		n := len(seen)
+		mu.Unlock()
+		if strings.Contains(text, "a-fails") {
+			return errors.New("submit refused")
+		}
+		if n >= 2 {
+			select {
+			case <-done:
+			default:
+				close(done)
+			}
+		}
+		return nil
+	})
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		mu.Lock()
+		got := append([]string(nil), seen...)
+		mu.Unlock()
+		t.Fatalf("scheduler stopped after a failed fire; submitted = %v", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) < 2 || !strings.Contains(seen[1], "b-succeeds") {
+		t.Fatalf("submitted = %v, want the second job to fire after the failure", seen)
+	}
+}
+
+// A registry read error is retried instead of ending the scheduler.
+func TestCronRetriesDueErrors(t *testing.T) {
+	flaky := &flakyRegistry{failures: 2}
+	rt, err := pluginschedule.NewCron(pluginschedule.CronConfig{PollSeconds: 1},
+		pluginschedule.CronDeps{Schedule: flaky, Engine: rtschedule.Engine{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cron := cronImpl(t, rt)
+	clock := newFakeClockAt(time.Now().UTC().Truncate(time.Minute))
+	cron.SetClockForTest(clock.Now, clock.Sleep)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fired := make(chan struct{})
+	startAsync(ctx, rt, func(_ context.Context, _ agentkit.MessageEvent) error {
+		select {
+		case <-fired:
+		default:
+			close(fired)
+		}
+		cancel()
+		return nil
+	})
+
+	// Once the flaky registry starts answering, a due job must still reach submit.
+	flaky.mu.Lock()
+	flaky.jobs = []capschedule.Job{{
+		ID: "later", Kind: capschedule.KindCron, Cron: "*/5 * * * *",
+		Prompt: "later", LastRun: clock.Now().Add(-15 * time.Minute),
+	}}
+	flaky.mu.Unlock()
+
+	waitFor(t, 3*time.Second, func() bool {
+		select {
+		case <-fired:
+			return true
+		default:
+			return false
+		}
+	}, "cron never recovered from a Due error")
+}
+
+// flakyRegistry fails the first N Due calls, then behaves like an empty registry.
+type flakyRegistry struct {
+	mu       sync.Mutex
+	failures int
+	jobs     []capschedule.Job
+}
+
+func (r *flakyRegistry) List(context.Context) ([]capschedule.Job, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]capschedule.Job(nil), r.jobs...), nil
+}
+
+func (r *flakyRegistry) Add(_ context.Context, job capschedule.Job) (capschedule.Job, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.jobs = append(r.jobs, job)
+	return job, nil
+}
+
+func (r *flakyRegistry) Remove(context.Context, string) (bool, error) { return false, nil }
+
+func (r *flakyRegistry) SyncSource(context.Context, string, []capschedule.Job) error { return nil }
+
+func (r *flakyRegistry) Due(_ context.Context, _ time.Time) ([]capschedule.Job, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failures > 0 {
+		r.failures--
+		return nil, errors.New("registry temporarily unreadable")
+	}
+	due := r.jobs
+	r.jobs = nil
+	return due, nil
+}
+
+func (r *flakyRegistry) MarkFired(context.Context, string) error { return nil }
+
+func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal(msg)
+}

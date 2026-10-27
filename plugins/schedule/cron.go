@@ -226,7 +226,13 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		}
 		if job, ok := c.popDue(); ok {
 			if err := c.fire(ctx, submit, job); err != nil {
-				return err
+				// One failing job must not stop the calendar: a non-zero script
+				// exit or a refused submit would otherwise end every future
+				// fire silently while the process keeps serving chat. Log,
+				// back off, and keep scheduling.
+				if err := c.recover(ctx, "fire", err, job.ID); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -234,7 +240,12 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		now := c.now()
 		due, err := c.registry.Due(ctx, now)
 		if err != nil {
-			return err
+			// A transient registry read error (unreadable/corrupt file, disk
+			// pressure) is retried instead of taking the scheduler down.
+			if err := c.recover(ctx, "due", err, ""); err != nil {
+				return err
+			}
+			continue
 		}
 		if len(due) > 0 {
 			c.pushDue(due)
@@ -244,6 +255,24 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 			return err
 		}
 	}
+}
+
+// recover handles a non-fatal scheduler error: it logs, waits one poll
+// interval to avoid a hot retry loop, and reports whether the scheduler should
+// stop. Cancellation is the only fatal case.
+func (c *Cron) recover(ctx context.Context, stage string, err error, jobID string) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	slog.Error("cron "+stage+" failed, scheduler continues",
+		"job_id", jobID, "retry_in", c.poll.String(), "err", err)
+	if waitErr := c.wait(ctx, c.poll); waitErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return waitErr
+	}
+	return nil
 }
 
 func (c *Cron) Stop(context.Context) error { return nil }
