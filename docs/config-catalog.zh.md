@@ -52,6 +52,7 @@
 | `clientName` | `string` | `agentkit` | ClientName is sent in initialize; defaults to "agentkit". |
 | `clientVersion` | `string` | `0.1.0` | ClientVersion is sent in initialize; defaults to "0.1.0". |
 | `authHint` | `string` | — | AuthHint overrides the user-facing guidance when ACP requires authentication, during connection, session creation, or a prompt. Secret values are never included. |
+| `pool` | `acpremote.PoolConfig` | — | Pool chooses the connection-lifetime policy. Defaults to ttl: connections stay warm (a cold CLI start costs seconds) but idle ones are reclaimed and the cache is capped. Hosts that mint a new session id per turn - a stateless scheduler - should set strategy none so nothing is cached at all. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1541,6 +1542,22 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `workspace`（必填） | `workspace.Service` |  |
 | `credentials` | `credentials.Store` |  |
 | `sandbox`（必填） | `sandbox.Service` |  |
+
+## `tool/shell-exec`
+
+- 返回类型：`shell.Executor`
+- 源码：[`plugins/tool/shellexec/shellexec.go`](../plugins/tool/shellexec/shellexec.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `workDir` | `string` | `work` | WorkDir is the default working directory, relative to the workspace. A request-level WorkDir overrides it. |
+| `timeoutSeconds` | `int` | — | TimeoutSeconds bounds a run that does not set its own deadline. 0 means no default limit (the caller's context still applies). |
+| `trimEnv` | `bool` | — | TrimEnv restricts the child to a minimal base (PATH/HOME/TMPDIR/PWD) instead of inheriting the daemon environment. Prefer this for scheduled jobs, which should not depend on whatever the supervisor exported. |
+| `extraEnv` | `map[string]string` | — | ExtraEnv adds static KEY=value pairs to the child environment. Secrets belong in the host's credential store, not here. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `workspace`（必填） | `workspace.Service` |  |
 
 ## `tool/skill`
 
