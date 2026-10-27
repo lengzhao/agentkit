@@ -566,3 +566,130 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) 
 	}
 	t.Fatal(msg)
 }
+
+// A config job with a delivery target must route exactly like an agent-created
+// job. Without this the fire degraded to the synthetic "schedule" platform and
+// the answer could never reach the user.
+func TestConfigJobRoutesToDeliverTo(t *testing.T) {
+	t.Parallel()
+
+	rt, _, clock := newCronRuntime(t, pluginschedule.CronConfig{
+		Jobs: []pluginschedule.CronJobSpec{{
+			ID:        "daily",
+			Cron:      "*/5 * * * *",
+			Prompt:    "morning report",
+			DeliverTo: "lark:oc_demo:u:ou_owner",
+			Owner:     "ou_owner",
+			AgentID:   "claude",
+		}},
+		PollSeconds: 3600,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// SyncSource stamps LastRun at creation, so the first fire lands on the next
+	// real boundary; the fake clock advances inside the scheduler's own wait.
+	_ = clock
+
+	got := make(chan agentkit.MessageEvent, 1)
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- event
+		cancel()
+		return nil
+	})
+
+	select {
+	case event := <-got:
+		if event.Envelope.Route.Instance != "lark" {
+			t.Fatalf("instance = %q, want lark", event.Envelope.Route.Instance)
+		}
+		if rctx.InboundDeliveryID(event) != "lark:oc_demo:u:ou_owner" {
+			t.Fatalf("delivery = %q", rctx.InboundDeliveryID(event))
+		}
+		if event.Envelope.Actor.UserID != "ou_owner" {
+			t.Fatalf("owner = %q", event.Envelope.Actor.UserID)
+		}
+		if event.Envelope.AgentID != "claude" {
+			t.Fatalf("agent = %q", event.Envelope.AgentID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for config job fire")
+	}
+}
+
+// The default preamble must not name a tool: hosts without a send tool would
+// otherwise be told to call something that does not exist. promptTemplate
+// overrides it for hosts that do.
+func TestPromptPreambleMentionsNoToolByDefault(t *testing.T) {
+	t.Parallel()
+
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		ID:      "note",
+		Kind:    capschedule.KindCron,
+		Cron:    "*/5 * * * *",
+		Prompt:  "summarize today",
+		LastRun: clock.Now().Add(-15 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := make(chan string, 1)
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- textOfMessage(event.Message)
+		cancel()
+		return nil
+	})
+
+	select {
+	case prompt := <-got:
+		if strings.Contains(prompt, " send ") {
+			t.Fatalf("default prompt still instructs a send tool: %q", prompt)
+		}
+		if !strings.Contains(prompt, "summarize today") {
+			t.Fatalf("job prompt missing: %q", prompt)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for cron fire")
+	}
+}
+
+func TestPromptTemplateOverride(t *testing.T) {
+	t.Parallel()
+
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{
+		PollSeconds:    1,
+		PromptTemplate: "定时任务触发。用 tool/send 回复用户。",
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if _, err := registry.Add(ctx, capschedule.Job{
+		ID:      "note",
+		Kind:    capschedule.KindCron,
+		Cron:    "*/5 * * * *",
+		Prompt:  "summarize today",
+		LastRun: clock.Now().Add(-15 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := make(chan string, 1)
+	startAsync(ctx, rt, func(_ context.Context, event agentkit.MessageEvent) error {
+		got <- textOfMessage(event.Message)
+		cancel()
+		return nil
+	})
+
+	select {
+	case prompt := <-got:
+		if !strings.Contains(prompt, "tool/send") {
+			t.Fatalf("promptTemplate not applied: %q", prompt)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for cron fire")
+	}
+}
