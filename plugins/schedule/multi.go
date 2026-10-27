@@ -63,7 +63,10 @@ func (r *multiRegistry) List(ctx context.Context) ([]schedule.Job, error) {
 	}
 	filtered := make([]schedule.Job, 0, len(jobs))
 	for _, job := range jobs {
-		if rctx.ChannelKeyMatches(job.ChannelKey, key) {
+		// A config job belongs to no channel and fires for everyone in the
+		// process. Filtering it out of List hid jobs that were about to run,
+		// which makes a working setup look like a missing configuration.
+		if job.Source == schedule.SourceConfig || rctx.ChannelKeyMatches(job.ChannelKey, key) {
 			filtered = append(filtered, job)
 		}
 	}

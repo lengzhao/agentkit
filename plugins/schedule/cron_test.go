@@ -693,3 +693,44 @@ func TestPromptTemplateOverride(t *testing.T) {
 		t.Fatal("timed out waiting for cron fire")
 	}
 }
+
+// The retry wait must not follow pollSeconds: an hourly idle poll would stall
+// every other job for an hour after one failed fire.
+func TestRecoverBackoffIsBoundedByItsOwnCeiling(t *testing.T) {
+	t.Parallel()
+
+	rt, _, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 3600})
+	cron := cronImpl(t, rt)
+	ctx := context.Background()
+
+	before := clock.Now()
+	if err := cron.Recover(ctx, "fire", errors.New("boom"), "job-1"); err != nil {
+		t.Fatal(err)
+	}
+	waited := clock.Now().Sub(before)
+	if waited > time.Minute {
+		t.Fatalf("backoff = %s, want at most a minute regardless of pollSeconds", waited)
+	}
+	if waited <= 0 {
+		t.Fatalf("expected a non-zero backoff, got %s", waited)
+	}
+
+	// Repeated failures back off further, still bounded.
+	first := waited
+	before = clock.Now()
+	if err := cron.Recover(ctx, "fire", errors.New("boom"), "job-1"); err != nil {
+		t.Fatal(err)
+	}
+	second := clock.Now().Sub(before)
+	if second < first {
+		t.Fatalf("backoff shrank: %s then %s", first, second)
+	}
+	for i := 0; i < 20; i++ {
+		_ = cron.Recover(ctx, "fire", errors.New("boom"), "job-1")
+	}
+	before = clock.Now()
+	_ = cron.Recover(ctx, "fire", errors.New("boom"), "job-1")
+	if got := clock.Now().Sub(before); got > time.Minute {
+		t.Fatalf("backoff exceeded ceiling: %s", got)
+	}
+}

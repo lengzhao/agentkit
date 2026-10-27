@@ -402,6 +402,10 @@ schedule.default:
     engine: schedule.engine
 
 # 常驻日历调度：与 tool/schedule 共用 registry，agent 排的 job 跨重启存活。
+# jobs 里声明的静态 job 必须给 deliverTo（会话 id），否则触发后没有投递目标，
+# 结果只能落在内部侧 turn 里、用户收不到；agent 自己建的 job 从对话上下文取 route，
+# 无需该字段。
+# promptTemplate 可覆盖触发前缀；默认不提任何工具名（并非所有宿主都挂了 tool/send）。
 schedule.cron:
   use: schedule/cron
   config:
@@ -409,6 +413,7 @@ schedule.cron:
     sessionMode: stateless
     sessionID: schedule
     pollSeconds: 15
+    # promptTemplate: "定时任务触发，结果会按计划投递；无需额外调用工具发送。\n\n"
   deps:
     schedule: schedule.default
     workspace: workspace.default

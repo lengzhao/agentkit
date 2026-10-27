@@ -7,6 +7,25 @@
 （来自插件 Config 的 SetDefaults）与字段注释；deps 表列出依赖注入点。字段级校验规则
 （Validate）在装配期生效，可用 `agent config validate` 在不构造实例的情况下检查配置。
 
+## `acp/session-mcp-tools`
+
+- 返回类型：`acp.SessionMCPProvider`
+- 源码：[`plugins/acp/sessionmcptools/sessionmcptools.go`](../plugins/acp/sessionmcptools/sessionmcptools.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `listenAddr` | `string` | — | ListenAddr defaults to 127.0.0.1:0 (ephemeral port). |
+| `apiToken` | `string` | — | APIToken enables a loopback Bearer check. Empty disables it (local only). |
+| `serverName` | `string` | — | ServerName is the MCP server name announced to the agent. |
+| `transportType` | `string` | — | TransportType defaults to streamable-http. |
+| `headers` | `map[string]string` | — | Headers are static extra headers for the ACP session/new spec. |
+| `bind` | `map[string]sessionmcptools.HeaderBind` | — | Bind maps request headers to turn-context fields, so a tool call that arrives over MCP sees the same envelope (session, user, workspace) it would see in-process. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `provider`（必填） | `agentkit.ToolProvider` |  |
+| `workspace` | `workspace.Service` |  |
+
 ## `acp/session-restore`
 
 - 返回类型：`acp.SessionRestorer`
@@ -1040,6 +1059,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `sessionId` | `string` | `schedule` | SessionID is the id prefix used for inbound turns. |
 | `pollSeconds` | `int` | `30` | PollSeconds is the idle backoff when no jobs are scheduled. Defaults to 30. |
 | `missedGraceSeconds` | `int` | `300` | MissedGraceSeconds is how long a missed one-shot job is still fired. Older one-shots are marked stale instead of backfilled. Defaults to 300. |
+| `promptTemplate` | `string` | — | PromptTemplate replaces the default preamble prepended to every fired prompt. Use it to name a host-specific tool; leave it empty and the default mentions no tool at all. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1727,6 +1747,17 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `policies` | `[]agentkit.Policy` |  |
 | `approval` | `agentkit.Approval` |  |
 | `hooks` | `agentkit.HookRuntime` |  |
+
+## `tools/static`
+
+- 返回类型：`agentkit.ToolProvider`
+- 源码：[`plugins/tools/static/static.go`](../plugins/tools/static/static.go)
+
+无 config 字段。
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `tools`（必填） | `[]agentkit.Tool` |  |
 
 ## `workspace/default`
 

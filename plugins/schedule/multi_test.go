@@ -168,3 +168,42 @@ func TestMultiSyncSourceStoresConfigJobs(t *testing.T) {
 		t.Fatalf("jobs = %+v", jobs)
 	}
 }
+
+// Config jobs belong to no channel but still fire; List must show them, or a
+// working configuration looks unset to anyone debugging with op=list.
+func TestMultiListIncludesConfigJobs(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newMultiRegistry(t)
+	ch := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Route: rctx.SessionRoute("slack", "slack:C001"), Conversation: "slack:C001", Workspace: "slack:C001",
+	})
+
+	if err := reg.SyncSource(context.Background(), capschedule.SourceConfig, []capschedule.Job{{
+		ID: "configured", Kind: capschedule.KindCron, Cron: "0 9 * * *", Prompt: "morning",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(ch, capschedule.Job{
+		Kind: capschedule.KindDelay, FireAt: time.Now().Add(time.Minute), Prompt: "mine",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, err := reg.List(ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("jobs = %+v, want the config job plus the channel job", jobs)
+	}
+	var sawConfig bool
+	for _, job := range jobs {
+		if job.ID == "configured" && job.Source == capschedule.SourceConfig {
+			sawConfig = true
+		}
+	}
+	if !sawConfig {
+		t.Fatalf("config job hidden from List: %+v", jobs)
+	}
+}

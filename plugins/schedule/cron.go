@@ -126,6 +126,7 @@ type Cron struct {
 	naming         sessionNamer
 	sessionMode    string
 	promptTemplate string
+	backoffs       map[string]time.Duration
 	now            func() time.Time
 	wait           func(context.Context, time.Duration) error
 
@@ -282,6 +283,8 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 				if err := c.recover(ctx, "fire", err, job.ID); err != nil {
 					return err
 				}
+			} else {
+				c.resetBackoff("fire")
 			}
 			continue
 		}
@@ -296,6 +299,7 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 			}
 			continue
 		}
+		c.resetBackoff("due")
 		if len(due) > 0 {
 			c.pushDue(due)
 			continue
@@ -306,22 +310,68 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 	}
 }
 
-// recover handles a non-fatal scheduler error: it logs, waits one poll
-// interval to avoid a hot retry loop, and reports whether the scheduler should
+// recoverBackoff bounds how long a failing scheduler pauses. The wait must not
+// follow pollSeconds: pollSeconds is the idle backoff and can be an hour, so a
+// single failed job would otherwise stall every other job for that long.
+const (
+	recoverBackoffMin = time.Second
+	recoverBackoffMax = time.Minute
+)
+
+// Recover applies the bounded retry backoff for a failed stage. Exported for
+// tests so the policy can be asserted without a live registry.
+func (c *Cron) Recover(ctx context.Context, stage string, err error, jobID string) error {
+	return c.recover(ctx, stage, err, jobID)
+}
+
+// recover handles a non-fatal scheduler error: it logs, backs off a bounded
+// amount to avoid a hot retry loop, and reports whether the scheduler should
 // stop. Cancellation is the only fatal case.
+//
+// Keyed by stage so a persistently broken registry backs off to the ceiling
+// while an occasional bad script does not slow the calendar down.
 func (c *Cron) recover(ctx context.Context, stage string, err error, jobID string) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}
+	backoff := c.nextBackoff(stage)
 	slog.Error("cron "+stage+" failed, scheduler continues",
-		"job_id", jobID, "retry_in", c.poll.String(), "err", err)
-	if waitErr := c.wait(ctx, c.poll); waitErr != nil {
+		"job_id", jobID, "retry_in", backoff.String(), "err", err)
+	if waitErr := c.wait(ctx, backoff); waitErr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
 		return waitErr
 	}
 	return nil
+}
+
+// nextBackoff doubles the current wait for stage, capped between the min and
+// max. The counter resets on a successful iteration (see resetBackoff).
+func (c *Cron) nextBackoff(stage string) time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.backoffs == nil {
+		c.backoffs = map[string]time.Duration{}
+	}
+	cur := c.backoffs[stage]
+	if cur <= 0 {
+		cur = recoverBackoffMin
+	} else if cur < recoverBackoffMax {
+		cur *= 2
+		if cur > recoverBackoffMax {
+			cur = recoverBackoffMax
+		}
+	}
+	c.backoffs[stage] = cur
+	return cur
+}
+
+// resetBackoff clears the failure streak for stage after a clean iteration.
+func (c *Cron) resetBackoff(stage string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.backoffs, stage)
 }
 
 func (c *Cron) Stop(context.Context) error { return nil }
