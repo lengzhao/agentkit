@@ -16,12 +16,12 @@ func (r *Root) resolveAgentID(ctx context.Context, event agentkit.MessageEvent, 
 	if entryKey == "" {
 		entryKey = conversation
 	}
-	effective, _, _, _, err := sessbind.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, entryKey, event.AgentID)
+	effective, _, _, _, err := sessbind.ResolveAgentID(ctx, r.sessionStore, r.workspace, conversation, entryKey, event.Envelope.AgentID)
 	return effective, err
 }
 
 func (r *Root) resolveConversation(ctx context.Context, event agentkit.MessageEvent, env agentkit.TurnEnvelope, policy rctx.RoutePolicy) (string, error) {
-	if capschedule.IsFireStateless(event.Metadata) {
+	if capschedule.IsFireStateless(event.Envelope.Metadata) {
 		return env.Conversation, nil
 	}
 	defaultConversation := env.Conversation

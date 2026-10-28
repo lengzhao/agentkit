@@ -7,6 +7,23 @@
 （来自插件 Config 的 SetDefaults）与字段注释；deps 表列出依赖注入点。字段级校验规则
 （Validate）在装配期生效，可用 `agent config validate` 在不构造实例的情况下检查配置。
 
+## `acp/session-mcp-tools`
+
+- 返回类型：`acp.SessionMCPProvider`
+- 源码：[`plugins/acp/sessionmcptools/sessionmcptools.go`](../plugins/acp/sessionmcptools/sessionmcptools.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `apiToken` | `string` | — | APIToken enables a loopback Bearer check. Empty disables it (local only). |
+| `serverName` | `string` | — | ServerName is the MCP server name announced to the agent. |
+| `headers` | `map[string]string` | — | Headers are static extra headers for the ACP session/new spec. |
+| `bind` | `map[string]sessionmcptools.HeaderBind` | — | Bind maps turn-context fields to session headers and restores them on inbound tool calls, preserving the session, user, workspace and route. |
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `provider`（必填） | `agentkit.ToolProvider` |  |
+| `workspace` | `workspace.Service` |  |
+
 ## `acp/session-restore`
 
 - 返回类型：`acp.SessionRestorer`
@@ -33,6 +50,7 @@
 | `clientName` | `string` | `agentkit` | ClientName is sent in initialize; defaults to "agentkit". |
 | `clientVersion` | `string` | `0.1.0` | ClientVersion is sent in initialize; defaults to "0.1.0". |
 | `authHint` | `string` | — | AuthHint overrides the user-facing guidance when ACP requires authentication, during connection, session creation, or a prompt. Secret values are never included. |
+| `pool` | `acpremote.PoolConfig` | — | Pool chooses the connection-lifetime policy. Defaults to ttl: connections stay warm (a cold CLI start costs seconds) but idle ones are reclaimed and the cache is capped. Hosts that mint a new session id per turn - a stateless scheduler - should set strategy none so nothing is cached at all. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -610,7 +628,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `userNameHeader` | `string` | `X-Chat-API-User-Name` |  |
 | `userEmailHeader` | `string` | `X-Chat-API-User-Email` |  |
 | `channelHeader` | `string` | `X-Chat-API-Channel` |  |
-| `metadataHeaders` | `[]string` | — | MetadataHeaders lists HTTP headers copied into MessageEvent.Metadata. |
+| `metadataHeaders` | `[]string` | — | MetadataHeaders lists HTTP headers copied into MessageEvent.Envelope.Metadata. |
 | `corsOrigins` | `[]string` | — |  |
 | `requestTimeout` | `string` | `30m0s` |  |
 | `interactionTimeout` | `string` | `10m0s` |  |
@@ -1040,6 +1058,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `sessionId` | `string` | `schedule` | SessionID is the id prefix used for inbound turns. |
 | `pollSeconds` | `int` | `30` | PollSeconds is the idle backoff when no jobs are scheduled. Defaults to 30. |
 | `missedGraceSeconds` | `int` | `300` | MissedGraceSeconds is how long a missed one-shot job is still fired. Older one-shots are marked stale instead of backfilled. Defaults to 300. |
+| `promptTemplate` | `string` | — | PromptTemplate replaces the default preamble prepended to every fired prompt. Use it to name a host-specific tool; leave it empty and the default mentions no tool at all. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1322,7 +1341,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
 | `history`（必填） | `agentkit.Platform` | History is typically platform.default; adapted to chathistory.Router at init. |
-| `delivery`（必填） | `delivery.Assistant` |  |
 
 ## `tool/finish`
 
@@ -1728,6 +1746,17 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `policies` | `[]agentkit.Policy` |  |
 | `approval` | `agentkit.Approval` |  |
 | `hooks` | `agentkit.HookRuntime` |  |
+
+## `tools/static`
+
+- 返回类型：`agentkit.ToolProvider`
+- 源码：[`plugins/tools/static/static.go`](../plugins/tools/static/static.go)
+
+无 config 字段。
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `tools`（必填） | `[]agentkit.Tool` |  |
 
 ## `workspace/default`
 

@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	_ "github.com/lengzhao/agentkit/plugins"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -29,8 +29,7 @@ func TestDispatchRoutesBySessionID(t *testing.T) {
 					map[string]any{
 						"use": "agent/coding",
 						"config": map[string]any{
-							"id":       "test",
-							
+							"id": "test",
 						},
 						"deps": map[string]any{
 							"sessionStore": map[string]any{

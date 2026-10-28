@@ -1,6 +1,8 @@
 package common
 
 import (
+	"context"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,5 +161,35 @@ func TestSanitizeAttachmentFileNameRejectsTraversal(t *testing.T) {
 	}
 	if got := sanitizeAttachmentFileName(".."); got != "" {
 		t.Fatalf(".. should be rejected, got %q", got)
+	}
+}
+
+func TestInboundFilesIsolateAdapterInstances(t *testing.T) {
+	ws, err := rtworkspace.NewTenant(rtworkspace.TenantConfig{Global: t.TempDir(), LocalBase: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]string{}
+	for _, instance := range []string{"slack", "slack1"} {
+		event := InboundFromContent("assistant", agentkit.SessionRouteInput{Platform: "slack", Instance: instance, DeliveryID: "slack:C1"}, "U1", "files", "", nil, []FileAttachment{{FileName: "same.txt", MimeType: "text/plain", Data: []byte(instance)}}, nil, nil, InboundOptsFor(ws))
+		env := rctx.ResolveEnvelope(event, rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+		ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+		path, err := rtworkspace.ResolveFile(ctx, ws, "upload/same.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths[instance] = path
+		if !strings.Contains(event.Message.Content[0].Text, path) {
+			t.Fatalf("model path missing %q: %s", path, event.Message.Content[0].Text)
+		}
+	}
+	for instance, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != instance {
+			t.Fatalf("%s content=%q", instance, data)
+		}
 	}
 }

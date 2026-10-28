@@ -12,7 +12,7 @@ func (r *Root) BuildInboundPromptPrefixForTest(event agentkit.MessageEvent, deli
 func (r *Root) FormatInboundEventForTest(event agentkit.MessageEvent, deliveryID agentkit.SessionID) agentkit.MessageEvent {
 	env := rctx.ResolveEnvelope(event, rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
 	if deliveryID != "" {
-		env.Route = rctx.SessionRouteFromDelivery(event.PlatformID, deliveryID, "")
+		env.Route = rctx.SessionRouteFromDelivery(event.Envelope.Route.Instance, deliveryID, "")
 	}
 	return r.formatInboundEvent(event, env)
 }

@@ -71,9 +71,9 @@ func decodePermissionRequest(data json.RawMessage) (permission.RequestPayload, e
 
 func (p *Platform) permissionReplyEvent(text string, pending *permissionPrompt) agentkit.MessageEvent {
 	return rctx.WithDeliverySession(agentkit.MessageEvent{
-		PlatformID: platformID,
+
 		Envelope: agentkit.TurnEnvelope{
-			Conversation: string(p.deliveryID),
+			Route: agentkit.RouteRef{Instance: p.PlatformInstance()},
 		},
 		Reply: rtpermission.MarshalReply(permission.Reply{
 			RequestID: pending.requestID,

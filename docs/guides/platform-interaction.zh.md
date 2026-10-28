@@ -240,7 +240,7 @@ platform.default:
 runner 现在会在 steer 成功后发 **`turn/steer`** 出站事件（payload `capsession.TurnSteerData`），并且**带的是被并入消息自己的 route**（含 `replyTo` = 该消息 id），因此平台能精确标注这条消息。飞书 / Lark 与 Slack 都按同一事件处理：
 
 - **即时 ack**：入队成功立即发一次 `outcome: queued`，第一时间让发送者看到响应。
-- **终态 ack**：谁最终决定了消息走向谁再发一次终态——本地 agent 在下一步注入 → `injected`；ACP peer 回 `_session/steering: injected` → `injected`；peer 太晚回 `promptRequired` 或 Loop 把残留 steering 顺延成下一个 turn → `next-turn`；传输失败（可能已送达、不敢重试）→ `rejected`。`queued` 是乐观的即时值，终态才是"到底并入了哪条路径"。
+- **终态 ack**：谁最终决定了消息走向谁再发一次终态——本地 agent 在下一步注入 → `injected`；ACP peer 回 `_session/steering: injected` → `injected`；peer 太晚回 `promptRequired` 后由 Loop 顺延，或 Loop 把残留 steering 顺延成下一个 turn → 在新 turn 执行前回 `next-turn`；传输失败或响应无效（可能已送达、不敢重试）、本地注入写入失败 → `rejected`。peer 已确认 `injected` 时，即使本地保存失败也保留该终态。批量处理失败时，未处理消息恢复到队列前端。`queued` 是乐观的即时值，终态才是"到底并入了哪条路径"。
 - **飞书 / Lark**：`queued`/`injected` → 把该消息的处理中 reaction（`reactionEmoji`）换成 `steerEmoji`（默认 `Typing`）；`next-turn`/`rejected` → 换回 `reactionEmoji`（撤销早先的替换，避免谎称已并入当前回复）。新 reaction 的 id 写回该消息在 **turn reaction batch** 中的记录，`turn/end` 据此移除。
 - **Slack**：同上，`eyes` ↔ `steerEmoji`（默认 `inbox_tray`）。Slack reaction 没有 id，由 batch 记录每条消息当前的 emoji 名，`turn/end` 据此移除。
 - 消息不在进行中 turn 的 batch 里时（例如 turn 已在收尾）仍会替换，只是不纳入 `turn/end` 的清理（Slack 此时无从记账，`turn/end` 会同时清 `eyes` 与 `steerEmoji`）。

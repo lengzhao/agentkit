@@ -12,6 +12,7 @@ type turnControl interface {
 	BeginStep(parent context.Context) (context.Context, func())
 	PopCancelReason() string
 	PopSteering() []agentkit.SteerEntry
+	RestoreSteering([]agentkit.SteerEntry)
 	HasSteering() bool
 }
 
@@ -35,3 +36,5 @@ func (noopTurnControl) PopCancelReason() string { return "" }
 func (noopTurnControl) PopSteering() []agentkit.SteerEntry { return nil }
 
 func (noopTurnControl) HasSteering() bool { return false }
+
+func (noopTurnControl) RestoreSteering([]agentkit.SteerEntry) {}

@@ -36,22 +36,23 @@ type replyContext struct {
 }
 
 type Platform struct {
-	cardSubmissions            common.CardSubmissions
-	interactionHandlers        []interaction.Handler
-	interactionDedup           common.InteractionDedup
-	platformTag                string
-	defaultDomain              string
-	domain                     string
-	appID                      string
-	appSecret                  string
-	showThinking               bool
-	showToolProgress           bool
-	asyncSubagentProgressCard  bool
-	useInteractiveCard         bool
-	reactionEmoji              string
-	doneEmoji                  string
-	cancelledEmoji             string
-	errorEmoji                 string
+	common.InstanceIdentity
+	cardSubmissions           common.CardSubmissions
+	interactionHandlers       []interaction.Handler
+	interactionDedup          common.InteractionDedup
+	platformTag               string
+	defaultDomain             string
+	domain                    string
+	appID                     string
+	appSecret                 string
+	showThinking              bool
+	showToolProgress          bool
+	asyncSubagentProgressCard bool
+	useInteractiveCard        bool
+	reactionEmoji             string
+	doneEmoji                 string
+	cancelledEmoji            string
+	errorEmoji                string
 	// steerEmoji replaces a steered message's in-flight reaction so its sender
 	// sees the message was folded into the running turn.
 	steerEmoji                 string

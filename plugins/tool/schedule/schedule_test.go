@@ -213,10 +213,11 @@ func TestScheduleCapturesDeliveryFromContext(t *testing.T) {
 		t.Fatalf("jobs = %+v", stored)
 	}
 	job := stored[0]
-	if job.Route.DeliverySessionID != "chat-api:ch:t:conv" {
-		t.Fatalf("delivery = %q", job.Route.DeliverySessionID)
+	delivery, _ := rctx.RouteSessionID(job.Route)
+	if delivery != "chat-api:ch:t:conv" {
+		t.Fatalf("delivery = %q", delivery)
 	}
-	if job.Route.PlatformID != "chat-api" || job.Route.UserID != "u1" || job.Route.AgentID != "assistant" {
+	if job.Route.Platform != "chat-api" || job.Actor.UserID != "u1" || job.AgentID != "assistant" {
 		t.Fatalf("routing = %+v", job)
 	}
 	if job.Kind != capschedule.KindDelay || job.FireAt.IsZero() {
@@ -231,5 +232,36 @@ func TestScheduleListIsEmptyWithoutJobs(t *testing.T) {
 	out := decodeSchedule(t, testutil.CallTool(t, context.Background(), tl, `{"op":"list"}`))
 	if len(out.Jobs) != 0 {
 		t.Fatalf("jobs = %+v, want none", out.Jobs)
+	}
+}
+
+// An envelope rebuilt by a remote tool bridge keeps the conversation and the
+// platform but not the route target. The job must still be deliverable: this
+// is exactly the shape an ACP sessionMcp tool call hands the agent.
+func TestScheduleRebuildsRouteWithoutTarget(t *testing.T) {
+	t.Parallel()
+
+	tl, registry := newScheduleTool(t, schedule.ScheduleConfig{})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{
+		Route:        agentkit.RouteRef{Platform: "lark"},
+		Conversation: "lark:oc_demo:u:ou_owner",
+		Actor:        agentkit.ActorRef{UserID: "ou_owner"},
+	})
+
+	testutil.CallTool(t, ctx, tl, `{"op":"add","kind":"delay","in":"1m","prompt":"remind"}`)
+
+	stored, err := registry.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("jobs = %+v", stored)
+	}
+	delivery, ok := rctx.RouteSessionID(stored[0].Route)
+	if !ok || delivery != "lark:oc_demo:u:ou_owner" {
+		t.Fatalf("route not rebuilt from conversation: %+v (delivery %q)", stored[0].Route, delivery)
+	}
+	if got := stored[0].Route.DestinationID(); got != "lark" {
+		t.Fatalf("destination = %q, want lark", got)
 	}
 }

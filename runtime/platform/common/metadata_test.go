@@ -17,17 +17,15 @@ func TestUserProfileMetadata(t *testing.T) {
 }
 
 func TestWithMetadataPreservesExistingKeys(t *testing.T) {
-	event := WithMetadata(agentkit.MessageEvent{
-		Metadata: map[string]any{"displayName": "Bob"},
-	}, map[string]any{
+	event := WithMetadata(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Metadata: map[string]any{"displayName": "Bob"}}}, map[string]any{
 		"displayName": "Alice",
 		"email":       "alice@example.com",
 	})
-	if event.Metadata["displayName"] != "Bob" {
-		t.Fatalf("displayName = %v", event.Metadata["displayName"])
+	if event.Envelope.Metadata["displayName"] != "Bob" {
+		t.Fatalf("displayName = %v", event.Envelope.Metadata["displayName"])
 	}
-	if event.Metadata["email"] != "alice@example.com" {
-		t.Fatalf("email = %v", event.Metadata["email"])
+	if event.Envelope.Metadata["email"] != "alice@example.com" {
+		t.Fatalf("email = %v", event.Envelope.Metadata["email"])
 	}
 }
 

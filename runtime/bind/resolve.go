@@ -2,6 +2,7 @@ package bind
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -76,6 +77,16 @@ func (defaultResolver) ResolveCtxValue(ctx context.Context, from string) (string
 			return v, nil
 		}
 		return "", nil
+	case key == "route":
+		route := rctx.RouteRefFromContext(ctx)
+		if len(route.Target) == 0 && route.Platform == "" && route.Instance == "" {
+			return "", nil
+		}
+		raw, err := json.Marshal(route)
+		if err != nil {
+			return "", fmt.Errorf("encode route: %w", err)
+		}
+		return string(raw), nil
 	case strings.HasPrefix(key, "metadata."):
 		mdKey := strings.TrimPrefix(key, "metadata.")
 		if mdKey == "" {

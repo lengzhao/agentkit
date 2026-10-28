@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/plugins/tool/send"
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
+	"github.com/lengzhao/agentkit/plugins/tool/send"
 	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
@@ -90,8 +90,8 @@ func TestSendUsesInboxDeliverySession(t *testing.T) {
 	if len(platform.sent) != 1 {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
-	if rtdelivery.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
-		t.Fatalf("route=%q", rtdelivery.OutboundRouteID(platform.sent[0]))
+	if rctx.OutboundRouteID(platform.sent[0]) != "slack:C001:t:111.0:u:U456" {
+		t.Fatalf("route=%q", rctx.OutboundRouteID(platform.sent[0]))
 	}
 }
 
@@ -116,8 +116,8 @@ func TestSendUserIDTarget(t *testing.T) {
 		t.Fatalf("sent=%d want 1", len(platform.sent))
 	}
 	want := rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U222")
-	if rtdelivery.OutboundRouteID(platform.sent[0]) != want {
-		t.Fatalf("route=%q want %q", rtdelivery.OutboundRouteID(platform.sent[0]), want)
+	if rctx.OutboundRouteID(platform.sent[0]) != want {
+		t.Fatalf("route=%q want %q", rctx.OutboundRouteID(platform.sent[0]), want)
 	}
 	if platform.sent[0].UserID != "U222" {
 		t.Fatalf("user=%q", platform.sent[0].UserID)

@@ -22,15 +22,15 @@ const maxHistoryContentLen = 4096
 
 // ReadChatHistory lists messages from Feishu/Lark IM for the given delivery session.
 func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request) (chathistory.Result, error) {
-	parts := rctx.ParseDelivery(req.SessionID, req.UserID)
-	if !parts.Routable || parts.Channel == "" {
+	parts, ok := rctx.DecodeSessionRoute(req.Route)
+	if !ok || parts.ChannelID == "" {
 		return chathistory.Result{}, fmt.Errorf("%s: chat_history requires a routable delivery session; hint: pass sessionId explicitly (e.g. \"lark:oc_xxx\") or a userId", p.tag())
 	}
-	if parts.Platform != "" && parts.Platform != p.platformTag {
-		return chathistory.Result{}, fmt.Errorf("%s: session platform %q does not match %q; hint: check the sessionId prefix matches the target platform", p.tag(), parts.Platform, p.platformTag)
+	if req.Route.Platform != "" && req.Route.Platform != p.platformTag {
+		return chathistory.Result{}, fmt.Errorf("%s: session platform %q does not match %q; hint: check the sessionId prefix matches the target platform", p.tag(), req.Route.Platform, p.platformTag)
 	}
-	if parts.Channel != "" && !common.AllowList(p.allowChat, parts.Channel) {
-		return chathistory.Result{}, fmt.Errorf("%s: chat %q is not in the allowlist; hint: ask an admin to allow this chat, or read a chat that is already allowed", p.tag(), parts.Channel)
+	if parts.ChannelID != "" && !common.AllowList(p.allowChat, parts.ChannelID) {
+		return chathistory.Result{}, fmt.Errorf("%s: chat %q is not in the allowlist; hint: ask an admin to allow this chat, or read a chat that is already allowed", p.tag(), parts.ChannelID)
 	}
 
 	// chainRoot 非空表示需要限定到某条回复链/话题：session 的 thread 段存的是
@@ -38,10 +38,10 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 	// chat 容器里，按 root_id 过滤），或被转成话题（后续消息进 omt_ thread
 	// 容器）；先聊几轮再转话题时两部分都存在，需要合并。
 	containerType := "chat"
-	containerID := parts.Channel
+	containerID := parts.ChannelID
 	chainRoot := ""
-	if req.Thread && parts.Thread != "" {
-		chainRoot = strings.TrimSpace(parts.Thread)
+	if req.Thread && parts.ThreadID != "" {
+		chainRoot = strings.TrimSpace(parts.ThreadID)
 		if threadID := p.resolveThreadID(ctx, chainRoot); threadID != "" {
 			containerType = "thread"
 			containerID = threadID
@@ -72,7 +72,7 @@ func (p *Platform) ReadChatHistory(ctx context.Context, req chathistory.Request)
 			items = filterChainItems(items, chainRoot)
 		} else {
 			// 话题：转话题前的回复仍在群容器中，捞出后合并。
-			chatItems, _, _, chatErr := p.listHistoryItems(ctx, "chat", parts.Channel, limit, req.Order, "", after)
+			chatItems, _, _, chatErr := p.listHistoryItems(ctx, "chat", parts.ChannelID, limit, req.Order, "", after)
 			if chatErr != nil {
 				slog.Warn(p.tag()+": read pre-topic chain failed, keep topic messages only", "root_message_id", chainRoot, "error", chatErr)
 			} else {

@@ -20,12 +20,30 @@ const cronPlatformID = "schedule"
 
 // CronJobSpec is one config-declared cron job. Prompt and script are mutually
 // exclusive; script runs without an agent turn.
+//
+// Config jobs used to carry no destination, so a fired job degraded to the
+// synthetic "schedule" platform and its result could never be delivered. Give
+// the spec a delivery target (an id.list session id) and optionally an owner
+// and agent, and the fire routes exactly like an agent-created job.
 type CronJobSpec struct {
 	ID     string `json:"id"`
 	Cron   string `json:"cron"`
 	Prompt string `json:"prompt,omitempty"`
 	Script string `json:"script,omitempty"`
 	Note   string `json:"note,omitempty"`
+	// DeliverTo is the destination session id, e.g.
+	// "lark:oc_xxx:u:ou_yyy" or "chat-api:default:t:conv_1". When set, the
+	// fired turn delivers its answer there; when empty the turn still runs but
+	// has no user-facing destination (metadata-only jobs).
+	DeliverTo string `json:"deliverTo,omitempty"`
+	// Platform overrides the delivery protocol; defaults to the protocol
+	// parsed from DeliverTo.
+	Platform string `json:"platform,omitempty"`
+	// Owner opens the scope: only Owner answers the permission prompts of a
+	// job that routes back to an interactive platform.
+	Owner string `json:"owner,omitempty"`
+	// AgentID pins the fire to one agent; empty uses the loop default.
+	AgentID string `json:"agentId,omitempty"`
 }
 
 type CronConfig struct {
@@ -41,6 +59,10 @@ type CronConfig struct {
 	// MissedGraceSeconds is how long a missed one-shot job is still fired.
 	// Older one-shots are marked stale instead of backfilled. Defaults to 300.
 	MissedGraceSeconds int `json:"missedGraceSeconds"`
+	// PromptTemplate replaces the default preamble prepended to every fired
+	// prompt. Use it to name a host-specific tool; leave it empty and the
+	// default mentions no tool at all.
+	PromptTemplate string `json:"promptTemplate"`
 }
 
 type CronDeps struct {
@@ -94,17 +116,18 @@ func (c *CronConfig) Validate() error {
 
 // Cron watches a shared registry and submits due jobs as inbound turns.
 type Cron struct {
-	registry    capschedule.Registry
-	workspace   workspace.Service
-	shell       shell.Executor
-	engine      capschedule.Engine
-	jobs        []capschedule.Job
-	poll        time.Duration
-	missedGrace time.Duration
-	naming      sessionNamer
-	sessionMode string
-	now         func() time.Time
-	wait        func(context.Context, time.Duration) error
+	registry       capschedule.Registry
+	workspace      workspace.Service
+	shell          shell.Executor
+	engine         capschedule.Engine
+	jobs           []capschedule.Job
+	poll           time.Duration
+	missedGrace    time.Duration
+	naming         sessionNamer
+	sessionMode    string
+	promptTemplate string
+	now            func() time.Time
+	wait           func(context.Context, time.Duration) error
 
 	mu       sync.Mutex
 	runCount int
@@ -141,17 +164,18 @@ func NewCron(cfg CronConfig, deps CronDeps) (capschedule.Runtime, error) {
 	poll := time.Duration(cfg.PollSeconds) * time.Second
 	missedGrace := time.Duration(cfg.MissedGraceSeconds) * time.Second
 	return &Cron{
-		registry:    deps.Schedule,
-		workspace:   deps.Workspace,
-		shell:       deps.Shell,
-		engine:      deps.Engine,
-		jobs:        jobs,
-		poll:        poll,
-		missedGrace: missedGrace,
-		naming:      newSessionNamer(mode, sessionID, nil),
-		sessionMode: mode,
-		now:         time.Now,
-		wait:        waitTimer,
+		registry:       deps.Schedule,
+		workspace:      deps.Workspace,
+		shell:          deps.Shell,
+		engine:         deps.Engine,
+		jobs:           jobs,
+		poll:           poll,
+		missedGrace:    missedGrace,
+		naming:         newSessionNamer(mode, sessionID, nil),
+		sessionMode:    mode,
+		promptTemplate: strings.TrimSpace(cfg.PromptTemplate),
+		now:            time.Now,
+		wait:           waitTimer,
 	}, nil
 }
 
@@ -174,11 +198,18 @@ func parseCronJobs(specs []CronJobSpec, engine capschedule.Engine) ([]capschedul
 			return nil, fmt.Errorf("schedule/cron job %d: %w", i+1, err)
 		}
 		job := capschedule.Job{
-			ID:     spec.ID,
-			Kind:   capschedule.KindCron,
-			Cron:   spec.Cron,
-			Note:   spec.Note,
-			Source: capschedule.SourceConfig,
+			ID:      spec.ID,
+			Kind:    capschedule.KindCron,
+			Cron:    spec.Cron,
+			Note:    spec.Note,
+			Source:  capschedule.SourceConfig,
+			AgentID: agentkit.AgentID(strings.TrimSpace(spec.AgentID)),
+			Actor:   agentkit.ActorRef{UserID: strings.TrimSpace(spec.Owner)},
+		}
+		if route, err := configJobRoute(spec); err != nil {
+			return nil, fmt.Errorf("schedule/cron job %d: %w", i+1, err)
+		} else {
+			job.Route = route
 		}
 		if job.ID == "" {
 			job.ID = fmt.Sprintf("job-%d", i+1)
@@ -191,6 +222,24 @@ func parseCronJobs(specs []CronJobSpec, engine capschedule.Engine) ([]capschedul
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+// configJobRoute turns a spec's DeliverTo/Platform into a stable delivery route.
+// An empty DeliverTo yields a zero route: the job still fires as a side turn,
+// it just has nowhere user-facing to answer.
+func configJobRoute(spec CronJobSpec) (agentkit.RouteRef, error) {
+	delivery := strings.TrimSpace(spec.DeliverTo)
+	if delivery == "" {
+		return agentkit.RouteRef{}, nil
+	}
+	platform := strings.TrimSpace(spec.Platform)
+	if platform == "" {
+		platform = rctx.ParseDelivery(agentkit.SessionID(delivery), strings.TrimSpace(spec.Owner)).Platform
+	}
+	if platform == "" {
+		return agentkit.RouteRef{}, fmt.Errorf("deliverTo %q needs a platform (set platform or use a qualified session id)", delivery)
+	}
+	return rctx.SessionRouteFromDelivery(platform, agentkit.SessionID(delivery), "").Stable(), nil
 }
 
 func validateScriptDeps(jobs []capschedule.Job, deps CronDeps) error {
@@ -217,6 +266,7 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 	if err := c.registry.SyncSource(ctx, capschedule.SourceConfig, c.jobs); err != nil {
 		return fmt.Errorf("schedule/cron: sync jobs: %w", err)
 	}
+	backoff := time.Second
 	for {
 		if hook := c.loopHook.Load(); hook != nil {
 			(*hook)()
@@ -226,7 +276,7 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		}
 		if job, ok := c.popDue(); ok {
 			if err := c.fire(ctx, submit, job); err != nil {
-				return err
+				slog.Error("cron fire failed, scheduler continues", "job_id", job.ID, "err", err)
 			}
 			continue
 		}
@@ -234,8 +284,14 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		now := c.now()
 		due, err := c.registry.Due(ctx, now)
 		if err != nil {
-			return err
+			slog.Error("cron due failed, scheduler retries", "retry_in", backoff, "err", err)
+			if err := c.wait(ctx, backoff); err != nil {
+				return err
+			}
+			backoff = min(backoff*2, time.Minute)
+			continue
 		}
+		backoff = time.Second
 		if len(due) > 0 {
 			c.pushDue(due)
 			continue
@@ -351,19 +407,15 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 	now := c.now()
 	platformID := cronPlatformID
 	deliverySessionID := agentkit.SessionID("")
-	if delivery := strings.TrimSpace(job.Route.DeliverySessionID); delivery != "" {
-		deliverySessionID = agentkit.SessionID(delivery)
-		platformID = strings.TrimSpace(job.Route.PlatformID)
-		if platformID == "" {
-			platformID = rctx.ParseDelivery(deliverySessionID, job.Route.UserID).Platform
-		}
+	if delivery, ok := rctx.RouteSessionID(job.Route); ok && delivery != "" {
+		deliverySessionID = delivery
+		platformID = job.Route.DestinationID()
 	}
-
 	var sessionID agentkit.SessionID
 	switch c.sessionMode {
 	case capschedule.SessionModeReuse:
 		if deliverySessionID != "" {
-			sessionID = deliverySessionID
+			sessionID = rctx.ActiveEntryKey(job.Route, rctx.RoutePolicy{ActiveEntryMode: rctx.ActiveEntryDelivery}, job.Actor.UserID)
 		} else {
 			sessionID = c.naming.forRun(run)
 		}
@@ -373,36 +425,25 @@ func (c *Cron) event(run int, job capschedule.Job) agentkit.MessageEvent {
 		sessionID = statelessSessionID(job, now)
 	}
 
-	prompt := scheduleInboundPrompt(job)
+	route := job.Route.Stable()
+	if deliverySessionID == "" {
+		route = agentkit.RouteRef{Platform: cronPlatformID, Instance: platformID}
+	}
+	route.Instance = route.DestinationID()
 	evt := agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     strings.TrimSpace(job.Route.UserID),
 		Envelope: agentkit.TurnEnvelope{
+			Route:        route,
 			Conversation: string(sessionID),
+			Actor:        job.Actor,
+			AgentID:      job.AgentID,
+			Metadata:     map[string]any{"schedule": map[string]any{"fired": true, "jobId": job.ID, "kind": job.NormalizedKind(), "sessionMode": c.sessionMode}},
 		},
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: prompt}},
-		},
-		Metadata: map[string]any{
-			"schedule": map[string]any{
-				"fired":       true,
-				"jobId":       job.ID,
-				"kind":        job.NormalizedKind(),
-				"sessionMode": c.sessionMode,
-			},
-		},
-	}
-	if deliverySessionID != "" {
-		evt = rctx.WithDeliverySession(evt, platformID, deliverySessionID)
-	}
-	if agent := strings.TrimSpace(job.Route.AgentID); agent != "" {
-		evt.AgentID = agentkit.AgentID(agent)
+		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: c.scheduleInboundPrompt(job)}}},
 	}
 	return evt
 }
 
-func scheduleInboundPrompt(job capschedule.Job) string {
+func (c *Cron) scheduleInboundPrompt(job capschedule.Job) string {
 	kind := job.NormalizedKind()
 	desc := strings.TrimSpace(job.Note)
 	if desc == "" {
@@ -415,10 +456,14 @@ func scheduleInboundPrompt(job capschedule.Job) string {
 	if desc != "" {
 		header += fmt.Sprintf(" ⏰ %s", desc)
 	}
-	return header + "\n\n" +
-		"这是一次定时任务触发。请用 send 把提醒发给用户（只发一次）。\n\n" +
-		strings.TrimSpace(job.Prompt)
+	preamble := c.promptTemplate
+	if preamble == "" {
+		preamble = defaultPromptPreamble
+	}
+	return header + "\n\n" + preamble + "\n\n" + strings.TrimSpace(job.Prompt)
 }
+
+const defaultPromptPreamble = "这是一次定时任务触发，请完成下面的任务；结果会按计划投递给用户，不需要额外调用工具发送。"
 
 // SetLoopHookForTest runs hook at the top of each Start loop iteration. Test-only.
 func (c *Cron) SetLoopHookForTest(hook func()) {

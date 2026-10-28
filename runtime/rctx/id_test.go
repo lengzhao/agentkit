@@ -7,17 +7,17 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-func TestSlackSessionID(t *testing.T) {
+func TestBuildSlackDeliveryID(t *testing.T) {
 	t.Parallel()
-	if got := rctx.SlackSessionID("C001", ""); got != agentkit.SessionID("slack:C001") {
+	if got := rctx.BuildDeliverySessionID("slack", "C001", "", ""); got != agentkit.SessionID("slack:C001") {
 		t.Fatalf("channel = %q", got)
 	}
-	if got := rctx.SlackSessionID("C001", "123.456"); got != agentkit.SessionID("slack:C001:t:123.456") {
+	if got := rctx.BuildDeliverySessionID("slack", "C001", "123.456", ""); got != agentkit.SessionID("slack:C001:t:123.456") {
 		t.Fatalf("thread = %q", got)
 	}
 }
 
-func TestSlackSessionIDForScope(t *testing.T) {
+func TestSlackDeliveryScopes(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -32,7 +32,7 @@ func TestSlackSessionIDForScope(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := rctx.SlackSessionIDForScope(tc.scope, "C001", "123.456", "U777")
+			got := rctx.ApplyScope(rctx.BuildDeliverySessionID("slack", "C001", "123.456", "U777"), tc.scope, "U777")
 			if got != tc.want {
 				t.Fatalf("got %q want %q", got, tc.want)
 			}
@@ -47,7 +47,7 @@ func TestEverySlackScopeSharesOneTenant(t *testing.T) {
 
 	scopes := []agentkit.SessionScope{agentkit.SessionScopeChannel, agentkit.SessionScopeThread, agentkit.SessionScopeUser}
 	for _, scope := range scopes {
-		id := rctx.SlackSessionIDForScope(scope, "C001", "123.456", "U777")
+		id := rctx.ApplyScope(rctx.BuildDeliverySessionID("slack", "C001", "123.456", "U777"), scope, "U777")
 		if key := rctx.WorkspaceKey(string(id)); key != "slack:C001" {
 			t.Fatalf("scope %q: session %q -> tenant %q, want slack:C001", scope, id, key)
 		}
@@ -56,7 +56,7 @@ func TestEverySlackScopeSharesOneTenant(t *testing.T) {
 
 func TestScopeUserWithoutUserFallsBackToChannel(t *testing.T) {
 	t.Parallel()
-	got := rctx.SlackSessionIDForScope(agentkit.SessionScopeUser, "C001", "", "")
+	got := rctx.ApplyScope(rctx.BuildDeliverySessionID("slack", "C001", "", ""), agentkit.SessionScopeUser, "")
 	if got != agentkit.SessionID("slack:C001") {
 		t.Fatalf("got %q", got)
 	}

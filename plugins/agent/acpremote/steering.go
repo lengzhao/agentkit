@@ -52,7 +52,7 @@ func forwardSteering(ctx context.Context, stop <-chan struct{}, ctrl steeringCon
 				return nil
 			default:
 			}
-			requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			raw, err := callSteering(requestCtx, conn, sessionID, entry.Message, abort)
 			cancel()
 			if err != nil {
@@ -73,24 +73,26 @@ func forwardSteering(ctx context.Context, stop <-chan struct{}, ctrl steeringCon
 				Outcome string `json:"outcome"`
 			}
 			if err = json.Unmarshal(raw, &response); err != nil {
+				ackSteer(entry, capsession.SteerOutcomeRejected)
 				ctrl.RestoreSteering(entries[i+1:])
 				return fmt.Errorf("decode ACP steering response: %w", err)
 			}
 			switch response.Outcome {
 			case "injected":
+				// The peer's confirmation is authoritative even if local history
+				// persistence fails. Never retry input the peer already consumed.
+				ackSteer(entry, capsession.SteerOutcomeInjected)
 				if err := accepted(entry.Message); err != nil {
 					ctrl.RestoreSteering(entries[i+1:])
 					return err
 				}
-				// The peer folded the message into the streaming prompt: that is
-				// the authoritative mid-turn injection.
-				ackSteer(entry, capsession.SteerOutcomeInjected)
 			case "promptRequired":
 				// The peer was too far along to inject; the message stays queued
 				// and Loop runs it as the session's next turn (acked there).
 				ctrl.RestoreSteering(entries[i:])
 				return nil
 			default:
+				ackSteer(entry, capsession.SteerOutcomeRejected)
 				ctrl.RestoreSteering(entries[i+1:])
 				return fmt.Errorf("unexpected ACP steering outcome %q", response.Outcome)
 			}
@@ -107,15 +109,33 @@ func ackSteer(entry agentkit.SteerEntry, outcome string) {
 }
 
 // CallExtension writes synchronously before waiting for the JSON-RPC response.
-// Context cancellation alone cannot interrupt a blocked pipe write, so abort
-// must close the transport (in production, terminate the owning subprocess).
+// A cancelled response wait returns through the SDK without closing the shared
+// transport. Only abort if the call stays stuck after cancellation (for example
+// in a synchronous pipe write), allowing the SDK a short grace period to return.
 func callSteering(ctx context.Context, conn *acp.ClientSideConnection, sessionID acp.SessionId, msg agentkit.ModelMessage, abort func()) (json.RawMessage, error) {
 	aborted := make(chan struct{})
-	stopAbort := context.AfterFunc(ctx, func() { defer close(aborted); abort() })
+	finished := make(chan struct{})
+	stopAbort := context.AfterFunc(ctx, func() {
+		defer close(aborted)
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-finished:
+			return
+		case <-timer.C:
+		}
+		select {
+		case <-finished:
+			return
+		default:
+			abort()
+		}
+	})
 	raw, err := conn.CallExtension(ctx, "_session/steering", acp.PromptRequest{
 		SessionId: sessionID, Prompt: modelMessageToPrompt(msg),
 		Meta: map[string]any{"steering": map[string]any{"idleBehavior": "promptRequired"}},
 	})
+	close(finished)
 	if !stopAbort() {
 		<-aborted
 	}

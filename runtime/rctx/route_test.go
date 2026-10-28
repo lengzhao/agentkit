@@ -1,11 +1,13 @@
 package rctx_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -235,5 +237,51 @@ func TestDecodeSessionRoutePayload(t *testing.T) {
 	}
 	if route.Kind != agentkit.RouteKindSession {
 		t.Fatalf("kind = %q", route.Kind)
+	}
+}
+
+func TestSessionRouteFromDeliveryNormalizesSegments(t *testing.T) {
+	t.Parallel()
+	route := rctx.SessionRouteFromDelivery(" slack ", " slack: C001 :t: 1.0 :u: U1 ", " msg-1 ")
+	target, ok := rctx.DecodeSessionRoute(route)
+	if !ok {
+		t.Fatal("session route did not decode")
+	}
+	if route.Platform != "slack" || target.ChannelID != "C001" || target.ThreadID != "1.0" || target.ScopeUserID != "U1" || target.ReplyTo != "msg-1" {
+		t.Fatalf("route fields were not normalized: platform=%q target=%+v", route.Platform, target)
+	}
+	if target.DeliveryID != "slack: C001 :t: 1.0 :u: U1" {
+		t.Fatalf("delivery ID changed: %q", target.DeliveryID)
+	}
+}
+
+func TestResolveRoutePreservesAdapterAndDropsReplyAnchor(t *testing.T) {
+	t.Parallel()
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "slack", Instance: "slack1", ChannelID: "C1", ThreadID: "1", ReplyTo: "old-message"})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: route})
+	got, err := rctx.ResolveRoute(ctx, capsdelivery.RouteInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Platform != "slack" || got.DestinationID() != "slack1" {
+		t.Fatalf("route lost instance: %+v", got)
+	}
+	if rctx.RouteReplyTo(got) != "" {
+		t.Fatal("persistent destination retained a transient reply anchor")
+	}
+	other, err := rctx.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: "C2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.DestinationID() != "slack1" {
+		t.Fatalf("bare target lost adapter: %+v", other)
+	}
+}
+
+func TestWorkspaceFallbackKeepsInstance(t *testing.T) {
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: rctx.SessionRoute("slack", "slack:C1").WithInstance("slack1")})
+	want := rctx.WorkspaceKey("slack1:C1")
+	if got := rctx.WorkspaceFromContext(ctx); got != want {
+		t.Fatalf("workspace=%q want %q", got, want)
 	}
 }

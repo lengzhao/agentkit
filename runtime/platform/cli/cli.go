@@ -41,6 +41,7 @@ type Deps struct {
 }
 
 type Platform struct {
+	common.InstanceIdentity
 	mu     sync.Mutex
 	turnMu sync.Mutex
 
@@ -164,22 +165,23 @@ func (p *Platform) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	}
 	p.beginTurnWait()
 	return rctx.WithInboundRoute(agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     cliUserID(),
-		Metadata:   map[string]any{agentkit.MetadataQueueTurn: true},
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
+		Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID},
+			Actor: agentkit.ActorRef{UserID: cliUserID()}, Metadata: map[string]any{agentkit.MetadataQueueTurn: true}},
 	}, agentkit.SessionRouteInput{
 		Platform:   platformID,
+		Instance:   p.PlatformInstance(),
 		DeliveryID: p.deliveryID,
 	}), nil
 }
 
 func (p *Platform) slashContext() common.SlashContext {
 	return common.SlashContext{
-		Route:        rctx.SessionRouteFromDelivery(platformID, p.deliveryID, ""),
+		Route:        rctx.SessionRouteFromDelivery(platformID, p.deliveryID, "").WithInstance(p.PlatformInstance()),
 		SessionScope: agentkit.SessionScopeChannel,
 		UserID:       cliUserID(),
 	}

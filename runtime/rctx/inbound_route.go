@@ -12,16 +12,16 @@ func WithInboundRoute(event agentkit.MessageEvent, route agentkit.SessionRouteIn
 }
 
 // WithDeliveryRoute attaches the platform return address to an inbound event.
-// Runner SyncMessageEvent copies the resolved envelope onto the inbound event.
+// Runner resolves conversation and workspace before dispatch.
 func WithDeliveryRoute(event agentkit.MessageEvent, route agentkit.RouteRef) agentkit.MessageEvent {
-	if route.Platform != "" || route.HasTarget() {
-		event.Envelope.Route = route
-		if event.PlatformID == "" && route.Platform != "" {
-			event.PlatformID = strings.TrimSpace(route.Platform)
+	if route.Platform != "" || route.HasTarget() || route.Instance != "" {
+		if route.Instance == "" {
+			route.Instance = event.Envelope.Route.Instance
 		}
-	}
-	if uid := strings.TrimSpace(event.UserID); uid != "" && event.Envelope.Actor.UserID == "" {
-		event.Envelope.Actor.UserID = uid
+		if route.Instance == "" {
+			route.Instance = route.Platform
+		}
+		event.Envelope.Route = route
 	}
 	return event
 }

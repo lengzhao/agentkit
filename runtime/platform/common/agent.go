@@ -40,13 +40,13 @@ func (c AgentRoutingConfig) ResolveAgentID() agentkit.AgentID {
 
 func InboundMessage(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, text string) agentkit.MessageEvent {
 	return rctx.WithDeliverySession(agentkit.MessageEvent{
-		AgentID:    agentID,
-		PlatformID: platformID,
-		UserID:     userID,
+
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: text}},
 		},
+		Envelope: agentkit.TurnEnvelope{AgentID: agentID, Route: agentkit.RouteRef{Instance: platformID},
+			Actor: agentkit.ActorRef{UserID: userID}},
 	}, platformID, sessionID)
 }
 
@@ -56,10 +56,9 @@ func PermissionReplyEvent(agentID agentkit.AgentID, sessionID agentkit.SessionID
 
 func PermissionReplyEventWithConversation(agentID agentkit.AgentID, sessionID agentkit.SessionID, platformID, userID, conversation string, reply permission.Reply) agentkit.MessageEvent {
 	event := rctx.WithDeliverySession(agentkit.MessageEvent{
-		AgentID:    agentID,
-		PlatformID: platformID,
-		UserID:     userID,
-		Reply:      rtpermission.MarshalReply(reply),
+
+		Reply: rtpermission.MarshalReply(reply), Envelope: agentkit.TurnEnvelope{AgentID: agentID, Route: agentkit.RouteRef{Instance: platformID},
+			Actor: agentkit.ActorRef{UserID: userID}},
 	}, platformID, sessionID)
 	if conversation = strings.TrimSpace(conversation); conversation != "" {
 		event.Envelope.Conversation = conversation

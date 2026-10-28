@@ -38,6 +38,10 @@ type PlatformIdentifier interface {
 	PlatformID() string
 }
 
+// PlatformInstanceSetter receives the aggregator-assigned identity before Receive.
+// Leaf platforms with native commands or callbacks use it for logical state keys.
+type PlatformInstanceSetter interface{ SetPlatformInstance(string) }
+
 // UserTimezoneProvider is optional on leaf platforms. Runner uses it when
 // runner.config.inject includes timestamp.
 type UserTimezoneProvider interface {

@@ -15,11 +15,8 @@ func TestResolveEnvelopePreservesInboundRoute(t *testing.T) {
 	route := rctx.SessionRoute("slack", string(delivery))
 	event := agentkit.MessageEvent{
 		Envelope: agentkit.TurnEnvelope{
-			Route: route,
-			Actor: agentkit.ActorRef{UserID: "U111"},
+			Route: route.WithInstance("slack"), Actor: agentkit.ActorRef{UserID: "U111"},
 		},
-		PlatformID: "slack",
-		UserID:     "U111",
 	}
 	policy := rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel)
 	env := rctx.ResolveEnvelope(event, policy)
@@ -33,10 +30,9 @@ func TestResolveEnvelopeSlackChannelScope(t *testing.T) {
 
 	delivery := rctx.BuildDeliverySessionID("slack", "C001", "111.0", "U111")
 	event := agentkit.MessageEvent{
-		PlatformID: "slack",
-		UserID:     "U111",
+
 		Envelope: agentkit.TurnEnvelope{
-			Route: rctx.SessionRoute("slack", string(delivery)),
+			Route: rctx.SessionRoute("slack", string(delivery)).WithInstance("slack"), Actor: agentkit.ActorRef{UserID: "U111"},
 		},
 	}
 	policy := rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel)
@@ -59,9 +55,9 @@ func TestResolveEnvelopeChatAPIUsesDeliveryConversation(t *testing.T) {
 
 	delivery := rctx.BuildDeliverySessionID("chat-api", "default_channel", "conv_1", "")
 	event := agentkit.MessageEvent{
-		PlatformID: "chat-api",
+
 		Envelope: agentkit.TurnEnvelope{
-			Route: rctx.SessionRoute("chat-api", string(delivery)),
+			Route: rctx.SessionRoute("chat-api", string(delivery)).WithInstance("chat-api"),
 		},
 	}
 	policy := rctx.RoutePolicyForPlatform("chat-api", rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))

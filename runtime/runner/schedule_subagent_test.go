@@ -66,16 +66,14 @@ func textPart(msg agentkit.ModelMessage) string {
 
 func subagentCompleteEvent(sessionID agentkit.SessionID) agentkit.MessageEvent {
 	return agentkit.MessageEvent{
-		PlatformID: "cli",
+
 		Envelope: agentkit.TurnEnvelope{
-			Route: rctx.SessionRoute("cli", string(sessionID)),
-		},
+			Route: rctx.SessionRoute("cli", string(sessionID)).WithInstance("cli"), Metadata: map[string]any{
+				"subagent_complete": true,
+			}},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "[subagent-complete agent=cursor job=sub:1 status=failed]\nerr"}},
-		},
-		Metadata: map[string]any{
-			"subagent_complete": true,
 		},
 	}
 }
@@ -152,9 +150,9 @@ func TestBusyUserMessageStillSteers(t *testing.T) {
 	sched := newScheduler(1, func(context.Context, agentkit.LoopRequest) error { return nil }, nil)
 
 	r.handleInbound(context.Background(), sched, agentkit.MessageEvent{
-		PlatformID: "cli",
+
 		Envelope: agentkit.TurnEnvelope{
-			Route: rctx.SessionRoute("cli", string(sessionID)),
+			Route: rctx.SessionRoute("cli", string(sessionID)).WithInstance("cli"),
 		},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
@@ -187,10 +185,9 @@ func TestBusyQueuedUserMessageStartsNewTurn(t *testing.T) {
 	defer sched.stop()
 	defer sched.wait(2 * time.Second)
 	event := agentkit.MessageEvent{
-		PlatformID: "cli",
-		Envelope:   agentkit.TurnEnvelope{Route: rctx.SessionRoute("cli", string(sessionID))},
-		Message:    agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "next turn"}}},
-		Metadata:   map[string]any{agentkit.MetadataQueueTurn: true},
+
+		Envelope: agentkit.TurnEnvelope{Route: rctx.SessionRoute("cli", string(sessionID)).WithInstance("cli"), Metadata: map[string]any{agentkit.MetadataQueueTurn: true}},
+		Message:  agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "next turn"}}},
 	}
 	root.(*Root).handleInbound(context.Background(), sched, event)
 	loop.mu.Lock()
@@ -263,10 +260,8 @@ func TestBusyUserMessageEmitsTurnSteerEvent(t *testing.T) {
 		ScopeUserID: "ou_1",
 	}
 	event := agentkit.MessageEvent{
-		PlatformID: platformID,
-		UserID:     "ou_1",
-		AgentID:    "assistant",
-		Envelope:   agentkit.TurnEnvelope{Route: rctx.BuildSessionRoute(route)},
+
+		Envelope: agentkit.TurnEnvelope{Route: rctx.BuildSessionRoute(route).WithInstance(platformID), Actor: agentkit.ActorRef{UserID: "ou_1"}, AgentID: "assistant"},
 		Message: agentkit.ModelMessage{
 			Role:    "user",
 			Content: []agentkit.ContentPart{{Type: "text", Text: "改一下方向"}},
@@ -325,10 +320,9 @@ func TestIdleUserMessageEmitsNoTurnSteerEvent(t *testing.T) {
 	defer sched.wait(2 * time.Second)
 
 	event := agentkit.MessageEvent{
-		PlatformID: "lark",
-		UserID:     "ou_2",
+
 		Envelope: agentkit.TurnEnvelope{
-			Route: rctx.SessionRoute("lark", string(sessionID)),
+			Route: rctx.SessionRoute("lark", string(sessionID)).WithInstance("lark"), Actor: agentkit.ActorRef{UserID: "ou_2"},
 		},
 		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hi"}}},
 	}
@@ -370,9 +364,10 @@ func TestTurnSteerEventEndToEnd(t *testing.T) {
 	}
 	inbound := func(replyTo, text string) agentkit.MessageEvent {
 		return agentkit.MessageEvent{
-			PlatformID: "lark", UserID: "ou_9", AgentID: ag.ID(),
-			Envelope: route(replyTo),
-			Message:  agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: text}}},
+
+			Envelope: route(replyTo).WithPlatformInstance("lark").WithUserID("ou_9").WithAgentID(ag.ID()),
+
+			Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: text}}},
 		}
 	}
 
@@ -442,10 +437,9 @@ func TestSteerReporterReceivesTerminalOutcome(t *testing.T) {
 	defer sched.wait(2 * time.Second)
 
 	event := agentkit.MessageEvent{
-		PlatformID: "lark",
-		UserID:     "ou_7",
-		AgentID:    "assistant",
 		Envelope: agentkit.TurnEnvelope{
+			AgentID: "assistant",
+			Actor:   agentkit.ActorRef{UserID: "ou_7"},
 			Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 				Platform: "lark", DeliveryID: sessionID, ChannelID: "oc_ack", ReplyTo: "om_ack", ScopeUserID: "ou_7",
 			}),

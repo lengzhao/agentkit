@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"sync"
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/permission"
@@ -13,7 +14,10 @@ import (
 //
 // All mutable state is owned by a single goroutine; callers synchronize via ch.
 type Control struct {
-	ch chan func(*controlState)
+	ch       chan func(*controlState)
+	stop     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 type controlState struct {
@@ -29,39 +33,55 @@ type controlState struct {
 }
 
 func NewControl() *Control {
-	c := &Control{ch: make(chan func(*controlState))}
+	c := &Control{ch: make(chan func(*controlState)), stop: make(chan struct{}), done: make(chan struct{})}
 	go c.loop()
 	return c
 }
 
 func (c *Control) loop() {
 	var st controlState
-	for fn := range c.ch {
-		fn(&st)
-	}
-	// Drain any pending permission waiters so CancelAllInFlight callers do not
-	// block forever after the owner goroutine retires.
-	if st.permissionPending != nil {
-		st.permissionPending.finish()
-	}
-	if st.stepCancel != nil {
-		st.stepCancel()
+	defer close(c.done)
+	defer func() {
+		if st.permissionPending != nil {
+			st.permissionPending.finish()
+		}
+		if st.stepCancel != nil {
+			st.stepCancel()
+		}
+	}()
+	for {
+		select {
+		case fn := <-c.ch:
+			fn(&st)
+		case <-c.stop:
+			return
+		}
 	}
 }
 
-// Stop retires the owner goroutine. Safe to call once; subsequent sync calls
-// will panic on a closed channel. Loop calls this on shutdown for every session.
+// Stop cancels pending work and retires the owner. Concurrent calls and late
+// turn cleanup are safe: the request channel stays open, and stop rejects sends.
 func (c *Control) Stop() {
-	close(c.ch)
+	c.stopOnce.Do(func() { close(c.stop) })
+	<-c.done
 }
 
-func (c *Control) sync(fn func(*controlState)) {
-	done := make(chan struct{})
-	c.ch <- func(st *controlState) {
-		fn(st)
-		close(done)
+// sync reports whether the owner accepted the operation. Once accepted, wait
+// for its completion even during shutdown so callers can safely read results.
+func (c *Control) sync(fn func(*controlState)) bool {
+	select {
+	case <-c.stop:
+		return false
+	default:
 	}
-	<-done
+	done := make(chan struct{})
+	select {
+	case c.ch <- func(st *controlState) { fn(st); close(done) }:
+		<-done
+		return true
+	case <-c.stop:
+		return false
+	}
 }
 
 func (c *Control) setTurnCapability(cap permission.Capability) {
@@ -140,9 +160,11 @@ func (c *Control) ClearTurnCancel() {
 
 func (c *Control) BeginStep(parent context.Context) (context.Context, func()) {
 	stepCtx, cancel := context.WithCancel(parent)
-	c.sync(func(st *controlState) {
+	if !c.sync(func(st *controlState) {
 		st.stepCancel = cancel
-	})
+	}) {
+		cancel()
+	}
 	return stepCtx, func() {
 		cancel()
 		c.sync(func(st *controlState) {

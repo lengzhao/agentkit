@@ -60,6 +60,7 @@ type Timer struct {
 // Best practices:
 //   - Ticks are anchored to the start time and missed ones are skipped, so a slow turn does not make the schedule drift.
 //   - Use platform/worker with a cron expression when you need calendar times rather than an interval.
+//
 // SetDefaults implements pluginkit.Defaulter.
 func (c *TimerConfig) SetDefaults() {
 	if strings.TrimSpace(c.SessionID) == "" {
@@ -145,8 +146,8 @@ func (t *Timer) Receive(ctx context.Context) (agentkit.MessageEvent, error) {
 	slog.Info("timer tick", "run", run+1, "interval", t.interval.String())
 	sessionID := t.naming.forRun(run)
 	return rctx.WithDeliverySession(agentkit.MessageEvent{
-		PlatformID: timerPlatformID,
-		Message:    userMessage(t.prompt),
+
+		Message: userMessage(t.prompt), Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: timerPlatformID}},
 	}, timerPlatformID, sessionID), nil
 }
 

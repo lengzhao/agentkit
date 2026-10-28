@@ -44,7 +44,11 @@ func (r *Root) inboundSubmit(sched *scheduler) capschedule.SubmitFunc {
 }
 
 func (r *Root) routePolicy(event agentkit.MessageEvent) rctx.RoutePolicy {
-	return rctx.RoutePolicyForPlatform(event.PlatformID, rctx.DefaultRoutePolicy(r.sessionScope))
+	protocol := event.Envelope.Route.Platform
+	if protocol == "" {
+		protocol = rctx.ParseDelivery(rctx.InboundDeliveryID(event), event.Envelope.Actor.UserID).Platform
+	}
+	return rctx.RoutePolicyForPlatform(protocol, rctx.DefaultRoutePolicy(r.sessionScope))
 }
 
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
@@ -59,14 +63,15 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	}
 	env = env.WithConversation(conversation)
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
-	scoped := rctx.SyncMessageEvent(event, env)
+	scoped := event
+	scoped.Envelope = env
 	agentID, err := r.resolveAgentID(ctx, scoped, agentkit.SessionID(conversation))
 	if err != nil {
 		r.reportInboundError(ctx, env, event, err)
 		return
 	}
 	if agentID != "" {
-		scoped.AgentID = agentID
+		scoped.Envelope.AgentID = agentID
 		env = env.WithAgentID(agentID)
 	}
 	if len(scoped.Reply) > 0 {
@@ -74,7 +79,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 			return
 		}
 		slog.Warn("permission reply not delivered",
-			"platform", event.PlatformID,
+			"platform", event.Envelope.Route.Instance,
 			"user_id", env.Actor.UserID,
 			"route", routeLogID(env.Route),
 			"conversation", conversation,
@@ -99,19 +104,19 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	subagentComplete := inboundIsSubagentComplete(scoped)
 	// A sequential platform may have observed turn/end before loop teardown
 	// clears its busy flag. Preserve that input as a new scheduler request.
-	queueTurn, _ := scoped.Metadata[agentkit.MetadataQueueTurn].(bool)
+	queueTurn, _ := scoped.Envelope.Metadata[agentkit.MetadataQueueTurn].(bool)
 	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) && !subagentComplete && !queueTurn {
 		if r.tryStopBusyInbound(ctx, scoped) {
 			return
 		}
 		steerMsg := r.formatInboundEvent(scoped, env).Message
 		slog.Info("inbound steered to busy session",
-			"platform", event.PlatformID,
+			"platform", event.Envelope.Route.Instance,
 			"user_id", env.Actor.UserID,
 			"route", routeLogID(env.Route),
 			"conversation", conversation,
 			"workspace", env.Workspace,
-			"agent_id", scoped.AgentID,
+			"agent_id", scoped.Envelope.AgentID,
 			"preview", telemetry.SummarizeMessage(steerMsg),
 		)
 		// Instant ack: the message was accepted into the running turn's queue.
@@ -133,22 +138,22 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	scoped = r.formatInboundEvent(scoped, env)
 	if subagentComplete {
 		slog.Info("async subagent follow-up queued",
-			"platform", event.PlatformID,
+			"platform", event.Envelope.Route.Instance,
 			"user_id", env.Actor.UserID,
 			"route", routeLogID(env.Route),
 			"conversation", conversation,
 			"workspace", env.Workspace,
-			"agent_id", scoped.AgentID,
+			"agent_id", scoped.Envelope.AgentID,
 			"preview", telemetry.SummarizeMessage(scoped.Message),
 		)
 	} else {
 		slog.Info("inbound turn queued",
-			"platform", event.PlatformID,
+			"platform", event.Envelope.Route.Instance,
 			"user_id", env.Actor.UserID,
 			"route", routeLogID(env.Route),
 			"conversation", conversation,
 			"workspace", env.Workspace,
-			"agent_id", scoped.AgentID,
+			"agent_id", scoped.Envelope.AgentID,
 			"preview", telemetry.SummarizeMessage(scoped.Message),
 		)
 	}
@@ -156,15 +161,12 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
 		out.Route = env.Route
 		if out.AgentID == "" {
-			out.AgentID = scoped.AgentID
-		}
-		if out.PlatformID == "" {
-			out.PlatformID = env.Route.Platform
+			out.AgentID = scoped.Envelope.AgentID
 		}
 		if out.UserID == "" {
 			out.UserID = env.Actor.UserID
 		}
-		if err := out.RequirePlatformID(); err != nil {
+		if err := out.RequireDestination(); err != nil {
 			return err
 		}
 		return r.platform.Send(ctx, out)
@@ -190,7 +192,7 @@ func (r *Root) reportInboundError(ctx context.Context, env agentkit.TurnEnvelope
 		"err", err,
 	)
 	out := rctx.OutboundFromEnvelope(env, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
-	out.AgentID = event.AgentID
+	out.AgentID = event.Envelope.AgentID
 	_ = r.platform.Send(ctx, out)
 }
 
@@ -228,15 +230,15 @@ func (r *Root) reportTurnSteer(ctx context.Context, env agentkit.TurnEnvelope, e
 	data := capsession.TurnSteerData{
 		Outcome:   outcome,
 		SessionID: string(rctx.ConversationFromEvent(event)),
-		AgentID:   string(event.AgentID),
+		AgentID:   string(event.Envelope.AgentID),
 		UserID:    env.Actor.UserID,
 		Preview:   clampSteerPreview(telemetry.SummarizeMessage(event.Message)),
 	}
 	out := rctx.OutboundFromEnvelope(env, agentkit.EventTurnSteer, rctx.MarshalOutboundData(data))
-	out.AgentID = event.AgentID
+	out.AgentID = event.Envelope.AgentID
 	if err := r.platform.Send(ctx, out); err != nil {
 		slog.Debug("reporting turn steer failed",
-			"platform", event.PlatformID,
+			"platform", event.Envelope.Route.Instance,
 			"route", routeLogID(env.Route),
 			"outcome", outcome,
 			"err", err,
@@ -267,14 +269,14 @@ func (r *Root) tryStopBusyInbound(ctx context.Context, event agentkit.MessageEve
 	out, err := stopCommand{loop: r.loop, store: r.sessionStore}.CommandExec(ctx, "")
 	if err != nil {
 		slog.Error("stop command failed",
-			"platform", event.PlatformID,
-			"user_id", event.UserID,
+			"platform", event.Envelope.Route.Instance,
+			"user_id", event.Envelope.Actor.UserID,
 			"err", err,
 		)
 		return true
 	}
 	if out != "" {
-		slog.Info("stop command", "platform", event.PlatformID, "reply", out)
+		slog.Info("stop command", "platform", event.Envelope.Route.Instance, "reply", out)
 	}
 	return true
 }
@@ -290,9 +292,9 @@ func inboundPlainText(msg agentkit.ModelMessage) string {
 }
 
 func inboundIsSubagentComplete(event agentkit.MessageEvent) bool {
-	if event.Metadata == nil {
+	if event.Envelope.Metadata == nil {
 		return false
 	}
-	v, ok := event.Metadata["subagent_complete"].(bool)
+	v, ok := event.Envelope.Metadata["subagent_complete"].(bool)
 	return ok && v
 }

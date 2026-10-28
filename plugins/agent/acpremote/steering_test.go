@@ -35,7 +35,7 @@ func TestSteeringCapability(t *testing.T) {
 }
 
 func TestSteeringWorker(t *testing.T) {
-	for _, outcome := range []string{"injected", "promptRequired", "methodNotFound", "invalid", "transportError"} {
+	for _, outcome := range []string{"injected", "promptRequired", "methodNotFound", "invalid", "invalidJSON", "acceptError", "transportError"} {
 		t.Run(outcome, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
@@ -76,6 +76,12 @@ func TestSteeringWorker(t *testing.T) {
 					return
 				}
 				response := map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"outcome": outcome}}
+				if outcome == "invalidJSON" {
+					response["result"] = "not an outcome object"
+				}
+				if outcome == "acceptError" {
+					response["result"] = map[string]any{"outcome": "injected"}
+				}
 				if outcome == "methodNotFound" {
 					delete(response, "result")
 					response["error"] = map[string]any{"code": -32601, "message": "method not found"}
@@ -87,7 +93,13 @@ func TestSteeringWorker(t *testing.T) {
 			done := make(chan error, 1)
 			accepted := 0
 			go func() {
-				done <- forwardSteering(ctx, stop, ctrl, conn, "remote", func() { _ = cw.Close() }, func(agentkit.ModelMessage) error { accepted++; return nil })
+				done <- forwardSteering(ctx, stop, ctrl, conn, "remote", func() { _ = cw.Close() }, func(agentkit.ModelMessage) error {
+					accepted++
+					if outcome == "acceptError" {
+						return errors.New("persist accepted message")
+					}
+					return nil
+				})
 			}()
 			select {
 			case <-received:
@@ -96,17 +108,19 @@ func TestSteeringWorker(t *testing.T) {
 			}
 			close(stop)
 			err := <-done
-			if outcome == "invalid" || outcome == "transportError" {
+			if outcome == "invalid" || outcome == "invalidJSON" || outcome == "transportError" || outcome == "acceptError" {
 				if err == nil {
 					t.Fatal("expected error")
 				}
-				// Only an ambiguous transport failure is a terminal rejection;
-				// a protocol decode error leaves the outcome to Loop's fallback.
-				if outcome == "transportError" && (len(acks) != 1 || acks[0] != capsession.SteerOutcomeRejected) {
-					t.Fatalf("transportError acks = %v, want [rejected]", acks)
+				want := capsession.SteerOutcomeRejected
+				if outcome == "acceptError" {
+					want = capsession.SteerOutcomeInjected
 				}
-				if outcome == "invalid" && len(acks) != 0 {
-					t.Fatalf("invalid acks = %v, want none", acks)
+				if len(acks) != 1 || acks[0] != want {
+					t.Fatalf("acks = %v, want [%s]", acks, want)
+				}
+				if len(ctrl.PopSteering()) != 0 {
+					t.Fatal("ambiguous or injected message must not be retried")
 				}
 				return
 			}
@@ -192,6 +206,12 @@ func TestACPSteeringHelper(t *testing.T) {
 				reply(promptID, map[string]any{"stopReason": "cancelled"})
 			}
 		case "_session/steering":
+			if mode == "delayedResponse" {
+				time.Sleep(5200 * time.Millisecond)
+				reply(promptID, map[string]any{"stopReason": "end_turn"})
+				reply(req.ID, map[string]any{"outcome": "injected"})
+				continue
+			}
 			reply(promptID, map[string]any{"stopReason": "end_turn"})
 			time.Sleep(20 * time.Millisecond)
 			outcome := mode
@@ -218,7 +238,7 @@ func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ag.(*Runtime).bridgeFor("stop-session").releaseSubprocess()
+	defer releaseSessionBridge(t, ag.(*Runtime), "stop-session")
 	ctrl := loop.NewControl()
 	defer ctrl.Stop()
 	ctx, cancel := context.WithTimeout(agenttest.TurnContext("stop-session", "acp"), 2*time.Second)
@@ -230,7 +250,7 @@ func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
 	err = ag.RunTurn(ctx, agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "work"}}}, Emit: func(_ context.Context, ev agentkit.OutboundEvent) error {
 		if ev.Type == agentkit.EventMessageUpdate && !stopped {
 			stopped = true
-			remoteProc = ag.(*Runtime).bridgeFor("stop-session").proc.Load()
+			remoteProc = requireBridge(t, ag.(*Runtime), "stop-session").proc.Load()
 			return ctrl.Cancel(context.Background(), "/stop")
 		}
 		if ev.Type == agentkit.EventTurnEnd {
@@ -283,7 +303,7 @@ func TestRunTurnStopCancelsRemotePrompt(t *testing.T) {
 }
 
 func TestRunTurnSteering(t *testing.T) {
-	for _, mode := range []string{"injected", "promptRequired", "unsupported", "cancelOnAccept"} {
+	for _, mode := range []string{"injected", "promptRequired", "unsupported", "cancelOnAccept", "delayedResponse"} {
 		t.Run(mode, func(t *testing.T) {
 			exe, err := os.Executable()
 			if err != nil {
@@ -294,7 +314,11 @@ func TestRunTurnSteering(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(agenttest.TurnContext("steering-session", "acp"), 3*time.Second)
+			timeout := 3 * time.Second
+			if mode == "delayedResponse" {
+				timeout = 8 * time.Second
+			}
+			ctx, cancel := context.WithTimeout(agenttest.TurnContext("steering-session", "acp"), timeout)
 			defer cancel()
 			store := &steeringTestStore{sess: mem}
 			if mode == "cancelOnAccept" {
@@ -336,7 +360,7 @@ func TestRunTurnSteering(t *testing.T) {
 				}
 			}
 			wantUserMessages := 1
-			if mode == "injected" || mode == "cancelOnAccept" {
+			if mode == "injected" || mode == "cancelOnAccept" || mode == "delayedResponse" {
 				wantUserMessages = 2
 			}
 			if userMessages != wantUserMessages {
@@ -344,7 +368,7 @@ func TestRunTurnSteering(t *testing.T) {
 			}
 			pending := ctrl.PopSteering()
 			want := 1
-			if mode == "injected" || mode == "cancelOnAccept" {
+			if mode == "injected" || mode == "cancelOnAccept" || mode == "delayedResponse" {
 				want = 0
 			}
 			if len(pending) != want {
@@ -400,6 +424,68 @@ func TestSteeringWriteCancellation(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("steering write did not unblock")
+	}
+}
+
+// A peer can keep serving the original prompt while a steering acknowledgement
+// is delayed. Timing out the extension must leave that shared transport alive.
+func TestSteeringResponseTimeoutPreservesPrompt(t *testing.T) {
+	cr, sw := io.Pipe()
+	sr, cw := io.Pipe()
+	defer cr.Close()
+	defer sw.Close()
+	defer sr.Close()
+	defer cw.Close()
+	conn := acp.NewClientSideConnection(&bridgeClient{}, cw, cr)
+	promptReceived := make(chan struct{})
+	finishPrompt := make(chan struct{})
+	defer close(finishPrompt)
+	go func() {
+		decoder := json.NewDecoder(sr)
+		var req struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if decoder.Decode(&req) != nil {
+			return
+		}
+		promptID := append(json.RawMessage(nil), req.ID...)
+		close(promptReceived)
+		if decoder.Decode(&req) != nil {
+			return
+		}
+		// Keep reading cancellation notifications while waiting to finish.
+		go io.Copy(io.Discard, sr)
+		<-finishPrompt
+		_ = json.NewEncoder(sw).Encode(map[string]any{"jsonrpc": "2.0", "id": promptID, "result": map[string]any{"stopReason": "end_turn"}})
+	}()
+	promptDone := make(chan error, 1)
+	go func() {
+		_, err := conn.Prompt(t.Context(), acp.PromptRequest{SessionId: "remote", Prompt: []acp.ContentBlock{acp.TextBlock("work")}})
+		promptDone <- err
+	}()
+	select {
+	case <-promptReceived:
+	case <-time.After(time.Second):
+		t.Fatal("prompt not received")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	aborted := false
+	_, err := callSteering(ctx, conn, "remote", agentkit.ModelMessage{Role: "user"}, func() { aborted = true; _ = cw.Close() })
+	if err == nil {
+		t.Fatal("expected steering timeout")
+	}
+	if aborted {
+		t.Fatal("steering response timeout aborted the active prompt transport")
+	}
+	finishPrompt <- struct{}{}
+	select {
+	case err := <-promptDone:
+		if err != nil {
+			t.Fatalf("original prompt failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("original prompt did not complete")
 	}
 }
 

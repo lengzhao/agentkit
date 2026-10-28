@@ -120,21 +120,44 @@ func (op endPromptOp) run(_ *bridge, st *connLocalState) {
 	}
 }
 
-func (b *bridge) connSend(op connOp) {
-	b.connOps <- op
+// connSend hands one operation to the connection loop. It reports whether the
+// loop accepted it: after stop, a late caller (a prompt ending, a subprocess
+// reaper) is refused instead of blocking forever or panicking on a closed
+// channel.
+func (b *bridge) connSend(op connOp) bool {
+	select {
+	case <-b.stopCh:
+		return false
+	default:
+	}
+	select {
+	case b.connOps <- op:
+		return true
+	case <-b.stopCh:
+		return false
+	}
 }
 
 func (b *bridge) connLoop() {
 	var st connLocalState
-	for op := range b.connOps {
-		op.run(b, &st)
+	for {
+		select {
+		case op := <-b.connOps:
+			op.run(b, &st)
+		case <-b.stopCh:
+			return
+		}
 	}
 }
 
-// stop closes connOps, retiring the connLoop goroutine. Call after Close (or
-// dropBridge) has detached the subprocess. Safe to call once.
+// stop retires the connLoop goroutine. It signals rather than closing connOps:
+// connSend may be running concurrently (a prompt settling, a subprocess exit
+// handler), and closing the channel under it would panic.
+//
+// Call after the subprocess has been detached, or the loop exits while a
+// process is still running.
 func (b *bridge) stop() {
-	close(b.connOps)
+	b.stopOnce.Do(func() { close(b.stopCh) })
 }
 
 // adoptProcOp seeds conn-loop state (tests).
@@ -165,7 +188,9 @@ func detachSubprocess(st *connLocalState) (*subprocess, context.CancelFunc) {
 
 func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 	resp := make(chan ensureConnResult, 1)
-	b.connSend(ensureConnOp{ctx: ctx, resp: resp})
+	if !b.connSend(ensureConnOp{ctx: ctx, resp: resp}) {
+		return nil, fmt.Errorf("acp-remote: bridge stopped")
+	}
 	r := <-resp
 	return r.proc, r.err
 }
@@ -219,7 +244,8 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 
 	client := &bridgeClient{bridge: b}
 	conn := acp.NewClientSideConnection(client, stdin, stdout)
-	conn.SetLogger(slog.Default())
+	// The SDK already uses slog.Default(). SetLogger here races with the
+	// receive goroutine started by NewClientSideConnection on early EOF.
 
 	initResp, err := conn.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
@@ -279,20 +305,23 @@ func (b *bridge) authenticateSubprocess(ctx context.Context, proc *subprocess) e
 
 func (b *bridge) releaseSubprocess() {
 	done := make(chan struct{})
-	b.connSend(detachReleaseOp{done: done})
-	<-done
+	if b.connSend(detachReleaseOp{done: done}) {
+		<-done
+	}
 }
 
 func (b *bridge) beginPromptContext(ctx context.Context) (context.Context, func()) {
 	resp := make(chan beginPromptResult, 1)
-	b.connSend(beginPromptOp{ctx: ctx, resp: resp})
+	if !b.connSend(beginPromptOp{ctx: ctx, resp: resp}) {
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+		return cancelled, func() {}
+	}
 	r := <-resp
 	return r.pctx, r.end
 }
 
 func (b *bridge) Close() error {
-	done := make(chan struct{})
-	b.connSend(detachReleaseOp{done: done})
-	<-done
+	b.releaseSubprocess()
 	return nil
 }

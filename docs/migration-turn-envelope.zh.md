@@ -6,15 +6,20 @@
 
 | 旧 API | 新 API |
 |--------|--------|
+| `MessageEvent.AgentID/PlatformID/UserID/Metadata` | `Envelope.AgentID/Route.Instance/Actor.UserID/Metadata` |
+| `OutboundEvent.PlatformID` | `Route.DestinationID()`（`Instance` 缺省时回退 `Platform`） |
+| `cap/delivery.Route`、`cap/schedule.Route` | `agentkit.RouteRef`；schedule 的 Actor、AgentID 分开保存 |
 | `MessageEvent.SessionID` | `MessageEvent.Envelope.Conversation`（Runner 在 dispatch 前填充） |
 | `MessageEvent.DeliverySessionID` | `MessageEvent.Envelope.Route`（Platform 入站设置） |
 | `OutboundEvent.SessionID` | `OutboundEvent.Route` |
-| `ctx.Value(KeySessionID)` 等 | `session.EnvelopeFromContext(ctx)` / `session.SessionIDFromContext(ctx)` |
+| `ctx.Value(KeySessionID)` 等 | `rctx.EnvelopeFromContext(ctx)` / `rctx.SessionIDFromContext(ctx)` |
 | `LoopRequest.Envelope` | `LoopRequest.Event.Envelope`（单一来源） |
-| `cap/tenant.FromContext` | `session.WorkspaceFromContext`（优先读 `Envelope.Workspace`） |
+| `cap/tenant.FromContext` | `rctx.WorkspaceFromContext`（优先读 `Envelope.Workspace`） |
 | `tool/send` deps `platform` | `sender`（`cap/delivery.Sender`，通常 `platform.default`） |
 | `tool/chat-history` deps `platform` | `history`（`cap/chathistory.Router`） |
 | agent/hook 重复 compaction 链 | `compaction/pipeline` 单点引用 |
+
+路由辅助接口已收敛到 `runtime/rctx`：`runtime/delivery` 的 `ResolveRoute`、`NormalizeSessionID`、`OutboundRoute`、`OutboundRouteID` 转发函数已删除。原 `rctx.SlackSessionID`、`SlackSessionIDForScope` 改用通用的 `BuildDeliverySessionID` 和 `ApplyScope`。
 
 ## 插件依赖分层
 
@@ -22,8 +27,9 @@
 
 | 包 | `cap`（类型/接口） | `runtime`（实现） |
 |----|-------------------|-------------------|
-| session | `Todo`、`RunState`、`DeliveryParts` 等 | `EnvelopeFromContext`、`LoadRunState`、`ApplyEnvelopeToContext`… |
-| delivery | `Sender`、`Route`、`RouteInput` | `ResolveRoute`、`NormalizeSessionID`、`OutboundRoute`… |
+| session | `Todo`、`RunState` 等 | `LoadRunState`、事件读写与派生… |
+| 路由上下文 | `agentkit.RouteRef`、`TurnEnvelope` | `runtime/rctx`：`EnvelopeFromContext`、`ApplyEnvelopeToContext`、`BuildSessionRoute`、`DeliveryParts`… |
+| delivery | `Sender`、`Route`、`RouteInput` | 发送实现位于 `runtime/delivery`；`ResolveRoute`、`NormalizeSessionID`、`OutboundRoute` 位于 `runtime/rctx` |
 | bind | —（无 `cap/bind`） | `Resolver`、`ResolveCtxValue`、`Default`（`runtime/bind`） |
 | chathistory | `Provider`、`Router` | `RouterFromPlatform` 适配器 |
 | compaction | `Service`、`Request`、`EventData`、`Preparation` 等 | `ApplyAll`、`Prepare`、`PruneToolResults`、`SerializeConversation`… |
@@ -40,11 +46,10 @@
 ```go
 import (
     capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
-    rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
-    "github.com/lengzhao/agentkit/runtime/session"
+    "github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: input.SessionID})
+route, err := rctx.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: input.SessionID})
 ```
 
 - **插件应优先依赖**：`agentkit`（根包语义接口）、`cap/*`（类型）、`runtime/*`（读/写上下文与路由的函数）、`pluginkit`
@@ -54,10 +59,9 @@ route, err := rtdelivery.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: in
 ## Platform 入站
 
 ```go
-delivery := session.BuildDeliverySessionID("slack", channelID, threadTS, userID)
+delivery := rctx.BuildDeliverySessionID("slack", channelID, threadTS, userID)
 event := rctx.WithInboundRoute(agentkit.MessageEvent{
-    PlatformID: "slack",
-    UserID:     userID,
+    Envelope: agentkit.TurnEnvelope{Actor: agentkit.ActorRef{UserID: userID}},
     Message:    msg,
 }, agentkit.SessionRouteInput{
     Platform:    "slack",
@@ -77,7 +81,6 @@ event := rctx.WithInboundRoute(agentkit.MessageEvent{
 ```go
 agentkit.OutboundEvent{
     Route:      env.Route,
-    PlatformID: env.Route.Platform,
     Type:       typ,
     Data:       data,
 }
@@ -93,16 +96,28 @@ agentkit.LoopRequest{
         Envelope: agentkit.TurnEnvelope{
             Conversation: "cli:default",
             Workspace:    "cli:default",
-            Route:        agentkit.SessionRoute("cli", "cli:default"),
+            Route:        rctx.SessionRoute("cli", "cli:default"),
         },
         Message: userMsg,
     },
 }
 ```
 
+## 平台类型与实例
+
+`Route.Platform` 表示协议/codec 类型，例如 `slack`；`Route.Instance` 表示具体适配器，例如第二个 Slack 实例 `slack1`。`DestinationID()` 优先返回 Instance，旧数据缺省时回退 Platform。multiplex 入站统一写入 Instance，出站与历史查询只按该目标选择适配器；平台原始 delivery ID 保持不变，会话、租户和绑定键使用实例命名空间，避免同名频道相互污染。
+
+Runner 从单一 Envelope 解析 Conversation、Workspace；核心层不再维护平行的 AgentID、PlatformID、UserID 或 Metadata。原 `SyncMessageEvent` 已删除。
+
+## 持久化定时任务
+
+`Job.Route` 保存 `RouteRef.Stable()`，不保留临时 ReplyTo。`Job.Actor` 与 `Job.AgentID` 保存归属。旧 `route.deliverySessionId/platformId/userId/agentId` 仅在 Job JSON 读取边界转换，写回统一输出新格式。reuse 模式的逻辑 session 同样使用实例命名空间。
+
+`tool/chat-history` 只依赖 history router，通过纯路由解析获得 RouteRef；删除配置中的 `deps.delivery`。历史 Provider 收到的是完整 RouteRef。
+
 ## `/new` active mapping
 
-`/new` 从 `Envelope.Route` 推导 stable mapping key（`session.ActiveEntryKeyFromContext`），写入 `sessions/<stable>/current.json` 指向新 `Conversation`。`Route` 与 `Workspace` 不变；Runner 下次入站时把 resolved `Conversation` 更新为新会话 id。
+`/new` 从 `Envelope.Route` 推导 stable mapping key（`rctx.ActiveEntryKeyFromContext`），写入 `sessions/<stable>/current.json` 指向新 `Conversation`。`Route` 与 `Workspace` 不变；Runner 下次入站时把 resolved `Conversation` 更新为新会话 id。
 
 ## L0 配置（`config.base.yaml`）
 
@@ -150,3 +165,5 @@ telemetry.default:
 ```
 
 可选能力仍保留在 L0 注释中（如 `learning.dreamSweep`），启用时取消注释并挂到 `runner.deps.schedules`；见 [guides/learning-dreaming.zh.md](guides/learning-dreaming.zh.md) §7。
+
+同协议的多个适配器由 multiplex 在 Receive 启动前通过可选的 `PlatformInstanceSetter` 注入实例名，原生 slash、卡片命令和撤回停止任务均使用该身份。显式 `slack1:C2` 先选择实例，再转换成协议地址 `slack:C2`；平台编解码器不会收到实例前缀。

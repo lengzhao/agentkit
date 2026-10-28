@@ -50,10 +50,8 @@ func TestChannelAgentBindUsesEntryKey(t *testing.T) {
 
 func slashCtx(channel string) context.Context {
 	delivery := rctx.BuildDeliverySessionID("slack", channel, "", "U1")
-	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{
-		PlatformID: "slack",
-		UserID:     "U1",
-	}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	env := rctx.ResolveEnvelope(rctx.WithDeliveryRoute(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "slack"},
+		Actor: agentkit.ActorRef{UserID: "U1"}}}, rctx.SessionRoute("slack", string(delivery))), rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
 	return rctx.ApplyEnvelopeToContext(context.Background(), env)
 }
 

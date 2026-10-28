@@ -191,8 +191,8 @@ func TestLoopAgentAsyncSubmitsFollowUp(t *testing.T) {
 	}
 	select {
 	case event := <-ch:
-		if event.AgentID != "assistant" {
-			t.Fatalf("agent id = %q", event.AgentID)
+		if event.Envelope.AgentID != "assistant" {
+			t.Fatalf("agent id = %q", event.Envelope.AgentID)
 		}
 		if len(event.Message.Content) == 0 || event.Message.Content[0].Text == "" {
 			t.Fatal("empty follow-up text")
@@ -246,8 +246,8 @@ func TestLoopAgentAsyncSubmitsFollowUpOnError(t *testing.T) {
 		if !strings.Contains(text, wantErr.Error()) {
 			t.Fatalf("follow-up = %q", text)
 		}
-		if event.Metadata["subagent_status"] != "failed" {
-			t.Fatalf("metadata status = %v", event.Metadata["subagent_status"])
+		if event.Envelope.Metadata["subagent_status"] != "failed" {
+			t.Fatalf("metadata status = %v", event.Envelope.Metadata["subagent_status"])
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected async follow-up submit on error")
@@ -329,7 +329,7 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := &blockingLoopAgent{id: "cursor", started: started, unblock: unblock, finished: finished, store: store}
+	agent := &blockingLoopAgent{id: "cursor", started: started, unblock: unblock, store: store}
 	spawner, err := NewLoopAgent(LoopAgentConfig{
 		MaxConcurrentJobsPerSession: 1,
 		Agents: []LoopAgentEntry{{
@@ -346,12 +346,28 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 		t.Fatal(err)
 	}
 	loop := spawner.(*LoopAgentSpawner)
-	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error { return nil })
+	// Completion is submitted after the child result and parent subagent/end
+	// event have been persisted. RunTurn returning is too early for cleanup.
+	loop.BindSubmit(func(context.Context, agentkit.MessageEvent) error {
+		close(finished)
+		return nil
+	})
 
 	ctx := loopParentCtx()
 	if _, err := loop.Run(ctx, capsubagent.Request{Agent: "cursor", Task: "first job"}); err != nil {
 		t.Fatal(err)
 	}
+	var unblockOnce sync.Once
+	release := func() { unblockOnce.Do(func() { close(unblock) }) }
+	// Even a failed assertion must let the worker finish before TempDir cleanup.
+	t.Cleanup(func() {
+		release()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("async completion did not finish before cleanup")
+		}
+	})
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
@@ -360,7 +376,7 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 	if _, err := loop.Run(ctx, capsubagent.Request{Agent: "cursor", Task: "second job"}); err == nil {
 		t.Fatal("expected second async job to be rejected")
 	}
-	close(unblock)
+	release()
 	select {
 	case <-finished:
 	case <-time.After(2 * time.Second):
@@ -369,11 +385,10 @@ func TestLoopAgentRejectsSecondAsync(t *testing.T) {
 }
 
 type blockingLoopAgent struct {
-	id       agentkit.AgentID
-	started  chan struct{}
-	unblock  chan struct{}
-	finished chan struct{}
-	store    agentkit.SessionStore
+	id      agentkit.AgentID
+	started chan struct{}
+	unblock chan struct{}
+	store   agentkit.SessionStore
 }
 
 func (a *blockingLoopAgent) ID() agentkit.AgentID { return a.id }
@@ -384,18 +399,12 @@ func (a *blockingLoopAgent) RunTurn(ctx context.Context, _ agentkit.TurnInput) e
 	sessionID := rctx.SessionIDFromContext(ctx)
 	sess, err := a.store.Get(ctx, sessionID)
 	if err != nil {
-		if a.finished != nil {
-			close(a.finished)
-		}
 		return err
 	}
 	err = sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventAssistantMessage, agentkit.ModelMessage{
 		Role:    "assistant",
 		Content: []agentkit.ContentPart{{Type: "text", Text: "done"}},
 	})
-	if a.finished != nil {
-		close(a.finished)
-	}
 	return err
 }
 

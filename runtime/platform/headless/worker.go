@@ -308,8 +308,8 @@ func (w *Worker) runScript(ctx context.Context, scriptPath string) error {
 func (w *Worker) event(run int, prompt string) agentkit.MessageEvent {
 	sessionID := w.naming.forRun(run)
 	return rctx.WithDeliverySession(agentkit.MessageEvent{
-		PlatformID: workerPlatformID,
-		Message:    userMessage(prompt),
+
+		Message: userMessage(prompt), Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: workerPlatformID}},
 	}, workerPlatformID, sessionID)
 }
 

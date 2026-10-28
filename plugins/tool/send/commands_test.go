@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
-	"github.com/lengzhao/agentkit/runtime/delivery"
+
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -113,11 +113,11 @@ func TestSendSlashCommandTargetChat(t *testing.T) {
 	if out != "" {
 		t.Fatalf("reply = %q", out)
 	}
-	if len(platform.sent) != 1 || delivery.OutboundRouteID(platform.sent[0]) != "slack:C002" {
+	if len(platform.sent) != 1 || rctx.OutboundRouteID(platform.sent[0]) != "slack:C002" {
 		t.Fatalf("sent = %#v", platform.sent)
 	}
-	if platform.sent[0].PlatformID != "slack" {
-		t.Fatalf("platformID = %q, want slack", platform.sent[0].PlatformID)
+	if platform.sent[0].Route.Instance != "slack" {
+		t.Fatalf("platformID = %q, want slack", platform.sent[0].Route.Instance)
 	}
 }
 

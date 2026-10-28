@@ -41,25 +41,19 @@ func DefaultRoutePolicy(conversationScope agentkit.SessionScope) RoutePolicy {
 func ResolveEnvelope(event agentkit.MessageEvent, policy RoutePolicy) agentkit.TurnEnvelope {
 	env := event.Envelope
 	delivery := InboundDeliveryID(event)
-	platform := strings.TrimSpace(event.PlatformID)
-	if platform == "" && delivery != "" {
-		platform = ParseDelivery(delivery, event.UserID).Platform
+	if env.Route.Platform == "" {
+		env.Route.Platform = ParseDelivery(delivery, env.Actor.UserID).Platform
+		if env.Route.Platform == "" {
+			env.Route.Platform = env.Route.Instance
+		}
 	}
-	if env.Route.Platform == "" && delivery != "" {
-		env.Route = SessionRouteFromDelivery(platform, delivery, "")
-	}
-	if env.Actor.UserID == "" {
-		env.Actor.UserID = strings.TrimSpace(event.UserID)
-	}
-	if len(env.Metadata) == 0 && len(event.Metadata) > 0 {
-		env.Metadata = event.Metadata
-	}
+	env.Route.Instance = env.Route.DestinationID()
 	if env.Conversation == "" {
 		if delivery != "" {
 			if policy.ActiveEntryMode == ActiveEntryDelivery {
-				env.Conversation = string(delivery)
+				env.Conversation = string(namespaceSessionID(env.Route, delivery))
 			} else {
-				env.Conversation = string(ApplyScope(delivery, policy.ConversationScope, env.Actor.UserID))
+				env.Conversation = string(namespaceSessionID(env.Route, ApplyScope(delivery, policy.ConversationScope, env.Actor.UserID)))
 			}
 		}
 	}
@@ -77,9 +71,9 @@ func ActiveEntryKey(route agentkit.RouteRef, policy RoutePolicy, userID string) 
 	}
 	switch policy.ActiveEntryMode {
 	case ActiveEntryDelivery:
-		return delivery
+		return namespaceSessionID(route, delivery)
 	default:
-		return ApplyScope(delivery, policy.ConversationScope, userID)
+		return namespaceSessionID(route, ApplyScope(delivery, policy.ConversationScope, userID))
 	}
 }
 
@@ -89,7 +83,7 @@ func workspaceFromRoute(route agentkit.RouteRef, userID string) string {
 		return ""
 	}
 	scoped := ApplyScope(delivery, agentkit.SessionScopeChannel, userID)
-	return WorkspaceKey(string(scoped))
+	return WorkspaceKey(string(namespaceSessionID(route, scoped)))
 }
 
 var (
@@ -187,8 +181,7 @@ func WorkspaceFromContext(ctx context.Context) string {
 	if delivery := DeliveryRouteFromContext(ctx); delivery != "" {
 		slog.Warn("workspace derived from delivery route; set TurnEnvelope.Workspace at ingress",
 			"delivery", delivery)
-		scoped := ApplyScope(delivery, agentkit.SessionScopeChannel, UserIDFromContext(ctx))
-		return WorkspaceKey(string(scoped))
+		return workspaceFromRoute(EnvelopeFromContext(ctx).Route, UserIDFromContext(ctx))
 	}
 	if conv := ConversationFromContext(ctx); conv != "" {
 		slog.Warn("workspace derived from conversation; set TurnEnvelope.Workspace at ingress",
@@ -196,4 +189,17 @@ func WorkspaceFromContext(ctx context.Context) string {
 		return WorkspaceKey(conv)
 	}
 	return ""
+}
+
+// namespaceSessionID isolates logical state while leaving the transport ID intact.
+func namespaceSessionID(route agentkit.RouteRef, id agentkit.SessionID) agentkit.SessionID {
+	instance, protocol := route.DestinationID(), strings.TrimSpace(route.Platform)
+	if id == "" || instance == "" || instance == protocol {
+		return id
+	}
+	raw := string(id)
+	if protocol != "" && strings.HasPrefix(raw, protocol+":") {
+		return agentkit.SessionID(instance + strings.TrimPrefix(raw, protocol))
+	}
+	return agentkit.SessionID(instance + ":" + raw)
 }

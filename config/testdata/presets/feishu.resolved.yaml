@@ -558,6 +558,7 @@ schedule.cron:
     deps:
         engine: schedule.engine
         schedule: schedule.default
+        shell: tool.shell-bash.scheduled
         workspace: workspace.default
     use: schedule/cron
 schedule.default:
@@ -657,7 +658,6 @@ tool.ask-user.default:
     use: tool/ask-user
 tool.chat-history.default:
     deps:
-        delivery: delivery.default
         history: platform.default
     use: tool/chat-history
 tool.finish.default:
@@ -721,6 +721,14 @@ tool.shell-bash.default:
         workDir: work
     deps:
         credentials: credentials.integrations
+        workspace: workspace.default
+    use: tool/shell-bash
+tool.shell-bash.scheduled:
+    config:
+        timeoutSeconds: 300
+        trimEnv: true
+        workDir: work
+    deps:
         workspace: workspace.default
     use: tool/shell-bash
 tool.skill.default:

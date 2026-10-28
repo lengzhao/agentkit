@@ -112,8 +112,8 @@ func (a *agentBridge) Prompt(ctx context.Context, params acp.PromptRequest) (acp
 
 	msg := promptToModelMessage(params.Prompt)
 	event := rctx.WithDeliverySession(agentkit.MessageEvent{
-		PlatformID: platformID,
-		Message:    msg,
+
+		Message: msg, Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: platformID}},
 	}, platformID, sess.deliveryID)
 	if err := a.platform.inbox.Push(promptCtx, event); err != nil {
 		return acp.PromptResponse{}, err

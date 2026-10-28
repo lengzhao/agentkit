@@ -1,6 +1,12 @@
 package feishu
 
 import (
+	"context"
+	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,4 +183,39 @@ func TestAllowsUnmentionedGroupMessage(t *testing.T) {
 			t.Fatal("thread isolation off should require @bot")
 		}
 	})
+}
+
+func TestBufferedAttachmentsKeepAdapterWorkspace(t *testing.T) {
+	ws, err := rtworkspace.NewTenant(rtworkspace.TenantConfig{Global: t.TempDir(), LocalBase: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]string{}
+	for _, instance := range []string{"lark", "lark1"} {
+		p := &Platform{platformTag: "lark", workspace: ws}
+		p.SetPlatformInstance(instance)
+		p.saveAndBuffer("lark:C1", []byte(instance), "text/plain", "same.txt")
+		opts := common.InboundOptsFor(ws)
+		opts.PresavedAttachments = p.drainPendingAttachments("lark:C1")
+		p.flushPendingAttachments()
+		event := common.InboundFromContent("assistant", p.inboundRoute(inboundMessage{sessionID: "lark:C1"}), "U1", "file", "", nil, nil, nil, nil, opts)
+		env := rctx.ResolveEnvelope(event, rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+		path, err := rtworkspace.ResolveFile(rctx.ApplyEnvelopeToContext(context.Background(), env), ws, "upload/same.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths[instance] = path
+		if !strings.Contains(event.Message.Content[0].Text, path) {
+			t.Fatalf("model path missing %q: %s", path, event.Message.Content[0].Text)
+		}
+	}
+	for instance, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != instance {
+			t.Fatalf("%s content=%q", instance, data)
+		}
+	}
 }

@@ -63,7 +63,7 @@ type fileView struct {
 }
 
 func (p *Platform) channelCtx(ctx context.Context, channelKey string) context.Context {
-	return channelWorkspaceCtx(ctx, channelKey)
+	return p.channelWorkspaceCtx(ctx, channelKey)
 }
 
 func (p *Platform) uploadDir(ctx context.Context, channelKey string) (string, error) {

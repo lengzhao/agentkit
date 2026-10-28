@@ -46,8 +46,8 @@ func TestSharedSessionReplaysStoredInjectPrefix(t *testing.T) {
 	t.Parallel()
 
 	store := attributionTestStore(t, t.TempDir())
-	id := rctx.SlackSessionIDForScope(agentkit.SessionScopeChannel, "C001", "", "U111")
-	if other := rctx.SlackSessionIDForScope(agentkit.SessionScopeChannel, "C001", "", "U222"); other != id {
+	id := rctx.ApplyScope(rctx.BuildDeliverySessionID("slack", "C001", "", "U111"), agentkit.SessionScopeChannel, "U111")
+	if other := rctx.ApplyScope(rctx.BuildDeliverySessionID("slack", "C001", "", "U222"), agentkit.SessionScopeChannel, "U222"); other != id {
 		t.Fatalf("channel scope split the session: %q vs %q", id, other)
 	}
 

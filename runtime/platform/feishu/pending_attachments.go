@@ -6,6 +6,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // defaultPendingAttachTTL is how long a buffered attachment waits for a
@@ -104,7 +105,7 @@ func (p *Platform) pendingAttachTTL() time.Duration {
 // already-downloaded bytes, persists them to upload/, and buffers the result.
 func (p *Platform) saveAndBuffer(sessionKey string, data []byte, mimeType, fileName string) {
 	deliveryID := agentkit.SessionID(sessionKey)
-	saved := common.SaveInboundAttachments(deliveryID, []common.FileAttachment{{
+	saved := common.SaveInboundAttachments(rctx.SessionRoute(p.platformTag, string(deliveryID)).WithInstance(p.PlatformInstance()), []common.FileAttachment{{
 		MimeType: mimeType,
 		Data:     data,
 		FileName: fileName,

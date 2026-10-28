@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -72,6 +73,7 @@ type Root struct {
 	inject                []string
 	defaultTimezone       string
 	shutdownHooks         []func()
+	shutdownHooksOnce     sync.Once
 }
 
 // New registers runner: Root plugin: connects Platform to Loop and owns process lifecycle.
@@ -272,17 +274,11 @@ func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, er
 	slog.Error("loop dispatch failed",
 		"session_id", conversation,
 		"delivery_session_id", deliveryID,
-		"agent_id", req.Event.AgentID,
+		"agent_id", req.Event.Envelope.AgentID,
 		"err", err,
 	)
 	out := rctx.OutboundFromEnvelope(req.Event.Envelope, "error", json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error())))
-	out.AgentID = req.Event.AgentID
-	if out.PlatformID == "" {
-		out.PlatformID = req.Event.PlatformID
-	}
-	if out.UserID == "" {
-		out.UserID = req.Event.UserID
-	}
+	out.AgentID = req.Event.Envelope.AgentID
 	if sendErr := r.platform.Send(ctx, out); sendErr != nil {
 		slog.Error("reporting turn error failed", "session_id", deliveryID, "err", sendErr)
 	}
@@ -302,7 +298,7 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 		slog.Error("turn panicked",
 			"session_id", rctx.ConversationFromLoopRequest(req),
 			"delivery_session_id", rctx.DeliveryFromEnvelope(req.Event.Envelope),
-			"agent_id", req.Event.AgentID,
+			"agent_id", req.Event.Envelope.AgentID,
 			"panic", fmt.Sprint(recovered),
 			"stack", string(debug.Stack()),
 		)
@@ -343,11 +339,13 @@ func (r *Root) collectShutdownHooks(result *build.Result) {
 }
 
 func (r *Root) runShutdownHooks() {
-	for _, fn := range r.shutdownHooks {
-		if fn != nil {
-			fn()
+	r.shutdownHooksOnce.Do(func() {
+		for _, fn := range r.shutdownHooks {
+			if fn != nil {
+				fn()
+			}
 		}
-	}
+	})
 }
 
 func (r *Root) Stop(ctx context.Context) error {
@@ -380,8 +378,8 @@ func permissionCapability(platform agentkit.Platform, platformID string) permiss
 // to an interactive platform (e.g. chat-api for send), so cron jobs never block on
 // ask_user.
 func inboundPermissionCapability(platform agentkit.Platform, event agentkit.MessageEvent) permission.Capability {
-	cap := permissionCapability(platform, event.PlatformID)
-	if capschedule.IsFireTurn(event.Metadata) {
+	cap := permissionCapability(platform, event.Envelope.Route.Instance)
+	if capschedule.IsFireTurn(event.Envelope.Metadata) {
 		cap.Interactive = false
 	}
 	return cap

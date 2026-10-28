@@ -61,10 +61,7 @@ func TestInboundPermissionCapabilityScheduleFireNonInteractive(t *testing.T) {
 		},
 	}
 
-	event := agentkit.MessageEvent{
-		PlatformID: "chat-api",
-		Metadata:   scheduleFireMetadata(),
-	}
+	event := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "chat-api"}, Metadata: scheduleFireMetadata()}}
 	cap := inboundPermissionCapability(router, event)
 	if cap.Interactive {
 		t.Fatalf("schedule fire cap = %+v, want non-interactive", cap)
@@ -73,7 +70,7 @@ func TestInboundPermissionCapabilityScheduleFireNonInteractive(t *testing.T) {
 		t.Fatalf("timeout = %v, want preserved %v", cap.DefaultTimeout, interactive.DefaultTimeout)
 	}
 
-	plain := agentkit.MessageEvent{PlatformID: "chat-api"}
+	plain := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "chat-api"}}}
 	cap = inboundPermissionCapability(router, plain)
 	if !cap.Interactive {
 		t.Fatalf("normal inbound cap = %+v, want interactive", cap)
@@ -82,13 +79,10 @@ func TestInboundPermissionCapabilityScheduleFireNonInteractive(t *testing.T) {
 
 func TestInboundPermissionCapabilityLeafPlatform(t *testing.T) {
 	plat := &stubCapablePlatform{
-		id: "cli",
+		id:  "cli",
 		cap: permission.Capability{Interactive: true},
 	}
-	event := agentkit.MessageEvent{
-		PlatformID: "cli",
-		Metadata:   scheduleFireMetadata(),
-	}
+	event := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: agentkit.RouteRef{Instance: "cli"}, Metadata: scheduleFireMetadata()}}
 	cap := inboundPermissionCapability(plat, event)
 	if cap.Interactive {
 		t.Fatalf("schedule fire cap = %+v, want non-interactive", cap)

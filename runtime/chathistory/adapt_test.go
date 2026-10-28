@@ -18,8 +18,8 @@ type stubRouter struct {
 	id string
 }
 
-func (r stubRouter) ChatHistoryFor(platformID string) chathistory.Provider {
-	if platformID == r.id {
+func (r stubRouter) ChatHistoryFor(route agentkit.RouteRef) chathistory.Provider {
+	if route.DestinationID() == r.id {
 		return stubProvider{}
 	}
 	return nil
@@ -45,12 +45,12 @@ func TestRouterFromPlatformProvider(t *testing.T) {
 	if r == nil {
 		t.Fatal("expected adapter router")
 	}
-	prov := r.ChatHistoryFor("any")
+	prov := r.ChatHistoryFor(agentkit.RouteRef{Platform: "any"})
 	if prov == nil {
 		t.Fatal("adapter must return provider for any platform id")
 	}
 	res, err := prov.ReadChatHistory(context.Background(), chathistory.Request{
-		SessionID: agentkit.SessionID("s1"),
+		Route: agentkit.RouteRef{Platform: "stub"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestRouterFromPlatformUnknown(t *testing.T) {
 	if r == nil {
 		t.Fatal("expected noop router")
 	}
-	if p := r.ChatHistoryFor("x"); p != nil {
+	if p := r.ChatHistoryFor(agentkit.RouteRef{Platform: "x"}); p != nil {
 		t.Fatal("noop router must return nil provider")
 	}
 }

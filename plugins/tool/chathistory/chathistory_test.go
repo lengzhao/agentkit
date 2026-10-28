@@ -8,19 +8,8 @@ import (
 	"github.com/lengzhao/agentkit"
 	caphistory "github.com/lengzhao/agentkit/cap/chathistory"
 	"github.com/lengzhao/agentkit/plugins/tool/chathistory"
-	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
-	rtdelivery "github.com/lengzhao/agentkit/runtime/delivery"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
-
-func mustDelivery(t *testing.T) capsdelivery.Assistant {
-	t.Helper()
-	a, err := rtdelivery.NewAssistant(struct{}{}, struct{}{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return a
-}
 
 type stubProvider struct {
 	lastReq caphistory.Request
@@ -36,8 +25,8 @@ type stubHistoryPlatform struct {
 	providers map[string]caphistory.Provider
 }
 
-func (r *stubHistoryPlatform) ChatHistoryFor(id string) caphistory.Provider {
-	return r.providers[id]
+func (r *stubHistoryPlatform) ChatHistoryFor(route agentkit.RouteRef) caphistory.Provider {
+	return r.providers[route.DestinationID()]
 }
 
 func (stubHistoryPlatform) Receive(context.Context) (agentkit.MessageEvent, error) {
@@ -50,8 +39,7 @@ func TestChatHistoryReturnsEmptyWithoutProvider(t *testing.T) {
 	t.Parallel()
 
 	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{
-		History:  &stubHistoryPlatform{providers: map[string]caphistory.Provider{}},
-		Delivery: mustDelivery(t),
+		History: &stubHistoryPlatform{providers: map[string]caphistory.Provider{}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +80,7 @@ func TestChatHistoryRoutesThroughMultiplex(t *testing.T) {
 	}
 	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": provider}}
 
-	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router, Delivery: mustDelivery(t)})
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +118,7 @@ func TestChatHistoryThreadCanBeDisabled(t *testing.T) {
 	provider := &stubProvider{result: caphistory.Result{Source: "feishu"}}
 	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": provider}}
 
-	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router, Delivery: mustDelivery(t)})
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,5 +135,26 @@ func TestChatHistoryThreadCanBeDisabled(t *testing.T) {
 	}
 	if provider.lastReq.Thread {
 		t.Fatal("expected thread=false when explicitly disabled")
+	}
+}
+
+func TestChatHistoryUsesCurrentAdapterInstance(t *testing.T) {
+	t.Parallel()
+	first, second := &stubProvider{}, &stubProvider{}
+	router := &stubHistoryPlatform{providers: map[string]caphistory.Provider{"feishu": first, "feishu1": second}}
+	tool, err := chathistory.NewChatHistory(chathistory.ChatHistoryConfig{}, chathistory.ChatHistoryDeps{History: router})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "feishu", Instance: "feishu1", ChannelID: "oc_1", ReplyTo: "old-message"})
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Route: route})
+	if _, err := tool.Call(ctx, []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !first.lastReq.Route.IsZero() || second.lastReq.Route.DestinationID() != "feishu1" {
+		t.Fatal("history read reached the wrong adapter")
+	}
+	if rctx.RouteReplyTo(second.lastReq.Route) != "" {
+		t.Fatal("history route retained an ephemeral reply anchor")
 	}
 }

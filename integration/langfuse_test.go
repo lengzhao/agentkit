@@ -87,7 +87,6 @@ func TestIntegrationLangfuseExporterOnAgentTurn(t *testing.T) {
 	ctx := context.Background()
 	if err := loopInst.Dispatch(ctx, agentkit.LoopRequest{
 		Event: agentkit.MessageEvent{
-			PlatformID: "cli",
 			Message: agentkit.ModelMessage{
 				Role:    "user",
 				Content: []agentkit.ContentPart{{Type: "text", Text: "hello langfuse"}},

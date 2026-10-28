@@ -75,7 +75,6 @@ func stopCandidateSessionIDs(ctx context.Context, store agentkit.SessionStore) (
 			policy := rctx.RoutePolicyForPlatform(platform, rctx.DefaultRoutePolicy(scope))
 			ek := rctx.ActiveEntryKey(env.Route, policy, userID)
 			add(ek)
-			add(rctx.ApplyScope(delivery, scope, userID))
 			if store != nil && ek != "" {
 				resolved, err := capsession.ResolveActiveSessionID(ctx, store, ek)
 				if err != nil {

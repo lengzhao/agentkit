@@ -63,6 +63,8 @@ type Default struct {
 	sessionStore    agentkit.SessionStore
 	workspace       workspace.Service
 	modelCatalog    capllm.ModelCatalog
+	controlsMu      sync.Mutex
+	controlsStopped bool
 	sessionControls sync.Map // SessionID -> *Control
 	sessionBusy     sync.Map // SessionID -> struct{}
 }
@@ -137,7 +139,7 @@ func (l *Default) Agents() []agentkit.Agent {
 }
 
 func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error {
-	ag, agentID, err := l.resolveAgent(req.Event.AgentID)
+	ag, agentID, err := l.resolveAgent(req.Event.Envelope.AgentID)
 	if err != nil {
 		return err
 	}
@@ -154,7 +156,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	control := l.controlFor(conversation)
 	capab := permissionCapability(req.Capability)
 	control.setTurnCapability(capab)
-	ctx = withTurnContext(ctx, req.Event.Envelope, conversation, agentID, req.Event.PlatformID, req.Event.UserID, req.Event.Metadata, control, req.Emit)
+	ctx = withTurnContext(ctx, req.Event.Envelope.WithAgentID(agentID), control, req.Emit)
 	ctx = rttelemetry.WithExporter(ctx, l.telemetry)
 
 	turnInput := agentkit.TurnInput{
@@ -170,14 +172,15 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 
 	for {
 		if steered := control.PopSteering(); len(steered) > 0 {
-			for _, entry := range steered {
+			for i, entry := range steered {
+				ackSteering(entry, capsession.SteerOutcomeNextTurn)
 				if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 					Message: entry.Message,
 					Emit:    req.Emit,
 				}); err != nil {
+					control.RestoreSteering(steered[i+1:])
 					return err
 				}
-				ackSteering(entry, capsession.SteerOutcomeNextTurn)
 			}
 			continue
 		}
@@ -187,14 +190,15 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 		}
 		if len(followUps) == 0 {
 			if steered := control.PopSteering(); len(steered) > 0 {
-				for _, entry := range steered {
+				for i, entry := range steered {
+					ackSteering(entry, capsession.SteerOutcomeNextTurn)
 					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 						Message: entry.Message,
 						Emit:    req.Emit,
 					}); err != nil {
+						control.RestoreSteering(steered[i+1:])
 						return err
 					}
-					ackSteering(entry, capsession.SteerOutcomeNextTurn)
 				}
 				continue
 			}
@@ -210,14 +214,15 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 		}
 		if l.followUpMode == agentkit.FollowUpOneAtATime {
 			if steered := control.PopSteering(); len(steered) > 0 {
-				for _, entry := range steered {
+				for i, entry := range steered {
+					ackSteering(entry, capsession.SteerOutcomeNextTurn)
 					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 						Message: entry.Message,
 						Emit:    req.Emit,
 					}); err != nil {
+						control.RestoreSteering(steered[i+1:])
 						return err
 					}
-					ackSteering(entry, capsession.SteerOutcomeNextTurn)
 				}
 				continue
 			}
@@ -229,8 +234,8 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 }
 
 // ackSteering reports the terminal outcome for one drained steering entry. The
-// message ran as its own turn (Loop only drains steering after the running turn
-// finished), so the outcome is next-turn rather than injected.
+// message is about to run as its own turn. Report the routing decision before
+// execution so a blocked or failed next turn cannot leave the outcome unresolved.
 func ackSteering(entry agentkit.SteerEntry, outcome string) {
 	if entry.Ack != nil {
 		entry.Ack(outcome)
@@ -241,7 +246,7 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	turnID := uuid.NewString()
 	// A caller-provided turn id (agentkit.MetadataTurnID) wins, so transports
 	// that register per-turn resources before dispatch can correlate them.
-	if id := turnIDFromMetadata(req.Event.Metadata); id != "" {
+	if id := turnIDFromMetadata(req.Event.Envelope.Metadata); id != "" {
 		turnID = id
 	}
 	meta := captelemetry.TurnMeta{
@@ -250,8 +255,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		DeliverySessionID: string(rctx.DeliveryFromEnvelope(req.Event.Envelope)),
 		AgentID:           string(agentID),
 		Model:             agentTraceModel(ctx, ag),
-		PlatformID:        req.Event.PlatformID,
-		UserID:            req.Event.UserID,
+		PlatformID:        req.Event.Envelope.Route.Instance,
+		UserID:            req.Event.Envelope.Actor.UserID,
 		WorkspaceKey:      req.Event.Envelope.Workspace,
 		AttachmentSources: rttelemetry.JoinAttachmentSources(rttelemetry.AttachmentSources(input.Message)),
 		Input:             rttelemetry.FormatMessage(input.Message),
@@ -261,8 +266,8 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 		"agent_id", agentID,
 		"session_id", rctx.ConversationFromLoopRequest(req),
 		"delivery_session_id", rctx.DeliveryFromEnvelope(req.Event.Envelope),
-		"platform_id", req.Event.PlatformID,
-		"user_id", req.Event.UserID,
+		"platform_id", req.Event.Envelope.Route.Instance,
+		"user_id", req.Event.Envelope.Actor.UserID,
 	)
 	turnStarted := time.Now()
 	ctx, endTurn := rttelemetry.BeginTurn(ctx, meta)
@@ -385,14 +390,25 @@ func (l *Default) markSessionBusy(sessionID agentkit.SessionID, busy bool) {
 }
 
 func (l *Default) controlFor(sessionID agentkit.SessionID) *Control {
-	v, _ := l.sessionControls.LoadOrStore(sessionID, NewControl())
-	return v.(*Control)
+	l.controlsMu.Lock()
+	defer l.controlsMu.Unlock()
+	if v, ok := l.sessionControls.Load(sessionID); ok {
+		return v.(*Control)
+	}
+	c := NewControl()
+	if l.controlsStopped {
+		c.Stop()
+	}
+	l.sessionControls.Store(sessionID, c)
+	return c
 }
 
-// Stop retires every per-session Control owner goroutine. Call after the
-// runner scheduler has drained (sched.wait + sched.stop); no further Dispatch
-// may run after this returns.
+// Stop retires all session owners, including when in-flight turns are abandoned.
+// Later cleanup calls are safe and cannot create a live owner after shutdown.
 func (l *Default) Stop(_ context.Context) error {
+	l.controlsMu.Lock()
+	defer l.controlsMu.Unlock()
+	l.controlsStopped = true
 	l.sessionControls.Range(func(_, v any) bool {
 		v.(*Control).Stop()
 		return true
@@ -411,22 +427,8 @@ func (l *Default) resolveAgent(agentID agentkit.AgentID) (agentkit.Agent, agentk
 	return ag, agentID, nil
 }
 
-func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, sessionID agentkit.SessionID, agentID agentkit.AgentID, platformID string, userID string, metadata map[string]any, control *Control, emit agentkit.OutboundEmit) context.Context {
-	if sessionID != "" {
-		env = env.WithConversation(string(sessionID))
-	}
-	if env.Route.Platform == "" && platformID != "" {
-		env.Route.Platform = platformID
-	}
-	if env.Actor.UserID == "" && userID != "" {
-		env.Actor.UserID = userID
-	}
-	if agentID != "" {
-		env.AgentID = agentID
-	}
-	if len(metadata) > 0 && len(env.Metadata) == 0 {
-		env.Metadata = metadata
-	}
+func withTurnContext(ctx context.Context, env agentkit.TurnEnvelope, control *Control, emit agentkit.OutboundEmit) context.Context {
+	metadata := env.Metadata
 	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
 	if len(metadata) > 0 {
 		if capschedule.IsFireTurn(metadata) {

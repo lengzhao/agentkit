@@ -44,7 +44,7 @@ event := rctx.WithInboundRoute(agentkit.MessageEvent{
     ReplyTo:     messageID,
     ScopeUserID: userID,
 })
-// Runner SyncMessageEvent 后 Envelope 含 Conversation / Workspace / Route
+// Runner ResolveEnvelope 后 Envelope 含 Conversation / Workspace / Route
 ```
 
 或 `common.InboundFromContent(agentID, route, userID, ...)`；仅需 delivery id 时用 `rctx.WithDeliverySession`。
@@ -77,17 +77,17 @@ Runner 每次入站先拿 delivery / effective key 查 active mapping，解析�
 
 ### Agent 路由
 
-与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：解析 `Conversation` 后，从持久化存储读出绑定，写入 `MessageEvent.AgentID` 再交给 Loop。
+与 `sessionScope` 一样，agent 选择在 **Runner** 统一完成：解析 `Conversation` 后，从持久化存储读出绑定，写入 `MessageEvent.Envelope.AgentID` 再交给 Loop。
 
 | 优先级 | 来源 | 存储 |
 |---|---|---|
 | 1 | Session runtime | `sessions/<session-id>/runtime.json`（`agentId` / `model`，由 `/agent use`、`/model` 写入） |
 | 1.2 | Channel runtime | Session store 上 channel **active entry** 的 `agentId`（由 `/agent -c use` 写入；`/new` 不清除，同群各会话共享；旧数据可能仍从 `local:runtime.json` 只读回退） |
 | 1.5 | Global runtime | `global:runtime.json`（`agentId`、`models`，由 `/agent -g`、`/model -g` 写入） |
-| 2 | 单条消息 | Platform 入站时填入 `MessageEvent.AgentID`（如 chat-api 请求体显式 `agent_id`、定时任务指定 agent） |
+| 2 | 单条消息 | Platform 入站时填入 `MessageEvent.Envelope.AgentID`（如 chat-api 请求体显式 `agent_id`、定时任务指定 agent） |
 | 3 | 默认 | `loop.defaultAgent` |
 
-Runner **不**维护静态路由表。`/agent use` 写入 resolved session 工作目录下的 `runtime.json` 后优先生效；`/agent -c use` 写入当前 channel active entry 的 agent 绑定，同群会话共享且 `/new` 不清除。Platform 仅在请求显式指定 agent 时写入 `MessageEvent.AgentID`（chat-api 不再把 conversation/platform 默认值当作 per-message override）。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
+Runner **不**维护静态路由表。`/agent use` 写入 resolved session 工作目录下的 `runtime.json` 后优先生效；`/agent -c use` 写入当前 channel active entry 的 agent 绑定，同群会话共享且 `/new` 不清除。Platform 仅在请求显式指定 agent 时写入 `MessageEvent.Envelope.AgentID`（chat-api 不再把 conversation/platform 默认值当作 per-message override）。`DeriveMessages` 按当前 `agent_id` 过滤回放，同一会话文件里切换 agent 不会串上下文。
 
 ## 2. 识别不同用户
 
@@ -122,11 +122,11 @@ runner.default:
 
 | inject 项 | 来源 | 输出 attr |
 |---|---|---|
-| `sender_id` | `MessageEvent.UserID` | `sender_id=U111` |
-| `sender_name` | `MessageEvent.Metadata`（平台入站写入 `displayName`，或 chat-api header） | `sender_name="Alice"` |
-| `sender_email` | `MessageEvent.Metadata`（平台入站写入 `email`，或 chat-api header） | `sender_email="alice@example.com"` |
-| `mentions` | `MessageEvent.Metadata.mentions`（Lark/飞书/Slack 入站解析 @ 提及用户） | `mentions="name=Alice id=ou_xxx email=alice@example.com\|name=Bob id=ou_yyy email=bob@example.com"` |
-| `platform` | `MessageEvent.PlatformID` 或 delivery SessionID | `platform=slack` |
+| `sender_id` | `MessageEvent.Envelope.Actor.UserID` | `sender_id=U111` |
+| `sender_name` | `MessageEvent.Envelope.Metadata`（平台入站写入 `displayName`，或 chat-api header） | `sender_name="Alice"` |
+| `sender_email` | `MessageEvent.Envelope.Metadata`（平台入站写入 `email`，或 chat-api header） | `sender_email="alice@example.com"` |
+| `mentions` | `MessageEvent.Envelope.Metadata.mentions`（Lark/飞书/Slack 入站解析 @ 提及用户） | `mentions="name=Alice id=ou_xxx email=alice@example.com\|name=Bob id=ou_yyy email=bob@example.com"` |
+| `platform` | `MessageEvent.Envelope.Route.Instance` 或 delivery SessionID | `platform=slack` |
 | `chat_id` | delivery SessionID 的 channel 段 | `chat_id=C001` |
 | `thread_id` | delivery SessionID 的 thread 段；为空时省略 | `thread_id=1729500000.123` |
 | `timestamp` | 当前时间 + 时区 | `timestamp="RFC3339" timezone="IANA"` |
@@ -136,7 +136,7 @@ runner.default:
 
 `UserID` 仍落在 **事件信封**（`SessionEvent.UserID`）供审计与 tool `metadata.*` 绑定；模型可见的上下文由入站时写入 session 的 `[meta ...]` 前缀承担。
 
-单条跳过前缀：`MessageEvent.Metadata.skipPromptMeta: true`（chat-api 可通过 HTTP header 映射）。
+单条跳过前缀：`MessageEvent.Envelope.Metadata.skipPromptMeta: true`（chat-api 可通过 HTTP header 映射）。
 
 三条固定规则：
 
@@ -234,8 +234,8 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/multi-tenant.yaml
 `presets/multi-tenant.yaml` 只装内核。可与 `presets/slack.yaml`、`presets/feishu.yaml`、`presets/chat-api.yaml` 等 overlay 组合。platform 侧的全部义务就三件：
 
 1. 用 `rctx.BuildDeliverySessionID` 生成 delivery，并通过 `rctx.WithInboundRoute`（推荐，含 `ReplyTo`）或 `rctx.WithDeliverySession` / `common.InboundFromContent` / `common.InboundMessage` 写入 `MessageEvent.Envelope.Route`；
-2. 在 `MessageEvent.UserID` 填上发言人；
-3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。`x-task-id` 默认已纳入白名单；`X-Chat-API-User-Name`（或配置的 `userNameHeader`）会自动写入 Metadata，无需重复配置。
+2. 在 `MessageEvent.Envelope.Actor.UserID` 填上发言人；
+3. 可选 `metadataHeaders`：HTTP 请求头白名单，非空值写入 `MessageEvent.Envelope.Metadata`，供 `runner.config.inject` 与 tool `metadata.*` 绑定使用。`x-task-id` 默认已纳入白名单；`X-Chat-API-User-Name`（或配置的 `userNameHeader`）会自动写入 Metadata，无需重复配置。
 
 `sessionScope` 由 runner 配置（默认 `channel`），不在 platform 重复实现。出站 `OutboundEvent.Route` 携带入站捕获的 delivery；platform 通过 `session.OutboundRouteID` 解析投递目标。
 

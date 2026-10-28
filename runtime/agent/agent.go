@@ -327,8 +327,11 @@ func (a *Runtime) runSegment(
 			return "", fmt.Errorf("cancelled: %s", reason)
 		}
 
-		for _, entry := range ctrl.PopSteering() {
+		entries := ctrl.PopSteering()
+		for i, entry := range entries {
 			if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, entry.Message); err != nil {
+				ackSteering(entry, capsession.SteerOutcomeRejected)
+				ctrl.RestoreSteering(entries[i+1:])
 				return "", err
 			}
 			// The message is now part of this running turn's next step, so its

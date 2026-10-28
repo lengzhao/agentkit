@@ -203,6 +203,7 @@ func (p *Platform) stopSessionForRecall(sessionID agentkit.SessionID, rc replyCo
 	// ThreadID is backfilled by BuildSessionRoute from the delivery id.
 	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{
 		Platform:   p.platformTag,
+		Instance:   p.PlatformInstance(),
 		DeliveryID: sessionID,
 		ChannelID:  rc.chatID,
 	})

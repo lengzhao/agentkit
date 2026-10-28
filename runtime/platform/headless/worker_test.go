@@ -66,8 +66,8 @@ func TestWorkerRunsEachTaskThenReportsEOF(t *testing.T) {
 		}
 		got = append(got, textOfMessage(event.Message))
 		sessions = append(sessions, deliveryID(event))
-		if event.PlatformID != "worker" {
-			t.Fatalf("platform id = %q, want worker", event.PlatformID)
+		if event.Envelope.Route.Instance != "worker" {
+			t.Fatalf("platform id = %q, want worker", event.Envelope.Route.Instance)
 		}
 		if err := p.Send(ctx, agentkit.OutboundEvent{Type: agentkit.EventTurnEnd}); err != nil {
 			t.Fatal(err)

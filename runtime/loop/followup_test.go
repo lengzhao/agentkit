@@ -2,6 +2,7 @@ package loop_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
@@ -9,8 +10,8 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
-	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
+	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -357,3 +358,59 @@ type ignoringAgent struct{}
 func (ignoringAgent) ID() agentkit.AgentID { return "ignoring" }
 
 func (ignoringAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
+
+// Routing is known before the next turn starts, even if that turn fails.
+func TestSteeringNextTurnAckPrecedesRunFailure(t *testing.T) {
+	var outcomes []string
+	wantErr := errors.New("next turn failed")
+	ag := &nextTurnAckAgent{run: func(input agentkit.TurnInput) error {
+		if input.Message.Content[0].Text != "steered" {
+			return nil
+		}
+		if len(outcomes) != 1 || outcomes[0] != capsession.SteerOutcomeNextTurn {
+			t.Errorf("outcomes at next-turn start = %v, want [next-turn]", outcomes)
+		}
+		return wantErr
+	}}
+	lp, err := loop.New(loop.Config{}, loop.Deps{Agents: []agentkit.Agent{ag}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lp.(*loop.Default).Stop(context.Background()) })
+	err = lp.(agentkit.SteerReporter).SteerEntry(testContext(testSessionID), agentkit.SteerEntry{
+		Message: userMessage("steered"), Ack: func(outcome string) { outcomes = append(outcomes, outcome) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remainingOutcomes []string
+	if err := lp.(agentkit.SteerReporter).SteerEntry(testContext(testSessionID), agentkit.SteerEntry{
+		Message: userMessage("remaining"), Ack: func(outcome string) { remainingOutcomes = append(remainingOutcomes, outcome) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lp.Dispatch(t.Context(), loopReq(testSessionID, userMessage("initial"))); !errors.Is(err, wantErr) {
+		t.Fatalf("dispatch error = %v", err)
+	}
+	if len(outcomes) != 1 {
+		t.Fatalf("terminal outcomes = %v, want exactly one", outcomes)
+	}
+	if len(remainingOutcomes) != 0 {
+		t.Fatalf("unrun message resolved early: %v", remainingOutcomes)
+	}
+	if err := lp.Dispatch(t.Context(), loopReq(testSessionID, userMessage("retry"))); err != nil {
+		t.Fatal(err)
+	}
+	if len(remainingOutcomes) != 1 || remainingOutcomes[0] != capsession.SteerOutcomeNextTurn {
+		t.Fatalf("remaining message lost after failed next turn: outcomes = %v", remainingOutcomes)
+	}
+}
+
+type nextTurnAckAgent struct {
+	run func(agentkit.TurnInput) error
+}
+
+func (*nextTurnAckAgent) ID() agentkit.AgentID { return "next-turn-ack" }
+func (a *nextTurnAckAgent) RunTurn(_ context.Context, input agentkit.TurnInput) error {
+	return a.run(input)
+}
