@@ -307,6 +307,11 @@ func (a *fsAdapter) llmPath(ctx context.Context, path string) string {
 	if a.workspace == nil {
 		return path
 	}
+	if workspace.WorkingDirectory(ctx) != "" {
+		if resolved, err := rtws.ResolveFile(ctx, a.workspace, path); err == nil {
+			path = resolved
+		}
+	}
 	return rtmedia.AgentLLMPath(ctx, a.workspace, path)
 }
 
@@ -390,7 +395,10 @@ func (a *fsAdapter) writeText(ctx context.Context, path, content string) error {
 }
 
 func (a *fsAdapter) listDir(ctx context.Context, path string) ([]filesystem.DirEntry, error) {
-	if strings.TrimSpace(path) != "" {
+	if strings.TrimSpace(path) != "" || workspace.WorkingDirectory(ctx) != "" {
+		if strings.TrimSpace(path) == "" {
+			path = "."
+		}
 		resolved, err := a.resolveToolPath(ctx, path)
 		if err != nil {
 			return nil, err
@@ -401,7 +409,10 @@ func (a *fsAdapter) listDir(ctx context.Context, path string) ([]filesystem.DirE
 }
 
 func (a *fsAdapter) grep(ctx context.Context, req filesystem.GrepRequest) (filesystem.GrepResult, error) {
-	if strings.TrimSpace(req.Path) != "" {
+	if strings.TrimSpace(req.Path) != "" || workspace.WorkingDirectory(ctx) != "" {
+		if strings.TrimSpace(req.Path) == "" {
+			req.Path = "."
+		}
 		resolved, err := a.resolveToolPath(ctx, req.Path)
 		if err != nil {
 			return filesystem.GrepResult{}, err
@@ -412,7 +423,10 @@ func (a *fsAdapter) grep(ctx context.Context, req filesystem.GrepRequest) (files
 }
 
 func (a *fsAdapter) find(ctx context.Context, req filesystem.FindRequest) (filesystem.FindResult, error) {
-	if strings.TrimSpace(req.Path) != "" {
+	if strings.TrimSpace(req.Path) != "" || workspace.WorkingDirectory(ctx) != "" {
+		if strings.TrimSpace(req.Path) == "" {
+			req.Path = "."
+		}
 		resolved, err := a.resolveToolPath(ctx, req.Path)
 		if err != nil {
 			return filesystem.FindResult{}, err

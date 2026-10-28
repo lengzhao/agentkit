@@ -125,7 +125,7 @@ func (e *bashExecutor) runForModel(ctx context.Context, input ShellInput) (strin
 }
 
 func (e *bashExecutor) formatModelResult(ctx context.Context, out ShellOutput, runErr error) (string, error) {
-	workDir, _ := e.workspace.Resolve(ctx, e.relWorkDir)
+	workDir, _ := workspace.ResolveWorkingDirectory(ctx, e.workspace, e.relWorkDir)
 	return tooloutput.BashModelResult(ctx, e.workspace, workDir, tooloutput.BashStreams{
 		Stdout: out.Stdout, Stderr: out.Stderr, ExitCode: out.ExitCode,
 	}, runErr)
@@ -139,7 +139,11 @@ func (e *bashExecutor) RunStructured(ctx context.Context, command string, timeou
 }
 
 func (e *bashExecutor) run(ctx context.Context, command string, perCallTimeout *float64) (ShellOutput, error) {
-	return e.runInDir(ctx, command, perCallTimeout, e.relWorkDir)
+	dir := e.relWorkDir
+	if cwd := workspace.WorkingDirectory(ctx); cwd != "" {
+		dir = cwd
+	}
+	return e.runInDir(ctx, command, perCallTimeout, dir)
 }
 
 func (e *bashExecutor) runInDir(ctx context.Context, command string, perCallTimeout *float64, relDir string) (ShellOutput, error) {

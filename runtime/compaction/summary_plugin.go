@@ -519,6 +519,7 @@ func retainedTurnStarts(indexed []capcompaction.IndexedMessage) []bool {
 }
 
 func latestCompactionData(events []agentkit.SessionEvent, agentID agentkit.AgentID) (agentkit.EventSeq, capcompaction.EventData, bool) {
+	events = capsession.ContextEvents(events)
 	var (
 		seq  agentkit.EventSeq
 		data capcompaction.EventData

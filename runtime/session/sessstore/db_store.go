@@ -293,3 +293,27 @@ func (s *SQLStore) SetActiveSession(ctx context.Context, id, active agentkit.Ses
 	)
 	return err
 }
+
+func (s *SQLStore) CwdBind(ctx context.Context, id agentkit.SessionID) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	var cwd string
+	err := s.query(ctx, `SELECT cwd FROM ak_session_cwd WHERE stable_id = ?`, string(id)).Scan(&cwd)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return cwd, err
+}
+func (s *SQLStore) SetCwdBind(ctx context.Context, id agentkit.SessionID, cwd string) error {
+	if id == "" {
+		return fmt.Errorf("session id is required")
+	}
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		_, err := s.exec(ctx, `DELETE FROM ak_session_cwd WHERE stable_id = ?`, string(id))
+		return err
+	}
+	_, err := s.exec(ctx, `INSERT INTO ak_session_cwd (stable_id,cwd) VALUES (?,?) ON CONFLICT(stable_id) DO UPDATE SET cwd = excluded.cwd`, string(id), cwd)
+	return err
+}

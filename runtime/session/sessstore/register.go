@@ -23,5 +23,8 @@ var (
 	_ agentkit.SessionStore        = (*SQLStore)(nil)
 	_ agentkit.ActiveSessionStore  = (*SQLStore)(nil)
 	_ agentkit.SessionRuntimeStore = (*SQLStore)(nil)
+	_ agentkit.SessionCwdStore     = (*Store)(nil)
+	_ agentkit.SessionCwdStore     = (*StaticStore)(nil)
+	_ agentkit.SessionCwdStore     = (*SQLStore)(nil)
 	_ agentkit.CommandProvider     = (*Commands)(nil)
 )

@@ -16,6 +16,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 )
 
@@ -243,6 +244,11 @@ func ackSteering(entry agentkit.SteerEntry, outcome string) {
 }
 
 func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
+	var contextErr error
+	ctx, contextErr = sessctx.NextTurn(ctx)
+	if contextErr != nil {
+		return contextErr
+	}
 	turnID := uuid.NewString()
 	// A caller-provided turn id (agentkit.MetadataTurnID) wins, so transports
 	// that register per-turn resources before dispatch can correlate them.

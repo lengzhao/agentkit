@@ -18,6 +18,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
 	"github.com/lengzhao/pluginkit/build"
 )
@@ -304,6 +305,11 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 		)
 		err = fmt.Errorf("turn panicked: %v", recovered)
 	}()
+	ctx = rctx.ApplyEnvelopeToContext(ctx, req.Event.Envelope)
+	ctx, err = sessctx.Prepare(ctx, r.sessionStore, r.workspace)
+	if err != nil {
+		return err
+	}
 	return r.loop.Dispatch(ctx, req)
 }
 

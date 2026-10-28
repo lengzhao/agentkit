@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 func (p parentContext) asyncRunContext() context.Context {
-	ctx := context.Background()
+	ctx := workspace.WithWorkingDirectory(context.Background(), p.cwd)
 	ctx = rctx.ApplyEnvelopeToContext(ctx, p.envelope)
 	ctx = rctx.WithAgentID(ctx, p.agentID)
 	if p.sessionControl != nil {

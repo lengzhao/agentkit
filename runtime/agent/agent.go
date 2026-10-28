@@ -20,6 +20,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessbind"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/telemetry"
 )
@@ -205,6 +206,11 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 	sessionID := rctx.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return fmt.Errorf("turn requires session id in context")
+	}
+	var prepareErr error
+	ctx, prepareErr = sessctx.Prepare(ctx, a.sessionStore, a.workspace)
+	if prepareErr != nil {
+		return prepareErr
 	}
 	ctx = rctx.WithWorkspaceService(ctx, a.workspace)
 	ctx = rctx.WithState(ctx, rctx.NewState())

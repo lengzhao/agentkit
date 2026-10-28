@@ -300,6 +300,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 	}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
+	childCtx = rctx.WithInheritedWorkingDirectory(childCtx, workspace.WorkingDirectory(ctx))
 	parentEnv := rctx.EnvelopeFromContext(ctx)
 	childEnv := parentEnv.WithConversation(string(childID))
 	childCtx = rctx.ApplyEnvelopeToContext(childCtx, childEnv)

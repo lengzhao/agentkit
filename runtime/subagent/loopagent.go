@@ -15,6 +15,7 @@ import (
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/subagent"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
@@ -277,6 +278,7 @@ func (s *LoopAgentSpawner) releaseJob(parentID agentkit.SessionID) {
 }
 
 type parentContext struct {
+	cwd            string
 	conversation   agentkit.SessionID
 	agentID        agentkit.AgentID
 	envelope       agentkit.TurnEnvelope
@@ -299,6 +301,7 @@ func captureParentContext(ctx context.Context, parent agentkit.Session) parentCo
 		sessionControl = v
 	}
 	return parentContext{
+		cwd:            workspace.WorkingDirectory(ctx),
 		conversation:   agentkit.SessionID(env.Conversation),
 		agentID:        agentID,
 		envelope:       env,
@@ -388,6 +391,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
 	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
+	childCtx = rctx.WithInheritedWorkingDirectory(childCtx, workspace.WorkingDirectory(ctx))
 	parentEnv := rctx.EnvelopeFromContext(ctx)
 	childEnv := parentEnv.WithConversation(string(childID))
 	childCtx = rctx.ApplyEnvelopeToContext(childCtx, childEnv)

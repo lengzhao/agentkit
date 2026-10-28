@@ -74,7 +74,8 @@ func NewStore(cfg StoreConfig, deps StoreDeps) (agentkit.SessionStore, error) {
 		maxLoadedEvents: cfg.MaxLoadedEvents,
 		cache:           newSessionCache(cfg.MaxCachedSessions, idleTTL, time.Now),
 	}
-	s.sidecar.dir = s.storeDir
+	// Runtime binding reads must not create/stat directories on every lookup.
+	s.sidecar.dir = func(ctx context.Context) (string, error) { return s.workspace.Resolve(ctx, s.relDir) }
 	if idleTTL > 0 {
 		interval := idleTTL / 2
 		if interval < time.Minute {

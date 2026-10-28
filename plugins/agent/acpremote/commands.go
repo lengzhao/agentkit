@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 )
 
 func (a *Runtime) Commands() []agentkit.Command { return []agentkit.Command{acpCommand{runtime: a}} }
@@ -160,9 +161,27 @@ func (c acpCommand) CommandExec(ctx context.Context, args string) (out string, c
 		return "", err
 	}
 	defer b.configMu.Unlock()
+	if err := b.contextMu.Lock(ctx); err != nil {
+		return "", err
+	}
+	defer b.contextMu.Unlock()
 	// The request still bounds initialization/RPCs, while the subprocess must
 	// survive the slash HTTP response so its session settings remain effective.
 	ctx = context.WithValue(ctx, subprocessContextKey{}, a.processCtx)
+	ctx = rctx.WithConversation(ctx, string(sessionID))
+	execution, err := sessctx.Resolve(ctx, a.sessionStore, a.workspace)
+	if err != nil {
+		return "", err
+	}
+	pending := rctx.WithExecution(ctx, execution)
+	cwd, err := b.resolveCwd(pending)
+	if err != nil {
+		return "", err
+	}
+	if proc := b.proc.Load(); b.currentTurn() != nil && (proc == nil || proc.cwd != cwd || proc.epoch != execution.Epoch) {
+		return "", fmt.Errorf("execution context change applies after the active turn completes")
+	}
+	ctx = pending
 	remote, err := b.ensureSession(ctx, sessionID, a.id, a.sessionStore, false)
 	if err != nil {
 		return "", err

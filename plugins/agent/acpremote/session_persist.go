@@ -23,6 +23,7 @@ type acpSessionBind struct {
 	AgentID      agentkit.AgentID `json:"agentId"`
 	ACPSessionID acp.SessionId    `json:"acpSessionId"`
 	Cwd          string           `json:"cwd"`
+	ContextEpoch string           `json:"contextEpoch,omitempty"`
 }
 
 func acpSessionBindPath(bindDir string, sessionID agentkit.SessionID, agentID agentkit.AgentID) (string, error) {

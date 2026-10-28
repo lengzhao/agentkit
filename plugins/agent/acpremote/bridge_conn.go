@@ -198,18 +198,18 @@ func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 type subprocessContextKey struct{}
 
 func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*subprocess, error) {
-	if st.proc != nil && st.proc.alive() && (st.proc.authenticated || b.cfg.AuthMethod == "") {
+	cwd, err := b.resolveCwd(ctx)
+	if err != nil {
+		return nil, err
+	}
+	execution, _ := rctx.ExecutionFromContext(ctx)
+	if st.proc != nil && st.proc.alive() && (st.proc.authenticated || b.cfg.AuthMethod == "") && st.proc.cwd == cwd && st.proc.epoch == execution.Epoch {
 		return st.proc, nil
 	}
 	if st.proc != nil {
 		old, cancel := detachSubprocess(st)
 		b.proc.Store(nil)
 		terminateAndWaitSubprocess(old, cancel)
-	}
-
-	cwd, err := b.resolveCwd(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	argv := b.cfg.Command
@@ -271,6 +271,8 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 
 	done := make(chan struct{})
 	proc := &subprocess{
+		cwd:               cwd,
+		epoch:             execution.Epoch,
 		cmd:               cmd,
 		conn:              conn,
 		client:            client,
