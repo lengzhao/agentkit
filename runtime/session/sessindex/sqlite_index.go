@@ -74,7 +74,7 @@ func (s *SQLiteIndex) SyncSessions(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	db, err := sessstore.OpenSQLDB("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (s *SQLiteIndex) Search(ctx context.Context, query string, limit int) ([]ca
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	db, err := sessstore.OpenSQLDB("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (s *SQLiteIndex) ListSessions(ctx context.Context, limit int) ([]capsession
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	db, err := sessstore.OpenSQLDB("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (s *SQLiteIndex) ScrollMessages(ctx context.Context, sessionID string, anch
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	db, err := sessstore.OpenSQLDB("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, err
 	}
