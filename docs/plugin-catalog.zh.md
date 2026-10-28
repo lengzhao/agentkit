@@ -252,7 +252,7 @@ llm.fallback:
 - **切换与恢复**：绑定不打断当前 turn。共享 session 层在下一轮写入 `session/context` 事件并固定执行目录；本地 agent、bash、文件工具和项目指令使用相同的执行上下文。模型历史及压缩派生从最新上下文事件之后开始，原始日志保留。ACP 只根据 cwd/上下文版本重建远端连接，冷重启继续使用同一个通用历史视图。清除绑定而回退到不同目录时规则相同。现有静态 `config.cwd` 的自动建目录行为保持兼容。
 - **子任务继承**：同步和异步子 agent 继承父轮次的 cwd 快照，优先于 channel 默认目录；子 session 的显式 cwd 绑定优先于继承值。子任务使用自己的历史上下文版本。
 - **配置内存态**：文件存储的 session/channel agent、model、cwd 绑定按配置文件路径共享内存快照，首次加载后查询不再读取磁盘。修改串行更新完整快照，持久化成功后才发布到内存，避免并发修改不同字段时互相覆盖；直接编辑 `runtime.json` 需要重启进程后生效。此机制不提供跨进程写入协调。
-- **宿主集成**：使用内置 session/static、session/store、session/sql（分别为内存、文件、SQL）保存绑定。第三方 SessionStore 可额外实现 `agentkit.SessionCwdStore`，不需要修改原有 SessionRuntimeStore。`runner` 为任意自定义 loop 提供命令及执行上下文；直接调用 agent 时复用 `sessctx.Prepare`。自定义 loop 在同一 Dispatch 中执行多个独立 turn 时，后续 turn 调用 `sessctx.NextTurn(ctx)` 刷新快照（loop/default 已接入）。独立宿主可注册 `sessctx.CwdCommand(store, workspace)`；后续工具复用 `sessbind.CwdBinding` 和 `ValidateCwd`。绑定仅改变执行目录，不改变 workspace 根目录、状态存储、上传位置或 filesystem 权限。shell Executor 的显式请求 WorkDir 仍优先；文件工具的相对路径及空搜索路径使用当前 cwd，绝对路径保留原语义。项目指令默认从 cwd 向上发现，显式配置的 root 保留。未新增 agent tool。
+- **宿主集成**：使用内置 session/static、session/store、session/sql（分别为内存、文件、SQL）保存绑定。第三方 SessionStore 可额外实现 `agentkit.SessionCwdStore`，不需要修改原有 SessionRuntimeStore。`runner` 为任意自定义 loop 提供命令及执行上下文；直接调用 agent 时复用 `sessctx.Prepare`。自定义 loop 在同一 Dispatch 中执行多个独立 turn 时，后续 turn 调用 `sessctx.NextTurn(ctx)` 刷新快照（loop/default 已接入）。独立宿主可注册 `sessctx.CwdCommand(store, workspace)`；后续工具复用 `sessbind.CwdBinding` 和 `ValidateCwd`。绑定仅改变执行目录，不改变 workspace 根目录、状态存储、上传位置或 filesystem 权限。shell Executor 的显式请求 WorkDir 仍优先；文件工具的相对路径及空搜索路径使用当前 cwd，绝对路径保留原语义。项目指令默认从 cwd 向上发现，显式配置的 root 保留。agent 可通过 `tool/session-cwd` 修改自己的 session 绑定，见下文。
 - **Harness MCP（可选）**：不把 `mcp.json` 再传给远端（Claude/Cursor 自行加载项目 MCP）。若需按当前 turn 的会话上下文向远端注入额外 MCP，在 deps 注入 `cap/acp.SessionMCPProvider`（配置键 `sessionMcp`）。`session/new` 与 restore 方法均携带当时解析出的最新 `mcpServers`。后续可用此扩展把 Loop 内 tools 虚拟成 MCP（如 ACP transport）。
 - **出站工具结果**：ACP `ToolCallUpdate` 在 `completed` / `failed` 时除 `toolcall_end` 外还会发 harness `tool/result`（输出取自 `rawOutput` / `content`），供飞书过程卡与 `forwardParentEmit` 转发的 async 子 Agent 进度展示；不写入 harness session 事件流（与 Loop 内 `tool.Execute` 路径不同）。
 - **Langfuse**：每个 ACP `Prompt` 对应一条 `acp.generation` observation（input 为本 turn 用户消息；output 含 `AgentThoughtChunk` 与最终回复）；ACP 上报的 `ToolCall` 导出为嵌套 span。Cursor 在进程内执行且未通过 ACP 推送的工具调用不会出现在 Langfuse；token/model 以远端 Agent 为准，harness 不补全。
@@ -657,3 +657,27 @@ graph:
 - [ ] 补充 Preset 示例或 Feature 片段
 - [ ] 更新本文档对应分类表
 - [ ] **tool 插件**：主 agent 工具面以 `config.base.yaml` 的 `tools.default` / `tools.deferred` 为准；子 agent 以 `tools.subagent.default` 白名单为准（见 [guides/config-simplification.zh.md](guides/config-simplification.zh.md) §10）
+
+
+### `tool/session-cwd`：agent 调整 session 工作目录
+
+模型工具 `session_cwd` 只有一个必填字符串参数 `path`：非空路径设置当前 session 的 cwd，`""` 清除 session 覆盖，恢复 channel/父任务/agent 默认。修改下一轮生效，本轮 cwd 和上下文保持不变；路径校验、内存态和持久化复用通用 session 绑定层。缺少 path 或传 null 会返回错误，不会意外清除绑定。子 agent 只能修改自己的 session。
+
+每次工具列表使用本轮执行上下文生成 description，其中包含当前 cwd。尚无共享 cwd 时显示 `unbound (agent/tool defaults apply)`，因为各消费者可能有不同的静态默认目录。
+
+```yaml
+tool.session-cwd.default:
+  use: tool/session-cwd
+  deps:
+    sessionStore: sessionStore.default
+    workspace: workspace.default
+
+# 合并到现有 tools/runtime 实例的 deps 中：
+tools.default:
+  use: tools/runtime
+  deps:
+    dynamicTools:
+      - tool.session-cwd.default
+```
+
+ACP 可将同一 `tool.session-cwd.default` provider 接入 `acp/session-mcp-tools` 的 `deps.provider`；需要与其他工具组合时使用现有 provider 组合方式。配置 header bind 将 `ctx:session_id` 和 `ctx:tenant`（多租户时）传入 MCP，保证调用写入当前会话及工作区。桥自动传递本轮 cwd 快照，并按请求渲染 description，不会把某个 session 的目录写入全局工具描述；工具成员和 schema 的变更仍通过显式 Refresh 更新。

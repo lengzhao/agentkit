@@ -31,6 +31,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/recognize"
 	_ "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/tool/send"
+	_ "github.com/lengzhao/agentkit/plugins/tool/sessioncwd"
 	_ "github.com/lengzhao/agentkit/plugins/tool/sessionquery"
 	_ "github.com/lengzhao/agentkit/plugins/tool/setmodel"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shell"

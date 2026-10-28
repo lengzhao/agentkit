@@ -15,6 +15,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -343,5 +344,49 @@ func TestMCPCallReceivesSessionContext(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
+	}
+}
+
+type cwdDescriptionProvider struct{}
+
+func (cwdDescriptionProvider) ListTools(ctx context.Context) ([]agentkit.Tool, error) {
+	tool, err := agentkit.NewTool[struct{}, string]("cwd_probe", func(context.Context, struct{}) (string, error) { return "ok", nil }).Description(workspace.WorkingDirectory(ctx)).Build()
+	return []agentkit.Tool{tool}, err
+}
+func TestMCPDescriptionsUseRequestCwd(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	p, err := New(Config{}, Deps{Provider: cwdDescriptionProvider{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProvider(t, p)
+	for _, cwd := range []string{t.TempDir(), t.TempDir()} {
+		specs, err := p.SessionMCPServers(workspace.WithWorkingDirectory(ctx, cwd))
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec := specs[0].HTTP
+		client, err := mcpclient.NewStreamableHttpClient(spec.URL, transport.WithHTTPHeaders(spec.Headers))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := client.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var init mcplib.InitializeRequest
+		init.Params.ProtocolVersion = "2025-03-26"
+		init.Params.ClientInfo = mcplib.Implementation{Name: "cwd-test", Version: "1"}
+		if _, err := client.Initialize(ctx, init); err != nil {
+			t.Fatal(err)
+		}
+		result, err := client.ListTools(ctx, mcplib.ListToolsRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		client.Close()
+		if len(result.Tools) != 1 || result.Tools[0].Description != cwd {
+			t.Fatalf("tools=%+v want cwd %q", result.Tools, cwd)
+		}
 	}
 }
