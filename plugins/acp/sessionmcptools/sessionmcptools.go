@@ -10,6 +10,7 @@ package sessionmcptools
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,6 +29,7 @@ import (
 )
 
 const (
+	executionCwdHeader   = "X-Agentkit-Execution-Cwd"
 	defaultServerName    = "harness-tools"
 	defaultTransportType = "streamable-http"
 )
@@ -110,7 +112,7 @@ func (p *Provider) startHTTP() error {
 	if err != nil {
 		return fmt.Errorf("acp/session-mcp-tools listen %s: %w", listenAddr, err)
 	}
-	mcp := server.NewMCPServer(p.serverName, "1.0.0", server.WithToolCapabilities(true))
+	mcp := server.NewMCPServer(p.serverName, "1.0.0", server.WithToolCapabilities(true), server.WithToolFilter(p.bridge.describeForRequest))
 	p.bridge.bind(mcp)
 	if err := p.bridge.sync(context.Background()); err != nil {
 		_ = ln.Close()
@@ -153,7 +155,7 @@ func (p *Provider) Refresh(ctx context.Context) error {
 
 // SessionMCPServers implements capacp.SessionMCPProvider.
 func (p *Provider) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPServer, error) {
-	headers := make(map[string]string, len(p.staticHeaders)+1)
+	headers := make(map[string]string, len(p.staticHeaders)+2)
 	for k, v := range p.staticHeaders {
 		headers[http.CanonicalHeaderKey(k)] = v
 	}
@@ -167,6 +169,11 @@ func (p *Provider) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPSe
 		if value != "" {
 			headers[headerName(entry)] = value
 		}
+	}
+	// Always replace the reserved snapshot header, including when unbound.
+	delete(headers, executionCwdHeader)
+	if cwd := workspace.WorkingDirectory(ctx); cwd != "" {
+		headers[executionCwdHeader] = base64.StdEncoding.EncodeToString([]byte(cwd))
 	}
 	if p.apiToken != "" {
 		headers[http.CanonicalHeaderKey("Authorization")] = "Bearer " + p.apiToken

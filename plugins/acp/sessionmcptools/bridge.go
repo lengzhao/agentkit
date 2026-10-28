@@ -2,6 +2,7 @@ package sessionmcptools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -63,6 +64,28 @@ func (b *toolBridge) sync(ctx context.Context) error {
 	}
 	b.tools = next
 	return nil
+}
+
+// describeForRequest renders context-dependent descriptions without mutating the
+// shared MCP registry. Tool membership and schemas still require explicit Refresh.
+func (b *toolBridge) describeForRequest(ctx context.Context, registered []mcplib.Tool) []mcplib.Tool {
+	current, err := b.provider.ListTools(ctx)
+	if err != nil {
+		return registered
+	}
+	descriptions := make(map[string]string, len(current))
+	for _, tool := range current {
+		if tool != nil {
+			descriptions[tool.Name()] = tool.Description()
+		}
+	}
+	out := append([]mcplib.Tool(nil), registered...)
+	for i := range out {
+		if description, ok := descriptions[out[i].Name]; ok {
+			out[i].Description = description
+		}
+	}
+	return out
 }
 
 func (b *toolBridge) handler(name string) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -173,6 +196,11 @@ func bearerAuthorized(r *http.Request, token string) bool {
 // target and could never deliver.
 func contextFromInboundHeaders(r *http.Request, binds []HeaderBind, ws workspace.Service) context.Context {
 	ctx := r.Context()
+	if raw := r.Header.Get(executionCwdHeader); raw != "" {
+		if cwd, err := base64.StdEncoding.DecodeString(raw); err == nil {
+			ctx = workspace.WithWorkingDirectory(ctx, string(cwd))
+		}
+	}
 	env := rctx.EnvelopeFromContext(ctx)
 	for _, bind := range binds {
 		val := strings.TrimSpace(r.Header.Get(headerName(bind)))

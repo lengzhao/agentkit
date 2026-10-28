@@ -1479,6 +1479,18 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `workspace` | `workspace.Service` |  |
 | `fs` | `filesystem.Service` | FS verifies attachment existence (wire an unrestricted filesystem/local instance; the resolved path is also handed to the platform as a local URL). |
 
+## `tool/session-cwd`
+
+- 返回类型：`agentkit.ToolProvider`
+- 源码：[`plugins/tool/sessioncwd/sessioncwd.go`](../plugins/tool/sessioncwd/sessioncwd.go)
+
+无 config 字段。
+
+| deps 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionStore`（必填） | `agentkit.SessionStore` |  |
+| `workspace`（必填） | `workspace.Service` |  |
+
 ## `tool/session-query`
 
 - 返回类型：`agentkit.Tool`
