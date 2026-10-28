@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
+	capexecution "github.com/lengzhao/agentkit/cap/execution"
 	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -254,6 +255,12 @@ func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID
 	// that register per-turn resources before dispatch can correlate them.
 	if id := turnIDFromMetadata(req.Event.Envelope.Metadata); id != "" {
 		turnID = id
+	}
+	identity := capexecution.Identity{ID: uuid.NewString(), RootTurnID: turnID}
+	ctx = rctx.WithExecutionIdentity(ctx, identity)
+	if control, ok := ctx.Value(agentkit.KeySessionControl).(*Control); ok {
+		endControlTurn := control.beginTurn(identity.ID)
+		defer endControlTurn()
 	}
 	meta := captelemetry.TurnMeta{
 		TurnID:            turnID,

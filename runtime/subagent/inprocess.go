@@ -299,26 +299,17 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		return out, err, nil
 	}
 
-	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
-	childCtx = rctx.WithInheritedWorkingDirectory(childCtx, workspace.WorkingDirectory(ctx))
-	parentEnv := rctx.EnvelopeFromContext(ctx)
-	childEnv := parentEnv.WithConversation(string(childID))
-	childCtx = rctx.ApplyEnvelopeToContext(childCtx, childEnv)
-	childCtx = rctx.WithAgentID(childCtx, child.ID())
+	childCtx, closeChild, err := prepareChildContext(ctx, childID, child.ID(), wallClock, childContextPolicy{})
+	if err != nil {
+		return out, err, nil
+	}
+	defer closeChild()
 	// Model overrides for the child resolve from explicit config only
 	// (definition model, then global binds); conversation session state
 	// never leaks into the child.
 	childCtx = rctx.WithSubagentModelScope(childCtx, rctx.SubagentModelScope{
 		ParentAgentID: rctx.AgentIDFromContext(ctx),
 	})
-	// Drop the parent's turn control: steering and cancel reasons belong to the
-	// parent's turn. turnControlFrom degrades to a no-op when the value is nil.
-	childCtx = context.WithValue(childCtx, agentkit.KeySessionControl, nil)
-	if wallClock > 0 {
-		var cancel context.CancelFunc
-		childCtx, cancel = context.WithTimeout(childCtx, wallClock)
-		defer cancel()
-	}
 
 	obsModel := inprocessTelemetryModel(childCtx, s.workspace, child.ID(), def)
 	childCtx, endSubagentObs := telemetry.BeginObservation(childCtx, telemetry.ObservationMetaFromContext(childCtx, captelemetry.ObservationMeta{
@@ -341,41 +332,7 @@ func (s *Spawner) runChild(ctx context.Context, def subagent.Definition, task st
 		endSubagentObs(end)
 	}()
 
-	childEmit, closeForward := forwardParentEmit(ctx, emitFromContext(ctx))
-	closer = closeForward
-	runErr = child.RunTurn(childCtx, agentkit.TurnInput{
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: task}},
-		},
-		Emit: childEmit,
-	})
-
-	// Read the outcome even when the turn failed: a child that worked for ten
-	// steps and then hit a provider error still has a partial answer worth
-	// carrying back.
-	sess, err := sessevents.LoadSession(ctx, s.store, childID)
-	if err != nil {
-		if runErr != nil {
-			return out, runErr, closer
-		}
-		return out, err, closer
-	}
-	events, err := derive.ReadAllEvents(ctx, sess)
-	if err != nil {
-		if runErr != nil {
-			return out, runErr, closer
-		}
-		return out, err, closer
-	}
-	out.Steps = capsession.StepCount(events, 0)
-	if finish := capsession.FinishAfter(events, 0); finish != nil {
-		out.Status = finish.Status
-		out.Summary = finish.Summary
-	} else {
-		out.Status = subagent.StatusStopped
-		out.Summary = capsession.LastAssistantText(events, 0)
-	}
+	out, runErr, closer = invokeChild(ctx, childCtx, s.store, childInvocation{Name: def.Name, Agent: child, SessionID: childID, Message: taskMessage(task)})
 	return out, runErr, closer
 }
 

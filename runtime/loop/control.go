@@ -2,10 +2,13 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/lengzhao/agentkit"
+	capexecution "github.com/lengzhao/agentkit/cap/execution"
 	"github.com/lengzhao/agentkit/cap/permission"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
 // Control holds steer / follow-up queues and step-cancel state for one session.
@@ -21,15 +24,23 @@ type Control struct {
 }
 
 type controlState struct {
-	stepCancel        context.CancelFunc
+	stepCancels       map[uint64]executionRegistration
+	nextStepID        uint64
 	steering          []agentkit.SteerEntry
 	followUps         []agentkit.ModelMessage
 	cancelReason      string
+	activeExecutionID string
+	cancelExecutionID string
 	capability        permission.Capability
 	permissionPending *pendingPermission
 	// permissionAllowAll is set when the user replies "allow_all" (全部允许):
 	// subsequent KindAllowDeny requests in this session auto-resolve to allow.
 	permissionAllowAll bool
+}
+
+type executionRegistration struct {
+	identity capexecution.Identity
+	cancel   context.CancelCauseFunc
 }
 
 func NewControl() *Control {
@@ -45,8 +56,8 @@ func (c *Control) loop() {
 		if st.permissionPending != nil {
 			st.permissionPending.finish()
 		}
-		if st.stepCancel != nil {
-			st.stepCancel()
+		for _, registration := range st.stepCancels {
+			registration.cancel(context.Canceled)
 		}
 	}()
 	for {
@@ -123,14 +134,13 @@ func (c *Control) FollowUp(_ context.Context, msg agentkit.ModelMessage) error {
 }
 
 func (c *Control) Cancel(_ context.Context, reason string) error {
-	var cancel context.CancelFunc
 	c.sync(func(st *controlState) {
 		st.cancelReason = reason
-		cancel = st.stepCancel
+		st.cancelExecutionID = st.activeExecutionID
+		for _, registration := range st.stepCancels {
+			registration.cancel(cancelCause(reason))
+		}
 	})
-	if cancel != nil {
-		cancel()
-	}
 	return nil
 }
 
@@ -155,22 +165,94 @@ func (c *Control) DrainFollowUps(_ context.Context, mode agentkit.FollowUpMode) 
 func (c *Control) ClearTurnCancel() {
 	c.sync(func(st *controlState) {
 		st.cancelReason = ""
+		st.cancelExecutionID = ""
 	})
 }
 
-func (c *Control) BeginStep(parent context.Context) (context.Context, func()) {
-	stepCtx, cancel := context.WithCancel(parent)
-	if !c.sync(func(st *controlState) {
-		st.stepCancel = cancel
-	}) {
-		cancel()
-	}
-	return stepCtx, func() {
-		cancel()
+// beginTurn bounds a pending stop to one loop invocation. Custom agents are
+// not required to consume PopCancelReason; their next turn must still run.
+// An idle/pre-start stop has no owner and is adopted by the upcoming turn.
+func (c *Control) beginTurn(executionID string) func() {
+	c.sync(func(st *controlState) {
+		if st.cancelExecutionID != "" && st.cancelExecutionID != executionID {
+			st.cancelReason = ""
+			st.cancelExecutionID = ""
+		}
+		st.activeExecutionID = executionID
+		if st.cancelReason != "" {
+			st.cancelExecutionID = executionID
+		}
+	})
+	return func() {
 		c.sync(func(st *controlState) {
-			st.stepCancel = nil
+			if st.activeExecutionID != executionID {
+				return
+			}
+			st.activeExecutionID = ""
+			if st.cancelExecutionID == executionID {
+				st.cancelReason = ""
+				st.cancelExecutionID = ""
+			}
 		})
 	}
+}
+
+func (c *Control) BeginStep(parent context.Context) (context.Context, func()) {
+	return c.RegisterExecution(parent, rctx.ExecutionIdentityFromContext(parent))
+}
+
+// RegisterExecution associates this cancel registration with an immutable
+// invocation owner. Legacy BeginStep delegates here without changing its API.
+func (c *Control) RegisterExecution(parent context.Context, identity capexecution.Identity) (context.Context, func()) {
+	stepCtx, cancel := context.WithCancelCause(rctx.WithExecutionIdentity(parent, identity))
+	var id uint64
+	if !c.sync(func(st *controlState) {
+		st.nextStepID++
+		id = st.nextStepID
+		if st.stepCancels == nil {
+			st.stepCancels = make(map[uint64]executionRegistration)
+		}
+		st.stepCancels[id] = executionRegistration{identity: identity, cancel: cancel}
+		if st.cancelReason != "" {
+			cancel(cancelCause(st.cancelReason))
+		}
+	}) {
+		cancel(context.Canceled)
+	}
+	var once sync.Once
+	return stepCtx, func() {
+		once.Do(func() {
+			cancel(context.Canceled)
+			c.sync(func(st *controlState) {
+				delete(st.stepCancels, id)
+			})
+		})
+	}
+}
+
+// CancelRoot cancels only registrations owned by the given user interaction.
+// It does not set the session-wide pending reason or stop another root/job.
+func (c *Control) CancelRoot(rootTurnID, reason string) bool {
+	if rootTurnID == "" {
+		return false
+	}
+	found := false
+	c.sync(func(st *controlState) {
+		for _, registration := range st.stepCancels {
+			if registration.identity.RootTurnID == rootTurnID {
+				found = true
+				registration.cancel(cancelCause(reason))
+			}
+		}
+	})
+	return found
+}
+
+func cancelCause(reason string) error {
+	if reason == "" {
+		return context.Canceled
+	}
+	return errors.New(reason)
 }
 
 func (c *Control) PopCancelReason() string {
@@ -178,6 +260,7 @@ func (c *Control) PopCancelReason() string {
 	c.sync(func(st *controlState) {
 		reason = st.cancelReason
 		st.cancelReason = ""
+		st.cancelExecutionID = ""
 	})
 	return reason
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
+	capexecution "github.com/lengzhao/agentkit/cap/execution"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/cap/subagent"
@@ -278,6 +279,7 @@ func (s *LoopAgentSpawner) releaseJob(parentID agentkit.SessionID) {
 }
 
 type parentContext struct {
+	identity       capexecution.Identity
 	cwd            string
 	conversation   agentkit.SessionID
 	agentID        agentkit.AgentID
@@ -298,9 +300,13 @@ func captureParentContext(ctx context.Context, parent agentkit.Session) parentCo
 	agentID := rctx.AgentIDFromContext(ctx)
 	var sessionControl any
 	if v := ctx.Value(agentkit.KeySessionControl); v != nil {
+		if scoped, ok := v.(interface{ ParentSessionControl() any }); ok {
+			v = scoped.ParentSessionControl()
+		}
 		sessionControl = v
 	}
 	return parentContext{
+		identity:       rctx.ExecutionIdentityFromContext(ctx),
 		cwd:            workspace.WorkingDirectory(ctx),
 		conversation:   agentkit.SessionID(env.Conversation),
 		agentID:        agentID,
@@ -390,14 +396,11 @@ func formatSubagentComplete(agentName, jobID string, result subagent.Result, run
 func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition, ag agentkit.Agent, task string, childID agentkit.SessionID, wallClock time.Duration) (out subagent.Result, runErr error, closer func()) {
 	out = subagent.Result{Agent: def.Name, Session: string(childID)}
 
-	childCtx := context.WithValue(ctx, agentkit.KeyInSubagent, true)
-	childCtx = rctx.WithInheritedWorkingDirectory(childCtx, workspace.WorkingDirectory(ctx))
-	parentEnv := rctx.EnvelopeFromContext(ctx)
-	childEnv := parentEnv.WithConversation(string(childID))
-	childCtx = rctx.ApplyEnvelopeToContext(childCtx, childEnv)
-	childCtx = rctx.WithAgentID(childCtx, ag.ID())
-	// Keep parent KeySessionControl so ACP agents (cursor/claude) can use the same
-	// permission broker while the parent turn is in delegate (sync or async child).
+	childCtx, closeChild, err := prepareChildContext(ctx, childID, ag.ID(), wallClock, childContextPolicy{asyncParentControl: true})
+	if err != nil {
+		return out, err, nil
+	}
+	defer closeChild()
 	childCtx = rttelemetry.WithExporter(childCtx, s.telemetry)
 
 	turnMeta := s.childTurnMeta(childCtx, def, ag, task, childID)
@@ -418,45 +421,7 @@ func (s *LoopAgentSpawner) runChild(ctx context.Context, def subagent.Definition
 		endTurn(end)
 	}()
 
-	if wallClock > 0 {
-		var cancel context.CancelFunc
-		childCtx, cancel = context.WithTimeout(childCtx, wallClock)
-		defer cancel()
-	}
-
-	emit, closeForward := forwardParentEmit(childCtx, emitFromContext(ctx))
-	closer = closeForward
-	runErr = ag.RunTurn(childCtx, agentkit.TurnInput{
-		Message: agentkit.ModelMessage{
-			Role:    "user",
-			Content: []agentkit.ContentPart{{Type: "text", Text: task}},
-		},
-		Emit: emit,
-	})
-
-	sess, err := sessevents.LoadSession(ctx, s.store, childID)
-	if err != nil {
-		slog.Warn("subagent loop: load child session failed", "child", childID, "err", err)
-		if runErr != nil {
-			return out, runErr, closer
-		}
-		return out, err, closer
-	}
-	events, err := derive.ReadAllEvents(ctx, sess)
-	if err != nil {
-		if runErr != nil {
-			return out, runErr, closer
-		}
-		return out, err, closer
-	}
-	out.Steps = capsession.StepCount(events, 0)
-	if finish := capsession.FinishAfter(events, 0); finish != nil {
-		out.Status = finish.Status
-		out.Summary = finish.Summary
-	} else {
-		out.Status = subagent.StatusStopped
-		out.Summary = capsession.LastAssistantText(events, 0)
-	}
+	out, runErr, closer = invokeChild(ctx, childCtx, s.store, childInvocation{Name: def.Name, Agent: ag, SessionID: childID, Message: taskMessage(task)})
 	return out, runErr, closer
 }
 

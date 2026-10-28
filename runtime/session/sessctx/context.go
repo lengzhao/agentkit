@@ -16,7 +16,7 @@ import (
 
 // Resolve reads pending bindings and the durable context epoch without writing.
 // Configuration commands use it; normal turns call Prepare.
-func Resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Service) (rctx.Execution, error) {
+func Resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Service) (rctx.SessionContext, error) {
 	return resolve(ctx, store, ws, false)
 }
 
@@ -28,13 +28,13 @@ func Prepare(ctx context.Context, store agentkit.SessionStore, ws workspace.Serv
 	if err != nil {
 		return ctx, err
 	}
-	return context.WithValue(rctx.WithExecution(ctx, execution), servicesKey{}, services{store, ws}), nil
+	return context.WithValue(rctx.WithSessionContext(ctx, execution), servicesKey{}, services{store, ws}), nil
 }
 
-func resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Service, prepare bool) (rctx.Execution, error) {
+func resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Service, prepare bool) (rctx.SessionContext, error) {
 	sid := rctx.SessionIDFromContext(ctx)
-	execution := rctx.Execution{SessionID: sid}
-	if current, ok := rctx.ExecutionFromContext(ctx); ok && current.SessionID == sid {
+	execution := rctx.SessionContext{SessionID: sid}
+	if current, ok := rctx.SessionContextFromContext(ctx); ok && current.SessionID == sid {
 		return current, nil
 	}
 	value, hits, err := sessbind.StackFromContext(ctx, ws).Effective(ctx, store, sessbind.CwdBinding{})
@@ -107,5 +107,5 @@ func NextTurn(ctx context.Context) (context.Context, error) {
 	if !ok {
 		return ctx, nil
 	}
-	return Prepare(rctx.WithoutExecution(ctx), deps.store, deps.ws)
+	return Prepare(rctx.WithoutSessionContext(ctx), deps.store, deps.ws)
 }

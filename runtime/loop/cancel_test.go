@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capexecution "github.com/lengzhao/agentkit/cap/execution"
 	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
@@ -136,4 +137,79 @@ func TestControlCancelIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	wg.Wait()
+}
+
+func TestControlOldCleanupDoesNotUnregisterNewStep(t *testing.T) {
+	t.Parallel()
+	ctrl := loop.NewControl()
+	defer ctrl.Stop()
+	_, oldEnd := ctrl.BeginStep(context.Background())
+	next, nextEnd := ctrl.BeginStep(context.Background())
+	defer nextEnd()
+	oldEnd()
+	oldEnd() // Cleanup is idempotent and owns only its original registration.
+	if err := ctrl.Cancel(context.Background(), "stop next"); err != nil {
+		t.Fatal(err)
+	}
+	if next.Err() != context.Canceled {
+		t.Fatal("old cleanup removed the new step's cancellation registration")
+	}
+}
+
+func TestControlCancelReachesAllActiveSteps(t *testing.T) {
+	t.Parallel()
+	ctrl := loop.NewControl()
+	defer ctrl.Stop()
+	parent, endParent := ctrl.BeginStep(context.Background())
+	defer endParent()
+	child, endChild := ctrl.BeginStep(context.Background())
+	defer endChild()
+	if err := ctrl.Cancel(context.Background(), "stop both"); err != nil {
+		t.Fatal(err)
+	}
+	if parent.Err() != context.Canceled || child.Err() != context.Canceled {
+		t.Fatalf("parent=%v child=%v; both active registrations must cancel", parent.Err(), child.Err())
+	}
+}
+
+func TestControlStepHonorsPendingStop(t *testing.T) {
+	t.Parallel()
+	ctrl := loop.NewControl()
+	defer ctrl.Stop()
+	if err := ctrl.Cancel(context.Background(), "stop before start"); err != nil {
+		t.Fatal(err)
+	}
+	step, end := ctrl.BeginStep(context.Background())
+	defer end()
+	if step.Err() != context.Canceled {
+		t.Fatal("step started despite pending stop")
+	}
+	if got := ctrl.PopCancelReason(); got != "stop before start" {
+		t.Fatalf("registration consumed parent cancel reason: %q", got)
+	}
+}
+
+func TestControlCancelRootIsolatesExecutionOwners(t *testing.T) {
+	ctrl := loop.NewControl()
+	defer ctrl.Stop()
+	a, endA := ctrl.RegisterExecution(context.Background(), capexecution.Identity{ID: "a", RootTurnID: "turn-a"})
+	defer endA()
+	b, endB := ctrl.RegisterExecution(context.Background(), capexecution.Identity{ID: "b", RootTurnID: "turn-b"})
+	defer endB()
+	if !ctrl.CancelRoot("turn-a", "stop a") {
+		t.Fatal("root registration not found")
+	}
+	if a.Err() != context.Canceled || b.Err() != nil {
+		t.Fatalf("a=%v b=%v", a.Err(), b.Err())
+	}
+	endA()
+	if err := ctrl.Cancel(context.Background(), "stop remaining"); err != nil {
+		t.Fatal(err)
+	}
+	if b.Err() != context.Canceled {
+		t.Fatal("old cleanup removed another owner")
+	}
+	if ctrl.CancelRoot("", "invalid") {
+		t.Fatal("empty root may not target legacy registrations")
+	}
 }

@@ -27,6 +27,15 @@
 
 ## 2. 核心术语
 
+执行层新增的身份与委派边界见 [同步子执行 scope](child-execution.zh.md) 和 [执行架构统一设计](plans/2026-10-28-execution-unification-design.md)。已落实的基础职责：
+
+- `rctx.SessionContext` 是历史/cwd/epoch 快照；`cap/execution.Identity` 是单次调用及父/root 归属，两者独立。
+- `runtime/execution` 管理同步子执行生命周期；`runtime/permission` 代理父审批；`runtime/rctx` 只读写上下文。
+- `runtime/subagent` 内共享执行流程负责上下文派生、超时、完整消息传递、输出转发与结果读取，inprocess/configured-agent 分别负责构造与 backend 能力。
+- 旧 Spawner、临时历史键和 Execution 快照 API 保持兼容。异步旧行为有显式兼容策略，独立 job owner 尚未实现。
+
+后续目录固定快照、持久角色、状态事件和 router 按统一设计接入，不在 backend 中各自再造会话控制与目录解析。
+
 `agentkit` 的配置模型建立在 `pluginkit` 的实例图之上。用户配置描述要构造哪些实例以及它们之间的依赖，Agent 运行时只消费构造完成后的语义接口。
 
 | 术语 | 含义 |
