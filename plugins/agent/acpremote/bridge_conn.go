@@ -244,7 +244,8 @@ func (b *bridge) connectSubprocess(ctx context.Context, st *connLocalState) (*su
 
 	client := &bridgeClient{bridge: b}
 	conn := acp.NewClientSideConnection(client, stdin, stdout)
-	conn.SetLogger(slog.Default())
+	// The SDK already uses slog.Default(). SetLogger here races with the
+	// receive goroutine started by NewClientSideConnection on early EOF.
 
 	initResp, err := conn.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
