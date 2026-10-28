@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // NormalizeSQLDriver maps driver aliases to canonical database/sql driver names.
@@ -41,6 +42,12 @@ func SQLPlaceholderQuery(driver, query string) string {
 	return b.String()
 }
 
+// SQLite initializes process-global mutex state on its first physical open.
+// Serialize the initial Ping of each handle before exposing it to callers or
+// connection pools. This also protects startup shared by the store and index
+// without linking a SQL driver into the JSONL/memory store package.
+var sqliteOpenMu sync.Mutex
+
 // OpenSQLDB opens a database/sql handle for session storage backends.
 func OpenSQLDB(driver, dsn string) (*sql.DB, error) {
 	driver = NormalizeSQLDriver(driver)
@@ -70,6 +77,15 @@ func OpenSQLDB(driver, dsn string) (*sql.DB, error) {
 	}
 	db.SetMaxOpenConns(16)
 	db.SetMaxIdleConns(4)
+	if driver == "sqlite" {
+		sqliteOpenMu.Lock()
+		err = db.Ping()
+		sqliteOpenMu.Unlock()
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("session sqlite initialize: %w", err)
+		}
+	}
 	return db, nil
 }
 

@@ -157,3 +157,32 @@ func TestApplyTurnSteerOutsideBatchStillAcknowledges(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestApplyTurnSteerNextTurnUndoesSwap(t *testing.T) {
+	p := &Platform{steerEmoji: reactionSteer}
+	sessionID := agentkit.SessionID("slack:C7")
+	d := delivery{channel: "C7", msgTS: "7.0", sessionID: sessionID}
+	p.onTurnStartReactions(sessionID)
+	p.appendTurnReactionIfActive(sessionID, d)
+
+	event := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "slack", DeliveryID: sessionID, ChannelID: "C7", ReplyTo: "7.0"}),
+		Data:  rctx.MarshalOutboundData(capsession.TurnSteerData{Outcome: capsession.SteerOutcomeQueued}),
+	}
+	if err := p.applyTurnSteer(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := p.turnReactionBatchFor(sessionID).reactionFor(d); !ok || name != reactionSteer {
+		t.Fatalf("after queued swap reaction = %q ok=%v, want %q", name, ok, reactionSteer)
+	}
+
+	nextTurn := event
+	nextTurn.Data = rctx.MarshalOutboundData(capsession.TurnSteerData{Outcome: capsession.SteerOutcomeNextTurn})
+	if err := p.applyTurnSteer(context.Background(), nextTurn); err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := p.turnReactionBatchFor(sessionID).reactionFor(d); !ok || name != reactionReceived {
+		t.Fatalf("after undo reaction = %q ok=%v, want %q", name, ok, reactionReceived)
+	}
+}

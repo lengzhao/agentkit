@@ -305,6 +305,14 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (runErr
 }
 
 // runSegment drives model steps until the assistant stops requesting tools.
+// ackSteering reports that a popped steering entry was injected into the running
+// turn's next step. Best effort and non-blocking.
+func ackSteering(entry agentkit.SteerEntry, outcome string) {
+	if entry.Ack != nil {
+		entry.Ack(outcome)
+	}
+}
+
 func (a *Runtime) runSegment(
 	ctx context.Context,
 	sess agentkit.Session,
@@ -325,10 +333,16 @@ func (a *Runtime) runSegment(
 			return "", fmt.Errorf("cancelled: %s", reason)
 		}
 
-		for _, msg := range ctrl.PopSteering() {
-			if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, msg); err != nil {
+		entries := ctrl.PopSteering()
+		for i, entry := range entries {
+			if err := sessevents.Default.AppendMessage(ctx, sess, a.id, agentkit.EventUserMessage, entry.Message); err != nil {
+				ackSteering(entry, capsession.SteerOutcomeRejected)
+				ctrl.RestoreSteering(entries[i+1:])
 				return "", err
 			}
+			// The message is now part of this running turn's next step, so its
+			// steer ack resolves to injected rather than the next turn.
+			ackSteering(entry, capsession.SteerOutcomeInjected)
 		}
 
 		if a.maxSteps > 0 && run.meter.stepsUsed() >= a.maxSteps {

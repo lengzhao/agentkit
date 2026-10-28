@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"sync"
@@ -207,6 +208,27 @@ func (p *Platform) addReaction(messageID string) string {
 	return p.addReactionWithEmoji(messageID, p.reactionEmoji)
 }
 
+// steerAckAccepted reports whether a turn/steer event claims the message was
+// taken into the running turn's work. queued/injected mean the sender will see
+// its input folded into (or run right after) the current reply; next-turn and
+// rejected contradict that, so the emoji swap is skipped and the message keeps
+// whatever reaction it already has.
+func steerAckAccepted(event agentkit.OutboundEvent) bool {
+	var data capsession.TurnSteerData
+	if len(event.Data) == 0 {
+		return true
+	}
+	if err := json.Unmarshal(event.Data, &data); err != nil {
+		return true
+	}
+	switch data.Outcome {
+	case "", capsession.SteerOutcomeQueued, capsession.SteerOutcomeInjected:
+		return true
+	default:
+		return false
+	}
+}
+
 // applyTurnSteer acknowledges a steered message on the message itself: the
 // in-flight reaction is replaced by steerEmoji so the sender sees the message
 // was folded into the running turn rather than queued for a later one.
@@ -225,11 +247,18 @@ func (p *Platform) applyTurnSteer(event agentkit.OutboundEvent) error {
 	}
 	sessionID := rctx.OutboundRouteID(event)
 	batch := p.turnReactionBatchFor(sessionID)
+	want := p.steerEmoji
+	if !steerAckAccepted(event) {
+		// The message never made it into the running reply (deferred to the next
+		// turn, or delivery failed). Undo an earlier swap so the message keeps the
+		// plain processing reaction, which turn/end resolves normally.
+		want = p.reactionEmoji
+	}
 	if oldID, tracked := batch.reactionFor(messageID); tracked {
 		if oldID != "" {
 			p.removeReaction(messageID, oldID)
 		}
-		newID := p.addReactionWithEmoji(messageID, p.steerEmoji)
+		newID := p.addReactionWithEmoji(messageID, want)
 		// turn/end may have drained the batch while the API call was in flight.
 		if !batch.setReaction(messageID, newID) {
 			p.removeReaction(messageID, newID)
@@ -237,7 +266,8 @@ func (p *Platform) applyTurnSteer(event agentkit.OutboundEvent) error {
 		return nil
 	}
 	// The turn already ended or does not track this message. Avoid adding a
-	// transient reaction that no turn/end will be able to retire.
+	// transient reaction that no turn/end will be able to retire — the sender
+	// keeps whatever reaction it already has.
 	return nil
 }
 

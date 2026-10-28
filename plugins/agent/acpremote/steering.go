@@ -9,12 +9,13 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 )
 
 // steeringControl is the queue owned by Loop for the active session.
 type steeringControl interface {
-	PopSteering() []agentkit.ModelMessage
-	RestoreSteering([]agentkit.ModelMessage)
+	PopSteering() []agentkit.SteerEntry
+	RestoreSteering([]agentkit.SteerEntry)
 }
 
 func supportsSteering(meta map[string]any) bool {
@@ -43,49 +44,67 @@ func forwardSteering(ctx context.Context, stop <-chan struct{}, ctrl steeringCon
 			return nil
 		default:
 		}
-		messages := ctrl.PopSteering()
-		for i, msg := range messages {
+		entries := ctrl.PopSteering()
+		for i, entry := range entries {
 			select {
 			case <-stop:
-				ctrl.RestoreSteering(messages[i:])
+				ctrl.RestoreSteering(entries[i:])
 				return nil
 			default:
 			}
 			requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			raw, err := callSteering(requestCtx, conn, sessionID, msg, abort)
+			raw, err := callSteering(requestCtx, conn, sessionID, entry.Message, abort)
 			cancel()
 			if err != nil {
 				var rpcErr *acp.RequestError
 				if errors.As(err, &rpcErr) && rpcErr.Code == -32601 {
-					ctrl.RestoreSteering(messages[i:])
+					// Capability was negotiated away mid-turn; leave the queue for
+					// Loop's next-turn fallback.
+					ctrl.RestoreSteering(entries[i:])
 					return nil
 				}
 				// Delivery is ambiguous. Never automatically retry the current message;
 				// preserve the rest, and surface the failure to the caller.
-				ctrl.RestoreSteering(messages[i+1:])
+				ackSteer(entry, capsession.SteerOutcomeRejected)
+				ctrl.RestoreSteering(entries[i+1:])
 				return wrapACPStageError("_session/steering", err)
 			}
 			var response struct {
 				Outcome string `json:"outcome"`
 			}
 			if err = json.Unmarshal(raw, &response); err != nil {
-				ctrl.RestoreSteering(messages[i+1:])
+				ackSteer(entry, capsession.SteerOutcomeRejected)
+				ctrl.RestoreSteering(entries[i+1:])
 				return fmt.Errorf("decode ACP steering response: %w", err)
 			}
 			switch response.Outcome {
 			case "injected":
-				if err := accepted(msg); err != nil {
-					ctrl.RestoreSteering(messages[i+1:])
+				// The peer's confirmation is authoritative even if local history
+				// persistence fails. Never retry input the peer already consumed.
+				ackSteer(entry, capsession.SteerOutcomeInjected)
+				if err := accepted(entry.Message); err != nil {
+					ctrl.RestoreSteering(entries[i+1:])
 					return err
 				}
 			case "promptRequired":
-				ctrl.RestoreSteering(messages[i:])
+				// The peer was too far along to inject; the message stays queued
+				// and Loop runs it as the session's next turn (acked there).
+				ctrl.RestoreSteering(entries[i:])
 				return nil
 			default:
-				ctrl.RestoreSteering(messages[i+1:])
+				ackSteer(entry, capsession.SteerOutcomeRejected)
+				ctrl.RestoreSteering(entries[i+1:])
 				return fmt.Errorf("unexpected ACP steering outcome %q", response.Outcome)
 			}
 		}
+	}
+}
+
+// ackSteer reports one steered message's terminal outcome. Best effort: the ack
+// runs platform I/O, so it must not break the steering worker.
+func ackSteer(entry agentkit.SteerEntry, outcome string) {
+	if entry.Ack != nil {
+		entry.Ack(outcome)
 	}
 }
 

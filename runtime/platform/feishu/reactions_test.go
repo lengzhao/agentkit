@@ -116,6 +116,33 @@ func TestApplyTurnSteerDisabledWithoutEmoji(t *testing.T) {
 	}
 }
 
+func TestApplyTurnSteerNextTurnUndoesSwap(t *testing.T) {
+	p := &Platform{steerEmoji: "Typing", reactionEmoji: "OnIt"}
+	sessionID := agentkit.SessionID("lark:oc_undo")
+	p.onTurnStartReactions(sessionID)
+	p.appendTurnReactionIfActive(sessionID, replyContext{messageID: "msg-9", processingReactionID: "rx-9"})
+
+	// First the queued ack swaps to Typing...
+	queued := agentkit.OutboundEvent{
+		Type:  agentkit.EventTurnSteer,
+		Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", DeliveryID: sessionID, ReplyTo: "msg-9"}),
+		Data:  rctx.MarshalOutboundData(capsession.TurnSteerData{Outcome: capsession.SteerOutcomeQueued}),
+	}
+	if err := p.applyTurnSteer(queued); err != nil {
+		t.Fatal(err)
+	}
+	// ...then the terminal next-turn ack must restore the processing reaction.
+	nextTurn := queued
+	nextTurn.Data = rctx.MarshalOutboundData(capsession.TurnSteerData{Outcome: capsession.SteerOutcomeNextTurn})
+	if err := p.applyTurnSteer(nextTurn); err != nil {
+		t.Fatal(err)
+	}
+	// The message is still tracked while the turn runs.
+	if _, tracked := p.turnReactionBatchFor(sessionID).reactionFor("msg-9"); !tracked {
+		t.Fatal("message dropped from the batch after undo")
+	}
+}
+
 func TestApplyTurnSteerWithoutAnchorIsNoop(t *testing.T) {
 	p := &Platform{steerEmoji: "Typing"}
 	event := agentkit.OutboundEvent{
