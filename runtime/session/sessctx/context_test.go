@@ -5,10 +5,13 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -161,5 +164,63 @@ func TestChildSessionBindingOverridesInheritedCwd(t *testing.T) {
 	prepared, err = sessctx.Prepare(ctx, store, ws)
 	if err != nil || workspace.WorkingDirectory(prepared) != childDir {
 		t.Fatalf("explicit child: %q %v", workspace.WorkingDirectory(prepared), err)
+	}
+}
+
+// A bound directory can disappear after it was persisted (repo moved, temp dir
+// cleaned, another host). That must not fail every later turn, and the
+// configuration path must keep working so the binding can be cleared.
+func TestUnusableCwdBindingDoesNotBrickSession(t *testing.T) {
+	root := t.TempDir()
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "session"})
+	store := sessstore.NewStaticStore(mem)
+	ws := rtworkspace.Static(root)
+	base := rctx.WithConversation(context.Background(), "session")
+
+	gone := filepath.Join(t.TempDir(), "gone")
+	if err := os.MkdirAll(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetCwdBind(base, "session", gone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessctx.Prepare(base, store, ws); err != nil {
+		t.Fatalf("prepare while cwd exists: %v", err)
+	}
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := sessctx.Prepare(base, store, ws)
+	if err != nil {
+		t.Fatalf("prepare failed on unusable binding: %v", err)
+	}
+	if got := workspace.WorkingDirectory(ctx); got != "" {
+		t.Fatalf("unusable binding still applied: %q", got)
+	}
+	// /cwd reads through Resolve; it must not fail either.
+	if _, err := sessctx.Resolve(base, store, ws); err != nil {
+		t.Fatalf("resolve failed on unusable binding: %v", err)
+	}
+	// Clearing the binding works and normal turns resume.
+	if err := store.SetCwdBind(base, "session", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessctx.Prepare(base, store, ws); err != nil {
+		t.Fatalf("prepare after reset: %v", err)
+	}
+}
+
+// An explicit setter still rejects a path that does not exist.
+func TestSetCwdRejectsMissingDirectory(t *testing.T) {
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "session"})
+	store := sessstore.NewStaticStore(mem)
+	ws := rtworkspace.Static(t.TempDir())
+	base := rctx.WithConversation(context.Background(), "session")
+	if _, err := sessctx.Prepare(base, store, ws); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, err := sessbind.ValidateCwd(base, ws, missing); err == nil {
+		t.Fatal("ValidateCwd accepted a missing directory")
 	}
 }

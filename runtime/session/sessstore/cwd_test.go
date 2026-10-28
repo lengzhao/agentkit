@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
@@ -186,4 +187,99 @@ func TestFileRuntimeReadsMemoryAndWritesCompleteSnapshot(t *testing.T) {
 	if got, err := cwd.CwdBind(ctx, "memory"); err != nil || got != "/project" {
 		t.Fatalf("failed update became visible: %q %v", got, err)
 	}
+}
+
+// A snapshot primed before another writer persisted a binding must not replay
+// its stale (empty) copy on the next unrelated write: that used to delete
+// runtime.json and silently drop the cwd binding.
+func TestFileRuntimeWriteMergesOnDiskState(t *testing.T) {
+	for _, twoPaths := range []bool{false, true} {
+		name := "single-snapshot"
+		if twoPaths {
+			// Two workspace front ends resolving one directory with
+			// different spellings own two snapshots of the same file.
+			name = "two-spellings"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			var a, b agentkit.SessionStore
+			var path string
+			if twoPaths {
+				base, err := os.MkdirTemp("/tmp", "merge")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { os.RemoveAll(base) })
+				plain := rtworkspace.Static(base)
+				aliased := symlinkResolved{plain}
+				open := func(ws workspace.Service) agentkit.SessionStore {
+					s, e := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: ws})
+					if e != nil {
+						t.Fatal(e)
+					}
+					return s
+				}
+				a, b = open(plain), open(aliased)
+				dir, _ := plain.Resolve(ctx, "sessions")
+				if real, err := filepath.EvalSymlinks(dir); err == nil {
+					dir = real
+				}
+				path = filepath.Join(dir, "session", "runtime.json")
+			} else {
+				root := t.TempDir()
+				open := func() agentkit.SessionStore {
+					s, e := sessstore.NewStore(sessstore.StoreConfig{Dir: "sessions"}, sessstore.StoreDeps{Workspace: rtworkspace.Static(root)})
+					if e != nil {
+						t.Fatal(e)
+					}
+					return s
+				}
+				a, b = open(), open()
+				path = filepath.Join(root, "sessions", "session", "runtime.json")
+			}
+
+			// b observes the session first: an empty snapshot.
+			if _, err := b.(agentkit.SessionRuntimeStore).AgentBind(ctx, "session"); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.(agentkit.SessionCwdStore).SetCwdBind(ctx, "session", "/project"); err != nil {
+				t.Fatal(err)
+			}
+			// An unrelated write from the stale snapshot (session/agent-guard
+			// clears a denied agent bind exactly like this).
+			if err := b.(agentkit.SessionRuntimeStore).SetAgentBind(ctx, "session", ""); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := a.(agentkit.SessionCwdStore).CwdBind(ctx, "session"); err != nil || got != "/project" {
+				t.Fatalf("cwd binding lost after unrelated write: %q %v", got, err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("runtime.json removed: %v", err)
+			}
+			if !strings.Contains(string(raw), "/project") {
+				t.Fatalf("runtime.json lost cwd: %s", raw)
+			}
+		})
+	}
+}
+
+// symlinkResolved resolves every absolute path, modelling a host where the same
+// directory has two spellings (/tmp vs /private/tmp, a symlinked tenant root).
+type symlinkResolved struct{ inner workspace.Service }
+
+func (s symlinkResolved) Resolve(ctx context.Context, rel string) (string, error) {
+	path, err := s.inner.Resolve(ctx, rel)
+	if err != nil {
+		return "", err
+	}
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real, nil
+	}
+	// The leaf may not exist yet; resolve the parent so the two front ends
+	// still disagree on the spelling of the same directory.
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+		return filepath.Join(dir, filepath.Base(path)), nil
+	}
+	return path, nil
 }
