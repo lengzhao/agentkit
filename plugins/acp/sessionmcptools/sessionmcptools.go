@@ -22,6 +22,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/bind"
 	"github.com/lengzhao/pluginkit"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -37,19 +38,14 @@ func init() {
 
 // Config configures the loopback MCP endpoint.
 type Config struct {
-	// ListenAddr defaults to 127.0.0.1:0 (ephemeral port).
-	ListenAddr string `json:"listenAddr,omitempty"`
 	// APIToken enables a loopback Bearer check. Empty disables it (local only).
 	APIToken string `json:"apiToken,omitempty"`
 	// ServerName is the MCP server name announced to the agent.
 	ServerName string `json:"serverName,omitempty"`
-	// TransportType defaults to streamable-http.
-	TransportType string `json:"transportType,omitempty"`
 	// Headers are static extra headers for the ACP session/new spec.
 	Headers map[string]string `json:"headers,omitempty"`
-	// Bind maps request headers to turn-context fields, so a tool call that
-	// arrives over MCP sees the same envelope (session, user, workspace) it
-	// would see in-process.
+	// Bind maps turn-context fields to session headers and restores them on
+	// inbound tool calls, preserving the session, user, workspace and route.
 	Bind map[string]HeaderBind `json:"bind,omitempty"`
 }
 
@@ -71,16 +67,14 @@ type Deps struct {
 type Provider struct {
 	apiToken      string
 	serverName    string
-	transportType string
 	staticHeaders map[string]string
 	binds         []HeaderBind
 	bridge        *toolBridge
 	workspace     workspace.Service
 
-	mu       sync.Mutex
-	baseURL  string
-	listener net.Listener
-	server   *http.Server
+	mu      sync.Mutex
+	baseURL string
+	server  *http.Server
 }
 
 // New registers acp/session-mcp-tools: streamable-http MCP over any ToolProvider.
@@ -96,29 +90,22 @@ func New(cfg Config, deps Deps) (capacp.SessionMCPProvider, error) {
 	if serverName == "" {
 		serverName = defaultServerName
 	}
-	transport := strings.TrimSpace(cfg.TransportType)
-	if transport == "" {
-		transport = defaultTransportType
-	}
 	p := &Provider{
 		apiToken:      strings.TrimSpace(cfg.APIToken),
 		serverName:    serverName,
-		transportType: transport,
 		staticHeaders: cfg.Headers,
 		binds:         binds,
 		bridge:        newToolBridge(deps.Provider),
 		workspace:     deps.Workspace,
 	}
-	if err := p.startHTTP(strings.TrimSpace(cfg.ListenAddr)); err != nil {
+	if err := p.startHTTP(); err != nil {
 		return nil, err
 	}
 	return p, nil
 }
 
-func (p *Provider) startHTTP(listenAddr string) error {
-	if listenAddr == "" {
-		listenAddr = "127.0.0.1:0"
-	}
+func (p *Provider) startHTTP() error {
+	const listenAddr = "127.0.0.1:0"
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("acp/session-mcp-tools listen %s: %w", listenAddr, err)
@@ -145,7 +132,6 @@ func (p *Provider) startHTTP(listenAddr string) error {
 
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	p.mu.Lock()
-	p.listener = ln
 	p.baseURL = "http://" + ln.Addr().String()
 	p.server = srv
 	p.mu.Unlock()
@@ -169,7 +155,18 @@ func (p *Provider) Refresh(ctx context.Context) error {
 func (p *Provider) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPServer, error) {
 	headers := make(map[string]string, len(p.staticHeaders)+1)
 	for k, v := range p.staticHeaders {
-		headers[k] = v
+		headers[http.CanonicalHeaderKey(k)] = v
+	}
+	for _, entry := range p.binds {
+		value, err := bind.Default.ResolveCtxValue(ctx, entry.From)
+		if err != nil {
+			return nil, fmt.Errorf("session mcp header %s: %w", entry.Name, err)
+		}
+		// A missing context value must not reuse a static header from another scope.
+		delete(headers, headerName(entry))
+		if value != "" {
+			headers[headerName(entry)] = value
+		}
 	}
 	if p.apiToken != "" {
 		headers[http.CanonicalHeaderKey("Authorization")] = "Bearer " + p.apiToken
@@ -184,7 +181,7 @@ func (p *Provider) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPSe
 		HTTP: &capacp.HTTPMCPServer{
 			Name:    p.serverName,
 			URL:     url,
-			Type:    p.transportType,
+			Type:    defaultTransportType,
 			Headers: headers,
 		},
 	}}, nil

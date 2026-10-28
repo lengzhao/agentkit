@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
@@ -222,5 +226,122 @@ func TestRefreshPicksUpNewTools(t *testing.T) {
 	concrete.bridge.mu.Unlock()
 	if len(names) != 2 {
 		t.Fatalf("tools after refresh = %v, want both", names)
+	}
+}
+
+func TestSessionHeadersRoundTripContext(t *testing.T) {
+	route := rctx.SessionRouteFromDelivery("lark", "lark:oc_demo:u:ou_owner", "").Stable()
+	env := agentkit.TurnEnvelope{Conversation: "history-key", Actor: agentkit.ActorRef{UserID: "ou_owner"}, AgentID: "assistant", Workspace: "tenant-1", Route: route}
+	cfg := Config{Headers: map[string]string{"X-Static": "kept"}, Bind: map[string]HeaderBind{
+		"session":   {From: "ctx:session_id", Name: "Session-Key"},
+		"user":      {From: "ctx:user_id", Name: "User-Key"},
+		"agent":     {From: "ctx:agent_id", Name: "Agent-Key"},
+		"workspace": {From: "ctx:tenant", Name: "Workspace-Key"},
+		"route":     {From: "ctx:route", Name: "Route-Key"},
+	}}
+	p, err := New(cfg, Deps{Provider: stubProvider(stubTool{"now"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProvider(t, p)
+	specs, err := p.SessionMCPServers(rctx.ApplyEnvelopeToContext(context.Background(), env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	for k, v := range specs[0].HTTP.Headers {
+		req.Header.Set(k, v)
+	}
+	got := rctx.EnvelopeFromContext(contextFromInboundHeaders(req, p.(*Provider).binds, nil))
+	if got.Conversation != env.Conversation || got.Actor != env.Actor || got.AgentID != env.AgentID || got.Workspace != env.Workspace {
+		t.Fatalf("context lost: %+v", got)
+	}
+	wantRoute, _ := json.Marshal(route)
+	gotRoute, _ := json.Marshal(got.Route)
+	if string(wantRoute) != string(gotRoute) {
+		t.Fatalf("route lost: %s", gotRoute)
+	}
+	if req.Header.Get("X-Static") != "kept" {
+		t.Fatal("static headers lost")
+	}
+}
+
+func TestUnknownToolRequiresExplicitRefresh(t *testing.T) {
+	source := &stubProviderImpl{tools: []agentkit.Tool{stubTool{"one"}}}
+	p, err := New(Config{}, Deps{Provider: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProvider(t, p)
+	source.tools = append(source.tools, stubTool{"two"})
+	bridge := p.(*Provider).bridge
+	if _, err := bridge.toolForCall("two"); err == nil {
+		t.Fatal("unknown call implicitly refreshed registry")
+	}
+	if err := p.(*Provider).Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bridge.toolForCall("two"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Exercise the real HTTP transport: the ACP spec's headers must reach Tool.Call.
+func TestMCPCallReceivesSessionContext(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	received := make(chan agentkit.TurnEnvelope, 1)
+	tool, err := agentkit.NewTool[struct{}, string]("capture", func(ctx context.Context, _ struct{}) (string, error) {
+		received <- rctx.EnvelopeFromContext(ctx)
+		return "ok", nil
+	}).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Config{APIToken: "local-token", Bind: map[string]HeaderBind{
+		"session": {From: "ctx:session_id", Name: "X-Session"},
+		"route":   {From: "ctx:route", Name: "X-Route"},
+	}}, Deps{Provider: stubProvider(tool)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProvider(t, p)
+	env := agentkit.TurnEnvelope{Conversation: "history-key", Route: rctx.SessionRoute("lark", "lark:oc_demo:u:ou_owner")}
+	specs, err := p.SessionMCPServers(rctx.ApplyEnvelopeToContext(ctx, env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := specs[0].HTTP
+	client, err := mcpclient.NewStreamableHttpClient(spec.URL, transport.WithHTTPHeaders(spec.Headers))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	var init mcplib.InitializeRequest
+	init.Params.ProtocolVersion = "2025-03-26"
+	init.Params.ClientInfo = mcplib.Implementation{Name: "context-test", Version: "1"}
+	if _, err := client.Initialize(ctx, init); err != nil {
+		t.Fatal(err)
+	}
+	var call mcplib.CallToolRequest
+	call.Params.Name = "capture"
+	result, err := client.CallTool(ctx, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("tool failed: %+v", result)
+	}
+	select {
+	case got := <-received:
+		route, _ := rctx.RouteSessionID(got.Route)
+		if got.Conversation != env.Conversation || route != "lark:oc_demo:u:ou_owner" {
+			t.Fatalf("lost context: %+v", got)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
 }

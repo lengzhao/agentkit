@@ -57,7 +57,7 @@ func releaseSessionBridge(t *testing.T, a *Runtime, sessionID agentkit.SessionID
 
 // acquireTestLease takes a lease the caller must release; it exists so tests
 // exercise the same path production uses.
-func acquireTestLease(t *testing.T, a *Runtime, sessionID agentkit.SessionID) *Lease {
+func acquireTestLease(t *testing.T, a *Runtime, sessionID agentkit.SessionID) *bridgeLease {
 	t.Helper()
 	lease, err := a.acquireLease(context.Background(), sessionID)
 	if err != nil {

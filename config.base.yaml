@@ -401,11 +401,10 @@ schedule.default:
     fs: filesystem.local.state
     engine: schedule.engine
 
-# script 类 job 的 bash 执行器（cap/shell.Executor）。不接时 script job 启动即报错：
-# schedule/cron 的 script 依赖 shell，tool/shell-bash 是模型工具、不实现该接口。
+# script 类 job 复用 shell-bash 的 cap/shell.Executor 能力。
 # 定时任务建议 trimEnv: true，避免继承常驻进程的操作者环境。
-tool.shell-exec.default:
-  use: tool/shell-exec
+tool.shell-bash.scheduled:
+  use: tool/shell-bash
   config:
     workDir: work
     timeoutSeconds: 300
@@ -430,6 +429,7 @@ schedule.cron:
     schedule: schedule.default
     workspace: workspace.default
     engine: schedule.engine
+    shell: tool.shell-bash.scheduled
 
 # 子 agent 委派：定义在 local:agents / global:agents 下的 agents/*.md。
 # 子 agent 必须用不含 tool/subagent 的兄弟 tools/prompt 实例，既断依赖环，也让"只有主 agent 能委派"成为结构性事实。

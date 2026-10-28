@@ -67,7 +67,7 @@ func (b *toolBridge) sync(ctx context.Context) error {
 
 func (b *toolBridge) handler(name string) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-		tool, err := b.toolForCall(ctx, name)
+		tool, err := b.toolForCall(name)
 		if err != nil {
 			return mcplib.NewToolResultError(err.Error()), nil
 		}
@@ -83,18 +83,9 @@ func (b *toolBridge) handler(name string) func(context.Context, mcplib.CallToolR
 	}
 }
 
-func (b *toolBridge) toolForCall(ctx context.Context, name string) (agentkit.Tool, error) {
+func (b *toolBridge) toolForCall(name string) (agentkit.Tool, error) {
 	b.mu.Lock()
 	tool := b.tools[name]
-	b.mu.Unlock()
-	if tool != nil {
-		return tool, nil
-	}
-	if err := b.sync(ctx); err != nil {
-		return nil, err
-	}
-	b.mu.Lock()
-	tool = b.tools[name]
 	b.mu.Unlock()
 	if tool == nil {
 		return nil, fmt.Errorf("unknown tool %q", name)

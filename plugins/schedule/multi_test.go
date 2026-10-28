@@ -171,7 +171,7 @@ func TestMultiSyncSourceStoresConfigJobs(t *testing.T) {
 
 // Config jobs belong to no channel but still fire; List must show them, or a
 // working configuration looks unset to anyone debugging with op=list.
-func TestMultiListIncludesConfigJobs(t *testing.T) {
+func TestMultiListKeepsConfigJobsScoped(t *testing.T) {
 	t.Parallel()
 
 	reg, _ := newMultiRegistry(t)
@@ -194,16 +194,7 @@ func TestMultiListIncludesConfigJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 2 {
-		t.Fatalf("jobs = %+v, want the config job plus the channel job", jobs)
-	}
-	var sawConfig bool
-	for _, job := range jobs {
-		if job.ID == "configured" && job.Source == capschedule.SourceConfig {
-			sawConfig = true
-		}
-	}
-	if !sawConfig {
-		t.Fatalf("config job hidden from List: %+v", jobs)
+	if len(jobs) != 1 || jobs[0].Prompt != "mine" {
+		t.Fatalf("jobs = %+v, want only this channel's job", jobs)
 	}
 }

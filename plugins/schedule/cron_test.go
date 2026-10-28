@@ -694,43 +694,66 @@ func TestPromptTemplateOverride(t *testing.T) {
 	}
 }
 
-// The retry wait must not follow pollSeconds: an hourly idle poll would stall
-// every other job for an hour after one failed fire.
-func TestRecoverBackoffIsBoundedByItsOwnCeiling(t *testing.T) {
-	t.Parallel()
-
-	rt, _, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 3600})
+// Verify bounded retry through Start rather than a test-only public method.
+func TestDueBackoffIsBoundedAndResetsAfterSuccess(t *testing.T) {
+	registry := &flakyRegistry{failures: 10}
+	rt, err := pluginschedule.NewCron(pluginschedule.CronConfig{PollSeconds: 3600}, pluginschedule.CronDeps{Schedule: registry, Engine: rtschedule.Engine{}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	cron := cronImpl(t, rt)
-	ctx := context.Background()
-
-	before := clock.Now()
-	if err := cron.Recover(ctx, "fire", errors.New("boom"), "job-1"); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var waits []time.Duration
+	cron.SetClockForTest(time.Now, func(_ context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		if len(waits) == 11 { // successful empty read uses idle polling; then fail again
+			registry.mu.Lock()
+			registry.failures = 1
+			registry.mu.Unlock()
+		}
+		if len(waits) == 12 {
+			cancel()
+			return ctx.Err()
+		}
+		return nil
+	})
+	if err := rt.Start(ctx, func(context.Context, agentkit.MessageEvent) error { return nil }); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	waited := clock.Now().Sub(before)
-	if waited > time.Minute {
-		t.Fatalf("backoff = %s, want at most a minute regardless of pollSeconds", waited)
+	for i, got := range waits[:10] {
+		want := min(time.Second*time.Duration(1<<i), time.Minute)
+		if got != want {
+			t.Fatalf("wait %d = %s, want %s", i, got, want)
+		}
 	}
-	if waited <= 0 {
-		t.Fatalf("expected a non-zero backoff, got %s", waited)
+	if waits[11] != time.Second {
+		t.Fatalf("retry did not reset: %s", waits[11])
 	}
+}
 
-	// Repeated failures back off further, still bounded.
-	first := waited
-	before = clock.Now()
-	if err := cron.Recover(ctx, "fire", errors.New("boom"), "job-1"); err != nil {
-		t.Fatal(err)
+func TestFailedFireDoesNotDelayNextDueJob(t *testing.T) {
+	rt, registry, clock := newCronRuntime(t, pluginschedule.CronConfig{PollSeconds: 3600})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for _, id := range []string{"a-fails", "b-succeeds"} {
+		if _, err := registry.Add(ctx, capschedule.Job{ID: id, Kind: capschedule.KindCron, Cron: "*/5 * * * *", Prompt: id, LastRun: clock.Now().Add(-15 * time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	second := clock.Now().Sub(before)
-	if second < first {
-		t.Fatalf("backoff shrank: %s then %s", first, second)
-	}
-	for i := 0; i < 20; i++ {
-		_ = cron.Recover(ctx, "fire", errors.New("boom"), "job-1")
-	}
-	before = clock.Now()
-	_ = cron.Recover(ctx, "fire", errors.New("boom"), "job-1")
-	if got := clock.Now().Sub(before); got > time.Minute {
-		t.Fatalf("backoff exceeded ceiling: %s", got)
+	var first time.Time
+	err := rt.Start(ctx, func(_ context.Context, event agentkit.MessageEvent) error {
+		if strings.Contains(textOfMessage(event.Message), "a-fails") {
+			first = clock.Now()
+			return errors.New("submit refused")
+		}
+		cancel()
+		if elapsed := clock.Now().Sub(first); elapsed != 0 {
+			t.Errorf("failed fire delayed next job by %s", elapsed)
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start returned %v", err)
 	}
 }

@@ -35,7 +35,6 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/setmodel"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shell"
 	_ "github.com/lengzhao/agentkit/plugins/tool/shellbwrap"
-	_ "github.com/lengzhao/agentkit/plugins/tool/shellexec"
 	_ "github.com/lengzhao/agentkit/plugins/tool/skill"
 	_ "github.com/lengzhao/agentkit/plugins/tool/subagent"
 	_ "github.com/lengzhao/agentkit/plugins/tool/todo"

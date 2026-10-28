@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/lengzhao/agentkit"
@@ -138,6 +139,13 @@ func (e *bashExecutor) RunStructured(ctx context.Context, command string, timeou
 }
 
 func (e *bashExecutor) run(ctx context.Context, command string, perCallTimeout *float64) (ShellOutput, error) {
+	return e.runInDir(ctx, command, perCallTimeout, e.relWorkDir)
+}
+
+func (e *bashExecutor) runInDir(ctx context.Context, command string, perCallTimeout *float64, relDir string) (ShellOutput, error) {
+	if strings.TrimSpace(command) == "" {
+		return ShellOutput{}, fmt.Errorf("shell command must not be empty")
+	}
 	limit, err := tooloutput.ResolveRunTimeout(perCallTimeout, e.cfg.TimeoutSeconds)
 	if err != nil {
 		return ShellOutput{}, err
@@ -150,7 +158,7 @@ func (e *bashExecutor) run(ctx context.Context, command string, perCallTimeout *
 		defer cancel()
 	}
 
-	workDir, err := e.workspace.Resolve(ctx, e.relWorkDir)
+	workDir, err := e.workspace.Resolve(ctx, relDir)
 	if err != nil {
 		return ShellOutput{}, err
 	}

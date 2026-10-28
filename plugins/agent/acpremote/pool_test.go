@@ -55,7 +55,7 @@ func TestPoolConfigDefaultsToTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Strategy != StrategyTTL {
+	if got.Strategy != strategyTTL {
 		t.Fatalf("default strategy = %q, want ttl (warm connections are the existing behaviour)", got.Strategy)
 	}
 	if got.IdleTTL != defaultPoolIdleTTL || got.MaxIdle != defaultPoolMaxIdle {
@@ -76,16 +76,13 @@ func TestPoolConfigRejectsUnknownStrategy(t *testing.T) {
 func TestStrategyNoneCachesNothing(t *testing.T) {
 	t.Parallel()
 
-	p, created := countingPool(t, PoolConfig{Strategy: StrategyNone})
+	p, created := countingPool(t, PoolConfig{Strategy: strategyNone})
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
 		lease, err := p.Acquire(ctx, agentkit.SessionID("schedule:job:1"))
 		if err != nil {
 			t.Fatal(err)
-		}
-		if lease.Reused() {
-			t.Fatal("strategy none must never reuse a connection")
 		}
 		if got := p.Stats().Live; got != 0 {
 			t.Fatalf("cached connections = %d, want 0 while leased under none", got)
@@ -105,16 +102,13 @@ func TestStrategyNoneCachesNothing(t *testing.T) {
 func TestStrategyTTLReusesWarmConnection(t *testing.T) {
 	t.Parallel()
 
-	p, created := countingPool(t, PoolConfig{Strategy: StrategyTTL})
+	p, created := countingPool(t, PoolConfig{Strategy: strategyTTL})
 	ctx := context.Background()
 	sid := agentkit.SessionID("lark:oc_demo")
 
 	first, err := p.Acquire(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if first.Reused() {
-		t.Fatal("the first acquire cannot be a reuse")
 	}
 	first.Release()
 
@@ -123,9 +117,6 @@ func TestStrategyTTLReusesWarmConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Release()
-	if !second.Reused() {
-		t.Fatal("a warm connection must be reused under ttl")
-	}
 	if created.get() != 1 {
 		t.Fatalf("created %d bridges, want 1", created.get())
 	}
@@ -139,7 +130,7 @@ func TestStrategyTTLReusesWarmConnection(t *testing.T) {
 func TestReapSkipsLeasedConnections(t *testing.T) {
 	t.Parallel()
 
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyTTL, IdleTTL: time.Minute})
+	p, _ := countingPool(t, PoolConfig{Strategy: strategyTTL, IdleTTL: time.Minute})
 	ctx := context.Background()
 	sid := agentkit.SessionID("busy")
 
@@ -164,30 +155,10 @@ func TestReapSkipsLeasedConnections(t *testing.T) {
 	}
 }
 
-func TestStrategyPinnedKeepsConnections(t *testing.T) {
-	t.Parallel()
-
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyPinned, IdleTTL: time.Minute})
-	ctx := context.Background()
-	lease, err := p.Acquire(ctx, agentkit.SessionID("pinned"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	lease.Release()
-
-	if n := p.reapIdle(time.Now().Add(24 * time.Hour)); n != 0 {
-		t.Fatalf("pinned reaped %d connections", n)
-	}
-	if got := p.Stats().Live; got != 1 {
-		t.Fatalf("live = %d, want 1", got)
-	}
-}
-
-// MaxIdle is a safety valve for every strategy, including pinned.
 func TestMaxIdleBoundsCachedConnections(t *testing.T) {
 	t.Parallel()
 
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyPinned, MaxIdle: 2})
+	p, _ := countingPool(t, PoolConfig{Strategy: strategyTTL, MaxIdle: 2})
 	ctx := context.Background()
 	for _, id := range []string{"a", "b", "c", "d"} {
 		lease, err := p.Acquire(ctx, agentkit.SessionID(id))
@@ -196,17 +167,15 @@ func TestMaxIdleBoundsCachedConnections(t *testing.T) {
 		}
 		lease.Release()
 	}
-	if got := p.Stats().Live; got > 2+1 {
-		// The cap allows the just-released entry; it is reclaimed on the next
-		// release. Assert we never grow without bound.
-		t.Fatalf("cached connections = %d, want roughly MaxIdle", got)
+	if got := p.Stats().Live; got != 2 {
+		t.Fatalf("cached connections = %d, want MaxIdle", got)
 	}
 }
 
 func TestReleaseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyTTL})
+	p, _ := countingPool(t, PoolConfig{Strategy: strategyTTL})
 	lease, err := p.Acquire(context.Background(), "s")
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +190,7 @@ func TestReleaseIsIdempotent(t *testing.T) {
 func TestAcquireAfterCloseFails(t *testing.T) {
 	t.Parallel()
 
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyTTL})
+	p, _ := countingPool(t, PoolConfig{Strategy: strategyTTL})
 	p.Close()
 	if _, err := p.Acquire(context.Background(), "s"); err == nil {
 		t.Fatal("expected an error after Close")
@@ -231,7 +200,7 @@ func TestAcquireAfterCloseFails(t *testing.T) {
 func TestAcquireHonorsContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyTTL})
+	p, _ := countingPool(t, PoolConfig{Strategy: strategyTTL})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := p.Acquire(ctx, "s"); err == nil {
@@ -242,7 +211,7 @@ func TestAcquireHonorsContextCancellation(t *testing.T) {
 func TestConcurrentAcquireRelease(t *testing.T) {
 	t.Parallel()
 
-	p, created := countingPool(t, PoolConfig{Strategy: StrategyNone, MaxIdle: 4})
+	p, created := countingPool(t, PoolConfig{Strategy: strategyNone, MaxIdle: 4})
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
@@ -272,7 +241,7 @@ func TestConcurrentAcquireRelease(t *testing.T) {
 func TestLeaseGuardsSlashCommandPath(t *testing.T) {
 	t.Parallel()
 
-	p, _ := countingPool(t, PoolConfig{Strategy: StrategyTTL, IdleTTL: time.Minute})
+	p, _ := countingPool(t, PoolConfig{Strategy: strategyTTL, IdleTTL: time.Minute})
 	ctx := context.Background()
 	sid := agentkit.SessionID("lark:oc_demo")
 
@@ -280,9 +249,6 @@ func TestLeaseGuardsSlashCommandPath(t *testing.T) {
 	slashLease, err := p.Acquire(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if slashLease.Reused() {
-		t.Fatal("first acquire cannot be a reuse")
 	}
 
 	// A reaper sweep during the command must not reclaim it. Before the pool,
@@ -300,9 +266,6 @@ func TestLeaseGuardsSlashCommandPath(t *testing.T) {
 	turnLease, err := p.Acquire(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !turnLease.Reused() {
-		t.Fatal("second acquire should reuse the warm bridge")
 	}
 	if turnLease.Bridge() != slashLease.Bridge() {
 		t.Fatal("both leases must hand back the same bridge")

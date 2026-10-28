@@ -1,7 +1,8 @@
-package shellexec_test
+package shell_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,17 +10,18 @@ import (
 	"time"
 
 	capshell "github.com/lengzhao/agentkit/cap/shell"
-	"github.com/lengzhao/agentkit/plugins/tool/shellexec"
+	"github.com/lengzhao/agentkit/plugins/tool/shell"
+	"github.com/lengzhao/agentkit/runtime/tooloutput"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
-func newExecutor(t *testing.T, cfg shellexec.Config, dir string) *shellexec.Executor {
+func newExecutor(t *testing.T, cfg shell.ShellBashConfig, dir string) capshell.Executor {
 	t.Helper()
-	ex, err := shellexec.New(cfg, shellexec.Deps{Workspace: rtworkspace.Static(dir)})
+	ex, err := shell.NewShellBash(cfg, shell.ShellBashDeps{Workspace: rtworkspace.Static(dir)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	impl, ok := ex.(*shellexec.Executor)
+	impl, ok := ex.(capshell.Executor)
 	if !ok {
 		t.Fatalf("New returned %T", ex)
 	}
@@ -30,7 +32,7 @@ func TestRunCapturesOutput(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	ex := newExecutor(t, shellexec.Config{WorkDir: "."}, dir)
+	ex := newExecutor(t, shell.ShellBashConfig{WorkDir: "."}, dir)
 	res, err := ex.Run(context.Background(), capshell.Request{Command: "echo hello"})
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +50,7 @@ func TestRunCapturesOutput(t *testing.T) {
 func TestRunReportsNonZeroExitAsResult(t *testing.T) {
 	t.Parallel()
 
-	ex := newExecutor(t, shellexec.Config{}, t.TempDir())
+	ex := newExecutor(t, shell.ShellBashConfig{}, t.TempDir())
 	res, err := ex.Run(context.Background(), capshell.Request{Command: "exit 7"})
 	if err != nil {
 		t.Fatalf("non-zero exit must not be an error: %v", err)
@@ -65,7 +67,7 @@ func TestRunHonorsRequestWorkDir(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ex := newExecutor(t, shellexec.Config{WorkDir: "."}, dir)
+	ex := newExecutor(t, shell.ShellBashConfig{WorkDir: "."}, dir)
 	res, err := ex.Run(context.Background(), capshell.Request{Command: "pwd", WorkDir: "sub"})
 	if err != nil {
 		t.Fatal(err)
@@ -78,13 +80,13 @@ func TestRunHonorsRequestWorkDir(t *testing.T) {
 func TestRunTimesOut(t *testing.T) {
 	t.Parallel()
 
-	ex := newExecutor(t, shellexec.Config{TimeoutSeconds: 1}, t.TempDir())
+	ex := newExecutor(t, shell.ShellBashConfig{TimeoutSeconds: 1}, t.TempDir())
 	start := time.Now()
 	_, err := ex.Run(context.Background(), capshell.Request{Command: "sleep 10"})
 	if err == nil {
 		t.Fatal("expected a timeout error")
 	}
-	if !strings.Contains(err.Error(), "timed out") {
+	if _, ok := tooloutput.AsTimeoutError(err); !ok {
 		t.Fatalf("err = %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > 8*time.Second {
@@ -95,7 +97,7 @@ func TestRunTimesOut(t *testing.T) {
 func TestRunRejectsEmptyCommand(t *testing.T) {
 	t.Parallel()
 
-	ex := newExecutor(t, shellexec.Config{}, t.TempDir())
+	ex := newExecutor(t, shell.ShellBashConfig{}, t.TempDir())
 	if _, err := ex.Run(context.Background(), capshell.Request{}); err == nil {
 		t.Fatal("expected an error for an empty command")
 	}
@@ -105,7 +107,7 @@ func TestRunRejectsEmptyCommand(t *testing.T) {
 func TestTrimEnvDropsInheritedVariables(t *testing.T) {
 	t.Setenv("SCHEDULED_ONLY_MARKER", "leaked")
 
-	ex := newExecutor(t, shellexec.Config{TrimEnv: true}, t.TempDir())
+	ex := newExecutor(t, shell.ShellBashConfig{TrimEnv: boolPointer(true)}, t.TempDir())
 	res, err := ex.Run(context.Background(), capshell.Request{
 		Command: `printf '%s' "${SCHEDULED_ONLY_MARKER:-absent}"`,
 	})
@@ -120,7 +122,7 @@ func TestTrimEnvDropsInheritedVariables(t *testing.T) {
 func TestInheritedEnvIsKeptByDefault(t *testing.T) {
 	t.Setenv("INTERACTIVE_MARKER", "present")
 
-	ex := newExecutor(t, shellexec.Config{}, t.TempDir())
+	ex := newExecutor(t, shell.ShellBashConfig{}, t.TempDir())
 	res, err := ex.Run(context.Background(), capshell.Request{
 		Command: `printf '%s' "${INTERACTIVE_MARKER:-absent}"`,
 	})
@@ -135,7 +137,7 @@ func TestInheritedEnvIsKeptByDefault(t *testing.T) {
 func TestExtraEnvReachesChild(t *testing.T) {
 	t.Parallel()
 
-	ex := newExecutor(t, shellexec.Config{TrimEnv: true, ExtraEnv: map[string]string{"JOB_TAG": "nightly"}}, t.TempDir())
+	ex := newExecutor(t, shell.ShellBashConfig{TrimEnv: boolPointer(true), ExtraEnv: map[string]string{"JOB_TAG": "nightly"}}, t.TempDir())
 	res, err := ex.Run(context.Background(), capshell.Request{
 		Command: `printf '%s' "${JOB_TAG:-missing}"`,
 	})
@@ -150,7 +152,23 @@ func TestExtraEnvReachesChild(t *testing.T) {
 func TestNewRequiresWorkspace(t *testing.T) {
 	t.Parallel()
 
-	if _, err := shellexec.New(shellexec.Config{}, shellexec.Deps{}); err == nil {
+	if _, err := shell.NewShellBash(shell.ShellBashConfig{}, shell.ShellBashDeps{}); err == nil {
 		t.Fatal("expected an error without a workspace")
+	}
+}
+
+func boolPointer(v bool) *bool { return &v }
+
+func TestRunHonorsRequestTimeoutAndCancellation(t *testing.T) {
+	ex := newExecutor(t, shell.ShellBashConfig{TimeoutSeconds: 60}, t.TempDir())
+	_, err := ex.Run(context.Background(), capshell.Request{Command: "sleep 10", Timeout: 50 * time.Millisecond})
+	if _, ok := tooloutput.AsTimeoutError(err); !ok {
+		t.Fatalf("request timeout: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = ex.Run(ctx, capshell.Request{Command: "sleep 10"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation: %v", err)
 	}
 }

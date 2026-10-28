@@ -126,7 +126,6 @@ type Cron struct {
 	naming         sessionNamer
 	sessionMode    string
 	promptTemplate string
-	backoffs       map[string]time.Duration
 	now            func() time.Time
 	wait           func(context.Context, time.Duration) error
 
@@ -267,6 +266,7 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 	if err := c.registry.SyncSource(ctx, capschedule.SourceConfig, c.jobs); err != nil {
 		return fmt.Errorf("schedule/cron: sync jobs: %w", err)
 	}
+	backoff := time.Second
 	for {
 		if hook := c.loopHook.Load(); hook != nil {
 			(*hook)()
@@ -276,15 +276,7 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		}
 		if job, ok := c.popDue(); ok {
 			if err := c.fire(ctx, submit, job); err != nil {
-				// One failing job must not stop the calendar: a non-zero script
-				// exit or a refused submit would otherwise end every future
-				// fire silently while the process keeps serving chat. Log,
-				// back off, and keep scheduling.
-				if err := c.recover(ctx, "fire", err, job.ID); err != nil {
-					return err
-				}
-			} else {
-				c.resetBackoff("fire")
+				slog.Error("cron fire failed, scheduler continues", "job_id", job.ID, "err", err)
 			}
 			continue
 		}
@@ -292,14 +284,14 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 		now := c.now()
 		due, err := c.registry.Due(ctx, now)
 		if err != nil {
-			// A transient registry read error (unreadable/corrupt file, disk
-			// pressure) is retried instead of taking the scheduler down.
-			if err := c.recover(ctx, "due", err, ""); err != nil {
+			slog.Error("cron due failed, scheduler retries", "retry_in", backoff, "err", err)
+			if err := c.wait(ctx, backoff); err != nil {
 				return err
 			}
+			backoff = min(backoff*2, time.Minute)
 			continue
 		}
-		c.resetBackoff("due")
+		backoff = time.Second
 		if len(due) > 0 {
 			c.pushDue(due)
 			continue
@@ -308,70 +300,6 @@ func (c *Cron) Start(ctx context.Context, submit capschedule.SubmitFunc) error {
 			return err
 		}
 	}
-}
-
-// recoverBackoff bounds how long a failing scheduler pauses. The wait must not
-// follow pollSeconds: pollSeconds is the idle backoff and can be an hour, so a
-// single failed job would otherwise stall every other job for that long.
-const (
-	recoverBackoffMin = time.Second
-	recoverBackoffMax = time.Minute
-)
-
-// Recover applies the bounded retry backoff for a failed stage. Exported for
-// tests so the policy can be asserted without a live registry.
-func (c *Cron) Recover(ctx context.Context, stage string, err error, jobID string) error {
-	return c.recover(ctx, stage, err, jobID)
-}
-
-// recover handles a non-fatal scheduler error: it logs, backs off a bounded
-// amount to avoid a hot retry loop, and reports whether the scheduler should
-// stop. Cancellation is the only fatal case.
-//
-// Keyed by stage so a persistently broken registry backs off to the ceiling
-// while an occasional bad script does not slow the calendar down.
-func (c *Cron) recover(ctx context.Context, stage string, err error, jobID string) error {
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-	backoff := c.nextBackoff(stage)
-	slog.Error("cron "+stage+" failed, scheduler continues",
-		"job_id", jobID, "retry_in", backoff.String(), "err", err)
-	if waitErr := c.wait(ctx, backoff); waitErr != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return waitErr
-	}
-	return nil
-}
-
-// nextBackoff doubles the current wait for stage, capped between the min and
-// max. The counter resets on a successful iteration (see resetBackoff).
-func (c *Cron) nextBackoff(stage string) time.Duration {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.backoffs == nil {
-		c.backoffs = map[string]time.Duration{}
-	}
-	cur := c.backoffs[stage]
-	if cur <= 0 {
-		cur = recoverBackoffMin
-	} else if cur < recoverBackoffMax {
-		cur *= 2
-		if cur > recoverBackoffMax {
-			cur = recoverBackoffMax
-		}
-	}
-	c.backoffs[stage] = cur
-	return cur
-}
-
-// resetBackoff clears the failure streak for stage after a clean iteration.
-func (c *Cron) resetBackoff(stage string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.backoffs, stage)
 }
 
 func (c *Cron) Stop(context.Context) error { return nil }
@@ -528,19 +456,11 @@ func (c *Cron) scheduleInboundPrompt(job capschedule.Job) string {
 	if desc != "" {
 		header += fmt.Sprintf(" ⏰ %s", desc)
 	}
-	return header + "\n\n" + strings.TrimSpace(c.promptPreamble(job)) + "\n\n" + strings.TrimSpace(job.Prompt)
-}
-
-// promptPreamble is the line prepended to every fired prompt. The default
-// names no tool: hosts that expose a send-like tool can override it, and hosts
-// that do not (an ACP agent driving its own toolset) are not told to call a
-// tool that does not exist. Delivery itself is handled by the route, not by
-// the model.
-func (c *Cron) promptPreamble(capschedule.Job) string {
-	if c.promptTemplate != "" {
-		return c.promptTemplate
+	preamble := c.promptTemplate
+	if preamble == "" {
+		preamble = defaultPromptPreamble
 	}
-	return defaultPromptPreamble
+	return header + "\n\n" + preamble + "\n\n" + strings.TrimSpace(job.Prompt)
 }
 
 const defaultPromptPreamble = "这是一次定时任务触发，请完成下面的任务；结果会按计划投递给用户，不需要额外调用工具发送。"

@@ -50,13 +50,9 @@ type bridge struct {
 
 	globalDefaults *globalConfigStore
 	connOps        chan connOp
-	// stopped guards connOps: a closed channel cannot be sent to, and the
-	// connection loop is retired by signalling (stopCh) rather than by closing
-	// connOps, so a concurrent connSend from a prompt or a waiting subprocess
-	// can never panic. Both fields are covered by stopMu.
-	stopMu  sync.Mutex
-	stopped bool
-	stopCh  chan struct{}
+	// stopCh retires the loop without closing connOps under concurrent senders.
+	stopOnce sync.Once
+	stopCh   chan struct{}
 	// proc is the current subprocess snapshot. It is written exclusively by
 	// connLoop (via ensureConnOp / subprocessExitOp / detachReleaseOp) and read
 	// by callers from any goroutine (cancel, prompt). A Load may

@@ -125,16 +125,13 @@ func (op endPromptOp) run(_ *bridge, st *connLocalState) {
 // reaper) is refused instead of blocking forever or panicking on a closed
 // channel.
 func (b *bridge) connSend(op connOp) bool {
-	b.stopMu.Lock()
-	if b.stopped {
-		b.stopMu.Unlock()
-		return false
-	}
-	ch := b.connOps
-	b.stopMu.Unlock()
-
 	select {
-	case ch <- op:
+	case <-b.stopCh:
+		return false
+	default:
+	}
+	select {
+	case b.connOps <- op:
 		return true
 	case <-b.stopCh:
 		return false
@@ -144,14 +141,6 @@ func (b *bridge) connSend(op connOp) bool {
 func (b *bridge) connLoop() {
 	var st connLocalState
 	for {
-		// Prefer draining work already queued; stop wins only when nothing is
-		// ready, so an op handed over just before stop still runs.
-		select {
-		case op := <-b.connOps:
-			op.run(b, &st)
-			continue
-		default:
-		}
 		select {
 		case op := <-b.connOps:
 			op.run(b, &st)
@@ -168,14 +157,7 @@ func (b *bridge) connLoop() {
 // Call after the subprocess has been detached, or the loop exits while a
 // process is still running.
 func (b *bridge) stop() {
-	b.stopMu.Lock()
-	if b.stopped {
-		b.stopMu.Unlock()
-		return
-	}
-	b.stopped = true
-	close(b.stopCh)
-	b.stopMu.Unlock()
+	b.stopOnce.Do(func() { close(b.stopCh) })
 }
 
 // adoptProcOp seeds conn-loop state (tests).
@@ -206,7 +188,9 @@ func detachSubprocess(st *connLocalState) (*subprocess, context.CancelFunc) {
 
 func (b *bridge) ensureConn(ctx context.Context) (*subprocess, error) {
 	resp := make(chan ensureConnResult, 1)
-	b.connSend(ensureConnOp{ctx: ctx, resp: resp})
+	if !b.connSend(ensureConnOp{ctx: ctx, resp: resp}) {
+		return nil, fmt.Errorf("acp-remote: bridge stopped")
+	}
 	r := <-resp
 	return r.proc, r.err
 }
@@ -320,20 +304,23 @@ func (b *bridge) authenticateSubprocess(ctx context.Context, proc *subprocess) e
 
 func (b *bridge) releaseSubprocess() {
 	done := make(chan struct{})
-	b.connSend(detachReleaseOp{done: done})
-	<-done
+	if b.connSend(detachReleaseOp{done: done}) {
+		<-done
+	}
 }
 
 func (b *bridge) beginPromptContext(ctx context.Context) (context.Context, func()) {
 	resp := make(chan beginPromptResult, 1)
-	b.connSend(beginPromptOp{ctx: ctx, resp: resp})
+	if !b.connSend(beginPromptOp{ctx: ctx, resp: resp}) {
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+		return cancelled, func() {}
+	}
 	r := <-resp
 	return r.pctx, r.end
 }
 
 func (b *bridge) Close() error {
-	done := make(chan struct{})
-	b.connSend(detachReleaseOp{done: done})
-	<-done
+	b.releaseSubprocess()
 	return nil
 }

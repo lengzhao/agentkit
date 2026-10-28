@@ -185,10 +185,10 @@ func (a *Runtime) ShutdownHooks() []func() {
 	}}
 }
 
-// acquireLease reserves exclusive use of a session's bridge. Every caller -
+// acquireLease keeps a session bridge alive while it is in use. Every caller -
 // turns and slash commands alike - goes through a lease, so the pool can never
 // reclaim a connection someone is using.
-func (a *Runtime) acquireLease(ctx context.Context, sessionID agentkit.SessionID) (*Lease, error) {
+func (a *Runtime) acquireLease(ctx context.Context, sessionID agentkit.SessionID) (*bridgeLease, error) {
 	if a.pool == nil {
 		return nil, fmt.Errorf("acp-remote: bridge pool is not initialized")
 	}
@@ -196,9 +196,9 @@ func (a *Runtime) acquireLease(ctx context.Context, sessionID agentkit.SessionID
 }
 
 // PoolStats reports connection-pool state for diagnostics.
-func (a *Runtime) PoolStats() Stats {
+func (a *Runtime) PoolStats() poolStats {
 	if a.pool == nil {
-		return Stats{}
+		return poolStats{}
 	}
 	return a.pool.Stats()
 }
@@ -297,13 +297,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
 		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, endData())
-		if a.cfg.ReleaseSubprocessAfterTurn {
-			// Best effort: the lease may already be gone (pool reclaimed it).
-			if lease, err := a.acquireLease(context.WithoutCancel(ctx), sessionID); err == nil {
-				lease.Bridge().releaseSubprocess()
-				lease.Release()
-			}
-		}
 	}()
 
 	lease, err := a.acquireLease(ctx, sessionID)
@@ -312,8 +305,13 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	}
 	// Held for the whole turn: the connection cannot be reclaimed while the
 	// turn is running, without any "is a turn in flight" heuristic.
-	defer lease.Release()
 	brid := lease.Bridge()
+	defer func() {
+		if a.cfg.ReleaseSubprocessAfterTurn {
+			brid.releaseSubprocess()
+		}
+		lease.Release()
+	}()
 	acpSessionID, err := brid.ensureSession(ctx, sessionID, a.id, a.sessionStore, true)
 	if err != nil {
 
