@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -49,6 +50,9 @@ type bridge struct {
 
 	globalDefaults *globalConfigStore
 	connOps        chan connOp
+	// stopCh retires the loop without closing connOps under concurrent senders.
+	stopOnce sync.Once
+	stopCh   chan struct{}
 	// proc is the current subprocess snapshot. It is written exclusively by
 	// connLoop (via ensureConnOp / subprocessExitOp / detachReleaseOp) and read
 	// by callers from any goroutine (cancel, prompt). A Load may
@@ -96,6 +100,7 @@ func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionM
 		telemetry:      telemetry,
 		sandbox:        sandbox,
 		connOps:        make(chan connOp),
+		stopCh:         make(chan struct{}),
 	}
 	go b.connLoop()
 	return b

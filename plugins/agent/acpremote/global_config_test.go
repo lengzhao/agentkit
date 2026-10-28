@@ -81,7 +81,7 @@ func TestACPGlobalReadDoesNotConnect(t *testing.T) {
 	if err != nil || !strings.Contains(out, "(not set)") {
 		t.Fatalf("global read = %s, %v", out, err)
 	}
-	if len(a.bridges) != 0 {
+	if a.bridgeCount() != 0 {
 		t.Fatal("global read initialized a bridge")
 	}
 	for _, args := range []string{"model opus -g", "model -g -g opus", "-g model opus", "config effort -g high"} {
@@ -102,7 +102,7 @@ func TestACPGlobalDefaultsDoNotOverrideRestoredSession(t *testing.T) {
 	if _, err := cmd.CommandExec(ctx, "model -g opus"); err != nil {
 		t.Fatal(err)
 	}
-	a.bridgeFor("restored").releaseSubprocess()
+	releaseSessionBridge(t, a, "restored")
 	out, err := cmd.CommandExec(ctx, "model")
 	if err != nil || !strings.Contains(out, "current: sonnet") {
 		t.Fatalf("restore was overridden: %s, %v", out, err)

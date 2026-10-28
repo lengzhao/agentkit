@@ -267,9 +267,30 @@ func parseAt(raw string, loc *time.Location) (time.Time, error) {
 
 func agentJobFromContext(ctx context.Context, job capschedule.Job) capschedule.Job {
 	env := rctx.EnvelopeFromContext(ctx)
-	job.Route = env.Route.Stable()
+	job.Route = durableRoute(env)
 	job.Actor = env.Actor
 	job.AgentID = env.AgentID
 	job.ChannelKey = rctx.WorkspaceFromContext(ctx)
 	return job
+}
+
+// durableRoute is the destination stored with a job so its fire can deliver.
+// The turn envelope's route is used when it carries a target; otherwise the
+// route is rebuilt from the conversation id. An envelope rebuilt from a remote
+// tool bridge (an ACP sessionMcp call, for instance) carries the conversation
+// and platform but not the route target, and a job stored without a target can
+// never deliver its answer.
+func durableRoute(env agentkit.TurnEnvelope) agentkit.RouteRef {
+	if route := env.Route.Stable(); len(route.Target) > 0 || (route.Kind != "" && route.Kind != agentkit.RouteKindSession) {
+		return route
+	}
+	platform := strings.TrimSpace(env.Route.Platform)
+	delivery := strings.TrimSpace(string(env.Conversation))
+	if delivery == "" || platform == "" {
+		return env.Route.Stable()
+	}
+	if parsed := rctx.ParseDelivery(agentkit.SessionID(delivery), env.Actor.UserID); parsed.Platform != "" {
+		platform = parsed.Platform
+	}
+	return rctx.SessionRouteFromDelivery(platform, agentkit.SessionID(delivery), "").Stable()
 }

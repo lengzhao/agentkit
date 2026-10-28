@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lengzhao/agentkit"
+	capshell "github.com/lengzhao/agentkit/cap/shell"
 	"github.com/lengzhao/agentkit/runtime/tooloutput"
 )
 
@@ -42,6 +43,22 @@ func (b *shellBashBundle) Commands() []agentkit.Command {
 // RunStructured implements StructuredShell.
 func (b *shellBashBundle) RunStructured(ctx context.Context, command string, timeoutSeconds *float64) (stdout, stderr string, exitCode int, err error) {
 	return b.exec.RunStructured(ctx, command, timeoutSeconds)
+}
+
+// Run implements cap/shell.Executor using the same environment and process
+// lifecycle as model calls, without formatting the output for a model.
+func (b *shellBashBundle) Run(ctx context.Context, req capshell.Request) (capshell.Result, error) {
+	relDir := req.WorkDir
+	if relDir == "" {
+		relDir = b.exec.relWorkDir
+	}
+	var timeout *float64
+	if req.Timeout != 0 {
+		seconds := req.Timeout.Seconds()
+		timeout = &seconds
+	}
+	out, err := b.exec.runInDir(ctx, req.Command, timeout, relDir)
+	return capshell.Result{Stdout: out.Stdout, Stderr: out.Stderr, ExitCode: out.ExitCode}, err
 }
 
 type shellSlashCommand struct {

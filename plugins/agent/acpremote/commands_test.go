@@ -117,10 +117,8 @@ func configTestRuntime(t *testing.T, id, mode string) (*Runtime, agentkit.Comman
 	}
 	a := ag.(*Runtime)
 	t.Cleanup(func() {
-		a.bridgesMu.Lock()
-		defer a.bridgesMu.Unlock()
-		for _, b := range a.bridges {
-			b.releaseSubprocess()
+		if a.pool != nil {
+			a.pool.Close()
 		}
 		if a.configBridge != nil {
 			a.configBridge.releaseSubprocess()
@@ -238,7 +236,7 @@ func TestACPConfigIdleUpdatesAndIsolation(t *testing.T) {
 	if _, err := cmd.CommandExec(ctx, "model opus"); err != nil {
 		t.Fatal(err)
 	}
-	b := a.bridgeFor("first")
+	b := requireBridge(t, a, "first")
 	proc := b.proc.Load()
 	update := acp.SessionNotification{SessionId: "remote", Update: acp.SessionUpdate{ConfigOptionUpdate: &acp.SessionConfigOptionUpdate{ConfigOptions: modelOptions(t, configTestOptions)}}}
 	// Idle notifications still update state when there is no thinking emitter.
@@ -280,7 +278,7 @@ func TestACPConfigRestoreState(t *testing.T) {
 			if _, err := cmd.CommandExec(ctx, "model opus"); err != nil {
 				t.Fatal(err)
 			}
-			a.bridgeFor("restore").releaseSubprocess()
+			releaseSessionBridge(t, a, "restore")
 			out, err := cmd.CommandExec(ctx, "config show")
 			if err != nil || !strings.Contains(out, "current: sonnet") || !strings.Contains(out, "fast-mode") {
 				t.Fatalf("restore options lost: %s %v", out, err)
@@ -296,7 +294,7 @@ func TestACPConfigSurvivesSlashRequestCancellation(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
-	proc := a.bridgeFor("request").proc.Load()
+	proc := requireBridge(t, a, "request").proc.Load()
 	cancel() // HTTP request has finished; this is not a session shutdown.
 	select {
 	case <-proc.done:
@@ -433,7 +431,7 @@ func TestACPConfigMalformedCommandDoesNotConnect(t *testing.T) {
 			t.Fatalf("%q succeeded", args)
 		}
 	}
-	if len(a.bridges) != 0 {
+	if a.bridgeCount() != 0 {
 		t.Fatal("malformed syntax initialized a bridge")
 	}
 }
@@ -471,7 +469,7 @@ func TestACPConfigBareCommandIsNavigation(t *testing.T) {
 	if strings.Contains(out, "available:") || strings.Contains(out, "initial:") {
 		t.Fatalf("navigation contains configuration details: %s", out)
 	}
-	if len(a.bridges) != 0 {
+	if a.bridgeCount() != 0 {
 		t.Fatal("navigation connected to remote agent")
 	}
 }
@@ -520,7 +518,7 @@ func TestACPConfigNavigationHasNoHelpCommand(t *testing.T) {
 			t.Fatalf("removed %q still accepted", args)
 		}
 	}
-	if len(a.bridges) != 0 {
+	if a.bridgeCount() != 0 {
 		t.Fatal("navigation or invalid command connected to remote")
 	}
 }

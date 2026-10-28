@@ -48,6 +48,11 @@ type Config struct {
 	// AuthHint overrides the user-facing guidance when ACP requires authentication,
 	// during connection, session creation, or a prompt. Secret values are never included.
 	AuthHint string `json:"authHint,omitempty"`
+	// Pool chooses the connection-lifetime policy. Defaults to ttl: connections
+	// stay warm (a cold CLI start costs seconds) but idle ones are reclaimed and
+	// the cache is capped. Hosts that mint a new session id per turn - a
+	// stateless scheduler - should set strategy none so nothing is cached at all.
+	Pool PoolConfig `json:"pool,omitempty"`
 }
 
 // Deps holds injected capabilities for the ACP client side.
@@ -80,8 +85,7 @@ type Runtime struct {
 	sessionRestore capacp.SessionRestorer
 	telemetry      captelemetry.Toolkit
 	sandbox        capsandbox.Service
-	bridges        map[agentkit.SessionID]*bridge
-	bridgesMu      sync.Mutex
+	pool           *bridgePool
 	configBridge   *bridge
 	configBridgeMu requestMutex
 	processCtx     context.Context
@@ -134,6 +138,16 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		sandbox = capsandbox.Disabled()
 	}
 	processCtx, processCancel := context.WithCancel(context.Background())
+	newBridge := func() *bridge {
+		b := newBridge(cfg, deps.Workspace, deps.FS, deps.SessionMCP, deps.SessionRestore, deps.Telemetry, sandbox, nil)
+		b.globalDefaults = &globalConfigStore{fs: deps.FS, agentID: id}
+		return b
+	}
+	pool, err := newBridgePool(cfg.Pool, newBridge)
+	if err != nil {
+		processCancel()
+		return nil, err
+	}
 	return &Runtime{
 		id:             id,
 		cfg:            cfg,
@@ -145,7 +159,7 @@ func New(cfg Config, deps Deps) (agentkit.Agent, error) {
 		sessionRestore: deps.SessionRestore,
 		telemetry:      deps.Telemetry,
 		sandbox:        sandbox,
-		bridges:        make(map[agentkit.SessionID]*bridge),
+		pool:           pool,
 		processCtx:     processCtx,
 		processCancel:  processCancel,
 	}, nil
@@ -158,27 +172,35 @@ func (a *Runtime) ShutdownHooks() []func() {
 		if a.processCancel != nil {
 			a.processCancel()
 		}
-		a.bridgesMu.Lock()
-		defer a.bridgesMu.Unlock()
-		for _, b := range a.bridges {
-			go b.releaseSubprocess()
+		if a.pool != nil {
+			a.pool.Close()
 		}
-		if a.configBridge != nil {
-			go a.configBridge.releaseSubprocess()
+		if err := a.configBridgeMu.Lock(context.Background()); err == nil {
+			b := a.configBridge
+			a.configBridgeMu.Unlock()
+			if b != nil {
+				go b.releaseSubprocess()
+			}
 		}
 	}}
 }
 
-func (a *Runtime) bridgeFor(sessionID agentkit.SessionID) *bridge {
-	a.bridgesMu.Lock()
-	defer a.bridgesMu.Unlock()
-	b := a.bridges[sessionID]
-	if b == nil {
-		b = newBridge(a.cfg, a.workspace, a.fs, a.sessionMCP, a.sessionRestore, a.telemetry, a.sandbox, nil)
-		b.globalDefaults = &globalConfigStore{fs: a.fs, agentID: a.id}
-		a.bridges[sessionID] = b
+// acquireLease keeps a session bridge alive while it is in use. Every caller -
+// turns and slash commands alike - goes through a lease, so the pool can never
+// reclaim a connection someone is using.
+func (a *Runtime) acquireLease(ctx context.Context, sessionID agentkit.SessionID) (*bridgeLease, error) {
+	if a.pool == nil {
+		return nil, fmt.Errorf("acp-remote: bridge pool is not initialized")
 	}
-	return b
+	return a.pool.Acquire(ctx, sessionID)
+}
+
+// PoolStats reports connection-pool state for diagnostics.
+func (a *Runtime) PoolStats() poolStats {
+	if a.pool == nil {
+		return poolStats{}
+	}
+	return a.pool.Stats()
 }
 
 func (a *Runtime) ID() agentkit.AgentID { return a.id }
@@ -275,12 +297,21 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	defer func() {
 		endCtx := context.WithoutCancel(ctx)
 		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, endData())
-		if a.cfg.ReleaseSubprocessAfterTurn {
-			a.bridgeFor(sessionID).releaseSubprocess()
-		}
 	}()
 
-	brid := a.bridgeFor(sessionID)
+	lease, err := a.acquireLease(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	// Held for the whole turn: the connection cannot be reclaimed while the
+	// turn is running, without any "is a turn in flight" heuristic.
+	brid := lease.Bridge()
+	defer func() {
+		if a.cfg.ReleaseSubprocessAfterTurn {
+			brid.releaseSubprocess()
+		}
+		lease.Release()
+	}()
 	acpSessionID, err := brid.ensureSession(ctx, sessionID, a.id, a.sessionStore, true)
 	if err != nil {
 

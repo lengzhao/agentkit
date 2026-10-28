@@ -97,6 +97,7 @@ schedule.cron:
     deps:
         engine: schedule.engine
         schedule: schedule.default
+        shell: tool.shell-bash.scheduled
         workspace: workspace.default
     use: schedule/cron
 schedule.default:
@@ -122,6 +123,14 @@ telemetry.default:
     use: telemetry/none
 telemetry.toolkit:
     use: telemetry/toolkit
+tool.shell-bash.scheduled:
+    config:
+        timeoutSeconds: 300
+        trimEnv: true
+        workDir: work
+    deps:
+        workspace: workspace.default
+    use: tool/shell-bash
 workspace.default:
     config:
         global: ~/.agentkit

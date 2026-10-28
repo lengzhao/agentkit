@@ -75,7 +75,11 @@ func TestACPConfigDefaultTimeout(t *testing.T) {
 
 func TestACPConfigQueueHonorsCancellation(t *testing.T) {
 	a, cmd := configTestRuntime(t, "claude", "supported")
-	b := a.bridgeFor("queued")
+	// Hold the session's config lock through a lease, exactly as a concurrent
+	// slash command would.
+	lease := acquireTestLease(t, a, "queued")
+	defer lease.Release()
+	b := lease.Bridge()
 	if err := b.configMu.Lock(context.Background()); err != nil {
 		t.Fatal(err)
 	}
