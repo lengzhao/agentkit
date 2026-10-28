@@ -87,5 +87,14 @@ func (p *provider) call(ctx context.Context, input Input) (Output, error) {
 	if err := stack.Set(ctx, p.deps.SessionStore, sessbind.CwdBinding{}, sessbind.LevelSession, path); err != nil {
 		return Output{}, err
 	}
+	// Read back so a store that silently drops or rewrites the binding returns an
+	// error instead of a success the next turn will not honour.
+	stored, _, err := stack.Effective(ctx, p.deps.SessionStore, sessbind.CwdBinding{})
+	if err != nil {
+		return Output{}, err
+	}
+	if stored != path {
+		return Output{}, fmt.Errorf("session_cwd did not persist: stored %q, want %q", stored, path)
+	}
 	return Output{CurrentPath: workspace.WorkingDirectory(ctx), Path: path, Note: "session cwd updated; applies on the next turn; current turn unchanged"}, nil
 }

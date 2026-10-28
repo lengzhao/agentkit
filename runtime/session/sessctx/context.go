@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -47,9 +48,19 @@ func resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Serv
 		value = inherited
 	}
 	if value != "" {
-		execution.Cwd, err = sessbind.ValidateCwd(ctx, ws, value)
-		if err != nil {
-			return execution, err
+		resolved, resolveErr := sessbind.ValidateCwd(ctx, ws, value)
+		if resolveErr == nil {
+			execution.Cwd = resolved
+		} else {
+			// A persisted or inherited directory can disappear (repo moved,
+			// temp dir cleaned, wrong host) or stop being reachable. Failing
+			// here would abort every later turn of the session and even make
+			// the configuration path (Resolve, behind /cwd) fail the same way,
+			// leaving no way to clear the binding. Ignore it and run in the
+			// consumer default instead; the explicit setters (session_cwd,
+			// /cwd use) still validate and reject a bad path up front.
+			slog.Warn("session context: skipping unusable cwd binding",
+				"cwd", value, "err", resolveErr)
 		}
 	}
 	_, supportsCwd := store.(agentkit.SessionCwdStore)

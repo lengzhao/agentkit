@@ -75,7 +75,9 @@ func saveSessionRuntime(storeDir string, id agentkit.SessionID, data sessionRunt
 
 // Runtime snapshots are shared by resolved file path, including across Store
 // instances. Reads are memory-only after the first load. Writes publish a new
-// snapshot only after the entire file has been persisted successfully.
+// snapshot only after the entire file has been persisted successfully, and are
+// merged from the file on disk so a snapshot that predates another writer's
+// update cannot replay stale (or empty) values over it.
 type runtimeSnapshot struct {
 	mu     sync.Mutex
 	loaded bool
@@ -126,7 +128,18 @@ func updateSessionRuntime(dir string, id agentkit.SessionID, update func(*sessio
 	if err := state.load(dir, id); err != nil {
 		return err
 	}
-	next := state.data
+	// The file is the shared authority between processes and between snapshots
+	// that were primed at different times: merge from disk, then apply the one
+	// field this call owns. Replaying a stale snapshot instead would drop a
+	// binding another writer just persisted, and an all-empty result deletes
+	// runtime.json outright.
+	base, err := loadSessionRuntime(dir, id)
+	if err != nil {
+		// Unreadable or corrupt file: keep the in-memory view rather than
+		// overwriting data we cannot parse.
+		base = state.data
+	}
+	next := base
 	update(&next)
 	if err := saveSessionRuntime(dir, id, next); err != nil {
 		return err
