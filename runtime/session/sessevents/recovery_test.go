@@ -272,3 +272,10 @@ func assertToolCallsAnswered(t *testing.T, messages []agentkit.ModelMessage) {
 		}
 	}
 }
+
+func TestContextChangeDoesNotRepairPreviousProjectTurn(t *testing.T) {
+	events := []agentkit.SessionEvent{{Seq: 1, Type: agentkit.EventTurnStart, AgentID: "agent"}, {Seq: 2, Type: agentkit.EventSessionContext}}
+	if got := sessevents.ScanIncomplete(events); got != nil {
+		t.Fatalf("previous project turn selected for repair: %+v", got)
+	}
+}

@@ -75,3 +75,10 @@ func NewStatic(_ StaticConfig, deps StaticDeps) (agentkit.SessionStore, error) {
 	}
 	return NewStaticStore(deps.Session), nil
 }
+
+func (s *StaticStore) CwdBind(ctx context.Context, id agentkit.SessionID) (string, error) {
+	return s.sidecar.CwdBind(ctx, id)
+}
+func (s *StaticStore) SetCwdBind(ctx context.Context, id agentkit.SessionID, cwd string) error {
+	return s.sidecar.SetCwdBind(ctx, id, cwd)
+}

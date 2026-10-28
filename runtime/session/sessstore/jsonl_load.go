@@ -114,9 +114,15 @@ func FoldLoadedSessionEvents(all []agentkit.SessionEvent, maxLoadedEvents int) (
 		nonCompactionSeen int
 	)
 	ring.max = maxLoadedEvents
+	var latestContext *agentkit.SessionEvent
 	for _, ev := range all {
 		if ev.Seq > maxSeq {
 			maxSeq = ev.Seq
+		}
+		if ev.Type == agentkit.EventSessionContext {
+			copy := ev
+			latestContext = &copy
+			continue
 		}
 		if ev.Type == agentkit.EventCompaction {
 			compactions = append(compactions, ev)
@@ -124,6 +130,9 @@ func FoldLoadedSessionEvents(all []agentkit.SessionEvent, maxLoadedEvents int) (
 		}
 		nonCompactionSeen++
 		ring.add(ev)
+	}
+	if latestContext != nil {
+		compactions = append(compactions, *latestContext)
 	}
 	cutoffs := cutoffsFromCompactions(compactions)
 	events := mergeLoadedEvents(compactions, ring.buf, cutoffs)

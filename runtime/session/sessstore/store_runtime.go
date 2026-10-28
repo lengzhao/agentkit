@@ -33,3 +33,10 @@ func (s *Store) SetActiveSession(ctx context.Context, id, active agentkit.Sessio
 func (s *Store) storeDir(ctx context.Context) (string, error) {
 	return ensureTenantLayout(ctx, s.workspace, s.relDir)
 }
+
+func (s *Store) CwdBind(ctx context.Context, id agentkit.SessionID) (string, error) {
+	return s.sidecar.CwdBind(ctx, id)
+}
+func (s *Store) SetCwdBind(ctx context.Context, id agentkit.SessionID, cwd string) error {
+	return s.sidecar.SetCwdBind(ctx, id, cwd)
+}

@@ -7,12 +7,14 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 )
 
 func (r *Root) Commands() []agentkit.Command {
 	return []agentkit.Command{
 		stopCommand{loop: r.loop, store: r.sessionStore},
 		meCommand{},
+		sessctx.CwdCommand(r.sessionStore, r.workspace),
 	}
 }
 

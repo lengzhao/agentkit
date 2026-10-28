@@ -91,6 +91,9 @@ func (p *fileProvider) Sections() []agentkit.Section {
 
 func (p *fileProvider) build(ctx context.Context, _ agentkit.PromptRequest) (agentkit.PromptSection, error) {
 	root, err := p.workspace.Resolve(ctx, p.relRoot)
+	if p.walkUp && p.relRoot == "." {
+		root, err = workspace.ResolveWorkingDirectory(ctx, p.workspace, p.relRoot)
+	}
 	if err != nil {
 		return agentkit.PromptSection{}, err
 	}

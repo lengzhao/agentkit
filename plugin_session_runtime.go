@@ -11,3 +11,10 @@ type SessionRuntimeStore interface {
 	ModelBind(ctx context.Context, id SessionID) (string, error)
 	SetModelBind(ctx context.Context, id SessionID, model string) error
 }
+
+// SessionCwdStore optionally persists working-directory overrides. It is separate
+// from SessionRuntimeStore so existing third-party stores remain compatible.
+type SessionCwdStore interface {
+	CwdBind(ctx context.Context, id SessionID) (string, error)
+	SetCwdBind(ctx context.Context, id SessionID, cwd string) error
+}

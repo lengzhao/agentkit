@@ -98,6 +98,10 @@ func ensureSessionSQLSchema(db *sql.DB, driver string) error {
 		payloadType = "BYTEA"
 	}
 	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS ak_session_cwd (
+   stable_id TEXT PRIMARY KEY,
+   cwd TEXT NOT NULL
+  )`,
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS ak_session_events (
 			session_id TEXT NOT NULL,
 			seq INTEGER NOT NULL,

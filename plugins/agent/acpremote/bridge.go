@@ -61,11 +61,14 @@ type bridge struct {
 	// of prompt/cancel relies on connLoop serializing the real connection state.
 	proc      atomic.Pointer[subprocess]
 	turn      atomic.Pointer[turnState]
+	contextMu requestMutex // protects initialization against configuration transitions
 	sessionMu requestMutex // serialize session initialization with slash commands
 	configMu  requestMutex // serialize config requests and their full-state responses
 }
 
 type subprocess struct {
+	cwd               string
+	epoch             string
 	cmd               *exec.Cmd
 	conn              *acp.ClientSideConnection
 	client            *bridgeClient
@@ -187,6 +190,9 @@ func (b *bridge) waitSubprocess(proc *subprocess) {
 // does not exist yet fails the subprocess (chdir) and session/new instead of
 // just starting in a fresh directory.
 func (b *bridge) resolveCwd(ctx context.Context) (string, error) {
+	if cwd := workspace.WorkingDirectory(ctx); cwd != "" {
+		return cwd, nil
+	}
 	rel := b.cfg.Cwd
 	if rel == "" {
 		workDir, _ := workspace.WorkLayout(b.workspace)
@@ -210,6 +216,14 @@ func (b *bridge) ensureSession(ctx context.Context, sessionID agentkit.SessionID
 		return "", err
 	}
 	defer b.sessionMu.Unlock()
+	cwd, err := b.resolveCwd(ctx)
+	if err != nil {
+		return "", err
+	}
+	execution, _ := rctx.ExecutionFromContext(ctx)
+	if proc := b.proc.Load(); !replay && b.currentTurn() != nil && (proc == nil || proc.cwd != cwd || proc.epoch != execution.Epoch) {
+		return "", fmt.Errorf("execution context change applies after the active turn completes")
+	}
 	proc, err := b.ensureConn(ctx)
 	if err != nil {
 		return "", err
@@ -226,11 +240,6 @@ func (b *bridge) ensureSession(ctx context.Context, sessionID agentkit.SessionID
 		}
 		return session.remote, nil
 	}
-	cwd, err := b.resolveCwd(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	bindDir, err := b.bindDir(ctx)
 	if err != nil {
 		return "", err
@@ -248,7 +257,7 @@ func (b *bridge) ensureSession(ctx context.Context, sessionID agentkit.SessionID
 
 	if bind, ok, err := loadACPSessionBind(ctx, b.fs, bindPath); err != nil {
 		return "", err
-	} else if ok && bind.Cwd == cwd {
+	} else if ok && bind.Cwd == cwd && bind.ContextEpoch == execution.Epoch {
 		restorer := b.sessionRestore
 		if restorer == nil {
 			restorer = acpclient.NewRestorer(acpclient.StrategyResume)
@@ -294,6 +303,7 @@ func (b *bridge) ensureSession(ctx context.Context, sessionID agentkit.SessionID
 		AgentID:      agentID,
 		ACPSessionID: resp.SessionId,
 		Cwd:          cwd,
+		ContextEpoch: execution.Epoch,
 	}); err != nil {
 		slog.Debug("acp-remote: save session bind failed", "err", err)
 	}

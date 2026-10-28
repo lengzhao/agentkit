@@ -22,6 +22,12 @@ func ResolveFile(ctx context.Context, ws cw.Service, path string) (string, error
 	if strings.HasPrefix(lower, cw.ScopeLocal+":") || strings.HasPrefix(lower, cw.ScopeGlobal+":") {
 		return ws.Resolve(ctx, path)
 	}
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		return ws.Resolve(ctx, path)
+	}
+	if cwd := cw.WorkingDirectory(ctx); cwd != "" {
+		return filepath.Clean(filepath.Join(cwd, path)), nil
+	}
 	workDir, _ := cw.WorkLayout(ws)
 	if workDir == "" {
 		return ws.Resolve(ctx, path)

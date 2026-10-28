@@ -29,6 +29,7 @@ type IncompleteTurn struct {
 // ends cleanly. Only the last turn can be incomplete: every earlier turn either
 // wrote turn/end or was repaired on a previous startup.
 func ScanIncomplete(events []agentkit.SessionEvent) *IncompleteTurn {
+	events = capsession.ContextEvents(events)
 	var open *IncompleteTurn
 	for _, ev := range events {
 		switch ev.Type {

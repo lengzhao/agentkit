@@ -2,7 +2,6 @@ package sessstore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -74,7 +73,7 @@ func (m *memorySidecar) SetModelBind(_ context.Context, id agentkit.SessionID, m
 func (m *memorySidecar) storeRuntime(id agentkit.SessionID, data sessionRuntimeData) {
 	data.AgentID = agentkit.AgentID(strings.TrimSpace(string(data.AgentID)))
 	data.Model = strings.TrimSpace(data.Model)
-	if data.AgentID == "" && data.Model == "" {
+	if data.AgentID == "" && data.Model == "" && data.Cwd == "" {
 		delete(m.runtime, id)
 		return
 	}
@@ -103,12 +102,6 @@ func (m *memorySidecar) SetActiveSession(_ context.Context, id, active agentkit.
 	return nil
 }
 
-type runtimeCacheEntry struct {
-	data    sessionRuntimeData
-	modTime time.Time
-	missing bool
-}
-
 type activeCacheEntry struct {
 	sessionID agentkit.SessionID
 	modTime   time.Time
@@ -116,9 +109,8 @@ type activeCacheEntry struct {
 
 // fileSidecar persists agent binds and active-session mappings beside session logs.
 type fileSidecar struct {
-	dir          func(ctx context.Context) (string, error)
-	runtimeCache sync.Map
-	activeCache  sync.Map
+	dir         func(ctx context.Context) (string, error)
+	activeCache sync.Map
 }
 
 func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.SessionID) (sessionRuntimeData, error) {
@@ -126,39 +118,7 @@ func (f *fileSidecar) loadSessionRuntimeCached(ctx context.Context, id agentkit.
 	if err != nil {
 		return sessionRuntimeData{}, err
 	}
-	path, err := sessionRuntimeFilePath(dir, id)
-	if err != nil {
-		return sessionRuntimeData{}, err
-	}
-	info, statErr := os.Stat(path)
-	if statErr == nil {
-		if v, ok := f.runtimeCache.Load(id); ok {
-			entry := v.(runtimeCacheEntry)
-			if !entry.missing && entry.modTime.Equal(info.ModTime()) {
-				return entry.data, nil
-			}
-		}
-	} else if errors.Is(statErr, os.ErrNotExist) {
-		if v, ok := f.runtimeCache.Load(id); ok {
-			entry := v.(runtimeCacheEntry)
-			if entry.missing {
-				return entry.data, nil
-			}
-		}
-	} else {
-		return sessionRuntimeData{}, statErr
-	}
-	data, err := loadSessionRuntime(dir, id)
-	if err != nil {
-		return sessionRuntimeData{}, err
-	}
-	modTime := time.Time{}
-	missing := errors.Is(statErr, os.ErrNotExist)
-	if statErr == nil {
-		modTime = info.ModTime()
-	}
-	f.runtimeCache.Store(id, runtimeCacheEntry{data: data, modTime: modTime, missing: missing})
-	return data, nil
+	return readSessionRuntimeSnapshot(dir, id)
 }
 
 func (f *fileSidecar) AgentBind(ctx context.Context, id agentkit.SessionID) (agentkit.AgentID, error) {
@@ -183,7 +143,6 @@ func (f *fileSidecar) SetAgentBind(ctx context.Context, id agentkit.SessionID, a
 	if err := setSessionRuntimeAgent(dir, id, agent); err != nil {
 		return err
 	}
-	f.runtimeCache.Delete(id)
 	return nil
 }
 
@@ -209,7 +168,6 @@ func (f *fileSidecar) SetModelBind(ctx context.Context, id agentkit.SessionID, m
 	if err := setSessionRuntimeModel(dir, id, model); err != nil {
 		return err
 	}
-	f.runtimeCache.Delete(id)
 	return nil
 }
 
@@ -275,4 +233,34 @@ func (f *fileSidecar) SetActiveSession(ctx context.Context, id, active agentkit.
 	}
 	f.activeCache.Store(id, activeCacheEntry{sessionID: active, modTime: info.ModTime()})
 	return nil
+}
+
+func (m *memorySidecar) CwdBind(_ context.Context, id agentkit.SessionID) (string, error) {
+	return m.sessionRuntime(m.normalize(id)).Cwd, nil
+}
+func (m *memorySidecar) SetCwdBind(_ context.Context, id agentkit.SessionID, cwd string) error {
+	id = m.normalize(id)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data := m.runtime[id]
+	data.Cwd = strings.TrimSpace(cwd)
+	m.storeRuntime(id, data)
+	return nil
+}
+func (f *fileSidecar) CwdBind(ctx context.Context, id agentkit.SessionID) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	data, err := f.loadSessionRuntimeCached(ctx, id)
+	return data.Cwd, err
+}
+func (f *fileSidecar) SetCwdBind(ctx context.Context, id agentkit.SessionID, cwd string) error {
+	if id == "" {
+		return fmt.Errorf("session id is required")
+	}
+	dir, err := f.dir(ctx)
+	if err != nil {
+		return err
+	}
+	return setSessionRuntimeCwd(dir, id, cwd)
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capshell "github.com/lengzhao/agentkit/cap/shell"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/tooloutput"
 )
 
@@ -51,6 +52,9 @@ func (b *shellBashBundle) Run(ctx context.Context, req capshell.Request) (capshe
 	relDir := req.WorkDir
 	if relDir == "" {
 		relDir = b.exec.relWorkDir
+		if cwd := workspace.WorkingDirectory(ctx); cwd != "" {
+			relDir = cwd
+		}
 	}
 	var timeout *float64
 	if req.Timeout != 0 {

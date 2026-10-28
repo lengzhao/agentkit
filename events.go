@@ -1,6 +1,8 @@
 package agentkit
 
 const (
+	// EventSessionContext starts a new model-history context without deleting the audit log.
+	EventSessionContext          EventType = "session/context"
 	EventTurnStart               EventType = "turn/start"
 	EventTurnEnd                 EventType = "turn/end"
 	EventStepStart               EventType = "step/start"

@@ -17,6 +17,7 @@ import (
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -230,6 +231,33 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 	if emit == nil {
 		return fmt.Errorf("turn requires outbound emit")
 	}
+	lease, err := a.acquireLease(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	// Held for the whole turn: the connection cannot be reclaimed while the
+	// turn is running, without any "is a turn in flight" heuristic.
+	brid := lease.Bridge()
+	defer func() {
+		if a.cfg.ReleaseSubprocessAfterTurn {
+			brid.releaseSubprocess()
+		}
+		lease.Release()
+	}()
+	if err := brid.contextMu.Lock(ctx); err != nil {
+		return err
+	}
+	initializing := true
+	defer func() {
+		if initializing {
+			brid.contextMu.Unlock()
+		}
+	}()
+	var prepareErr error
+	ctx, prepareErr = sessctx.Prepare(rctx.WithoutExecution(ctx), a.sessionStore, a.workspace)
+	if prepareErr != nil {
+		return prepareErr
+	}
 	// Remote turns must register with the same cancellation control as local steps.
 	if ctrl, ok := ctx.Value(agentkit.KeySessionControl).(interface {
 		BeginStep(context.Context) (context.Context, func())
@@ -299,19 +327,6 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, endData())
 	}()
 
-	lease, err := a.acquireLease(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	// Held for the whole turn: the connection cannot be reclaimed while the
-	// turn is running, without any "is a turn in flight" heuristic.
-	brid := lease.Bridge()
-	defer func() {
-		if a.cfg.ReleaseSubprocessAfterTurn {
-			brid.releaseSubprocess()
-		}
-		lease.Release()
-	}()
 	acpSessionID, err := brid.ensureSession(ctx, sessionID, a.id, a.sessionStore, true)
 	if err != nil {
 
@@ -326,6 +341,8 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		agentID:   a.id,
 	})
 	defer brid.clearTurn()
+	brid.contextMu.Unlock()
+	initializing = false
 
 	prompt := modelMessageToPrompt(input.Message)
 	if len(prompt) == 0 {
