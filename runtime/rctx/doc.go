@@ -2,6 +2,8 @@
 // every value carried on context.Context during execution (session, envelope,
 // route, metadata, workspace key, outbound emit), plus inbound MessageEvent
 // route helpers (WithInboundRoute, WithDeliveryRoute, WithDeliverySession)
-// and outbound payload encoding. It depends only on the root agentkit package;
-// all runtime layers may depend on it.
+// and outbound payload encoding. SessionContext is the history snapshot;
+// execution.Identity identifies a single invocation. This package depends on
+// root/cap contracts, never lifecycle or backend implementations. All runtime
+// layers may depend on it; scope lifecycle lives in runtime/execution.
 package rctx

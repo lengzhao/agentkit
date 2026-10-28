@@ -12,6 +12,7 @@ import (
 func (p parentContext) asyncRunContext() context.Context {
 	ctx := workspace.WithWorkingDirectory(context.Background(), p.cwd)
 	ctx = rctx.ApplyEnvelopeToContext(ctx, p.envelope)
+	ctx = rctx.WithExecutionIdentity(ctx, p.identity)
 	ctx = rctx.WithAgentID(ctx, p.agentID)
 	if p.sessionControl != nil {
 		ctx = context.WithValue(ctx, agentkit.KeySessionControl, p.sessionControl)
