@@ -2,10 +2,13 @@ package loop_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	_ "github.com/lengzhao/agentkit/plugins"
+	"github.com/lengzhao/agentkit/runtime/loop"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/derive"
 	sessstore "github.com/lengzhao/agentkit/runtime/session/sessstore"
@@ -311,4 +314,103 @@ func TestSessionControlsAreIsolated(t *testing.T) {
 			t.Fatalf("session B = %v, want prefix %v", gotB, wantB)
 		}
 	}
+}
+
+// Steering that survives into the post-turn drain runs as the session's next
+// turn, so its ack reports next-turn, not injected. A queue-ignoring agent
+// (like an ACP peer without steering support) is what leaves it to the drain.
+func TestSteeringDrainedAsNextTurnAcksNextTurn(t *testing.T) {
+	t.Parallel()
+
+	lp, err := loop.New(loop.Config{FollowUpMode: agentkit.FollowUpOneAtATime}, loop.Deps{
+		Agents: []agentkit.Agent{ignoringAgent{}},
+	})
+	if err != nil {
+		t.Fatalf("new loop: %v", err)
+	}
+	reporter, ok := lp.(agentkit.SteerReporter)
+	if !ok {
+		t.Fatal("loop/default must implement agentkit.SteerReporter")
+	}
+
+	ctx := testContext(testSessionID)
+	var outcomes []string
+	if err := reporter.SteerEntry(ctx, agentkit.SteerEntry{
+		Message: userMessage("steer before dispatch"),
+		Ack:     func(outcome string) { outcomes = append(outcomes, outcome) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := lp.Dispatch(context.Background(), loopReq(testSessionID, userMessage("initial"))); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	// The RunTurn pass leaves the queue untouched, so Loop drains it as the
+	// session's next turn and reports next-turn (never injected).
+	if len(outcomes) != 1 || outcomes[0] != capsession.SteerOutcomeNextTurn {
+		t.Fatalf("outcomes = %v, want [next-turn]", outcomes)
+	}
+}
+
+type ignoringAgent struct{}
+
+func (ignoringAgent) ID() agentkit.AgentID { return "ignoring" }
+
+func (ignoringAgent) RunTurn(context.Context, agentkit.TurnInput) error { return nil }
+
+// Routing is known before the next turn starts, even if that turn fails.
+func TestSteeringNextTurnAckPrecedesRunFailure(t *testing.T) {
+	var outcomes []string
+	wantErr := errors.New("next turn failed")
+	ag := &nextTurnAckAgent{run: func(input agentkit.TurnInput) error {
+		if input.Message.Content[0].Text != "steered" {
+			return nil
+		}
+		if len(outcomes) != 1 || outcomes[0] != capsession.SteerOutcomeNextTurn {
+			t.Errorf("outcomes at next-turn start = %v, want [next-turn]", outcomes)
+		}
+		return wantErr
+	}}
+	lp, err := loop.New(loop.Config{}, loop.Deps{Agents: []agentkit.Agent{ag}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lp.(*loop.Default).Stop(context.Background()) })
+	err = lp.(agentkit.SteerReporter).SteerEntry(testContext(testSessionID), agentkit.SteerEntry{
+		Message: userMessage("steered"), Ack: func(outcome string) { outcomes = append(outcomes, outcome) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remainingOutcomes []string
+	if err := lp.(agentkit.SteerReporter).SteerEntry(testContext(testSessionID), agentkit.SteerEntry{
+		Message: userMessage("remaining"), Ack: func(outcome string) { remainingOutcomes = append(remainingOutcomes, outcome) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lp.Dispatch(t.Context(), loopReq(testSessionID, userMessage("initial"))); !errors.Is(err, wantErr) {
+		t.Fatalf("dispatch error = %v", err)
+	}
+	if len(outcomes) != 1 {
+		t.Fatalf("terminal outcomes = %v, want exactly one", outcomes)
+	}
+	if len(remainingOutcomes) != 0 {
+		t.Fatalf("unrun message resolved early: %v", remainingOutcomes)
+	}
+	if err := lp.Dispatch(t.Context(), loopReq(testSessionID, userMessage("retry"))); err != nil {
+		t.Fatal(err)
+	}
+	if len(remainingOutcomes) != 1 || remainingOutcomes[0] != capsession.SteerOutcomeNextTurn {
+		t.Fatalf("remaining message lost after failed next turn: outcomes = %v", remainingOutcomes)
+	}
+}
+
+type nextTurnAckAgent struct {
+	run func(agentkit.TurnInput) error
+}
+
+func (*nextTurnAckAgent) ID() agentkit.AgentID { return "next-turn-ack" }
+func (a *nextTurnAckAgent) RunTurn(_ context.Context, input agentkit.TurnInput) error {
+	return a.run(input)
 }

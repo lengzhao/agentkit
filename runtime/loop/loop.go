@@ -12,6 +12,7 @@ import (
 	capllm "github.com/lengzhao/agentkit/cap/llm"
 	"github.com/lengzhao/agentkit/cap/permission"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -171,11 +172,13 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 
 	for {
 		if steered := control.PopSteering(); len(steered) > 0 {
-			for _, msg := range steered {
+			for i, entry := range steered {
+				ackSteering(entry, capsession.SteerOutcomeNextTurn)
 				if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
-					Message: msg,
+					Message: entry.Message,
 					Emit:    req.Emit,
 				}); err != nil {
+					control.RestoreSteering(steered[i+1:])
 					return err
 				}
 			}
@@ -187,11 +190,13 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 		}
 		if len(followUps) == 0 {
 			if steered := control.PopSteering(); len(steered) > 0 {
-				for _, msg := range steered {
+				for i, entry := range steered {
+					ackSteering(entry, capsession.SteerOutcomeNextTurn)
 					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
-						Message: msg,
+						Message: entry.Message,
 						Emit:    req.Emit,
 					}); err != nil {
+						control.RestoreSteering(steered[i+1:])
 						return err
 					}
 				}
@@ -209,11 +214,13 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 		}
 		if l.followUpMode == agentkit.FollowUpOneAtATime {
 			if steered := control.PopSteering(); len(steered) > 0 {
-				for _, msg := range steered {
+				for i, entry := range steered {
+					ackSteering(entry, capsession.SteerOutcomeNextTurn)
 					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
-						Message: msg,
+						Message: entry.Message,
 						Emit:    req.Emit,
 					}); err != nil {
+						control.RestoreSteering(steered[i+1:])
 						return err
 					}
 				}
@@ -224,6 +231,15 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	}
 
 	return nil
+}
+
+// ackSteering reports the terminal outcome for one drained steering entry. The
+// message is about to run as its own turn. Report the routing decision before
+// execution so a blocked or failed next turn cannot leave the outcome unresolved.
+func ackSteering(entry agentkit.SteerEntry, outcome string) {
+	if entry.Ack != nil {
+		entry.Ack(outcome)
+	}
 }
 
 func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
@@ -316,6 +332,17 @@ func (l *Default) Steer(ctx context.Context, msg agentkit.ModelMessage) error {
 		return err
 	}
 	return l.controlFor(sessionID).Steer(ctx, msg)
+}
+
+// SteerEntry queues one steering message with its outcome reporter. Transports
+// that want per-message steering feedback call this instead of Steer; the
+// runner picks it up through agentkit.SteerReporter.
+func (l *Default) SteerEntry(ctx context.Context, entry agentkit.SteerEntry) error {
+	sessionID, err := sessionIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return l.controlFor(sessionID).SteerEntry(ctx, entry)
 }
 
 func (l *Default) FollowUp(ctx context.Context, msg agentkit.ModelMessage) error {

@@ -416,3 +416,97 @@ func (a *blockingAgent) RunTurn(ctx context.Context, input agentkit.TurnInput) e
 		return ctx.Err()
 	}
 }
+
+// A loop that implements SteerReporter gets the message's ack, and a terminal
+// outcome lands as a second turn/steer event with the real outcome.
+func TestSteerReporterReceivesTerminalOutcome(t *testing.T) {
+	t.Parallel()
+
+	sessionID := agentkit.SessionID("lark:oc_ack")
+	loop := &ackLoop{
+		inboundRoutingLoop: inboundRoutingLoop{busy: map[agentkit.SessionID]bool{sessionID: true}},
+	}
+	platform := &recordingPlatform{}
+	root, err := New(Config{}, Deps{Platform: platform, Loop: loop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*Root)
+	sched := newScheduler(1, func(context.Context, agentkit.LoopRequest) error { return nil }, nil)
+	defer sched.stop()
+	defer sched.wait(2 * time.Second)
+
+	event := agentkit.MessageEvent{
+		Envelope: agentkit.TurnEnvelope{
+			AgentID: "assistant",
+			Actor:   agentkit.ActorRef{UserID: "ou_7"},
+			Route: rctx.BuildSessionRoute(agentkit.SessionRouteInput{
+				Platform: "lark", DeliveryID: sessionID, ChannelID: "oc_ack", ReplyTo: "om_ack", ScopeUserID: "ou_7",
+			}),
+		},
+		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "改方向"}}},
+	}
+	r.handleInbound(context.Background(), sched, event)
+
+	// Immediate queued ack, before any terminal outcome resolves.
+	if got := steerOutcomes(platform.steerEvents()); len(got) != 1 || got[0] != capsession.SteerOutcomeQueued {
+		t.Fatalf("immediate outcomes = %v, want [queued]", got)
+	}
+
+	loop.resolve(capsession.SteerOutcomeInjected)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if outcomes := steerOutcomes(platform.steerEvents()); len(outcomes) == 2 {
+			if outcomes[1] != capsession.SteerOutcomeInjected {
+				t.Fatalf("terminal outcome = %q, want injected", outcomes[1])
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("steer outcomes = %v, want a terminal injected", steerOutcomes(platform.steerEvents()))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// A second resolve must not emit a third event.
+	loop.resolve(capsession.SteerOutcomeNextTurn)
+	time.Sleep(50 * time.Millisecond)
+	if got := steerOutcomes(platform.steerEvents()); len(got) != 2 {
+		t.Fatalf("outcomes after duplicate resolve = %v, want exactly 2", got)
+	}
+}
+
+func steerOutcomes(events []agentkit.OutboundEvent) []string {
+	var out []string
+	for _, ev := range events {
+		var data capsession.TurnSteerData
+		if err := json.Unmarshal(ev.Data, &data); err != nil {
+			continue
+		}
+		out = append(out, data.Outcome)
+	}
+	return out
+}
+
+// ackLoop captures the SteerEntry so the test can drive terminal outcomes.
+type ackLoop struct {
+	inboundRoutingLoop
+	mu  sync.Mutex
+	ack agentkit.SteerAck
+}
+
+func (l *ackLoop) SteerEntry(_ context.Context, entry agentkit.SteerEntry) error {
+	l.mu.Lock()
+	l.ack = entry.Ack
+	l.mu.Unlock()
+	return nil
+}
+
+func (l *ackLoop) resolve(outcome string) {
+	l.mu.Lock()
+	ack := l.ack
+	l.mu.Unlock()
+	if ack != nil {
+		ack(outcome)
+	}
+}

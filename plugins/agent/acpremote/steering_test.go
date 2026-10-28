@@ -35,7 +35,7 @@ func TestSteeringCapability(t *testing.T) {
 }
 
 func TestSteeringWorker(t *testing.T) {
-	for _, outcome := range []string{"injected", "promptRequired", "methodNotFound", "invalid", "transportError"} {
+	for _, outcome := range []string{"injected", "promptRequired", "methodNotFound", "invalid", "invalidJSON", "acceptError", "transportError"} {
 		t.Run(outcome, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
@@ -49,7 +49,8 @@ func TestSteeringWorker(t *testing.T) {
 			ctrl := loop.NewControl()
 			defer ctrl.Stop()
 			msg := agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "change direction"}}}
-			if err := ctrl.Steer(ctx, msg); err != nil {
+			var acks []string
+			if err := ctrl.SteerEntry(ctx, agentkit.SteerEntry{Message: msg, Ack: func(outcome string) { acks = append(acks, outcome) }}); err != nil {
 				t.Fatal(err)
 			}
 			received := make(chan struct{})
@@ -75,6 +76,12 @@ func TestSteeringWorker(t *testing.T) {
 					return
 				}
 				response := map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"outcome": outcome}}
+				if outcome == "invalidJSON" {
+					response["result"] = "not an outcome object"
+				}
+				if outcome == "acceptError" {
+					response["result"] = map[string]any{"outcome": "injected"}
+				}
 				if outcome == "methodNotFound" {
 					delete(response, "result")
 					response["error"] = map[string]any{"code": -32601, "message": "method not found"}
@@ -86,7 +93,13 @@ func TestSteeringWorker(t *testing.T) {
 			done := make(chan error, 1)
 			accepted := 0
 			go func() {
-				done <- forwardSteering(ctx, stop, ctrl, conn, "remote", func() { _ = cw.Close() }, func(agentkit.ModelMessage) error { accepted++; return nil })
+				done <- forwardSteering(ctx, stop, ctrl, conn, "remote", func() { _ = cw.Close() }, func(agentkit.ModelMessage) error {
+					accepted++
+					if outcome == "acceptError" {
+						return errors.New("persist accepted message")
+					}
+					return nil
+				})
 			}()
 			select {
 			case <-received:
@@ -95,9 +108,19 @@ func TestSteeringWorker(t *testing.T) {
 			}
 			close(stop)
 			err := <-done
-			if outcome == "invalid" || outcome == "transportError" {
+			if outcome == "invalid" || outcome == "invalidJSON" || outcome == "transportError" || outcome == "acceptError" {
 				if err == nil {
 					t.Fatal("expected error")
+				}
+				want := capsession.SteerOutcomeRejected
+				if outcome == "acceptError" {
+					want = capsession.SteerOutcomeInjected
+				}
+				if len(acks) != 1 || acks[0] != want {
+					t.Fatalf("acks = %v, want [%s]", acks, want)
+				}
+				if len(ctrl.PopSteering()) != 0 {
+					t.Fatal("ambiguous or injected message must not be retried")
 				}
 				return
 			}
@@ -108,9 +131,17 @@ func TestSteeringWorker(t *testing.T) {
 				if accepted != 1 || len(ctrl.PopSteering()) != 0 {
 					t.Fatal("injected message not consumed exactly once")
 				}
+				if len(acks) != 1 || acks[0] != capsession.SteerOutcomeInjected {
+					t.Fatalf("injected acks = %v, want [injected]", acks)
+				}
 			} else {
 				if accepted != 0 || len(ctrl.PopSteering()) != 1 {
 					t.Fatal("rejected message not restored")
+				}
+				// promptRequired / methodNotFound fall through to Loop's next turn,
+				// which acks there — the worker itself must not ack.
+				if len(acks) != 0 {
+					t.Fatalf("non-terminal acks = %v, want none", acks)
 				}
 			}
 		})
@@ -128,7 +159,7 @@ func TestRestoreSteeringPreservesOrder(t *testing.T) {
 	_ = ctrl.Steer(t.Context(), msg("second"))
 	ctrl.RestoreSteering(pending)
 	got := ctrl.PopSteering()
-	if len(got) != 2 || got[0].Content[0].Text != "first" || got[1].Content[0].Text != "second" {
+	if len(got) != 2 || got[0].Message.Content[0].Text != "first" || got[1].Message.Content[0].Text != "second" {
 		t.Fatalf("order: %+v", got)
 	}
 }
