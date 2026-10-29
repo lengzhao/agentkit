@@ -41,3 +41,30 @@ type SessionMCPServer struct {
 type SessionMCPProvider interface {
 	SessionMCPServers(ctx context.Context) ([]SessionMCPServer, error)
 }
+
+// SessionMCPTurnProvider optionally binds an MCP connection to a host turn.
+// Begin must run on every turn, including when the remote ACP session is reused.
+// The returned context is used for session setup and prompting. End is idempotent,
+// cancels tool work, and returns any turn-fatal tool error.
+type SessionMCPTurnProvider interface {
+	BeginMCPTurn(context.Context) (context.Context, func() error, error)
+}
+
+// SessionMCPReleaser releases connection-scoped resources when an ACP bridge is
+// retired. The context carries the same session/agent/workspace identity as Begin.
+type SessionMCPReleaser interface {
+	ReleaseMCPSession(context.Context)
+}
+
+// sessionMCPBindingKey separates connection ownership from conversation identity.
+type sessionMCPBindingKey struct{}
+
+// WithSessionMCPBinding identifies one ACP bridge lifetime. A replacement bridge
+// must use a new ID so delayed cleanup cannot revoke its successor's resources.
+func WithSessionMCPBinding(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, sessionMCPBindingKey{}, id)
+}
+func SessionMCPBindingFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(sessionMCPBindingKey{}).(string)
+	return id
+}

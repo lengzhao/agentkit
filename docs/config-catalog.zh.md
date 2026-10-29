@@ -21,7 +21,8 @@
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
-| `provider`（必填） | `agentkit.ToolProvider` |  |
+| `provider` | `agentkit.ToolProvider` | Provider is the legacy direct-tool backend; mutually exclusive with Runtime. |
+| `runtime` | `agentkit.ToolRuntime` | Runtime preserves visibility, policy, approval, and execution semantics. |
 | `workspace` | `workspace.Service` |  |
 
 ## `acp/session-restore`

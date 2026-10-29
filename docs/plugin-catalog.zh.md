@@ -681,3 +681,5 @@ tools.default:
 ```
 
 ACP 可将同一 `tool.session-cwd.default` provider 接入 `acp/session-mcp-tools` 的 `deps.provider`；需要与其他工具组合时使用现有 provider 组合方式。配置 header bind 将 `ctx:session_id` 和 `ctx:tenant`（多租户时）传入 MCP，保证调用写入当前会话及工作区。桥自动传递本轮 cwd 快照，并按请求渲染 description，不会把某个 session 的目录写入全局工具描述；工具成员和 schema 的变更仍通过显式 Refresh 更新。
+
+如需复用本地工具运行时的策略、审批和渐进披露，可将 `acp/session-mcp-tools` 的 `deps.runtime` 指向同一 ToolRuntime；与 `deps.provider` 二选一。作用域、连接复用和刷新方式见 [Session MCP Runtime](session-mcp-runtime.zh.md)。

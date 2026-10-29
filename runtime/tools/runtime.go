@@ -57,8 +57,6 @@ type Runtime struct {
 	tools            map[string]agentkit.Tool
 	exposed          map[string]agentkit.Tool
 	dynamicProviders []agentkit.ToolProvider
-	dynamicTools     map[string]agentkit.Tool
-	dynamicMu        sync.Mutex
 	policies         []agentkit.Policy
 	approval         agentkit.Approval
 	hooks            agentkit.HookRuntime
@@ -104,7 +102,6 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 	r := &Runtime{
 		tools:            tools,
 		dynamicProviders: deps.DynamicTools,
-		dynamicTools:     make(map[string]agentkit.Tool),
 		policies:         deps.Policies,
 		approval:         deps.Approval,
 		hooks:            deps.Hooks,
@@ -112,7 +109,7 @@ func NewRuntime(cfg RuntimeConfig, deps RuntimeDeps) (agentkit.ToolRuntime, erro
 		toolTimeouts:     toolTimeouts,
 		filter:           newToolNameFilter(cfg.AllowTools, cfg.DenyTools),
 	}
-	r.rebuildExposedCatalog()
+	r.exposed, _ = buildExposedCatalog(r.tools, nil)
 	return r, nil
 }
 
@@ -139,13 +136,22 @@ func addTool(tools map[string]agentkit.Tool, tool agentkit.Tool) error {
 	return nil
 }
 
-func (r *Runtime) refreshDynamic(ctx context.Context) error {
+// catalogSnapshot is immutable and belongs to one discovery/execution context.
+// Dynamic providers may expose different implementations under the same name in
+// different sessions, so their catalogs must never be published on Runtime.
+type catalogSnapshot struct {
+	owner   *Runtime
+	exposed map[string]agentkit.Tool
+	dynamic map[string]agentkit.Tool
+}
+type catalogContextKey struct{}
+
+func (r *Runtime) catalog(ctx context.Context) (*catalogSnapshot, error) {
+	if cached, ok := ctx.Value(catalogContextKey{}).(*catalogSnapshot); ok && cached.owner == r {
+		return cached, nil
+	}
 	if len(r.dynamicProviders) == 0 {
-		r.dynamicMu.Lock()
-		r.dynamicTools = make(map[string]agentkit.Tool)
-		r.dynamicMu.Unlock()
-		r.rebuildExposedCatalog()
-		return nil
+		return &catalogSnapshot{owner: r, exposed: r.exposed}, nil
 	}
 	dynamic := make(map[string]agentkit.Tool)
 	for _, provider := range r.dynamicProviders {
@@ -177,32 +183,30 @@ func (r *Runtime) refreshDynamic(ctx context.Context) error {
 			dynamic[name] = tool
 		}
 	}
-	r.dynamicMu.Lock()
-	r.dynamicTools = dynamic
-	r.dynamicMu.Unlock()
-	r.rebuildExposedCatalog()
-	return nil
-}
 
-func (r *Runtime) rebuildExposedCatalog() {
-	r.dynamicMu.Lock()
-	dynamic := r.dynamicTools
-	r.dynamicMu.Unlock()
 	exposed, dropped := buildExposedCatalog(r.tools, dynamic)
 	if dropped > 0 {
 		slog.Warn("tools/runtime: dropped tools with duplicate model-visible names", "count", dropped)
 	}
-	r.exposed = exposed
+	return &catalogSnapshot{owner: r, exposed: exposed, dynamic: dynamic}, nil
+}
+func (r *Runtime) withCatalog(ctx context.Context) (context.Context, error) {
+	catalog, err := r.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return context.WithValue(ctx, catalogContextKey{}, catalog), nil
 }
 
 func (r *Runtime) Visible(ctx context.Context) ([]agentkit.ToolSpec, error) {
-	if err := r.refreshDynamic(ctx); err != nil {
+	catalog, err := r.catalog(ctx)
+	if err != nil {
 		return nil, err
 	}
-	specs := make([]agentkit.ToolSpec, 0, len(r.exposed))
+	specs := make([]agentkit.ToolSpec, 0, len(catalog.exposed))
 	available := make(map[string]bool)
-	for _, exposedName := range sortedKeys(r.exposed) {
-		tool := r.exposed[exposedName]
+	for _, exposedName := range sortedKeys(catalog.exposed) {
+		tool := catalog.exposed[exposedName]
 		available[exposedName] = true
 		specs = append(specs, agentkit.ToolSpec{
 			Name:          exposedName,
@@ -253,6 +257,11 @@ func (r *Runtime) withToolObservation(ctx context.Context, call agentkit.ToolCal
 }
 
 func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID agentkit.SessionID, agentID agentkit.AgentID) (agentkit.ToolResult, error) {
+	var err error
+	ctx, err = r.withCatalog(ctx)
+	if err != nil {
+		return agentkit.ToolResult{}, err
+	}
 	result, call, runBody, err := r.preflightTool(ctx, call, sessionID, agentID)
 	if err != nil || !runBody {
 		return result, err
@@ -260,16 +269,18 @@ func (r *Runtime) execute(ctx context.Context, call agentkit.ToolCall, sessionID
 	return r.runToolBody(ctx, call, sessionID, agentID)
 }
 
-func (r *Runtime) lookupTool(callName string) (agentkit.Tool, bool) {
-	if t, ok := r.exposed[callName]; ok {
+func (r *Runtime) lookupTool(ctx context.Context, callName string) (agentkit.Tool, bool) {
+	catalog, _ := ctx.Value(catalogContextKey{}).(*catalogSnapshot)
+	if catalog == nil || catalog.owner != r {
+		return nil, false
+	}
+	if t, ok := catalog.exposed[callName]; ok {
 		return t, true
 	}
 	if t, ok := r.tools[callName]; ok {
 		return t, true
 	}
-	r.dynamicMu.Lock()
-	t, ok := r.dynamicTools[callName]
-	r.dynamicMu.Unlock()
+	t, ok := catalog.dynamic[callName]
 	return t, ok
 }
 

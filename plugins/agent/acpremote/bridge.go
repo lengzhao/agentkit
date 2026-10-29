@@ -13,6 +13,7 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
+	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
 	"github.com/lengzhao/agentkit/cap/filesystem"
@@ -44,6 +45,8 @@ type bridge struct {
 	workspace      workspace.Service
 	fs             filesystem.Service
 	sessionMCP     capacp.SessionMCPProvider
+	mcpCleanup     func()
+	mcpBinding     string
 	sessionRestore capacp.SessionRestorer
 	telemetry      captelemetry.Toolkit
 	sandbox        capsandbox.Service
@@ -99,6 +102,7 @@ func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionM
 		workspace:      ws,
 		fs:             fs,
 		sessionMCP:     sessionMCP,
+		mcpBinding:     uuid.NewString(),
 		sessionRestore: sessionRestore,
 		telemetry:      telemetry,
 		sandbox:        sandbox,
@@ -110,15 +114,26 @@ func newBridge(cfg Config, ws workspace.Service, fs filesystem.Service, sessionM
 }
 
 func (b *bridge) resolveSessionMCP(ctx context.Context) ([]acp.McpServer, error) {
+	ctx = capacp.WithSessionMCPBinding(ctx, b.mcpBinding)
 	if b.sessionMCP == nil {
 		// Cursor ACP rejects JSON null for mcpServers; must be an array.
 		return acpclient.ToMCPServers(nil), nil
 	}
+	b.rememberMCPCleanup(ctx)
 	specs, err := b.sessionMCP.SessionMCPServers(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return acpclient.ToMCPServers(specs), nil
+}
+
+// Called with contextMu held; bridge retirement happens after all leases end.
+func (b *bridge) rememberMCPCleanup(ctx context.Context) {
+	if releaser, ok := b.sessionMCP.(capacp.SessionMCPReleaser); ok && b.mcpCleanup == nil {
+		identityCtx := rctx.ApplyEnvelopeToContext(context.Background(), rctx.EnvelopeFromContext(ctx))
+		identityCtx = capacp.WithSessionMCPBinding(identityCtx, b.mcpBinding)
+		b.mcpCleanup = func() { releaser.ReleaseMCPSession(identityCtx) }
+	}
 }
 
 func (b *bridge) recordSessionMCP(ctx context.Context, servers []acp.McpServer) {

@@ -1,11 +1,6 @@
-// Package sessionmcptools serves any agentkit.ToolProvider to an external ACP
-// agent as a loopback streamable-http MCP server.
-//
-// agent/acp-remote's sessionMcp slot takes a capacp.SessionMCPProvider, but the
-// tools a host wants to expose usually already exist as a ToolProvider
-// (tool/openapi, tool/mcp, a static tool list, ...). This plugin is the general
-// bridge between the two, so a host does not need one bespoke MCP server per
-// tool source.
+// Package sessionmcptools exposes a ToolProvider or ToolRuntime to an external
+// ACP agent as a loopback streamable-http MCP server. Runtime mode preserves
+// turn state and the policy/approval pipeline through cap/acp's turn lifecycle.
 package sessionmcptools
 
 import (
@@ -59,13 +54,16 @@ type HeaderBind struct {
 	Name string `json:"name"`
 }
 
-// Deps wires the tool source and the workspace used to resolve paths.
+// Deps selects exactly one tool source and the workspace used to resolve paths.
 type Deps struct {
-	Provider  agentkit.ToolProvider `json:"provider"`
-	Workspace workspace.Service     `json:"workspace,omitempty"`
+	// Provider is the legacy direct-tool backend; mutually exclusive with Runtime.
+	Provider agentkit.ToolProvider `json:"provider,omitempty"`
+	// Runtime preserves visibility, policy, approval, and execution semantics.
+	Runtime   agentkit.ToolRuntime `json:"runtime,omitempty"`
+	Workspace workspace.Service    `json:"workspace,omitempty"`
 }
 
-// Provider implements capacp.SessionMCPProvider over the supplied ToolProvider.
+// Provider implements SessionMCPProvider and the optional turn lifecycle.
 type Provider struct {
 	apiToken      string
 	serverName    string
@@ -73,16 +71,19 @@ type Provider struct {
 	binds         []HeaderBind
 	bridge        *toolBridge
 	workspace     workspace.Service
+	runtime       agentkit.ToolRuntime
+	scopes        map[string]*runtimeScope
+	closed        bool
 
 	mu      sync.Mutex
 	baseURL string
 	server  *http.Server
 }
 
-// New registers acp/session-mcp-tools: streamable-http MCP over any ToolProvider.
+// New registers acp/session-mcp-tools: streamable-http MCP over a tool provider or runtime.
 func New(cfg Config, deps Deps) (capacp.SessionMCPProvider, error) {
-	if deps.Provider == nil {
-		return nil, fmt.Errorf("acp/session-mcp-tools requires a provider dependency")
+	if (deps.Provider == nil) == (deps.Runtime == nil) {
+		return nil, fmt.Errorf("acp/session-mcp-tools requires exactly one provider or runtime dependency")
 	}
 	binds, err := parseBinds(cfg.Bind)
 	if err != nil {
@@ -99,6 +100,8 @@ func New(cfg Config, deps Deps) (capacp.SessionMCPProvider, error) {
 		binds:         binds,
 		bridge:        newToolBridge(deps.Provider),
 		workspace:     deps.Workspace,
+		runtime:       deps.Runtime,
+		scopes:        make(map[string]*runtimeScope),
 	}
 	if err := p.startHTTP(); err != nil {
 		return nil, err
@@ -112,17 +115,24 @@ func (p *Provider) startHTTP() error {
 	if err != nil {
 		return fmt.Errorf("acp/session-mcp-tools listen %s: %w", listenAddr, err)
 	}
-	mcp := server.NewMCPServer(p.serverName, "1.0.0", server.WithToolCapabilities(true), server.WithToolFilter(p.bridge.describeForRequest))
-	p.bridge.bind(mcp)
-	if err := p.bridge.sync(context.Background()); err != nil {
-		_ = ln.Close()
-		return fmt.Errorf("acp/session-mcp-tools tools: %w", err)
+	var stream *server.StreamableHTTPServer
+	if p.runtime == nil {
+		mcp := server.NewMCPServer(p.serverName, "1.0.0", server.WithToolCapabilities(true), server.WithToolFilter(p.bridge.describeForRequest))
+		p.bridge.bind(mcp)
+		if err := p.bridge.sync(context.Background()); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("acp/session-mcp-tools tools: %w", err)
+		}
+		stream = server.NewStreamableHTTPServer(mcp)
 	}
-	stream := server.NewStreamableHTTPServer(mcp)
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !bearerAuthorized(r, p.apiToken) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if p.runtime != nil {
+			p.serveRuntime(w, r)
 			return
 		}
 		ctx := contextFromInboundHeaders(r, p.binds, p.workspace)
@@ -150,11 +160,17 @@ func (p *Provider) startHTTP() error {
 // runtime change (an OpenAPI reload, an MCP client discovery); it is safe to
 // call concurrently with in-flight calls.
 func (p *Provider) Refresh(ctx context.Context) error {
+	if p.runtime != nil {
+		return p.refreshRuntime(ctx)
+	}
 	return p.bridge.sync(ctx)
 }
 
 // SessionMCPServers implements capacp.SessionMCPProvider.
 func (p *Provider) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPServer, error) {
+	if p.runtime != nil {
+		return p.runtimeServers(ctx)
+	}
 	headers := make(map[string]string, len(p.staticHeaders)+2)
 	for k, v := range p.staticHeaders {
 		headers[http.CanonicalHeaderKey(k)] = v
@@ -198,7 +214,13 @@ func (p *Provider) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPSe
 func (p *Provider) Close() error {
 	p.mu.Lock()
 	srv := p.server
+	p.closed = true
+	scopes := p.scopes
+	p.scopes = make(map[string]*runtimeScope)
 	p.mu.Unlock()
+	for _, scope := range scopes {
+		scope.close()
+	}
 	if srv == nil {
 		return nil
 	}

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,6 +13,11 @@ import (
 // PreflightTool runs visibility, policy, approval, and BeforeTool for one call.
 // When runBody is false, result is final (deny, not found, etc.).
 func (r *Runtime) PreflightTool(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, agentkit.ToolCall, bool, error) {
+	var catalogErr error
+	ctx, catalogErr = r.withCatalog(ctx)
+	if catalogErr != nil {
+		return agentkit.ToolResult{}, call, false, catalogErr
+	}
 	sessionID := rctx.SessionIDFromContext(ctx)
 	agentID := rctx.AgentIDFromContext(ctx)
 	result, call, runBody, err := r.preflightTool(ctx, call, sessionID, agentID)
@@ -29,11 +33,14 @@ func (r *Runtime) PreflightTool(ctx context.Context, call agentkit.ToolCall) (ag
 		})
 		return result, call, false, err
 	}
-	return result, call, true, nil
+	return result, call.WithRuntimeState(ctx.Value(catalogContextKey{})), true, nil
 }
 
 // RunToolBody executes the tool body and AfterTool. Call only after a successful PreflightTool.
 func (r *Runtime) RunToolBody(ctx context.Context, call agentkit.ToolCall) (agentkit.ToolResult, error) {
+	if catalog, ok := call.RuntimeState().(*catalogSnapshot); ok && catalog.owner == r {
+		ctx = context.WithValue(ctx, catalogContextKey{}, catalog)
+	}
 	sessionID := rctx.SessionIDFromContext(ctx)
 	agentID := rctx.AgentIDFromContext(ctx)
 	return r.withToolObservation(ctx, call, func(ctx context.Context) (agentkit.ToolResult, error) {
@@ -46,13 +53,13 @@ func (r *Runtime) preflightTool(ctx context.Context, call agentkit.ToolCall, ses
 		return filteredOutResult(call), call, false, nil
 	}
 
-	if _, ok := r.lookupTool(call.Name); !ok {
-		if err := r.refreshDynamic(ctx); err != nil {
-			return agentkit.ToolResult{}, call, false, fmt.Errorf("refresh dynamic tools: %w", err)
-		}
-		if _, ok = r.lookupTool(call.Name); !ok {
-			return deniedResult(call, "tool not found", "", nil), call, false, nil
-		}
+	var catalogErr error
+	ctx, catalogErr = r.withCatalog(ctx)
+	if catalogErr != nil {
+		return agentkit.ToolResult{}, call, false, catalogErr
+	}
+	if _, ok := r.lookupTool(ctx, call.Name); !ok {
+		return deniedResult(call, "tool not found", "", nil), call, false, nil
 	}
 
 	decision, err := r.evaluatePolicies(ctx, call)
@@ -84,15 +91,14 @@ func (r *Runtime) preflightTool(ctx context.Context, call agentkit.ToolCall, ses
 }
 
 func (r *Runtime) runToolBody(ctx context.Context, call agentkit.ToolCall, sessionID agentkit.SessionID, agentID agentkit.AgentID) (agentkit.ToolResult, error) {
-	tool, ok := r.lookupTool(call.Name)
+	var catalogErr error
+	ctx, catalogErr = r.withCatalog(ctx)
+	if catalogErr != nil {
+		return agentkit.ToolResult{}, catalogErr
+	}
+	tool, ok := r.lookupTool(ctx, call.Name)
 	if !ok {
-		if err := r.refreshDynamic(ctx); err != nil {
-			return agentkit.ToolResult{}, fmt.Errorf("refresh dynamic tools: %w", err)
-		}
-		tool, ok = r.lookupTool(call.Name)
-		if !ok {
-			return deniedResult(call, "tool not found", "", nil), nil
-		}
+		return deniedResult(call, "tool not found", "", nil), nil
 	}
 
 	execCtx := ctx
