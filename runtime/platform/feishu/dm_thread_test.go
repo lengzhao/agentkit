@@ -1,12 +1,90 @@
 package feishu
 
 import (
+	"context"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
+
+func TestDMThreadAttachmentsStartTurns(t *testing.T) {
+	for _, kind := range []string{"image", "file", "audio", "sticker", "media"} {
+		t.Run(kind, func(t *testing.T) {
+			p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.Contains(r.URL.Path, "/resources/") {
+					t.Errorf("unexpected request: %s", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write([]byte("attachment payload"))
+			}))
+			defer srv.Close()
+			defer p.flushPendingAttachments()
+			p.cfg.DMThreadMode = true
+			p.inbox = common.NewInbox(1)
+			p.workspace = rtworkspace.Static(t.TempDir())
+			p.userProfileCache.Store("U1", feishuUserProfileEntry{})
+			p.chatNameCache.Store("C1", "test")
+			key := string(rctx.BuildDeliverySessionID("lark", "C1", "om_file", "U1"))
+			p.dispatchMessage(context.Background(), kind, `{"file_key":"f1","image_key":"i1","file_name":"a.txt"}`, nil,
+				"om_file", key, "U1", "C1", replyContext{chatID: "C1", chatType: "p2p", messageID: "om_file", sessionKey: key}, "")
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			event, err := p.inbox.Receive(ctx)
+			if err != nil {
+				t.Fatalf("standalone DM attachment did not start a topic turn: %v", err)
+			}
+			if len(event.Uploads) != 1 || string(event.Uploads[0].Data) != "attachment payload" {
+				t.Fatalf("attachment bytes lost: %#v", event.Uploads)
+			}
+			if rctx.RouteReplyTo(event.Envelope.Route) != "om_file" {
+				t.Fatal("attachment turn lost its reply anchor")
+			}
+			if len(p.drainPendingAttachments(key)) != 0 {
+				t.Fatal("DM topic attachment left in pending buffer")
+			}
+			// A user can continue in the topic created by the attachment reply.
+			typ, root, child, topic := "p2p", "om_file", "om_followup", "omt_1"
+			followup := &larkim.EventMessage{ChatType: &typ, RootId: &root, MessageId: &child, ThreadId: &topic}
+			if p.makeSessionKey(followup, "C1", "U1") != key {
+				t.Fatal("attachment topic follow-up selected a different session")
+			}
+		})
+	}
+}
+
+func TestStandaloneAttachmentsKeepBufferingOutsideDMThreads(t *testing.T) {
+	for _, tc := range []struct {
+		name, chatType string
+		dmThreads      bool
+	}{{"flat DM", "p2p", false}, {"group with DM mode", "group", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write([]byte("buffered payload"))
+			}))
+			defer srv.Close()
+			defer p.flushPendingAttachments()
+			p.cfg.DMThreadMode = tc.dmThreads
+			p.inbox = common.NewInbox(1)
+			p.workspace = rtworkspace.Static(t.TempDir())
+			p.userProfileCache.Store("U1", feishuUserProfileEntry{})
+			p.chatNameCache.Store("C1", "test")
+			key := string(rctx.BuildDeliverySessionID("lark", "C1", "", "U1"))
+			p.dispatchMessage(context.Background(), "file", `{"file_key":"f1","file_name":"a.txt"}`, nil,
+				"om_file", key, "U1", "C1", replyContext{chatID: "C1", chatType: tc.chatType, messageID: "om_file", sessionKey: key}, "")
+			if saved := p.drainPendingAttachments(key); len(saved) != 1 || saved[0].OrigName != "a.txt" {
+				t.Fatalf("file-first buffering changed: %#v", saved)
+			}
+		})
+	}
+}
 
 func TestDMThreadMode(t *testing.T) {
 	typ, root, child, topic := "p2p", "om_root", "om_child", "omt_topic"

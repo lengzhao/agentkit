@@ -169,6 +169,9 @@ func (c acpCommand) CommandExec(ctx context.Context, args string) (out string, c
 	// survive the slash HTTP response so its session settings remain effective.
 	ctx = context.WithValue(ctx, subprocessContextKey{}, a.processCtx)
 	ctx = rctx.WithConversation(ctx, string(sessionID))
+	// Slash contexts have routing identity but do not select an agent. MCP
+	// setup must use the same scope as this runtime's subsequent turns.
+	ctx = rctx.WithAgentID(ctx, a.id)
 	execution, err := sessctx.Resolve(ctx, a.sessionStore, a.workspace)
 	if err != nil {
 		return "", err
