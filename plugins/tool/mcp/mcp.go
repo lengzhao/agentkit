@@ -531,7 +531,14 @@ func (t *mcpTool) InputSchema() agentkit.JSONSchema {
 func (t *mcpTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
 	result, err := t.provider.callTool(ctx, t.def.ExposedName, input)
 	if err != nil {
-		return err.Error(), nil
+		return err.Error(), err
+	}
+	if result.IsError {
+		message := strings.TrimSpace(result.Content)
+		if message == "" {
+			message = "server returned isError=true without diagnostic content"
+		}
+		return result.Content, fmt.Errorf("mcp tool %q failed: %s", t.def.ExposedName, message)
 	}
 	return result.Content, nil
 }
