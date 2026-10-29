@@ -34,6 +34,8 @@ docs/
 
 Preset 用法见 [presets/README.zh.md](../presets/README.zh.md)（[English](../presets/README.md)）。
 
+工作目录与附件：[工作目录作用域与入站附件](guides/workspace-scopes.zh.md)。
+
 ## 快速开始
 
 ```sh

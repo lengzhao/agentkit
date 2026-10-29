@@ -1,8 +1,12 @@
 package common
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -42,8 +46,9 @@ type AudioAttachment struct {
 
 // PresavedAttachment is an attachment already saved to disk by the platform
 // (e.g. buffered pending attachments). Only metadata is carried; the bytes
-// are already under upload/.
+// are already under upload/. Paths returned by SaveInboundAttachments are absolute.
 type PresavedAttachment struct {
+	Owner    *agentkit.AttachmentOwner
 	Path     string
 	Mime     string
 	Size     int
@@ -56,6 +61,8 @@ type InboundOpts struct {
 	// Workspace resolves upload paths; when set, inbound files land under the
 	// same tenant root as session/store and tool/fs-workspace.
 	Workspace cw.Service
+	// DeferUploads leaves fresh downloaded files for the runner turn snapshot.
+	DeferUploads bool
 	// PresavedAttachments are attachments already on disk; their paths are
 	// appended to the user prompt as an attachment block.
 	PresavedAttachments []PresavedAttachment
@@ -70,14 +77,14 @@ func InboundOptsFor(ws cw.Service) *InboundOpts {
 }
 
 // SaveInboundAttachments writes the given files to the upload directory and
-// returns their workspace-relative paths plus metadata. Useful for platforms
+// returns stable absolute paths plus metadata. Useful for platforms
 // that buffer attachments before a text message arrives.
 func SaveInboundAttachments(route agentkit.RouteRef, files []FileAttachment, opts *InboundOpts) []PresavedAttachment {
 	saved := saveInboundFiles(route, files, opts)
 	out := make([]PresavedAttachment, 0, len(saved))
 	for _, s := range saved {
 		out = append(out, PresavedAttachment{
-			Path:     s.path,
+			Path:     rtmedia.AgentLLMPath(inboundRouteContext(route), opts.Workspace, s.path),
 			Mime:     s.mime,
 			Size:     s.size,
 			OrigName: s.origName,
@@ -87,10 +94,18 @@ func SaveInboundAttachments(route agentkit.RouteRef, files []FileAttachment, opt
 	return out
 }
 
-// InboundFromContent builds a MessageEvent from text and optional media.
-// extraContent is prepended (e.g. quoted reply context). Attachments are saved
-// under work/upload/. User text and image_url Source use host-absolute paths
-// (AgentLLMPath); event.Attachments.Path stays work-relative (upload/…).
+// DeferredInboundOptsFor opts runner-based adapters into turn-time saving.
+// InboundOptsFor retains eager behavior for standalone legacy callers.
+func DeferredInboundOptsFor(ws cw.Service) *InboundOpts {
+	if ws == nil {
+		return nil
+	}
+	return &InboundOpts{Workspace: ws, DeferUploads: true}
+}
+
+// InboundFromContent builds a MessageEvent from text and media. By default it
+// saves attachments eagerly. DeferUploads retains fresh bytes for turn-time
+// materialization; existing file references are pinned to their ingress paths.
 func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInput, userID, content, extraContent string, images []ImageAttachment, files []FileAttachment, audio *AudioAttachment, filePaths []string, opts *InboundOpts) agentkit.MessageEvent {
 	if route.ScopeUserID == "" {
 		route.ScopeUserID = strings.TrimSpace(userID)
@@ -103,6 +118,16 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 
 	routeRef := rctx.BuildSessionRoute(route)
 	inboundCtx := inboundRouteContext(routeRef)
+	deferred := opts != nil && opts.DeferUploads
+	images = append([]ImageAttachment(nil), images...)
+	var uploads []agentkit.InboundUpload
+	if deferred {
+		for _, f := range files {
+			if len(f.Data) > 0 {
+				uploads = append(uploads, agentkit.InboundUpload{Data: append([]byte(nil), f.Data...), MIME: f.MimeType, OrigName: f.FileName, ContentIndex: -1})
+			}
+		}
+	}
 
 	var attachmentNotes []inboundSavedAttachment
 	for _, img := range images {
@@ -119,11 +144,11 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 			})
 		}
 	}
-	if len(files) > 0 {
+	if len(files) > 0 && !deferred {
 		attachmentNotes = append(attachmentNotes, saveInboundFiles(routeRef, files, opts)...)
 	}
 	for i := range images {
-		if strings.TrimSpace(images[i].WorkPath) != "" || len(images[i].Data) == 0 {
+		if deferred || strings.TrimSpace(images[i].WorkPath) != "" || len(images[i].Data) == 0 {
 			continue
 		}
 		if opts == nil || opts.Workspace == nil {
@@ -141,7 +166,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		images[i].WorkPath = saved[0].path
 		attachmentNotes = append(attachmentNotes, saved[0])
 	}
-	if len(filePaths) > 0 && len(files) == 0 {
+	if len(filePaths) > 0 {
 		for _, p := range filePaths {
 			attachmentNotes = append(attachmentNotes, inboundSavedAttachment{path: p})
 		}
@@ -149,6 +174,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 	if opts != nil && len(opts.PresavedAttachments) > 0 {
 		for _, a := range opts.PresavedAttachments {
 			attachmentNotes = append(attachmentNotes, inboundSavedAttachment{
+				owner:    a.Owner,
 				path:     a.Path,
 				mime:     a.Mime,
 				size:     a.Size,
@@ -194,13 +220,19 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		if mime == "" {
 			mime = "image/png"
 		}
-		url := rtmedia.DataURL(mime, img.Data)
+		url := ""
+		if !deferred || strings.TrimSpace(img.WorkPath) != "" {
+			url = rtmedia.DataURL(mime, img.Data)
+		}
 		part := agentkit.ContentPart{Type: "image_url", URL: url, MIME: mime}
 		if path := strings.TrimSpace(img.WorkPath); path != "" {
 			if opts != nil && opts.Workspace != nil {
 				path = rtmedia.AgentLLMPath(inboundCtx, opts.Workspace, path)
 			}
 			part.Source = path
+		}
+		if deferred && strings.TrimSpace(img.WorkPath) == "" {
+			uploads = append(uploads, agentkit.InboundUpload{Data: append([]byte(nil), img.Data...), MIME: mime, OrigName: img.FileName, ContentIndex: len(parts)})
 		}
 		parts = append(parts, part)
 	}
@@ -220,6 +252,7 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		event.Attachments = make([]agentkit.InboundAttachment, 0, len(attachmentNotes))
 		for _, a := range attachmentNotes {
 			event.Attachments = append(event.Attachments, agentkit.InboundAttachment{
+				Owner:    a.owner,
 				Path:     a.path,
 				MIME:     a.mime,
 				Size:     a.size,
@@ -228,10 +261,15 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 			})
 		}
 	}
+	if deferred {
+		event.IngressWorkspace = opts.Workspace
+	}
+	event.Uploads = uploads
 	return event
 }
 
 type inboundSavedAttachment struct {
+	owner    *agentkit.AttachmentOwner
 	path     string
 	mime     string
 	size     int
@@ -294,43 +332,87 @@ func saveInboundFiles(route agentkit.RouteRef, files []FileAttachment, opts *Inb
 		slog.Warn("common: inbound attachments require workspace")
 		return nil
 	}
-	ctx := inboundRouteContext(route)
-	attachDir, err := rtws.ResolveFile(ctx, opts.Workspace, cw.UploadWorkRel(opts.Workspace))
+	saved, err := saveInboundFilesAt(inboundRouteContext(route), files, opts.Workspace)
 	if err != nil {
-		slog.Warn("common: resolve inbound upload dir failed", "error", err)
-		return nil
+		slog.Warn("common: save inbound attachments failed", "error", err)
 	}
-	if err := os.MkdirAll(attachDir, 0o755); err != nil {
-		slog.Warn("common: mkdir inbound upload dir failed", "dir", attachDir, "error", err)
-		return nil
-	}
+	return saved
+}
 
+func saveInboundFilesAt(ctx context.Context, files []FileAttachment, ws cw.Service) ([]inboundSavedAttachment, error) {
 	var out []inboundSavedAttachment
-	for i, f := range files {
+	for _, f := range files {
 		if len(f.Data) == 0 {
 			continue
 		}
-		fname := sanitizeAttachmentFileName(f.FileName)
-		if fname == "" {
-			fname = fmt.Sprintf("file_%d_%d", time.Now().UnixMilli(), i)
+		saved, err := saveInboundFileAt(ctx, ws, bytes.NewReader(f.Data), f.FileName, f.MimeType)
+		if err != nil {
+			return out, err
 		}
-		fname = rtmedia.EnsureInboundFileName(fname, f.MimeType, f.Data)
-		fpath := filepath.Join(attachDir, fname)
-		if err := os.WriteFile(fpath, f.Data, 0o644); err != nil {
-			slog.Error("common: write inbound attachment failed", "path", fpath, "error", err)
+		out = append(out, saved)
+	}
+	return out, nil
+}
+
+func saveInboundFileAt(ctx context.Context, ws cw.Service, data io.Reader, original, mime string) (inboundSavedAttachment, error) {
+	var saved inboundSavedAttachment
+	if ws == nil {
+		return saved, fmt.Errorf("inbound attachments require workspace")
+	}
+	attachDir, err := rtws.ResolveFile(ctx, ws, cw.UploadWorkRel(ws))
+	if err != nil {
+		return saved, fmt.Errorf("resolve inbound upload directory: %w", err)
+	}
+	if err = os.MkdirAll(attachDir, 0755); err != nil {
+		return saved, fmt.Errorf("create inbound upload directory: %w", err)
+	}
+	name := sanitizeAttachmentFileName(original)
+	if name == "" {
+		name = fmt.Sprintf("file_%d", time.Now().UnixNano())
+	}
+	reader := bufio.NewReader(data)
+	head, err := reader.Peek(512)
+	if err != nil && err != io.EOF {
+		return saved, fmt.Errorf("read inbound attachment: %w", err)
+	}
+	name = rtmedia.EnsureInboundFileName(name, mime, head)
+	name, size, err := writeInboundFile(attachDir, name, reader)
+	if err != nil {
+		return saved, err
+	}
+	path := cw.AttachFSRel(ws, name)
+	if cw.WorkingDirectory(ctx) != "" {
+		path = filepath.Join(attachDir, name)
+	}
+	return inboundSavedAttachment{path: path, mime: strings.TrimSpace(mime), size: int(size), origName: strings.TrimSpace(original), image: rtmedia.IsImage(mime, original)}, nil
+}
+
+// Exclusive creation protects historical references, including concurrent uploads.
+// Copy streams disk-backed inputs instead of allocating a full file at dispatch.
+func writeInboundFile(dir, name string, data io.Reader) (string, int64, error) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for n := 0; ; n++ {
+		candidate := name
+		if n > 0 {
+			candidate = fmt.Sprintf("%s_%d%s", stem, n, ext)
+		}
+		path := filepath.Join(dir, candidate)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if errors.Is(err, os.ErrExist) {
 			continue
 		}
-		workPath := cw.AttachFSRel(opts.Workspace, fname)
-		out = append(out, inboundSavedAttachment{
-			path:     workPath,
-			mime:     strings.TrimSpace(f.MimeType),
-			size:     len(f.Data),
-			origName: strings.TrimSpace(f.FileName),
-			image:    rtmedia.IsImage(f.MimeType, f.FileName),
-		})
-		slog.Debug("common: inbound upload saved", "path", fpath, "name", f.FileName, "size", len(f.Data))
+		if err != nil {
+			return "", 0, fmt.Errorf("create inbound attachment: %w", err)
+		}
+		size, copyErr := io.Copy(f, data)
+		closeErr := f.Close()
+		if err = errors.Join(copyErr, closeErr); err != nil {
+			_ = os.Remove(path) // only the incomplete file created exclusively above
+			return "", 0, fmt.Errorf("write inbound attachment: %w", err)
+		}
+		return candidate, size, nil
 	}
-	return out
 }
 
 func sanitizeAttachmentFileName(name string) string {

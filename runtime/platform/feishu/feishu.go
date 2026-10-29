@@ -73,6 +73,7 @@ type Platform struct {
 	agentID                    agentkit.AgentID
 	commands                   agentkit.Commands
 	sessionScope               agentkit.SessionScope
+	sessionStore               agentkit.SessionStore
 	workspace                  workspace.Service
 	inbox                      *common.Inbox
 	outbound                   *common.Outbound

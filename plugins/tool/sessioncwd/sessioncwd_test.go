@@ -11,6 +11,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessbind"
 	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 	"github.com/lengzhao/agentkit/runtime/tools"
@@ -166,5 +167,29 @@ func TestRequiresDependencies(t *testing.T) {
 		if _, err := New(Config{}, deps); err == nil {
 			t.Fatalf("accepted deps=%+v", deps)
 		}
+	}
+}
+
+func TestResetSessionCwdRevealsChannelBinding(t *testing.T) {
+	p, store, ws, _ := fixture(t)
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", ChannelID: "C1", ThreadID: "T1"})
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: route}}, rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
+	env.Conversation = "test:session"
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	channel, session := t.TempDir(), t.TempDir()
+	stack := sessbind.StackFromContext(ctx, ws)
+	if err := stack.Set(ctx, store, sessbind.CwdBinding{}, sessbind.LevelChannel, channel); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetCwdBind(ctx, "test:session", session); err != nil {
+		t.Fatal(err)
+	}
+	empty := ""
+	if _, err := p.(*provider).call(ctx, Input{Path: &empty}); err != nil {
+		t.Fatalf("reset rejected channel fallback: %v", err)
+	}
+	effective, _, err := stack.Effective(ctx, store, sessbind.CwdBinding{})
+	if err != nil || effective != channel {
+		t.Fatalf("fallback = %s, %v", effective, err)
 	}
 }

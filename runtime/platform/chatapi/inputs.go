@@ -31,6 +31,28 @@ func (p *Platform) inputsToCore(ctx context.Context, channelKey string, inputs [
 	filePaths []string,
 	err error,
 ) {
+	return p.inputsToCoreWithUploads(ctx, channelKey, inputs, false)
+}
+
+// inputsToCoreForTurn treats managed HTTP uploads as staging. Existing
+// local_path references remain pinned; fresh uploads are archived after routing.
+func (p *Platform) inputsToCoreForTurn(ctx context.Context, channelKey string, inputs []chatInput) (
+	images []common.ImageAttachment,
+	files []common.FileAttachment,
+	audio *common.AudioAttachment,
+	filePaths []string,
+	err error,
+) {
+	return p.inputsToCoreWithUploads(ctx, channelKey, inputs, true)
+}
+
+func (p *Platform) inputsToCoreWithUploads(ctx context.Context, channelKey string, inputs []chatInput, deferManaged bool) (
+	images []common.ImageAttachment,
+	files []common.FileAttachment,
+	audio *common.AudioAttachment,
+	filePaths []string,
+	err error,
+) {
 	for _, in := range inputs {
 		method := strings.ToLower(strings.TrimSpace(in.TransferMethod))
 		if method == "" {
@@ -76,6 +98,13 @@ func (p *Platform) inputsToCore(ctx context.Context, channelKey string, inputs [
 			}
 		default:
 			return nil, nil, nil, nil, fmt.Errorf("unsupported transfer_method")
+		}
+		if deferManaged && method == "local_file" && workRel != "" {
+			data, err = p.readWorkFile(ctx, channelKey, workRel)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			workRel = ""
 		}
 		switch strings.ToLower(in.Type) {
 		case "image":

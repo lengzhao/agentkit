@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"time"
 )
 
@@ -172,6 +173,14 @@ type MessageEvent struct {
 	Envelope TurnEnvelope `json:"envelope,omitempty"`
 
 	Message ModelMessage
+	// Uploads holds staged inputs awaiting the turn directory snapshot.
+	// Process-local only: never serialize bytes into session logs or wire events.
+	Uploads []InboundUpload `json:"-"`
+	// IngressWorkspace preserves legacy wiring where only the platform owns a
+	// workspace. Runner's explicit workspace wins; this fallback is process-local.
+	IngressWorkspace interface {
+		Resolve(context.Context, string) (string, error)
+	} `json:"-"`
 	// Attachments carries inbound file metadata (real on-disk sizes) for
 	// telemetry. It is NOT persisted: only Message (sanitized) + Metadata are
 	// written to the session log. Platforms that save attachments to disk
@@ -183,14 +192,41 @@ type MessageEvent struct {
 	Reply json.RawMessage `json:"reply,omitempty"`
 }
 
+// InboundUploadSource owns transient storage. Close removes only its own
+// staging data and must be idempotent; Open returns a fresh reader.
+type InboundUploadSource interface {
+	Open() (io.ReadCloser, error)
+	Close() error
+}
+
+// InboundUpload awaits materialization by the runner. Data is used only until
+// staging; Source owns the queued input. ContentIndex is -1 for files, or the
+// image content part whose Source and URL are filled during execution.
+type InboundUpload struct {
+	Source       InboundUploadSource
+	Data         []byte
+	MIME         string
+	OrigName     string
+	ContentIndex int
+}
+
+// AttachmentOwner pins a buffered file to its resolved logical session and route.
+// Unknown marks an ingress that could not resolve a session; it must not guess.
+type AttachmentOwner struct {
+	Conversation string   `json:"conversation,omitempty"`
+	Route        RouteRef `json:"route"`
+	Unknown      bool     `json:"unknown,omitempty"`
+}
+
 // InboundAttachment is one inbound file saved to the workspace upload dir by a
 // platform. Size is the real on-disk byte count recorded at ingest time.
 type InboundAttachment struct {
-	Path     string `json:"path"`
-	MIME     string `json:"mime,omitempty"`
-	Size     int    `json:"size"`
-	OrigName string `json:"origName,omitempty"`
-	Image    bool   `json:"image,omitempty"`
+	Owner    *AttachmentOwner `json:"owner,omitempty"`
+	Path     string           `json:"path"`
+	MIME     string           `json:"mime,omitempty"`
+	Size     int              `json:"size"`
+	OrigName string           `json:"origName,omitempty"`
+	Image    bool             `json:"image,omitempty"`
 }
 
 // OutboundEvent is the outbound envelope from Agent/Loop to Platform. Route is

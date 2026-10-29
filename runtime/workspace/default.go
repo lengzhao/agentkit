@@ -21,14 +21,21 @@ type Config struct {
 	WorkDir string `json:"workDir,omitempty"`
 	// UploadSubdir is the inbound upload folder under WorkDir (default upload).
 	UploadSubdir string `json:"uploadSubdir,omitempty"`
+	// WorkspaceScope opts into a default execution directory: global/channel/thread/session.
+	// Empty preserves legacy consumer defaults and existing storage layouts.
+	WorkspaceScope string `json:"workspaceScope,omitempty"`
+	// WorkspaceScopes overrides the default for a platform instance ID.
+	WorkspaceScopes map[string]string `json:"workspaceScopes,omitempty"`
 }
 
 type Service struct {
-	globalRoot  string
-	localRoot   string
-	scope       string
-	workDir     string
-	uploadSub   string
+	globalRoot      string
+	localRoot       string
+	scope           string
+	workDir         string
+	workspaceScope  string
+	workspaceScopes map[string]string
+	uploadSub       string
 }
 
 func init() {
@@ -39,6 +46,7 @@ func init() {
 //
 // Best practices:
 //   - Prefix a path with global: or local: to pin it regardless of scope.
+//
 // SetDefaults implements pluginkit.Defaulter.
 func (c *Config) SetDefaults() {
 	if c.Global == "" {
@@ -63,6 +71,9 @@ func (c *Config) SetDefaults() {
 
 // Validate implements pluginkit.Validator.
 func (c *Config) Validate() error {
+	if err := validateDirectoryPolicy(c.WorkspaceScope, c.WorkspaceScopes); err != nil {
+		return err
+	}
 	if c.Scope != cw.ScopeGlobal && c.Scope != cw.ScopeLocal {
 		return fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
 	}
@@ -86,11 +97,12 @@ func New(cfg Config) (cw.Service, error) {
 	workDir := normalizeWorkDir(cfg.WorkDir)
 	uploadSub := normalizeUploadSub(cfg.UploadSubdir)
 	return &Service{
-		globalRoot: globalAbs,
-		localRoot:  localAbs,
-		scope:      cfg.Scope,
-		workDir:    workDir,
-		uploadSub:  uploadSub,
+		globalRoot:     globalAbs,
+		workspaceScope: cfg.WorkspaceScope, workspaceScopes: copyDirectoryPolicies(cfg.WorkspaceScopes),
+		localRoot: localAbs,
+		scope:     cfg.Scope,
+		workDir:   workDir,
+		uploadSub: uploadSub,
 	}, nil
 }
 

@@ -1,12 +1,16 @@
 package feishu
 
 import (
+	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 )
 
 // defaultPendingAttachTTL is how long a buffered attachment waits for a
@@ -104,15 +108,39 @@ func (p *Platform) pendingAttachTTL() time.Duration {
 // saveAndBuffer downloads-then-saves are done by the caller; this helper takes
 // already-downloaded bytes, persists them to upload/, and buffers the result.
 func (p *Platform) saveAndBuffer(sessionKey string, data []byte, mimeType, fileName string) {
-	deliveryID := agentkit.SessionID(sessionKey)
-	saved := common.SaveInboundAttachments(rctx.SessionRoute(p.platformTag, string(deliveryID)).WithInstance(p.PlatformInstance()), []common.FileAttachment{{
-		MimeType: mimeType,
-		Data:     data,
-		FileName: fileName,
-	}}, common.InboundOptsFor(p.workspace))
-	if len(saved) == 0 {
-		slog.Warn(p.tag()+": saveAndBuffer produced no saved attachment", "session", sessionKey, "name", fileName)
+	route := rctx.SessionRoute(p.platformTag, sessionKey).WithInstance(p.PlatformInstance())
+	policy := rctx.RoutePolicyForPlatform(p.platformTag, rctx.DefaultRoutePolicy(p.sessionScope))
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: route}}, policy)
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	entry := rctx.ActiveEntryKey(route, policy, env.Actor.UserID)
+	owner, err := capsession.ResolveActiveSessionID(ctx, p.sessionStore, entry)
+	if err != nil {
+		slog.Warn(p.tag()+": resolve buffered attachment owner failed", "error", err)
 		return
+	}
+	env.Conversation = string(owner)
+	ctx = rctx.ApplyEnvelopeToContext(ctx, env)
+	if p.sessionStore != nil {
+		snapshot, resolveErr := sessctx.Resolve(ctx, p.sessionStore, p.workspace)
+		if resolveErr != nil {
+			slog.Warn(p.tag()+": resolve buffered attachment directory failed", "error", resolveErr)
+			return
+		}
+		ctx = rctx.WithSessionContext(ctx, snapshot)
+		if snapshot.Cwd != "" {
+			if err = os.MkdirAll(snapshot.Cwd, 0755); err != nil {
+				slog.Warn(p.tag()+": create buffered attachment directory failed", "error", err)
+				return
+			}
+		}
+	}
+	saved, err := common.SaveInboundAttachmentsAt(ctx, p.workspace, []common.FileAttachment{{MimeType: mimeType, Data: data, FileName: fileName}})
+	if err != nil || len(saved) == 0 {
+		slog.Warn(p.tag()+": save buffered attachment failed", "error", err)
+		return
+	}
+	if p.sessionStore == nil {
+		saved[0].Owner.Unknown = true
 	}
 	p.bufferAttachment(sessionKey, saved[0])
 }

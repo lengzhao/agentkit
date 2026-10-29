@@ -510,3 +510,49 @@ func (l *ackLoop) resolve(outcome string) {
 		ack(outcome)
 	}
 }
+
+func TestBusyInboundUploadsQueueWithoutLosingBytes(t *testing.T) {
+	l := &inboundRoutingLoop{busy: map[agentkit.SessionID]bool{"cli:default": true}}
+	root, err := New(Config{}, Deps{Platform: eofPlatform{}, Loop: l})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := root.(*Root)
+	submitted := make(chan string, 1)
+	sched := newScheduler(1, func(_ context.Context, req agentkit.LoopRequest) error {
+		if len(req.Event.Uploads) != 1 || len(req.Event.Uploads[0].Data) != 0 || req.Event.Uploads[0].Source == nil {
+			submitted <- "not disk backed"
+			return nil
+		}
+		f, err := req.Event.Uploads[0].Source.Open()
+		if err != nil {
+			submitted <- err.Error()
+			return nil
+		}
+		data, err := io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			submitted <- err.Error()
+			return nil
+		}
+		submitted <- string(data)
+		return nil
+	}, nil)
+	defer sched.stop()
+	event := agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: rctx.SessionRoute("cli", "cli:default")}, Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "read file"}}}, Uploads: []agentkit.InboundUpload{{Data: []byte("payload"), OrigName: "a.txt", ContentIndex: -1}}}
+	r.handleInbound(context.Background(), sched, event)
+	select {
+	case data := <-submitted:
+		if data != "payload" {
+			t.Fatalf("upload bytes lost: %s", data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("upload was steered instead of queued")
+	}
+	sched.wait(time.Second)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.steers) != 0 {
+		t.Fatalf("steers = %v", l.steers)
+	}
+}

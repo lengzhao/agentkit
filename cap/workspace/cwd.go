@@ -22,3 +22,10 @@ func ResolveWorkingDirectory(ctx context.Context, ws Service, fallback string) (
 	}
 	return ws.Resolve(ctx, fallback)
 }
+
+// DefaultDirectoryResolver optionally selects an execution directory independently
+// of storage roots. Empty means preserve legacy per-consumer defaults. Resolution
+// is pure; the turn preparer creates a selected directory before execution.
+type DefaultDirectoryResolver interface {
+	DefaultWorkingDirectory(context.Context) (string, error)
+}

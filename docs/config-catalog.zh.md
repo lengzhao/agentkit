@@ -578,7 +578,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 |---|---|---|
 | `agents`（必填） | `[]agentkit.Agent` |  |
 | `telemetry` | `telemetry.Exporter` |  |
-| `sessionStore` | `agentkit.SessionStore` | SessionStore, Workspace and ModelCatalog are optional and only serve the catalog slash commands (/agent, /model) the loop contributes via agentkit.CommandProvider; turn dispatch never touches them. |
+| `sessionStore` | `agentkit.SessionStore` | SessionStore, Workspace and ModelCatalog are optional and only serve the catalog slash commands and preparation of standalone turn contexts. |
 | `workspace` | `workspace.Service` |  |
 | `modelCatalog` | `llm.ModelCatalog` |  |
 
@@ -1786,6 +1786,8 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `scope` | `string` | `global` | Scope is which root an unprefixed path resolves against: global or local. global \| local |
 | `workDir` | `string` | `work` | WorkDir is the tenant-local agent work subtree (align with filesystem/local root and shell workDir). |
 | `uploadSubdir` | `string` | `upload` | UploadSubdir is the inbound upload folder under WorkDir (default upload). |
+| `workspaceScope` | `string` | — | WorkspaceScope opts into a default execution directory: global/channel/thread/session. Empty preserves legacy consumer defaults and existing storage layouts. |
+| `workspaceScopes` | `map[string]string` | — | WorkspaceScopes overrides the default for a platform instance ID. |
 
 ## `workspace/tenant`
 
@@ -1801,4 +1803,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `omitPlatformPrefix` | `bool` | — | OmitPlatformPrefix drops the platform segment from local directory names. slack:C123 -> C123 instead of slack_C123; chat-api:slack_x -> slack_x. Tenant map keys are unchanged; only the default localBase/<dir> layout moves. |
 | `workDir` | `string` | — | WorkDir is the tenant-local agent work subtree (align with filesystem/local root and shell workDir). |
 | `uploadSubdir` | `string` | — | UploadSubdir is the inbound upload folder under WorkDir (default upload). |
+| `workspaceScope` | `string` | — | WorkspaceScope opts into a default execution directory: global/channel/thread/session. Empty preserves legacy consumer defaults and existing storage layouts. |
+| `workspaceScopes` | `map[string]string` | — | WorkspaceScopes overrides the default for a platform instance ID. |
 

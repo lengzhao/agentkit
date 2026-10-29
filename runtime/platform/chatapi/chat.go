@@ -173,7 +173,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	case common.SlashNotCommand:
 	}
 
-	images, files, audio, filePaths, err := p.inputsToCore(r.Context(), channelKey, body.Inputs)
+	images, files, audio, filePaths, err := p.inputsToCoreForTurn(r.Context(), channelKey, body.Inputs)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
@@ -184,7 +184,7 @@ func (p *Platform) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		DeliveryID:  agentkit.SessionID(engineSessionKey),
 		ReplyTo:     msgID,
 		ScopeUserID: user,
-	}, user, query, "", images, files, audio, filePaths, common.InboundOptsFor(p.workspace))
+	}, user, query, "", images, files, audio, filePaths, common.DeferredInboundOptsFor(p.workspace))
 	event.Envelope.Metadata = mergeInboundTurnMetadata(p.requestMetadata(r), runID)
 	if err := p.inbox.Push(r.Context(), event); err != nil {
 		p.pending.finish(runID, pendingResult{err: err})

@@ -224,3 +224,106 @@ func TestSetCwdRejectsMissingDirectory(t *testing.T) {
 		t.Fatal("ValidateCwd accepted a missing directory")
 	}
 }
+
+func TestWorkspacePolicyDefaultsAndCwdReset(t *testing.T) {
+	ws, err := rtworkspace.NewTenant(rtworkspace.TenantConfig{Global: t.TempDir(), LocalBase: t.TempDir(), WorkspaceScope: "thread"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "S1"})
+	store := sessstore.NewStaticStore(mem)
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", Instance: "bot1", ChannelID: "C1", ThreadID: "T1"})
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: route}}, rctx.DefaultRoutePolicy(agentkit.SessionScopeThread))
+	env.Conversation = "S1"
+	base := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	expected, err := ws.(workspace.DefaultDirectoryResolver).DefaultWorkingDirectory(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := sessctx.Prepare(base, store, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.WorkingDirectory(first) != expected {
+		t.Fatalf("default = %s want %s", workspace.WorkingDirectory(first), expected)
+	}
+	if info, err := os.Stat(expected); err != nil || !info.IsDir() {
+		t.Fatalf("directory not created: %v", err)
+	}
+	override := t.TempDir()
+	if err = store.SetCwdBind(base, "S1", override); err != nil {
+		t.Fatal(err)
+	}
+	second, err := sessctx.NextTurn(first)
+	if err != nil || workspace.WorkingDirectory(second) != override {
+		t.Fatalf("override failed: %v", err)
+	}
+	if workspace.WorkingDirectory(first) != expected {
+		t.Fatal("current turn changed")
+	}
+	if err = store.SetCwdBind(base, "S1", ""); err != nil {
+		t.Fatal(err)
+	}
+	reset, err := sessctx.NextTurn(second)
+	if err != nil || workspace.WorkingDirectory(reset) != expected {
+		t.Fatalf("reset failed: %v", err)
+	}
+	// Work directory policy must not change the underlying state root.
+	before, _ := ws.Resolve(base, "local:sessions")
+	after, _ := ws.Resolve(reset, "local:sessions")
+	if before != after {
+		t.Fatalf("state root moved: %s -> %s", before, after)
+	}
+}
+
+func TestScopedWorkspaceRejectsInvalidCwdWithoutWritingElsewhere(t *testing.T) {
+	ws, err := rtworkspace.NewTenant(rtworkspace.TenantConfig{Global: t.TempDir(), LocalBase: t.TempDir(), WorkspaceScope: "global"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "S1"})
+	store := sessstore.NewStaticStore(mem)
+	base := rctx.WithConversation(context.Background(), "S1")
+	if err = store.SetCwdBind(base, "S1", filepath.Join(t.TempDir(), "gone")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = sessctx.Prepare(base, store, ws); err == nil {
+		t.Fatal("invalid binding silently fell back")
+	}
+	if _, err = sessctx.CwdCommand(store, ws).CommandExec(base, "reset"); err != nil {
+		t.Fatalf("cannot recover: %v", err)
+	}
+	if _, err = sessctx.Prepare(base, store, ws); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrepareWithoutWorkspaceDefersSnapshotToExecutionOwner(t *testing.T) {
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "session"})
+	store := sessstore.NewStaticStore(mem)
+	base := rctx.WithConversation(context.Background(), "session")
+	wanted := t.TempDir()
+	if err := store.SetCwdBind(base, "session", wanted); err != nil {
+		t.Fatal(err)
+	}
+	unresolved, err := sessctx.Prepare(base, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rctx.SessionContextFromContext(unresolved); ok {
+		t.Fatal("missing workspace published a completed snapshot")
+	}
+	events, err := mem.Read(base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Type == agentkit.EventSessionContext {
+			t.Fatal("missing workspace moved durable cwd boundary")
+		}
+	}
+	ready, err := sessctx.Prepare(unresolved, store, rtworkspace.Static(t.TempDir()))
+	if err != nil || workspace.WorkingDirectory(ready) != wanted {
+		t.Fatalf("execution owner failed to resolve cwd: %s, %v", workspace.WorkingDirectory(ready), err)
+	}
+}

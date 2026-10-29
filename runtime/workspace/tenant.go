@@ -37,6 +37,11 @@ type TenantConfig struct {
 	WorkDir string `json:"workDir,omitempty"`
 	// UploadSubdir is the inbound upload folder under WorkDir (default upload).
 	UploadSubdir string `json:"uploadSubdir,omitempty"`
+	// WorkspaceScope opts into a default execution directory: global/channel/thread/session.
+	// Empty preserves legacy consumer defaults and existing storage layouts.
+	WorkspaceScope string `json:"workspaceScope,omitempty"`
+	// WorkspaceScopes overrides the default for a platform instance ID.
+	WorkspaceScopes map[string]string `json:"workspaceScopes,omitempty"`
 }
 
 // TenantEntry is one tenant's pinned workspace root.
@@ -58,6 +63,8 @@ type TenantService struct {
 	scope              string
 	omitPlatformPrefix bool
 	workDir            string
+	workspaceScope     string
+	workspaceScopes    map[string]string
 	uploadSub          string
 	roots              map[string]string
 }
@@ -83,6 +90,7 @@ func init() {
 //     beside its siblings, so the parent-directory exemption would be a way out
 //     of the tenant. Point a tenant's root at the project directory itself
 //     instead of relying on "..".
+//
 // SetDefaults implements pluginkit.Defaulter.
 func (c *TenantConfig) SetDefaults() {
 	if c.Global == "" {
@@ -98,6 +106,9 @@ func (c *TenantConfig) SetDefaults() {
 
 // Validate implements pluginkit.Validator.
 func (c *TenantConfig) Validate() error {
+	if err := validateDirectoryPolicy(c.WorkspaceScope, c.WorkspaceScopes); err != nil {
+		return err
+	}
 	if c.Scope != cw.ScopeGlobal && c.Scope != cw.ScopeLocal {
 		return fmt.Errorf("workspace scope must be %q or %q", cw.ScopeGlobal, cw.ScopeLocal)
 	}
@@ -137,7 +148,8 @@ func NewTenant(cfg TenantConfig) (cw.Service, error) {
 	}
 
 	return &TenantService{
-		globalRoot:         globalAbs,
+		globalRoot:     globalAbs,
+		workspaceScope: cfg.WorkspaceScope, workspaceScopes: copyDirectoryPolicies(cfg.WorkspaceScopes),
 		localBase:          localBaseAbs,
 		scope:              cfg.Scope,
 		omitPlatformPrefix: cfg.OmitPlatformPrefix,

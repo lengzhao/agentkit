@@ -254,7 +254,7 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		}
 	}()
 	var prepareErr error
-	ctx, prepareErr = sessctx.Prepare(rctx.WithoutExecution(ctx), a.sessionStore, a.workspace)
+	ctx, prepareErr = sessctx.Prepare(ctx, a.sessionStore, a.workspace)
 	if prepareErr != nil {
 		return prepareErr
 	}
