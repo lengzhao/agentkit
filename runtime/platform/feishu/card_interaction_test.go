@@ -404,3 +404,25 @@ func TestFeishuInteractionProfileLookupHonorsContext(t *testing.T) {
 		t.Fatal("profile lookup ignored caller context")
 	}
 }
+
+func TestDMThreadCardRecovery(t *testing.T) {
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/messages/") {
+			_, _ = w.Write([]byte(`{"code":0,"data":{"items":[{"message_id":"om_m","root_id":"om_root","thread_id":"omt_topic","chat_id":"oc_c","msg_type":"interactive","body":{"content":"{}"}}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":0,"data":{"chat_mode":"p2p"}}`))
+	}))
+	defer srv.Close()
+	p.cfg.DMThreadMode = true
+	e := feishuInteractionSnapshot(testCardEvent("answer"), "", "oc_c", "om_m", "ou_u", "answer")
+	chatType, valid := p.enrichCardInteraction(context.Background(), &e)
+	if !valid || chatType != "p2p" || e.ThreadID != "om_root" {
+		t.Fatalf("DM card lost topic route: chatType=%s event=%+v", chatType, e)
+	}
+	rc := replyContext{messageID: e.MessageID, chatType: chatType, sessionKey: e.SessionID}
+	if !p.shouldReplyInThread(rc) {
+		t.Fatal("recovered DM card must reply in topic")
+	}
+}

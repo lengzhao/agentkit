@@ -252,7 +252,7 @@ func (p *Platform) enrichCardInteraction(ctx context.Context, e *interaction.Eve
 	if card.chatID != "" {
 		e.ChatID = card.chatID
 	}
-	if card.rootID != "" || card.threadID != "" {
+	if !p.cfg.DMThreadMode && (card.rootID != "" || card.threadID != "") {
 		chatType = "group"
 	}
 	if chatType == "" && p.client != nil && e.ChatID != "" {
@@ -268,13 +268,13 @@ func (p *Platform) enrichCardInteraction(ctx context.Context, e *interaction.Eve
 	}
 	parts := rctx.ParseDelivery(agentkit.SessionID(candidate), "")
 	matchesChat := parts.Channel == e.ChatID || (chatType == "p2p" && parts.Channel == e.UserID)
-	matchesThread := !p.threadIsolation || card.rootID == "" || parts.Thread == card.rootID
+	matchesThread := !(p.threadIsolation || p.cfg.DMThreadMode && chatType == "p2p") || card.rootID == "" || parts.Thread == card.rootID
 	if candidate != "" && parts.Routable && parts.Platform == p.tag() && matchesChat && matchesThread && (parts.User == "" || parts.User == e.UserID) {
 		e.SessionID = candidate
 		e.RoutingStatus = "restored"
 	} else {
 		var msg *larkim.EventMessage
-		if chatType == "group" {
+		if chatType == "group" || chatType == "p2p" {
 			msg = &larkim.EventMessage{RootId: &card.rootID, ThreadId: &card.threadID, MessageId: &e.MessageID, ChatType: &chatType}
 		}
 		e.SessionID = p.makeSessionKey(msg, e.ChatID, e.UserID)

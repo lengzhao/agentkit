@@ -37,6 +37,7 @@ type Config struct {
 	AllowChat             string `json:"allowChat"`
 	GroupReplyAll         bool   `json:"groupReplyAll"`
 	ShareSessionInChannel bool   `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
+	DMThreadMode          bool   `json:"dmThreadMode"`          // opt-in DM topics; runner sessionScope must be thread
 	ThreadIsolation       bool   `json:"threadIsolation"`
 	ReplyInThread         *bool  `json:"replyInThread"`
 	ThreadNoMention       bool   `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation

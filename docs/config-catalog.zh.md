@@ -681,6 +681,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `allowChat` | `string` | — |  |
 | `groupReplyAll` | `bool` | — |  |
 | `shareSessionInChannel` | `bool` | — | deprecated: use runner.config.sessionScope |
+| `dmThreadMode` | `bool` | — | opt-in DM topics; runner sessionScope must be thread |
 | `threadIsolation` | `bool` | — |  |
 | `replyInThread` | `*bool` | — |  |
 | `threadNoMention` | `bool` | — | 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation |
@@ -738,6 +739,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `allowChat` | `string` | — |  |
 | `groupReplyAll` | `bool` | — |  |
 | `shareSessionInChannel` | `bool` | — | deprecated: use runner.config.sessionScope |
+| `dmThreadMode` | `bool` | — | opt-in DM topics; runner sessionScope must be thread |
 | `threadIsolation` | `bool` | — |  |
 | `replyInThread` | `*bool` | — |  |
 | `threadNoMention` | `bool` | — | 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation |
