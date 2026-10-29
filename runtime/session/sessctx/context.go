@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
@@ -47,11 +48,13 @@ func resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Serv
 	if inherited := rctx.InheritedWorkingDirectory(ctx); inherited != "" && hits[sessbind.LevelSession] == "" {
 		value = inherited
 	}
+	var bindingErr error
 	if value != "" {
 		resolved, resolveErr := sessbind.ValidateCwd(ctx, ws, value)
 		if resolveErr == nil {
 			execution.Cwd = resolved
 		} else {
+			bindingErr = resolveErr
 			// A persisted or inherited directory can disappear (repo moved,
 			// temp dir cleaned, wrong host) or stop being reachable. Failing
 			// here would abort every later turn of the session and even make
@@ -61,6 +64,25 @@ func resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Serv
 			// /cwd use) still validate and reject a bad path up front.
 			slog.Warn("session context: skipping unusable cwd binding",
 				"cwd", value, "err", resolveErr)
+		}
+	}
+	if execution.Cwd == "" {
+		if resolver, ok := ws.(workspace.DefaultDirectoryResolver); ok {
+			dir, err := resolver.DefaultWorkingDirectory(ctx)
+			if err != nil {
+				return execution, err
+			}
+			if dir != "" {
+				if bindingErr != nil {
+					return execution, fmt.Errorf("invalid cwd binding %q: %w; use /cwd reset (or /cwd -c reset for channel binding)", value, bindingErr)
+				}
+				if prepare {
+					if err = os.MkdirAll(dir, 0755); err != nil {
+						return execution, fmt.Errorf("create default working directory: %w", err)
+					}
+				}
+				execution.Cwd = dir
+			}
 		}
 	}
 	_, supportsCwd := store.(agentkit.SessionCwdStore)

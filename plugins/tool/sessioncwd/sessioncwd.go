@@ -89,7 +89,7 @@ func (p *provider) call(ctx context.Context, input Input) (Output, error) {
 	}
 	// Read back so a store that silently drops or rewrites the binding returns an
 	// error instead of a success the next turn will not honour.
-	stored, _, err := stack.Effective(ctx, p.deps.SessionStore, sessbind.CwdBinding{})
+	stored, err := (sessbind.CwdBinding{}).Read(ctx, sessbind.LevelSession, sid, p.deps.Workspace, p.deps.SessionStore)
 	if err != nil {
 		return Output{}, err
 	}
