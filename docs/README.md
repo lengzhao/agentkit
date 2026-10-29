@@ -64,3 +64,5 @@ flowchart LR
 2. [go-agent-harness-architecture.zh.md](go-agent-harness-architecture.zh.md) — Runner / Loop / Policy
 3. [roadmap.zh.md](roadmap.zh.md) — gaps and priorities
 4. [guides/](guides/) — scenario deep dives
+
+- [Workspace scopes and inbound attachments (Chinese)](guides/workspace-scopes.zh.md)
