@@ -157,7 +157,12 @@ func (b *bridge) connLoop() {
 // Call after the subprocess has been detached, or the loop exits while a
 // process is still running.
 func (b *bridge) stop() {
-	b.stopOnce.Do(func() { close(b.stopCh) })
+	b.stopOnce.Do(func() {
+		close(b.stopCh)
+		if b.mcpCleanup != nil {
+			b.mcpCleanup()
+		}
+	})
 }
 
 // adoptProcOp seeds conn-loop state (tests).

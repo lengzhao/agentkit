@@ -285,6 +285,25 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 			return context.Canceled
 		}
 	}
+	var finishMCP func() error
+	// Bind on every turn, before ensureSession's reused-session fast path.
+	if lifecycle, ok := brid.sessionMCP.(capacp.SessionMCPTurnProvider); ok {
+		if ctx.Value(subprocessContextKey{}) == nil {
+			ctx = context.WithValue(ctx, subprocessContextKey{}, a.processCtx)
+		}
+		ctx = capacp.WithSessionMCPBinding(ctx, brid.mcpBinding)
+		brid.rememberMCPCleanup(ctx)
+		nextCtx, endMCPTurn, beginErr := lifecycle.BeginMCPTurn(ctx)
+		if beginErr != nil {
+			return beginErr
+		}
+		if nextCtx == nil || endMCPTurn == nil {
+			return fmt.Errorf("session MCP lifecycle returned an invalid turn binding")
+		}
+		ctx = nextCtx
+		finishMCP = sync.OnceValue(endMCPTurn)
+		defer func() { _ = finishMCP() }()
+	}
 	endData := sync.OnceValue(func() capsession.TurnEndData {
 		data := capsession.TurnEndData{Steps: 1}
 		if errors.Is(turnErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
@@ -327,6 +346,15 @@ func (a *Runtime) RunTurn(ctx context.Context, input agentkit.TurnInput) (turnEr
 		_ = a.emitLifecycle(endCtx, emit, agentkit.EventTurnEnd, endData())
 	}()
 
+	if finishMCP != nil {
+		defer func() {
+			// Freeze the outcome before resource cleanup cancels the tool context.
+			_ = endData()
+			if err := finishMCP(); err != nil {
+				turnErr = err
+			}
+		}()
+	}
 	acpSessionID, err := brid.ensureSession(ctx, sessionID, a.id, a.sessionStore, true)
 	if err != nil {
 

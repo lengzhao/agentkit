@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -22,6 +23,7 @@ type toolBridge struct {
 	mcp      *server.MCPServer
 	mu       sync.Mutex
 	tools    map[string]agentkit.Tool
+	catalog  string
 }
 
 func newToolBridge(provider agentkit.ToolProvider) *toolBridge {
@@ -52,17 +54,26 @@ func (b *toolBridge) sync(ctx context.Context) error {
 		next[name] = tool
 	}
 
+	entries := make([]server.ServerTool, 0, len(next))
+	for name, tool := range next {
+		entries = append(entries, server.ServerTool{Tool: mcplib.NewToolWithRawSchema(name, tool.Description(), rawInputSchema(tool)), Handler: b.handler(name)})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Tool.Name < entries[j].Tool.Name })
+	toolsForHash := make([]mcplib.Tool, 0, len(entries))
+	for _, entry := range entries {
+		toolsForHash = append(toolsForHash, entry.Tool)
+	}
+	fingerprint, err := json.Marshal(toolsForHash)
+	if err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for name := range b.tools {
-		if next[name] == nil {
-			b.mcp.DeleteTools(name)
-		}
-	}
-	for name, tool := range next {
-		b.mcp.AddTool(mcplib.NewToolWithRawSchema(name, tool.Description(), rawInputSchema(tool)), b.handler(name))
-	}
 	b.tools = next
+	if b.catalog != string(fingerprint) {
+		b.mcp.SetTools(entries...)
+		b.catalog = string(fingerprint)
+	}
 	return nil
 }
 

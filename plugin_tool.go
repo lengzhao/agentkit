@@ -58,10 +58,17 @@ type ToolSpec struct {
 }
 
 type ToolCall struct {
-	ID    ToolCallID
-	Name  string
-	Input json.RawMessage
+	ID           ToolCallID
+	Name         string
+	Input        json.RawMessage
+	runtimeState any
 }
+
+// WithRuntimeState attaches opaque execution bookkeeping to a prepared call.
+// It is not serialized. Batch runtimes use it to carry the approved catalog
+// snapshot from PreflightTool to RunToolBody without a shared pending-call map.
+func (c ToolCall) WithRuntimeState(state any) ToolCall { c.runtimeState = state; return c }
+func (c ToolCall) RuntimeState() any                   { return c.runtimeState }
 
 // ToolResult is a tool output bound to a specific call, used by session history,
 // hooks, and LLM wire-up. Audit is populated by the tool runtime (policy deny,
