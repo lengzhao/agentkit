@@ -332,3 +332,30 @@ func TestRemoteTurnPreservesPreparedCwdSnapshot(t *testing.T) {
 		t.Fatalf("remote cwd = %s, want prepared %s", got, first)
 	}
 }
+
+func TestRunnerWithoutWorkspaceDoesNotHideRemoteCwdBinding(t *testing.T) {
+	a, _ := configTestRuntime(t, "test", "replay")
+	a.cfg.Env["AGENTKIT_CONFIG_PROMPTS"] = filepath.Join(t.TempDir(), "prompts.jsonl")
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "review-cwd"})
+	store := sessstore.NewStaticStore(mem)
+	a.sessionStore = store
+	a.sessionEvents = sessevents.Default
+	base, cancel := context.WithTimeout(agenttest.TurnContext("review-cwd", "test"), 10*time.Second)
+	defer cancel()
+	wanted := t.TempDir()
+	if err := store.SetCwdBind(base, "review-cwd", wanted); err != nil {
+		t.Fatal(err)
+	}
+	// Runner workspace is optional; CLI ingress has no IngressWorkspace fallback.
+	prepared, err := sessctx.Prepare(base, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.RunTurn(prepared, agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}}}, Emit: func(context.Context, agentkit.OutboundEvent) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	got := requireBridge(t, a, "review-cwd").proc.Load().cwd
+	if got != wanted {
+		t.Fatalf("bound cwd ignored: got %q want %q", got, wanted)
+	}
+}

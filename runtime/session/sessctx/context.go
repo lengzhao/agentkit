@@ -26,6 +26,11 @@ func Resolve(ctx context.Context, store agentkit.SessionStore, ws workspace.Serv
 // this entry point; an existing snapshot prevents duplicate work. Callers must
 // serialize turns for a session, as they do for all other session events.
 func Prepare(ctx context.Context, store agentkit.SessionStore, ws workspace.Service) (context.Context, error) {
+	// A caller without the resolver cannot complete directory preparation.
+	// Leave both the snapshot and history boundary to the execution owner.
+	if ws == nil {
+		return ctx, nil
+	}
 	execution, err := resolve(ctx, store, ws, true)
 	if err != nil {
 		return ctx, err

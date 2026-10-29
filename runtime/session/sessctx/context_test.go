@@ -297,3 +297,33 @@ func TestScopedWorkspaceRejectsInvalidCwdWithoutWritingElsewhere(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPrepareWithoutWorkspaceDefersSnapshotToExecutionOwner(t *testing.T) {
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "session"})
+	store := sessstore.NewStaticStore(mem)
+	base := rctx.WithConversation(context.Background(), "session")
+	wanted := t.TempDir()
+	if err := store.SetCwdBind(base, "session", wanted); err != nil {
+		t.Fatal(err)
+	}
+	unresolved, err := sessctx.Prepare(base, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rctx.SessionContextFromContext(unresolved); ok {
+		t.Fatal("missing workspace published a completed snapshot")
+	}
+	events, err := mem.Read(base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Type == agentkit.EventSessionContext {
+			t.Fatal("missing workspace moved durable cwd boundary")
+		}
+	}
+	ready, err := sessctx.Prepare(unresolved, store, rtworkspace.Static(t.TempDir()))
+	if err != nil || workspace.WorkingDirectory(ready) != wanted {
+		t.Fatalf("execution owner failed to resolve cwd: %s, %v", workspace.WorkingDirectory(ready), err)
+	}
+}
