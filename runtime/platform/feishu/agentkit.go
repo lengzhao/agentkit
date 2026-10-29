@@ -37,6 +37,7 @@ type Config struct {
 	AllowChat             string `json:"allowChat"`
 	GroupReplyAll         bool   `json:"groupReplyAll"`
 	ShareSessionInChannel bool   `json:"shareSessionInChannel"` // deprecated: use runner.config.sessionScope
+	DMThreadMode          bool   `json:"dmThreadMode"`          // opt-in DM topics; runner sessionScope must be thread
 	ThreadIsolation       bool   `json:"threadIsolation"`
 	ReplyInThread         *bool  `json:"replyInThread"`
 	ThreadNoMention       bool   `json:"threadNoMention"` // 话题被 @bot 激活后，话题内消息（含纯文字）免 @；需 threadIsolation
@@ -499,6 +500,13 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	p.storeDelivery(msg.sessionID, msg.rctx)
 
 	text := strings.TrimSpace(msg.content)
+	if msg.rctx.chatType == "p2p" && !p.cfg.DisablePlatformSlash {
+		if handled, reply := p.dmThreadCommand(ctx, msg.userID, text); handled {
+			_ = p.sendText(ctx, msg.sessionID, reply)
+			p.addDoneReactionForSession(msg.sessionID)
+			return
+		}
+	}
 	metadata := p.inboundMetadata(msg)
 	if text != "" {
 		outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{

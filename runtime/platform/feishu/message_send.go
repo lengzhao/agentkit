@@ -51,7 +51,9 @@ func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, c
 	}
 	// 网关/权限故障（如 403）常同时拦截 Reply 与 Create，但 Create 走不同路径，
 	// 多一次尝试就多一分送达最终答复的机会；chatID 为空时无法降级。
-	if rc.chatID == "" {
+	if rc.chatID == "" || p.mustStayInThread(rc) {
+		// A standalone DM reply would escape the topic and mix concurrent
+		// conversations. Return the original error instead of flattening it.
 		return err
 	}
 	slog.Warn(p.tag()+": reply api failed, falling back to create message",

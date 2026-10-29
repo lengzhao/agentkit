@@ -404,3 +404,121 @@ func TestFeishuInteractionProfileLookupHonorsContext(t *testing.T) {
 		t.Fatal("profile lookup ignored caller context")
 	}
 }
+
+func TestDMThreadCardRecovery(t *testing.T) {
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/messages/") {
+			_, _ = w.Write([]byte(`{"code":0,"data":{"items":[{"message_id":"om_m","root_id":"om_root","thread_id":"omt_topic","chat_id":"oc_c","msg_type":"interactive","body":{"content":"{}"}}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":0,"data":{"chat_mode":"p2p"}}`))
+	}))
+	defer srv.Close()
+	e := feishuInteractionSnapshot(testCardEvent("answer"), "", "oc_c", "om_m", "ou_u", "answer")
+	chatType, valid := p.enrichCardInteraction(context.Background(), &e)
+	if !valid || chatType != "p2p" || e.ThreadID != "om_root" {
+		t.Fatalf("DM card lost topic route: chatType=%s event=%+v", chatType, e)
+	}
+	rc := replyContext{messageID: e.MessageID, chatType: chatType, sessionKey: e.SessionID}
+	if !p.shouldReplyInThread(rc) {
+		t.Fatal("recovered DM card must reply in topic")
+	}
+}
+
+func TestDMThreadReplyFailureDoesNotFlatten(t *testing.T) {
+	creates := 0
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/im/v1/messages" {
+			creates++
+		}
+		_, _ = w.Write([]byte(`{"code":230001,"msg":"invalid message"}`))
+	}))
+	defer srv.Close()
+	rc := replyContext{messageID: "om_root", chatID: "oc_c", chatType: "p2p", sessionKey: "lark:oc_c:t:om_root:u:ou_u"}
+	err := p.replyMessage(context.Background(), rc, "text", `{"text":"hello"}`)
+	if err == nil || creates != 0 {
+		t.Fatalf("topic failure silently flattened: err=%v creates=%d", err, creates)
+	}
+}
+
+func TestDMThreadPreviewFailureDoesNotFlatten(t *testing.T) {
+	creates := 0
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/im/v1/messages" {
+			creates++
+		}
+		_, _ = w.Write([]byte(`{"code":230001,"msg":"invalid message"}`))
+	}))
+	defer srv.Close()
+	p.useInteractiveCard = true
+	rc := replyContext{messageID: "om_root", chatID: "oc_c", chatType: "p2p", sessionKey: "lark:oc_c:t:om_root:u:ou_u"}
+	handle, err := p.SendPreviewStart(context.Background(), rc, "processing")
+	if err == nil || handle != nil || creates != 0 {
+		t.Fatalf("preview topic failure flattened: err=%v creates=%d", err, creates)
+	}
+}
+
+func TestDMThreadOutgoingMessages(t *testing.T) {
+	var types []string
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !strings.HasSuffix(r.URL.Path, "/om_root/reply") {
+			t.Errorf("wrong message endpoint: %s", r.URL.Path)
+		}
+		var body struct {
+			ReplyInThread bool   `json:"reply_in_thread"`
+			MsgType       string `json:"msg_type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if !body.ReplyInThread {
+			t.Error("outgoing topic message became flat")
+		}
+		types = append(types, body.MsgType)
+		_, _ = w.Write([]byte(`{"code":0,"data":{"message_id":"om_out"}}`))
+	}))
+	defer srv.Close()
+	p.useInteractiveCard = true
+	p.noReplyToTrigger = true
+	rc := replyContext{messageID: "om_root", chatID: "oc_c", chatType: "p2p", sessionKey: "lark:oc_c:t:om_root:u:ou_u"}
+	ctx := context.Background()
+	if err := p.Reply(ctx, rc, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.sendMediaMessage(ctx, rc, "file", `{"file_key":"file_test"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.sendCard(ctx, rc, &common.Card{Elements: []common.CardElement{common.CardMarkdown{Content: "approve"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.SendPreviewStart(ctx, rc, "processing"); err != nil {
+		t.Fatal(err)
+	}
+	if len(types) != 4 || types[1] != "file" || types[2] != "interactive" || types[3] != "interactive" {
+		t.Fatalf("missing outgoing messages: %v", types)
+	}
+}
+
+func TestDMThreadCommandDoesNotInvokeAgent(t *testing.T) {
+	p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"message_id":"om_out"}}`))
+	}))
+	defer srv.Close()
+	p.workspace = dmTestWorkspace(t.TempDir())
+	p.inbox = common.NewInbox(1)
+	key := "lark:oc_c:u:ou_u"
+	p.dispatchInbound(context.Background(), inboundMessage{sessionID: agentkit.SessionID(key), messageID: "om_command", userID: "ou_u", content: "/dm-thread on", rctx: replyContext{messageID: "om_command", chatID: "oc_c", chatType: "p2p", sessionKey: key}})
+	if !p.dmThreadEnabled("ou_u") {
+		t.Fatal("command not applied")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := p.inbox.Receive(ctx); err == nil {
+		t.Fatal("local command forwarded to agent")
+	}
+}

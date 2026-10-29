@@ -28,6 +28,7 @@ import (
 )
 
 type replyContext struct {
+	explicitThread       bool // reconstructed delivery explicitly targets a topic
 	messageID            string
 	chatID               string
 	chatType             string
@@ -40,6 +41,7 @@ type Platform struct {
 	cardSubmissions           common.CardSubmissions
 	interactionHandlers       []interaction.Handler
 	interactionDedup          common.InteractionDedup
+	dmPreferenceMu            sync.Mutex
 	platformTag               string
 	defaultDomain             string
 	domain                    string
@@ -432,7 +434,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 	// inside a thread — the thread already provides conversational context, and
 	// long quoted prefixes can drown out the user's actual text (issue #764).
 	quotedPrefix := ""
-	if parentID != "" && !(p.threadIsolation && isThreadSessionKey(sessionKey)) {
+	if p.shouldFetchQuotedMessage(rctx, parentID) {
 		quotedPrefix = p.fetchQuotedMessage(ctx, parentID)
 	}
 

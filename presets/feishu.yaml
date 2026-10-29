@@ -22,7 +22,9 @@ platform.default:
     # allowChat: "" # 群聊 chat_id 白名单，逗号分隔；空=全部
     groupReplyAll: false # false：群内仅 @ 机器人时响应
     # threadIsolation: false # true：群话题在 delivery SessionID 中带 :t:<rootID>
-    # replyInThread: true # false：群聊出站不创建/进入话题；私聊始终平铺回复
+    # replyInThread: true # false：群聊出站不创建/进入话题
+    # dmThreadMode: false # DM 默认话题模式；用户 /dm-thread on|off|status 覆盖
+    # 多会话需同时设置 runner.config.sessionScope: thread 和此处 runnerSessionScope: thread
     # reactionEmoji: OnIt # 默认 OnIt；none 关闭
     # doneEmoji: CheckMark # 默认 CheckMark；none 关闭
     # groupOnly: false # true：仅群聊，忽略私聊

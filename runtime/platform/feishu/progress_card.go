@@ -511,6 +511,9 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 				return nil
 			})
 		}); err != nil {
+			if p.mustStayInThread(rc) {
+				return nil, err
+			}
 			// 网关/权限故障（如 403）常同时拦截 Reply 与 Create，但 Create 走
 			// 不同路径，多一次尝试就多一分送达最终答复的机会。
 			slog.Warn(p.tag()+": send preview reply failed, falling back to create message",
