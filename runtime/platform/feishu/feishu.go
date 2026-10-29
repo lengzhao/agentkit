@@ -436,6 +436,26 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 	if parentID != "" && !(p.threadIsolation && isThreadSessionKey(sessionKey)) {
 		quotedPrefix = p.fetchQuotedMessage(ctx, parentID)
 	}
+	// Top-level DM messages each own a topic. Buffering a standalone upload
+	// under its message ID leaves no reply to open that topic, and the next
+	// top-level text has a different key. Dispatch it so users can continue in
+	// the resulting topic; flat DMs and groups keep file-first buffering.
+	dispatchAttachment := func(data []byte, mimeType, fileName string) {
+		if !p.cfg.DMThreadMode || rctx.chatType != "p2p" {
+			p.saveAndBuffer(sessionKey, data, mimeType, fileName)
+			return
+		}
+		msg := &inboundMessage{
+			sessionID: agentkit.SessionID(sessionKey), messageID: messageID,
+			userID: userID, extraContent: quotedPrefix, mentions: mentions, rctx: rctx,
+		}
+		if msgType == "image" || msgType == "sticker" {
+			msg.images = []common.ImageAttachment{{Data: data, MimeType: mimeType, FileName: fileName}}
+		} else {
+			msg.files = []common.FileAttachment{{Data: data, MimeType: mimeType, FileName: fileName}}
+		}
+		p.dispatchCoreMessage(msg)
+	}
 
 	switch msgType {
 	case "text":
@@ -483,7 +503,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			}
 			return
 		}
-		p.saveAndBuffer(sessionKey, imgData, mimeType, "")
+		dispatchAttachment(imgData, mimeType, "")
 
 	case "audio":
 		var audioBody struct {
@@ -503,7 +523,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			}
 			return
 		}
-		p.saveAndBuffer(sessionKey, audioData, "audio/opus", "")
+		dispatchAttachment(audioData, "audio/opus", "")
 
 	case "post":
 		textParts, images := p.parsePostContent(messageID, content)
@@ -544,7 +564,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		}
 		slog.Debug(p.tag()+": file downloaded", "file_name", fileBody.FileName, "size", len(fileData))
 		mimeType := detectMimeType(fileData)
-		p.saveAndBuffer(sessionKey, fileData, mimeType, fileBody.FileName)
+		dispatchAttachment(fileData, mimeType, fileBody.FileName)
 
 	case "interactive":
 		// The event payload carries a degraded card (often just an image and
@@ -604,7 +624,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			slog.Warn(p.tag()+": download sticker failed, skipping", "error", err)
 			return
 		}
-		p.saveAndBuffer(sessionKey, imgData, mimeType, "")
+		dispatchAttachment(imgData, mimeType, "")
 
 	case "media":
 		var mediaBody struct {
@@ -618,8 +638,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			return
 		}
 		slog.Info(p.tag()+": media received", "user", userID, "file_key", mediaBody.FileKey, "file_name", mediaBody.FileName)
-		// Download the video file and buffer it; the thumbnail is skipped to
-		// keep the buffer lean — the agent can read the saved video path.
+		// Download the video without its thumbnail; the agent can read the
+		// saved video path when this attachment is dispatched.
 		videoData, err := p.downloadResource(messageID, mediaBody.FileKey, "file")
 		if err != nil {
 			slog.Error(p.tag()+": download media file failed", "error", err)
@@ -629,7 +649,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			return
 		}
 		mimeType := "video/mp4"
-		p.saveAndBuffer(sessionKey, videoData, mimeType, mediaBody.FileName)
+		dispatchAttachment(videoData, mimeType, mediaBody.FileName)
 
 	default:
 		slog.Debug(p.tag()+": ignoring unsupported message type", "type", msgType)

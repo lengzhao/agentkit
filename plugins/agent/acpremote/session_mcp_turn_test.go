@@ -12,8 +12,48 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
+	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/testing/agenttest"
 )
+
+type commandMCPIdentityProbe struct {
+	turnMCPProbe
+	setupAgent, turnAgent agentkit.AgentID
+}
+
+func (p *commandMCPIdentityProbe) SessionMCPServers(ctx context.Context) ([]capacp.SessionMCPServer, error) {
+	p.setupAgent = rctx.AgentIDFromContext(ctx)
+	return p.turnMCPProbe.SessionMCPServers(ctx)
+}
+
+func (p *commandMCPIdentityProbe) BeginMCPTurn(ctx context.Context) (context.Context, func() error, error) {
+	p.turnAgent = rctx.AgentIDFromContext(ctx)
+	return p.turnMCPProbe.BeginMCPTurn(ctx)
+}
+
+func TestACPCommandAndTurnUseSameMCPIdentity(t *testing.T) {
+	a, cmd := configTestRuntime(t, "remote", "replay")
+	a.cfg.Env["AGENTKIT_CONFIG_PROMPTS"] = filepath.Join(t.TempDir(), "prompts.jsonl")
+	p := &commandMCPIdentityProbe{}
+	original := a.pool.newBridgeFn
+	a.pool.newBridgeFn = func() *bridge { b := original(); b.sessionMCP = p; return b }
+	ctx := common.SlashCommandContext(context.Background(), nil, common.SlashContext{
+		Route: rctx.SessionRoute("lark", "lark:C1"), UserID: "U1",
+	})
+	if _, err := cmd.CommandExec(ctx, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.RunTurn(rctx.WithAgentID(ctx, a.id), agentkit.TurnInput{
+		Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "hello"}}},
+		Emit:    func(context.Context, agentkit.OutboundEvent) error { return nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p.setupAgent != a.id || p.turnAgent != p.setupAgent || p.lists.Load() != 1 {
+		t.Fatalf("MCP identity changed on reused connection: setup=%q turn=%q setups=%d", p.setupAgent, p.turnAgent, p.lists.Load())
+	}
+}
 
 type turnMCPProbe struct {
 	begins, ends, lists, releases atomic.Int32

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lengzhao/agentkit"
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
@@ -218,13 +219,16 @@ func (r *Root) turnSteerAck(ctx context.Context, env agentkit.TurnEnvelope, even
 	// The ack can fire after the turn (and its context) is gone: an agent injects
 	// at a step boundary, or an ACP steering worker settles late. Detach from the
 	// turn's cancellation so the platform notice still goes out.
-	sendCtx := context.WithoutCancel(ctx)
 	return func(outcome string) {
 		if outcome == "" || outcome == capsession.SteerOutcomeQueued {
 			return
 		}
 		once.Do(func() {
-			r.reportTurnSteer(sendCtx, env, event, outcome)
+			go func() {
+				sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+				defer cancel()
+				r.reportTurnSteer(sendCtx, env, event, outcome)
+			}()
 		})
 	}
 }
