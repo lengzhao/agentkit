@@ -500,13 +500,6 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	p.storeDelivery(msg.sessionID, msg.rctx)
 
 	text := strings.TrimSpace(msg.content)
-	if msg.rctx.chatType == "p2p" && !p.cfg.DisablePlatformSlash {
-		if handled, reply := p.dmThreadCommand(ctx, msg.userID, text); handled {
-			_ = p.sendText(ctx, msg.sessionID, reply)
-			p.addDoneReactionForSession(msg.sessionID)
-			return
-		}
-	}
 	metadata := p.inboundMetadata(msg)
 	if text != "" {
 		outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{

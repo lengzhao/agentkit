@@ -15,7 +15,6 @@ func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
 	rc := replyContext{chatID: parts.Channel, sessionKey: sessionKey}
 	if parts.Thread != "" {
 		rc.messageID = parts.Thread
-		rc.explicitThread = true
 	}
 	return rc, nil
 }

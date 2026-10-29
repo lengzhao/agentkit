@@ -23,7 +23,7 @@ platform.default:
     groupReplyAll: false # false：群内仅 @ 机器人时响应
     # threadIsolation: false # true：群话题在 delivery SessionID 中带 :t:<rootID>
     # replyInThread: true # false：群聊出站不创建/进入话题
-    # dmThreadMode: false # DM 默认话题模式；用户 /dm-thread on|off|status 覆盖
+    # dmThreadMode: false # true：DM 按话题回复，每条主界面新消息创建独立话题
     # 多会话需同时设置 runner.config.sessionScope: thread 和此处 runnerSessionScope: thread
     # reactionEmoji: OnIt # 默认 OnIt；none 关闭
     # doneEmoji: CheckMark # 默认 CheckMark；none 关闭

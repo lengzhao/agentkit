@@ -252,7 +252,9 @@ func (p *Platform) enrichCardInteraction(ctx context.Context, e *interaction.Eve
 	if card.chatID != "" {
 		e.ChatID = card.chatID
 	}
-	// A topic root does not identify chat type: DMs support topics too.
+	if !p.cfg.DMThreadMode && (card.rootID != "" || card.threadID != "") {
+		chatType = "group"
+	}
 	if chatType == "" && p.client != nil && e.ChatID != "" {
 		resp, err := p.client.Im.Chat.Get(queryCtx, larkim.NewGetChatReqBuilder().ChatId(e.ChatID).Build())
 		if err == nil && resp != nil && resp.Success() && resp.Data != nil {
@@ -264,14 +266,9 @@ func (p *Platform) enrichCardInteraction(ctx context.Context, e *interaction.Eve
 			}
 		}
 	}
-	if chatType == "" && (card.rootID != "" || card.threadID != "") {
-		// Preserve group recovery when chat lookup is unavailable. Never
-		// overwrite a verified p2p delivery with this fallback.
-		chatType = "group"
-	}
 	parts := rctx.ParseDelivery(agentkit.SessionID(candidate), "")
 	matchesChat := parts.Channel == e.ChatID || (chatType == "p2p" && parts.Channel == e.UserID)
-	matchesThread := !(p.threadIsolation || chatType == "p2p" && card.threadID != "") || card.rootID == "" || parts.Thread == card.rootID
+	matchesThread := !(p.threadIsolation || p.cfg.DMThreadMode && chatType == "p2p") || card.rootID == "" || parts.Thread == card.rootID
 	if candidate != "" && parts.Routable && parts.Platform == p.tag() && matchesChat && matchesThread && (parts.User == "" || parts.User == e.UserID) {
 		e.SessionID = candidate
 		e.RoutingStatus = "restored"
