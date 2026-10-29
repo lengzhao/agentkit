@@ -172,6 +172,14 @@ type MessageEvent struct {
 	Envelope TurnEnvelope `json:"envelope,omitempty"`
 
 	Message ModelMessage
+	// Uploads holds downloaded bytes awaiting the turn directory snapshot.
+	// Process-local only: never serialize bytes into session logs or wire events.
+	Uploads []InboundUpload `json:"-"`
+	// IngressWorkspace preserves legacy wiring where only the platform owns a
+	// workspace. Runner's explicit workspace wins; this fallback is process-local.
+	IngressWorkspace interface {
+		Resolve(context.Context, string) (string, error)
+	} `json:"-"`
 	// Attachments carries inbound file metadata (real on-disk sizes) for
 	// telemetry. It is NOT persisted: only Message (sanitized) + Metadata are
 	// written to the session log. Platforms that save attachments to disk
@@ -183,14 +191,32 @@ type MessageEvent struct {
 	Reply json.RawMessage `json:"reply,omitempty"`
 }
 
+// InboundUpload is a downloaded file awaiting materialization by the runner.
+// ContentIndex is -1 for files, or the image content part whose Source is filled.
+type InboundUpload struct {
+	Data         []byte
+	MIME         string
+	OrigName     string
+	ContentIndex int
+}
+
+// AttachmentOwner pins a buffered file to its resolved logical session and route.
+// Unknown marks an ingress that could not resolve a session; it must not guess.
+type AttachmentOwner struct {
+	Conversation string   `json:"conversation,omitempty"`
+	Route        RouteRef `json:"route"`
+	Unknown      bool     `json:"unknown,omitempty"`
+}
+
 // InboundAttachment is one inbound file saved to the workspace upload dir by a
 // platform. Size is the real on-disk byte count recorded at ingest time.
 type InboundAttachment struct {
-	Path     string `json:"path"`
-	MIME     string `json:"mime,omitempty"`
-	Size     int    `json:"size"`
-	OrigName string `json:"origName,omitempty"`
-	Image    bool   `json:"image,omitempty"`
+	Owner    *AttachmentOwner `json:"owner,omitempty"`
+	Path     string           `json:"path"`
+	MIME     string           `json:"mime,omitempty"`
+	Size     int              `json:"size"`
+	OrigName string           `json:"origName,omitempty"`
+	Image    bool             `json:"image,omitempty"`
 }
 
 // OutboundEvent is the outbound envelope from Agent/Loop to Platform. Route is

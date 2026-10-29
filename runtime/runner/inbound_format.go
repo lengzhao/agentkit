@@ -45,7 +45,16 @@ func (r *Root) formatInboundEvent(event agentkit.MessageEvent, env agentkit.Turn
 	if prefix == "" {
 		return event
 	}
+	before := len(event.Message.Content)
 	event.Message = prependInboundPromptPrefix(event.Message, prefix)
+	if added := len(event.Message.Content) - before; added > 0 && len(event.Uploads) > 0 {
+		event.Uploads = append([]agentkit.InboundUpload(nil), event.Uploads...)
+		for i := range event.Uploads {
+			if event.Uploads[i].ContentIndex >= 0 {
+				event.Uploads[i].ContentIndex += added
+			}
+		}
+	}
 	return event
 }
 

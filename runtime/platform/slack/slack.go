@@ -536,7 +536,7 @@ func (p *Platform) enqueueInbound(ctx context.Context, d delivery, user, text st
 		p.appendTurnReactionIfActive(d.sessionID, d)
 		p.reactReceived(ctx, d)
 	}
-	event := common.InboundFromContent(p.agentID, p.inboundRoute(d, user), user, text, "", images, files, audio, nil, common.InboundOptsFor(p.workspace))
+	event := common.InboundFromContent(p.agentID, p.inboundRoute(d, user), user, text, "", images, files, audio, nil, common.DeferredInboundOptsFor(p.workspace))
 	_ = p.inbox.Push(ctx, common.WithMetadata(event, metadata))
 }
 

@@ -17,6 +17,7 @@ import (
 	capschedule "github.com/lengzhao/agentkit/cap/schedule"
 	captelemetry "github.com/lengzhao/agentkit/cap/telemetry"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessctx"
 	rttelemetry "github.com/lengzhao/agentkit/runtime/telemetry"
@@ -306,7 +307,15 @@ func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err erro
 		err = fmt.Errorf("turn panicked: %v", recovered)
 	}()
 	ctx = rctx.ApplyEnvelopeToContext(ctx, req.Event.Envelope)
-	ctx, err = sessctx.Prepare(ctx, r.sessionStore, r.workspace)
+	ws := r.workspace
+	if ws == nil {
+		ws = req.Event.IngressWorkspace
+	}
+	ctx, err = sessctx.Prepare(ctx, r.sessionStore, ws)
+	if err != nil {
+		return err
+	}
+	req.Event, err = common.PrepareInboundAttachments(ctx, ws, req.Event)
 	if err != nil {
 		return err
 	}

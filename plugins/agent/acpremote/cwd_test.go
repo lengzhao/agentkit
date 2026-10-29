@@ -296,11 +296,39 @@ func TestCwdPendingConfigurationDoesNotResetEarlierTurnSnapshot(t *testing.T) {
 		t.Fatalf("configuration reset active context to %q", marker.Cwd)
 	}
 	before := requireBridge(t, a, "pending-cwd").proc.Load()
-	if err := a.RunTurn(stale, agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "new task"}}}, Emit: func(context.Context, agentkit.OutboundEvent) error { return nil }}); err != nil {
+	if err := a.RunTurn(rctx.WithoutSessionContext(stale), agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "new task"}}}, Emit: func(context.Context, agentkit.OutboundEvent) error { return nil }}); err != nil {
 		t.Fatal(err)
 	}
 	after := requireBridge(t, a, "pending-cwd").proc.Load()
 	if before != after || after.cwd != second {
 		t.Fatal("turn did not reuse pending configuration in the selected directory")
+	}
+}
+
+func TestRemoteTurnPreservesPreparedCwdSnapshot(t *testing.T) {
+	a, _ := configTestRuntime(t, "test", "replay")
+	a.cfg.Env["AGENTKIT_CONFIG_PROMPTS"] = filepath.Join(t.TempDir(), "prompts.jsonl")
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "fixed-cwd"})
+	store := sessstore.NewStaticStore(mem)
+	a.sessionStore = store
+	a.sessionEvents = sessevents.Default
+	base, cancel := context.WithTimeout(agenttest.TurnContext("fixed-cwd", "test"), 10*time.Second)
+	defer cancel()
+	first, second := t.TempDir(), t.TempDir()
+	if err := store.SetCwdBind(base, "fixed-cwd", first); err != nil {
+		t.Fatal(err)
+	}
+	fixed, err := sessctx.Prepare(base, store, a.workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SetCwdBind(base, "fixed-cwd", second); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.RunTurn(fixed, agentkit.TurnInput{Message: agentkit.ModelMessage{Role: "user", Content: []agentkit.ContentPart{{Type: "text", Text: "read the attachment"}}}, Emit: func(context.Context, agentkit.OutboundEvent) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	if got := requireBridge(t, a, "fixed-cwd").proc.Load().cwd; got != first {
+		t.Fatalf("remote cwd = %s, want prepared %s", got, first)
 	}
 }

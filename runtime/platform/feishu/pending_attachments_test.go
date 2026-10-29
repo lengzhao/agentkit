@@ -3,9 +3,12 @@ package feishu
 import (
 	"context"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/workspace"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/sessstore"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -217,5 +220,53 @@ func TestBufferedAttachmentsKeepAdapterWorkspace(t *testing.T) {
 		if string(data) != instance {
 			t.Fatalf("%s content=%q", instance, data)
 		}
+	}
+}
+
+func TestBufferPinsSessionAndCwdBeforeSessionSwitch(t *testing.T) {
+	ws := rtworkspace.Static(t.TempDir())
+	mem, _ := sessstore.NewMemory(sessstore.MemoryConfig{ID: "lark:C1"})
+	store := sessstore.NewStaticStore(mem)
+	first, second := t.TempDir(), t.TempDir()
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", ChannelID: "C1"})
+	env := rctx.ResolveEnvelope(agentkit.MessageEvent{Envelope: agentkit.TurnEnvelope{Route: route}}, rctx.DefaultRoutePolicy(agentkit.SessionScopeChannel))
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	if err := store.SetCwdBind(ctx, "lark:C1", first); err != nil {
+		t.Fatal(err)
+	}
+	p := &Platform{platformTag: "lark", workspace: ws, sessionStore: store, sessionScope: agentkit.SessionScopeChannel}
+	p.saveAndBuffer("lark:C1", []byte("buffer"), "text/plain", "a.txt")
+	defer p.flushPendingAttachments()
+	saved := p.drainPendingAttachments("lark:C1")
+	if len(saved) != 1 || saved[0].Path != filepath.Join(first, "upload", "a.txt") || saved[0].Owner.Conversation != "lark:C1" {
+		t.Fatalf("buffer = %#v", saved)
+	}
+	if err := store.SetCwdBind(ctx, "lark:C1", second); err != nil {
+		t.Fatal(err)
+	}
+	opts := common.DeferredInboundOptsFor(ws)
+	opts.PresavedAttachments = saved
+	event := common.InboundFromContent("assistant", agentkit.SessionRouteInput{Platform: "lark", ChannelID: "C1"}, "", "read", "", nil, nil, nil, nil, opts)
+	got, err := common.PrepareInboundAttachments(workspace.WithWorkingDirectory(ctx, second), ws, event)
+	if err != nil || got.Attachments[0].Path != saved[0].Path {
+		t.Fatalf("buffer moved after cwd change: %v", err)
+	}
+	env.Conversation = "new-session"
+	switched := rctx.ApplyEnvelopeToContext(context.Background(), env)
+	if _, err = common.PrepareInboundAttachments(switched, ws, event); err == nil {
+		t.Fatal("buffer handed to new session")
+	}
+}
+
+type bufferSlashCommands struct{}
+
+func (bufferSlashCommands) Dispatch(context.Context, string, string) (string, error) { return "", nil }
+func (bufferSlashCommands) List(context.Context) []agentkit.Command                  { return nil }
+func TestHandledSlashDoesNotDiscardBufferedAttachments(t *testing.T) {
+	p := &Platform{platformTag: "lark", commands: bufferSlashCommands{}, inbox: common.NewInbox(1)}
+	defer p.flushPendingAttachments()
+	p.dispatchInbound(context.Background(), inboundMessage{sessionID: "lark:C1", content: "/new", presaved: []common.PresavedAttachment{{Path: "/original/a.txt"}}})
+	if got := p.drainPendingAttachments("lark:C1"); len(got) != 1 || got[0].Path != "/original/a.txt" {
+		t.Fatalf("slash discarded original attachment: %v", got)
 	}
 }

@@ -32,8 +32,7 @@ type Deps struct {
 	Agents    []agentkit.Agent      `json:"agents"`
 	Telemetry captelemetry.Exporter `json:"telemetry,omitempty"`
 	// SessionStore, Workspace and ModelCatalog are optional and only serve the
-	// catalog slash commands (/agent, /model) the loop contributes via
-	// agentkit.CommandProvider; turn dispatch never touches them.
+	// catalog slash commands and preparation of standalone turn contexts.
 	SessionStore agentkit.SessionStore `json:"sessionStore,omitempty"`
 	Workspace    workspace.Service     `json:"workspace,omitempty"`
 	ModelCatalog capllm.ModelCatalog   `json:"modelCatalog,omitempty"`
@@ -161,6 +160,12 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 	ctx = withTurnContext(ctx, req.Event.Envelope.WithAgentID(agentID), control, req.Emit)
 	ctx = rttelemetry.WithExporter(ctx, l.telemetry)
 
+	if snapshot, ok := rctx.SessionContextFromContext(ctx); (!ok || snapshot.SessionID != agentkit.SessionID(conversation)) && l.sessionStore != nil && l.workspace != nil {
+		ctx, err = sessctx.Prepare(ctx, l.sessionStore, l.workspace)
+		if err != nil {
+			return err
+		}
+	}
 	turnInput := agentkit.TurnInput{
 		Message: req.Event.Message,
 		Emit:    req.Emit,
@@ -176,7 +181,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 		if steered := control.PopSteering(); len(steered) > 0 {
 			for i, entry := range steered {
 				ackSteering(entry, capsession.SteerOutcomeNextTurn)
-				if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+				if err := l.runNextTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 					Message: entry.Message,
 					Emit:    req.Emit,
 				}); err != nil {
@@ -194,7 +199,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 			if steered := control.PopSteering(); len(steered) > 0 {
 				for i, entry := range steered {
 					ackSteering(entry, capsession.SteerOutcomeNextTurn)
-					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+					if err := l.runNextTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 						Message: entry.Message,
 						Emit:    req.Emit,
 					}); err != nil {
@@ -207,7 +212,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 			break
 		}
 		for _, msg := range followUps {
-			if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+			if err := l.runNextTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 				Message: msg,
 				Emit:    req.Emit,
 			}); err != nil {
@@ -218,7 +223,7 @@ func (l *Default) Dispatch(ctx context.Context, req agentkit.LoopRequest) error 
 			if steered := control.PopSteering(); len(steered) > 0 {
 				for i, entry := range steered {
 					ackSteering(entry, capsession.SteerOutcomeNextTurn)
-					if err := l.runTurn(ctx, req, agentID, ag, agentkit.TurnInput{
+					if err := l.runNextTurn(ctx, req, agentID, ag, agentkit.TurnInput{
 						Message: entry.Message,
 						Emit:    req.Emit,
 					}); err != nil {
@@ -244,12 +249,17 @@ func ackSteering(entry agentkit.SteerEntry, outcome string) {
 	}
 }
 
-func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
-	var contextErr error
-	ctx, contextErr = sessctx.NextTurn(ctx)
-	if contextErr != nil {
-		return contextErr
+// runNextTurn refreshes pending bindings only for additional logical turns.
+// The initial turn must retain the snapshot already consumed by its uploads.
+func (l *Default) runNextTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
+	next, err := sessctx.NextTurn(ctx)
+	if err != nil {
+		return err
 	}
+	return l.runTurn(next, req, agentID, ag, input)
+}
+
+func (l *Default) runTurn(ctx context.Context, req agentkit.LoopRequest, agentID agentkit.AgentID, ag agentkit.Agent, input agentkit.TurnInput) error {
 	turnID := uuid.NewString()
 	// A caller-provided turn id (agentkit.MetadataTurnID) wins, so transports
 	// that register per-turn resources before dispatch can correlate them.

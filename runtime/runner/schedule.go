@@ -105,7 +105,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 	// A sequential platform may have observed turn/end before loop teardown
 	// clears its busy flag. Preserve that input as a new scheduler request.
 	queueTurn, _ := scoped.Envelope.Metadata[agentkit.MetadataQueueTurn].(bool)
-	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) && !subagentComplete && !queueTurn {
+	if r.loop.IsSessionBusy(agentkit.SessionID(conversation)) && !subagentComplete && !queueTurn && len(scoped.Uploads) == 0 && len(scoped.Attachments) == 0 {
 		if r.tryStopBusyInbound(ctx, scoped) {
 			return
 		}

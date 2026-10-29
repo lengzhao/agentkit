@@ -105,6 +105,21 @@ func TestUploadAndChatWithLocalFile(t *testing.T) {
 		t.Fatalf("prompt missing upload ref: %q", text)
 	}
 
+	// A managed upload is staging until a chat request resolves its turn cwd.
+	turnImages, turnFiles, turnAudio, turnPaths, err := plat.inputsToCoreForTurn(context.Background(), channel, inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deferred := common.InboundFromContent("assistant", agentkit.SessionRouteInput{Platform: "chat-api", ChannelID: channel}, user, "read staged file", "", turnImages, turnFiles, turnAudio, turnPaths, common.DeferredInboundOptsFor(ws))
+	cwd := t.TempDir()
+	prepared, err := common.PrepareInboundAttachments(cw.WithWorkingDirectory(context.Background(), cwd), ws, deferred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Attachments) != 1 || filepath.Dir(prepared.Attachments[0].Path) != filepath.Join(cwd, "upload") {
+		t.Fatalf("staged upload did not follow turn cwd: %#v", prepared.Attachments)
+	}
+
 	uploadDir, err := rtws.ResolveFile(context.Background(), ws, cw.UploadWorkRel(ws))
 	if err != nil {
 		t.Fatal(err)

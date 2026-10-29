@@ -337,6 +337,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		agentID:                    cfg.ResolveAgentID(),
 		commands:                   deps.Commands,
 		workspace:                  deps.Workspace,
+		sessionStore:               deps.SessionStore,
 		sessionScope:               cfg.SlashSessionScope(),
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
@@ -515,6 +516,11 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}
 		switch outcome.Kind {
 		case common.SlashHandled:
+			// A command (especially /new or /cwd) is not the text paired with
+			// buffered files. Retain their original owner for the next real input.
+			for _, a := range msg.presaved {
+				p.bufferAttachment(string(msg.sessionID), a)
+			}
 			if outcome.Reply != "" {
 				_ = p.sendText(ctx, msg.sessionID, outcome.Reply)
 			}
@@ -528,7 +534,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}
 	}
 
-	opts := common.InboundOptsFor(p.workspace)
+	opts := common.DeferredInboundOptsFor(p.workspace)
 	if len(msg.presaved) > 0 {
 		if opts == nil {
 			opts = &common.InboundOpts{Workspace: p.workspace}
