@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"time"
 )
 
@@ -172,7 +173,7 @@ type MessageEvent struct {
 	Envelope TurnEnvelope `json:"envelope,omitempty"`
 
 	Message ModelMessage
-	// Uploads holds downloaded bytes awaiting the turn directory snapshot.
+	// Uploads holds staged inputs awaiting the turn directory snapshot.
 	// Process-local only: never serialize bytes into session logs or wire events.
 	Uploads []InboundUpload `json:"-"`
 	// IngressWorkspace preserves legacy wiring where only the platform owns a
@@ -191,9 +192,18 @@ type MessageEvent struct {
 	Reply json.RawMessage `json:"reply,omitempty"`
 }
 
-// InboundUpload is a downloaded file awaiting materialization by the runner.
-// ContentIndex is -1 for files, or the image content part whose Source is filled.
+// InboundUploadSource owns transient storage. Close removes only its own
+// staging data and must be idempotent; Open returns a fresh reader.
+type InboundUploadSource interface {
+	Open() (io.ReadCloser, error)
+	Close() error
+}
+
+// InboundUpload awaits materialization by the runner. Data is used only until
+// staging; Source owns the queued input. ContentIndex is -1 for files, or the
+// image content part whose Source and URL are filled during execution.
 type InboundUpload struct {
+	Source       InboundUploadSource
 	Data         []byte
 	MIME         string
 	OrigName     string

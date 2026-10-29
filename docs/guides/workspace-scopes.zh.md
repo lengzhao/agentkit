@@ -43,7 +43,7 @@ workspace.default:
 
 ## 附件与轮次快照
 
-Slack、飞书/Lark 和 Chat API 的新文件与图片在入口下载后暂留于进程内。Runner 完成路由及 active-session 解析、取得会话队列执行权后，调用 `sessctx.Prepare` 固定本轮目录，再保存附件并传入 Loop。图片的 `Source` 与文件提示都使用稳定绝对路径。ACP 和本地 Agent 复用该快照；后续逻辑轮次重新解析 cwd。
+Slack、飞书/Lark 和 Chat API 的新文件与图片在入口下载后暂留于有界入口缓冲。Runner 在入执行队列前将上传字节写入权限为 0600 的随机临时文件，队列只保留文件来源与元数据，不保留完整文件字节或图片 base64。完成路由及 active-session 解析、取得会话队列执行权后，调用 `sessctx.Prepare` 固定本轮目录，再把普通文件流式归档到该目录；图片的模型输入在执行时生成。图片的 `Source` 与文件提示都使用稳定绝对路径。ACP 和本地 Agent 复用该快照；后续逻辑轮次重新解析 cwd。缺少 workspace 解析依赖的上层不会发布空快照或移动历史边界，实际执行器取得完整依赖后再完成准备。
 
 带附件的消息在会话忙碌时排队为新轮次，避免 steering 的纯消息接口丢失附件状态。普通文字 steering 行为保持不变。保存失败时报告轮次错误；不会继续执行并假装附件已保存。同名文件使用排他创建并增加序号，不覆盖历史附件。
 
@@ -55,10 +55,10 @@ Chat API 的 `local_file` 上传是受控的前置文件保存：实际 chat 请
 
 平台与 Runner 必须接入同一个 SessionStore，并保持 `runnerSessionScope` 配置一致；基础配置已经这样装配。旧配置未向平台提供 SessionStore 时，保留兼容的缓冲引用并记录缺少逻辑归属的 warning；启用新策略后这种未知归属会被拒绝，不猜测默认 Session。
 
-缓冲元数据和延迟字节仍是进程内临时状态，重启不恢复未配对的缓冲消息。已归档文件和已写入历史的绝对引用保留；策略配置及已有 Session cwd 绑定通过原有配置与存储恢复。框架不自动清理或删除旧目录。
+暂存文件在归档成功、失败、取消及队列关闭时释放；最终 workspace 文件不受清理影响。缓冲元数据和待执行上传索引仍是进程内临时状态，重启不恢复未配对的缓冲消息或待执行上传；进程异常退出可能遗留系统临时目录中的文件。已归档文件和已写入历史的绝对引用保留；策略配置及已有 Session cwd 绑定通过原有配置与存储恢复。框架不自动清理或删除旧目录。
 
 ## 自定义集成
 
 `common.InboundOptsFor` 保持立即保存的旧 API。Runner 集成应使用 `common.DeferredInboundOptsFor`；`MessageEvent.Uploads` 是不参与 JSON 序列化的临时数据。
 
-自定义 Runner 需在路由/会话排队及 cwd 准备后调用 `common.PrepareInboundAttachments`，并把同一上下文传给执行器。自定义中间件若在图片前插入内容，必须同步更新待上传图片的 `ContentIndex`。文件先发的适配器可在解析归属与目录后使用 `common.SaveInboundAttachmentsAt`，后续通过 `PresavedAttachments` 交接。
+自定义 Runner 入队前应调用 `common.StageInboundUploads` 并处理返回的错误，在放弃上传或结束调度时调用幂等的 `common.ReleaseInboundUploads`。随后在路由/会话排队及 cwd 准备后调用 `common.PrepareInboundAttachments`，并把同一上下文传给执行器。自定义中间件若在图片前插入内容，必须同步更新待上传图片的 `ContentIndex`。文件先发的适配器可在解析归属与目录后使用 `common.SaveInboundAttachmentsAt`，后续通过 `PresavedAttachments` 交接。

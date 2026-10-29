@@ -1,9 +1,12 @@
 package common
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/lengzhao/agentkit"
@@ -16,6 +19,7 @@ import (
 // turn context. Already-saved references are never moved or reinterpreted.
 // Custom runners must call this after session routing and cwd preparation.
 func PrepareInboundAttachments(ctx context.Context, ws cw.Service, event agentkit.MessageEvent) (agentkit.MessageEvent, error) {
+	defer ReleaseInboundUploads(event)
 	env := rctx.EnvelopeFromContext(ctx)
 	for _, a := range event.Attachments {
 		if a.Owner == nil {
@@ -58,22 +62,44 @@ func PrepareInboundAttachments(ctx context.Context, ws cw.Service, event agentki
 	event.Attachments = append([]agentkit.InboundAttachment(nil), event.Attachments...)
 	var notes []inboundSavedAttachment
 	for _, u := range event.Uploads {
-		saved, err := saveInboundFilesAt(ctx, []FileAttachment{{Data: u.Data, MimeType: u.MIME, FileName: u.OrigName}}, ws)
-		if err != nil {
-			return event, err
-		}
-		for _, a := range saved {
-			a.path = rtmedia.AgentLLMPath(ctx, ws, a.path)
-			if !filepath.IsAbs(a.path) {
-				return event, fmt.Errorf("inbound attachment path is not absolute: %s", a.path)
+		var reader io.ReadCloser
+		if u.Source != nil {
+			var err error
+			reader, err = u.Source.Open()
+			if err != nil {
+				return event, fmt.Errorf("open staged inbound upload: %w", err)
 			}
-			if u.ContentIndex >= 0 {
-				a.image = true
-				event.Message.Content[u.ContentIndex].Source = a.path
+		} else {
+			if len(u.Data) == 0 {
+				continue
 			}
-			notes = append(notes, a)
-			event.Attachments = append(event.Attachments, agentkit.InboundAttachment{Path: a.path, MIME: a.mime, Size: a.size, OrigName: a.origName, Image: a.image})
+			reader = io.NopCloser(bytes.NewReader(u.Data))
 		}
+		a, saveErr := saveInboundFileAt(ctx, ws, reader, u.OrigName, u.MIME)
+		closeErr := reader.Close()
+		if saveErr != nil {
+			return event, saveErr
+		}
+		if closeErr != nil {
+			return event, closeErr
+		}
+		a.path = rtmedia.AgentLLMPath(ctx, ws, a.path)
+		if !filepath.IsAbs(a.path) {
+			return event, fmt.Errorf("inbound attachment path is not absolute: %s", a.path)
+		}
+		if u.ContentIndex >= 0 {
+			a.image = true
+			event.Message.Content[u.ContentIndex].Source = a.path
+			if event.Message.Content[u.ContentIndex].URL == "" {
+				data, err := os.ReadFile(a.path)
+				if err != nil {
+					return event, err
+				}
+				event.Message.Content[u.ContentIndex].URL = rtmedia.DataURL(u.MIME, data)
+			}
+		}
+		notes = append(notes, a)
+		event.Attachments = append(event.Attachments, agentkit.InboundAttachment{Path: a.path, MIME: a.mime, Size: a.size, OrigName: a.origName, Image: a.image})
 	}
 	if len(notes) > 0 {
 		found := false

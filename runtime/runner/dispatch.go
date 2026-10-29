@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -76,6 +77,17 @@ func (s *scheduler) stop() {
 	s.regMu.Lock()
 	defer s.regMu.Unlock()
 	if !s.closed {
+		done := make(chan struct{})
+		s.regCh <- func(queues map[agentkit.SessionID]*sessionQueue) {
+			for _, queue := range queues {
+				for _, req := range queue.pending {
+					common.ReleaseInboundUploads(req.Event)
+				}
+			}
+			clear(queues)
+			close(done)
+		}
+		<-done
 		s.closed = true
 		close(s.regCh)
 	}
@@ -122,6 +134,21 @@ func (s *scheduler) release() {
 // submit queues a new turn request, starting a worker for the session when one
 // is not already draining it.
 func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
+	s.regMu.Lock()
+	stopped := s.closed
+	s.regMu.Unlock()
+	if stopped || ctx.Err() != nil {
+		common.ReleaseInboundUploads(req.Event)
+		return
+	}
+	var stageErr error
+	req.Event, stageErr = common.StageInboundUploads(req.Event)
+	if stageErr != nil {
+		if s.onError != nil {
+			s.onError(ctx, req, stageErr)
+		}
+		return
+	}
 	sessionID := rctx.ConversationFromLoopRequest(req)
 
 	var start bool
@@ -137,6 +164,7 @@ func (s *scheduler) submit(ctx context.Context, req agentkit.LoopRequest) {
 			queue.running = true
 		}
 	}) {
+		common.ReleaseInboundUploads(req.Event)
 		return // scheduler stopped: drop the submission
 	}
 
@@ -164,6 +192,7 @@ func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 				return
 			}
 			req = queue.pending[0]
+			queue.pending[0] = agentkit.LoopRequest{}
 			queue.pending = queue.pending[1:]
 		}) {
 			return // scheduler stopped: retire the drain
@@ -173,9 +202,25 @@ func (s *scheduler) drain(ctx context.Context, sessionID agentkit.SessionID) {
 		}
 
 		if err := s.acquire(ctx); err != nil {
+			common.ReleaseInboundUploads(req.Event)
+			s.withQueues(func(queues map[agentkit.SessionID]*sessionQueue) {
+				if queue := queues[sessionID]; queue != nil {
+					for _, pending := range queue.pending {
+						common.ReleaseInboundUploads(pending.Event)
+					}
+					delete(queues, sessionID)
+				}
+			})
+			return
+		}
+		// A worker may have waited for a slot while shutdown retired the queue.
+		if !s.withQueues(func(map[agentkit.SessionID]*sessionQueue) {}) {
+			common.ReleaseInboundUploads(req.Event)
+			s.release()
 			return
 		}
 		err := s.dispatch(ctx, req)
+		common.ReleaseInboundUploads(req.Event)
 		s.release()
 		if err != nil && s.onError != nil {
 			s.onError(ctx, req, err)

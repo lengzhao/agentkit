@@ -292,6 +292,7 @@ func (r *Root) reportTurnError(ctx context.Context, req agentkit.LoopRequest, er
 // the next event. The interrupted turn leaves an unterminated turn/start behind,
 // which the agent repairs on its next turn.
 func (r *Root) dispatch(ctx context.Context, req agentkit.LoopRequest) (err error) {
+	defer common.ReleaseInboundUploads(req.Event)
 	defer func() {
 		recovered := recover()
 		if recovered == nil {

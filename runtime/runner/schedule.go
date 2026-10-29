@@ -52,6 +52,12 @@ func (r *Root) routePolicy(event agentkit.MessageEvent) rctx.RoutePolicy {
 }
 
 func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentkit.MessageEvent) {
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			common.ReleaseInboundUploads(event)
+		}
+	}()
 	policy := r.routePolicy(event)
 	env := rctx.ResolveEnvelope(event, policy)
 	env = rctx.WithMetadataScope(env, r.sessionScope)
@@ -158,10 +164,11 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		)
 	}
 	fmt.Fprintln(os.Stderr)
+	emitAgentID := scoped.Envelope.AgentID
 	emit := func(ctx context.Context, out agentkit.OutboundEvent) error {
 		out.Route = env.Route
 		if out.AgentID == "" {
-			out.AgentID = scoped.Envelope.AgentID
+			out.AgentID = emitAgentID
 		}
 		if out.UserID == "" {
 			out.UserID = env.Actor.UserID
@@ -171,6 +178,7 @@ func (r *Root) handleInbound(ctx context.Context, sched *scheduler, event agentk
 		}
 		return r.platform.Send(ctx, out)
 	}
+	handedOff = true
 	sched.submit(ctx, agentkit.LoopRequest{
 		Event:      scoped,
 		Emit:       emit,

@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,5 +166,89 @@ func TestUnknownBufferedOwnerPreservesLegacyButRequiresOwnerForNewPolicy(t *test
 	}
 	if _, err = PrepareInboundAttachments(ctx, scoped, event); err == nil {
 		t.Fatal("new policy guessed unknown owner")
+	}
+}
+
+func TestDeferredUploadsSpoolBytesAndCleanAfterMaterialization(t *testing.T) {
+	ws := rtworkspace.Static(t.TempDir())
+	event := InboundFromContent("assistant", agentkit.SessionRouteInput{}, "", "read", "", []ImageAttachment{{Data: []byte("image"), FileName: "a.png", MimeType: "image/png"}}, []FileAttachment{{Data: []byte("payload"), FileName: "a.txt"}}, nil, nil, DeferredInboundOptsFor(ws))
+	event, stageErr := StageInboundUploads(event)
+	if stageErr != nil {
+		t.Fatal(stageErr)
+	}
+	t.Cleanup(func() { ReleaseInboundUploads(event) })
+	if len(event.Uploads) != 2 {
+		t.Fatalf("uploads = %d", len(event.Uploads))
+	}
+	for _, u := range event.Uploads {
+		if len(u.Data) != 0 || u.Source == nil {
+			t.Fatal("queued event still owns full upload bytes")
+		}
+		f, err := u.Source.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(f)
+		f.Close()
+		if err != nil || len(data) == 0 {
+			t.Fatalf("spool data: %q %v", data, err)
+		}
+	}
+	if event.Message.Content[1].URL != "" {
+		t.Fatal("queued image retained base64 data")
+	}
+	prepared, err := PrepareInboundAttachments(context.Background(), ws, event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Attachments) != 2 || !strings.HasPrefix(prepared.Message.Content[1].URL, "data:image/png;base64,") {
+		t.Fatalf("materialized attachments = %#v", prepared)
+	}
+	for _, u := range event.Uploads {
+		if f, err := u.Source.Open(); err == nil {
+			f.Close()
+			t.Fatal("staging file leaked after materialization")
+		}
+	}
+}
+
+func TestFailedMaterializationReleasesStagedUploads(t *testing.T) {
+	ws := rtworkspace.Static(t.TempDir())
+	event := InboundFromContent("assistant", agentkit.SessionRouteInput{}, "", "read", "", nil, []FileAttachment{{Data: []byte("payload"), FileName: "a.txt"}}, nil, nil, DeferredInboundOptsFor(ws))
+	event, stageErr := StageInboundUploads(event)
+	if stageErr != nil {
+		t.Fatal(stageErr)
+	}
+	t.Cleanup(func() { ReleaseInboundUploads(event) })
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "upload"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PrepareInboundAttachments(workspace.WithWorkingDirectory(context.Background(), root), ws, event); err == nil {
+		t.Fatal("save error ignored")
+	}
+	if f, err := event.Uploads[0].Source.Open(); err == nil {
+		f.Close()
+		t.Fatal("staging file leaked on failure")
+	}
+}
+
+func TestStagingFailureReturnsDiagnosticWithoutRetainingBytes(t *testing.T) {
+	root := t.TempDir()
+	ws := rtworkspace.Static(root)
+	event := InboundFromContent("assistant", agentkit.SessionRouteInput{}, "", "read", "", nil, []FileAttachment{{Data: []byte("payload"), FileName: "a.txt"}}, nil, nil, DeferredInboundOptsFor(ws))
+	blocked := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, blocked)
+	}
+	failed, err := StageInboundUploads(event)
+	if err == nil {
+		t.Fatal("staging failure ignored")
+	}
+	if len(failed.Uploads) != 0 {
+		t.Fatal("failed staging retained bytes")
 	}
 }

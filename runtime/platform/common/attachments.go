@@ -1,9 +1,12 @@
 package common
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -217,7 +220,10 @@ func InboundFromContent(agentID agentkit.AgentID, route agentkit.SessionRouteInp
 		if mime == "" {
 			mime = "image/png"
 		}
-		url := rtmedia.DataURL(mime, img.Data)
+		url := ""
+		if !deferred || strings.TrimSpace(img.WorkPath) != "" {
+			url = rtmedia.DataURL(mime, img.Data)
+		}
 		part := agentkit.ContentPart{Type: "image_url", URL: url, MIME: mime}
 		if path := strings.TrimSpace(img.WorkPath); path != "" {
 			if opts != nil && opts.Workspace != nil {
@@ -334,41 +340,56 @@ func saveInboundFiles(route agentkit.RouteRef, files []FileAttachment, opts *Inb
 }
 
 func saveInboundFilesAt(ctx context.Context, files []FileAttachment, ws cw.Service) ([]inboundSavedAttachment, error) {
-	if ws == nil {
-		return nil, fmt.Errorf("inbound attachments require workspace")
-	}
-	attachDir, err := rtws.ResolveFile(ctx, ws, cw.UploadWorkRel(ws))
-	if err != nil {
-		return nil, fmt.Errorf("resolve inbound upload directory: %w", err)
-	}
-	if err = os.MkdirAll(attachDir, 0755); err != nil {
-		return nil, fmt.Errorf("create inbound upload directory: %w", err)
-	}
 	var out []inboundSavedAttachment
-	for i, f := range files {
+	for _, f := range files {
 		if len(f.Data) == 0 {
 			continue
 		}
-		fname := sanitizeAttachmentFileName(f.FileName)
-		if fname == "" {
-			fname = fmt.Sprintf("file_%d_%d", time.Now().UnixNano(), i)
-		}
-		fname = rtmedia.EnsureInboundFileName(fname, f.MimeType, f.Data)
-		name, err := writeInboundFile(attachDir, fname, f.Data)
+		saved, err := saveInboundFileAt(ctx, ws, bytes.NewReader(f.Data), f.FileName, f.MimeType)
 		if err != nil {
 			return out, err
 		}
-		path := cw.AttachFSRel(ws, name)
-		if cw.WorkingDirectory(ctx) != "" {
-			path = filepath.Join(attachDir, name)
-		}
-		out = append(out, inboundSavedAttachment{path: path, mime: strings.TrimSpace(f.MimeType), size: len(f.Data), origName: strings.TrimSpace(f.FileName), image: rtmedia.IsImage(f.MimeType, f.FileName)})
+		out = append(out, saved)
 	}
 	return out, nil
 }
 
+func saveInboundFileAt(ctx context.Context, ws cw.Service, data io.Reader, original, mime string) (inboundSavedAttachment, error) {
+	var saved inboundSavedAttachment
+	if ws == nil {
+		return saved, fmt.Errorf("inbound attachments require workspace")
+	}
+	attachDir, err := rtws.ResolveFile(ctx, ws, cw.UploadWorkRel(ws))
+	if err != nil {
+		return saved, fmt.Errorf("resolve inbound upload directory: %w", err)
+	}
+	if err = os.MkdirAll(attachDir, 0755); err != nil {
+		return saved, fmt.Errorf("create inbound upload directory: %w", err)
+	}
+	name := sanitizeAttachmentFileName(original)
+	if name == "" {
+		name = fmt.Sprintf("file_%d", time.Now().UnixNano())
+	}
+	reader := bufio.NewReader(data)
+	head, err := reader.Peek(512)
+	if err != nil && err != io.EOF {
+		return saved, fmt.Errorf("read inbound attachment: %w", err)
+	}
+	name = rtmedia.EnsureInboundFileName(name, mime, head)
+	name, size, err := writeInboundFile(attachDir, name, reader)
+	if err != nil {
+		return saved, err
+	}
+	path := cw.AttachFSRel(ws, name)
+	if cw.WorkingDirectory(ctx) != "" {
+		path = filepath.Join(attachDir, name)
+	}
+	return inboundSavedAttachment{path: path, mime: strings.TrimSpace(mime), size: int(size), origName: strings.TrimSpace(original), image: rtmedia.IsImage(mime, original)}, nil
+}
+
 // Exclusive creation protects historical references, including concurrent uploads.
-func writeInboundFile(dir, name string, data []byte) (string, error) {
+// Copy streams disk-backed inputs instead of allocating a full file at dispatch.
+func writeInboundFile(dir, name string, data io.Reader) (string, int64, error) {
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
 	for n := 0; ; n++ {
@@ -382,14 +403,15 @@ func writeInboundFile(dir, name string, data []byte) (string, error) {
 			continue
 		}
 		if err != nil {
-			return "", fmt.Errorf("create inbound attachment: %w", err)
+			return "", 0, fmt.Errorf("create inbound attachment: %w", err)
 		}
-		_, writeErr := f.Write(data)
+		size, copyErr := io.Copy(f, data)
 		closeErr := f.Close()
-		if err = errors.Join(writeErr, closeErr); err != nil {
-			return "", fmt.Errorf("write inbound attachment: %w", err)
+		if err = errors.Join(copyErr, closeErr); err != nil {
+			_ = os.Remove(path) // only the incomplete file created exclusively above
+			return "", 0, fmt.Errorf("write inbound attachment: %w", err)
 		}
-		return candidate, nil
+		return candidate, size, nil
 	}
 }
 
