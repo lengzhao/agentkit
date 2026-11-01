@@ -710,6 +710,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
+| `inboundPolicy` | `ingress.Policy` |  |
 | `interactionHandlers` | `[]interaction.Handler` |  |
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |
@@ -768,6 +769,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
+| `inboundPolicy` | `ingress.Policy` |  |
 | `interactionHandlers` | `[]interaction.Handler` |  |
 | `commands` | `agentkit.Commands` |  |
 | `sessionStore` | `agentkit.SessionStore` |  |

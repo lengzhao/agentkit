@@ -15,6 +15,7 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/ingress"
 	"github.com/lengzhao/agentkit/cap/interaction"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -169,13 +170,9 @@ func (p *Platform) processCardInteraction(e interaction.Event) error {
 	chatType := ""
 	validRoute := true
 	ttl, _ := common.ParseCardSubmissionTTL(p.cfg.CardSubmissionTTL)
-	return common.ProcessInteraction(ctx, e, common.InteractionProcessing{
+	processing := common.InteractionProcessing{
 		Submissions: &p.cardSubmissions, SubmissionTTL: ttl, CloseCard: p.closeInteractionCard, NotifyUser: p.notifyInteractionUser,
 		Mode: p.unknownCardAction, Handlers: p.interactionHandlers,
-		Enrich: func(ctx context.Context, e *interaction.Event) {
-			chatType, validRoute = p.enrichCardInteraction(ctx, e)
-			normalizeFeishuInteraction(e)
-		},
 		Allowed: func(_ context.Context, e interaction.Event) bool {
 			return validRoute && common.AllowList(p.allowChat, e.ChatID)
 		},
@@ -216,7 +213,27 @@ func (p *Platform) processCardInteraction(e interaction.Event) error {
 			metadata := common.InteractionMetadata(ctx, func(ctx context.Context) map[string]any { return p.userProfileMetadataContext(ctx, e.UserID) })
 			return p.inbox.Push(ctx, enrichInboundActorFromProfile(common.WithMetadata(event, metadata)))
 		},
-	})
+	}
+	chatType, validRoute = p.enrichCardInteraction(ctx, &e)
+	normalizeFeishuInteraction(&e)
+	if !validRoute || !common.AllowList(p.allowChat, e.ChatID) {
+		return nil
+	}
+	action := ingress.Submit
+	if p.unknownCardAction == "ignore" {
+		action = ingress.Skip
+	}
+	plan := p.evaluateIngress(ctx, ingress.Input{Platform: p.tag(), InstanceID: p.PlatformInstance(), Kind: ingress.Interaction, Type: e.Type, ID: e.EventID, ChatID: e.ChatID, UserID: e.UserID, ThreadID: e.ThreadID, ConversationKind: "unknown", Context: ingress.Unknown, Default: ingress.Plan{Agent: action, Handlers: len(p.interactionHandlers) > 0}, Raw: e.RawCallback})
+	if !plan.Handlers {
+		processing.Handlers = nil
+	}
+	if plan.Agent != ingress.Submit {
+		processing.Forward = nil
+	}
+	if plan.Rejected {
+		return nil
+	}
+	return common.ProcessInteraction(ctx, e, processing)
 }
 
 // enrichCardInteraction restores a verified card delivery route. Query work has

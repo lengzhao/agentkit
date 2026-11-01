@@ -17,6 +17,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/ingress"
 	"github.com/lengzhao/agentkit/cap/interaction"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/permission"
@@ -118,6 +119,7 @@ func (c *Config) Validate() error {
 }
 
 type Deps struct {
+	InboundPolicy       ingress.Policy        `json:"inboundPolicy,omitempty"`
 	InteractionHandlers []interaction.Handler `json:"interactionHandlers,omitempty"`
 	Commands            agentkit.Commands     `json:"commands,omitempty"`
 	SessionStore        agentkit.SessionStore `json:"sessionStore,omitempty"`
@@ -342,6 +344,7 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 		inbox:                      common.NewInbox(64),
 		startOnce:                  sync.Once{},
 		eventHandlers:              deps.EventHandlers,
+		inboundPolicy:              deps.InboundPolicy,
 		interactionHandlers:        deps.InteractionHandlers,
 		forwardToAgent:             forwardToAgent,
 	}
@@ -468,6 +471,7 @@ func (p *Platform) run(ctx context.Context) {
 	}
 	<-ctx.Done()
 	p.flushPendingAttachments()
+	p.flushDeferredAttachments()
 	if p.wsClient != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -534,6 +538,20 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		}
 	}
 
+	var acceptedOwner agentkit.SessionID
+	if p.inboundPolicy != nil {
+		acceptedOwner, _ = p.ingressContext(ctx, msg.rctx, msg.userID)
+	}
+	if p.inboundPolicy != nil && text != "" {
+		owner := acceptedOwner
+		if err := p.consumeDeferred(&msg, owner); err != nil {
+			slog.Warn(p.tag()+": pending attachment ownership rejected", "error", err)
+			if p.client != nil {
+				_ = p.sendText(ctx, msg.sessionID, "待处理文件属于之前的会话，请在当前会话重新上传。")
+			}
+			return
+		}
+	}
 	opts := common.DeferredInboundOptsFor(p.workspace)
 	if len(msg.presaved) > 0 {
 		if opts == nil {
@@ -547,7 +565,21 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 		opts,
 	)
 	event = enrichInboundActorFromProfile(common.WithMetadata(event, metadata))
-	_ = p.inbox.Push(ctx, event)
+	// Carry the verified owner through runner active-session resolution. A /new
+	// between admission and materialization must not move buffered uploads.
+	if p.inboundPolicy != nil && acceptedOwner != "" {
+		event.Envelope.Conversation = string(acceptedOwner)
+		owner := &agentkit.AttachmentOwner{Conversation: string(acceptedOwner), Route: event.Envelope.Route}
+		for i := range event.Uploads {
+			event.Uploads[i].Owner = owner
+		}
+	}
+	if err := p.inbox.Push(ctx, event); err != nil {
+		slog.Warn(p.tag()+": inbound queue rejected input", "message_id", msg.messageID, "error", err)
+	} else if p.inboundPolicy != nil && text != "" {
+		p.rememberIngressText(acceptedOwner)
+		p.commitDeferred(msg, acceptedOwner)
+	}
 }
 
 func (p *Platform) inboundMetadata(msg inboundMessage) map[string]any {

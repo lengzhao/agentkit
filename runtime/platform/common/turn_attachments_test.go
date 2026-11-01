@@ -252,3 +252,17 @@ func TestStagingFailureReturnsDiagnosticWithoutRetainingBytes(t *testing.T) {
 		t.Fatal("failed staging retained bytes")
 	}
 }
+
+func TestDeferredUploadRejectsSessionSwitchBeforeMaterialization(t *testing.T) {
+	ws := rtworkspace.Static(t.TempDir())
+	route := rctx.BuildSessionRoute(agentkit.SessionRouteInput{Platform: "lark", Instance: "bot1", ChannelID: "C1", ThreadID: "T1"})
+	event := agentkit.MessageEvent{Uploads: []agentkit.InboundUpload{{Data: []byte("file"), MIME: "text/plain", OrigName: "a.txt", ContentIndex: -1, Owner: &agentkit.AttachmentOwner{Conversation: "old", Route: route}}}}
+	ctx := rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "new", Route: route})
+	if _, err := PrepareInboundAttachments(ctx, ws, event); err == nil {
+		t.Fatal("queued buffered upload crossed /new")
+	}
+	ctx = rctx.ApplyEnvelopeToContext(context.Background(), agentkit.TurnEnvelope{Conversation: "old", Route: route})
+	if _, err := PrepareInboundAttachments(ctx, ws, event); err != nil {
+		t.Fatal(err)
+	}
+}
