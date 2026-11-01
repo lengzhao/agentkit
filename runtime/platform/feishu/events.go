@@ -16,6 +16,7 @@ import (
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/ingress"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
@@ -91,17 +92,33 @@ func (p *Platform) dispatchCustomEvent(eventType string, route *customEventRoute
 	// 重推，重启后补送正是停机期间事件的送达保障；重复投递由 event_id
 	// 去重兜底（与 IM 消息不同，事件没有"历史积压回放"语义）。
 
-	for _, h := range route.handlers {
-		go func(h caplarkevent.Handler) {
-			if err := h.Handle(context.Background(), evt.Event); err != nil {
-				slog.Error(p.tag()+": custom event handler failed",
-					"event_type", eventType, "event_id", evt.EventID, "error", err)
+	dispatch := func() {
+		action := ingress.Skip
+		if route.toAgent {
+			action = ingress.Submit
+		}
+		plan := p.evaluateIngress(context.Background(), ingress.Input{Platform: p.tag(), InstanceID: p.PlatformInstance(), Kind: ingress.Event, Type: evt.Type, ID: evt.EventID, ChatID: evt.ChatID, UserID: evt.UserID, ConversationKind: "unknown", Context: ingress.Unknown, Default: ingress.Plan{Agent: action, Handlers: len(route.handlers) > 0}, Raw: append([]byte(nil), evt.Raw...)})
+
+		if plan.Handlers {
+			for _, h := range route.handlers {
+				go func(h caplarkevent.Handler) {
+					if err := h.Handle(context.Background(), evt.Event); err != nil {
+						slog.Error(p.tag()+": custom event handler failed",
+							"event_type", eventType, "event_id", evt.EventID, "error", err)
+					}
+				}(h)
 			}
-		}(h)
+		}
+		if plan.Agent == ingress.Submit {
+			go p.forwardEventToAgent(evt)
+		}
 	}
-	if route.toAgent {
-		go p.forwardEventToAgent(evt)
+	if p.inboundPolicy != nil {
+		go dispatch()
+	} else {
+		dispatch()
 	}
+
 }
 
 // customEvent 内部表示：caplarkevent.Event 加上仅平台使用的 header 字段。
