@@ -299,6 +299,26 @@ func TestForwardEventDMThread(t *testing.T) {
 					return
 				}
 				creates++
+				var request struct {
+					MsgType string `json:"msg_type"`
+					Content string `json:"content"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if request.MsgType != "interactive" {
+					t.Errorf("event root must be a receipt card, got %q", request.MsgType)
+				}
+				var card map[string]any
+				if err := json.Unmarshal([]byte(request.Content), &card); err != nil {
+					t.Errorf("invalid root card: %v", err)
+				}
+				if strings.Contains(request.Content, "[事件]") {
+					t.Errorf("technical event marker leaked into receipt: %s", request.Content)
+				}
+				if !strings.Contains(request.Content, "收到事件 x_v1，正在处理…") {
+					t.Errorf("receipt title missing: %s", request.Content)
+				}
 				if r.URL.Query().Get("receive_id_type") != "open_id" {
 					t.Error("expected open_id delivery")
 				}
@@ -341,3 +361,35 @@ func TestForwardEventDMThread(t *testing.T) {
 }
 
 func eventThreadTestString(s string) *string { return &s }
+
+func TestEventReceiptCardIncludesExistingResourceDetails(t *testing.T) {
+	evt := parseCustomEvent("minutes.minute.generated_v1", []byte(`{"header":{"event_id":"event-123","create_time":"1793629636702"},"event":{"minute_token":"minute-123","minute_source":{"source_entity_id":7703573987080277776,"source_type":"meeting"},"subscriber_ids":[{"open_id":"private-user"}],"access_token":"private-credential"}}`))
+	raw, err := json.Marshal(renderCardMap(eventReceiptCard(evt), ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := string(raw)
+	for _, value := range []string{"收到事件 minutes.minute.generated_v1，正在处理…", "事件已受理，处理完成后会在此汇报结果。", "event-123", "发生时间", "7703573987080277776", "minute-123", "meeting"} {
+		if !strings.Contains(card, value) {
+			t.Errorf("receipt missing %q: %s", value, card)
+		}
+	}
+	for _, value := range []string{"private-user", "private-credential"} {
+		if strings.Contains(card, value) {
+			t.Errorf("receipt contains unrelated identity or credentials: %s", card)
+		}
+	}
+}
+
+func TestEventReceiptCardHandlesMissingDetails(t *testing.T) {
+	raw, err := json.Marshal(renderCardMap(eventReceiptCard(customEvent{Event: caplarkevent.Event{Type: "custom.event", Raw: json.RawMessage(`invalid`)}}), ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "收到事件 custom.event，正在处理…") {
+		t.Fatalf("missing fallback card title: %s", raw)
+	}
+	if strings.Contains(string(raw), "0001-") {
+		t.Fatal("zero event timestamp shown")
+	}
+}
