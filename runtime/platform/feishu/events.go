@@ -21,6 +21,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/ingress"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
@@ -288,7 +289,8 @@ func prettyEventJSON(raw json.RawMessage) string {
 // normal DM topic delivery key lets subsequent user replies resume this session,
 // including after a restart, without an event-to-topic lookup table.
 func (p *Platform) createEventThreadRoot(ctx context.Context, evt customEvent) (*larkim.CreateMessageRespData, error) {
-	content, err := json.Marshal(map[string]string{"text": "[事件] " + evt.Type})
+	card := eventReceiptCard(evt)
+	content, err := json.Marshal(renderCardMap(card, ""))
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +298,7 @@ func (p *Platform) createEventThreadRoot(ctx context.Context, evt customEvent) (
 	uuid := fmt.Sprintf("agentkit-event-%x", sha256.Sum256([]byte(forwardEventSessionKey(p.tag(), evt))))[:46]
 	req := larkim.NewCreateMessageReqBuilder().ReceiveIdType("open_id").
 		Body(larkim.NewCreateMessageReqBodyBuilder().ReceiveId(evt.UserID).
-			MsgType(larkim.MsgTypeText).Content(string(content)).Uuid(uuid).Build()).Build()
+			MsgType(larkim.MsgTypeInteractive).Content(string(content)).Uuid(uuid).Build()).Build()
 	var root *larkim.CreateMessageRespData
 	err = p.withTransientRetry(ctx, "create event topic", func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "create event topic", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
@@ -315,4 +317,53 @@ func (p *Platform) createEventThreadRoot(ctx context.Context, evt customEvent) (
 		})
 	})
 	return root, err
+}
+
+// eventReceiptCard summarizes information already present in the event. It does
+// not fetch business resources or expose the full payload/subscriber identities.
+func eventReceiptCard(evt customEvent) *common.Card {
+	var body strings.Builder
+	body.WriteString("事件已受理，处理完成后会在此汇报结果。")
+	field := func(label, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		value = strings.NewReplacer("`", "ˋ", "\n", " ", "\r", " ").Replace(value)
+		fmt.Fprintf(&body, "\n**%s**：`%s`", label, truncateRunes(value, 160))
+	}
+	if !evt.createTime.IsZero() {
+		field("发生时间", evt.createTime.Local().Format("2006-01-02 15:04:05 -07:00"))
+	}
+	field("事件 ID", evt.EventID)
+	var envelope struct {
+		Event map[string]any `json:"event"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(evt.Raw))
+	decoder.UseNumber() // resource IDs can exceed float64's exact integer range
+	if decoder.Decode(&envelope) == nil {
+		for _, detail := range []struct{ path, label string }{
+			{"title", "标题"}, {"name", "名称"}, {"meeting_id", "会议 ID"},
+			{"minute_source.source_entity_id", "来源 ID"}, {"minute_source.source_type", "来源类型"},
+			{"minute_token", "妙记 token"}, {"file_token", "文件 token"},
+			{"document_id", "文档 ID"}, {"file_id", "文件 ID"},
+		} {
+			var value any = envelope.Event
+			for _, segment := range strings.Split(detail.path, ".") {
+				object, ok := value.(map[string]any)
+				if !ok {
+					value = nil
+					break
+				}
+				value = object[segment]
+			}
+			switch scalar := value.(type) {
+			case string:
+				field(detail.label, scalar)
+			case json.Number:
+				field(detail.label, string(scalar))
+			}
+		}
+	}
+	return common.NewCard().Title(fmt.Sprintf("收到事件 %s，正在处理…", evt.Type), "blue").Markdown(body.String()).Build()
 }
