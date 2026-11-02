@@ -71,9 +71,9 @@ type Config struct {
 	UnknownCardAction         string            `json:"unknownCardAction"` // forward (default) | ignore
 	CardSubmissionTTL         string            `json:"cardSubmissionTTL"` // positive duration; default 24h
 	// ForwardEventsToAgent 列出直转 agent 处理的自定义事件类型
-	// （如 drive.file.created_v1）。用哪个 agent 由 Loop/Runner 解析，不在此指定。
-	// 事件序列化为一条 inbound 消息；
-	// 每条事件使用独立 session（按 event_id），避免同群/同用户事件共享历史。
+	// （如 drive.file.created_v1）。事件序列化为一条 inbound 消息；
+	// 默认按 event_id 分配独立 session；开启 dmThreadMode 后，仅用户身份事件
+	// 创建 DM 根消息并使用话题 session，供后续用户回复续接。
 	// 回复仍按事件上下文：带 chat_id 回群，只带 user_id 回 p2p，都无则
 	// 无回复目标。妙记/会议等用户身份
 	// 订阅事件（minutes.minute.generated_v1、vc.*）按 subscriber_ids[0]
@@ -116,15 +116,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("platform feishu/lark unknownCardAction must be forward or ignore, got %q", c.UnknownCardAction)
 	}
 	_, err := common.ParseCardSubmissionTTL(c.CardSubmissionTTL)
-	if err != nil {
-		return err
-	}
-	for _, raw := range c.ForwardEventsToAgent {
-		if strings.Contains(raw, ":") {
-			return fmt.Errorf("platform feishu/lark forwardEventsToAgent %q: event_type:agentId syntax is not supported; use Loop agent binds", strings.TrimSpace(raw))
-		}
-	}
-	return nil
+	return err
 }
 
 type Deps struct {
@@ -300,12 +292,10 @@ func newPlatform(name, defaultDomain string, cfg Config, deps Deps) (agentkit.Pl
 	}
 
 	forwardToAgent := map[string]bool{}
-	for _, raw := range cfg.ForwardEventsToAgent {
-		eventType := strings.TrimSpace(raw)
-		if eventType == "" {
-			continue
+	for _, eventType := range cfg.ForwardEventsToAgent {
+		if eventType = strings.TrimSpace(eventType); eventType != "" {
+			forwardToAgent[eventType] = true
 		}
-		forwardToAgent[eventType] = true
 	}
 
 	var clientOpts []lark.ClientOptionFunc

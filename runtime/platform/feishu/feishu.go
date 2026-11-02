@@ -125,7 +125,7 @@ type Platform struct {
 	activeThreadSessions sync.Map
 	// eventHandlers / forwardToAgent drive custom event routing; see events.go.
 	eventHandlers  []caplarkevent.Handler
-	forwardToAgent map[string]bool // event types to forward as inbound messages
+	forwardToAgent map[string]bool
 }
 
 type feishuRequestFunc func(client *lark.Client, options ...larkcore.RequestOptionFunc) error

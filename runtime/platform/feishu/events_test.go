@@ -276,19 +276,6 @@ func TestReceiveIDType(t *testing.T) {
 	}
 }
 
-func TestValidateForwardEventsToAgentRejectsAgentSuffix(t *testing.T) {
-	cfg := Config{
-		AppID:     "id",
-		AppSecret: "secret",
-		ForwardEventsToAgent: []string{
-			"minutes.minute.generated_v1:claude",
-		},
-	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected validate error for event_type:agentId syntax")
-	}
-}
-
 func TestForwardEventDMThread(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(fmt.Sprint(fail), func(t *testing.T) {

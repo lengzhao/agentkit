@@ -68,7 +68,7 @@ platforms:
   每条事件使用独立 session（`sessionID = <platform>:evt:<event_id>[:u:<open_id>]`），
   避免同用户/同群多次事件共享对话历史。用户身份事件无 chat_id 时，回复仍按
   `subscriber_ids[0].open_id` 走 p2p（`replyContext.chat_id = open_id`）。
-- **Agent**：由 **Loop/Runner** 解析（session/channel/global bind、`loop.defaultAgent`）；`forwardEventsToAgent` 不支持 `event_type:agentId`。
+- **Agent**：由 **Loop/Runner** 解析（session/channel/global bind、`loop.defaultAgent`）。
 - **重启补送**：飞书对未 ack 的事件持续重推。停机期间发生的事件在进程重启、
   WS 重连后仍会送达——自定义事件**不按进程启动时间过滤**（与 IM 消息的
   `IsOldMessage` 策略不同），重复投递由 `event_id` 去重兜底。

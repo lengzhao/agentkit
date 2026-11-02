@@ -19,7 +19,7 @@ platform.default:
     workspace: workspace.default
 ```
 
-`forwardEventsToAgent` 保持现有名称，只接受事件类型，不支持 `event_type:agentId`。Agent 选择沿用现有平台与 Loop/Runner 路由，不引入按事件类型选择 agent 的配置。
+`forwardEventsToAgent` 列出需要转发的事件类型。Agent 选择沿用现有平台与 Loop/Runner 路由。
 
 ## 处理顺序
 
