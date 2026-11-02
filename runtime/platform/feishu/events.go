@@ -13,8 +13,11 @@ import (
 	"strings"
 	"time"
 
+	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/lengzhao/agentkit"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/runtime/rctx"
@@ -218,7 +221,8 @@ func forwardEventSessionKey(platformTag string, evt customEvent) string {
 	return string(rctx.BuildDeliverySessionID(platformTag, "evt:"+id, "", evt.UserID))
 }
 
-// forwardEventToAgent 把事件直转 agent：每条事件使用独立 session（见 forwardEventSessionKey）。
+// forwardEventToAgent 把事件直转 agent：每条事件使用独立 session。
+// DM 话题模式下先创建根消息，并使用常规话题 session key 以支持用户续接。
 // 回复按事件上下文路由——带 chat_id 回群、仅 user_id 时回 p2p（open_id）、都无则无回复目标。
 func (p *Platform) forwardEventToAgent(evt customEvent) {
 	chatID := evt.ChatID
@@ -231,6 +235,17 @@ func (p *Platform) forwardEventToAgent(evt customEvent) {
 		chatType = "p2p"
 	}
 	sessionKey := forwardEventSessionKey(p.tag(), evt)
+	rc := replyContext{chatID: chatID, chatType: chatType, sessionKey: sessionKey}
+	if p.cfg.DMThreadMode && chatType == "p2p" {
+		root, err := p.createEventThreadRoot(context.Background(), evt)
+		if err != nil {
+			slog.Warn(p.tag()+": event topic creation failed, forwarding without topic", "event_id", evt.EventID, "error", err)
+		} else {
+			chatID = *root.ChatId
+			sessionKey = string(rctx.BuildDeliverySessionID(p.tag(), chatID, *root.MessageId, evt.UserID))
+			rc = replyContext{chatID: chatID, chatType: chatType, messageID: *root.MessageId, sessionKey: sessionKey}
+		}
+	}
 
 	content := fmt.Sprintf("[事件] %s\n%s", evt.Type, prettyEventJSON(evt.Raw))
 	slog.Info(p.tag()+": forwarding custom event to agent",
@@ -240,7 +255,7 @@ func (p *Platform) forwardEventToAgent(evt customEvent) {
 		sessionID: agentkit.SessionID(sessionKey),
 		userID:    evt.UserID,
 		content:   content,
-		rctx:      replyContext{chatID: chatID, chatType: chatType, sessionKey: sessionKey},
+		rctx:      rc,
 	})
 }
 
@@ -250,4 +265,37 @@ func prettyEventJSON(raw json.RawMessage) string {
 		return string(raw)
 	}
 	return buf.String()
+}
+
+// createEventThreadRoot gives a user-only event a durable IM anchor. Using the
+// normal DM topic delivery key lets subsequent user replies resume this session,
+// including after a restart, without an event-to-topic lookup table.
+func (p *Platform) createEventThreadRoot(ctx context.Context, evt customEvent) (*larkim.CreateMessageRespData, error) {
+	content, err := json.Marshal(map[string]string{"text": "[事件] " + evt.Type})
+	if err != nil {
+		return nil, err
+	}
+	// Stable UUID avoids duplicate roots when a transient failure retries Create.
+	uuid := fmt.Sprintf("agentkit-event-%x", sha256.Sum256([]byte(forwardEventSessionKey(p.tag(), evt))))[:46]
+	req := larkim.NewCreateMessageReqBuilder().ReceiveIdType("open_id").
+		Body(larkim.NewCreateMessageReqBodyBuilder().ReceiveId(evt.UserID).
+			MsgType(larkim.MsgTypeText).Content(string(content)).Uuid(uuid).Build()).Build()
+	var root *larkim.CreateMessageRespData
+	err = p.withTransientRetry(ctx, "create event topic", func() error {
+		return p.withFreshTenantAccessTokenRetry(ctx, "create event topic", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
+			resp, err := client.Im.Message.Create(ctx, req, options...)
+			if err != nil {
+				return err
+			}
+			if !resp.Success() {
+				return fmt.Errorf("create event topic failed code=%d msg=%s", resp.Code, resp.Msg)
+			}
+			if resp.Data == nil || resp.Data.MessageId == nil || *resp.Data.MessageId == "" || resp.Data.ChatId == nil || *resp.Data.ChatId == "" {
+				return fmt.Errorf("create event topic returned no message_id or chat_id")
+			}
+			root = resp.Data
+			return nil
+		})
+	})
+	return root, err
 }

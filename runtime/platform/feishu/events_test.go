@@ -3,6 +3,9 @@ package feishu
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -272,3 +275,69 @@ func TestReceiveIDType(t *testing.T) {
 		t.Errorf("receiveIDType(oc_abc) = %q, want chat_id", got)
 	}
 }
+
+func TestForwardEventDMThread(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			creates, replies := 0, 0
+			p, srv := newCardkitMockPlatform(cardkitMockHandler(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if strings.Contains(r.URL.Path, "/contact/") {
+					_, _ = w.Write([]byte(`{"code":0}`))
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/reply") {
+					replies++
+					var body struct {
+						ReplyInThread bool `json:"reply_in_thread"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&body)
+					if !body.ReplyInThread || !strings.Contains(r.URL.Path, "/om_root/") {
+						t.Error("reply missing topic anchor")
+					}
+					_, _ = w.Write([]byte(`{"code":0,"data":{"message_id":"om_reply"}}`))
+					return
+				}
+				creates++
+				if r.URL.Query().Get("receive_id_type") != "open_id" {
+					t.Error("expected open_id delivery")
+				}
+				if fail {
+					_, _ = w.Write([]byte(`{"code":230001,"msg":"denied"}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"code":0,"data":{"message_id":"om_root","chat_id":"oc_dm"}}`))
+			}))
+			defer srv.Close()
+			p.cfg.DMThreadMode = true
+			p.inbox = common.NewInbox(4)
+			p.forwardEventToAgent(customEvent{Event: caplarkevent.Event{Type: "x_v1", EventID: "e1", UserID: "ou_1", Raw: json.RawMessage(`{}`)}})
+			want := "lark:evt:e1:u:ou_1"
+			if !fail {
+				want = p.makeSessionKey(&larkim.EventMessage{ChatType: eventThreadTestString("p2p"), MessageId: eventThreadTestString("om_followup"), RootId: eventThreadTestString("om_root"), ThreadId: eventThreadTestString("omt_topic")}, "oc_dm", "ou_1")
+			}
+			rc, ok := p.deliveryFor(agentkit.SessionID(want))
+			if !ok {
+				t.Fatalf("missing event delivery matching follow-up session %s", want)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if _, err := p.inbox.Receive(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if !fail {
+				if rc.messageID != "om_root" || rc.chatID != "oc_dm" {
+					t.Fatalf("invalid anchor: %+v", rc)
+				}
+				if err := p.sendText(ctx, agentkit.SessionID(want), "answer"); err != nil {
+					t.Fatal(err)
+				}
+				if creates != 1 || replies != 1 {
+					t.Fatalf("creates=%d replies=%d", creates, replies)
+				}
+			}
+		})
+	}
+}
+
+func eventThreadTestString(s string) *string { return &s }
