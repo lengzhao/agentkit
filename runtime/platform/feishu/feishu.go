@@ -21,6 +21,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/lengzhao/agentkit"
+	"github.com/lengzhao/agentkit/cap/ingress"
 	"github.com/lengzhao/agentkit/cap/interaction"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/workspace"
@@ -33,9 +34,17 @@ type replyContext struct {
 	chatType             string
 	sessionKey           string
 	processingReactionID string
+	ingressAction        ingress.AgentAction
+	ingressOwner         agentkit.SessionID
 }
 
 type Platform struct {
+	inboundPolicy   ingress.Policy
+	ingressMu       sync.Mutex
+	ingressAccepted map[agentkit.SessionID]time.Time
+	ingressTails    map[string]chan struct{}
+	deferredMu      sync.Mutex
+	deferred        map[deferredKey]*deferredAttachments
 	common.InstanceIdentity
 	cardSubmissions           common.CardSubmissions
 	interactionHandlers       []interaction.Handler
@@ -342,28 +351,6 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		"thread_isolation", p.threadIsolation,
 	)
 
-	if chatType == "group" && !p.groupReplyAll && p.botOpenID != "" {
-		if !isBotMentioned(msg.Mentions, p.botOpenID) {
-			switch {
-			// Feishu @all sends {"text":"@_all"} with 0 mentions.
-			case p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all"):
-				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
-			// Once a thread has been engaged via @bot, allow follow-up
-			// messages in the same thread through without re-mentioning the
-			// bot. With threadNoMention every message passes; by default only
-			// attachment-only messages (image/file/audio/media/sticker) are
-			// admitted so plain text still requires an explicit @bot to avoid
-			// pulling in unrelated chatter.
-			case p.allowsUnmentionedGroupMessage(msgType, sessionKey):
-				slog.Debug(p.tag()+": passing message through active thread without mention",
-					"chat_id", chatID, "session_key", sessionKey, "msg_type", msgType, "message_id", messageID)
-			default:
-				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
-				return nil
-			}
-		}
-	}
-
 	if !common.AllowList(p.allowFrom, userID) {
 		slog.Debug(p.tag()+": message from unauthorized user", "user", userID)
 		return nil
@@ -400,13 +387,14 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 
 	// Mark this thread as bot-engaged so subsequent attachment-only messages
 	// in the same thread can pass the group @ filter without re-mentioning.
-	p.markThreadSessionActive(sessionKey)
 
 	// Dispatch message handling asynchronously so the SDK event loop is not
 	// blocked by IO-heavy operations (image/audio download, handler HTTP calls).
 	// The dedup and old-message checks above remain synchronous to guarantee
 	// correctness before spawning the goroutine.
-	go p.dispatchMessage(ctx, msgType, content, mentions, messageID, sessionKey, userID, chatID, rctx, parentID)
+	p.queueIngress(chatID, func() {
+		p.dispatchMessage(context.WithoutCancel(ctx), msgType, content, mentions, messageID, sessionKey, userID, chatID, rctx, parentID)
+	})
 
 	return nil
 }
@@ -414,7 +402,7 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 // dispatchMessage handles the message content parsing, media download, and
 // handler invocation. It runs in its own goroutine so that onMessage returns
 // quickly and does not block the SDK event loop.
-func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string) {
+func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string) {
 	if p.isMessageRecalled(messageID) {
 		slog.Debug(p.tag()+": recalled message ignored in async dispatch", "message_id", messageID)
 		return
@@ -441,7 +429,13 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 	// top-level text has a different key. Dispatch it so users can continue in
 	// the resulting topic; flat DMs and groups keep file-first buffering.
 	dispatchAttachment := func(data []byte, mimeType, fileName string) {
-		if !p.cfg.DMThreadMode || rctx.chatType != "p2p" {
+		if rctx.ingressAction == ingress.Defer {
+			if err := p.deferAttachment(ctx, rctx, userID, rctx.ingressOwner, data, mimeType, fileName); err != nil {
+				slog.Warn(p.tag()+": defer attachment failed", "error", err)
+			}
+			return
+		}
+		if rctx.ingressAction != ingress.Submit && (!p.cfg.DMThreadMode || rctx.chatType != "p2p") {
 			p.saveAndBuffer(sessionKey, data, mimeType, fileName)
 			return
 		}

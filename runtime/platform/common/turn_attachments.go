@@ -21,7 +21,13 @@ import (
 func PrepareInboundAttachments(ctx context.Context, ws cw.Service, event agentkit.MessageEvent) (agentkit.MessageEvent, error) {
 	defer ReleaseInboundUploads(event)
 	env := rctx.EnvelopeFromContext(ctx)
-	for _, a := range event.Attachments {
+	owners := append([]agentkit.InboundAttachment(nil), event.Attachments...)
+	for _, upload := range event.Uploads {
+		if upload.Owner != nil {
+			owners = append(owners, agentkit.InboundAttachment{Owner: upload.Owner, OrigName: upload.OrigName})
+		}
+	}
+	for _, a := range owners {
 		if a.Owner == nil {
 			continue
 		}
@@ -99,7 +105,7 @@ func PrepareInboundAttachments(ctx context.Context, ws cw.Service, event agentki
 			}
 		}
 		notes = append(notes, a)
-		event.Attachments = append(event.Attachments, agentkit.InboundAttachment{Path: a.path, MIME: a.mime, Size: a.size, OrigName: a.origName, Image: a.image})
+		event.Attachments = append(event.Attachments, agentkit.InboundAttachment{Owner: u.Owner, Path: a.path, MIME: a.mime, Size: a.size, OrigName: a.origName, Image: a.image})
 	}
 	if len(notes) > 0 {
 		found := false

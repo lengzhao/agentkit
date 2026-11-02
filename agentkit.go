@@ -203,6 +203,8 @@ type InboundUploadSource interface {
 // staging; Source owns the queued input. ContentIndex is -1 for files, or the
 // image content part whose Source and URL are filled during execution.
 type InboundUpload struct {
+	// Owner optionally pins a policy-buffered upload through runner active-session resolution.
+	Owner        *AttachmentOwner
 	Source       InboundUploadSource
 	Data         []byte
 	MIME         string
