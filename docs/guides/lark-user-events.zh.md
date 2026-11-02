@@ -49,6 +49,8 @@ agentkit 运行时接收不需要 user token，纯 bot 身份即可。
 
 ## agentkit 侧配置
 
+自定义事件的处理顺序、`inboundPolicy` 扩展与 DM 话题行为见 [自定义事件管线](lark-custom-event-pipeline.zh.md)。平台配置沿用 `forwardEventsToAgent`：
+
 ```yaml
 platforms:
   lark:
@@ -66,6 +68,7 @@ platforms:
   每条事件使用独立 session（`sessionID = <platform>:evt:<event_id>[:u:<open_id>]`），
   避免同用户/同群多次事件共享对话历史。用户身份事件无 chat_id 时，回复仍按
   `subscriber_ids[0].open_id` 走 p2p（`replyContext.chat_id = open_id`）。
+- **Agent**：由 **Loop/Runner** 解析（session/channel/global bind、`loop.defaultAgent`）；`forwardEventsToAgent` 不支持 `event_type:agentId`。
 - **重启补送**：飞书对未 ack 的事件持续重推。停机期间发生的事件在进程重启、
   WS 重连后仍会送达——自定义事件**不按进程启动时间过滤**（与 IM 消息的
   `IsOldMessage` 策略不同），重复投递由 `event_id` 去重兜底。
