@@ -223,7 +223,7 @@ func (p *Platform) resolveThreadID(ctx context.Context, segment string) string {
 	return ""
 }
 
-func (p *Platform) historyMessageFromAPI(_ context.Context, item *larkim.Message) *chathistory.Message {
+func (p *Platform) historyMessageFromAPI(ctx context.Context, item *larkim.Message) *chathistory.Message {
 	if item == nil {
 		return nil
 	}
@@ -262,7 +262,7 @@ func (p *Platform) historyMessageFromAPI(_ context.Context, item *larkim.Message
 		case "user":
 			role = "user"
 			if senderName == "" && senderID != "" {
-				resolved := p.resolveUserName(senderID)
+				resolved := p.resolveUserNameContext(ctx, senderID)
 				if resolved != senderID {
 					senderName = resolved
 				}

@@ -17,12 +17,12 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
-// resolveUserName fetches a user's display name via the Contact API, with caching.
-func (p *Platform) resolveUserName(openID string) string {
+// resolveUserNameContext fetches a user's display name via the Contact API, with caching.
+func (p *Platform) resolveUserNameContext(ctx context.Context, openID string) string {
 	if !isValidFeishuLookupID(openID) {
 		return openID
 	}
-	entry := p.cachedUserProfile(openID)
+	entry := p.cachedUserProfileContext(ctx, openID)
 	if entry.ok && entry.name != "" {
 		return entry.name
 	}
@@ -35,9 +35,6 @@ type feishuUserProfileEntry struct {
 	ok    bool
 }
 
-func (p *Platform) cachedUserProfile(userID string) feishuUserProfileEntry {
-	return p.cachedUserProfileContext(context.Background(), userID)
-}
 func (p *Platform) cachedUserProfileContext(ctx context.Context, userID string) feishuUserProfileEntry {
 	if cached, ok := p.userProfileCache.Load(userID); ok {
 		return cached.(feishuUserProfileEntry)
@@ -152,9 +149,6 @@ func metadataString(md map[string]any, key string) string {
 	return strings.TrimSpace(s)
 }
 
-func (p *Platform) userProfileMetadata(userID string) map[string]any {
-	return p.userProfileMetadataContext(context.Background(), userID)
-}
 func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string) map[string]any {
 	userID = strings.TrimSpace(userID)
 	if userID == "" || !isValidFeishuLookupID(userID) {
@@ -167,7 +161,7 @@ func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string
 	return common.UserProfileMetadata(entry.name, entry.email)
 }
 
-func (p *Platform) mentionMetadata(mentions []*larkim.MentionEvent) map[string]any {
+func (p *Platform) mentionMetadataContext(ctx context.Context, mentions []*larkim.MentionEvent) map[string]any {
 	if len(mentions) == 0 {
 		return nil
 	}
@@ -193,7 +187,7 @@ func (p *Platform) mentionMetadata(mentions []*larkim.MentionEvent) map[string]a
 		if mention.Name != nil {
 			name = strings.TrimSpace(*mention.Name)
 		}
-		entry := p.cachedUserProfile(userID)
+		entry := p.cachedUserProfileContext(ctx, userID)
 		if name == "" && entry.ok {
 			name = entry.name
 		}
@@ -243,26 +237,29 @@ func isValidFeishuLookupID(id string) bool {
 	return true
 }
 
-// resolveUserNames batch-resolves open_ids to display names.
-func (p *Platform) resolveUserNames(openIDs []string) map[string]string {
+// resolveUserNamesContext batch-resolves open_ids to display names.
+func (p *Platform) resolveUserNamesContext(ctx context.Context, openIDs []string) map[string]string {
 	names := make(map[string]string, len(openIDs))
 	for _, id := range openIDs {
 		if _, ok := names[id]; !ok {
-			names[id] = p.resolveUserName(id)
+			names[id] = p.resolveUserNameContext(ctx, id)
 		}
 	}
 	return names
 }
 
-// resolveChatName fetches a chat/group name via the IM API, with caching.
-func (p *Platform) resolveChatName(chatID string) string {
+// resolveChatNameContext fetches a chat/group name via the IM API, with caching.
+func (p *Platform) resolveChatNameContext(ctx context.Context, chatID string) string {
 	if chatID == "" {
 		return ""
 	}
 	if cached, ok := p.chatNameCache.Load(chatID); ok {
 		return cached.(string)
 	}
-	resp, err := p.client.Im.Chat.Get(context.Background(),
+	if p.client == nil {
+		return chatID
+	}
+	resp, err := p.client.Im.Chat.Get(ctx,
 		larkim.NewGetChatReqBuilder().ChatId(chatID).Build())
 	if err != nil {
 		slog.Debug(p.tag()+": resolve chat name failed", "chat_id", chatID, "error", err)

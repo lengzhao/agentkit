@@ -31,8 +31,8 @@ func detectFeishuFileType(mimeType, fileName string) string {
 	}
 }
 
-func (p *Platform) downloadImage(messageID, imageKey string) ([]byte, string, error) {
-	resp, err := p.client.Im.MessageResource.Get(context.Background(),
+func (p *Platform) downloadImage(ctx context.Context, messageID, imageKey string) ([]byte, string, error) {
+	resp, err := p.client.Im.MessageResource.Get(ctx,
 		larkim.NewGetMessageResourceReqBuilder().
 			MessageId(messageID).
 			FileKey(imageKey).
@@ -57,8 +57,8 @@ func (p *Platform) downloadImage(messageID, imageKey string) ([]byte, string, er
 	return data, mimeType, nil
 }
 
-func (p *Platform) downloadResource(messageID, fileKey, resType string) ([]byte, error) {
-	resp, err := p.client.Im.MessageResource.Get(context.Background(),
+func (p *Platform) downloadResource(ctx context.Context, messageID, fileKey, resType string) ([]byte, error) {
+	resp, err := p.client.Im.MessageResource.Get(ctx,
 		larkim.NewGetMessageResourceReqBuilder().
 			MessageId(messageID).
 			FileKey(fileKey).

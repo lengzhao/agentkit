@@ -14,6 +14,8 @@ type (
 	CardListItem     = delivery.CardListItem
 	CardSelect       = delivery.CardSelect
 	CardSelectOption = delivery.CardSelectOption
+	CardForm         = delivery.CardForm
+	CardCheckbox     = delivery.CardCheckbox
 	CardButton       = delivery.CardButton
 	CardActionLayout = delivery.CardActionLayout
 	CardBuilder      = delivery.CardBuilder

@@ -188,7 +188,7 @@ allow/deny 请求除 `allow`/`deny` 外还支持第三个 decision `allow_all`�
 
 **空内容不建卡**：`buildRichCard` 在无折叠区且正文为空（非终态没有状态行可显示）时返回空串，调用方据此跳过建卡；`message/end` 对零输出消息段（如 ACP follow-up turn 无可见内容）在尚未建卡时直接跳过 flush——避免渲染出只有空 `main_text` 元素的空消息气泡。终态（☑️/已取消/出错）状态行始终保留，不受影响。
 
-**失败降级与心跳**（更新模式，对齐 cc-connect）：卡片创建/更新失败（如出口代理间歇性 403）**不会中断 agent turn**，且**更新失败绝不中途重建新消息**——streamState 内容单调累积（每次 flush 渲染全量快照），跳过一帧什么都不丢，下一次成功 flush 把同一张卡补齐到最新；失败仅记日志（含连续失败计数 `updateFailCount`）并等下轮 flush / 心跳重试同一张卡。出口代理 / 边缘网关的非 JSON 响应（TLB 403/5xx 空 body，请求未到达 Lark 应用层）归类为 transient 错误退避重试，预算按调用方**分三档且整体保持短预算**：中途流式帧 quick（1 次重试、~1s 快速失败——内容单调累积，下一帧自动补齐，多重重试只会在故障期持续锤网关并长时间占用同卡写锁）；普通发送/消息 standard（2 次、~1.5s）；`turn/end` 定稿 patch finalize（3 次、~4s——只覆盖短暂抖动）。长故障窗口下快速走完降级链（另发最终卡 + 撤回旧卡 → 纯文本兜底），最终投递保证由纯文本的 5s/20s/60s 长重试覆盖，而不是让卡片路径在故障期长时间重试。创建失败带**指数退避**（2s 起步、上限 30s，成功清零），避免网关持续故障时每个流式 delta 都打一次创建 API；创建失败不产出任何消息，下轮 flush 重试创建。`turn/end` 定稿走**三级降级**保证最终答复不丢：patch 当前卡 → 失败则消息接口（`Im.Message.Patch`）挽救 → 再失败另发一张最终卡，**成功后随即撤回旧卡**（先发后撤：新卡已是完整答复，旧卡只是过时残影，撤回换来会话里只有一份答案；与中途更新保留旧卡的策略相反，因为那时旧卡是唯一内容）→ 最后纯文本补发，纯文本按 5s/20s/60s 重试，全部失败才记 Error 日志。卡片创建后若超过 10s 无任何更新（长 LLM 推理期间无出站流量，CardKit 实体可能被回收），心跳定时器会自动轻量 flush 一次（页脚 elapsed 随时间变化）保持卡片活跃；`turn/end` 定稿前停止心跳。
+**失败降级与心跳**：更新失败不会中断 agent turn，也不会中途重建消息；下轮 flush 或 10 秒心跳继续更新同一张卡。读取、整卡更新和元素流式使用有限重试预算。普通 IM Create/Reply 只有已确认 token 失效时才刷新并重试；响应丢失、传输失败或无法确认的服务端结果可能已经提交，因此停止重发和新消息降级。已确认的创建失败保留指数退避（2 秒起步，上限 30 秒）。`turn/end` 保留原始 state，等待在途创建完成：先更新旧卡，失败则尝试消息接口更新，再在结果明确时降级为新最终卡或纯文本；新卡成功后撤回旧卡。轮次结束会停止定时器，迟到回调不会重建已清理的状态。上述机制不保证故障下最终投递成功。
 
 `enableFeishuCard: false` 时出站为纯文本。
 
@@ -210,7 +210,7 @@ flowchart TD
 | `threadNoMention` | `false` | 配合 `threadIsolation`：话题被 @bot 触发过（`activeThreadSessions`）后，话题内所有消息（含纯文字）免 @；默认仅纯附件免 @，纯文字仍需 @ |
 | `replyToTrigger` | `true` | `false` 时不引用触发消息，改用 `Im.Message.Create` |
 
-**整轮 turn** 的 thinking / tool / 正文都在同一张 rich 卡内刷新；同一 turn 内多条 assistant 消息的正文会在每条 `message/start` 时**定稿到累积区**（段间空行拼接），不会互相覆盖。出站流式状态优先按 Loop 打标的 `OutboundEvent.turnId` 隔离；无 `turnId` 时回退为 `delivery` + `Route.ReplyTo` 组合。IM 投递地址（delivery + replyTo）在首个出站事件时捕获进 stream state，心跳、防抖 flush、`turn/end` 定稿与纯文本兜底均从 state 读取，不依赖事件或额外缓存表。子 Agent 转发进度与 `subagent/start|end` 会带上父 turn id，异步委派在后台 goroutine 仍沿用捕获的父 turn id。`turn/end` 定稿时若流式正文为空，会用载荷里的 `message` 兜底。平台监听 `tool/result` 与 `subagent/start|end` 更新过程区。`renderProgressBody` 在面板 JSON 中默认仅保留最近 **2** 条 tool 行（超出显示「仅显示最近更新」），与 cc-connect 一致。
+**整轮 turn** 的 thinking / tool / 正文都在同一张 rich 卡内刷新；同一 turn 内多条 assistant 消息的正文会在每条 `message/start` 时**定稿到累积区**（段间空行拼接），不会互相覆盖。出站流式状态优先按 Loop 打标的 `OutboundEvent.turnId` 隔离；无 `turnId` 时回退为 `delivery` + `Route.ReplyTo` 组合。IM 投递地址（delivery + replyTo）在首个出站事件时捕获进 stream state，心跳、防抖 flush、`turn/end` 定稿与纯文本兜底均从 state 读取，不依赖事件或额外缓存表。子 Agent 转发进度与 `subagent/start|end` 会带上父 turn id，异步委派在后台 goroutine 仍沿用捕获的父 turn id。`turn/end` 定稿时若流式正文为空，会用载荷里的 `message` 兜底。平台监听 `tool/result` 与 `subagent/start|end` 更新过程区。Rich 卡片面板默认仅展示最近 **2** 条过程记录，并提示被折叠的较早记录数量。
 
 **异步子 Agent**（`delegate` + `async: true`）：父 turn 回复卡仍在 `turn/end` 定稿；子 Agent 在 `subagent/start`（`async`）时另发一张「后台子 Agent」过程卡，按 `OutboundEvent.AgentID` 与子 Agent 区分，刷新子 Agent 经 `forwardParentEmit` 转发的 **`toolcall_start` / `toolcall_end` / `tool/result`** 与**限长思考区内容**（原生 `thinking_delta`，以及 **ACP 等子 Agent 的 `text_delta` 重映射为 `thinking_delta`**，不进入主回复正文 lane），在 `subagent/end` 定稿。完整结论仍由 follow-up turn 以新消息送达。可通过 `asyncSubagentProgressCard: false` 关闭。该过程卡是 `streams` 里独立 key（父 streamKey + `:async:` + jobID）的普通 stream：正文由 `streamState.bodyFn` 自定义，**创建 / 刷新 / 心跳与父回复卡完全同一条 `flushRichCard` 路径**，平台层只保留事件路由。
 

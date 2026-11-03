@@ -87,7 +87,7 @@ func (p *Platform) handleAsyncSubagentStart(ctx context.Context, streamKey agent
 		return nil
 	}
 	if existing := p.asyncSubagentForStream(streamKey); existing != nil {
-		p.clearStream(existing.asyncKey)
+		p.clearStreamState(existing.asyncKey)
 		p.unregisterAsyncSubagentCard(existing)
 	}
 
@@ -146,7 +146,7 @@ func (p *Platform) handleAsyncSubagentEnd(ctx context.Context, data sessevents.S
 
 	// 定稿整卡（失败已在 flushRichCard 内部降级，不会上抛），随后清理 state 与心跳。
 	err := p.flushRichCard(ctx, card.asyncKey, false)
-	p.clearStream(card.asyncKey)
+	p.clearStreamState(card.asyncKey)
 	p.unregisterAsyncSubagentCard(card)
 	return err
 }

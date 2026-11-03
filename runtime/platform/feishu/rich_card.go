@@ -132,7 +132,7 @@ func richStepBody(step toolStep) string {
 		if body := formatProgressToolResult(result); body != "" {
 			lines = append(lines, body)
 		} else {
-			lines = append(lines, progressNoOutputText("zh"))
+			lines = append(lines, "无输出")
 		}
 		return strings.Join(lines, "\n")
 	default:

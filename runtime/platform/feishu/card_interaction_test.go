@@ -364,7 +364,7 @@ func (c *profileMetadataCommands) List(context.Context) []agentkit.Command { ret
 func TestCardCommandPreservesProfileMetadata(t *testing.T) {
 	p, _ := interactionPlatform()
 	p.userProfileCache.Store("ou_u", feishuUserProfileEntry{name: "Alice", email: "alice@example.com", ok: true})
-	normal := p.inboundMetadata(inboundMessage{userID: "ou_u"})
+	normal := p.inboundMetadata(context.Background(), inboundMessage{userID: "ou_u"})
 	if normal["displayName"] != "Alice" {
 		t.Fatal("probe setup did not populate normal metadata")
 	}

@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 
@@ -25,31 +26,37 @@ type postLang struct {
 // parsePostContent handles both formats of feishu post content:
 // 1. {"title":"...", "content":[[...]]}  (receive event)
 // 2. {"zh_cn":{"title":"...", "content":[[...]]}}  (some SDK versions)
-func (p *Platform) parsePostContent(messageID, raw string) ([]string, []common.ImageAttachment) {
+func (p *Platform) parsePostContent(ctx context.Context, messageID, raw string) ([]string, []common.ImageAttachment) {
 	// try flat format first
 	var flat postLang
 	if err := json.Unmarshal([]byte(raw), &flat); err == nil && flat.Content != nil {
-		return p.extractPostParts(messageID, &flat)
+		return p.extractPostParts(ctx, messageID, &flat)
 	}
 	// try language-keyed format
 	var langMap map[string]postLang
 	if err := json.Unmarshal([]byte(raw), &langMap); err == nil {
 		for _, lang := range langMap {
-			return p.extractPostParts(messageID, &lang)
+			return p.extractPostParts(ctx, messageID, &lang)
 		}
 	}
 	slog.Error(p.tag()+": failed to parse post content", "raw", raw)
 	return nil, nil
 }
 
-func (p *Platform) extractPostParts(messageID string, post *postLang) ([]string, []common.ImageAttachment) {
+func (p *Platform) extractPostParts(ctx context.Context, messageID string, post *postLang) ([]string, []common.ImageAttachment) {
 	var textParts []string
 	var images []common.ImageAttachment
 	if post.Title != "" {
 		textParts = append(textParts, post.Title)
 	}
 	for _, line := range post.Content {
+		if ctx.Err() != nil {
+			return textParts, images
+		}
 		for _, elem := range line {
+			if ctx.Err() != nil {
+				return textParts, images
+			}
 			switch elem.Tag {
 			case "text":
 				if elem.Text != "" {
@@ -78,11 +85,11 @@ func (p *Platform) extractPostParts(messageID string, post *postLang) ([]string,
 				case elem.UserName != "":
 					textParts = append(textParts, "@"+elem.UserName)
 				case elem.UserId != "":
-					textParts = append(textParts, "@"+p.resolveUserName(elem.UserId))
+					textParts = append(textParts, "@"+p.resolveUserNameContext(ctx, elem.UserId))
 				}
 			case "img":
 				if elem.ImageKey != "" {
-					imgData, mimeType, err := p.downloadImage(messageID, elem.ImageKey)
+					imgData, mimeType, err := p.downloadImage(ctx, messageID, elem.ImageKey)
 					if err != nil {
 						slog.Error(p.tag()+": download post image failed", "error", err, "key", elem.ImageKey)
 						continue

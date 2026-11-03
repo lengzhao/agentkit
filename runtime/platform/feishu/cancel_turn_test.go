@@ -2,27 +2,11 @@ package feishu
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
 )
-
-func TestCancelledTurnEndProgressFooter(t *testing.T) {
-	p := &Platform{showToolProgress: true}
-	st := p.streamState(agentkit.SessionID("session-cancel"))
-	st.startedAt = time.Now().Add(-2 * time.Second)
-	st.progressStartedAt = st.startedAt
-	st.steps = []toolStep{{Kind: toolStepKindTool, Name: "read", Status: "running"}}
-
-	md := p.renderProgressMarkdown(st, false)
-	md = appendCancelledProgressFooter(md, "/stop")
-	if !strings.Contains(md, "> 已取消（/stop）") {
-		t.Fatalf("expected cancelled footer, got %q", md)
-	}
-}
 
 func TestCancelledBodyText(t *testing.T) {
 	if got := cancelledBodyText("/stop"); got != "任务已取消（/stop）" {

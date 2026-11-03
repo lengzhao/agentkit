@@ -7,10 +7,10 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-// streamStateData is a mutable card snapshot (tests and async subagent panel use this directly).
-type streamStateData struct {
+// streamState holds one reply card and its per-turn presentation state.
+type streamState struct {
+	mu                 sync.Mutex
 	progressHandle     any
-	cards              []streamCard
 	bodyText           string
 	committedBodyText  string
 	finalizedBodyText  string
@@ -22,13 +22,16 @@ type streamStateData struct {
 	startedAt          time.Time
 	progressStartedAt  time.Time
 	lastProgressUpdate time.Time
-	lastBodyUpdate     time.Time
 	bodyFlushTimer     *time.Timer
 	keepaliveTimer     *time.Timer
 	// 卡片创建失败退避：连续失败次数与下次允许重试的时间，避免网关持续故障时
 	// 每个流式 delta 都打一次创建 API。
-	createFailCount  int
-	nextCreateAfter  time.Time
+	createFailCount int
+	nextCreateAfter time.Time
+	// An uncertain create must not be retried by a later streaming flush.
+	unknownCreateErr error
+	createDone       chan struct{}
+	ended            bool
 	// updateFailCount 是同一 handle 上连续更新失败的次数（成功 flush 清零），
 	// 仅作日志观测：更新模式下失败不触发任何重建，下轮 flush 自然重试同一张卡。
 	updateFailCount int
@@ -43,27 +46,9 @@ type streamStateData struct {
 	lastRichCardBodyStreamRunes int
 	// route 是该 stream 的 IM 投递地址（从首个出站事件的 Route 捕获），
 	// 供心跳、防抖 flush、turn/end 定稿等异步路径使用，无需再查事件。
-	route     agentkit.RouteRef
-	hasRoute  bool
-}
-
-// streamState holds per-stream outbound card state. Access is serialized with
-// a mutex (hot path: every streaming delta locks once). lock/unlock are kept as
-// methods so call sites read symmetrically; the underlying primitive is a
-// sync.Mutex because channel-based locks are measurably slower on this path.
-type streamState struct {
-	mu sync.Mutex
-	streamStateData
-}
-
-func newStreamState() *streamState {
-	return &streamState{}
+	route    agentkit.RouteRef
+	hasRoute bool
 }
 
 func (st *streamState) lock()   { st.mu.Lock() }
 func (st *streamState) unlock() { st.mu.Unlock() }
-
-// streamStateLiteral builds a stream state for tests (fields pre-populated).
-func streamStateLiteral(data streamStateData) *streamState {
-	return &streamState{streamStateData: data}
-}
