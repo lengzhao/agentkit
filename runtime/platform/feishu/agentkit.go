@@ -733,7 +733,7 @@ func parseTurnEndData(event agentkit.OutboundEvent) capsession.TurnEndData {
 	return data
 }
 
-// cc-connect style: stream main_text via CardKit when the collapsible panel is unchanged.
+// Stream main_text via CardKit when the collapsible panel is unchanged.
 const richCardBodyStreamInterval = 200 * time.Millisecond
 const richCardBodyStreamMinRunes = 20
 const richCardFullPatchInterval = 1500 * time.Millisecond

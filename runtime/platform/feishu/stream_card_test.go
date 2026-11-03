@@ -557,7 +557,7 @@ func TestCreateProgressCardBackoff(t *testing.T) {
 }
 
 // TestFlushRichCardUpdateFailureNeverSendsNewMessage 是「更新模式」的核心回归
-// 测试（对齐 cc-connect）：进度卡中途更新失败绝不重建新消息——handle 保留、
+// 测试：进度卡中途更新失败绝不重建新消息——handle 保留、
 // 不发任何新 IM 消息，内容随下一次成功 flush 在同一张卡上补齐。
 // 这是线上「单 turn 多响应框」的根治路径。
 func TestFlushRichCardUpdateFailureNeverSendsNewMessage(t *testing.T) {
@@ -662,7 +662,7 @@ func TestFinalizeTurnEndRecallsStaleCardAfterReplacement(t *testing.T) {
 }
 
 // TestRichBodyDeltaThrottleCapsFlushRate：快模型高频 delta 下，写请求速率必须被
-// 压到 1/interval——立即 flush 需要「间隔 + 最小增量」同时满足（对齐 cc-connect），
+// 压到 1/interval——立即 flush 需要「间隔 + 最小增量」同时满足，
 // 否则由防抖定时器在间隔边界兜底一次。回归：旧实现 minRunes 为 OR 条件，
 // 10 次连续 delta 会产生约 10 次立即写请求。
 func TestRichBodyDeltaThrottleCapsFlushRate(t *testing.T) {

@@ -10,8 +10,6 @@ Shared or business logic lives outside native rendering:
 - `runtime/platform/common.KeyedExecutor` bounds ingress work and preserves FIFO
   order within a chat. Lark uses 8 active jobs and 256 waiting jobs. Shutdown
   cancels active work and discards waiting work; jobs must honor cancellation.
-- `runtime/platform/common.ProgressEntryFromToolResult` reduces tool results to
-  presentation data. Native streaming state and writes remain in this adapter.
 - `runtime/cardcompat` translates legacy delete-mode cards and form submissions.
   The renderer handles typed forms and checkboxes without knowing their commands.
   Existing command names and callback values remain compatible with downstream
@@ -37,3 +35,8 @@ acknowledgment does not promise exactly-once business execution.
 Attachment buffering, interaction submission tracking, reaction identity and
 CardKit sequencing remain separate state with different lifetimes. This refactor
 does not merge them into a general workflow/state framework or add configuration.
+
+Progress cards consume native outbound events and typed tool results directly.
+The unused prefixed-string progress payload protocol and its legacy entry
+inference have been removed. Tool-result formatting stays local until another
+platform needs the same behavior.

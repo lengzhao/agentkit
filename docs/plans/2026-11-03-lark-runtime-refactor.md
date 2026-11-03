@@ -2,7 +2,7 @@
 
 **Goal:** Reduce Lark adapter responsibility while preserving user-visible messaging, interaction and session ownership behavior.
 
-**Architecture:** Keep native SDK, CardKit and route semantics in the adapter. Move session-history facts and agent progress reduction into existing runtime packages; keep business commands outside native rendering. Use one bounded, lifecycle-owned ingress executor rather than independent background tasks. Separate confirmed API rejection from uncertain writes before choosing retry or fallback. No new user configuration or global registry.
+**Architecture:** Keep native SDK, CardKit and route semantics in the adapter. Move session-history facts into the session runtime; keep business commands outside native rendering. Use one bounded, lifecycle-owned ingress executor rather than independent background tasks. Separate confirmed API rejection from uncertain writes before choosing retry or fallback. No new user configuration or global registry.
 
 **Tech Stack:** Go, existing Lark SDK, httptest, existing platform/common and session runtime packages.
 
@@ -13,7 +13,7 @@
 
 ## 2. Card business boundaries and progress state
 - Inspect deletion/navigation card creation and move business action interpretation to the owning command/common presentation logic; Lark should render typed controls and decode native fields.
-- Extract pure tool-event/progress state normalization when it reduces actual coupling; keep CardKit seq, native layout preservation and streaming locks local.
+- Remove unused prefixed progress-payload parsing and rendering. Keep single-consumer tool-result reduction, CardKit seq, native layout preservation and streaming locks local.
 - Preserve current callbacks and compatibility formats unless callers can be ruled out. Add behavior tests and run Lark/common/command tests.
 
 ## 3. Single message writes and safe policy

@@ -11,7 +11,6 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
-	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
@@ -251,10 +250,10 @@ func (p *Platform) flushRichCardState(ctx context.Context, streamKey agentkit.Se
 		err = p.patchRichCard(ctx, handle, content, retryProfileStandard)
 	}
 	if err != nil {
-		// 更新模式（对齐 cc-connect）：进度卡只原地更新，中途失败绝不重建新
+		// 更新模式：进度卡只原地更新，中途失败绝不重建新
 		// 消息。streamState 内容单调累积，跳过一帧什么都不丢——下一次成功的
-		// flush 会把同一张卡补齐到最新。投递保证由 turn/end 定稿兜底
-		// （patch 失败才新发一条最终答复），因此中途失败只记日志并等下轮。
+		// flush 会把同一张卡补齐到最新。turn/end 会尝试定稿；
+		// 未知写入结果不会触发另发消息，中途失败只记日志并等下轮。
 		st.lock()
 		st.updateFailCount++
 		fails := st.updateFailCount
@@ -551,7 +550,7 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 	interval := p.richCardPatchThrottle(st)
 	elapsed := time.Since(st.lastProgressUpdate)
 	bodyGrowth := len([]rune(displayBody)) - st.lastRichCardBodyStreamRunes
-	// 限频（对齐 cc-connect）：间隔与最小增量两个条件同时满足才立即 flush，
+	// 限频：间隔与最小增量两个条件同时满足才立即 flush，
 	// 否则由防抖定时器在间隔边界兜底——快模型高频 delta 下写请求速率同样
 	// 被压到 1/interval，避免打满出口代理（TLB 403）与 Lark 流式更新限流。
 	shouldFlushNow := st.progressHandle == nil ||
@@ -741,15 +740,24 @@ func (p *Platform) applyToolResult(st *streamState, result agentkit.ToolResult) 
 	if !p.showToolProgress {
 		return false
 	}
-	item := common.ProgressEntryFromToolResult(result, maxToolSummaryRunes)
+	name := strings.TrimSpace(result.Name)
+	if name == "" {
+		name = "Tool"
+	}
+	content := truncateRunes(strings.TrimSpace(result.Content), maxToolSummaryRunes)
+	success := strings.TrimSpace(result.Audit["decision"]) != "deny" && strings.TrimSpace(result.Audit["status"]) != "failed"
+	status := "completed"
+	if !success {
+		status = "failed"
+	}
 	st.steps = append(st.steps, toolStep{
 		Kind:    toolStepKindToolResult,
-		Name:    item.Tool,
-		Summary: item.Text,
-		Result:  item.Text,
-		Status:  item.Status,
+		Name:    name,
+		Summary: content,
+		Result:  content,
+		Status:  status,
 		CallID:  string(result.ID),
-		Success: item.Success,
+		Success: &success,
 		Done:    true,
 	})
 	st.status = cardStatusWorking
