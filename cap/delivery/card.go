@@ -1,0 +1,130 @@
+package delivery
+
+// Card is a platform-agnostic rich message (Slack Block Kit, Feishu interactive card, etc.).
+type Card struct {
+	Header   *CardHeader
+	Elements []CardElement
+	Static   bool // true after user answered; renderers must not emit interactive controls
+}
+
+type CardHeader struct {
+	Title string
+	Color string // blue, green, orange, red, ...
+}
+
+type CardElement interface {
+	cardElement()
+}
+
+type CardMarkdown struct{ Content string }
+type CardDivider struct{}
+type CardActions struct {
+	Buttons []CardButton
+	Layout  CardActionLayout
+}
+type CardNote struct {
+	Text string
+	Tag  string
+}
+type CardListItem struct {
+	Text     string
+	BtnText  string
+	BtnType  string
+	BtnValue string
+	Extra    map[string]string
+}
+
+func (CardMarkdown) cardElement() {}
+func (CardDivider) cardElement()  {}
+func (CardActions) cardElement()  {}
+func (CardNote) cardElement()     {}
+
+type CardSelect struct {
+	Placeholder string
+	Options     []CardSelectOption
+	InitValue   string
+}
+
+type CardSelectOption struct {
+	Text  string
+	Value string
+}
+
+func (CardSelect) cardElement()   {}
+func (CardListItem) cardElement() {}
+
+// CardForm groups named fields and form actions. Renderers map these generic
+// nodes to native form controls; application action values remain opaque.
+type CardForm struct {
+	Name     string
+	Elements []CardElement
+	Buttons  []CardButton
+}
+
+type CardCheckbox struct {
+	Name    string
+	Text    string
+	Checked bool
+}
+
+func (CardForm) cardElement()     {}
+func (CardCheckbox) cardElement() {}
+
+type CardButton struct {
+	Name       string
+	FormAction string // optional form action, e.g. "submit"
+
+	Text  string
+	Type  string
+	Value string
+	Extra map[string]string
+}
+
+type CardActionLayout string
+
+const (
+	CardActionLayoutRow          CardActionLayout = "row"
+	CardActionLayoutEqualColumns CardActionLayout = "equal_columns"
+)
+
+type CardBuilder struct{ card Card }
+
+func NewCard() *CardBuilder { return &CardBuilder{} }
+
+func (b *CardBuilder) Title(title, color string) *CardBuilder {
+	b.card.Header = &CardHeader{Title: title, Color: color}
+	return b
+}
+
+func (b *CardBuilder) Markdown(content string) *CardBuilder {
+	if content != "" {
+		b.card.Elements = append(b.card.Elements, CardMarkdown{Content: content})
+	}
+	return b
+}
+
+func (b *CardBuilder) Note(text string) *CardBuilder {
+	if text != "" {
+		b.card.Elements = append(b.card.Elements, CardNote{Text: text})
+	}
+	return b
+}
+
+func (b *CardBuilder) ListItemBtnExtra(desc, btnText, btnType, btnValue string, extra map[string]string) *CardBuilder {
+	b.card.Elements = append(b.card.Elements, CardListItem{
+		Text: desc, BtnText: btnText, BtnType: btnType, BtnValue: btnValue, Extra: extra,
+	})
+	return b
+}
+
+func (b *CardBuilder) Build() *Card {
+	c := b.card
+	return &c
+}
+
+func (c *Card) FallbackText() string {
+	if c.Header != nil && c.Header.Title != "" {
+		return c.Header.Title
+	}
+	return " "
+}
