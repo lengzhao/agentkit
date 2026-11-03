@@ -11,7 +11,6 @@ import (
 	capsdelivery "github.com/lengzhao/agentkit/cap/delivery"
 	"github.com/lengzhao/agentkit/cap/filesystem"
 	"github.com/lengzhao/agentkit/cap/workspace"
-	"github.com/lengzhao/agentkit/runtime/rctx"
 	rtworkspace "github.com/lengzhao/agentkit/runtime/workspace"
 )
 
@@ -153,33 +152,4 @@ func isImagePath(path string) bool {
 	default:
 		return false
 	}
-}
-
-// DispatchReceipt sends explicit business content without an assistant event.
-// It never falls back to legacy Send when receipt capabilities are unavailable.
-func DispatchReceipt(ctx context.Context, deps SendDeps, input SendInput) (capsdelivery.Receipt, error) {
-	receipt := capsdelivery.Receipt{Outcome: capsdelivery.OutcomeNotSent, Deduplication: capsdelivery.Deduplication{Mode: "none"}}
-	if deps.Messages == nil {
-		return receipt, &capsdelivery.Error{Code: capsdelivery.CodeUnsupported, Outcome: capsdelivery.OutcomeNotSent}
-	}
-	if input.Path != "" || input.Raw {
-		return receipt, &capsdelivery.Error{Code: capsdelivery.CodeUnsupported, Outcome: capsdelivery.OutcomeNotSent}
-	}
-	if strings.TrimSpace(input.Text) == "" {
-		return receipt, &capsdelivery.Error{Code: capsdelivery.CodeInvalidContent, Outcome: capsdelivery.OutcomeNotSent}
-	}
-	var route agentkit.RouteRef
-	if input.Route != nil {
-		if input.SessionID != "" || input.UserID != "" {
-			return receipt, &capsdelivery.Error{Code: capsdelivery.CodeInvalidTarget, Outcome: capsdelivery.OutcomeNotSent}
-		}
-		route = *input.Route
-	} else {
-		var err error
-		route, err = rctx.ResolveRoute(ctx, capsdelivery.RouteInput{SessionID: input.SessionID, UserID: input.UserID})
-		if err != nil {
-			return receipt, &capsdelivery.Error{Code: capsdelivery.CodeInvalidTarget, Outcome: capsdelivery.OutcomeNotSent, Cause: err}
-		}
-	}
-	return deps.Messages.Publish(ctx, capsdelivery.PublishRequest{Route: route, Content: []capsdelivery.Part{{Type: "text", Text: input.Text}}, Caller: "tool/send", OperationID: input.OperationID})
 }

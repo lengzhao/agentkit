@@ -148,7 +148,7 @@ flowchart LR
 | [plugin-catalog.zh.md](docs/plugin-catalog.zh.md) | Plugin kind catalog |
 | [roadmap.zh.md](docs/roadmap.zh.md) | Status and roadmap |
 | [guides/learning-dreaming.zh.md](docs/guides/learning-dreaming.zh.md) | Dreaming, diary, Skill Workshop |
-| [guides/delivery.zh.md](docs/guides/delivery.zh.md) | Background delivery, durable receipts, optional topics |
+| [guides/delivery.zh.md](docs/guides/delivery.zh.md) | Custom plugin card sending |
 | [guides/](docs/guides/) | Autonomous runs, multi-tenant, tools, HIL, … |
 
 ## Development

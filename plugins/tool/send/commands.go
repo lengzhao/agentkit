@@ -10,17 +10,16 @@ import (
 var _ agentkit.CommandLogSanitizer = sendSlashCommand{}
 
 type sendBundle struct {
-	tool   agentkit.Tool
-	cfg    SendConfig
-	deps   SendDeps
-	schema agentkit.JSONSchema
+	tool agentkit.Tool
+	cfg  SendConfig
+	deps SendDeps
 }
 
 func (b *sendBundle) Name() string { return b.tool.Name() }
 
 func (b *sendBundle) Description() string { return b.tool.Description() }
 
-func (b *sendBundle) InputSchema() agentkit.JSONSchema { return b.schema }
+func (b *sendBundle) InputSchema() agentkit.JSONSchema { return b.tool.InputSchema() }
 
 func (b *sendBundle) Call(ctx context.Context, input json.RawMessage) (string, error) {
 	return b.tool.Call(ctx, input)

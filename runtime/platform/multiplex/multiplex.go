@@ -13,9 +13,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-type Config struct {
-	Instances []string `json:"instances,omitempty"`
-}
+type Config struct{}
 
 type Deps struct {
 	Platforms []agentkit.Platform `json:"platforms"`
@@ -43,7 +41,7 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 	if len(deps.Platforms) == 0 {
 		return nil, fmt.Errorf("multiplex requires at least one platform")
 	}
-	platforms, err := assignNamedPlatformIDs(deps.Platforms, cfg.Instances)
+	platforms, err := assignPlatformIDs(deps.Platforms)
 	if err != nil {
 		return nil, err
 	}
@@ -59,18 +57,8 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 }
 
 func assignPlatformIDs(platforms []agentkit.Platform) (map[string]agentkit.Platform, error) {
-	return assignNamedPlatformIDs(platforms, nil)
-}
-
-func assignNamedPlatformIDs(platforms []agentkit.Platform, instances []string) (map[string]agentkit.Platform, error) {
-	if len(instances) > 0 && len(instances) != len(platforms) {
-		return nil, fmt.Errorf("multiplex instances must match platforms")
-	}
-	ids := make([]string, len(platforms))
-	bases := make([]string, len(platforms))
-	used := map[string]struct{}{}
-	// Reserve explicit identities before assigning fallback names, regardless of
-	// leaf order. Validate everything before mutating any shared leaf identity.
+	out := make(map[string]agentkit.Platform, len(platforms))
+	used := make(map[string]struct{}, len(platforms))
 	for i, p := range platforms {
 		if p == nil {
 			return nil, fmt.Errorf("platforms[%d] is nil", i)
@@ -79,38 +67,12 @@ func assignNamedPlatformIDs(platforms []agentkit.Platform, instances []string) (
 		if err != nil {
 			return nil, err
 		}
-		bases[i] = base
-		if identity, ok := p.(interface{ PlatformInstance() string }); ok {
-			ids[i] = identity.PlatformInstance()
-		}
-		if len(instances) > 0 {
-			if instances[i] == "" {
-				return nil, fmt.Errorf("multiplex requires nonempty instance IDs")
-			}
-			if ids[i] != "" && ids[i] != instances[i] {
-				return nil, fmt.Errorf("multiplex instance identity conflict")
-			}
-			ids[i] = instances[i]
-		}
-		if ids[i] != "" {
-			if _, exists := used[ids[i]]; exists {
-				return nil, fmt.Errorf("duplicate explicit platform instance %q", ids[i])
-			}
-			used[ids[i]] = struct{}{}
-		}
-	}
-	out := make(map[string]agentkit.Platform, len(platforms))
-	for i, p := range platforms {
-		if ids[i] == "" {
-			ids[i] = uniquePlatformKey(bases[i], i, used)
-			used[ids[i]] = struct{}{}
-		}
-		out[ids[i]] = p
-	}
-	for id, p := range out {
+		id := uniquePlatformKey(base, i, used)
+		used[id] = struct{}{}
 		if setter, ok := p.(agentkit.PlatformInstanceSetter); ok {
 			setter.SetPlatformInstance(id)
 		}
+		out[id] = p
 	}
 	return out, nil
 }
