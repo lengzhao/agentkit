@@ -102,24 +102,6 @@ func (b *CardBuilder) Build() *Card {
 	return &c
 }
 
-// CollectButtons flattens list-item buttons for Telegram inline keyboards.
-func (c *Card) CollectButtons() [][]ButtonOption {
-	var rows [][]ButtonOption
-	for _, elem := range c.Elements {
-		e, ok := elem.(CardListItem)
-		if !ok {
-			continue
-		}
-		rows = append(rows, []ButtonOption{{Text: e.BtnText, Data: e.BtnValue}})
-	}
-	return rows
-}
-
-type ButtonOption struct {
-	Text string
-	Data string
-}
-
 func (c *Card) FallbackText() string {
 	if c.Header != nil && c.Header.Title != "" {
 		return c.Header.Title

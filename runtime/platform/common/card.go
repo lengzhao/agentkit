@@ -17,7 +17,6 @@ type (
 	CardButton       = delivery.CardButton
 	CardActionLayout = delivery.CardActionLayout
 	CardBuilder      = delivery.CardBuilder
-	ButtonOption     = delivery.ButtonOption
 )
 
 const (
