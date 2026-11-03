@@ -53,7 +53,7 @@ type CronConfig struct {
 	SessionMode string `json:"sessionMode"`
 	// SessionID is the id prefix used for inbound turns.
 	SessionID string `json:"sessionId"`
-	// PollSeconds is the idle backoff when no jobs are scheduled.
+	// PollSeconds bounds the wait before rechecking the registry for job changes.
 	// Defaults to 30.
 	PollSeconds int `json:"pollSeconds"`
 	// MissedGraceSeconds is how long a missed one-shot job is still fired.
@@ -383,7 +383,7 @@ func (c *Cron) nextWake(ctx context.Context, now time.Time) time.Duration {
 	if wait < time.Millisecond {
 		return time.Millisecond
 	}
-	return wait
+	return min(wait, c.poll)
 }
 
 func (c *Cron) popDue() (capschedule.Job, bool) {

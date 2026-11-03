@@ -1061,7 +1061,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `jobs` | `[]schedule.CronJobSpec` | — | Jobs are reconciled into the registry on every start with source=config. |
 | `sessionMode` | `string` | — | SessionMode is stateless (default), reuse, or fixed. |
 | `sessionId` | `string` | `schedule` | SessionID is the id prefix used for inbound turns. |
-| `pollSeconds` | `int` | `30` | PollSeconds is the idle backoff when no jobs are scheduled. Defaults to 30. |
+| `pollSeconds` | `int` | `30` | PollSeconds bounds the wait before rechecking the registry for job changes. Defaults to 30. |
 | `missedGraceSeconds` | `int` | `300` | MissedGraceSeconds is how long a missed one-shot job is still fired. Older one-shots are marked stale instead of backfilled. Defaults to 300. |
 | `promptTemplate` | `string` | — | PromptTemplate replaces the default preamble prepended to every fired prompt. Use it to name a host-specific tool; leave it empty and the default mentions no tool at all. |
 
