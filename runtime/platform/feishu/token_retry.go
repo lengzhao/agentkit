@@ -70,6 +70,10 @@ func isTenantAccessTokenInvalid(err error) bool {
 	if err == nil {
 		return false
 	}
+	var write *messageWriteError
+	if errors.As(err, &write) {
+		return !write.Unknown && write.Code == 99991663
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "99991663") || strings.Contains(msg, "invalid access token")
 }
@@ -79,17 +83,15 @@ const (
 	transientRetryInitial = 500 * time.Millisecond
 )
 
-// transientRetryProfile 描述一组 transient 重试预算。整体策略：各档都保持
-// 短预算、快速失败/快速降级——长故障窗口下尽快走完降级链（新最终卡 → 纯文本），
-// 最终投递保证由降级链末端纯文本的 5s/20s/60s 长重试覆盖，而不是让卡片路径
-// 在故障期长时间重试锤网关。
+// transientRetryProfile bounds retries for repeatable operations such as reads
+// and updates. Unknown IM Create/Reply results bypass these retries and fallback.
 type transientRetryProfile struct {
 	maxRetries int
 	maxDelay   time.Duration
 }
 
 var (
-	// retryProfileStandard：普通发送/消息类请求，2 次重试、~1.5s（0.5+1）。
+	// retryProfileStandard：可重复的普通请求，2 次重试、~1.5s（0.5+1）。
 	retryProfileStandard = transientRetryProfile{maxRetries: 2, maxDelay: 5 * time.Second}
 	// retryProfileQuick：中途流式帧（元素流式/整卡 patch），1 次重试、~1s
 	// 快速失败——内容在 streamState 单调累积，下一次 flush 自动补齐。
@@ -102,7 +104,7 @@ var (
 // isTransientError returns true if the error is a transient network error
 // that warrants a retry (connection reset, timeout, EOF, etc.).
 func isTransientError(err error) bool {
-	if err == nil {
+	if err == nil || isMessageWriteUnknown(err) {
 		return false
 	}
 	// Typed syscall checks — more robust than string matching.
@@ -121,10 +123,9 @@ func isTransientError(err error) bool {
 	// Unwrapped string checks for common transient symptoms that may
 	// appear in wrapped Feishu SDK errors.
 	msg := err.Error()
-	// 出口代理/边缘网关（TLB 等）拦截响应：非 JSON 空 body + 403/5xx。
-	// Lark API 自身永远返回 JSON，非 JSON 响应说明请求未到达应用层，
-	// 属于网关抖动，退避重试通常成功（CardKit 同 seq 重试已被 300317
-	// 良性化兜底，重复落地无副作用）。
+	// Non-JSON responses are transient symptoms, not proof that a write was
+	// rejected. Uncertain IM writes are excluded above; callers of this generic
+	// retry helper must otherwise provide repeatable/read operations.
 	if strings.Contains(msg, "response content-type not json") {
 		return true
 	}

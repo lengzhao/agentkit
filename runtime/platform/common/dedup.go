@@ -19,8 +19,16 @@ type MessageDedup struct {
 
 // IsDuplicate returns true if msgID was already seen within the TTL window.
 func (d *MessageDedup) IsDuplicate(msgID string) bool {
+	duplicate, _ := d.Admit(msgID, func() error { return nil })
+	return duplicate
+}
+
+// Admit atomically records an ID only after nonblocking queue admission succeeds.
+// A full/stopped executor can therefore return an SDK error without poisoning
+// the dedup window. accept must not block or call back into this MessageDedup.
+func (d *MessageDedup) Admit(msgID string, accept func() error) (bool, error) {
 	if msgID == "" {
-		return false
+		return false, accept()
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -28,16 +36,19 @@ func (d *MessageDedup) IsDuplicate(msgID string) bool {
 		d.seen = make(map[string]time.Time)
 	}
 	now := time.Now()
-	for k, t := range d.seen {
-		if now.Sub(t) > dedupTTL {
-			delete(d.seen, k)
+	for key, at := range d.seen {
+		if now.Sub(at) > dedupTTL {
+			delete(d.seen, key)
 		}
 	}
 	if _, ok := d.seen[msgID]; ok {
-		return true
+		return true, nil
+	}
+	if err := accept(); err != nil {
+		return false, err
 	}
 	d.seen[msgID] = now
-	return false
+	return false, nil
 }
 
 // IsOldMessage returns true if msgTime is before process start (with grace).

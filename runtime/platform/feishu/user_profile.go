@@ -19,10 +19,14 @@ import (
 
 // resolveUserName fetches a user's display name via the Contact API, with caching.
 func (p *Platform) resolveUserName(openID string) string {
+	return p.resolveUserNameContext(context.Background(), openID)
+}
+
+func (p *Platform) resolveUserNameContext(ctx context.Context, openID string) string {
 	if !isValidFeishuLookupID(openID) {
 		return openID
 	}
-	entry := p.cachedUserProfile(openID)
+	entry := p.cachedUserProfileContext(ctx, openID)
 	if entry.ok && entry.name != "" {
 		return entry.name
 	}
@@ -168,6 +172,10 @@ func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string
 }
 
 func (p *Platform) mentionMetadata(mentions []*larkim.MentionEvent) map[string]any {
+	return p.mentionMetadataContext(context.Background(), mentions)
+}
+
+func (p *Platform) mentionMetadataContext(ctx context.Context, mentions []*larkim.MentionEvent) map[string]any {
 	if len(mentions) == 0 {
 		return nil
 	}
@@ -193,7 +201,7 @@ func (p *Platform) mentionMetadata(mentions []*larkim.MentionEvent) map[string]a
 		if mention.Name != nil {
 			name = strings.TrimSpace(*mention.Name)
 		}
-		entry := p.cachedUserProfile(userID)
+		entry := p.cachedUserProfileContext(ctx, userID)
 		if name == "" && entry.ok {
 			name = entry.name
 		}
@@ -245,10 +253,14 @@ func isValidFeishuLookupID(id string) bool {
 
 // resolveUserNames batch-resolves open_ids to display names.
 func (p *Platform) resolveUserNames(openIDs []string) map[string]string {
+	return p.resolveUserNamesContext(context.Background(), openIDs)
+}
+
+func (p *Platform) resolveUserNamesContext(ctx context.Context, openIDs []string) map[string]string {
 	names := make(map[string]string, len(openIDs))
 	for _, id := range openIDs {
 		if _, ok := names[id]; !ok {
-			names[id] = p.resolveUserName(id)
+			names[id] = p.resolveUserNameContext(ctx, id)
 		}
 	}
 	return names
@@ -256,13 +268,20 @@ func (p *Platform) resolveUserNames(openIDs []string) map[string]string {
 
 // resolveChatName fetches a chat/group name via the IM API, with caching.
 func (p *Platform) resolveChatName(chatID string) string {
+	return p.resolveChatNameContext(context.Background(), chatID)
+}
+
+func (p *Platform) resolveChatNameContext(ctx context.Context, chatID string) string {
 	if chatID == "" {
 		return ""
 	}
 	if cached, ok := p.chatNameCache.Load(chatID); ok {
 		return cached.(string)
 	}
-	resp, err := p.client.Im.Chat.Get(context.Background(),
+	if p.client == nil {
+		return chatID
+	}
+	resp, err := p.client.Im.Chat.Get(ctx,
 		larkim.NewGetChatReqBuilder().ChatId(chatID).Build())
 	if err != nil {
 		slog.Debug(p.tag()+": resolve chat name failed", "chat_id", chatID, "error", err)

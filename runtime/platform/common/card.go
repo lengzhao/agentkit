@@ -38,6 +38,7 @@ func (CardMarkdown) cardElement() {}
 func (CardDivider) cardElement()  {}
 func (CardActions) cardElement()  {}
 func (CardNote) cardElement()     {}
+
 type CardSelect struct {
 	Placeholder string
 	Options     []CardSelectOption
@@ -49,10 +50,29 @@ type CardSelectOption struct {
 	Value string
 }
 
-func (CardSelect) cardElement() {}
+func (CardSelect) cardElement()   {}
 func (CardListItem) cardElement() {}
 
+// CardForm groups named fields and form actions. Renderers map these generic
+// nodes to native form controls; application action values remain opaque.
+type CardForm struct {
+	Name     string
+	Elements []CardElement
+	Buttons  []CardButton
+}
+type CardCheckbox struct {
+	Name    string
+	Text    string
+	Checked bool
+}
+
+func (CardForm) cardElement()     {}
+func (CardCheckbox) cardElement() {}
+
 type CardButton struct {
+	Name       string
+	FormAction string // optional form action, e.g. "submit"
+
 	Text  string
 	Type  string
 	Value string

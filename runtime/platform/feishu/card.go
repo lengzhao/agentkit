@@ -10,6 +10,7 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"github.com/lengzhao/agentkit/runtime/cardcompat"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
@@ -61,6 +62,7 @@ func (p *Platform) RefreshCard(ctx context.Context, sessionKey string, card *com
 }
 
 func renderCardMap(card *common.Card, sessionKey string) map[string]any {
+	card = cardcompat.Normalize(card)
 	config := map[string]any{"wide_screen_mode": true}
 	if card != nil && card.Static {
 		config["enable_forward_interaction"] = false
@@ -82,37 +84,53 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 			"template": color,
 		}
 	}
-	if transformed, ok := renderDeleteModeCheckerCard(card, result); ok {
-		return transformed
+	elements := renderCardElements(card.Elements, sessionKey, card.Static)
+	if len(elements) == 0 {
+		elements = []map[string]any{{"tag": "markdown", "content": " "}}
 	}
+	result["elements"] = elements
+	return result
+}
 
+func renderCardElements(source []common.CardElement, sessionKey string, static bool) []map[string]any {
 	var elements []map[string]any
-	for _, elem := range card.Elements {
+	for _, elem := range source {
 		switch e := elem.(type) {
+		case common.CardForm:
+			fields := renderCardElements(e.Elements, sessionKey, static)
+			if static {
+				elements = append(elements, fields...)
+				continue
+			}
+			var columns []map[string]any
+			for _, button := range e.Buttons {
+				columns = append(columns, map[string]any{"tag": "column", "width": "auto", "vertical_align": "center", "elements": []map[string]any{renderCardButton(button, sessionKey)}})
+			}
+			if len(columns) > 0 {
+				fields = append(fields, map[string]any{"tag": "column_set", "horizontal_align": "left", "columns": columns})
+			}
+			elements = append(elements, map[string]any{"tag": "form", "name": e.Name, "elements": fields})
+		case common.CardCheckbox:
+			if static {
+				mark := "◻ "
+				if e.Checked {
+					mark = "☑ "
+				}
+				elements = append(elements, map[string]any{"tag": "markdown", "content": mark + e.Text})
+				continue
+			}
+			elements = append(elements, map[string]any{"tag": "checker", "name": e.Name, "checked": e.Checked, "text": map[string]any{"tag": "lark_md", "content": e.Text}})
 		case common.CardMarkdown:
 			elements = append(elements, map[string]any{"tag": "markdown", "content": e.Content})
 		case common.CardDivider:
 			elements = append(elements, map[string]any{"tag": "hr"})
 		case common.CardActions:
-			if card.Static {
+			if static {
 				continue
 			}
 			var actions []map[string]any
 			for _, btn := range e.Buttons {
-				btnType := btn.Type
-				if btnType == "" {
-					btnType = "default"
-				}
-				valMap := map[string]string{"action": btn.Value}
-				if sessionKey != "" {
-					valMap["session_key"] = sessionKey
-				}
-				for k, v := range btn.Extra {
-					valMap[k] = v
-				}
-				action := map[string]any{
-					"tag": "button", "text": plainText(btn.Text), "type": btnType, "value": valMap,
-				}
+				action := renderCardButton(btn, sessionKey)
 				if e.Layout == common.CardActionLayoutEqualColumns {
 					action["width"] = "fill"
 				}
@@ -138,7 +156,7 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 				}
 			}
 		case common.CardListItem:
-			if card.Static {
+			if static {
 				if strings.TrimSpace(e.Text) == "" {
 					continue
 				}
@@ -184,7 +202,7 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 				},
 			})
 		case common.CardSelect:
-			if card.Static {
+			if static {
 				continue
 			}
 			var options []map[string]any
@@ -208,11 +226,7 @@ func renderCardMap(card *common.Card, sessionKey string) map[string]any {
 			elements = append(elements, map[string]any{"tag": "note", "elements": []map[string]any{plainText(e.Text)}})
 		}
 	}
-	if len(elements) == 0 {
-		elements = []map[string]any{{"tag": "markdown", "content": " "}}
-	}
-	result["elements"] = elements
-	return result
+	return elements
 }
 
 func listItemStacksVertically(text string) bool {
@@ -235,130 +249,24 @@ func renderCard(card *common.Card, sessionKey string) string {
 	return string(b)
 }
 
-func renderDeleteModeCheckerCard(card *common.Card, base map[string]any) (map[string]any, bool) {
-	if card == nil {
-		return nil, false
+func renderCardButton(button common.CardButton, sessionKey string) map[string]any {
+	kind := button.Type
+	if kind == "" {
+		kind = "default"
 	}
-	formRowElements := make([]map[string]any, 0)
-	notes := make([]common.CardNote, 0)
-	navRows := make([]common.CardActions, 0)
-	submitText := ""
-	cancelText := ""
-
-	for _, elem := range card.Elements {
-		switch e := elem.(type) {
-		case common.CardListItem:
-			id, selectable, ok := parseDeleteModeListItemAction(e.BtnValue)
-			if !ok {
-				return nil, false
-			}
-			text := normalizeDeleteModeCheckerText(e.Text)
-			if !selectable {
-				formRowElements = append(formRowElements, map[string]any{"tag": "markdown", "content": "▶ " + text})
-				continue
-			}
-			formRowElements = append(formRowElements, map[string]any{
-				"tag": "checker", "name": deleteModeCheckerName(id), "checked": strings.Contains(e.Text, "☑"),
-				"text": map[string]any{"tag": "lark_md", "content": text},
-			})
-		case common.CardNote:
-			notes = append(notes, e)
-		case common.CardActions:
-			remaining := make([]common.CardButton, 0, len(e.Buttons))
-			for _, btn := range e.Buttons {
-				switch btn.Value {
-				case "act:/delete-mode confirm":
-					submitText = btn.Text
-				case "act:/delete-mode cancel":
-					cancelText = btn.Text
-				default:
-					remaining = append(remaining, btn)
-				}
-			}
-			if len(remaining) > 0 {
-				navRows = append(navRows, common.CardActions{Buttons: remaining, Layout: e.Layout})
-			}
-		case common.CardMarkdown, common.CardDivider, common.CardSelect:
-			return nil, false
-		}
+	value := map[string]string{"action": button.Value}
+	if sessionKey != "" {
+		value["session_key"] = sessionKey
 	}
-	if len(formRowElements) == 0 || submitText == "" {
-		return nil, false
+	for key, item := range button.Extra {
+		value[key] = item
 	}
-
-	elements := make([]map[string]any, 0, len(notes)+1+len(navRows))
-	for _, n := range notes {
-		if n.Text == "" || n.Tag == "delete-mode-selected-count" {
-			continue
-		}
-		elements = append(elements, map[string]any{"tag": "note", "elements": []map[string]any{plainText(n.Text)}})
+	out := map[string]any{"tag": "button", "text": plainText(button.Text), "type": kind, "value": value}
+	if button.Name != "" {
+		out["name"] = button.Name
 	}
-	formElements := append([]map[string]any{}, formRowElements...)
-	buttonColumns := []map[string]any{{
-		"tag": "column", "width": "auto", "vertical_align": "center",
-		"elements": []map[string]any{{
-			"tag": "button", "text": plainText(submitText), "type": "danger",
-			"name": "delete_mode_submit", "form_action_type": "submit",
-			"value": map[string]string{"action": "act:/delete-mode form-submit"},
-		}},
-	}}
-	if cancelText != "" {
-		buttonColumns = append(buttonColumns, map[string]any{
-			"tag": "column", "width": "auto", "vertical_align": "center",
-			"elements": []map[string]any{{
-				"tag": "button", "text": plainText(cancelText), "type": "default",
-				"name": "delete_mode_cancel", "value": map[string]string{"action": "act:/delete-mode cancel"},
-			}},
-		})
+	if button.FormAction != "" {
+		out["form_action_type"] = button.FormAction
 	}
-	formElements = append(formElements, map[string]any{"tag": "column_set", "horizontal_align": "left", "columns": buttonColumns})
-	elements = append(elements, map[string]any{"tag": "form", "name": "delete_mode_form", "elements": formElements})
-	for _, row := range navRows {
-		actions := make([]map[string]any, 0, len(row.Buttons))
-		for _, btn := range row.Buttons {
-			btnType := btn.Type
-			if btnType == "" {
-				btnType = "default"
-			}
-			valMap := map[string]string{"action": btn.Value}
-			for k, v := range btn.Extra {
-				valMap[k] = v
-			}
-			action := map[string]any{"tag": "button", "text": plainText(btn.Text), "type": btnType, "value": valMap}
-			if row.Layout == common.CardActionLayoutEqualColumns {
-				action["width"] = "fill"
-			}
-			actions = append(actions, action)
-		}
-		if len(actions) > 0 {
-			elements = append(elements, map[string]any{"tag": "action", "actions": actions})
-		}
-	}
-	base["elements"] = elements
-	return base, true
-}
-
-func normalizeDeleteModeCheckerText(text string) string {
-	trimmed := strings.TrimSpace(text)
-	for _, prefix := range []string{"☑ ▶", "◻ ▶", "▶", "☑", "◻"} {
-		if strings.HasPrefix(trimmed, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
-		}
-	}
-	return trimmed
-}
-
-func parseDeleteModeListItemAction(action string) (id string, selectable bool, ok bool) {
-	const togglePrefix = "act:/delete-mode toggle "
-	const noopPrefix = "act:/delete-mode noop "
-	switch {
-	case strings.HasPrefix(action, togglePrefix):
-		id = strings.TrimSpace(strings.TrimPrefix(action, togglePrefix))
-		return id, true, id != ""
-	case strings.HasPrefix(action, noopPrefix):
-		id = strings.TrimSpace(strings.TrimPrefix(action, noopPrefix))
-		return id, false, id != ""
-	default:
-		return "", false, false
-	}
+	return out
 }

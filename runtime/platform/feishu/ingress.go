@@ -13,6 +13,7 @@ import (
 	capsession "github.com/lengzhao/agentkit/cap/session"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
+	"github.com/lengzhao/agentkit/runtime/session/derive"
 )
 
 const ingressPolicyTimeout = 2 * time.Second
@@ -70,20 +71,8 @@ func (p *Platform) ingressContext(ctx context.Context, rc replyContext, user str
 	if err != nil {
 		return owner, ingress.Unknown
 	}
-	for _, msg := range messages {
-		if msg.Role != "user" {
-			continue
-		}
-		for _, part := range msg.Content {
-			text := strings.TrimSpace(part.Text)
-			text = strings.TrimSpace(strings.SplitN(text, "\n\n(Files the user uploaded with this message. workspace paths:", 2)[0])
-			if text == "Please analyze the attached file(s)." {
-				continue
-			}
-			if part.Type == "text" && text != "" && !strings.HasPrefix(text, "[附件") && !strings.HasPrefix(text, "[attachment") {
-				return owner, ingress.Existing
-			}
-		}
+	if derive.HasUserInstruction(messages) {
+		return owner, ingress.Existing
 	}
 	return owner, ingress.New
 }
@@ -106,31 +95,17 @@ func (p *Platform) rememberIngressText(owner agentkit.SessionID) {
 	p.ingressAccepted[owner] = time.Now()
 }
 
-// queueIngress preserves receive order across download IO without blocking SDK ACKs.
-// A channel/user queue also orders adjacent DM top-level messages with different topics.
-func (p *Platform) queueIngress(key string, work func()) {
-	p.ingressMu.Lock()
-	if p.ingressTails == nil {
-		p.ingressTails = make(map[string]chan struct{})
-	}
-	previous := p.ingressTails[key]
-	done := make(chan struct{})
-	p.ingressTails[key] = done
-	p.ingressMu.Unlock()
-	go func() {
-		if previous != nil {
-			<-previous
-		}
-		defer func() {
-			close(done)
-			p.ingressMu.Lock()
-			if p.ingressTails[key] == done {
-				delete(p.ingressTails, key)
-			}
-			p.ingressMu.Unlock()
-		}()
-		work()
-	}()
+// ingressExecutor is lazy so unit tests and embedded hosts can construct a
+// Platform directly. It owns no idle goroutines and is bound to run's lifetime.
+func (p *Platform) ingressExecutor() *common.KeyedExecutor {
+	p.ingressOnce.Do(func() { p.ingressWork = common.NewKeyedExecutor(8, 256) })
+	return p.ingressWork
+}
+
+// queueIngress preserves receive order across download IO without blocking SDK
+// ACKs. A full queue is an admission failure, not an accepted business operation.
+func (p *Platform) queueIngress(key string, work func(context.Context)) error {
+	return p.ingressExecutor().Submit(key, work)
 }
 
 func (p *Platform) normalMessageTrigger(kind, content, session string, mentions []*larkim.MentionEvent, chatType string) bool {
@@ -236,7 +211,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, kind, content string, me
 	}
 	// Pure-image posts use the same attachment path when deferred.
 	if plan.Agent == ingress.Defer && kind == "post" {
-		_, images := p.parsePostContent(messageID, content)
+		_, images := p.parsePostContent(ctx, messageID, content)
 		for _, img := range images {
 			if err := p.deferAttachment(ctx, rc, userID, owner, img.Data, img.MimeType, img.FileName); err != nil {
 				slog.Warn(p.tag()+": defer image post failed", "error", err)

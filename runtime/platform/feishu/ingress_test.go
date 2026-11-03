@@ -201,8 +201,8 @@ func TestQueueIngressPreservesReceiveOrder(t *testing.T) {
 	p := &Platform{}
 	first := make(chan struct{})
 	second := make(chan struct{})
-	p.queueIngress("chat/user", func() { <-first })
-	p.queueIngress("chat/user", func() { close(second) })
+	p.queueIngress("chat/user", func(context.Context) { <-first })
+	p.queueIngress("chat/user", func(context.Context) { close(second) })
 	select {
 	case <-second:
 		t.Fatal("second input overtook upload")

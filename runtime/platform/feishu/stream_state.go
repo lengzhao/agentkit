@@ -27,8 +27,12 @@ type streamStateData struct {
 	keepaliveTimer     *time.Timer
 	// 卡片创建失败退避：连续失败次数与下次允许重试的时间，避免网关持续故障时
 	// 每个流式 delta 都打一次创建 API。
-	createFailCount  int
-	nextCreateAfter  time.Time
+	createFailCount int
+	nextCreateAfter time.Time
+	// An uncertain create must not be retried by a later streaming flush.
+	unknownCreateErr error
+	createDone       chan struct{}
+	ended            bool
 	// updateFailCount 是同一 handle 上连续更新失败的次数（成功 flush 清零），
 	// 仅作日志观测：更新模式下失败不触发任何重建，下轮 flush 自然重试同一张卡。
 	updateFailCount int
@@ -43,8 +47,8 @@ type streamStateData struct {
 	lastRichCardBodyStreamRunes int
 	// route 是该 stream 的 IM 投递地址（从首个出站事件的 Route 捕获），
 	// 供心跳、防抖 flush、turn/end 定稿等异步路径使用，无需再查事件。
-	route     agentkit.RouteRef
-	hasRoute  bool
+	route    agentkit.RouteRef
+	hasRoute bool
 }
 
 // streamState holds per-stream outbound card state. Access is serialized with

@@ -25,6 +25,7 @@ import (
 	"github.com/lengzhao/agentkit/cap/interaction"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
 	"github.com/lengzhao/agentkit/cap/workspace"
+	"github.com/lengzhao/agentkit/runtime/cardcompat"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
@@ -42,7 +43,8 @@ type Platform struct {
 	inboundPolicy   ingress.Policy
 	ingressMu       sync.Mutex
 	ingressAccepted map[agentkit.SessionID]time.Time
-	ingressTails    map[string]chan struct{}
+	ingressOnce     sync.Once
+	ingressWork     *common.KeyedExecutor
 	deferredMu      sync.Mutex
 	deferred        map[deferredKey]*deferredAttachments
 	common.InstanceIdentity
@@ -210,20 +212,7 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 	if actionVal == "" && event.Event.Action.Option != "" {
 		actionVal = event.Event.Action.Option
 	}
-	if actionVal == "" {
-		switch event.Event.Action.Name {
-		case "delete_mode_submit":
-			actionVal = "act:/delete-mode form-submit"
-		case "delete_mode_cancel":
-			actionVal = "act:/delete-mode cancel"
-		}
-	}
-	if actionVal == "act:/delete-mode form-submit" {
-		ids := collectDeleteModeSelectedFromFormValue(event.Event.Action.FormValue)
-		if len(ids) > 0 {
-			actionVal += " " + strings.Join(ids, ",")
-		}
-	}
+	actionVal = cardcompat.NormalizeAction(event.Event.Action.Name, actionVal, event.Event.Action.FormValue)
 
 	userID := ""
 	if event.Event.Operator != nil {
@@ -317,11 +306,6 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		return nil
 	}
 
-	if p.dedup.IsDuplicate(messageID) {
-		slog.Debug(p.tag()+": duplicate message ignored", "message_id", messageID)
-		return nil
-	}
-
 	if msg.CreateTime != nil {
 		if ms, err := strconv.ParseInt(*msg.CreateTime, 10, 64); err == nil {
 			msgTime := time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
@@ -392,28 +376,36 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	// blocked by IO-heavy operations (image/audio download, handler HTTP calls).
 	// The dedup and old-message checks above remain synchronous to guarantee
 	// correctness before spawning the goroutine.
-	p.queueIngress(chatID, func() {
-		p.dispatchMessage(context.WithoutCancel(ctx), msgType, content, mentions, messageID, sessionKey, userID, chatID, rctx, parentID)
+	duplicate, err := p.dedup.Admit(messageID, func() error {
+		return p.queueIngress(chatID, func(workCtx context.Context) {
+			p.dispatchMessage(workCtx, msgType, content, mentions, messageID, sessionKey, userID, chatID, rctx, parentID)
+		})
 	})
+	if duplicate {
+		slog.Debug(p.tag()+": duplicate message ignored", "message_id", messageID)
+	}
+	return err
 
-	return nil
 }
 
 // dispatchMessage handles the message content parsing, media download, and
 // handler invocation. It runs in its own goroutine so that onMessage returns
 // quickly and does not block the SDK event loop.
 func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string) {
+	if ctx.Err() != nil {
+		return
+	}
 	if p.isMessageRecalled(messageID) {
 		slog.Debug(p.tag()+": recalled message ignored in async dispatch", "message_id", messageID)
 		return
 	}
 
 	// Resolve user profile asynchronously so SDK dispatcher is not blocked.
-	_ = p.cachedUserProfile(userID)
+	_ = p.cachedUserProfileContext(ctx, userID)
 	if len(mentions) > 0 {
-		_ = p.mentionMetadata(mentions)
+		_ = p.mentionMetadataContext(ctx, mentions)
 	}
-	_ = p.resolveChatName(chatID)
+	_ = p.resolveChatNameContext(ctx, chatID)
 
 	// If this message is a reply to another message, fetch the quoted content
 	// and prepend it so the agent has full context.
@@ -429,6 +421,9 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 	// top-level text has a different key. Dispatch it so users can continue in
 	// the resulting topic; flat DMs and groups keep file-first buffering.
 	dispatchAttachment := func(data []byte, mimeType, fileName string) {
+		if ctx.Err() != nil {
+			return
+		}
 		if rctx.ingressAction == ingress.Defer {
 			if err := p.deferAttachment(ctx, rctx, userID, rctx.ingressOwner, data, mimeType, fileName); err != nil {
 				slog.Warn(p.tag()+": defer attachment failed", "error", err)
@@ -448,7 +443,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 		} else {
 			msg.files = []common.FileAttachment{{Data: data, MimeType: mimeType, FileName: fileName}}
 		}
-		p.dispatchCoreMessage(msg)
+		p.dispatchCoreMessage(ctx, msg)
 	}
 
 	switch msgType {
@@ -470,7 +465,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			return
 		}
 		pending := p.drainPendingAttachments(sessionKey)
-		p.dispatchCoreMessage(&inboundMessage{
+		p.dispatchCoreMessage(ctx, &inboundMessage{
 			sessionID:    agentkit.SessionID(sessionKey),
 			messageID:    messageID,
 			userID:       userID,
@@ -489,7 +484,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			slog.Error(p.tag()+": failed to parse image content", "error", err)
 			return
 		}
-		imgData, mimeType, err := p.downloadImage(messageID, imgBody.ImageKey)
+		imgData, mimeType, err := p.downloadImage(ctx, messageID, imgBody.ImageKey)
 		if err != nil {
 			slog.Error(p.tag()+": download image failed", "error", err)
 			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ Image download failed (network error). Please resend."); sendErr != nil {
@@ -509,7 +504,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			return
 		}
 		slog.Debug(p.tag()+": audio received", "user", userID, "file_key", audioBody.FileKey)
-		audioData, err := p.downloadResource(messageID, audioBody.FileKey, "file")
+		audioData, err := p.downloadResource(ctx, messageID, audioBody.FileKey, "file")
 		if err != nil {
 			slog.Error(p.tag()+": download audio failed", "error", err)
 			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ Voice message download failed (network error). Please resend."); sendErr != nil {
@@ -520,13 +515,13 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 		dispatchAttachment(audioData, "audio/opus", "")
 
 	case "post":
-		textParts, images := p.parsePostContent(messageID, content)
+		textParts, images := p.parsePostContent(ctx, messageID, content)
 		text := stripMentions(strings.Join(textParts, "\n"), mentions, p.botOpenID)
 		if text == "" && len(images) == 0 {
 			return
 		}
 		pending := p.drainPendingAttachments(sessionKey)
-		p.dispatchCoreMessage(&inboundMessage{
+		p.dispatchCoreMessage(ctx, &inboundMessage{
 			sessionID:    agentkit.SessionID(sessionKey),
 			messageID:    messageID,
 			userID:       userID,
@@ -548,7 +543,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			return
 		}
 		slog.Info(p.tag()+": file received", "user", userID, "file_key", fileBody.FileKey, "file_name", fileBody.FileName)
-		fileData, err := p.downloadResource(messageID, fileBody.FileKey, "file")
+		fileData, err := p.downloadResource(ctx, messageID, fileBody.FileKey, "file")
 		if err != nil {
 			slog.Error(p.tag()+": download file failed", "error", err)
 			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ File download failed (network error). Please resend."); sendErr != nil {
@@ -573,7 +568,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			return
 		}
 		pending := p.drainPendingAttachments(sessionKey)
-		p.dispatchCoreMessage(&inboundMessage{
+		p.dispatchCoreMessage(ctx, &inboundMessage{
 			sessionID:    agentkit.SessionID(sessionKey),
 			messageID:    messageID,
 			userID:       userID,
@@ -585,7 +580,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 		})
 
 	case "merge_forward":
-		text, images, files := p.parseMergeForward(messageID)
+		text, images, files := p.parseMergeForward(ctx, messageID)
 		if text == "" && len(images) == 0 && len(files) == 0 {
 			slog.Warn(p.tag()+": merge_forward produced no content", "message_id", messageID)
 			return
@@ -602,7 +597,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			mentions:  mentions,
 			rctx:      rctx,
 		}
-		p.dispatchCoreMessage(coreMsg)
+		p.dispatchCoreMessage(ctx, coreMsg)
 
 	case "sticker":
 		var stickerBody struct {
@@ -613,7 +608,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 			return
 		}
 		slog.Info(p.tag()+": sticker received", "user", userID, "file_key", stickerBody.FileKey)
-		imgData, mimeType, err := p.downloadImage(messageID, stickerBody.FileKey)
+		imgData, mimeType, err := p.downloadImage(ctx, messageID, stickerBody.FileKey)
 		if err != nil {
 			slog.Warn(p.tag()+": download sticker failed, skipping", "error", err)
 			return
@@ -634,7 +629,7 @@ func (p *Platform) dispatchMessageContent(ctx context.Context, msgType, content 
 		slog.Info(p.tag()+": media received", "user", userID, "file_key", mediaBody.FileKey, "file_name", mediaBody.FileName)
 		// Download the video without its thumbnail; the agent can read the
 		// saved video path when this attachment is dispatched.
-		videoData, err := p.downloadResource(messageID, mediaBody.FileKey, "file")
+		videoData, err := p.downloadResource(ctx, messageID, mediaBody.FileKey, "file")
 		if err != nil {
 			slog.Error(p.tag()+": download media file failed", "error", err)
 			if sendErr := p.sendIMContent(ctx, rctx, "⚠️ Video download failed (network error). Please resend."); sendErr != nil {

@@ -390,7 +390,7 @@ func TestHandleRichTurnEndDoesNotDeadlockWithBodyFlushTimer(t *testing.T) {
 	p := &Platform{useInteractiveCard: true}
 	sessionID := agentkit.SessionID("session-turn-end-deadlock")
 	p.richStreamState(sessionID)
-	p.scheduleBodyFlush(sessionID)
+	p.scheduleBodyFlush(sessionID, p.streamState(sessionID))
 
 	done := make(chan struct{})
 	go func() {
@@ -429,7 +429,7 @@ func TestScheduleRichCardKeepaliveReschedules(t *testing.T) {
 	st := p.streamState(sessionID)
 
 	// 无卡片时不排心跳。
-	p.scheduleRichCardKeepalive(sessionID)
+	p.scheduleRichCardKeepalive(sessionID, p.streamState(sessionID))
 	st.lock()
 	if st.keepaliveTimer != nil {
 		st.unlock()
@@ -438,7 +438,7 @@ func TestScheduleRichCardKeepaliveReschedules(t *testing.T) {
 	st.progressHandle = &feishuPreviewHandle{messageID: "m1"}
 	st.unlock()
 
-	p.scheduleRichCardKeepalive(sessionID)
+	p.scheduleRichCardKeepalive(sessionID, p.streamState(sessionID))
 	st.lock()
 	first := st.keepaliveTimer
 	st.unlock()
@@ -447,7 +447,7 @@ func TestScheduleRichCardKeepaliveReschedules(t *testing.T) {
 	}
 
 	// 再次调用应重置定时器（心跳窗口随成功 flush 后移）。
-	p.scheduleRichCardKeepalive(sessionID)
+	p.scheduleRichCardKeepalive(sessionID, p.streamState(sessionID))
 	st.lock()
 	second := st.keepaliveTimer
 	st.unlock()
@@ -475,7 +475,7 @@ func TestOnRichCardKeepaliveAfterStreamCleared(t *testing.T) {
 	p.clearStream(sessionID)
 
 	// state 已删除：回调应直接返回，且不得重建 state。
-	p.onRichCardKeepalive(sessionID)
+	p.onRichCardKeepalive(sessionID, st)
 	if _, ok := p.streams.Load(sessionID); ok {
 		t.Fatal("keepalive callback must not recreate cleared stream state")
 	}
@@ -519,7 +519,7 @@ func TestCreateProgressCardBackoff(t *testing.T) {
 	sessionID := agentkit.SessionID("session-create-backoff")
 
 	// 第一次失败：记录退避窗口。
-	if _, err := p.createProgressCard(context.Background(), sessionID, replyContext{}, "{}"); err == nil {
+	if _, err := p.createProgressCard(context.Background(), p.streamState(sessionID), replyContext{}, "{}"); err == nil {
 		t.Fatal("expected create error")
 	}
 	st := p.streamState(sessionID)
@@ -531,7 +531,7 @@ func TestCreateProgressCardBackoff(t *testing.T) {
 	st.unlock()
 
 	// 退避窗口内不再打 API，直接返回 cooldown。
-	if _, err := p.createProgressCard(context.Background(), sessionID, replyContext{}, "{}"); !errors.Is(err, errRichCardCreateCooldown) {
+	if _, err := p.createProgressCard(context.Background(), p.streamState(sessionID), replyContext{}, "{}"); !errors.Is(err, errRichCardCreateCooldown) {
 		t.Fatalf("expected cooldown error, got %v", err)
 	}
 	st.lock()
@@ -545,7 +545,7 @@ func TestCreateProgressCardBackoff(t *testing.T) {
 	st.lock()
 	st.nextCreateAfter = time.Now().Add(-time.Second)
 	st.unlock()
-	if _, err := p.createProgressCard(context.Background(), sessionID, replyContext{}, "{}"); err == nil || errors.Is(err, errRichCardCreateCooldown) {
+	if _, err := p.createProgressCard(context.Background(), p.streamState(sessionID), replyContext{}, "{}"); err == nil || errors.Is(err, errRichCardCreateCooldown) {
 		t.Fatalf("expected real create error after cooldown, got %v", err)
 	}
 	st.lock()
@@ -641,7 +641,7 @@ func TestFinalizeTurnEndRecallsStaleCardAfterReplacement(t *testing.T) {
 	old := &feishuPreviewHandle{messageID: "m1", chatID: "oc_test", cardID: "c1"}
 	rc := replyContext{chatID: "oc_test", messageID: "om_trigger"}
 	content := `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"final answer"}]}}`
-	p.finalizeRichTurnEndAsync(context.Background(), agentkit.SessionID("turn-finalize-recall"),
+	p.finalizeRichTurnEndAsync(context.Background(), agentkit.SessionID("turn-finalize-recall"), newStreamState(),
 		old, content, "final answer", "", capsession.TurnEndData{}, agentkit.SessionID("lark:oc_test"), rc, true)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -712,7 +712,7 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 	st.lastProgressUpdate = time.Now()
 	st.unlock()
 
-	p.scheduleBodyFlush(sessionID)
+	p.scheduleBodyFlush(sessionID, p.streamState(sessionID))
 	st.lock()
 	first := st.bodyFlushTimer
 	st.unlock()
@@ -720,7 +720,7 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 		t.Fatal("expected body flush timer")
 	}
 
-	p.scheduleBodyFlush(sessionID)
+	p.scheduleBodyFlush(sessionID, p.streamState(sessionID))
 	st.lock()
 	second := st.bodyFlushTimer
 	st.unlock()

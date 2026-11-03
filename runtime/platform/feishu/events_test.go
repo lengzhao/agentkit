@@ -227,7 +227,7 @@ func TestForwardEventToAgentRouting(t *testing.T) {
 				dedup:       &common.MessageDedup{},
 			}
 			raw, _ := json.Marshal(map[string]any{"event_type": "x_v1"})
-			p.forwardEventToAgent(customEvent{
+			p.forwardEventToAgent(context.Background(), customEvent{
 				Event: caplarkevent.Event{Type: "x_v1", EventID: "e1", ChatID: tt.chatID, UserID: tt.userID, Raw: raw},
 			})
 
@@ -331,7 +331,7 @@ func TestForwardEventDMThread(t *testing.T) {
 			defer srv.Close()
 			p.cfg.DMThreadMode = true
 			p.inbox = common.NewInbox(4)
-			p.forwardEventToAgent(customEvent{Event: caplarkevent.Event{Type: "x_v1", EventID: "e1", UserID: "ou_1", Raw: json.RawMessage(`{}`)}})
+			p.forwardEventToAgent(context.Background(), customEvent{Event: caplarkevent.Event{Type: "x_v1", EventID: "e1", UserID: "ou_1", Raw: json.RawMessage(`{}`)}})
 			want := "lark:evt:e1:u:ou_1"
 			if !fail {
 				want = p.makeSessionKey(&larkim.EventMessage{ChatType: eventThreadTestString("p2p"), MessageId: eventThreadTestString("om_followup"), RootId: eventThreadTestString("om_root"), ThreadId: eventThreadTestString("omt_topic")}, "oc_dm", "ou_1")

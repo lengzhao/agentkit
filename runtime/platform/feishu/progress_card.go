@@ -490,69 +490,15 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 		sendContent = cardJSON
 	}
 
-	var msgID string
-	replyFailed := false
-	if p.shouldUseThreadOrReplyAPI(rc) {
-		req := larkim.NewReplyMessageReqBuilder().
-			MessageId(rc.messageID).
-			Body(p.buildReplyMessageReqBody(rc, larkim.MsgTypeInteractive, sendContent)).
-			Build()
-		var resp *larkim.ReplyMessageResp
-		if err := p.withTransientRetry(ctx, "send preview", func() error {
-			return p.withFreshTenantAccessTokenRetry(ctx, "send preview", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
-				var err error
-				resp, err = client.Im.Message.Reply(ctx, req, options...)
-				if err != nil {
-					return fmt.Errorf("%s: send preview (reply): %w", p.tag(), err)
-				}
-				if !resp.Success() {
-					return fmt.Errorf("%s: send preview (reply) code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
-				}
-				return nil
-			})
-		}); err != nil {
-			// 网关/权限故障（如 403）常同时拦截 Reply 与 Create，但 Create 走
-			// 不同路径，多一次尝试就多一分送达最终答复的机会。
-			slog.Warn(p.tag()+": send preview reply failed, falling back to create message",
-				"chat_id", chatID, "error", err)
-			replyFailed = true
-		} else if resp.Data != nil && resp.Data.MessageId != nil {
-			msgID = *resp.Data.MessageId
-		}
+	sendRC := rc
+	if !p.shouldUseThreadOrReplyAPI(rc) {
+		sendRC.messageID = ""
 	}
-	if msgID == "" && (!p.shouldUseThreadOrReplyAPI(rc) || replyFailed) {
-		req := larkim.NewCreateMessageReqBuilder().
-			ReceiveIdType("chat_id").
-			Body(larkim.NewCreateMessageReqBodyBuilder().
-				ReceiveId(chatID).
-				MsgType(larkim.MsgTypeInteractive).
-				Content(sendContent).
-				Build()).
-			Build()
-		var resp *larkim.CreateMessageResp
-		if err := p.withTransientRetry(ctx, "send preview", func() error {
-			return p.withFreshTenantAccessTokenRetry(ctx, "send preview", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
-				var err error
-				resp, err = client.Im.Message.Create(ctx, req, options...)
-				if err != nil {
-					return fmt.Errorf("%s: send preview: %w", p.tag(), err)
-				}
-				if !resp.Success() {
-					return fmt.Errorf("%s: send preview code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
-				}
-				return nil
-			})
-		}); err != nil {
-			return nil, err
-		}
-		if resp.Data != nil && resp.Data.MessageId != nil {
-			msgID = *resp.Data.MessageId
-		}
+	result, err := p.writeMessage(ctx, sendRC, larkim.MsgTypeInteractive, sendContent, "send preview")
+	if err != nil {
+		return nil, err
 	}
-
-	if msgID == "" {
-		return nil, fmt.Errorf("%s: send preview: no message ID returned", p.tag())
-	}
+	msgID := result.messageID
 
 	return &feishuPreviewHandle{messageID: msgID, chatID: chatID, cardID: cardEntityID}, nil
 }

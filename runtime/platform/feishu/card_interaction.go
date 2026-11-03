@@ -17,6 +17,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/ingress"
 	"github.com/lengzhao/agentkit/cap/interaction"
+	"github.com/lengzhao/agentkit/runtime/cardcompat"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
@@ -189,7 +190,7 @@ func (p *Platform) processCardInteraction(e interaction.Event) error {
 			if e.Action == "" {
 				return false
 			}
-			if strings.HasPrefix(e.Action, "act:/delete-mode toggle ") {
+			if cardcompat.IgnoreLegacyToggle(e.Action) {
 				return true
 			}
 			msg := inboundMessage{sessionID: agentkit.SessionID(e.SessionID), messageID: e.MessageID, userID: e.UserID, rctx: replyContext{messageID: e.MessageID, chatID: e.ChatID, chatType: chatType, sessionKey: e.SessionID}}

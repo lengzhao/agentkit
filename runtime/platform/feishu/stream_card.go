@@ -11,6 +11,7 @@ import (
 
 	"github.com/lengzhao/agentkit"
 	capsession "github.com/lengzhao/agentkit/cap/session"
+	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	"github.com/lengzhao/agentkit/runtime/session/sessevents"
 )
@@ -65,7 +66,6 @@ func replyToFromStreamKey(streamKey agentkit.SessionID) string {
 	}
 	return ""
 }
-
 
 func (st *streamState) commitInflightBodyText() {
 	part := strings.TrimSpace(st.bodyText)
@@ -131,13 +131,38 @@ func streamBodyMarkdownForCardKit(body string) string {
 }
 
 func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.SessionID, streaming bool) error {
-	rc, ok := p.replyContextForStream(streamKey)
+	return p.flushRichCardState(ctx, streamKey, p.streamState(streamKey), streaming)
+}
+
+// Timers retain the originating state so a late callback cannot recreate or
+// update a completed turn (or another turn reusing the same legacy key).
+func (p *Platform) flushRichCardState(ctx context.Context, streamKey agentkit.SessionID, st *streamState, streaming bool) error {
+	st.lock()
+	if st.ended {
+		st.unlock()
+		return nil
+	}
+	route, hasRoute := st.route, st.hasRoute
+	st.unlock()
+	var rc replyContext
+	var ok bool
+	if hasRoute {
+		rc, ok = p.replyContextFromRoute(route)
+	} else {
+		rc, ok = p.deliveryForSend(deliveryFromStreamKey(streamKey))
+		if anchor := replyToFromStreamKey(streamKey); anchor != "" {
+			rc.messageID = anchor
+		}
+	}
 	if !ok {
 		return nil
 	}
 
-	st := p.streamState(streamKey)
 	st.lock()
+	if st.ended {
+		st.unlock()
+		return nil
+	}
 	status := st.status
 	if status == "" {
 		status = cardStatusThinking
@@ -160,6 +185,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 	handle := st.progressHandle
 	elapsed := progressElapsed(st)
 	panelVer := st.richCardPanelVersion
+	canStreamBody := streaming && p.canRichCardStreamBody(st, handle)
 	st.unlock()
 
 	content := buildRichCard(status, "", displaySteps, body, streaming, elapsed)
@@ -168,7 +194,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 	}
 
 	if handle == nil {
-		newHandle, err := p.createProgressCard(ctx, streamKey, rc, content)
+		_, err := p.createProgressCard(ctx, st, rc, content)
 		if err != nil {
 			// 卡片创建失败不应中断 agent turn；最终答复仍走普通消息路径。
 			if !errors.Is(err, errRichCardCreateCooldown) {
@@ -177,20 +203,21 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 			return nil
 		}
 		st.lock()
-		st.progressHandle = newHandle
-		st.bodyStreamClosed = false // 新实体流式模式重新可用
-		st.enqueueCard(streamCardProgress, newHandle)
+		if st.ended {
+			st.unlock()
+			return nil
+		}
 		evicted := p.evictStreamCardsLocked(st)
 		st.lastProgressUpdate = time.Now()
 		st.richCardFlushedPanelVersion = panelVer
 		st.lastRichCardBodyStreamRunes = len([]rune(body))
 		st.unlock()
 		p.deleteEvictedProgressCards(ctx, evicted)
-		p.scheduleRichCardKeepalive(streamKey)
+		p.scheduleRichCardKeepalive(streamKey, st)
 		return nil
 	}
 
-	if streaming && p.canRichCardStreamBody(st, handle) {
+	if canStreamBody {
 		h := handle.(*feishuPreviewHandle)
 		streamText := streamBodyMarkdownForCardKit(body)
 		if strings.TrimSpace(streamText) != "" {
@@ -203,7 +230,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 				st.updateFailCount = 0
 				st.lastRichCardBodyStreamRunes = len([]rune(body))
 				st.unlock()
-				p.scheduleRichCardKeepalive(streamKey)
+				p.scheduleRichCardKeepalive(streamKey, st)
 				return nil
 			}
 			if isStreamClosedError(streamErr) {
@@ -234,7 +261,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.unlock()
 		slog.Warn(p.tag()+": rich card update failed, keep card and retry on next flush",
 			"session_id", streamKey, "consecutive_failures", fails, "error", err)
-		p.scheduleRichCardKeepalive(streamKey)
+		p.scheduleRichCardKeepalive(streamKey, st)
 		return nil
 	}
 	st.lock()
@@ -246,7 +273,7 @@ func (p *Platform) flushRichCard(ctx context.Context, streamKey agentkit.Session
 		st.finalizedSteps = append([]toolStep(nil), displaySteps...)
 	}
 	st.unlock()
-	p.scheduleRichCardKeepalive(streamKey)
+	p.scheduleRichCardKeepalive(streamKey, st)
 	return nil
 }
 
@@ -260,20 +287,38 @@ const (
 	richCardCreateRetryMax = 30 * time.Second
 )
 
-// createProgressCard 包装 SendPreviewStart，带创建失败退避：网关持续故障（如出口
-// 代理 403）时，流式 delta 会频繁触发 flush，若每次都打创建 API 会进一步压垮链路。
-// 连续失败按 2s/4s/8s…（上限 30s）退避，成功后清零。
-func (p *Platform) createProgressCard(ctx context.Context, streamKey agentkit.SessionID, rc replyContext, content string) (any, error) {
-	st := p.streamState(streamKey)
+// createProgressCard serializes creation and publishes its handle before opening
+// the gate. Confirmed failures back off 2s/4s/8s (up to 30s); unknown results
+// latch for the originating state and are never retried by subsequent flushes.
+func (p *Platform) createProgressCard(ctx context.Context, st *streamState, rc replyContext, content string) (any, error) {
 	st.lock()
-	if time.Now().Before(st.nextCreateAfter) {
+	if st.progressHandle != nil {
+		handle := st.progressHandle
+		st.unlock()
+		return handle, nil
+	}
+	if st.ended {
 		st.unlock()
 		return nil, errRichCardCreateCooldown
 	}
+	if st.unknownCreateErr != nil {
+		err := st.unknownCreateErr
+		st.unlock()
+		return nil, err
+	}
+	if st.createDone != nil || time.Now().Before(st.nextCreateAfter) {
+		st.unlock()
+		return nil, errRichCardCreateCooldown
+	}
+	st.createDone = make(chan struct{})
 	st.unlock()
 
 	handle, err := p.SendPreviewStart(ctx, rc, content)
 	st.lock()
+
+	if isMessageWriteUnknown(err) {
+		st.unknownCreateErr = err
+	}
 	if err != nil {
 		st.createFailCount++
 		shift := st.createFailCount - 1
@@ -288,7 +333,12 @@ func (p *Platform) createProgressCard(ctx context.Context, streamKey agentkit.Se
 	} else {
 		st.createFailCount = 0
 		st.nextCreateAfter = time.Time{}
+		st.progressHandle = handle
+		st.bodyStreamClosed = false
+		st.enqueueCard(streamCardProgress, handle)
 	}
+	close(st.createDone)
+	st.createDone = nil
 	st.unlock()
 	return handle, err
 }
@@ -296,31 +346,24 @@ func (p *Platform) createProgressCard(ctx context.Context, streamKey agentkit.Se
 // scheduleRichCardKeepalive 重置心跳定时器：卡片创建后若长时间无更新（LLM 推理
 // 期间没有任何出站流量），CardKit 实体可能被回收或遭网关间歇性拒绝；心跳通过
 // 轻量 flush（页脚 elapsed 随时间变化）保持卡片活跃。每次成功 flush 后调用。
-func (p *Platform) scheduleRichCardKeepalive(streamKey agentkit.SessionID) {
-	st := p.streamState(streamKey)
+func (p *Platform) scheduleRichCardKeepalive(streamKey agentkit.SessionID, st *streamState) {
 	st.lock()
-	if st.progressHandle == nil {
+	if st.ended || st.progressHandle == nil {
 		st.unlock()
 		return
 	}
 	stopStreamTimer(&st.keepaliveTimer)
 	sid := streamKey
 	st.keepaliveTimer = time.AfterFunc(richCardKeepaliveInterval, func() {
-		p.onRichCardKeepalive(sid)
+		p.onRichCardKeepalive(sid, st)
 	})
 	st.unlock()
 }
 
-func (p *Platform) onRichCardKeepalive(streamKey agentkit.SessionID) {
-	// 不能用 p.streamState：turn 结束后 state 已删除，重建会泄漏。
-	raw, ok := p.streams.Load(streamKey)
-	if !ok {
-		return
-	}
-	st := raw.(*streamState)
+func (p *Platform) onRichCardKeepalive(streamKey agentkit.SessionID, st *streamState) {
 	st.lock()
 	stopStreamTimer(&st.keepaliveTimer)
-	active := st.progressHandle != nil
+	active := !st.ended && st.progressHandle != nil
 	idle := active && time.Since(st.lastProgressUpdate) >= richCardKeepaliveInterval
 	st.unlock()
 	if !active {
@@ -328,10 +371,10 @@ func (p *Platform) onRichCardKeepalive(streamKey agentkit.SessionID) {
 	}
 	if !idle {
 		// 刚有过成功 flush（其已尝试重排心跳，但被当前 firing 的定时器挡住），补排下一次。
-		p.scheduleRichCardKeepalive(streamKey)
+		p.scheduleRichCardKeepalive(streamKey, st)
 		return
 	}
-	if err := p.flushRichCard(context.Background(), streamKey, true); err != nil {
+	if err := p.flushRichCardState(context.Background(), streamKey, st, true); err != nil {
 		slog.Debug(p.tag()+": rich card keepalive flush failed", "session_id", streamKey, "error", err)
 	}
 }
@@ -358,7 +401,7 @@ func (p *Platform) maybeFlushRichCard(ctx context.Context, sessionID agentkit.Se
 		p.cancelBodyFlushTimer(sessionID)
 		return p.flushRichCard(ctx, sessionID, true)
 	}
-	p.scheduleBodyFlush(sessionID)
+	p.scheduleBodyFlush(sessionID, st)
 	return nil
 }
 
@@ -455,16 +498,19 @@ func streamFlushDelay(lastUpdate time.Time, interval time.Duration) time.Duratio
 }
 
 func (p *Platform) cancelBodyFlushTimer(sessionID agentkit.SessionID) {
-	st := p.streamState(sessionID)
+	raw, ok := p.streams.Load(sessionID)
+	if !ok {
+		return
+	}
+	st := raw.(*streamState)
 	st.lock()
 	stopStreamTimer(&st.bodyFlushTimer)
 	st.unlock()
 }
 
-func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
-	st := p.streamState(sessionID)
+func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID, st *streamState) {
 	st.lock()
-	if st.bodyFlushTimer != nil {
+	if st.ended || st.bodyFlushTimer != nil {
 		st.unlock()
 		return
 	}
@@ -475,18 +521,12 @@ func (p *Platform) scheduleBodyFlush(sessionID agentkit.SessionID) {
 	st.bodyFlushTimer = time.AfterFunc(delay, func() {
 		st.lock()
 		stopStreamTimer(&st.bodyFlushTimer)
+		active := !st.ended && (st.progressHandle != nil || len(st.steps) > 0 || strings.TrimSpace(st.thinking) != "" || strings.TrimSpace(st.richCardDisplayBody()) != "")
 		st.unlock()
-		cur := p.streamState(sid)
-		cur.lock()
-		active := cur.progressHandle != nil ||
-			len(cur.steps) > 0 ||
-			strings.TrimSpace(cur.thinking) != "" ||
-			strings.TrimSpace(cur.richCardDisplayBody()) != ""
-		cur.unlock()
 		if !active {
 			return
 		}
-		if err := p.flushRichCard(context.Background(), sid, true); err != nil {
+		if err := p.flushRichCardState(context.Background(), sid, st, true); err != nil {
 			slog.Debug(p.tag()+": debounced patch rich card flush failed", "session_id", sid, "error", err)
 		}
 	})
@@ -521,7 +561,7 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 		p.cancelBodyFlushTimer(sessionID)
 		return p.flushRichCard(ctx, sessionID, true)
 	}
-	p.scheduleBodyFlush(sessionID)
+	p.scheduleBodyFlush(sessionID, st)
 	return nil
 }
 
@@ -701,32 +741,15 @@ func (p *Platform) applyToolResult(st *streamState, result agentkit.ToolResult) 
 	if !p.showToolProgress {
 		return false
 	}
-	name := strings.TrimSpace(result.Name)
-	if name == "" {
-		name = "Tool"
-	}
-	content := truncateRunes(strings.TrimSpace(result.Content), maxToolSummaryRunes)
-	success := true
-	status := "completed"
-	if result.Audit != nil {
-		if decision := strings.TrimSpace(result.Audit["decision"]); decision == "deny" {
-			success = false
-			status = "failed"
-		}
-		if strings.TrimSpace(result.Audit["status"]) == "failed" {
-			success = false
-			status = "failed"
-		}
-	}
-	okVal := success
+	item := common.ProgressEntryFromToolResult(result, maxToolSummaryRunes)
 	st.steps = append(st.steps, toolStep{
 		Kind:    toolStepKindToolResult,
-		Name:    name,
-		Summary: content,
-		Result:  content,
-		Status:  status,
+		Name:    item.Tool,
+		Summary: item.Text,
+		Result:  item.Text,
+		Status:  item.Status,
 		CallID:  string(result.ID),
-		Success: &okVal,
+		Success: item.Success,
 		Done:    true,
 	})
 	st.status = cardStatusWorking
@@ -924,10 +947,12 @@ func (p *Platform) handleRichProactiveAssistant(ctx context.Context, event agent
 }
 
 // finalizeRichTurnEndAsync patches the CardKit entity without blocking turn/end teardown.
-// 失败降级链保证最终答复不丢：patch 旧卡 → 另发一张最终卡 → 纯文本（带重试）。
+// Confirmed failures may fall back from patching the old card to a new final
+// card and then plain text. An unknown create stops without another message.
 func (p *Platform) finalizeRichTurnEndAsync(
 	ctx context.Context,
 	streamKey agentkit.SessionID,
+	st *streamState,
 	handle any,
 	content string,
 	bodyText string,
@@ -939,6 +964,32 @@ func (p *Platform) finalizeRichTurnEndAsync(
 ) {
 	parent := context.WithoutCancel(ctx)
 	go func() {
+		parent, cancel := context.WithTimeout(parent, 2*time.Minute)
+		defer cancel()
+		st.lock()
+		pending := st.createDone
+		st.unlock()
+		if pending != nil {
+			select {
+			case <-pending:
+			case <-parent.Done():
+				slog.Warn(p.tag()+": final delivery unresolved while card creation is pending", "session_id", streamKey, "error", parent.Err())
+				return
+			}
+		}
+		st.lock()
+		if handle == nil {
+			handle = st.progressHandle
+		}
+		if botReplyID == "" {
+			botReplyID = botReplyMessageID(st)
+		}
+		unknownCreate := st.unknownCreateErr
+		st.unlock()
+		if unknownCreate != nil {
+			slog.Warn(p.tag()+": final delivery unresolved after unknown card creation", "session_id", streamKey, "error", unknownCreate)
+			return
+		}
 		delivered := false
 		if handle != nil {
 			// 定稿 patch 用 finalize 预算（3 次、~4s）：只覆盖短暂抖动；
@@ -958,6 +1009,10 @@ func (p *Platform) finalizeRichTurnEndAsync(
 		}
 		if !delivered && hasReply {
 			if newHandle, err := p.SendPreviewStart(parent, rc, content); err != nil {
+				if isMessageWriteUnknown(err) {
+					slog.Warn(p.tag()+": final card delivery unresolved; not sending a duplicate", "session_id", streamKey, "error", err)
+					return
+				}
 				slog.Warn(p.tag()+": send final rich card on turn end failed, falling back to plain text", "session_id", streamKey, "error", err)
 			} else {
 				delivered = true
@@ -987,6 +1042,10 @@ var finalPlainTextRetryDelays = []time.Duration{5 * time.Second, 20 * time.Secon
 func (p *Platform) sendFinalPlainTextWithRetry(ctx context.Context, delivery agentkit.SessionID, streamKey agentkit.SessionID, bodyText string) {
 	for attempt := 0; ; attempt++ {
 		if err := p.sendText(ctx, delivery, bodyText); err != nil {
+			if isMessageWriteUnknown(err) || ctx.Err() != nil {
+				slog.Warn(p.tag()+": final plain delivery unresolved; not retrying", "session_id", streamKey, "error", err)
+				return
+			}
 			if attempt >= len(finalPlainTextRetryDelays) {
 				slog.Error(p.tag()+": plain text fallback on turn end failed after retries, final answer lost",
 					"session_id", streamKey, "attempts", attempt+1, "error", err)
@@ -1011,7 +1070,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	st := p.streamState(sessionID)
 	st.lock()
 	hasHandle := st.progressHandle != nil
-	if st.startedAt.IsZero() && !hasHandle {
+	if st.startedAt.IsZero() && !hasHandle && st.createDone == nil && st.unknownCreateErr == nil {
 		st.unlock()
 		return nil
 	}
@@ -1049,8 +1108,8 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	displaySteps := allSteps
 	elapsed := progressElapsed(st)
 	st.status = finalStatus
+	st.ended = true
 	st.bodyText = ""
-	st.progressHandle = nil
 	st.unlock()
 
 	rc, hasReply := p.replyContextForStream(sessionID)
@@ -1059,7 +1118,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	content := buildRichCard(finalStatus, "", displaySteps, bodyText, false, elapsed)
 	p.clearStream(sessionID)
 	if strings.TrimSpace(content) != "" && content != " " {
-		p.finalizeRichTurnEndAsync(ctx, sessionID, handle, content, bodyText, botReplyID, endData, delivery, rc, hasReply)
+		p.finalizeRichTurnEndAsync(ctx, sessionID, st, handle, content, bodyText, botReplyID, endData, delivery, rc, hasReply)
 	} else {
 		p.addBotReplyEndReaction(botReplyID, endData, "")
 	}

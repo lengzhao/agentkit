@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -21,6 +22,7 @@ import (
 	"github.com/lengzhao/agentkit"
 	"github.com/lengzhao/agentkit/cap/ingress"
 	caplarkevent "github.com/lengzhao/agentkit/cap/larkevent"
+	eventview "github.com/lengzhao/agentkit/runtime/larkevent"
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
@@ -46,8 +48,7 @@ func (p *Platform) registerCustomEvents(d *dispatcher.EventDispatcher) *dispatch
 	for _, eventType := range types {
 		route := routes[eventType]
 		d = d.OnCustomizedEvent(eventType, func(ctx context.Context, req *larkevent.EventReq) error {
-			p.dispatchCustomEvent(eventType, route, req)
-			return nil
+			return p.dispatchCustomEvent(eventType, route, req)
 		})
 		slog.Info(p.tag()+": subscribed custom event",
 			"event_type", eventType, "handlers", len(route.handlers), "to_agent", route.toAgent)
@@ -86,43 +87,51 @@ func (p *Platform) customEventRoutes() map[string]*customEventRoute {
 
 // dispatchCustomEvent 解析事件上下文并投递。SDK dispatcher 同步调用本函数，
 // handler 插件与 agent 直转都在 goroutine 中执行，避免阻塞事件循环。
-func (p *Platform) dispatchCustomEvent(eventType string, route *customEventRoute, req *larkevent.EventReq) {
-	evt := parseCustomEvent(eventType, req.Body)
-	if evt.EventID != "" && p.dedup.IsDuplicate("evt:"+evt.EventID) {
-		slog.Debug(p.tag()+": duplicate custom event ignored", "event_type", eventType, "event_id", evt.EventID)
-		return
+func (p *Platform) dispatchCustomEvent(eventType string, route *customEventRoute, req *larkevent.EventReq) error {
+	evt := parseCustomEvent(eventType, append([]byte(nil), req.Body...))
+	id := ""
+	if evt.EventID != "" {
+		id = "evt:" + evt.EventID
 	}
-	// 注意：自定义事件不按进程启动时间过滤。飞书对未 ack 的事件会持续
-	// 重推，重启后补送正是停机期间事件的送达保障；重复投递由 event_id
-	// 去重兜底（与 IM 消息不同，事件没有"历史积压回放"语义）。
-
-	dispatch := func() {
-		action := ingress.Skip
-		if route.toAgent {
-			action = ingress.Submit
+	// Unlike old IM backlog, custom event redelivery is not filtered by process
+	// start time. Dedup records acceptance, not durable business completion.
+	duplicate, err := p.dedup.Admit(id, func() error {
+		key := evt.ChatID
+		if key == "" {
+			key = "event-user:" + evt.UserID
 		}
-		plan := p.evaluateIngress(context.Background(), ingress.Input{Platform: p.tag(), InstanceID: p.PlatformInstance(), Kind: ingress.Event, Type: evt.Type, ID: evt.EventID, ChatID: evt.ChatID, UserID: evt.UserID, ConversationKind: "unknown", Context: ingress.Unknown, Default: ingress.Plan{Agent: action, Handlers: len(route.handlers) > 0}, Raw: append([]byte(nil), evt.Raw...)})
-
-		if plan.Handlers {
-			for _, h := range route.handlers {
-				go func(h caplarkevent.Handler) {
-					if err := h.Handle(context.Background(), evt.Event); err != nil {
-						slog.Error(p.tag()+": custom event handler failed",
-							"event_type", eventType, "event_id", evt.EventID, "error", err)
-					}
-				}(h)
+		if evt.UserID == "" && evt.ChatID == "" {
+			key = "event-type:" + evt.Type
+		}
+		return p.queueIngress(key, func(ctx context.Context) {
+			action := ingress.Skip
+			if route.toAgent {
+				action = ingress.Submit
 			}
-		}
-		if plan.Agent == ingress.Submit {
-			go p.forwardEventToAgent(evt)
-		}
+			plan := p.evaluateIngress(ctx, ingress.Input{Platform: p.tag(), InstanceID: p.PlatformInstance(), Kind: ingress.Event, Type: evt.Type, ID: evt.EventID, ChatID: evt.ChatID, UserID: evt.UserID, ConversationKind: "unknown", Context: ingress.Unknown, Default: ingress.Plan{Agent: action, Handlers: len(route.handlers) > 0}, Raw: append([]byte(nil), evt.Raw...)})
+			var tasks sync.WaitGroup
+			if plan.Handlers {
+				for _, h := range route.handlers {
+					tasks.Add(1)
+					go func(h caplarkevent.Handler) {
+						defer tasks.Done()
+						if err := h.Handle(ctx, evt.Event); err != nil {
+							slog.Error(p.tag()+": custom event handler failed", "event_type", eventType, "event_id", evt.EventID, "error", err)
+						}
+					}(h)
+				}
+			}
+			if plan.Agent == ingress.Submit {
+				tasks.Add(1)
+				go func() { defer tasks.Done(); p.forwardEventToAgent(ctx, evt) }()
+			}
+			tasks.Wait()
+		})
+	})
+	if duplicate {
+		slog.Debug(p.tag()+": duplicate custom event ignored", "event_type", eventType, "event_id", evt.EventID)
 	}
-	if p.inboundPolicy != nil {
-		go dispatch()
-	} else {
-		dispatch()
-	}
-
+	return err
 }
 
 // customEvent 内部表示：caplarkevent.Event 加上仅平台使用的 header 字段。
@@ -242,7 +251,7 @@ func forwardEventSessionKey(platformTag string, evt customEvent) string {
 // forwardEventToAgent 把事件直转 agent：每条事件使用独立 session。
 // DM 话题模式下先创建根消息，并使用常规话题 session key 以支持用户续接。
 // 回复按事件上下文路由——带 chat_id 回群、仅 user_id 时回 p2p（open_id）、都无则无回复目标。
-func (p *Platform) forwardEventToAgent(evt customEvent) {
+func (p *Platform) forwardEventToAgent(ctx context.Context, evt customEvent) {
 	chatID := evt.ChatID
 	chatType := ""
 	switch {
@@ -255,7 +264,7 @@ func (p *Platform) forwardEventToAgent(evt customEvent) {
 	sessionKey := forwardEventSessionKey(p.tag(), evt)
 	rc := replyContext{chatID: chatID, chatType: chatType, sessionKey: sessionKey}
 	if p.cfg.DMThreadMode && chatType == "p2p" {
-		root, err := p.createEventThreadRoot(context.Background(), evt)
+		root, err := p.createEventThreadRoot(ctx, evt)
 		if err != nil {
 			slog.Warn(p.tag()+": event topic creation failed, forwarding without topic", "event_id", evt.EventID, "error", err)
 		} else {
@@ -269,7 +278,7 @@ func (p *Platform) forwardEventToAgent(evt customEvent) {
 	slog.Info(p.tag()+": forwarding custom event to agent",
 		"event_type", evt.Type, "event_id", evt.EventID, "session_key", sessionKey)
 
-	p.dispatchInbound(context.Background(), inboundMessage{
+	p.dispatchInbound(ctx, inboundMessage{
 		sessionID: agentkit.SessionID(sessionKey),
 		userID:    evt.UserID,
 		content:   content,
@@ -322,48 +331,6 @@ func (p *Platform) createEventThreadRoot(ctx context.Context, evt customEvent) (
 // eventReceiptCard summarizes information already present in the event. It does
 // not fetch business resources or expose the full payload/subscriber identities.
 func eventReceiptCard(evt customEvent) *common.Card {
-	var body strings.Builder
-	body.WriteString("事件已受理，处理完成后会在此汇报结果。")
-	field := func(label, value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return
-		}
-		value = strings.NewReplacer("`", "ˋ", "\n", " ", "\r", " ").Replace(value)
-		fmt.Fprintf(&body, "\n**%s**：`%s`", label, truncateRunes(value, 160))
-	}
-	if !evt.createTime.IsZero() {
-		field("发生时间", evt.createTime.Local().Format("2006-01-02 15:04:05 -07:00"))
-	}
-	field("事件 ID", evt.EventID)
-	var envelope struct {
-		Event map[string]any `json:"event"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(evt.Raw))
-	decoder.UseNumber() // resource IDs can exceed float64's exact integer range
-	if decoder.Decode(&envelope) == nil {
-		for _, detail := range []struct{ path, label string }{
-			{"title", "标题"}, {"name", "名称"}, {"meeting_id", "会议 ID"},
-			{"minute_source.source_entity_id", "来源 ID"}, {"minute_source.source_type", "来源类型"},
-			{"minute_token", "妙记 token"}, {"file_token", "文件 token"},
-			{"document_id", "文档 ID"}, {"file_id", "文件 ID"},
-		} {
-			var value any = envelope.Event
-			for _, segment := range strings.Split(detail.path, ".") {
-				object, ok := value.(map[string]any)
-				if !ok {
-					value = nil
-					break
-				}
-				value = object[segment]
-			}
-			switch scalar := value.(type) {
-			case string:
-				field(detail.label, scalar)
-			case json.Number:
-				field(detail.label, string(scalar))
-			}
-		}
-	}
-	return common.NewCard().Title(fmt.Sprintf("收到事件 %s，正在处理…", evt.Type), "blue").Markdown(body.String()).Build()
+	title, body := eventview.ReceiptSummary(evt.Event, evt.createTime)
+	return common.NewCard().Title(title, "blue").Markdown(body).Build()
 }

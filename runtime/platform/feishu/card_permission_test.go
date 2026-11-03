@@ -69,3 +69,39 @@ func TestRenderCardMapKeepsShortListItemInline(t *testing.T) {
 		t.Fatalf("short option should stay side-by-side: %#v", elements[0])
 	}
 }
+
+func TestRenderGenericFormDoesNotDependOnBusinessActions(t *testing.T) {
+	card := &common.Card{Elements: []common.CardElement{common.CardForm{Name: "choices", Elements: []common.CardElement{common.CardCheckbox{Name: "accept", Text: "Accept terms", Checked: true}}, Buttons: []common.CardButton{{Name: "apply", Text: "Apply", FormAction: "submit", Value: "custom:apply"}}}}}
+	raw, err := json.Marshal(renderCardMap(card, "route"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for _, want := range []string{`"tag":"form"`, `"name":"choices"`, `"tag":"checker"`, `"name":"accept"`, `"checked":true`, `"name":"apply"`, `"form_action_type":"submit"`, `"action":"custom:apply"`, `"session_key":"route"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %s: %s", want, body)
+		}
+	}
+}
+func TestRenderLegacyDeleteCardPreservesNativeForm(t *testing.T) {
+	card := &common.Card{Elements: []common.CardElement{common.CardListItem{Text: "☑ old session", BtnValue: "act:/delete-mode toggle a"}, common.CardActions{Buttons: []common.CardButton{{Text: "Delete", Value: "act:/delete-mode confirm"}, {Text: "Cancel", Value: "act:/delete-mode cancel"}}}}}
+	raw, _ := json.Marshal(renderCardMap(card, "route"))
+	body := string(raw)
+	for _, want := range []string{`"name":"delete_mode_form"`, `"name":"delete_sel_61"`, `"checked":true`, `"name":"delete_mode_submit"`, `"form_action_type":"submit"`, `"action":"act:/delete-mode form-submit"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("legacy form lost %s: %s", want, body)
+		}
+	}
+}
+
+func TestRenderGenericFormStaticHasNoNativeControls(t *testing.T) {
+	card := &common.Card{Static: true, Elements: []common.CardElement{common.CardForm{Name: "choices", Elements: []common.CardElement{common.CardCheckbox{Name: "accept", Text: "Accept", Checked: true}}, Buttons: []common.CardButton{{Name: "submit", Text: "Apply", FormAction: "submit"}}}}}
+	raw, _ := json.Marshal(renderCardMap(card, "route"))
+	body := string(raw)
+	if strings.Contains(body, `"tag":"checker"`) || strings.Contains(body, `"tag":"button"`) || strings.Contains(body, `"tag":"form"`) {
+		t.Fatalf("static form contains controls: %s", body)
+	}
+	if !strings.Contains(body, "Accept") {
+		t.Fatalf("static form lost text: %s", body)
+	}
+}

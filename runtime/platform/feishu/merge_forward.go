@@ -17,8 +17,8 @@ import (
 // parseMergeForward fetches sub-messages of a merge_forward message via the
 // GET /open-apis/im/v1/messages/{message_id} API, then formats them into
 // readable text. Returns combined text, images, and files from the sub-messages.
-func (p *Platform) parseMergeForward(rootMessageID string) (string, []common.ImageAttachment, []common.FileAttachment) {
-	resp, err := p.client.Im.Message.Get(context.Background(),
+func (p *Platform) parseMergeForward(ctx context.Context, rootMessageID string) (string, []common.ImageAttachment, []common.FileAttachment) {
+	resp, err := p.client.Im.Message.Get(ctx,
 		larkim.NewGetMessageReqBuilder().
 			MessageId(rootMessageID).
 			CardMsgContentType("raw_card_content").
@@ -64,13 +64,13 @@ func (p *Platform) parseMergeForward(rootMessageID string) (string, []common.Ima
 	for id := range senderIDs {
 		uniqueIDs = append(uniqueIDs, id)
 	}
-	nameMap := p.resolveUserNames(uniqueIDs)
+	nameMap := p.resolveUserNamesContext(ctx, uniqueIDs)
 
 	var allImages []common.ImageAttachment
 	var allFiles []common.FileAttachment
 	var sb strings.Builder
 	sb.WriteString("<forwarded_messages>\n")
-	p.formatMergeForwardTree(rootMessageID, childrenMap, nameMap, &sb, &allImages, &allFiles, 0)
+	p.formatMergeForwardTree(ctx, rootMessageID, childrenMap, nameMap, &sb, &allImages, &allFiles, 0)
 	sb.WriteString("</forwarded_messages>")
 
 	return sb.String(), allImages, allFiles
@@ -87,7 +87,7 @@ func replaceMentions(text string, mentions []*larkim.Mention) string {
 }
 
 // formatMergeForwardTree recursively formats the sub-message tree.
-func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[string][]*larkim.Message, nameMap map[string]string, sb *strings.Builder, images *[]common.ImageAttachment, files *[]common.FileAttachment, depth int) {
+func (p *Platform) formatMergeForwardTree(ctx context.Context, parentID string, childrenMap map[string][]*larkim.Message, nameMap map[string]string, sb *strings.Builder, images *[]common.ImageAttachment, files *[]common.FileAttachment, depth int) {
 	if depth > 10 {
 		sb.WriteString(strings.Repeat("    ", depth))
 		sb.WriteString("[nested forwarding truncated]\n")
@@ -97,6 +97,9 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
 	indent := strings.Repeat("    ", depth)
 
 	for _, item := range children {
+		if ctx.Err() != nil {
+			return
+		}
 		msgID := ""
 		if item.MessageId != nil {
 			msgID = *item.MessageId
@@ -141,7 +144,7 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
 			}
 
 		case "post":
-			textParts, postImages := p.parsePostContent(msgID, content)
+			textParts, postImages := p.parsePostContent(ctx, msgID, content)
 			*images = append(*images, postImages...)
 			text := replaceMentions(strings.Join(textParts, "\n"), item.Mentions)
 			if text != "" {
@@ -156,7 +159,7 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
 				ImageKey string `json:"image_key"`
 			}
 			if err := json.Unmarshal([]byte(content), &imgBody); err == nil && imgBody.ImageKey != "" {
-				imgData, mimeType, err := p.downloadImage(msgID, imgBody.ImageKey)
+				imgData, mimeType, err := p.downloadImage(ctx, msgID, imgBody.ImageKey)
 				if err != nil {
 					slog.Error(p.tag()+": download merge_forward image failed", "error", err)
 					sb.WriteString(fmt.Sprintf("%s[%s] %s: [image - download failed]\n", indent, ts, senderName))
@@ -172,7 +175,7 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
 				FileName string `json:"file_name"`
 			}
 			if err := json.Unmarshal([]byte(content), &fileBody); err == nil && fileBody.FileKey != "" {
-				fileData, err := p.downloadResource(msgID, fileBody.FileKey, "file")
+				fileData, err := p.downloadResource(ctx, msgID, fileBody.FileKey, "file")
 				if err != nil {
 					slog.Error(p.tag()+": download merge_forward file failed", "error", err)
 					sb.WriteString(fmt.Sprintf("%s[%s] %s: [file: %s - download failed]\n", indent, ts, senderName, fileBody.FileName))
@@ -193,7 +196,7 @@ func (p *Platform) formatMergeForwardTree(parentID string, childrenMap map[strin
 
 		case "merge_forward":
 			sb.WriteString(fmt.Sprintf("%s[%s] %s: [forwarded messages]\n", indent, ts, senderName))
-			p.formatMergeForwardTree(msgID, childrenMap, nameMap, sb, images, files, depth+1)
+			p.formatMergeForwardTree(ctx, msgID, childrenMap, nameMap, sb, images, files, depth+1)
 
 		default:
 			sb.WriteString(fmt.Sprintf("%s[%s] %s: [%s message]\n", indent, ts, senderName, msgType))

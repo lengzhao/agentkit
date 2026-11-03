@@ -431,6 +431,7 @@ func (p *Platform) Send(ctx context.Context, event agentkit.OutboundEvent) error
 }
 
 func (p *Platform) run(ctx context.Context) {
+	p.ingressExecutor().Bind(ctx)
 	if !p.shouldUseWebhookMode() {
 		if openID, err := p.fetchBotOpenID(); err != nil {
 			slog.Warn(p.platformTag+": failed to get bot open_id, group chat filtering disabled", "error", err)
@@ -471,6 +472,11 @@ func (p *Platform) run(ctx context.Context) {
 		_ = p.startWebSocketMode(ctx)
 	}
 	<-ctx.Done()
+	ingressStopCtx, stopIngress := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := p.ingressExecutor().Stop(ingressStopCtx); err != nil {
+		slog.Warn(p.tag()+": ingress shutdown did not finish", "error", err)
+	}
+	stopIngress()
 	p.flushPendingAttachments()
 	p.flushDeferredAttachments()
 	if p.wsClient != nil {
@@ -487,18 +493,21 @@ func (p *Platform) run(ctx context.Context) {
 	}
 }
 
-func (p *Platform) dispatchCoreMessage(msg *inboundMessage) {
-	if msg == nil {
+func (p *Platform) dispatchCoreMessage(ctx context.Context, msg *inboundMessage) {
+	if msg == nil || ctx.Err() != nil {
 		return
 	}
 	if p.isMessageRecalled(msg.messageID) {
 		slog.Debug(p.tag()+": recalled message dispatch dropped", "message_id", msg.messageID)
 		return
 	}
-	p.dispatchInbound(context.Background(), *msg)
+	p.dispatchInbound(ctx, *msg)
 }
 
 func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
+	if ctx.Err() != nil {
+		return
+	}
 	if msg.messageID != "" && p.reactionEmoji != "" {
 		msg.rctx.processingReactionID = p.addReaction(msg.messageID)
 	}
@@ -506,7 +515,7 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	p.storeDelivery(msg.sessionID, msg.rctx)
 
 	text := strings.TrimSpace(msg.content)
-	metadata := p.inboundMetadata(msg)
+	metadata := p.inboundMetadata(ctx, msg)
 	if text != "" {
 		outcome, err := common.ProcessPlatformSlash(ctx, p.cfg.AgentRoutingConfig, p.commands, common.SlashContext{
 			Route:        rctx.BuildSessionRoute(p.inboundRoute(msg)),
@@ -583,8 +592,8 @@ func (p *Platform) dispatchInbound(ctx context.Context, msg inboundMessage) {
 	}
 }
 
-func (p *Platform) inboundMetadata(msg inboundMessage) map[string]any {
-	return common.MergeMetadata(p.userProfileMetadata(msg.userID), p.mentionMetadata(msg.mentions))
+func (p *Platform) inboundMetadata(ctx context.Context, msg inboundMessage) map[string]any {
+	return common.MergeMetadata(p.userProfileMetadataContext(ctx, msg.userID), p.mentionMetadataContext(ctx, msg.mentions))
 }
 
 func (p *Platform) storeDelivery(sessionID agentkit.SessionID, rc replyContext) {
@@ -748,6 +757,7 @@ func (p *Platform) clearStreamState(sessionID agentkit.SessionID) {
 	if raw, ok := p.streams.LoadAndDelete(sessionID); ok {
 		st := raw.(*streamState)
 		st.lock()
+		st.ended = true
 		stopStreamTimer(&st.bodyFlushTimer)
 		stopStreamTimer(&st.keepaliveTimer)
 		st.unlock()
