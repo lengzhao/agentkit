@@ -115,7 +115,7 @@ func (p *Platform) fetchSingleMessage(ctx context.Context, messageID string) *ch
 	if item.Sender.SenderType == "app" {
 		senderName = p.resolveBotSenderName(item.Sender.ID)
 	} else if item.Sender.ID != "" {
-		resolved := p.resolveUserName(item.Sender.ID)
+		resolved := p.resolveUserNameContext(ctx, item.Sender.ID)
 		if resolved != item.Sender.ID {
 			senderName = resolved
 		} else {

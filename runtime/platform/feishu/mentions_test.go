@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"context"
 	"testing"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -32,7 +33,7 @@ func TestMentionMetadataSkipsBotAndDedupes(t *testing.T) {
 		email: "alice@example.com",
 	})
 
-	md := p.mentionMetadata(mentions)
+	md := p.mentionMetadataContext(context.Background(), mentions)
 	items, ok := md["mentions"].([]map[string]string)
 	if !ok {
 		t.Fatalf("mentions = %#v", md["mentions"])

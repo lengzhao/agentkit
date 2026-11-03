@@ -130,7 +130,7 @@ func TestEndedStreamTimersCannotRecreateOrTouchNextTurn(t *testing.T) {
 	old.lock()
 	old.progressHandle = &feishuPreviewHandle{messageID: "old"}
 	old.unlock()
-	p.clearStream(key)
+	p.clearStreamState(key)
 	next := p.streamState(key)
 	p.scheduleRichCardKeepalive(key, old)
 	p.scheduleBodyFlush(key, old)

@@ -41,11 +41,11 @@ func TestProfileResolverContextKeepsCaches(t *testing.T) {
 	p := &Platform{}
 	p.userProfileCache.Store("ou_cached", feishuUserProfileEntry{ok: true, name: "Cached user"})
 	p.chatNameCache.Store("oc_cached", "Cached chat")
-	if p.resolveUserNameContext(context.Background(), "ou_cached") != "Cached user" || p.resolveUserName("ou_cached") != "Cached user" {
-		t.Fatal("user cache/wrapper changed")
+	if p.resolveUserNameContext(context.Background(), "ou_cached") != "Cached user" {
+		t.Fatal("user cache changed")
 	}
-	if p.resolveChatNameContext(context.Background(), "oc_cached") != "Cached chat" || p.resolveChatName("oc_cached") != "Cached chat" {
-		t.Fatal("chat cache/wrapper changed")
+	if p.resolveChatNameContext(context.Background(), "oc_cached") != "Cached chat" {
+		t.Fatal("chat cache changed")
 	}
 	if got := p.resolveChatNameContext(context.Background(), "oc_missing"); got != "oc_missing" {
 		t.Fatalf("nil-client fallback=%q", got)

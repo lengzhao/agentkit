@@ -15,52 +15,6 @@ import (
 	"github.com/lengzhao/agentkit/runtime/rctx"
 )
 
-func TestRenderProgressMarkdownMergesThinkingAndTool(t *testing.T) {
-	p := &Platform{
-		showThinking:     true,
-		showToolProgress: true,
-	}
-	st := streamStateLiteral(streamStateData{
-		thinking: "plan",
-		steps: []toolStep{
-			{Kind: toolStepKindTool, Name: "Read", Summary: "README.md", Done: true},
-			{Kind: toolStepKindToolResult, Name: "Read", Result: "hello"},
-		},
-	})
-	md := p.renderProgressMarkdown(st, true)
-	if strings.Contains(md, "⏱ 运行中") {
-		t.Fatalf("streaming progress should not include running status line, got %q", md)
-	}
-	if !strings.Contains(md, "> plan") {
-		t.Fatalf("expected thinking quote block, got %q", md)
-	}
-	if !strings.Contains(md, "**Read**") {
-		t.Fatalf("expected tool line, got %q", md)
-	}
-	if !strings.Contains(md, "hello") {
-		t.Fatalf("expected tool result, got %q", md)
-	}
-}
-
-func TestRenderProgressMarkdownFinalStatus(t *testing.T) {
-	p := &Platform{showToolProgress: true}
-	st := streamStateLiteral(streamStateData{
-		startedAt:         time.Now().Add(-2 * time.Second),
-		progressStartedAt: time.Now().Add(-2 * time.Second),
-		steps:             []toolStep{{Kind: toolStepKindTool, Name: "Read", Summary: "a.go"}},
-	})
-	md := p.renderProgressMarkdown(st, false)
-	if !strings.Contains(md, "> ⏱ 用时") {
-		t.Fatalf("expected completed status footer, got %q", md)
-	}
-	if !strings.Contains(md, "---") {
-		t.Fatalf("expected status footer separator, got %q", md)
-	}
-	if !strings.Contains(md, "1 个工具") {
-		t.Fatalf("expected tool count in final status, got %q", md)
-	}
-}
-
 func TestRichCardPatchKeepsSingleProgressHandleAcrossEvents(t *testing.T) {
 	p := &Platform{
 		showThinking:       true,
@@ -107,7 +61,7 @@ func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 		showThinking:     true,
 		showToolProgress: true,
 	}
-	st := streamStateLiteral(streamStateData{toolStepIdx: make(map[int]int)})
+	st := &streamState{toolStepIdx: make(map[int]int)}
 
 	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
 		Type:  agentkit.AssistantEventThinkingDelta,
@@ -171,7 +125,7 @@ func TestApplyRichStreamEventToolAndThinking(t *testing.T) {
 
 func TestRichStreamUpdateIgnoresThinkingWhenDisabled(t *testing.T) {
 	p := &Platform{showThinking: false}
-	st := streamStateLiteral(streamStateData{})
+	st := &streamState{}
 	if p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{
 		Type:  agentkit.AssistantEventThinkingDelta,
 		Delta: "secret",
@@ -212,7 +166,7 @@ func TestRichCardMessageStartPreservesToolSteps(t *testing.T) {
 
 func TestRichCardDisplayBodyJoinsCommittedAndInflight(t *testing.T) {
 	t.Parallel()
-	st := streamStateLiteral(streamStateData{committedBodyText: "first", bodyText: "second"})
+	st := &streamState{committedBodyText: "first", bodyText: "second"}
 	got := st.richCardDisplayBody()
 	want := "first" + richCardBodySegmentSeparator + "second"
 	if got != want {
@@ -294,80 +248,6 @@ func TestReplyContextForStreamLegacyKey(t *testing.T) {
 	}
 	if rc.messageID != "om_trigger" {
 		t.Fatalf("messageID = %q, want om_trigger", rc.messageID)
-	}
-}
-
-func TestEvictStreamCardsDropsOldestProgress(t *testing.T) {
-	p := &Platform{useInteractiveCard: false}
-	p1 := &feishuPreviewHandle{messageID: "p1"}
-	st := streamStateLiteral(streamStateData{
-		cards: []streamCard{
-			{Kind: streamCardProgress, Handle: p1},
-			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
-			{Kind: streamCardProgress, Handle: &feishuPreviewHandle{messageID: "p2"}},
-			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b2"}},
-		},
-		progressHandle: p1,
-	})
-	p.evictStreamCards(context.Background(), st)
-	if len(st.cards) != 3 {
-		t.Fatalf("cards len = %d, want 3", len(st.cards))
-	}
-	if st.cards[0].Handle.(*feishuPreviewHandle).messageID != "b1" {
-		t.Fatalf("oldest card = %v, want body b1", st.cards[0].Handle)
-	}
-	if st.cards[2].Handle.(*feishuPreviewHandle).messageID != "b2" {
-		t.Fatalf("newest card = %v, want body b2", st.cards[2].Handle)
-	}
-	if st.progressHandle != nil {
-		t.Fatal("evicted progress handle should clear active ref")
-	}
-}
-
-func TestRemovePriorProgressCardsKeepsLatestOnly(t *testing.T) {
-	p := &Platform{useInteractiveCard: false}
-	p1 := &feishuPreviewHandle{messageID: "p1"}
-	p2 := &feishuPreviewHandle{messageID: "p2"}
-	st := streamStateLiteral(streamStateData{
-		cards: []streamCard{
-			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
-			{Kind: streamCardProgress, Handle: p1},
-			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b2"}},
-		},
-		progressHandle: p1,
-	})
-	p.removePriorProgressCards(context.Background(), st, p2)
-	if len(st.cards) != 2 {
-		t.Fatalf("cards len = %d, want 2", len(st.cards))
-	}
-	if st.cards[0].Handle.(*feishuPreviewHandle).messageID != "b1" ||
-		st.cards[1].Handle.(*feishuPreviewHandle).messageID != "b2" {
-		t.Fatalf("body cards should remain, got %#v", st.cards)
-	}
-	if st.progressHandle != nil {
-		t.Fatal("removed progress handle should clear active ref")
-	}
-}
-
-func TestEvictStreamCardsPopsBodyWithoutDelete(t *testing.T) {
-	p := &Platform{useInteractiveCard: false}
-	st := streamStateLiteral(streamStateData{
-		cards: []streamCard{
-			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b1"}},
-			{Kind: streamCardProgress, Handle: &feishuPreviewHandle{messageID: "p1"}},
-			{Kind: streamCardBody, Handle: &feishuPreviewHandle{messageID: "b2"}},
-			{Kind: streamCardProgress, Handle: &feishuPreviewHandle{messageID: "p2"}},
-		},
-	})
-	p.evictStreamCards(context.Background(), st)
-	if len(st.cards) != 3 {
-		t.Fatalf("cards len = %d, want 3", len(st.cards))
-	}
-	if st.cards[0].Handle.(*feishuPreviewHandle).messageID != "p1" {
-		t.Fatalf("oldest card = %v, want progress p1", st.cards[0].Handle)
-	}
-	if st.cards[2].Handle.(*feishuPreviewHandle).messageID != "p2" {
-		t.Fatalf("newest card = %v, want progress p2", st.cards[2].Handle)
 	}
 }
 
@@ -456,7 +336,7 @@ func TestScheduleRichCardKeepaliveReschedules(t *testing.T) {
 	}
 
 	// clearStream 必须停掉心跳，避免 turn 结束后泄漏。
-	p.clearStream(sessionID)
+	p.clearStreamState(sessionID)
 	st.lock()
 	if st.keepaliveTimer != nil {
 		st.unlock()
@@ -472,7 +352,7 @@ func TestOnRichCardKeepaliveAfterStreamCleared(t *testing.T) {
 	st.lock()
 	st.progressHandle = &feishuPreviewHandle{messageID: "m1"}
 	st.unlock()
-	p.clearStream(sessionID)
+	p.clearStreamState(sessionID)
 
 	// state 已删除：回调应直接返回，且不得重建 state。
 	p.onRichCardKeepalive(sessionID, st)
@@ -589,7 +469,7 @@ func TestFlushRichCardUpdateFailureNeverSendsNewMessage(t *testing.T) {
 			t.Fatalf("flush %d: %v", i, err)
 		}
 	}
-	p.clearStream(streamKey)
+	p.clearStreamState(streamKey)
 
 	st.lock()
 	defer st.unlock()
@@ -641,7 +521,7 @@ func TestFinalizeTurnEndRecallsStaleCardAfterReplacement(t *testing.T) {
 	old := &feishuPreviewHandle{messageID: "m1", chatID: "oc_test", cardID: "c1"}
 	rc := replyContext{chatID: "oc_test", messageID: "om_trigger"}
 	content := `{"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"final answer"}]}}`
-	p.finalizeRichTurnEndAsync(context.Background(), agentkit.SessionID("turn-finalize-recall"), newStreamState(),
+	p.finalizeRichTurnEndAsync(context.Background(), agentkit.SessionID("turn-finalize-recall"), &streamState{},
 		old, content, "final answer", "", capsession.TurnEndData{}, agentkit.SessionID("lark:oc_test"), rc, true)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -700,7 +580,7 @@ func TestRichBodyDeltaThrottleCapsFlushRate(t *testing.T) {
 	if got := streamCalls.Load(); got != 1 {
 		t.Fatalf("expected exactly 1 debounced flush, got %d", got)
 	}
-	p.clearStream(streamKey)
+	p.clearStreamState(streamKey)
 }
 
 func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
@@ -732,7 +612,7 @@ func TestScheduleBodyFlushSetsTimerOnce(t *testing.T) {
 
 func TestToolCallEndMatchesByCallIDWithSharedContentIndex(t *testing.T) {
 	p := &Platform{showToolProgress: true}
-	st := streamStateLiteral(streamStateData{toolStepIdx: make(map[int]int)})
+	st := &streamState{toolStepIdx: make(map[int]int)}
 
 	const sharedIdx = 2
 	if !p.applyRichStreamEvent(st, agentkit.AssistantMessageEvent{

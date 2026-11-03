@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -18,7 +17,6 @@ import (
 const maxToolSummaryRunes = 180
 const maxRecentProgressSteps = 2
 
-const progressMarkdownFooterSeparator = "\n\n---\n\n"
 const richCardBodySegmentSeparator = "\n\n"
 const outboundStreamReplySuffix = ":reply:"
 
@@ -90,10 +88,6 @@ func (st *streamState) richCardDisplayBody() string {
 		return st.committedBodyText
 	}
 	return st.committedBodyText + richCardBodySegmentSeparator + inflight
-}
-
-func subagentToolLabel(agent string) string {
-	return "子Agent:" + strings.TrimSpace(agent)
 }
 
 func (p *Platform) bumpRichCardPanel(st *streamState) {
@@ -206,12 +200,10 @@ func (p *Platform) flushRichCardState(ctx context.Context, streamKey agentkit.Se
 			st.unlock()
 			return nil
 		}
-		evicted := p.evictStreamCardsLocked(st)
 		st.lastProgressUpdate = time.Now()
 		st.richCardFlushedPanelVersion = panelVer
 		st.lastRichCardBodyStreamRunes = len([]rune(body))
 		st.unlock()
-		p.deleteEvictedProgressCards(ctx, evicted)
 		p.scheduleRichCardKeepalive(streamKey, st)
 		return nil
 	}
@@ -334,7 +326,6 @@ func (p *Platform) createProgressCard(ctx context.Context, st *streamState, rc r
 		st.nextCreateAfter = time.Time{}
 		st.progressHandle = handle
 		st.bodyStreamClosed = false
-		st.enqueueCard(streamCardProgress, handle)
 	}
 	close(st.createDone)
 	st.createDone = nil
@@ -562,61 +553,6 @@ func (p *Platform) handleRichBodyDelta(ctx context.Context, sessionID agentkit.S
 	}
 	p.scheduleBodyFlush(sessionID, st)
 	return nil
-}
-
-func (st *streamState) enqueueCard(kind streamCardKind, handle any) {
-	st.cards = append(st.cards, streamCard{Kind: kind, Handle: handle})
-}
-
-func (st *streamState) clearCardRef(handle any) {
-	if st.progressHandle == handle {
-		st.progressHandle = nil
-	}
-}
-
-func (p *Platform) removePriorProgressCards(ctx context.Context, st *streamState, keep any) {
-	remaining := make([]streamCard, 0, len(st.cards))
-	var toDelete []any
-	for _, card := range st.cards {
-		if card.Kind != streamCardProgress || card.Handle == keep {
-			remaining = append(remaining, card)
-			continue
-		}
-		toDelete = append(toDelete, card.Handle)
-		st.clearCardRef(card.Handle)
-	}
-	st.cards = remaining
-	p.deleteEvictedProgressCards(ctx, toDelete)
-}
-
-func (p *Platform) evictStreamCards(ctx context.Context, st *streamState) {
-	evicted := p.evictStreamCardsLocked(st)
-	p.deleteEvictedProgressCards(ctx, evicted)
-}
-
-func (p *Platform) evictStreamCardsLocked(st *streamState) []any {
-	var toDelete []any
-	for len(st.cards) > maxStreamCards {
-		oldest := st.cards[0]
-		if oldest.Kind == streamCardProgress {
-			toDelete = append(toDelete, oldest.Handle)
-		}
-		st.clearCardRef(oldest.Handle)
-		st.cards = st.cards[1:]
-	}
-	return toDelete
-}
-
-// deleteEvictedProgressCards 不再真正删除被淘汰的卡片消息：删除在 Lark 客户端
-// 显示为「撤回了一条消息」，故障重建场景会刷屏打扰用户。被淘汰的旧卡内容已被
-// 后续卡片覆盖语义，保留无害。此处仅作日志记录，引用已由调用方清除。
-func (p *Platform) deleteEvictedProgressCards(_ context.Context, handles []any) {
-	for _, handle := range handles {
-		if handle == nil {
-			continue
-		}
-		slog.Debug(p.tag()+": evicted progress card kept (no recall)", "handle", fmt.Sprintf("%v", handle))
-	}
 }
 
 func toolCallID(ame agentkit.AssistantMessageEvent) string {
@@ -1124,7 +1060,7 @@ func (p *Platform) handleRichTurnEnd(ctx context.Context, sessionID agentkit.Ses
 	delivery := p.deliveryForStream(sessionID)
 
 	content := buildRichCard(finalStatus, "", displaySteps, bodyText, false, elapsed)
-	p.clearStream(sessionID)
+	p.clearStreamState(sessionID)
 	if strings.TrimSpace(content) != "" && content != " " {
 		p.finalizeRichTurnEndAsync(ctx, sessionID, st, handle, content, bodyText, botReplyID, endData, delivery, rc, hasReply)
 	} else {
@@ -1144,31 +1080,8 @@ func cancelledBodyText(reason string) string {
 	return "任务已取消"
 }
 
-func appendCancelledProgressFooter(progressMD, reason string) string {
-	footer := "> 已取消"
-	reason = strings.TrimSpace(reason)
-	if reason != "" && reason != "cancelled" {
-		footer += "（" + reason + "）"
-	}
-	if strings.TrimSpace(progressMD) == "" {
-		return footer
-	}
-	return progressMD + "\n\n---\n\n" + footer
-}
-
 func (p *Platform) bootstrapReplyCard(ctx context.Context, streamKey agentkit.SessionID) error {
 	return p.flushRichCard(ctx, streamKey, true)
-}
-
-func countProgressToolInvocations(steps []toolStep) int {
-	n := 0
-	for _, step := range steps {
-		switch step.Kind {
-		case toolStepKindTool, toolStepKindSubagent:
-			n++
-		}
-	}
-	return n
 }
 
 func progressElapsed(st *streamState) time.Duration {
@@ -1180,100 +1093,6 @@ func progressElapsed(st *streamState) time.Duration {
 		return 0
 	}
 	return elapsed
-}
-
-func (p *Platform) formatProgressStatusLine(toolCount int, elapsed time.Duration, streaming bool) string {
-	parts := make([]string, 0, 3)
-	if streaming {
-		parts = append(parts, "⏱ 运行中")
-	} else {
-		parts = append(parts, "⏱ 用时 "+formatElapsedCN(elapsed))
-	}
-	if p.showToolProgress {
-		parts = append(parts, fmt.Sprintf("%d 个工具", toolCount))
-	}
-	if streaming {
-		parts = append(parts, formatElapsedCN(elapsed))
-	}
-	return strings.Join(parts, " · ")
-}
-
-func (p *Platform) renderProgressMarkdown(st *streamState, streaming bool) string {
-	body := p.renderProgressBody(st)
-	if strings.TrimSpace(body) == "" {
-		if !streaming {
-			return "> " + p.formatProgressStatusLine(countProgressToolInvocations(st.steps), progressElapsed(st), false)
-		}
-		return ""
-	}
-	if streaming {
-		return body
-	}
-	footer := "> " + p.formatProgressStatusLine(countProgressToolInvocations(st.steps), progressElapsed(st), false)
-	return body + progressMarkdownFooterSeparator + footer
-}
-
-func (p *Platform) renderProgressBody(st *streamState) string {
-	var b strings.Builder
-	if p.showThinking && strings.TrimSpace(st.thinking) != "" {
-		b.WriteString("> ")
-		b.WriteString(strings.TrimSpace(st.thinking))
-		b.WriteString("\n\n")
-	}
-	steps := st.steps
-	if len(steps) == 0 {
-		return strings.TrimSpace(b.String())
-	}
-	visible := steps
-	truncated := false
-	stepLimit := maxRecentProgressSteps
-	if stepLimit > 0 && len(steps) > stepLimit {
-		visible = steps[len(steps)-stepLimit:]
-		truncated = true
-	}
-	for _, step := range visible {
-		switch step.Kind {
-		case toolStepKindTool:
-			b.WriteString("- **")
-			b.WriteString(step.Name)
-			b.WriteString("**")
-			if summary := strings.TrimSpace(step.Summary); summary != "" && summary != step.Name {
-				b.WriteString(" ")
-				b.WriteString(summary)
-			}
-			b.WriteString("\n")
-		case toolStepKindSubagent:
-			label := subagentToolLabel(step.Name)
-			b.WriteString("- **")
-			b.WriteString(label)
-			b.WriteString("**")
-			if step.Done {
-				if summary := strings.TrimSpace(step.Result); summary != "" {
-					b.WriteString(" ")
-					b.WriteString(summary)
-				} else if summary := strings.TrimSpace(step.Summary); summary != "" {
-					b.WriteString(" ")
-					b.WriteString(summary)
-				}
-			} else if summary := strings.TrimSpace(step.Summary); summary != "" {
-				b.WriteString(" ")
-				b.WriteString(summary)
-			}
-			b.WriteString("\n")
-		case toolStepKindToolResult:
-			b.WriteString("  - ")
-			if result := strings.TrimSpace(step.Result); result != "" {
-				b.WriteString(result)
-			} else {
-				b.WriteString(strings.TrimSpace(step.Summary))
-			}
-			b.WriteString("\n")
-		}
-	}
-	if truncated {
-		b.WriteString("\n_仅显示最近更新_\n")
-	}
-	return strings.TrimSpace(b.String())
 }
 
 func (p *Platform) renderRichSteps(st *streamState) []toolStep {

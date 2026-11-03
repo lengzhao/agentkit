@@ -40,3 +40,7 @@ Progress cards consume native outbound events and typed tool results directly.
 The unused prefixed-string progress payload protocol and its legacy entry
 inference have been removed. Tool-result formatting stays local until another
 platform needs the same behavior.
+
+Each stream keeps one active progress-card handle. The obsolete body/progress
+card queue, eviction bookkeeping, and Markdown-only progress renderer have been
+removed; turn-end replacement and stale-message recall remain explicit.

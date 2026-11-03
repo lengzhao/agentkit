@@ -7,10 +7,10 @@ import (
 	"github.com/lengzhao/agentkit"
 )
 
-// streamStateData is a mutable card snapshot (tests and async subagent panel use this directly).
-type streamStateData struct {
+// streamState holds one reply card and its per-turn presentation state.
+type streamState struct {
+	mu                 sync.Mutex
 	progressHandle     any
-	cards              []streamCard
 	bodyText           string
 	committedBodyText  string
 	finalizedBodyText  string
@@ -22,7 +22,6 @@ type streamStateData struct {
 	startedAt          time.Time
 	progressStartedAt  time.Time
 	lastProgressUpdate time.Time
-	lastBodyUpdate     time.Time
 	bodyFlushTimer     *time.Timer
 	keepaliveTimer     *time.Timer
 	// 卡片创建失败退避：连续失败次数与下次允许重试的时间，避免网关持续故障时
@@ -51,23 +50,5 @@ type streamStateData struct {
 	hasRoute bool
 }
 
-// streamState holds per-stream outbound card state. Access is serialized with
-// a mutex (hot path: every streaming delta locks once). lock/unlock are kept as
-// methods so call sites read symmetrically; the underlying primitive is a
-// sync.Mutex because channel-based locks are measurably slower on this path.
-type streamState struct {
-	mu sync.Mutex
-	streamStateData
-}
-
-func newStreamState() *streamState {
-	return &streamState{}
-}
-
 func (st *streamState) lock()   { st.mu.Lock() }
 func (st *streamState) unlock() { st.mu.Unlock() }
-
-// streamStateLiteral builds a stream state for tests (fields pre-populated).
-func streamStateLiteral(data streamStateData) *streamState {
-	return &streamState{streamStateData: data}
-}

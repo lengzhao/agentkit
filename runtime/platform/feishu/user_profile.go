@@ -17,11 +17,7 @@ import (
 	"github.com/lengzhao/agentkit/runtime/platform/common"
 )
 
-// resolveUserName fetches a user's display name via the Contact API, with caching.
-func (p *Platform) resolveUserName(openID string) string {
-	return p.resolveUserNameContext(context.Background(), openID)
-}
-
+// resolveUserNameContext fetches a user's display name via the Contact API, with caching.
 func (p *Platform) resolveUserNameContext(ctx context.Context, openID string) string {
 	if !isValidFeishuLookupID(openID) {
 		return openID
@@ -39,9 +35,6 @@ type feishuUserProfileEntry struct {
 	ok    bool
 }
 
-func (p *Platform) cachedUserProfile(userID string) feishuUserProfileEntry {
-	return p.cachedUserProfileContext(context.Background(), userID)
-}
 func (p *Platform) cachedUserProfileContext(ctx context.Context, userID string) feishuUserProfileEntry {
 	if cached, ok := p.userProfileCache.Load(userID); ok {
 		return cached.(feishuUserProfileEntry)
@@ -156,9 +149,6 @@ func metadataString(md map[string]any, key string) string {
 	return strings.TrimSpace(s)
 }
 
-func (p *Platform) userProfileMetadata(userID string) map[string]any {
-	return p.userProfileMetadataContext(context.Background(), userID)
-}
 func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string) map[string]any {
 	userID = strings.TrimSpace(userID)
 	if userID == "" || !isValidFeishuLookupID(userID) {
@@ -169,10 +159,6 @@ func (p *Platform) userProfileMetadataContext(ctx context.Context, userID string
 		return nil
 	}
 	return common.UserProfileMetadata(entry.name, entry.email)
-}
-
-func (p *Platform) mentionMetadata(mentions []*larkim.MentionEvent) map[string]any {
-	return p.mentionMetadataContext(context.Background(), mentions)
 }
 
 func (p *Platform) mentionMetadataContext(ctx context.Context, mentions []*larkim.MentionEvent) map[string]any {
@@ -251,11 +237,7 @@ func isValidFeishuLookupID(id string) bool {
 	return true
 }
 
-// resolveUserNames batch-resolves open_ids to display names.
-func (p *Platform) resolveUserNames(openIDs []string) map[string]string {
-	return p.resolveUserNamesContext(context.Background(), openIDs)
-}
-
+// resolveUserNamesContext batch-resolves open_ids to display names.
 func (p *Platform) resolveUserNamesContext(ctx context.Context, openIDs []string) map[string]string {
 	names := make(map[string]string, len(openIDs))
 	for _, id := range openIDs {
@@ -266,11 +248,7 @@ func (p *Platform) resolveUserNamesContext(ctx context.Context, openIDs []string
 	return names
 }
 
-// resolveChatName fetches a chat/group name via the IM API, with caching.
-func (p *Platform) resolveChatName(chatID string) string {
-	return p.resolveChatNameContext(context.Background(), chatID)
-}
-
+// resolveChatNameContext fetches a chat/group name via the IM API, with caching.
 func (p *Platform) resolveChatNameContext(ctx context.Context, chatID string) string {
 	if chatID == "" {
 		return ""

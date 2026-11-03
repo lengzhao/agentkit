@@ -177,10 +177,6 @@ func formatProgressToolResult(text string) string {
 	return text
 }
 
-func buildPreviewCardJSON(content string) string {
-	return buildCardJSON(sanitizeMarkdownURLs(content))
-}
-
 // buildFinalPreviewCardJSON builds card JSON for the final update of a streaming preview.
 // Unlike buildReplyContent, it must not wrap plain text in IM API {"text":...} JSON.
 func buildFinalPreviewCardJSON(text string) string {
@@ -222,7 +218,7 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 			sendContent = cardJSON
 		}
 	} else {
-		cardJSON = buildPreviewCardJSON(content)
+		cardJSON = buildCardJSON(sanitizeMarkdownURLs(content))
 		sendContent = cardJSON
 	}
 
@@ -278,11 +274,7 @@ func (p *Platform) updateMessageProfile(ctx context.Context, previewHandle any, 
 		h.lastContent = content
 		h.mu.Unlock()
 	} else {
-		processed := content
-		if containsMarkdown(content) {
-			processed = preprocessFeishuMarkdown(content)
-		}
-		cardJSON = buildCardJSON(sanitizeMarkdownURLs(processed))
+		cardJSON = buildFinalPreviewCardJSON(content)
 	}
 	req := larkim.NewPatchMessageReqBuilder().
 		MessageId(h.messageID).

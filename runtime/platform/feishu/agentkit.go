@@ -157,14 +157,6 @@ func (msg inboundMessage) inboundRoute(platform string) agentkit.SessionRouteInp
 	}
 }
 
-type streamCardKind string
-
-const (
-	streamCardProgress streamCardKind = "progress"
-	streamCardBody     streamCardKind = "body"
-	maxStreamCards                    = 3
-)
-
 type streamSegmentKind string
 
 const (
@@ -173,11 +165,6 @@ const (
 	streamSegmentTool     streamSegmentKind = "tool"
 	streamSegmentBody     streamSegmentKind = "body"
 )
-
-type streamCard struct {
-	Kind   streamCardKind
-	Handle any
-}
 
 type cardStatus string
 
@@ -746,7 +733,7 @@ func (p *Platform) streamState(sessionID agentkit.SessionID) *streamState {
 	if raw, ok := p.streams.Load(sessionID); ok {
 		return raw.(*streamState)
 	}
-	st := newStreamState()
+	st := &streamState{}
 	actual, _ := p.streams.LoadOrStore(sessionID, st)
 	return actual.(*streamState)
 }
@@ -762,10 +749,6 @@ func (p *Platform) clearStreamState(sessionID agentkit.SessionID) {
 		stopStreamTimer(&st.keepaliveTimer)
 		st.unlock()
 	}
-}
-
-func (p *Platform) clearStream(sessionID agentkit.SessionID) {
-	p.clearStreamState(sessionID)
 }
 
 func (p *Platform) handleStreamUpdate(ctx context.Context, event agentkit.OutboundEvent) error {
