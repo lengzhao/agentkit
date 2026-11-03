@@ -161,7 +161,7 @@ type Registry interface {
 - `kind=cron`：按 `Engine.NextFire(job, job.LastRun)` 判断，到期后更新 `LastRun`。
 - `kind=delay|at`：到期时写入 `inFlightAt=now` 并返回；`MarkFired` 清除 `inFlightAt` 并标记 `fired`。认领超过 `InFlightTimeout`（默认 30 分钟）可被 reclaim。
 
-`schedule/cron` 用 `time.Timer` 按最近 `Engine.NextFire` 精准唤醒；无待触发 job 时以 `pollSeconds` 空闲退避。
+`schedule/cron` 用 `time.Timer` 等待最近 `Engine.NextFire`，每次正常等待最多为 `pollSeconds`；无待触发 job 时也等待 `pollSeconds`。这样既能提前唤醒处理已知的近期任务，也能定期重读 registry，发现新增、更新和删除的任务。任务执行耗时及读取失败后的重试退避仍可能造成额外延迟。
 
 ## 7. Runtime 语义
 
