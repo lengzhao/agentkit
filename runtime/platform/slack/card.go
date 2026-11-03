@@ -110,6 +110,8 @@ func renderCardBlocks(card *common.Card, sessionKey string) []slack.Block {
 	}
 	for _, elem := range card.Elements {
 		switch e := elem.(type) {
+		case common.CardDivider:
+			blocks = append(blocks, slack.NewDividerBlock())
 		case common.CardMarkdown:
 			if strings.TrimSpace(e.Content) == "" {
 				continue

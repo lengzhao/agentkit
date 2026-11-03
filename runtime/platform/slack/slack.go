@@ -187,6 +187,11 @@ func New(cfg Config, deps Deps) (agentkit.Platform, error) {
 		channelNameCache:    make(map[string]string),
 		typingStops:         make(map[agentkit.SessionID]func()),
 	}
+	opts := []slack.Option{slack.OptionAppLevelToken(appToken)}
+	if apiURL != "" {
+		opts = append(opts, slack.OptionAPIURL(apiURL))
+	}
+	p.client = slack.New(botToken, opts...)
 	p.outbound = common.NewOutbound(p.sendText, p.sendMediaPart)
 	return p, nil
 }
@@ -322,12 +327,7 @@ func (p *Platform) startTypingForSession(sessionID agentkit.SessionID) func() {
 }
 
 func (p *Platform) run(ctx context.Context) {
-	opts := []slack.Option{slack.OptionAppLevelToken(p.cfg.AppToken)}
-	if p.apiURL != "" {
-		opts = append(opts, slack.OptionAPIURL(p.apiURL))
-	}
-	client := slack.New(p.cfg.BotToken, opts...)
-	p.client = client
+	client := p.client
 	if auth, err := client.AuthTestContext(ctx); err != nil {
 		slog.Warn("slack: auth test failed, bot mention filtering disabled", "error", err)
 	} else if auth != nil {
