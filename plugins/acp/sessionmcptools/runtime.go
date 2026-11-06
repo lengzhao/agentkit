@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/lengzhao/agentkit"
 	capacp "github.com/lengzhao/agentkit/cap/acp"
+	"github.com/lengzhao/agentkit/runtime/mcpbridge"
 	"github.com/lengzhao/agentkit/runtime/rctx"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -142,33 +142,17 @@ func (s *runtimeScope) unlock() { <-s.gate }
 
 // sync runs with gate held. Only the matching live turn may publish a catalog.
 func (s *runtimeScope) sync(ctx context.Context, t *runtimeTurn) error {
-	specs, err := s.runtime.Visible(ctx)
+	bridge, err := mcpbridge.New(s.runtime)
 	if err != nil {
-		return fmt.Errorf("runtime MCP visible: %w", err)
+		return err
 	}
-	entries := make([]server.ServerTool, 0, len(specs))
-	seen := make(map[string]bool, len(specs))
-	for _, spec := range specs {
-		if spec.Name == "" || seen[spec.Name] {
-			return fmt.Errorf("runtime MCP invalid or duplicate tool name %q", spec.Name)
-		}
-		seen[spec.Name] = true
-		schema := spec.InputSchema
-		var raw []byte
-		if len(schema.Raw) > 0 {
-			raw, err = json.Marshal(schema.Raw)
-		} else {
-			raw, err = json.Marshal(schema)
-		}
-		if err != nil {
-			return fmt.Errorf("runtime MCP schema %s: %w", spec.Name, err)
-		}
-		entries = append(entries, server.ServerTool{Tool: mcp.NewToolWithRawSchema(spec.Name, spec.Description, raw), Handler: s.handler(spec.Name)})
+	tools, err := bridge.Tools(ctx)
+	if err != nil {
+		return err
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Tool.Name < entries[j].Tool.Name })
-	tools := make([]mcp.Tool, 0, len(entries))
-	for _, entry := range entries {
-		tools = append(tools, entry.Tool)
+	entries := make([]server.ServerTool, 0, len(tools))
+	for _, tool := range tools {
+		entries = append(entries, server.ServerTool{Tool: tool, Handler: s.handler(tool.Name)})
 	}
 	raw, err := json.Marshal(tools)
 	if err != nil {
@@ -206,33 +190,24 @@ func (s *runtimeScope) handler(name string) server.ToolHandlerFunc {
 		if !active || ctx.Err() != nil {
 			return mcp.NewToolResultError("runtime MCP turn ended"), nil
 		}
-		raw, err := json.Marshal(req.Params.Arguments)
+		bridge, err := mcpbridge.New(s.runtime)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		call := agentkit.ToolCall{ID: agentkit.ToolCallID(uuid.NewString()), Name: name, Input: raw}
-		result, err := s.runtime.Execute(ctx, call)
-		if ctx.Err() != nil {
-			err = ctx.Err()
-		}
+		req.Params.Name = name
+		result, err := bridge.CallTool(ctx, req)
 		if agentkit.IsTurnAbort(err) {
 			t.cancel(err)
 		}
 		if err != nil {
-			text := err.Error()
-			if result.Content != "" {
-				text = result.Content + "\n" + text
-			}
-			return mcp.NewToolResultError(text), nil
+			return result, nil
 		}
 		if err = s.sync(ctx, t); err != nil {
-			return mcp.NewToolResultError(result.Content + "\n" + err.Error()), nil
+			result.IsError = true
+			result.Content = append(result.Content, mcp.NewTextContent(err.Error()))
+			return result, nil
 		}
-		switch result.Audit["decision"] {
-		case "deny", "timeout", "error":
-			return mcp.NewToolResultError(result.Content), nil
-		}
-		return mcp.NewToolResultText(result.Content), nil
+		return result, nil
 	}
 }
 func (p *Provider) runtimeServers(ctx context.Context) ([]capacp.SessionMCPServer, error) {
