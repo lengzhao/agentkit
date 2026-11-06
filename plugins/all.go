@@ -14,7 +14,6 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/hook"
 	_ "github.com/lengzhao/agentkit/plugins/larkevent"
 	_ "github.com/lengzhao/agentkit/plugins/learning"
-	_ "github.com/lengzhao/agentkit/plugins/mcp/toolruntime"
 	_ "github.com/lengzhao/agentkit/plugins/memory"
 	_ "github.com/lengzhao/agentkit/plugins/policy"
 	_ "github.com/lengzhao/agentkit/plugins/prompt"

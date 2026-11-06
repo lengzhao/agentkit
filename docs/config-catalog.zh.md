@@ -582,17 +582,6 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `workspace` | `workspace.Service` |  |
 | `modelCatalog` | `llm.ModelCatalog` |  |
 
-## `mcp/tool-runtime`
-
-- 返回类型：`*mcpbridge.Bridge`
-- 源码：[`plugins/mcp/toolruntime/toolruntime.go`](../plugins/mcp/toolruntime/toolruntime.go)
-
-无 config 字段。
-
-| deps 字段 | 类型 | 说明 |
-|---|---|---|
-| `runtime`（必填） | `agentkit.ToolRuntime` |  |
-
 ## `memory/default`
 
 - 返回类型：`*memory.Service`

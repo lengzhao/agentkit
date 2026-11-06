@@ -7,7 +7,7 @@ spawner. Share MCP protocol mapping through runtime/mcpbridge.
 
 **Tech Stack:** Go, pluginkit, existing ACP SDK and mcp-go.
 
-1. Retain `runtime/mcpbridge` and `plugins/mcp/toolruntime`; reuse the bridge from
+1. Retain only `runtime/mcpbridge` as a shared library; reuse the bridge from
    `plugins/acp/sessionmcptools/runtime.go`.
 2. Use `subagent/loop-agent` with `deps.agents`; do not add an ACP-specific spawner
    or move the existing ACP backend. Retain opt-in fresh child histories.

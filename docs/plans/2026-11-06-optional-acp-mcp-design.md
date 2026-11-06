@@ -12,19 +12,19 @@ including delegations started from the same parent snapshot. The existing defaul
 session ID behavior and synchronous/asynchronous delegation contracts remain.
 The host owns ACP configuration, event persistence, approvals and shutdown.
 
-`mcp/tool-runtime` adapts any ToolRuntime through `runtime/mcpbridge`. It has no
+The `runtime/mcpbridge` library adapts any ToolRuntime. It has no
 ACP, workspace, listener, authentication or host-identity dependency. The caller
 supplies trusted context and owns lifecycle/catalog refresh. Existing ACP Session
 MCP reuses the mapping while retaining its scoped execution semantics.
 
-Only the MCP adapter is a new plugin. Existing presets and core interfaces stay
+No new plugin kinds are introduced. Existing presets and core interfaces stay
 unchanged; neither integration needs the other enabled. No Buddy/NEX/TaskHub,
 health probing, client installation, or role-file conventions are introduced.
 
 ## Validation
 
 Verify fresh/legacy behavior from the same parent snapshot, real ACP delegation
-through a configuration graph without MCP, standalone MCP plugin construction,
+through a configuration graph without MCP, standalone MCP library use,
 schema/argument/error mapping, and existing approval/cancellation/scope tests.
 Run `./scripts/test.sh unit`: import isolation, catalog freshness, full vet and
 uncached race tests. Generate the config catalog when registered kinds change.

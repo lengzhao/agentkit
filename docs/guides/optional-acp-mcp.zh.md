@@ -1,7 +1,7 @@
 # 可选 ACP 子代理组合与 MCP 工具桥接
 
 ACP 委派复用已有的 `subagent/loop-agent`，通过 `deps.agents` 注入
-`agentkit.Agent`。新增的 `mcp/tool-runtime` 只接收 ToolRuntime。
+`agentkit.Agent`。MCP 协议转换复用公共库 `runtime/mcpbridge`。
 两种能力独立选用，不依赖 ACPD、Buddy、NEX 或 TaskHub，也不改变默认 preset。
 
 ## ACP 委派：通过 deps 组合已有插件
@@ -58,19 +58,11 @@ session.events:
 结果沿用现有语义：显式 finish 决定 completed/blocked；没有 finish 时返回
 stopped 与最后一条 assistant 文本。角色目录、人格文件及业务路由由宿主负责。
 
-## 工具桥接：`mcp/tool-runtime`
+## 公共工具桥接库
 
-只导入 `github.com/lengzhao/agentkit/plugins/mcp/toolruntime`，或直接使用
-`runtime/mcpbridge.New(runtime)`。它不启动监听、不要求 Agent 或 Workspace。
-
-```yaml
-mcp.tools:
-  use: mcp/tool-runtime
-  deps:
-    runtime: tools.default
-```
-
-构造结果是 `*mcpbridge.Bridge`，供宿主的 MCP 服务注入使用：
+宿主通过 `runtime/mcpbridge.New(runtime)` 传入已有 ToolRuntime，得到
+`*mcpbridge.Bridge`。无需增加配置实例或插件注册；公共库不启动监听，
+不要求 ACP、Agent 或 Workspace。
 
 * `Tools(ctx)`：按当前执行上下文调用 Visible，返回排序后的 MCP 工具目录。
 * `CallTool(ctx, request)`：生成调用 ID，将参数交给 ToolRuntime.Execute，保留
