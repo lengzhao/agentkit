@@ -1,19 +1,18 @@
-# Optional ACP and MCP Plugins Implementation Plan
+# ACP Composition and MCP Adapter Implementation Plan
 
-**Goal:** Deliver two independently usable optional plugins in AgentKit.
+**Goal:** Provide optional ACP delegation and MCP bridging without plugin-to-plugin imports.
 
-**Architecture:** Reuse ACP remote agents and child delegation. Extract MCP
-protocol mapping into runtime/mcpbridge; retain scope/transport in Session MCP.
+**Architecture:** Inject existing ACP Agents into the backend-neutral loop-agent
+spawner. Share MCP protocol mapping through runtime/mcpbridge.
 
 **Tech Stack:** Go, pluginkit, existing ACP SDK and mcp-go.
 
-1. Add failing tests for `runtime/mcpbridge` and `plugins/mcp/toolruntime`, run
-   them, then implement descriptors/calls and registration.
-2. Refactor `plugins/acp/sessionmcptools/runtime.go` to use the bridge. Run its
-   existing scope, dynamic catalog, cancellation and policy tests.
-3. Add failing tests for `plugins/subagent/acp`, then implement config validation,
-   owned ACP runtimes, synchronous delegation, and shutdown forwarding.
-4. Add a real subprocess ACP integration test, plus isolation/cancellation and
-   independently imported plugin tests. Regenerate `plugins/all.go`.
-5. Document opt-in use and host responsibilities, run targeted/race/vet/full
-   verification and inspect the final diff. Do not commit unrelated changes.
+1. Retain `runtime/mcpbridge` and `plugins/mcp/toolruntime`; reuse the bridge from
+   `plugins/acp/sessionmcptools/runtime.go`.
+2. Use `subagent/loop-agent` with `deps.agents`; do not add an ACP-specific spawner
+   or move the existing ACP backend. Retain opt-in fresh child histories.
+3. Test fresh/legacy session behavior and a real ACP subprocess injected through
+   a graph without MCP. Retain existing generic delegation permission/cancel tests.
+4. Document separate opt-in wiring and host lifecycle responsibilities.
+5. Regenerate plugin imports and configuration catalog; run `./scripts/test.sh unit`
+   and integration checks, then update the existing PR with the final scope.

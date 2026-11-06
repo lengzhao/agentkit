@@ -1,35 +1,30 @@
-# Independent ACP delegation and runtime MCP adapters
+# Optional ACP delegation composition and MCP runtime bridge
 
-## Scope
+## Architecture
 
-The approved scope is two independent optional plugins. No Buddy/NEX/TaskHub,
-health probing, client installation, default listeners, or role-file conventions.
+ACP delegation composes existing plugins through dependency injection:
+`agent/acp-remote` supplies an `agentkit.Agent` to `subagent/loop-agent` through
+`deps.agents`. The spawner is backend-neutral; it neither constructs nor imports
+an ACP plugin. No new ACP-specific spawner or runtime relocation is needed.
 
-* `subagent/acp` constructs named ACP backends from explicit trusted config and
-  delegates synchronously through the existing child execution mechanism. It
-  requires workspace/filesystem/session storage/telemetry, not an MCP provider.
-  Approval remains parent-owned; auto-approval is rejected. Remote runtimes are
-  owned by the plugin and shut down with it. Role discovery stays in the host.
-* `mcp/tool-runtime` adapts any ToolRuntime to MCP tool descriptors and calls.
-  A transport-neutral `runtime/mcpbridge` library exposes the reusable adapter.
-  It has no ACP, workspace, listener, authentication, or host identity dependency.
-  The caller supplies trusted request context, controls lifecycle and catalog
-  refresh, and handles turn-abort errors. Existing ACP Session MCP reuses it.
+An opt-in `freshSession` setting gives every delegation independent history,
+including delegations started from the same parent snapshot. The existing default
+session ID behavior and synchronous/asynchronous delegation contracts remain.
+The host owns ACP configuration, event persistence, approvals and shutdown.
 
-Registration is opt-in through imports (or the existing all-plugins bundle),
-activation through instance configuration. Neither plugin imports the other.
-Core interfaces and existing presets remain unchanged.
+`mcp/tool-runtime` adapts any ToolRuntime through `runtime/mcpbridge`. It has no
+ACP, workspace, listener, authentication or host-identity dependency. The caller
+supplies trusted context and owns lifecycle/catalog refresh. Existing ACP Session
+MCP reuses the mapping while retaining its scoped execution semantics.
 
-## Alternatives
-
-Copying ACPD packages would drag in product policies. Adding another ACP engine
-would duplicate isolation and permission handling. Reuse existing delegation,
-and extract only protocol mapping from the existing Session MCP implementation.
+Only the MCP adapter is a new plugin. Existing presets and core interfaces stay
+unchanged; neither integration needs the other enabled. No Buddy/NEX/TaskHub,
+health probing, client installation, or role-file conventions are introduced.
 
 ## Validation
 
-Tests cover construction without the other plugin, input validation, independent
-child history, parent identity/cancellation/approval, timeout, shutdown, MCP schema
-and argument mapping, runtime policy/error/cancellation behavior, and existing
-Session MCP disclosure/scope regressions. Run targeted tests, race tests, vet,
-and the repository suite where practical. Existing user changes stay untouched.
+Verify fresh/legacy behavior from the same parent snapshot, real ACP delegation
+through a configuration graph without MCP, standalone MCP plugin construction,
+schema/argument/error mapping, and existing approval/cancellation/scope tests.
+Run `./scripts/test.sh unit`: import isolation, catalog freshness, full vet and
+uncached race tests. Generate the config catalog when registered kinds change.

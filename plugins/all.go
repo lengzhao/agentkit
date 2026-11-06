@@ -20,7 +20,6 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/prompt"
 	_ "github.com/lengzhao/agentkit/plugins/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/skill"
-	_ "github.com/lengzhao/agentkit/plugins/subagent/acp"
 	_ "github.com/lengzhao/agentkit/plugins/telemetry/langfuse"
 	_ "github.com/lengzhao/agentkit/plugins/telemetry/none"
 	_ "github.com/lengzhao/agentkit/plugins/tool/askuser"

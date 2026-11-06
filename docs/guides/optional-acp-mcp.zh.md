@@ -1,46 +1,62 @@
-# 可选 ACP 子代理与 MCP 工具桥接
+# 可选 ACP 子代理组合与 MCP 工具桥接
 
-这两个插件可以分别导入、构造和使用，互不依赖，也不依赖 ACPD、Buddy、
-NEX 或 TaskHub。导入只注册构造器；配置实例才启用功能。不修改默认 preset。
+ACP 委派复用已有的 `subagent/loop-agent`，通过 `deps.agents` 注入
+`agentkit.Agent`。新增的 `mcp/tool-runtime` 只接收 ToolRuntime。
+两种能力独立选用，不依赖 ACPD、Buddy、NEX 或 TaskHub，也不改变默认 preset。
 
-## ACP 子代理：`subagent/acp`
-
-只导入 `github.com/lengzhao/agentkit/plugins/subagent/acp`，或使用已有的
-`plugins` 全量注册包。它实现 `cap/subagent.Spawner`，可以独立调用，亦可接给
-`tool/subagent` 和 `prompt/section/subagents`。
+## ACP 委派：通过 deps 组合已有插件
 
 ```yaml
 subagent.remote:
-  use: subagent/acp
+  use: subagent/loop-agent
   config:
+    freshSession: true
     timeoutSeconds: 900
     agents:
       - name: reviewer
         description: 检查代码并返回结论
-        acp:
-          command: ["my-acp-agent", "--stdio"]
+        agent: remote
+        async: false
+  deps:
+    sessionStore: session.store
+    agents: [agent.remote]
+
+agent.remote:
+  use: agent/acp-remote
+  config:
+    id: remote
+    command: ["my-acp-agent", "--stdio"]
+    autoApprove: false
+    pool:
+      strategy: none
   deps:
     workspace: workspace.default
     fs: filesystem.default
     sessionStore: session.store
+    sessionEvents: session.events
     telemetry: telemetry.toolkit
+
+session.events:
+  use: session/events
 ```
 
-依赖 ID 需替换为宿主实例图中的实际名称。配置沿用 `agent/acp-remote` 的
-ACP 参数；没有 id 时使用 name。子代理名不区分大小写且必须唯一，ACP id 也
-必须唯一。SessionStore、Workspace、FS、Telemetry 是必要能力；SessionEvents
-缺省使用标准事件实现，以保证结果可从历史读取。SessionMCP、Sandbox 和
-SessionRestore 沿用 ACP 的可选依赖，不需要启用 MCP。
+其余依赖 ID 替换为宿主实例图的实际名称。两个插件分别构造，委派器只依赖
+`agentkit.Agent`，不导入 ACP 插件实现，也可以注入其他 Agent 后端。
+`config.agents[].agent` 对应注入 Agent 的 `config.id`；`deps.agents` 引用的是
+实例 ID。仅需要时才导入或配置 ACP 插件，无须 MCP。
 
-每次委派使用独立历史（并发委派也不复用），继承父执行的租户、用户、工作目录
-与审批目标，不读取父会话内容或消费父 steer。任务必须自包含。插件仅支持同步
-执行；`async=true` 返回错误。超时默认 900 秒，请求 timeoutSeconds 可覆盖。
-权限交给父审批 broker；拒绝 `autoApprove=true`。每次执行结束释放 ACP 子进程，
-宿主退出需调用插件 ShutdownHooks，以取消正在执行的任务并关闭后端。
+`freshSession: true` 为每次委派分配独立历史，即使从同一父事件快照发起也不复用。
+省略时保留原有会话 ID 行为。示例默认为同步；已有 async 机制继续保留。
+`pool.strategy: none` 避免为一次性任务保留 ACP 连接。
 
-结果沿用现有子代理语义：显式 finish 决定 completed/blocked；没有 finish 时
-返回 stopped 和最后一条 assistant 文本。角色目录扫描、人格文件、动态路由、
-业务审批规则由宿主负责。
+必须为 ACP Agent 接入与委派器相同的 SessionStore，以及 SessionEvents，
+否则它不会持久化供委派器读取的结论。审批需要设置 `autoApprove: false` 并由
+宿主提供父审批 broker。子执行继承父租户、用户、工作目录、取消和审批目标，
+不把父历史当作任务输入；调用方应提供自包含任务。宿主负责所有依赖的生命周期，
+退出时收集并调用 ACP Agent 的 ShutdownHooks。
+
+结果沿用现有语义：显式 finish 决定 completed/blocked；没有 finish 时返回
+stopped 与最后一条 assistant 文本。角色目录、人格文件及业务路由由宿主负责。
 
 ## 工具桥接：`mcp/tool-runtime`
 
