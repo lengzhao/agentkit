@@ -19,6 +19,11 @@ type disableReason struct {
 // interpolation values are missing or because all deps were pruned. The process
 // repeats until the graph stabilizes.
 func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDisabled map[string]disableReason, envCtx EnvContext) (map[string]any, error) {
+	out, _, err := pruneUnavailableInstancesReported(raw, interpDir, explicitDisabled, envCtx, nil)
+	return out, err
+}
+
+func pruneUnavailableInstancesReported(raw map[string]any, interpDir string, explicitDisabled map[string]disableReason, envCtx EnvContext, report *ResolveReport) (map[string]any, map[string]disableReason, error) {
 	disabled := cloneDisableReasons(explicitDisabled)
 
 	for id, reason := range explicitDisabled {
@@ -52,10 +57,11 @@ func pruneUnavailableInstances(raw map[string]any, interpDir string, explicitDis
 	}
 
 	out, err := propagateDisabledPrune(raw, disabled)
+	report.recordDisabled(disabled)
 	if err != nil {
-		return nil, err
+		return nil, disabled, err
 	}
-	return out, nil
+	return out, disabled, nil
 }
 
 func propagateDisabledPrune(raw map[string]any, disabled map[string]disableReason) (map[string]any, error) {
@@ -198,20 +204,12 @@ func pruneDepRef(instanceID, depKey string, ref any, disabled map[string]disable
 		filtered := make([]any, 0, len(x))
 		removed := 0
 		for _, item := range x {
-			id, ok := item.(string)
-			if ok && id != "" {
-				if _, dis := disabled[id]; dis {
-					slog.Warn("config dep pruned",
-						"instance_id", instanceID,
-						"dep_key", depKey,
-						"dep_value", id,
-						"disabled_instance_id", id,
-					)
-					removed++
-					continue
-				}
+			newItem, itemRemoved := pruneDepRef(instanceID, depKey, item, disabled)
+			removed += itemRemoved
+			if newItem == nil && itemRemoved > 0 {
+				continue
 			}
-			filtered = append(filtered, item)
+			filtered = append(filtered, newItem)
 		}
 		if len(filtered) == 0 {
 			return nil, removed
@@ -244,6 +242,9 @@ func pruneDepRef(instanceID, depKey string, ref any, disabled map[string]disable
 		if _, hasUse := x["use"]; hasUse {
 			if nestedDeps, ok := asStringMap(x["deps"]); ok && len(nestedDeps) > 0 {
 				newNested, removed := pruneDepsMap(instanceID, nestedDeps, disabled)
+				if removed == 0 {
+					return ref, 0
+				}
 				pruned := removed
 				if len(newNested) == 0 {
 					return nil, pruned

@@ -26,7 +26,8 @@ func probeInterpolationMissing(instanceID string, node map[string]any, baseDir s
 }
 
 func walkProbeMap(m map[string]any, path, baseDir string, envCtx EnvContext, found *missingInterpolation) bool {
-	for key, value := range m {
+	for _, key := range sortedInstanceIDs(m) {
+		value := m[key]
 		fieldPath := path + "." + key
 		switch v := value.(type) {
 		case map[string]any:
@@ -89,7 +90,7 @@ func probeInterpolation(path, raw, baseDir string, envCtx EnvContext) (missingIn
 		return missingInterpolation{}, false
 	}
 	if strings.Contains(raw, "${env:") || strings.Contains(raw, "${var:") || strings.Contains(raw, "${file:") {
-		return missingInterpolation{field: path, ref: raw}, true
+		return missingInterpolation{field: path, ref: "<invalid interpolation>"}, true
 	}
 	return missingInterpolation{}, false
 }
@@ -126,7 +127,8 @@ func interpolateInstances(raw map[string]any, baseDir string, envCtx EnvContext)
 }
 
 func walkInterpolateMap(m map[string]any, path, baseDir string, envCtx EnvContext) error {
-	for key, value := range m {
+	for _, key := range sortedInstanceIDs(m) {
+		value := m[key]
 		fieldPath := path + "." + key
 		switch v := value.(type) {
 		case map[string]any:

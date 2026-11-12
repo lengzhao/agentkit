@@ -31,6 +31,18 @@ func LoadDocument(basePath string, overlayPaths ...string) (manager.Document, er
 // unreachable from root. Chaining lets a capability stack live in one preset and
 // a transport swap in another, instead of every preset restating the whole graph.
 func ResolveFiles(basePath string, overlayPaths ...string) ([]byte, error) {
+	return resolveFilesReported(basePath, overlayPaths, nil, nil)
+}
+
+// ResolveFilesWithReport is ResolveFiles with structured diagnostics and per-call
+// options. Missing overlay files retain the optional behavior of ResolveFiles.
+func ResolveFilesWithReport(basePath string, overlayPaths []string, opts ...ResolveOption) ([]byte, ResolveReport, error) {
+	report := ResolveReport{}
+	out, err := resolveFilesReported(basePath, overlayPaths, opts, &report)
+	return out, report, err
+}
+
+func resolveFilesReported(basePath string, overlayPaths []string, opts []ResolveOption, report *ResolveReport) ([]byte, error) {
 	baseRaw, err := os.ReadFile(basePath)
 	if err != nil {
 		return nil, fmt.Errorf("read base config %q: %w", basePath, err)
@@ -62,7 +74,7 @@ func ResolveFiles(basePath string, overlayPaths ...string) ([]byte, error) {
 			break
 		}
 	}
-	return ResolveYAML(interpDir, baseRaw, overlays...)
+	return resolveYAMLReported(interpDir, baseRaw, overlays, opts, report)
 }
 
 // ResolveYAML merges base with each overlay in order, expands extends, interpolates
@@ -79,6 +91,10 @@ func ResolveYAMLWithOptions(interpDir string, base []byte, overlays [][]byte, op
 }
 
 func resolveYAML(interpDir string, base []byte, overlays [][]byte, opts []ResolveOption) ([]byte, error) {
+	return resolveYAMLReported(interpDir, base, overlays, opts, nil)
+}
+
+func resolveYAMLReported(interpDir string, base []byte, overlays [][]byte, opts []ResolveOption, report *ResolveReport) ([]byte, error) {
 	raw, err := parseInstanceMap(base)
 	if err != nil {
 		return nil, err
@@ -98,8 +114,8 @@ func resolveYAML(interpDir string, base []byte, overlays [][]byte, opts []Resolv
 					return nil, fmt.Errorf("overlay disables unknown instance %q", id)
 				} else {
 					explicitDisabled[id] = disableReason{
-						use:        instanceUseFromAny(existing),
-						reason:     "explicit_null",
+						use:    instanceUseFromAny(existing),
+						reason: "explicit_null",
 					}
 				}
 				continue
@@ -122,22 +138,45 @@ func resolveYAML(interpDir string, base []byte, overlays [][]byte, opts []Resolv
 	if err != nil {
 		return nil, err
 	}
+	report.prepare(raw, explicitDisabled)
+	required, err := applyDeploymentIntent(raw, explicitDisabled, opts)
+	if err != nil {
+		return nil, err
+	}
 	envCtx, err := buildEnvContext(raw, opts)
 	if err != nil {
 		return nil, err
 	}
-	raw, err = pruneUnavailableInstances(raw, interpDir, explicitDisabled, envCtx)
+	raw, disabled, err := pruneUnavailableInstancesReported(raw, interpDir, explicitDisabled, envCtx, report)
 	if err != nil {
 		return nil, err
 	}
+	interpolatedFields := report.interpolatedDependencyFields(raw)
 	if err := interpolateInstances(raw, interpDir, envCtx); err != nil {
 		return nil, err
+	}
+	report.refreshDependencies(raw, interpolatedFields)
+	// Interpolation can reveal references to instances disabled in the first pass.
+	// Reuse the same disabled set so these references participate in cascading prune.
+	if len(disabled) > 0 {
+		raw, err = propagateDisabledPrune(raw, disabled)
+		report.recordDisabled(disabled)
+		if err != nil {
+			return nil, err
+		}
 	}
 	rootID, err := resolveRootID(raw)
 	if err != nil {
 		return nil, err
 	}
-	return yaml.Marshal(pruneToReachable(raw, rootID))
+	resolved := pruneToReachable(raw, rootID)
+	report.finish(resolved, rootID)
+	for _, id := range required {
+		if _, ok := resolved[id]; !ok {
+			return nil, fmt.Errorf("required instance %q did not survive resolution", id)
+		}
+	}
+	return yaml.Marshal(resolved)
 }
 
 // MergeYAML merges two instance graphs. When overlay changes use, the whole node
