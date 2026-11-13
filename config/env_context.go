@@ -30,6 +30,7 @@ func (c EnvContext) Lookup(name string) (string, bool) {
 type ResolveOption func(*resolveOptions)
 
 type resolveOptions struct {
+	intents      []DeploymentIntent
 	lookups      []EnvLookup
 	graphSources []GraphEnvSource
 }

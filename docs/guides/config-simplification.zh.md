@@ -423,3 +423,38 @@ flowchart TB
 - 架构文档 [§5.6](../go-agent-harness-architecture.zh.md) 的配置规则需补充深合并语义（`use` 变更 → 替换；`key+` 追加；`key-` 列表删减；`key: null` 删 map 键；overlay 顶层 `instance.id: null` 禁用已有实例）与 `${env:}` / `${var:}` / `${file:}` 插值。
 - 架构文档 §5.7 的 `Feature` / `Preset` 文档种类**保留为目标状态**，启动判据见 §8.2；建议在 §5.7 开头标注「目标 API，当前未实现；节点级复用先用 `extends:` + preset 链」，避免被读成已落地契约。其中「`agentkit config resolve`（规划中）」一句应改为指向本文的三条改动。
 - 底层装配始终不变：`build.Build[Runner](ctx, graph, rootID)`。
+
+## 结构化解析报告与部署断言
+
+宿主可通过 `config.ResolveFilesWithReport(basePath, overlayPaths, opts...)` 或
+`config.ResolveYAMLWithReport(interpDir, base, overlays, opts...)` 获取
+`(resolvedYAML, ResolveReport, error)`。原有入口保持兼容；解析失败时仍返回已收集的部分报告。
+
+```go
+resolved, report, err := config.ResolveFilesWithReport(
+    "config.base.yaml", []string{"config.yaml"},
+    config.WithDeploymentIntent(config.DeploymentIntent{
+        Required: []string{"runner.default"},
+        Optional: []string{"platform.feishu"},
+        Excluded: []string{"platform.demo"},
+    }),
+)
+```
+
+报告包含排序后的 `merged_ids`（含 overlay null 的实例）、`resolved_ids`、
+`root_id` 和逐实例状态：`active`、`explicit_null`、`missing_value`、
+`dependency_cascade`、`excluded`、`unreachable`。失败时尚未确定的状态为 `pending`。
+缺值记录字段路径及引用来源名，当前记录按字段路径排序后遇到的第一个缺值。
+`causes` 指向直接导致级联裁剪的实例 ID；继续查询这些实例可追溯到根因。
+`dependencies` 保留字段路径、目标以及 `present` / `pruned` / `dangling` 状态，
+因此实例仍存活但部分依赖被裁剪时，也能检查具体丢失的边。
+插值前无法确认的依赖标记为 `pending`，不保存原始插值表达式；插值成功后校验实际目标。
+
+断言名单必须互斥、无重复，并引用合并图中已知实例（包括显式 null 的实例）。
+excluded 在环境来源构建及缺值裁剪之前生效，即使凭据齐全也不加载，并参与正常依赖级联。
+required 不会强制保留不可达节点；最终未存活即返回错误。
+optional 只要求 ID 合法，被裁剪不会阻断解析。未列入名单的实例沿用原有规则。
+依赖插值后会继续裁剪指向已禁用实例的引用，并传播级联裁剪；内联插件列表同样适用。
+非必填参数可省略或使用 null、空字符串；缺失的插值需显式使用空默认值（如 `${var:NAME:-}`），不会仅因结果为空而禁用实例。
+悬空依赖通过报告诊断，不新增旧入口的解析失败条件。
+报告只包含诊断元数据，不包含配置快照或插值后的凭据值；resolvedYAML 本身仍可能包含配置值，应由宿主妥善处理。
