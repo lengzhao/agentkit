@@ -1278,6 +1278,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 | config 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
+| `freshSession` | `bool` | — | FreshSession gives every delegation a unique child history, including concurrent invocations from the same parent event sequence. |
 | `agents` | `[]subagent.LoopAgentEntry` | — | Agents lists Loop-backed subagents exposed to the delegate tool. |
 | `timeoutSeconds` | `int` | — | TimeoutSeconds is the default wall clock for one delegation. |
 | `maxConcurrentJobsPerSession` | `int` | — | MaxConcurrentJobsPerSession limits async jobs per parent session (channel semaphore). Zero means no limit. |
