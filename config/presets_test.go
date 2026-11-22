@@ -28,6 +28,7 @@ func TestPresetsBuild(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
 	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
 	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+	t.Setenv("TASKLOOM_AUTHORIZATION", "Bearer test-taskloom")
 
 	presets, err := filepath.Glob(filepath.Join("..", "presets", "*.yaml"))
 	if err != nil {

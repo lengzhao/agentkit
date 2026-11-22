@@ -38,6 +38,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "one-shot
 |---|---|---|
 | [slack.yaml](slack.yaml) | Slack bot | Socket Mode + coding; set bot/app tokens |
 | [feishu.yaml](feishu.yaml) | Feishu / Lark bot | Event subscription + coding |
+| [taskloom.yaml](taskloom.yaml) | Taskloom executor Agent | `platform/taskloom` + Taskloom MCP tools and todo/finish only; wakes per task |
 | [chat-api.yaml](chat-api.yaml) | HTTP debug API | Chat-style HTTP console |
 | [langfuse.yaml](langfuse.yaml) | Langfuse | Trace export overlay |
 | [multiplex.yaml](multiplex.yaml) | Multi-IM | `platform/multiplex`; chain with coding; remove platforms without credentials |
