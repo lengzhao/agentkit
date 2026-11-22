@@ -836,6 +836,19 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `workspace` | `workspace.Service` |  |
 | `credentials` | `credentials.Store` |  |
 
+## `platform/taskloom`
+
+- 返回类型：`agentkit.Platform`
+- 源码：[`runtime/platform/taskloom/platform.go`](../runtime/platform/taskloom/platform.go)
+
+| config 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `baseUrl` | `string` | — | BaseURL is the Taskloom API root, e.g. http://taskloom:8899/v1. |
+| `authorizationEnv` | `string` | `TASKLOOM_AUTHORIZATION` | AuthorizationEnv names the environment variable holding the full Authorization header value ("Bearer <secret>"); the secret never sits in config. Default TASKLOOM_AUTHORIZATION. |
+| `pollSeconds` | `int` | `3` | PollSeconds is how often the change feed is read. Polling the feed costs one small HTTP request; the model is only woken when a task needs it. |
+| `requestTimeoutSeconds` | `int` | `15` | RequestTimeoutSeconds bounds each HTTP request. Default 15. |
+| `maxBackoffSeconds` | `int` | `60` | MaxBackoffSeconds caps the retry delay while Taskloom is unreachable. |
+
 ## `platform/timer`
 
 - 返回类型：`agentkit.Platform`

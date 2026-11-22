@@ -1,0 +1,169 @@
+# L1：Taskloom 常驻执行 Agent（platform/taskloom）
+#
+# 适配插件跟随该 Agent 在 Taskloom 的变化流，只在某个任务等它处理时唤醒，
+# 一个任务一个会话；任务运行中的新动态 steer 进当前 turn；没有任务等待时不调用模型。
+# 只暴露 Taskloom MCP 工具和 todo/finish：没有 shell、文件、网络或子 agent，
+# 所以任务被取消或改派后，Taskloom 会拒绝旧执行的写入，turn 自行结束（规则 10）。
+# 业务规则、写入隔离和授权都在 Taskloom。
+#
+# 运行前：
+#   1. 在 Taskloom 用 taskloom-admin -mode enroll-agent 签发该 Agent 的凭据；
+#   2. export TASKLOOM_AUTHORIZATION="Bearer <secret>"
+#      export TASKLOOM_API_URL=http://<taskloom>/v1   # 默认 http://127.0.0.1:8899/v1
+#   3. 在 ~/.agentkit/mcp.json 写入 Taskloom MCP 服务（同一凭据，前缀 taskloom__）：
+#      {"mcpServers":{"taskloom":{"transport":"streamable-http",
+#        "url":"http://<taskloom>/v1/mcp",
+#        "headers":{"Authorization":"Bearer <secret>"},
+#        "prefix":"taskloom__","timeoutSeconds":60}}}
+#   4. go run ./cmd/agent -config presets/taskloom.yaml
+# 模型默认用 L0 的 deepseek-v4-flash（DEEPSEEK_API_KEY），可在自己的 overlay 覆盖
+# agent.taskloom.config.model 与 llm.*。
+
+runner.default:
+  config:
+    # Each task is its own session (sessionScope channel, channel = task id),
+    # so independent tasks may run side by side; one session stays in order.
+    maxConcurrentTurns: 2
+  deps:
+    schedules: []
+    init: []
+
+platform.default:
+  use: platform/taskloom
+  config:
+    baseUrl: ${var:TASKLOOM_API_URL:-http://127.0.0.1:8899/v1}
+    authorizationEnv: TASKLOOM_AUTHORIZATION
+    pollSeconds: 3
+
+loop.default:
+  deps:
+    agents:
+      - agent.taskloom
+
+agent.taskloom:
+  use: agent/coding
+  config:
+    id: taskloom
+    model: deepseek-v4-flash
+    retry:
+      enabled: true
+      maxRetries: 3
+      baseDelayMs: 2000
+  deps:
+    sessionStore: sessionStore.default
+    llm: llm.default
+    hooks: hooks.taskloom
+    prompt: prompt.taskloom
+    tools: tools.taskloom
+    workspace: workspace.default
+    compaction:
+      - compaction.pipeline.taskloom
+
+# A task session lives as long as the task, so bound its history by
+# summarising past ~40k tokens.
+hooks.taskloom:
+  use: hooks/runtime
+  deps:
+    providers:
+      - hook.before-step.taskloom
+      - hook.turn-continue.default
+
+hook.before-step.taskloom:
+  use: hook/before-step
+  deps:
+    compaction: compaction.pipeline.taskloom
+    sessionStore: sessionStore.default
+
+compaction.pipeline.taskloom:
+  use: compaction/pipeline
+  deps:
+    chain: compaction.chain.default
+    services:
+      - compaction.prune.default
+      - compaction.token-limit.taskloom
+
+compaction.token-limit.taskloom:
+  use: compaction/token-limit
+  config:
+    maxTokens: 40000
+    charsPerToken: 3
+  deps:
+    chain: compaction.chain.default
+    services:
+      - compaction.summary.default
+
+compaction.summary.default:
+  config:
+    summaryModel: deepseek-v4-flash
+    keepRecentTokens: 8000
+    reserveTokens: 8000
+  deps:
+    llm: llm.default
+
+hook.turn-continue.default:
+  use: hook/turn-continue
+  config:
+    maxContinuations: 20
+    stallLimit: 3
+    requireFinish: true
+    requireTodosDone: false
+  deps:
+    sessionStore: sessionStore.default
+
+prompt.taskloom:
+  use: prompt/assembler/default
+  deps:
+    sections:
+      - prompt.persona.taskloom
+
+prompt.persona.taskloom:
+  use: prompt/section/static
+  config:
+    name: persona
+    content: |
+      你是 Taskloom 任务系统里的执行 Agent。人是任务负责人，你负责把分配给你的任务做完并正式交付。
+      Taskloom 工具名带 taskloom__ 前缀。
+
+      每条唤醒消息只对应一个任务（消息里给出 task_id），这个会话只处理这个任务：
+      1. 先 read_task，仔细读 goal、criteria、timeline（包括人的留言和对问题的回答）、open_questions、
+         current_result 及其 review_reason。
+      2. next_actor 为 addressee 且 open_questions 里有 for_you 为 true 的问题：这是别人在问你，
+         用 answer_question 回答，不要认领或提交，然后调用 finish。
+      3. can.start_work 为 true 时调用 start_work 认领；已有自己的执行（can.submit_result 为 true）就直接继续。
+      4. 开始前用 post_message 简短说明你的理解和计划；工作较长时中途用 post_message 汇报进度。
+      5. 要求不清楚、需要人决定或需要某位参与者协助时，用 ask_owner 提问（写明问题、可选方案和你的建议；
+         默认问负责人，需要别人时先用 list_members 找到对方再填 to），然后不要提交，调用 finish 结束本轮；
+         对方回答后你会被再次唤醒。
+      6. 任务里有适合交给别人并行完成的独立部分（或任务说明要求拆分）时，认领后用 create_subtask 拆出子任务：
+         required 为 true 表示本任务要等它完成才能交付；owner 可指定子任务负责人，默认本任务负责人。
+         拆出后继续做你自己的部分；必需子任务完成前 submit_result 会被拒绝（blocked 里有 required_children_pending），
+         这时先用 post_message 说明进度再调用 finish，子任务完成后你会被再次唤醒，再汇总提交。
+      7. 自己完成交付物（写作、整理、分析等都由你直接写出），确认满足 criteria 后调用 submit_result 提交完整结果，
+         然后调用 finish。
+      8. 结果被验收退回时，按 review_reason 和留言修改后重新提交。
+      9. 写操作都要带 read_task 或上一次写操作返回的 basis；遇到冲突先重新 read_task。
+      10. 写入被拒绝且 read_task 显示你已不是处理人、任务已取消或已完成时，停止处理并调用 finish，不要留言。
+      工作中途收到的新唤醒消息是这个任务的新动态（人的留言、回答或改动）：先 read_task 再按新情况调整。
+
+      原则：普通留言不算交付；不要编造无法获得的事实（例如真实的工作记录），缺信息就提问或在结果中明确说明假设；
+      不要回复自己的留言；默认使用中文。
+
+tools.taskloom:
+  use: tools/runtime
+  config:
+    defaultTimeoutSeconds: 120
+  deps:
+    hooks: hooks.taskloom
+    tools:
+      - tool.todo.default
+      - tool.finish.default
+    dynamicTools:
+      - mcp.default
+    approval: approval.taskloom
+
+# Only Taskloom MCP tools and todo/finish exist in this agent, so nothing needs
+# a human approval; Taskloom itself authorizes every write.
+approval.taskloom:
+  use: approval/auto-allow
+  config:
+    reason: "auto-allowed: taskloom executor"

@@ -60,6 +60,7 @@ import (
 	_ "github.com/lengzhao/agentkit/runtime/platform/multiplex"
 	_ "github.com/lengzhao/agentkit/runtime/platform/rpc"
 	_ "github.com/lengzhao/agentkit/runtime/platform/slack"
+	_ "github.com/lengzhao/agentkit/runtime/platform/taskloom"
 	_ "github.com/lengzhao/agentkit/runtime/prompt"
 	_ "github.com/lengzhao/agentkit/runtime/runner"
 	_ "github.com/lengzhao/agentkit/runtime/sandbox"

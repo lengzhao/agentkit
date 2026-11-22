@@ -38,6 +38,7 @@ go run ./cmd/agent -config presets/autonomous.yaml,presets/worker.yaml "一次�
 |---|---|---|
 | [slack.yaml](slack.yaml) | Slack 机器人 | Socket Mode + coding；配置 bot/app token |
 | [feishu.yaml](feishu.yaml) | 飞书 / Lark | 事件订阅 + coding |
+| [taskloom.yaml](taskloom.yaml) | Taskloom 执行 Agent | `platform/taskloom` + 仅 Taskloom MCP 工具与 todo/finish；按任务唤醒 |
 | [chat-api.yaml](chat-api.yaml) | HTTP 调试台 | Chat 风格 HTTP 接口 |
 | [langfuse.yaml](langfuse.yaml) | Langfuse | 追踪导出 overlay |
 | [multiplex.yaml](multiplex.yaml) | 多 IM 聚合 | `platform/multiplex`；常与 coding 链式合并；无凭证的平台从 `deps.platforms` 移除 |

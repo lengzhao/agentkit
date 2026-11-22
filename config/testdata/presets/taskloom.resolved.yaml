@@ -1,0 +1,281 @@
+agent.taskloom:
+    config:
+        id: taskloom
+        model: deepseek-v4-flash
+        retry:
+            baseDelayMs: 2000
+            enabled: true
+            maxRetries: 3
+    deps:
+        compaction:
+            - compaction.pipeline.taskloom
+        hooks: hooks.taskloom
+        llm: llm.default
+        prompt: prompt.taskloom
+        sessionStore: sessionStore.default
+        tools: tools.taskloom
+        workspace: workspace.default
+    use: agent/coding
+approval.taskloom:
+    config:
+        reason: 'auto-allowed: taskloom executor'
+    use: approval/auto-allow
+compaction.chain.default:
+    use: compaction/chain
+compaction.pipeline.taskloom:
+    deps:
+        chain: compaction.chain.default
+        services:
+            - compaction.prune.default
+            - compaction.token-limit.taskloom
+    use: compaction/pipeline
+compaction.prune.default:
+    config:
+        maxToolResultBytes: 8192
+    use: compaction/prune-tool-results
+compaction.summary.default:
+    config:
+        keepRecentTokens: 8000
+        reserveTokens: 8000
+        retry:
+            baseDelayMs: 2000
+            enabled: true
+            maxRetries: 3
+        summaryModel: deepseek-v4-flash
+    deps:
+        llm: llm.default
+        sessionEvents: session.events
+    use: compaction/summary
+compaction.token-limit.taskloom:
+    config:
+        charsPerToken: 3
+        maxTokens: 40000
+    deps:
+        chain: compaction.chain.default
+        services:
+            - compaction.summary.default
+    use: compaction/token-limit
+credentials.default:
+    config:
+        encryptedFile: global:secrets.enc.json
+    deps:
+        fs: filesystem.local.state
+    use: credentials/env
+credentials.integrations:
+    config:
+        encryptedFile: global:secrets.enc.json
+    deps:
+        fs: filesystem.local.state
+    use: credentials/integrations
+filesystem.local.state:
+    config:
+        root: .
+        unrestricted: true
+    deps:
+        workspace: workspace.default
+    use: filesystem/local
+hook.before-step.taskloom:
+    deps:
+        compaction: compaction.pipeline.taskloom
+        sessionStore: sessionStore.default
+    use: hook/before-step
+hook.turn-continue.default:
+    config:
+        maxContinuations: 20
+        requireFinish: true
+        requireTodosDone: false
+        stallLimit: 3
+    deps:
+        sessionStore: sessionStore.default
+    use: hook/turn-continue
+hooks.taskloom:
+    deps:
+        providers:
+            - hook.before-step.taskloom
+            - hook.turn-continue.default
+    use: hooks/runtime
+llm.deepseek:
+    config:
+        apiKeyRef: env:DEEPSEEK_API_KEY
+        baseUrl: https://api.deepseek.com/v1
+        models:
+            - id: deepseek-v4-flash
+              modalities:
+                - text
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-chat
+llm.default:
+    deps:
+        default: llm.gpt
+        protocols:
+            - llm.gpt
+            - llm.deepseek
+    use: llm/router
+llm.gpt:
+    config:
+        api: chat
+        apiKeyRef: env:OPENAI_API_KEY
+        baseUrl: https://api.openai.com/v1
+        models:
+            - id: gpt-5.4
+              modalities:
+                - text
+                - image
+            - id: gpt-5.4-mini
+              modalities:
+                - text
+                - image
+            - id: gpt-5.4-nano
+              modalities:
+                - text
+                - image
+        responseHeaderTimeoutSeconds: 60
+        retry:
+            provider:
+                maxRetries: 0
+                maxRetryDelayMs: 60000
+        timeoutSeconds: 180
+    deps:
+        credentials: credentials.default
+    use: llm/openai-compatible
+llm.router:
+    deps:
+        default: llm.gpt
+        protocols:
+            - llm.gpt
+            - llm.deepseek
+    use: llm/router
+loop.default:
+    deps:
+        agents:
+            - agent.taskloom
+        modelCatalog: llm.router
+        sessionStore: sessionStore.default
+        telemetry: telemetry.default
+        workspace: workspace.default
+    use: loop/default
+mcp.default:
+    config:
+        files:
+            - global:mcp.json
+        idleTimeoutSeconds: 300
+    deps:
+        credentials: credentials.integrations
+        fs: filesystem.local.state
+        telemetry: telemetry.toolkit
+    use: tool/mcp
+platform.default:
+    config:
+        authorizationEnv: TASKLOOM_AUTHORIZATION
+        baseUrl: http://127.0.0.1:8899/v1
+        pollSeconds: 3
+    use: platform/taskloom
+prompt.persona.taskloom:
+    config:
+        content: |
+            你是 Taskloom 任务系统里的执行 Agent。人是任务负责人，你负责把分配给你的任务做完并正式交付。
+            Taskloom 工具名带 taskloom__ 前缀。
+
+            每条唤醒消息只对应一个任务（消息里给出 task_id），这个会话只处理这个任务：
+            1. 先 read_task，仔细读 goal、criteria、timeline（包括人的留言和对问题的回答）、open_questions、
+               current_result 及其 review_reason。
+            2. next_actor 为 addressee 且 open_questions 里有 for_you 为 true 的问题：这是别人在问你，
+               用 answer_question 回答，不要认领或提交，然后调用 finish。
+            3. can.start_work 为 true 时调用 start_work 认领；已有自己的执行（can.submit_result 为 true）就直接继续。
+            4. 开始前用 post_message 简短说明你的理解和计划；工作较长时中途用 post_message 汇报进度。
+            5. 要求不清楚、需要人决定或需要某位参与者协助时，用 ask_owner 提问（写明问题、可选方案和你的建议；
+               默认问负责人，需要别人时先用 list_members 找到对方再填 to），然后不要提交，调用 finish 结束本轮；
+               对方回答后你会被再次唤醒。
+            6. 任务里有适合交给别人并行完成的独立部分（或任务说明要求拆分）时，认领后用 create_subtask 拆出子任务：
+               required 为 true 表示本任务要等它完成才能交付；owner 可指定子任务负责人，默认本任务负责人。
+               拆出后继续做你自己的部分；必需子任务完成前 submit_result 会被拒绝（blocked 里有 required_children_pending），
+               这时先用 post_message 说明进度再调用 finish，子任务完成后你会被再次唤醒，再汇总提交。
+            7. 自己完成交付物（写作、整理、分析等都由你直接写出），确认满足 criteria 后调用 submit_result 提交完整结果，
+               然后调用 finish。
+            8. 结果被验收退回时，按 review_reason 和留言修改后重新提交。
+            9. 写操作都要带 read_task 或上一次写操作返回的 basis；遇到冲突先重新 read_task。
+            10. 写入被拒绝且 read_task 显示你已不是处理人、任务已取消或已完成时，停止处理并调用 finish，不要留言。
+            工作中途收到的新唤醒消息是这个任务的新动态（人的留言、回答或改动）：先 read_task 再按新情况调整。
+
+            原则：普通留言不算交付；不要编造无法获得的事实（例如真实的工作记录），缺信息就提问或在结果中明确说明假设；
+            不要回复自己的留言；默认使用中文。
+        name: persona
+    use: prompt/section/static
+prompt.taskloom:
+    deps:
+        sections:
+            - prompt.persona.taskloom
+    use: prompt/assembler/default
+runner.default:
+    config:
+        inject:
+            - sender_id
+            - sender_name
+            - sender_email
+            - mentions
+            - chat_id
+            - timestamp
+        maxConcurrentTurns: 2
+        sessionScope: channel
+        shutdownTimeoutSeconds: 10
+    deps:
+        init: []
+        loop: loop.default
+        platform: platform.default
+        schedules: []
+        sessionStore: sessionStore.default
+        telemetry: telemetry.default
+        workspace: workspace.default
+    use: runner
+session.events:
+    use: session/events
+sessionStore.default:
+    config:
+        cacheIdleTTL: 30m
+        dir: sessions
+        maxCachedSessions: 64
+        maxLoadedEvents: 256
+    deps:
+        workspace: workspace.default
+    use: session/store
+telemetry.default:
+    use: telemetry/none
+telemetry.toolkit:
+    use: telemetry/toolkit
+tool.finish.default:
+    deps:
+        sessionEvents: session.events
+        sessionStore: sessionStore.default
+    use: tool/finish
+tool.todo.default:
+    deps:
+        sessionEvents: session.events
+        sessionStore: sessionStore.default
+    use: tool/todo
+tools.taskloom:
+    config:
+        defaultTimeoutSeconds: 120
+    deps:
+        approval: approval.taskloom
+        dynamicTools:
+            - mcp.default
+        hooks: hooks.taskloom
+        tools:
+            - tool.todo.default
+            - tool.finish.default
+    use: tools/runtime
+workspace.default:
+    config:
+        global: ~/.agentkit
+        local: .agentkit
+        scope: local
+        uploadSubdir: upload
+        workDir: work
+    use: workspace/default
