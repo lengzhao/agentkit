@@ -799,7 +799,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `modelProvider` | `string` | — | ModelProvider is config.modelProvider. set_model rejects any other provider. |
 | `baseUrl` | `string` | — | BaseURL is config.baseUrl, echoed on get_state. |
 | `wireApi` | `string` | — | WireAPI is config.wireApi, echoed as model.api. |
-| `allowedModels` | `map[string]jsontext.Value` | — | AllowedModels lists model ids set_model may select, besides Model. An empty map allows only Model. |
+| `allowedModels` | `map[string]json.RawMessage` | — | AllowedModels lists model ids set_model may select, besides Model. An empty map allows only Model. |
 
 | deps 字段 | 类型 | 说明 |
 |---|---|---|
