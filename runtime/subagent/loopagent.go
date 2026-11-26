@@ -40,6 +40,9 @@ type LoopAgentEntry struct {
 
 // LoopAgentConfig configures subagent/loop-agent.
 type LoopAgentConfig struct {
+	// FreshSession gives every delegation a unique child history, including
+	// concurrent invocations from the same parent event sequence.
+	FreshSession bool `json:"freshSession,omitempty"`
 	// Agents lists Loop-backed subagents exposed to the delegate tool.
 	Agents []LoopAgentEntry `json:"agents,omitempty"`
 	// TimeoutSeconds is the default wall clock for one delegation.
@@ -73,6 +76,7 @@ type jobGate struct {
 }
 
 type LoopAgentSpawner struct {
+	freshSession               bool
 	entries                    []LoopAgentEntry
 	defaultTO                  time.Duration
 	maxConcurrentJobsPerParent int
@@ -110,6 +114,7 @@ func NewLoopAgent(cfg LoopAgentConfig, deps LoopAgentDeps) (subagent.Spawner, er
 		exp = rttelemetry.Noop
 	}
 	return &LoopAgentSpawner{
+		freshSession:               cfg.FreshSession,
 		entries:                    cfg.Agents,
 		defaultTO:                  defaultTO,
 		maxConcurrentJobsPerParent: cfg.MaxConcurrentJobsPerSession,
@@ -163,6 +168,9 @@ func (s *LoopAgentSpawner) Run(ctx context.Context, req subagent.Request) (subag
 		return subagent.Result{}, err
 	}
 	childID := agentkit.SessionID(rctx.ChildConversationID(string(parentID), def.Name, int64(capsession.LatestEventSeq(parentEvents))))
+	if s.freshSession {
+		childID += agentkit.SessionID(":" + uuid.NewString())
+	}
 	jobID := string(childID)
 
 	async := def.Async
