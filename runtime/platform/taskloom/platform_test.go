@@ -24,6 +24,8 @@ type fakeTaskloom struct {
 	commits map[string][]commitView
 	gone    map[string]bool
 	auth    string
+	floor   int      // cursors below this were cleaned up: 409 resync_required
+	reads   []string // task view requests, path and query
 }
 
 func newFake() *fakeTaskloom {
@@ -55,26 +57,49 @@ func (f *fakeTaskloom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			from = n
+			if from < f.floor {
+				w.WriteHeader(http.StatusConflict)
+				write(map[string]string{"Code": "resync_required"})
+				return
+			}
 		} else {
 			from = len(f.events)
 		}
 		write(changePage{Changes: f.events[from:], Cursor: strconv.Itoa(len(f.events))})
-	case path == "/inbox":
-		write(f.inbox)
+	case path == "/tasks":
+		if r.URL.Query().Get("mine") != "true" {
+			http.Error(w, "only mine", http.StatusBadRequest)
+			return
+		}
+		rows := []listRow{}
+		for _, it := range f.inbox {
+			var row listRow
+			row.Task.ID, row.Task.Title, row.NextActor, row.ForMe = it.TaskID, it.Title, it.NextActor, it.ForMe
+			rows = append(rows, row)
+		}
+		write(rows)
 	case strings.HasPrefix(path, "/tasks/"):
 		id := strings.Split(path, "/")[2]
+		f.reads = append(f.reads, r.URL.RequestURI())
 		if f.gone[id] {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
-		d := taskDetail{}
-		d.Task.ID, d.Task.Title = id, "title "+id
+		// Like Taskloom: the newest page (or the one before ?before=) in
+		// ascending order; one extra commit tells whether older ones exist.
+		before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+		var page []commitView
 		for _, c := range f.commits[id] {
-			if c.Sequence > after && len(d.Commits) < 100 {
-				d.Commits = append(d.Commits, c)
+			if before == 0 || c.Sequence < before {
+				page = append(page, c)
 			}
 		}
+		d := taskDetail{}
+		d.Task.ID, d.Task.Title = id, "title "+id
+		if len(page) > 100 {
+			page, d.Earlier = page[len(page)-100:], true
+		}
+		d.Commits = page
 		write(d)
 	default:
 		http.NotFound(w, r)
@@ -133,7 +158,7 @@ func TestWakesOncePerTaskAndIgnoresOwnCommits(t *testing.T) {
 	f := newFake()
 	f.commit("A", "alice", "comment", "please do A")
 	f.set(func() {
-		f.inbox = []pending{{TaskID: "A", Title: "A", NextActor: "assignee"}, {TaskID: "B", WaitingOnSubtasks: true}}
+		f.inbox = []pending{{TaskID: "A", Title: "A", NextActor: "assignee", ForMe: true}, {TaskID: "B", NextActor: "assignee"}}
 	})
 	p := newTestPlatform(t, f)
 
@@ -159,7 +184,7 @@ func TestWakesOncePerTaskAndIgnoresOwnCommits(t *testing.T) {
 
 func TestCommitsWhileNotWaitingAreReportedWhenItReturns(t *testing.T) {
 	f := newFake()
-	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee"}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
 	p := newTestPlatform(t, f)
 	next(t, p, 1)
 
@@ -170,7 +195,7 @@ func TestCommitsWhileNotWaitingAreReportedWhenItReturns(t *testing.T) {
 	if _, text := next(t, p, 2); text != "" {
 		t.Fatalf("woke while waiting on the owner: %q", text)
 	}
-	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee"}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
 	f.commit("A", "alice", "answer", "markdown")
 	_, text := next(t, p, 2)
 	if !strings.Contains(text, "thinking") || !strings.Contains(text, "markdown") || strings.Contains(text, "which format") {
@@ -181,7 +206,7 @@ func TestCommitsWhileNotWaitingAreReportedWhenItReturns(t *testing.T) {
 func TestEachTaskHasItsOwnSession(t *testing.T) {
 	f := newFake()
 	f.set(func() {
-		f.inbox = []pending{{TaskID: "A", NextActor: "assignee"}, {TaskID: "B", NextActor: "addressee"}}
+		f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}, {TaskID: "B", NextActor: "addressee", ForMe: true}}
 	})
 	p := newTestPlatform(t, f)
 	a, ta := next(t, p, 1)
@@ -200,7 +225,7 @@ func TestEachTaskHasItsOwnSession(t *testing.T) {
 // whether or not a turn is running; Taskloom fences the writes.
 func TestLeavingTheInboxSendsNothing(t *testing.T) {
 	f := newFake()
-	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee"}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
 	p := newTestPlatform(t, f)
 	next(t, p, 1)
 	f.set(func() { f.inbox, f.gone["A"] = nil, true })
@@ -212,7 +237,7 @@ func TestLeavingTheInboxSendsNothing(t *testing.T) {
 
 func TestOutageBacksOffAndKeepsCursor(t *testing.T) {
 	f := newFake()
-	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee"}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
 	p := newTestPlatform(t, f)
 	next(t, p, 1)
 
@@ -237,7 +262,7 @@ func TestOutageBacksOffAndKeepsCursor(t *testing.T) {
 
 func TestRejectedCursorResynchronizes(t *testing.T) {
 	f := newFake()
-	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee"}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
 	p := newTestPlatform(t, f)
 	next(t, p, 1)
 	p.cursor = "not-a-number"
@@ -282,16 +307,16 @@ func TestReceiveStopsWithContext(t *testing.T) {
 // and that re-entry wakes the Agent to deliver.
 func TestReturningToTheInboxWakesWithoutNewCommits(t *testing.T) {
 	f := newFake()
-	f.set(func() { f.inbox = []pending{{TaskID: "P", NextActor: "assignee"}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "P", NextActor: "assignee", ForMe: true}} })
 	p := newTestPlatform(t, f)
 	next(t, p, 1)
-	f.set(func() { f.inbox = []pending{{TaskID: "P", WaitingOnSubtasks: true}} })
+	f.set(func() { f.inbox = []pending{{TaskID: "P", NextActor: "assignee"}} })
 	f.commit("P", "bot", "plan.changed", "split")
 	if _, text := next(t, p, 2); text != "" {
 		t.Fatalf("woke while blocked: %q", text)
 	}
 	f.set(func() {
-		f.inbox = []pending{{TaskID: "P", NextActor: "assignee"}}
+		f.inbox = []pending{{TaskID: "P", NextActor: "assignee", ForMe: true}}
 		f.events = append(f.events, change{TaskID: "P", Kind: "task.changed"})
 	})
 	if _, text := next(t, p, 2); !strings.Contains(text, "任务 P") {
@@ -300,5 +325,55 @@ func TestReturningToTheInboxWakesWithoutNewCommits(t *testing.T) {
 	f.set(func() { f.events = append(f.events, change{TaskID: "P", Kind: "task.changed"}) })
 	if _, text := next(t, p, 2); text != "" {
 		t.Fatalf("woke again while still waiting: %q", text)
+	}
+}
+
+// A stale cursor (older than the retained events) answers 409; the adapter
+// resynchronizes from the task list instead of retrying forever.
+func TestExpiredCursorResynchronizes(t *testing.T) {
+	f := newFake()
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
+	p := newTestPlatform(t, f)
+	next(t, p, 1)
+	f.commit("A", "alice", "comment", "one")
+	f.set(func() { f.floor = len(f.events) + 1 })
+	if err := p.step(context.Background()); err != nil || p.started {
+		t.Fatalf("expired cursor: err=%v started=%v", err, p.started)
+	}
+	f.set(func() { f.floor = 0 })
+	if err := p.step(context.Background()); err != nil || !p.started {
+		t.Fatalf("resync: err=%v started=%v", err, p.started)
+	}
+}
+
+// A long timeline is read newest page first: the first wake reads one page
+// only, and a later wake pages back with ?before= exactly to what it saw.
+func TestLongTimelinePagesBackToLastSeen(t *testing.T) {
+	f := newFake()
+	for i := 0; i < 250; i++ {
+		f.commit("A", "alice", "comment", "old "+strconv.Itoa(i))
+	}
+	f.set(func() { f.inbox = []pending{{TaskID: "A", NextActor: "assignee", ForMe: true}} })
+	p := newTestPlatform(t, f)
+	f.set(func() { f.reads = nil })
+	if _, text := next(t, p, 1); !strings.Contains(text, "任务 A") {
+		t.Fatalf("first wake: %q", text)
+	}
+	if len(f.reads) != 1 || strings.Contains(f.reads[0], "before=") {
+		t.Fatalf("first wake should read only the newest page: %v", f.reads)
+	}
+	for i := 0; i < 150; i++ {
+		f.commit("A", "alice", "comment", "new "+strconv.Itoa(i))
+	}
+	f.set(func() { f.reads = nil })
+	_, text := next(t, p, 1)
+	if strings.Count(text, "new ") != 150 || strings.Contains(text, "old ") {
+		t.Fatalf("catch-up should carry exactly the 150 new commits")
+	}
+	if strings.Index(text, "new 0") > strings.Index(text, "new 149") {
+		t.Fatal("commits out of order")
+	}
+	if len(f.reads) != 2 || !strings.Contains(f.reads[1], "before=") {
+		t.Fatalf("expected one page back: %v", f.reads)
 	}
 }

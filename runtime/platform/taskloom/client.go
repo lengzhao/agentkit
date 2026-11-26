@@ -30,8 +30,9 @@ var errGone = errors.New("task not readable")
 // an operator issues a new one.
 var errAuth = errors.New("taskloom credential rejected")
 
-// errBadCursor means the change feed rejected the cursor (400): it does not
-// belong to this database any more, so the adapter resynchronizes.
+// errBadCursor means the change feed rejected the cursor: malformed (400), or
+// older than the retained events (409 resync_required). Either way the adapter
+// resynchronizes from the task list.
 var errBadCursor = errors.New("taskloom change cursor rejected")
 
 type viewer struct{ Tenant, Subject, Kind string }
@@ -43,10 +44,20 @@ type changePage struct {
 	Cursor  string
 }
 
+// pending is one row of the Agent's own task list. ForMe is set when the
+// task's next step waits on the Agent; other rows (e.g. a task blocked on its
+// required subtasks) have nothing for it to do yet.
 type pending struct {
-	TaskID, Title     string
-	NextActor         string
-	WaitingOnSubtasks bool
+	TaskID, Title string
+	NextActor     string
+	ForMe         bool
+}
+
+// listRow is the part of a GET /tasks row the adapter reads.
+type listRow struct {
+	Task      struct{ ID, Title string }
+	NextActor string
+	ForMe     bool
 }
 
 type commitView struct {
@@ -54,9 +65,12 @@ type commitView struct {
 	Sequence               int64
 }
 
+// taskDetail is one GET /tasks/{id} view: the task and one timeline page in
+// ascending order; Earlier tells that older commits precede the page.
 type taskDetail struct {
 	Task    struct{ ID, Title string }
 	Commits []commitView
+	Earlier bool
 }
 
 func (c *client) me(ctx context.Context) (viewer, error) {
@@ -71,7 +85,7 @@ func (c *client) changes(ctx context.Context, cursor string) (changePage, error)
 		path += "?cursor=" + url.QueryEscape(cursor)
 	}
 	err := c.get(ctx, path, &p)
-	if cursor != "" && errors.Is(err, errBadRequest) {
+	if cursor != "" && (errors.Is(err, errBadRequest) || errors.Is(err, errConflict)) {
 		err = fmt.Errorf("%w: %v", errBadCursor, err)
 	}
 	return p, err
@@ -80,29 +94,56 @@ func (c *client) changes(ctx context.Context, cursor string) (changePage, error)
 // errBadRequest is any 400; only the caller knows which input was rejected.
 var errBadRequest = errors.New("bad request")
 
+// errConflict is any 409; only the caller knows which state conflicted.
+var errConflict = errors.New("conflict")
+
+// inbox reads the Agent's own tasks (GET /tasks?mine=true, the whole list).
 func (c *client) inbox(ctx context.Context) ([]pending, error) {
-	var out []pending
-	return out, c.get(ctx, "/inbox", &out)
+	var rows []listRow
+	if err := c.get(ctx, "/tasks?mine=true", &rows); err != nil {
+		return nil, err
+	}
+	out := make([]pending, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pending{TaskID: r.Task.ID, Title: r.Task.Title, NextActor: r.NextActor, ForMe: r.ForMe})
+	}
+	return out, nil
 }
 
-// commitsAfter pages through the task timeline after a sequence. The server
-// returns at most 100 commits per page, so a short page is the last one.
-func (c *client) commitsAfter(ctx context.Context, taskID string, after int64) (string, []commitView, error) {
+// commitsAfter returns the task title and its commits after a sequence, in
+// ascending order. The view carries the newest page; older pages are read
+// with ?before= until the page reaches the given sequence. With latestOnly
+// only the newest page is read: enough to learn the current sequence when
+// the history itself is not reported.
+func (c *client) commitsAfter(ctx context.Context, taskID string, after int64, latestOnly bool) (string, []commitView, error) {
 	var (
-		title string
-		out   []commitView
+		title  string
+		out    []commitView
+		before int64
 	)
 	for {
+		path := "/tasks/" + url.PathEscape(taskID)
+		if before > 0 {
+			path += "?before=" + strconv.FormatInt(before, 10)
+		}
 		var d taskDetail
-		if err := c.get(ctx, "/tasks/"+url.PathEscape(taskID)+"?after="+strconv.FormatInt(after, 10), &d); err != nil {
+		if err := c.get(ctx, path, &d); err != nil {
 			return "", nil, err
 		}
-		title = d.Task.Title
-		out = append(out, d.Commits...)
-		if len(d.Commits) < 100 {
+		if title == "" {
+			title = d.Task.Title
+		}
+		var page []commitView
+		for _, cv := range d.Commits {
+			if cv.Sequence > after {
+				page = append(page, cv)
+			}
+		}
+		out = append(page, out...)
+		if latestOnly || !d.Earlier || len(d.Commits) == 0 || len(page) < len(d.Commits) {
 			return title, out, nil
 		}
-		after = d.Commits[len(d.Commits)-1].Sequence
+		before = d.Commits[0].Sequence
 	}
 }
 
@@ -129,6 +170,8 @@ func (c *client) get(ctx context.Context, path string, into any) error {
 		return fmt.Errorf("%w: GET %s: %d", errGone, path, resp.StatusCode)
 	case resp.StatusCode == http.StatusBadRequest:
 		return fmt.Errorf("%w: GET %s: %s", errBadRequest, path, strings.TrimSpace(string(body)))
+	case resp.StatusCode == http.StatusConflict:
+		return fmt.Errorf("%w: GET %s: %s", errConflict, path, strings.TrimSpace(string(body)))
 	case resp.StatusCode/100 != 2:
 		return fmt.Errorf("GET %s: %d %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}

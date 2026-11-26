@@ -251,10 +251,10 @@ func (p *Platform) review(ctx context.Context, ids map[string]bool, all bool) er
 	if err != nil {
 		return err
 	}
-	// Blocked entries (NextActor empty) have nothing to do yet.
+	// Rows not waiting on the Agent (e.g. blocked on subtasks) have nothing to do yet.
 	waiting := map[string]bool{}
 	for _, it := range inbox {
-		if it.NextActor != "" {
+		if it.ForMe {
 			waiting[it.TaskID] = true
 		}
 	}
@@ -264,7 +264,7 @@ func (p *Platform) review(ctx context.Context, ids map[string]bool, all bool) er
 		}
 	}
 	for _, it := range inbox {
-		if it.NextActor == "" || !all && !ids[it.TaskID] {
+		if !it.ForMe || !all && !ids[it.TaskID] {
 			continue
 		}
 		if err := p.wakeIfNew(ctx, it); err != nil {
@@ -287,7 +287,8 @@ func (p *Platform) state(id string) *taskState {
 // stays there only when someone other than the Agent wrote to it.
 func (p *Platform) wakeIfNew(ctx context.Context, it pending) error {
 	st := p.state(it.TaskID)
-	title, commits, err := p.api.commitsAfter(ctx, it.TaskID, st.seen)
+	// Before the first wake the history is not reported, only its position.
+	title, commits, err := p.api.commitsAfter(ctx, it.TaskID, st.seen, !st.woken)
 	if errors.Is(err, errGone) {
 		return nil // lost between the inbox read and this one; the next change says more
 	}
