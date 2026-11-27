@@ -689,6 +689,8 @@ tool.memory.default:
     deps:
         memory: memory.default
     use: tool/memory
+tool.read-output.default:
+    use: tool/read-output
 tool.recognize.default:
     config:
         model: gpt-5.4-mini
@@ -789,6 +791,7 @@ tools.default:
             - tool.fs-workspace.default
             - tool.recognize.default
         tools:
+            - tool.read-output.default
             - tool.shell-bash.default
             - tool.skill.default
             - tool.subagent.default
@@ -813,6 +816,7 @@ tools.runtime.workflow:
         toolPacks:
             - tool.fs-workspace.default
         tools:
+            - tool.read-output.default
             - tool.shell-bash.default
     use: tools/runtime
 tools.subagent.default:
@@ -825,6 +829,7 @@ tools.subagent.default:
         toolPacks:
             - tool.fs-workspace.readonly.default
         tools:
+            - tool.read-output.default
             - tool.finish.default
             - tool.web-fetch-http.default
             - tool.skill.default
@@ -847,6 +852,7 @@ tools.worker.default:
             - tool.fs-workspace.default
             - tool.recognize.default
         tools:
+            - tool.read-output.default
             - tool.shell-bash.default
             - tool.skill.default
             - tool.subagent.default

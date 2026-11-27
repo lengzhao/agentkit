@@ -256,6 +256,8 @@ tool.finish.default:
         sessionEvents: session.events
         sessionStore: sessionStore.default
     use: tool/finish
+tool.read-output.default:
+    use: tool/read-output
 tool.todo.default:
     deps:
         sessionEvents: session.events
@@ -272,6 +274,7 @@ tools.taskloom:
         tools:
             - tool.todo.default
             - tool.finish.default
+            - tool.read-output.default
     use: tools/runtime
 workspace.default:
     config:

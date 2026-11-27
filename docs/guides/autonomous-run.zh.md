@@ -399,3 +399,11 @@ print(collections.Counter(json.loads(l)['Type'] for l in open(f)))
 - **通用 HTTP / RPC 触发**：`platform/http` 可服务 `http.DefaultServeMux`（与 `chat-api.registerOnly` 组合）；`platform/rpc` 是 Pi RPC stdio；也可单独使用 `platform/chat-api` 或 OS cron + worker
 - **进程级自动重启**：panic 隔离保住了单个 turn，但进程真的挂掉（OOM、被 kill）仍需外部 supervisor（systemd `Restart=always`）兜底
 - 成本汇总 CLI、异步审批、verifier 子 agent 二次确认
+
+### 长工具输出续读
+
+工具结果超过会话视图上限时，运行时沿用 workspace 中的 tool-spill 文件保存完整文本；模型看到的提示直接给出 `read_tool_output(tool_call_id, offset=0)`，按响应的 `next_offset` 续读，直到该字段消失。每页最多 1024 原始字节，保持 UTF-8 边界并为 JSON 转义保留预算；offset 表示原文中的字节位置。
+
+默认、worker、subagent、workflow 和 Taskloom 工具集已包含 `tool.read-output.default`。自定义替换 `deps.tools` 的工具集应加入该实例，否则无法通过此工具续读。工具从当前执行上下文取得会话与 workspace，不接受会话编号或文件路径；只能读取当前会话已有的输出，不新增输出数据库或状态注册表。没有 workspace 或落盘失败时仍降级为截断，此时不宣告可续读。
+
+新输出的内部路径使用会话及调用编号的哈希，避免编号字符替换造成跨会话文件冲突。历史 session 事件及其 `spill_path` 审计引用保留原样；旧版本生成的 spill 不通过新工具恢复，原有文件及审计读取方式仍可使用。新工具仅对升级后写入的输出提供续读。

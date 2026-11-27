@@ -1452,6 +1452,13 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 | `credentials` | `credentials.Store` |  |
 | `telemetry`（必填） | `telemetry.Toolkit` |  |
 
+## `tool/read-output`
+
+- 返回类型：`agentkit.Tool`
+- 源码：[`plugins/tool/readoutput/readoutput.go`](../plugins/tool/readoutput/readoutput.go)
+
+无 config 字段。
+
 ## `tool/recognize`
 
 - 返回类型：`agentkit.ToolPack`
