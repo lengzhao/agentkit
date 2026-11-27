@@ -28,6 +28,7 @@ import (
 	_ "github.com/lengzhao/agentkit/plugins/tool/mcp"
 	_ "github.com/lengzhao/agentkit/plugins/tool/memory"
 	_ "github.com/lengzhao/agentkit/plugins/tool/openapi"
+	_ "github.com/lengzhao/agentkit/plugins/tool/readoutput"
 	_ "github.com/lengzhao/agentkit/plugins/tool/recognize"
 	_ "github.com/lengzhao/agentkit/plugins/tool/schedule"
 	_ "github.com/lengzhao/agentkit/plugins/tool/send"

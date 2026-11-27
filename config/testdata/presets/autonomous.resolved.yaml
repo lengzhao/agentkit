@@ -688,6 +688,8 @@ tool.fs-workspace.readonly.default:
         fs: filesystem.local.default
         workspace: workspace.default
     use: tool/fs-workspace
+tool.read-output.default:
+    use: tool/read-output
 tool.recognize.default:
     config:
         model: gpt-5.4-mini
@@ -778,6 +780,7 @@ tools.subagent.default:
         toolPacks:
             - tool.fs-workspace.readonly.default
         tools:
+            - tool.read-output.default
             - tool.finish.default
             - tool.web-fetch-http.default
             - tool.skill.default
@@ -800,6 +803,7 @@ tools.worker.default:
             - tool.fs-workspace.default
             - tool.recognize.default
         tools:
+            - tool.read-output.default
             - tool.shell-bash.default
             - tool.skill.default
             - tool.subagent.default

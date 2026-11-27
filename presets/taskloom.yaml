@@ -2,7 +2,7 @@
 #
 # 适配插件跟随该 Agent 在 Taskloom 的变化流，只在某个任务等它处理时唤醒，
 # 一个任务一个会话；任务运行中的新动态 steer 进当前 turn；没有任务等待时不调用模型。
-# 只暴露 Taskloom MCP 工具和 todo/finish：没有 shell、文件、网络或子 agent，
+# 只暴露 Taskloom MCP、todo/finish 与当前会话输出续读；没有 shell、任意文件、网络或子 agent，
 # 所以任务被取消或改派后，Taskloom 会拒绝旧执行的写入，turn 自行结束（规则 10）。
 # 业务规则、写入隔离和授权都在 Taskloom。
 #
@@ -159,11 +159,12 @@ tools.taskloom:
     tools:
       - tool.todo.default
       - tool.finish.default
+      - tool.read-output.default
     dynamicTools:
       - mcp.default
     approval: approval.taskloom
 
-# Only Taskloom MCP tools and todo/finish exist in this agent, so nothing needs
+# Only Taskloom MCP, todo/finish, and session-scoped output reading exist, so nothing needs
 # a human approval; Taskloom itself authorizes every write.
 approval.taskloom:
   use: approval/auto-allow

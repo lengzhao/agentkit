@@ -353,6 +353,7 @@ Tool 插件按工具来源返回不同类型：单工具插件返回 `agentkit.T
 | `tool/ask-user` | — | `ask_user` | 向用户提问（HIL） |
 | `tool/todo` | `sessionStore` | `todo` | durable 任务清单 |
 | `tool/finish` | `sessionStore` | `finish` | 显式收尾 |
+| `tool/read-output` | 当前会话 workspace | `read_tool_output` | 分页续读已截断的当前会话工具输出，不接受文件路径 |
 | `tool/set-model` | `sessionStore` | `set_model` | Agent 自主切换本会话模型（写与 `/model` 相同的 `runtime.json` 覆盖，下一 turn 生效）；`config.allowModels` 白名单；子 Agent 上下文拒绝调用 |
 | `tool/schedule` | `schedule` | `schedule` | agent 自主排期 |
 | `tool/send` | `sender`, `workspace?`, `fs?` | `send` | 经 delivery.Sender 主动发送文本或工作区文件；`/send [-r\|--raw] <chatId> <message>` 管理面投递（同平台裸 chat/channel id，消息可多行；`-r` 跳过平台 Markdown 转换）；L0 `tools.default` 已启用 |

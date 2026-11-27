@@ -939,6 +939,7 @@ tools.default:
   deps:
     hooks: hooks.default
     tools:
+      - tool.read-output.default
       - tool.shell-bash.default
       - tool.skill.default
       - tool.subagent.default
@@ -970,6 +971,7 @@ tools.worker.default:
   deps:
     hooks: hooks.worker
     tools:
+      - tool.read-output.default
       - tool.shell-bash.default
       - tool.skill.default
       - tool.subagent.default
@@ -997,6 +999,7 @@ tools.subagent.default:
   deps:
     hooks: hooks.default
     tools:
+      - tool.read-output.default
       - tool.finish.default
       - tool.web-fetch-http.default
       - tool.skill.default
@@ -1193,6 +1196,7 @@ tools.runtime.workflow:
   deps:
     hooks: hooks.default
     tools:
+      - tool.read-output.default
       - tool.shell-bash.default
     toolPacks:
       - tool.fs-workspace.default
@@ -1215,3 +1219,7 @@ tool.workflow.default:
 
 policy.dangerous-shell.default:
   use: policy/deny-dangerous-shell
+
+# Read only previously spilled outputs of the current conversation.
+tool.read-output.default:
+  use: tool/read-output
